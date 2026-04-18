@@ -9,16 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestWithStatusReporter_Scenarios(t *testing.T) {
 	t.Run("Scenario A: Inference Header", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		engine := &Engine{events: bus}
 		mw := engine.withStatusReporter()
 
@@ -26,12 +27,12 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 			return ProcessResult{NextPhase: PhaseComplete}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		hMock := &agenttest.MockHistoryManager{}
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference, RetryCount: 0},
 			CtxManager: cm,
-			Clock:      &testutil.MockClock{},
+			Clock:      &agenttest.MockClock{},
 		}
 
 		_, err := mw(next).Process(context.Background(), turn)
@@ -50,7 +51,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 	})
 
 	t.Run("Scenario B: Persisting Footer and Metrics", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		engine := &Engine{events: bus}
 		mw := engine.withStatusReporter()
 
@@ -58,15 +59,15 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 			return ProcessResult{NextPhase: PhaseComplete}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		hMock := &agenttest.MockHistoryManager{}
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State: &TurnState{
 				Phase:   PhasePersisting,
 				Metrics: &llm.Metrics{PromptTokens: 10},
 			},
 			CtxManager: cm,
-			Clock:      &testutil.MockClock{},
+			Clock:      &agenttest.MockClock{},
 		}
 
 		_, err := mw(next).Process(context.Background(), turn)
@@ -89,7 +90,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 	})
 
 	t.Run("Scenario C: Error handling", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		engine := &Engine{events: bus}
 		mw := engine.withStatusReporter()
 
@@ -98,12 +99,12 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 			return ProcessResult{}, expectedErr
 		})
 
-		hMock := &testutil.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		hMock := &agenttest.MockHistoryManager{}
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference},
 			CtxManager: cm,
-			Clock:      &testutil.MockClock{},
+			Clock:      &agenttest.MockClock{},
 		}
 
 		_, err := mw(next).Process(context.Background(), turn)
@@ -113,7 +114,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 
 func TestWithMetrics_Scenarios(t *testing.T) {
 	t.Run("Scenario A: Processor returns metrics", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		engine := &Engine{events: bus}
 		mw := engine.withMetrics()
 
@@ -144,7 +145,7 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 	})
 
 	t.Run("Scenario B: Processor returns nil metrics", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		engine := &Engine{events: bus}
 		mw := engine.withMetrics()
 
@@ -167,8 +168,8 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 	})
 
 	t.Run("Scenario C: Cost accumulation", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		tracker := &testutil.MockCostTracker{}
+		bus := &eventstest.MockEventBus{}
+		tracker := &agenttest.MockCostTracker{}
 		engine := &Engine{events: bus}
 		mw := engine.withMetrics()
 
@@ -192,7 +193,7 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 
 func TestLoopDetector_Scenarios(t *testing.T) {
 	t.Run("Detect Text Loop", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		mw := withLoopDetector()
 
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
@@ -200,9 +201,9 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 			return ProcessResult{}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			State: &TurnState{
@@ -238,7 +239,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 	})
 
 	t.Run("Detect Tool Loop", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		mw := withLoopDetector()
 
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
@@ -254,9 +255,9 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 			return ProcessResult{}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			State: &TurnState{
@@ -288,17 +289,17 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 }
 
 func TestPublishTurnStatus_EventBusError(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	bus.SetPublishErr(errors.New("bus failure"))
 
 	engine := &Engine{events: bus}
 
-	hMock := &testutil.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	hMock := &agenttest.MockHistoryManager{}
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 	turn := &Turn{
 		State:      &TurnState{},
 		CtxManager: cm,
-		Clock:      &testutil.MockClock{},
+		Clock:      &agenttest.MockClock{},
 	}
 
 	// This should not panic and should log the error
@@ -306,7 +307,7 @@ func TestPublishTurnStatus_EventBusError(t *testing.T) {
 }
 
 func TestWithMetrics_EventBusError(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	bus.SetPublishErr(errors.New("bus failure"))
 
 	engine := &Engine{events: bus}
@@ -328,9 +329,9 @@ func TestWithMetrics_EventBusError(t *testing.T) {
 }
 
 func TestHandleLoopBreak_Error_Internal(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
 	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
 		if content.Role == "model" {
@@ -338,7 +339,7 @@ func TestHandleLoopBreak_Error_Internal(t *testing.T) {
 		}
 		return nil
 	}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 	turn := &Turn{
 		State: &TurnState{
@@ -374,16 +375,16 @@ func TestTruncateSafe_Middleware(t *testing.T) {
 }
 
 func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	engine := &Engine{events: bus}
 
-	hMock := &testutil.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	hMock := &agenttest.MockHistoryManager{}
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 	turn := &Turn{
 		State:       &TurnState{},
 		CtxManager:  cm,
-		Clock:       &testutil.MockClock{},
+		Clock:       &agenttest.MockClock{},
 		CostTracker: nil,
 	}
 
@@ -399,9 +400,9 @@ func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
 }
 
 func TestHandleLoopBreak_Error_Warning(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	// Seed history
 	hMock.SetInternalContents([]*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}})
 
@@ -417,7 +418,7 @@ func TestHandleLoopBreak_Error_Warning(t *testing.T) {
 		hMock.Mu.Unlock()
 		return nil
 	}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 	turn := &Turn{
 		State: &TurnState{
@@ -433,17 +434,17 @@ func TestHandleLoopBreak_Error_Warning(t *testing.T) {
 }
 
 func TestPublishTurnStatus_ErrBusNotInitialized(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	bus.SetPublishErr(events.ErrBusNotInitialized)
 
 	engine := &Engine{events: bus}
 
-	hMock := &testutil.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	hMock := &agenttest.MockHistoryManager{}
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 	turn := &Turn{
 		State:      &TurnState{},
 		CtxManager: cm,
-		Clock:      &testutil.MockClock{},
+		Clock:      &agenttest.MockClock{},
 	}
 
 	// This should not panic and should NOT log the error

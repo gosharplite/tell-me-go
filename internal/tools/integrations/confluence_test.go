@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -467,7 +467,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
-		sm := &testutil.MockSecurityManager{AllowAll: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		m, err := newconfluenceManager(sm, mockClient)
 		assert.NoError(t, err)
 
@@ -519,7 +519,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 
 	t.Run("Conflict 409", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
-		sm := &testutil.MockSecurityManager{AllowAll: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		m, err := newconfluenceManager(sm, mockClient)
 		assert.NoError(t, err)
 

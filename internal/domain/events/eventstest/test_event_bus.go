@@ -1,19 +1,28 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+// Package eventstest provides test doubles for the events.EventBus
+// interface defined in the parent internal/domain/events package.
+//
+// Helpers in this package are intended only for use from _test.go
+// files. Production code must never import this package.
+package eventstest
 
 import (
 	"context"
 	"reflect"
 	"sync"
-	"sync/atomic"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
-// TestEventBus is a thread-safe event bus designed for unit tests.
-// It records all published events for assertion and allows simulating errors.
+// TestEventBus is an in-memory events.EventBus implementation suitable
+// for assertion-style tests. It records every published event under a
+// mutex (exposed via GetEvents/FilterEvents/AssertEventPublished),
+// dispatches synchronously to any subscribers added via Subscribe, and
+// supports scripted error injection via SetPublishErr/SetFlushErr/
+// SetShutdownErr. Listen blocks until the supplied context is
+// cancelled; WaitStarted is a no-op (no listener goroutine exists).
 type TestEventBus struct {
 	mu          sync.RWMutex
 	events      []events.Event
@@ -139,32 +148,3 @@ func (b *TestEventBus) FilterEvents(t reflect.Type) []events.Event {
 	}
 	return res
 }
-
-// CountingEventBus is a simple bus that counts published events.
-type CountingEventBus struct {
-	count int32
-}
-
-func NewCountingEventBus() *CountingEventBus {
-	return &CountingEventBus{}
-}
-
-func (b *CountingEventBus) Publish(ctx context.Context, e events.Event) error {
-	atomic.AddInt32(&b.count, 1)
-	return nil
-}
-
-func (b *CountingEventBus) Subscribe(sub func(context.Context, events.Event)) {}
-func (b *CountingEventBus) Shutdown(ctx context.Context) error                { return nil }
-func (b *CountingEventBus) Flush(ctx context.Context) error                   { return nil }
-func (b *CountingEventBus) Listen(ctx context.Context) error {
-	<-ctx.Done()
-	return ctx.Err()
-}
-func (b *CountingEventBus) WaitStarted() {}
-func (b *CountingEventBus) GetCount() int {
-	return int(atomic.LoadInt32(&b.count))
-}
-
-// MockEventBus is an alias for TestEventBus for backward compatibility.
-type MockEventBus = TestEventBus

@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestTeamsManager_SendTeamsMessage(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	tests := []struct {
 		name       string
@@ -116,7 +116,7 @@ func TestTeamsManager_SendTeamsMessage(t *testing.T) {
 }
 
 func TestTeamsManager_Timeout(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
@@ -161,7 +161,7 @@ func TestBuildTeamsRequestBody(t *testing.T) {
 }
 
 func TestPostToWebhook_RequestError(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	m := newteamsManager(sm, nil)
 
 	// Use an invalid URL that will cause NewRequestWithContext to fail if possible
@@ -174,7 +174,7 @@ func TestPostToWebhook_RequestError(t *testing.T) {
 }
 
 func TestNewTeamsManager_DefaultClient(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	m := newteamsManager(sm, nil)
 	if m.client == nil {
 		t.Error("Expected default client to be initialized")

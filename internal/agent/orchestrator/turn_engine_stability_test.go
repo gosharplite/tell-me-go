@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -23,7 +23,7 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 		Backoff:          1 * time.Second,
 		RateLimitBackoff: 5 * time.Second,
 	}
-	c := &testutil.MockClock{}
+	c := &agenttest.MockClock{}
 
 	// Test exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 120s (cap)
 	// attempt 0: delay = 1s
@@ -101,7 +101,7 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 				LastError:  llm.ErrTransient,
 				RetryCount: 0,
 			},
-			Clock: &testutil.MockClock{},
+			Clock: &agenttest.MockClock{},
 		}
 		res, err := step.Process(context.Background(), Turn)
 		if err != nil {
@@ -118,7 +118,7 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 			State: &orchestrator.TurnState{
 				LastError: llm.ErrTerminal,
 			},
-			Clock: &testutil.MockClock{},
+			Clock: &agenttest.MockClock{},
 		}
 		res, err := step.Process(context.Background(), Turn)
 		if !errors.Is(err, llm.ErrTerminal) {
@@ -134,7 +134,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, ctx.Err()
 		},
@@ -144,10 +144,10 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	Turn := &orchestrator.Turn{
 		Gateway:  gw,
 		State:    &orchestrator.TurnState{},
-		Clock:    &testutil.MockClock{},
-		Registry: &testutil.MockToolRegistry{},
+		Clock:    &agenttest.MockClock{},
+		Registry: &agenttest.MockToolRegistry{},
 		CtxManager: &session.ContextManager{
-			History: &testutil.MockHistoryManager{},
+			History: &agenttest.MockHistoryManager{},
 		},
 	}
 

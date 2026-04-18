@@ -15,53 +15,53 @@ import (
 )
 
 // AgentOption defines a functional option for configuring an Agent.
-type AgentOption func(*Agent)
+type AgentOption func(*agent)
 
 // WithHistoryManager sets the history manager for the agent.
 func WithHistoryManager(h ports.HistoryManager) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.hManager = h
 	}
 }
 
 // WithSecurityManager sets the security manager for the agent.
 func WithSecurityManager(sm security.Manager) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.sm = sm
 	}
 }
 
 // WithSessionProvider sets the session provider for the agent.
 func WithSessionProvider(sp ports.SessionProvider) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.sessionProvider = sp
 	}
 }
 
 // WithInitContext sets the context for the agent initialization.
 func WithInitContext(ctx context.Context) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.initCtx = ctx
 	}
 }
 
 // WithSummarizer sets the summarizer service for the agent.
 func WithSummarizer(s ports.Summarizer) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.summarizer = s
 	}
 }
 
 // WithInternalTools enables the registration of internal agent tools.
 func WithInternalTools() AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.registerInternal = true
 	}
 }
 
 // WithPricing sets the pricing configuration for cost estimation.
 func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.model = model
 		a.mode = mode
 		a.pricingOverrides = overrides
@@ -70,56 +70,56 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 
 // WithLoader sets the configuration loader for the agent.
 func WithLoader(loader domain_config.ConfigLoader) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.loader = loader
 	}
 }
 
 // WithSessionCostTracker sets the cost tracker for the agent.
 func WithSessionCostTracker(tracker domain_pricing.CostTracker) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.tracker = tracker
 	}
 }
 
 // WithSessionLoader sets the session configuration loader for the agent.
 func WithSessionLoader(loader domain_config.SessionLoader) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.sessionLoader = loader
 	}
 }
 
 // WithLogger sets the logger for the agent.
 func WithLogger(l ports.Logger) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.logger = l
 	}
 }
 
 // WithSkillSelector sets the skill selector for the agent.
 func WithSkillSelector(s skills.SkillSelector) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.skillSelector = s
 	}
 }
 
 // WithTurnsLogger sets the turns logger for the agent.
 func WithTurnsLogger(tl ports.TurnsLogger) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.turnsLogger = tl
 	}
 }
 
 // WithClock sets the clock for the agent and its components.
 func WithClock(c clock.Clock) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.clock = c
 	}
 }
 
 // WithProviderName sets the provider name for the agent.
 func WithProviderName(name string) AgentOption {
-	return func(a *Agent) {
+	return func(a *agent) {
 		a.providerName = name
 	}
 }

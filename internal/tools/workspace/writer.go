@@ -22,6 +22,24 @@ type fileWriter struct {
 }
 
 func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	// Defense-in-depth presence guard. As of the registry-level
+	// validateRequiredArgs check (see internal/infrastructure/registry/
+	// registry.go), every call routed through registry.Execute already
+	// has its required parameters validated before reaching this
+	// handler — so in production this guard is redundant. We keep it
+	// for two reasons:
+	//   (a) Direct unit tests in writer_test.go bypass the registry
+	//       and call writeFile() directly; this guard preserves their
+	//       value as a contract on the handler itself.
+	//   (b) Future callers (other registries, embedding scenarios,
+	//       in-process tool invocation by tests/scripts) get the same
+	//       safety without depending on the registry's behavior.
+	// The two layers cannot disagree because both check key-presence
+	// (not value-zero-ness) on the same args map.
+	if _, ok := args["content"]; !ok {
+		return tools.ToolResult{}, fmt.Errorf("required parameter 'content' is missing (to write an empty file, pass content=\"\" explicitly)")
+	}
+
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
@@ -105,6 +123,14 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 }
 
 func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (res tools.ToolResult, err error) {
+	// Same defense-in-depth pattern as writeFile — see that function's
+	// comment. Production calls via registry.Execute hit the central
+	// validateRequiredArgs check first; this guard exists for direct
+	// invocation paths (tests, scripts, embedding).
+	if _, ok := args["content"]; !ok {
+		return tools.ToolResult{}, fmt.Errorf("required parameter 'content' is missing (to append nothing, pass content=\"\" explicitly)")
+	}
+
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`

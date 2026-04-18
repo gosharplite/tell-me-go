@@ -10,29 +10,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
 func TestEngine_ConfigurationOptions(t *testing.T) {
-	gw := &testutil.MockGateway{}
-	ex := &testutil.MockAgentExecutor{}
+	gw := &agenttest.MockGateway{}
+	ex := &agenttest.MockAgentExecutor{}
 	cm := &session.ContextManager{}
-	reg := &testutil.MockToolRegistry{}
-	counter := &testutil.MockTokenCounter{}
+	reg := &agenttest.MockToolRegistry{}
+	counter := &agenttest.MockTokenCounter{}
 
-	mockClock := &testutil.MockClock{}
+	mockClock := &agenttest.MockClock{}
 	mockLogger := &ports.NoOpLogger{}
 	mockPricing := make(map[string]domain_pricing.ModelPricing)
 	mockRetry := &DefaultRetryPolicy{MaxRetries: 3}
-	mockCostTracker := &testutil.MockCostTracker{}
-	mockSM := &testutil.MockSecurityManager{}
+	mockCostTracker := &agenttest.MockCostTracker{}
+	mockSM := &noopSecurityManager{}
 
 	e := NewEngine(gw, ex, cm, reg, nil, counter,
 		WithEngineClock(mockClock),
@@ -63,7 +65,7 @@ func TestEngine_ApplyOptions(t *testing.T) {
 	e := &Engine{}
 	e.config.Store(&engineConfig{})
 
-	mockClock := &testutil.MockClock{}
+	mockClock := &agenttest.MockClock{}
 	e.ApplyOptions(WithEngineClock(mockClock))
 
 	assert.Equal(t, mockClock, e.clock)
@@ -73,7 +75,7 @@ func TestEngine_Reconfigure(t *testing.T) {
 	e := &Engine{}
 	e.config.Store(&engineConfig{})
 
-	tracker := &testutil.MockCostTracker{}
+	tracker := &agenttest.MockCostTracker{}
 	runtimeCfg := RuntimeConfig{
 		ProviderName: "new-provider",
 		Model:        "new-model",
@@ -188,14 +190,14 @@ func TestExecutionStep_Process(t *testing.T) {
 	})
 
 	t.Run("Successful execution", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		ex := &testutil.MockAgentExecutor{
+		bus := &eventstest.MockEventBus{}
+		ex := &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "tool"}, nil
 			},
 		}
-		counter := &testutil.MockTokenCounter{}
-		hMock := &testutil.MockHistoryManager{}
+		counter := &agenttest.MockTokenCounter{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
 		turn := &Turn{
@@ -203,7 +205,7 @@ func TestExecutionStep_Process(t *testing.T) {
 			Executor:     ex,
 			TokenCounter: counter,
 			CtxManager:   cm,
-			Clock:        &testutil.MockClock{},
+			Clock:        &agenttest.MockClock{},
 			State: &TurnState{
 				HasToolCalls: true,
 				Response: &llm.Content{
@@ -221,8 +223,8 @@ func TestExecutionStep_Process(t *testing.T) {
 	})
 
 	t.Run("Execution error", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		ex := &testutil.MockAgentExecutor{
+		bus := &eventstest.MockEventBus{}
+		ex := &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return nil, errors.New("exec failed")
 			},
@@ -230,7 +232,7 @@ func TestExecutionStep_Process(t *testing.T) {
 		turn := &Turn{
 			Events:   bus,
 			Executor: ex,
-			Clock:    &testutil.MockClock{},
+			Clock:    &agenttest.MockClock{},
 			State: &TurnState{
 				HasToolCalls: true,
 			},
@@ -241,14 +243,14 @@ func TestExecutionStep_Process(t *testing.T) {
 	})
 
 	t.Run("Transient execution error", func(t *testing.T) {
-		ex := &testutil.MockAgentExecutor{
+		ex := &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return nil, llm.ErrTransient
 			},
 		}
 		turn := &Turn{
 			Executor: ex,
-			Clock:    &testutil.MockClock{},
+			Clock:    &agenttest.MockClock{},
 			State: &TurnState{
 				HasToolCalls: true,
 			},
@@ -266,11 +268,11 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Scenario A: Tool response within limits", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		counter := &testutil.MockTokenCounter{}
+		bus := &eventstest.MockEventBus{}
+		counter := &agenttest.MockTokenCounter{}
 		counter.SetTokens(100)
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
@@ -292,11 +294,11 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 	})
 
 	t.Run("Scenario B: Individual tool response > 50% limit", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		counter := &testutil.MockTokenCounter{}
+		bus := &eventstest.MockEventBus{}
+		counter := &agenttest.MockTokenCounter{}
 		counter.SetTokens(600)
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
@@ -324,11 +326,11 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 	})
 
 	t.Run("Scenario C: Total conversation context > 90%", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		counter := &testutil.MockTokenCounter{}
+		bus := &eventstest.MockEventBus{}
+		counter := &agenttest.MockTokenCounter{}
 		counter.SetTokens(100)
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
@@ -357,9 +359,9 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 }
 
 func TestEngine_StartTelemetry(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 
-	tl := &testutil.MockTurnsLogger{}
+	tl := &agenttest.MockTurnsLogger{}
 	tl.On("Listen", mock.Anything).Return(nil)
 
 	e := &Engine{
@@ -381,13 +383,13 @@ func TestEngine_StartTelemetry(t *testing.T) {
 }
 
 func TestEngine_Run(t *testing.T) {
-	gw := &testutil.MockGateway{}
-	ex := &testutil.MockAgentExecutor{}
-	reg := &testutil.MockToolRegistry{}
-	bus := &testutil.MockEventBus{}
-	counter := &testutil.MockTokenCounter{}
+	gw := &agenttest.MockGateway{}
+	ex := &agenttest.MockAgentExecutor{}
+	reg := &agenttest.MockToolRegistry{}
+	bus := &eventstest.MockEventBus{}
+	counter := &agenttest.MockTokenCounter{}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
 	e := NewEngine(gw, ex, cm, reg, bus, counter)
@@ -416,7 +418,7 @@ func TestEngine_AdditionalOptions(t *testing.T) {
 	}
 	cfg := &engineConfig{}
 
-	tl := &testutil.MockTurnsLogger{}
+	tl := &agenttest.MockTurnsLogger{}
 	WithEngineTurnsLogger(tl)(e, cfg)
 	assert.Equal(t, tl, e.turnsLogger)
 
@@ -438,11 +440,11 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Duplicate Response", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		hMock := &testutil.MockHistoryManager{}
+		bus := &eventstest.MockEventBus{}
+		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			Events:     bus,
@@ -473,11 +475,11 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 	})
 
 	t.Run("Tool Call Count", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
-		hMock := &testutil.MockHistoryManager{}
+		bus := &eventstest.MockEventBus{}
+		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			Events:     bus,
@@ -547,17 +549,17 @@ func (m *mockTurnHook) OnPhaseTransition(from, to TurnPhase, state *TurnState) {
 }
 
 func TestExecuteTurn_TraceEventBusError(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	bus.SetPublishErr(errors.New("bus failure"))
 
-	gw := &testutil.MockGateway{}
-	ex := &testutil.MockAgentExecutor{}
+	gw := &agenttest.MockGateway{}
+	ex := &agenttest.MockAgentExecutor{}
 
 	// Properly initialize ContextManager
-	reg := &testutil.MockToolRegistry{}
-	counter := &testutil.MockTokenCounter{}
+	reg := &agenttest.MockToolRegistry{}
+	counter := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(strategy, hMock, bus, nil)
 
 	e := NewEngine(gw, ex, cm, reg, bus, counter)
@@ -602,3 +604,29 @@ func TestNewEngine_FastRetry(t *testing.T) {
 	e := NewEngine(nil, nil, nil, nil, nil, nil)
 	assert.Equal(t, 1*time.Millisecond, e.RetryPolicy.(*DefaultRetryPolicy).Backoff)
 }
+
+// noopSecurityManager is a minimal package-local stub of
+// domain_security.Manager used only to satisfy WithEngineConfig's
+// signature in TestEngine_ConfigurationOptions, which only asserts
+// pointer-equality of the stored SM and never invokes any of its
+// methods. Kept here (rather than importing internal/tools/toolstest)
+// to avoid a cross-layer test import (orchestrator → tools).
+type noopSecurityManager struct{}
+
+var _ domain_security.Manager = (*noopSecurityManager)(nil)
+
+func (*noopSecurityManager) IsPathSafe(string) (string, error)     { return "", nil }
+func (*noopSecurityManager) IsPathWritable(string) (string, error) { return "", nil }
+func (*noopSecurityManager) Authorize(context.Context, string, string, string, bool) (bool, error) {
+	return true, nil
+}
+func (*noopSecurityManager) LogAudit(string, ...any)                       {}
+func (*noopSecurityManager) Close() error                                  { return nil }
+func (*noopSecurityManager) TerminalLock()                                 {}
+func (*noopSecurityManager) TerminalUnlock()                               {}
+func (*noopSecurityManager) Prompt(string)                                 {}
+func (*noopSecurityManager) Warn(string)                                   {}
+func (*noopSecurityManager) Confirm(context.Context, string) (bool, error) { return true, nil }
+func (*noopSecurityManager) ReadLine(context.Context) (string, error)      { return "", nil }
+func (*noopSecurityManager) IsCommandAllowed(string) bool                  { return true }
+func (*noopSecurityManager) IsBypassActive() bool                          { return false }

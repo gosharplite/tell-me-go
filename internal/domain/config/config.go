@@ -4,6 +4,8 @@
 package config
 
 import (
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -25,13 +27,55 @@ const (
 
 // LLMProvider represents the configuration for a specific AI service provider.
 type LLMProvider struct {
-	Type           string            `yaml:"TYPE"`            // e.g., "openai", "anthropic", "gemini"
-	URL            string            `yaml:"URL"`             // Base API URL
-	APIKey         string            `yaml:"API_KEY"`         // Secret key (supports ${VAR} expansion in next task)
-	Model          string            `yaml:"MODEL"`           // Default model for this provider
-	ThinkingBudget int               `yaml:"THINKING_BUDGET"` // Provider-specific thinking budget
-	ThinkingLevel  string            `yaml:"THINKING_LEVEL"`  // Provider-specific thinking level
-	Headers        map[string]string `yaml:"HEADERS"`         // Custom HTTP headers
+	Type           string `yaml:"TYPE"`            // e.g., "openai", "anthropic", "gemini"
+	URL            string `yaml:"URL"`             // Base API URL
+	APIKey         string `yaml:"API_KEY"`         // Secret key (supports ${VAR} expansion in next task)
+	Model          string `yaml:"MODEL"`           // Default model for this provider
+	ThinkingBudget int    `yaml:"THINKING_BUDGET"` // Provider-specific thinking budget
+	ThinkingLevel  string `yaml:"THINKING_LEVEL"`  // Provider-specific thinking level
+	// MaxTokens is the per-request output-token cap. Optional; zero means
+	// "use the provider's package default". Read at startup only — changes
+	// to this field require a process restart to take effect.
+	MaxTokens int               `yaml:"MAX_TOKENS"`
+	Headers   map[string]string `yaml:"HEADERS"` // Custom HTTP headers
+}
+
+// anthropicThinkingBudgetHeadroom mirrors the Anthropic client's
+// runtime invariant: when ThinkingBudget > 0, the request's max_tokens
+// must exceed thinking_budget + 1024, otherwise the client silently
+// bumps it. Defining the constant here lets validation surface the
+// silent bump as a warning without coupling the domain to the
+// infrastructure constant.
+const anthropicThinkingBudgetHeadroom = 1024
+
+// Validate reports semantic errors and emits warnings for surprising-
+// but-tolerated values on a single LLMProvider. The logger is used for
+// warn-level diagnostics; it must be non-nil. Returns a non-nil error
+// only for hard rejections.
+//
+// Hard rejections:
+//   - MaxTokens < 0 — the API would reject this anyway; catch it at
+//     startup with a clear message naming the provider and value.
+//
+// Warnings (non-fatal):
+//   - Anthropic providers where MaxTokens > 0 && ThinkingBudget > 0
+//     && MaxTokens < ThinkingBudget + anthropicThinkingBudgetHeadroom:
+//     the Anthropic runtime will silently bump max_tokens at request
+//     time, overriding the configured cap. Surfacing as a warning
+//     gives operators visibility into the silent override.
+func (p *LLMProvider) Validate(name string, logger *slog.Logger) error {
+	if p.MaxTokens < 0 {
+		return fmt.Errorf("PROVIDERS.%s.MAX_TOKENS must be >= 0, got %d", name, p.MaxTokens)
+	}
+	if p.Type == "anthropic" && p.MaxTokens > 0 && p.ThinkingBudget > 0 &&
+		p.MaxTokens < p.ThinkingBudget+anthropicThinkingBudgetHeadroom {
+		logger.Warn("provider_max_tokens_below_thinking_budget_floor",
+			"provider", name,
+			"max_tokens", p.MaxTokens,
+			"thinking_budget", p.ThinkingBudget,
+			"note", "Anthropic runtime will silently bump max_tokens to thinking_budget+1024 on each request")
+	}
+	return nil
 }
 
 // Config represents the application configuration loaded from a YAML file.
@@ -72,6 +116,26 @@ func (c *Config) GetActiveProvider() LLMProvider {
 		ThinkingBudget: c.ThinkingBudget,
 		ThinkingLevel:  c.ThinkingLevel,
 	}
+}
+
+// ValidateProviders runs LLMProvider.Validate against every entry in
+// Providers and returns the first error encountered. Warnings are
+// emitted via the supplied logger (non-fatal). The logger must be
+// non-nil; callers without a configured logger should pass a logger
+// backed by a discard handler.
+//
+// The order of iteration is undefined (Go map iteration); operators
+// should treat the first-error semantics as "any one of multiple
+// invalid providers will be reported" rather than depending on which
+// one surfaces first.
+func (c *Config) ValidateProviders(logger *slog.Logger) error {
+	for name, p := range c.Providers {
+		provider := p // copy to avoid taking the address of the range variable
+		if err := provider.Validate(name, logger); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ModelConfig defines capabilities and limits for a specific model.

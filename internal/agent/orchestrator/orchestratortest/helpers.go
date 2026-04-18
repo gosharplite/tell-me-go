@@ -9,20 +9,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // TestTurnEnv holds the standard environment for TurnEngine tests.
 type TestTurnEnv struct {
-	Gw       *testutil.MockGateway
-	Reg      *testutil.MockToolRegistry
+	Gw       *agenttest.MockGateway
+	Reg      *agenttest.MockToolRegistry
 	Bus      *events.SimpleEventBus
 	Cm       *session.ContextManager
 	HManager ports.HistoryManager
@@ -33,15 +33,15 @@ func SetupTurnEngineTest(t interface {
 	Cleanup(func())
 }) *TestTurnEnv {
 	t.Helper()
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 	// Use synchronous event bus for deterministic test results
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	cm := NewTestContextManager(strategy, hManager, bus)
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 
 	// Default prompt in history
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -80,7 +80,7 @@ func CreateProcessorForPhase(phase orchestrator.TurnPhase) orchestrator.TurnProc
 }
 
 func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestrator.Turn {
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		if hasTools && phase == orchestrator.PhaseInference {
@@ -88,8 +88,8 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 		}
 		return content, &llm.Metrics{}, nil
 	}
-	reg := &testutil.MockToolRegistry{}
-	counter := &testutil.MockTokenCounter{}
+	reg := &agenttest.MockToolRegistry{}
+	counter := &agenttest.MockTokenCounter{}
 	turn := &orchestrator.Turn{
 		State: &orchestrator.TurnState{
 			HasToolCalls: hasTools,
@@ -100,11 +100,11 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 			},
 		},
 		CtxManager: &session.ContextManager{
-			History:  &testutil.MockHistoryManager{},
+			History:  &agenttest.MockHistoryManager{},
 			Strategy: session.NewContextStrategy(session.NewHeuristicTokenCounter(reg)),
 		},
 		Gateway: mockGw,
-		Executor: &testutil.MockAgentExecutor{
+		Executor: &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turnIdx int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
 			},

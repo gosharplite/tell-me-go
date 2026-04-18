@@ -9,17 +9,19 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func TestAgent_ManageHistory(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Fill history with 2 turns (4 messages)
@@ -94,7 +96,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 }
 
 func TestRegisterInternal(t *testing.T) {
-	registry := &testutil.MockToolRegistry{}
+	registry := &agenttest.MockToolRegistry{}
 	cm := session.NewContextManager(nil, nil, nil, nil)
 	if err := session.RegisterInternal(registry, cm); err != nil {
 		t.Fatalf("RegisterInternal failed: %v", err)
@@ -152,23 +154,23 @@ func validateTool(t *testing.T, found *tools.ToolDeclaration, expectedParams []s
 }
 
 func TestInternalTools_SummarizeHistory(t *testing.T) {
-	mockSumm := &testutil.MockSummarizer{}
+	mockSumm := &agenttest.MockSummarizer{}
 	mockSumm.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary result", &llm.Metrics{ResponseTokens: 10}, nil
 	})
 	factory := &session.PipelineFactory{
 		Summarizer: mockSumm,
-		Estimator:  session.NewContextStrategy(&testutil.MockTokenCounter{}),
-		Events:     &testutil.MockEventBus{},
+		Estimator:  session.NewContextStrategy(&agenttest.MockTokenCounter{}),
+		Events:     &eventstest.MockEventBus{},
 	}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	hManager.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "U1"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "M1"}}},
 		{Role: "user", Parts: []*llm.Part{{Text: "U2"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
 	})
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hManager, &testutil.MockEventBus{}, factory)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hManager, &eventstest.MockEventBus{}, factory)
 	it := session.NewInternalTools(cm)
 
 	ctx := context.Background()
@@ -227,7 +229,7 @@ func TestRegisterInternal_ErrorPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := &testutil.MockToolRegistry{}
+			registry := &agenttest.MockToolRegistry{}
 			registry.SetRegisterErr(fmt.Errorf("registry error"))
 			registry.SetFailAfter(tt.failAfter)
 			cm := session.NewContextManager(nil, nil, nil, nil)

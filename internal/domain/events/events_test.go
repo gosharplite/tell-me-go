@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	inframock "github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"go.uber.org/goleak"
 	"golang.org/x/sync/errgroup"
 )
@@ -581,7 +581,7 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	buf := inframock.NewSafeBuffer()
+	buf := testfixtures.NewSafeBuffer()
 	testLogger := slog.New(slog.NewJSONHandler(buf, nil))
 
 	// Setup bus with tiny queue to force backpressure quickly

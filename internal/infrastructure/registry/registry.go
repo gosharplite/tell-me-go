@@ -208,6 +208,22 @@ func (r *registry) ListAvailableToolkits() []string {
 }
 
 // Execute looks up and runs a tool handler with the provided JSON-parsed arguments.
+//
+// Before dispatching to the handler, Execute validates that every parameter
+// declared as Required in the tool's schema is present in args. This is a
+// defense-in-depth complement to handler-level validation: it ensures
+// every tool benefits from required-parameter enforcement even if the
+// handler author forgot to add an inline check, AND it eliminates a
+// silent-failure class where a missing parameter unmarshals to a zero
+// value (e.g. "" for strings) and the handler then operates on the
+// invalid input.
+//
+// On validation failure, Execute returns a model-friendly result of the
+// form `ToolResult{Text: "Error: ..."}` with a nil error, matching the
+// prevailing convention used by handlers in this codebase (see e.g.
+// generateMermaidDiagram in internal/tools/analysis/mermaid_tool.go).
+// The model receives the error as a tool result it can react to,
+// rather than as an exception that aborts the conversation turn.
 func (r *registry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	r.mu.RLock()
 	entry, ok := r.entries[name]
@@ -216,11 +232,48 @@ func (r *registry) Execute(ctx context.Context, name string, args map[string]int
 	if !ok {
 		return tools.ToolResult{}, fmt.Errorf("tool not found: %s", name)
 	}
+
+	if errMsg := validateRequiredArgs(entry.Declaration, args); errMsg != "" {
+		return tools.ToolResult{Text: errMsg}, nil
+	}
+
 	res, err := entry.Handler(ctx, args, hb)
 	if err != nil {
 		return res, fmt.Errorf("tool execution failed: %s: %w", name, err)
 	}
 	return res, nil
+}
+
+// validateRequiredArgs checks that every parameter listed in the tool's
+// schema Required slice is present in args. Returns a non-empty,
+// model-friendly error message on failure and "" on success.
+//
+// Presence (key in map) is the criterion, NOT non-zero-ness: a caller
+// that explicitly passes content="" to write_file is intentionally
+// writing an empty file and must not be rejected. Only a missing key is
+// a malformed call. This distinction is what makes the guard useful —
+// without it, json.Unmarshal-style "missing key becomes zero value"
+// silently masks the bug.
+//
+// If the declaration has no Parameters or no Required list, validation
+// trivially passes.
+func validateRequiredArgs(decl *tools.ToolDeclaration, args map[string]interface{}) string {
+	if decl == nil || decl.Parameters == nil || len(decl.Parameters.Required) == 0 {
+		return ""
+	}
+	missing := make([]string, 0, len(decl.Parameters.Required))
+	for _, key := range decl.Parameters.Required {
+		if _, present := args[key]; !present {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	if len(missing) == 1 {
+		return fmt.Sprintf("Error: missing required parameter %q for tool %q", missing[0], decl.Name)
+	}
+	return fmt.Sprintf("Error: missing required parameters %v for tool %q", missing, decl.Name)
 }
 
 // GetOptions returns the options associated with a tool.

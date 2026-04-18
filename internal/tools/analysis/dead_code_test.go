@@ -297,18 +297,44 @@ func (e APIError) Error() string { return "error" }
 type MyStringer struct{}
 func (s MyStringer) String() string { return "string" }
 `,
+				"iocontracts/iocontracts.go": `package iocontracts
+// Buffer satisfies io.Reader, io.Writer and io.Closer structurally, even
+// though no call site in this test workspace ever names Read/Write/Close.
+type Buffer struct{}
+func (b *Buffer) Read(p []byte) (int, error)  { return 0, nil }
+func (b *Buffer) Write(p []byte) (int, error) { return len(p), nil }
+func (b *Buffer) Close() error                 { return nil }
+`,
+				"jsoncontracts/jsoncontracts.go": `package jsoncontracts
+// Payload satisfies json.Marshaler / json.Unmarshaler.
+type Payload struct{}
+func (p Payload) MarshalJSON() ([]byte, error)   { return []byte("{}"), nil }
+func (p *Payload) UnmarshalJSON(data []byte) error { return nil }
+`,
+				"httpcontracts/httpcontracts.go": `package httpcontracts
+import "net/http"
+// Handler satisfies http.Handler.
+type Handler struct{}
+func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
+`,
 				"main.go": `package main
 import (
 	"example.com/test/errors"
 	"example.com/test/strings"
+	"example.com/test/iocontracts"
+	"example.com/test/jsoncontracts"
+	"example.com/test/httpcontracts"
 )
 func main() {
 	_ = errors.APIError{}
 	_ = strings.MyStringer{}
+	_ = iocontracts.Buffer{}
+	_ = jsoncontracts.Payload{}
+	_ = httpcontracts.Handler{}
 }
 `,
 			},
-			expected: nil, // Error() and String() should be protected
+			expected: nil, // All stdlib-contract methods should be protected
 		},
 		{
 			name: "Interface Contract Nil Receivers",

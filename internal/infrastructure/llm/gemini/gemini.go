@@ -33,6 +33,7 @@ type Client struct {
 	thinkingBudget    int
 	thinkingLevel     string
 	maxThinkingBudget int
+	maxOutputTokens   int
 	useSearch         bool
 	systemInstruction *llm.Content
 	backend           genai.Backend
@@ -43,13 +44,41 @@ type Client struct {
 	timeout           time.Duration
 }
 
+// defaultMaxOutputTokens is the per-request output budget when the
+// caller has not explicitly set one via WithMaxOutputTokens. It must
+// be large enough to comfortably emit a single tool call whose JSON
+// arguments may include multi-KB content payloads (e.g., write_file
+// with a multi-KB Go source file as the `content` argument).
+//
+// History: previously the gemini client did not set MaxOutputTokens
+// at all, so the API used its model-dependent default — typically
+// 8192 tokens, but for some models silently smaller — and large tool
+// calls were silently truncated. Coupled with checkResponse skipping
+// any non-empty content (regardless of FinishReason), truncations
+// propagated as malformed args maps that the registry rejected with
+// cryptic "missing required parameters" errors. See truncation_test.go
+// and the symmetric anthropic fix (5031162c) for full background.
+//
+// VALUE CHOICE: 8192 is deliberately conservative. It matches the
+// known hard ceiling of Gemini 1.5 Pro/Flash and Gemini 2.0 Flash,
+// so it cannot trigger an API rejection on any currently-supported
+// model. Newer models (Gemini 2.5 Pro: 65535) accept higher values;
+// callers targeting those should set WithMaxOutputTokens(N) for N
+// up to the model's actual ceiling. 8192 tokens is approximately
+// 24-32 KB of escaped JSON, which comfortably covers any reasonable
+// single tool call.
+//
+// Pinned by TestGemini_DefaultMaxOutputTokens_IsGenerous.
+const defaultMaxOutputTokens = 8192
+
 // NewClient returns a new Gemini API client.
 func NewClient(apiURL, model string, authenticator auth.Authenticator, opts ...geminiOption) (*Client, error) {
 	c := &Client{
-		apiURL:        apiURL,
-		model:         model,
-		authenticator: authenticator,
-		logger:        &ports.NoOpLogger{},
+		apiURL:          apiURL,
+		model:           model,
+		authenticator:   authenticator,
+		logger:          &ports.NoOpLogger{},
+		maxOutputTokens: defaultMaxOutputTokens,
 	}
 
 	for _, opt := range opts {
@@ -91,6 +120,28 @@ func WithThinking(budget int, level string, maxBudget int) geminiOption {
 		c.thinkingBudget = budget
 		c.thinkingLevel = level
 		c.maxThinkingBudget = maxBudget
+	}
+}
+
+// WithMaxOutputTokens sets the per-request output-token budget. The
+// Gemini API uses a model-dependent default (typically 8192) when
+// this is unset, and silently truncates responses that exceed it —
+// causing the bug class documented in truncation_test.go and fixed
+// in commit 5031162c (anthropic) plus this commit (gemini).
+//
+// A budget of 0 is treated as "unset" — the caller likely passed
+// through an unset config field by accident, and dropping the cap
+// would re-enable the silent-truncation failure mode. The package
+// default (defaultMaxOutputTokens) applies in that case.
+//
+// Pinned by TestGemini_WithMaxOutputTokens_Override and
+// TestGemini_WithMaxOutputTokens_ZeroFallsBackToDefault in
+// truncation_test.go.
+func WithMaxOutputTokens(n int) geminiOption {
+	return func(c *Client) {
+		if n > 0 {
+			c.maxOutputTokens = n
+		}
 	}
 }
 
@@ -321,7 +372,82 @@ func (c *Client) processResponse(resp *genai.GenerateContentResponse, duration f
 	}
 
 	candidate := resp.Candidates[0]
-	return c.fromSDKContent(candidate.Content), metrics, nil
+	content := c.fromSDKContent(candidate.Content)
+
+	// Detect output-budget truncation. The Gemini API returns
+	// FinishReasonMaxTokens when the response was cut off because the
+	// MaxOutputTokens cap was reached. For function-call parts, this
+	// means the JSON arguments may be incomplete — the SDK gives us
+	// whatever object boundary the truncation landed on, so the
+	// resulting Args map can be missing keys (typically the largest,
+	// last-emitted key like `content` for write_file).
+	//
+	// Surfacing this as an error lets the caller decide whether to
+	// retry with a larger MaxOutputTokens budget (via
+	// WithMaxOutputTokens) or to break the call into smaller pieces.
+	// The alternative — silently passing the truncated content
+	// downstream — caused the registry to reject calls with cryptic
+	// "missing required parameters" errors that the model would then
+	// "retry" identically, looping indefinitely.
+	//
+	// The check is universal (not function-call-specific): even
+	// text-only responses can be cut mid-thought in ways that mislead
+	// the agent into acting on incomplete reasoning. Conservative
+	// policy: any truncation is an error; the caller decides recovery.
+	//
+	// Critically, this check fires on NON-EMPTY content too — the
+	// pre-existing handleEmptyContent path only catches
+	// empty-content+non-Stop FinishReasons, missing the headline case
+	// where the API returns partial-but-non-empty content with
+	// FinishReasonMaxTokens.
+	//
+	// Pinned by TestGemini_FinishReasonMaxTokens_ProducesError,
+	// TestGemini_FinishReasonMaxTokens_TextOnlyStillReturnsError,
+	// TestGemini_FinishReasonStop_NoError,
+	// TestGemini_FinishReasonEmpty_NoError, and
+	// TestGemini_TruncationError_IsTerminal in truncation_test.go.
+	if err := checkGeminiTruncation(candidate); err != nil {
+		return content, metrics, err
+	}
+
+	return content, metrics, nil
+}
+
+// checkGeminiTruncation reports whether the candidate was cut off by
+// the output-token budget. See processResponse for full rationale.
+//
+// The error message intentionally avoids any substring that
+// llmerr.Classify treats as transient (HTTP status patterns, "rate
+// limit", "503", etc.) so the resilient client falls into Classify's
+// terminal default branch and does not auto-retry. Pinned by
+// TestGemini_TruncationError_IsTerminal.
+func checkGeminiTruncation(candidate *genai.Candidate) error {
+	if candidate == nil || candidate.FinishReason != genai.FinishReasonMaxTokens {
+		return nil
+	}
+
+	// Provide a function-call-aware diagnostic when we can identify it
+	// as the truncation site, since that is the most common and most
+	// damaging case.
+	if candidate.Content != nil {
+		for _, part := range candidate.Content.Parts {
+			if part != nil && part.FunctionCall != nil {
+				return fmt.Errorf(
+					"response truncated at MaxOutputTokens during "+
+						"function call (tool=%q): the tool arguments "+
+						"are incomplete and cannot be safely "+
+						"dispatched. Increase MaxOutputTokens via "+
+						"WithMaxOutputTokens, or break the tool call "+
+						"into smaller pieces.",
+					part.FunctionCall.Name,
+				)
+			}
+		}
+	}
+	return fmt.Errorf("response truncated at MaxOutputTokens: output " +
+		"budget was exhausted before the model finished. Increase " +
+		"MaxOutputTokens via WithMaxOutputTokens, or shorten the " +
+		"prompt/response.")
 }
 
 func (c *Client) checkResponse(resp *genai.GenerateContentResponse) error {
@@ -395,6 +521,18 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 	config := &genai.GenerateContentConfig{
 		Tools:             activeTools,
 		SystemInstruction: systemInstruction,
+	}
+
+	// Apply the per-request output-token budget. See defaultMaxOutputTokens
+	// and truncation_test.go for the rationale (silent tool-call
+	// truncation when the API's implicit default is hit). c.maxOutputTokens
+	// is initialized in NewClient to defaultMaxOutputTokens and may be
+	// overridden via WithMaxOutputTokens.
+	c.mu.RLock()
+	maxOut := c.maxOutputTokens
+	c.mu.RUnlock()
+	if maxOut > 0 {
+		config.MaxOutputTokens = int32(maxOut)
 	}
 
 	c.configureThinking(ctx, config)

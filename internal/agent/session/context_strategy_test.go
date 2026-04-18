@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 )
@@ -18,7 +18,7 @@ func contains(s, substr string) bool {
 }
 
 func TestContextStrategy_EstimateTokens(t *testing.T) {
-	registry := &testutil.MockToolRegistry{}
+	registry := &agenttest.MockToolRegistry{}
 	cs := NewContextStrategy(NewHeuristicTokenCounter(registry))
 
 	t.Run("Base overhead", func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 }
 
 func setupWarningTest() *ContextStrategy {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	cs.SetLimits(1000, 10, 100)
 	return cs
 }
@@ -167,7 +167,7 @@ func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
 }
 
 func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
@@ -257,7 +257,7 @@ func verifyWarningContains(t *testing.T, turns int, warnings []warning, expected
 }
 
 func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 
 	// First set to a non-zero value
 	cs.SetTieredThreshold(100)
@@ -451,7 +451,7 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 }
 
 func TestContextStrategy_Count(t *testing.T) {
-	mockCounter := &testutil.MockTokenCounter{Tokens: 42}
+	mockCounter := &agenttest.MockTokenCounter{Tokens: 42}
 	cs := NewContextStrategy(mockCounter)
 
 	contents := []*llm.Content{{Parts: []*llm.Part{{Text: "hello"}}}}

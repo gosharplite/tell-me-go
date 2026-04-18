@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -19,7 +19,7 @@ func TestDispatcher_ConcurrentSerialAndParallelTools(t *testing.T) {
 		t.Skip("skipping slow integration test in short mode")
 	}
 
-	toolsMap := map[string]testutil.ToolBehavior{
+	toolsMap := map[string]agenttest.ToolBehavior{
 		"parallel_tool": {
 			Observe: func() {},
 			Result:  tools.ToolResult{Text: "parallel_ok"},
@@ -64,7 +64,7 @@ func TestDispatcher_ConcurrentSerialAndParallelTools(t *testing.T) {
 		var parallelStartedAfterSerial bool
 		var mu sync.Mutex
 
-		toolsMap := map[string]testutil.ToolBehavior{
+		toolsMap := map[string]agenttest.ToolBehavior{
 			"p_tool": {
 				Result: tools.ToolResult{Text: "p_ok"},
 			},

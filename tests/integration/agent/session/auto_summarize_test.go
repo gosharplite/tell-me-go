@@ -18,12 +18,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"google.golang.org/genai"
 )
@@ -31,7 +31,7 @@ import (
 func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	if err := reg.Register(&tools.ToolDeclaration{
 		Name:        "dummy_tool",
@@ -154,7 +154,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *session.Contex
 	t.Helper()
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
@@ -211,7 +211,7 @@ func verifyAutoSummarizeLog(t *testing.T, logCh <-chan string) {
 func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history_sys.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -286,7 +286,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)

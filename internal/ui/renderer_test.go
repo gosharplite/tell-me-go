@@ -16,14 +16,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	inframock "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -101,7 +101,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_StatusLogging(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -134,7 +134,7 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_ToolLogging(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -164,7 +164,7 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_ResponseRendering(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -189,7 +189,7 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 }
 
 func TestStdUIRenderer_Spinner(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -260,7 +260,7 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 }
 
 func TestLogTurnStatus_Format(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -362,7 +362,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 }
 
 func TestStdUIRenderer_Colors(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -416,7 +416,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 }
 
 func TestStdUIRenderer_ToolMetrics(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -459,7 +459,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 }
 
 func TestStdUIRenderer_Concurrency(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	r := ui.NewRenderer(locker, stdout, stderr, clock.RealClock{}, nil).(*ui.StdUIRenderer)
 
@@ -557,7 +557,7 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 }
 
 func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -599,7 +599,7 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 }
 
 func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -624,7 +624,7 @@ func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
 }
 
 func TestStartSpinner_Synchronization(t *testing.T) {
-	combined := inframock.NewSafeBuffer()
+	combined := testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, combined, combined, mc, nil).(*ui.StdUIRenderer)
@@ -676,7 +676,7 @@ func (m *mockSystemMetricsProvider) GetMemoryPercent() float64 {
 }
 
 func TestStdUIRenderer_SpinnerWithMetrics(t *testing.T) {
-	stderr := inframock.NewSafeBuffer()
+	stderr := testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 
@@ -797,7 +797,7 @@ func TestStdUIRenderer_Setters(t *testing.T) {
 }
 
 func TestStdUIRenderer_InlineData(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -815,7 +815,7 @@ func TestStdUIRenderer_InlineData(t *testing.T) {
 }
 
 func TestStdUIRenderer_ToolReasons(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
@@ -832,7 +832,7 @@ func TestStdUIRenderer_ToolReasons(t *testing.T) {
 }
 
 func TestStdUIRenderer_RenderHealthReport(t *testing.T) {
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
 	locker := ui.NewMockLocker()
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)

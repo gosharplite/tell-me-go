@@ -599,7 +599,17 @@ func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 		Dir:     idx.dir,
 		Fset:    fset,
 		Context: ctx,
-		Tests:   true,
+		// Tests: true is REQUIRED. It causes go/packages to load synthesized
+		// test packages (foo, foo_test, foo.test variants), which dead_code_graph
+		// depends on to detect external _test package consumers. Without this,
+		// any symbol consumed only by `package foo_test` files is mis-flagged
+		// as DEAD/PRIVATE — a known false-positive class.
+		//
+		// The contract is pinned by TestIndexerLoadsTestPackages in
+		// internal/tools/analysis/dead_code_test_consumer_test.go.
+		// Do not flip to false without first updating that test and reviewing
+		// every dead_code_graph consumer.
+		Tests: true,
 	}
 	return packages.Load(cfg, "./...")
 }

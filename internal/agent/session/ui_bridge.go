@@ -251,27 +251,38 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 			// Forced abort: Drain remaining events if any, but don't block forever.
 			// This ensures that even if cancellation is triggered (e.g., via timeout),
 			// what was already in the channel is processed if the renderer is free.
-			for {
-				select {
-				case e, ok := <-b.eventCh:
-					if !ok {
-						b.stopActiveSpinner()
-						return nil
-					}
-					// Process remaining events with a fresh context to avoid
-					// immediate cancellation during final rendering.
-					b.processRecoverable(context.Background(), e)
-				default:
-					b.stopActiveSpinner()
-					return nil
-				}
-			}
+			b.drainRemainingEvents()
+			b.stopActiveSpinner()
+			return nil
 		case e, ok := <-b.eventCh:
 			if !ok {
 				b.stopActiveSpinner()
 				return nil
 			}
 			b.processRecoverable(ctx, e)
+		}
+	}
+}
+
+// drainRemainingEvents processes any events still buffered in b.eventCh after
+// the Listen loop's parent context has been cancelled. It uses a fresh
+// context.Background() for each event to avoid immediate cancellation during
+// final rendering. The drain terminates as soon as the channel is closed OR
+// no events are immediately available (non-blocking via default).
+//
+// The caller is responsible for invoking b.stopActiveSpinner() after this
+// returns; the helper deliberately does not, to keep the "stop spinner exactly
+// once before return" invariant centralized in Listen.
+func (b *UIBridge) drainRemainingEvents() {
+	for {
+		select {
+		case e, ok := <-b.eventCh:
+			if !ok {
+				return
+			}
+			b.processRecoverable(context.Background(), e)
+		default:
+			return
 		}
 	}
 }

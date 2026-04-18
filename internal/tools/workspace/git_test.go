@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 type mockGitExecutor struct {
@@ -29,7 +30,7 @@ func (m *mockGitExecutor) CombinedOutput(ctx context.Context, name string, args 
 func TestGitTools(t *testing.T) {
 	// SecurityManager requires a reader for InteractionHandler
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	// Allow all paths for testing
 	sm.SetBypassActive(true)
 
@@ -105,10 +106,17 @@ func TestGitTools(t *testing.T) {
 			wantErr:  true,
 		},
 		{
+			// `hash` is declared Required for get_git_show. With the
+			// central required-args guard in registry.Execute, this is
+			// caught BEFORE the handler runs and returned as a
+			// model-friendly ToolResult{Text: "Error: ..."} with nil
+			// error — matching the prevailing convention used by
+			// generateMermaidDiagram and others. See the doc-comment on
+			// registry.Execute / validateRequiredArgs.
 			name:     "get_git_show missing hash",
 			toolName: "get_git_show",
 			args:     map[string]interface{}{},
-			wantErr:  true,
+			expected: `Error: missing required parameter "hash" for tool "get_git_show"`,
 		},
 		{
 			name:     "get_git_show invalid args",
@@ -132,10 +140,13 @@ func TestGitTools(t *testing.T) {
 			wantErr:  true,
 		},
 		{
+			// `filepath` is declared Required for get_git_blame —
+			// caught by the central guard. See "get_git_show missing
+			// hash" above for the contract rationale.
 			name:     "get_git_blame missing filepath",
 			toolName: "get_git_blame",
 			args:     map[string]interface{}{},
-			wantErr:  true,
+			expected: `Error: missing required parameter "filepath" for tool "get_git_blame"`,
 		},
 		{
 			name:     "get_git_blame invalid args",
@@ -165,7 +176,7 @@ func TestGitTools(t *testing.T) {
 			}
 
 			reg := registry.New()
-			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem(), nil); err != nil {
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), persistencetest.NewPlainOSFileSystem(), nil); err != nil {
 				t.Fatalf("Register failed: %v", err)
 			}
 
@@ -196,7 +207,7 @@ func TestGitDestructiveActions(t *testing.T) {
 		{
 			name:     "git_commit approved",
 			toolName: "git_commit",
-			args:     map[string]interface{}{"message": "feat: test"},
+			args:     map[string]interface{}{"message": "feat: test", "reason": "ship it"},
 			approved: true,
 			mockOut:  "[main abc] feat: test",
 			expected: "[main abc] feat: test",
@@ -204,7 +215,7 @@ func TestGitDestructiveActions(t *testing.T) {
 		{
 			name:        "git_commit nothing to commit",
 			toolName:    "git_commit",
-			args:        map[string]interface{}{"message": "feat: test"},
+			args:        map[string]interface{}{"message": "feat: test", "reason": "ship it"},
 			approved:    true,
 			mockOut:     "On branch main\nnothing to commit, working tree clean",
 			mockErr:     fmt.Errorf("exit status 1"),
@@ -221,22 +232,30 @@ func TestGitDestructiveActions(t *testing.T) {
 			expected: "Switched to a new branch 'new-branch'",
 		},
 		{
+			// Both `message` AND `reason` are Required for git_commit.
+			// The central guard catches the missing message (and reason)
+			// and returns a ToolResult{Text: "Error: ..."} with nil err.
 			name:     "git_commit missing message",
 			toolName: "git_commit",
 			args:     map[string]interface{}{},
-			wantErr:  true,
+			expected: `Error: missing required parameters [message reason] for tool "git_commit"`,
 		},
 		{
+			// `message: 123` is type-invalid (not a string). The central
+			// guard only checks PRESENCE, not type — so it passes,
+			// 'reason' is also missing → central guard fires on reason.
 			name:     "git_commit invalid args",
 			toolName: "git_commit",
 			args:     map[string]interface{}{"message": 123},
-			wantErr:  true,
+			expected: `Error: missing required parameter "reason" for tool "git_commit"`,
 		},
 		{
+			// `name` is Required for git_create_branch — caught by the
+			// central guard before the handler runs.
 			name:     "git_create_branch missing name",
 			toolName: "git_create_branch",
 			args:     map[string]interface{}{"reason": "test"},
-			wantErr:  true,
+			expected: `Error: missing required parameter "name" for tool "git_create_branch"`,
 		},
 		{
 			name:     "git_create_branch invalid args",
@@ -248,7 +267,7 @@ func TestGitDestructiveActions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sm := &testutil.MockSecurityManager{AllowAll: true}
+			sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 			executor := &mockGitExecutor{
 				handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -257,7 +276,7 @@ func TestGitDestructiveActions(t *testing.T) {
 			}
 
 			reg := registry.New()
-			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem(), nil); err != nil {
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), persistencetest.NewPlainOSFileSystem(), nil); err != nil {
 				t.Fatalf("Register failed: %v", err)
 			}
 
@@ -279,7 +298,7 @@ func TestGitDestructiveActions(t *testing.T) {
 }
 
 func TestGitBlameSafety(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.IsSafeFunc = func(path string) (string, error) {
 		if strings.Contains(path, "etc") {
 			return "", fmt.Errorf("security violation")
@@ -295,7 +314,7 @@ func TestGitBlameSafety(t *testing.T) {
 	}
 
 	reg := registry.New()
-	if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem(), nil); err != nil {
+	if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), persistencetest.NewPlainOSFileSystem(), nil); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 

@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -116,10 +117,10 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 
 	// Create a custom slog handler to capture the panic log.
 	// We use LevelDebug to ensure the stack trace log is captured.
-	logBuffer := testutil.NewSafeBuffer()
+	logBuffer := testfixtures.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mockRenderer := new(testutil.MockUIRenderer)
+	mockRenderer := new(agenttest.MockUIRenderer)
 	// This mock will panic when StartSpinnerWithStatus is called
 	mockRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("intentional test panic")
@@ -163,7 +164,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	// Mock the renderer to return a closure that panics when called.
 	// We use .Maybe() because SyncBridge might trigger resumeActiveSpinner which calls this again.
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
@@ -218,10 +219,10 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 func TestUIBridge_PoisonPill(t *testing.T) {
 	t.Parallel()
 
-	logBuffer := testutil.NewSafeBuffer()
+	logBuffer := testfixtures.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	// First event panics
 	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("first panic")
@@ -258,7 +259,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))

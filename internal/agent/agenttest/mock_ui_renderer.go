@@ -1,11 +1,10 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+package agenttest
 
 import (
 	"context"
-	"io"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -15,7 +14,11 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockUIRenderer is a mock implementation of ports.UIRenderer.
+// MockUIRenderer is a testify-based test double for ports.UIRenderer.
+// All methods record their invocation through mock.Mock; the spinner
+// methods additionally return a stop-function (defaulting to a no-op
+// when no function is scripted). For tests that need a no-op stub
+// rather than a recording mock, see stubUIRenderer in helpers.go.
 type MockUIRenderer struct {
 	mock.Mock
 }
@@ -83,13 +86,4 @@ func (m *MockUIRenderer) SetForceSpinner(force bool) {
 func (m *MockUIRenderer) IsTerminalContext() bool {
 	args := m.Called()
 	return args.Bool(0)
-}
-
-// MockHistoryRenderer is a mock implementation of ports.HistoryRenderer.
-type MockHistoryRenderer struct {
-	mock.Mock
-}
-
-func (m *MockHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
-	m.Called(w, h, n, options)
 }

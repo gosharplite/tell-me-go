@@ -13,14 +13,15 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
@@ -53,10 +54,10 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 
 	gatekeeper := &session.TokenGatekeeper{
 		MaxTokens:  100,
-		Estimator:  &testutil.MockEstimator{},
+		Estimator:  &agenttest.MockEstimator{},
 		Summarizer: &mockFailingSummarizer{},
 	}
-	gatekeeper.Estimator.(*testutil.MockEstimator).SetTokens(95)
+	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95)
 
 	err := gatekeeper.Transform(ctx, req)
 	if err == nil || err.Error() != "summarizer failed" {
@@ -75,7 +76,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		req2.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(95)
 	cs := session.NewContextStrategy(tc)
 	cs.SetTieredThreshold(10)
@@ -93,10 +94,10 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 }
 
 func TestContextManager_FirstMessageRoleError(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
-	hm := &testutil.MockHistoryManager{}
+	hm := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(cs, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "first"}}})
@@ -115,10 +116,10 @@ func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 }
 
 func TestInternalTools_Errors(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
-	hm := &testutil.MockHistoryManager{}
+	hm := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(cs, hm, nil, nil)
 
 	it := session.NewInternalTools(cm)
@@ -209,7 +210,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
@@ -219,11 +220,11 @@ func TestSessionManager_ConfigError(t *testing.T) {
 
 func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	// Create a mock event bus that always returns an error
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
 	// Create a strategy that will trigger warnings to force event publishing
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	counter.SetTokens(200)
 	strategy := session.NewContextStrategy(counter)
 	strategy.SetTieredThreshold(100) // Trigger tiered threshold
@@ -253,7 +254,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 
 	gatekeeper := &session.TokenGatekeeper{

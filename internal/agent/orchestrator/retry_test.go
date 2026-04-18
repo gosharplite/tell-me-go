@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +19,7 @@ func TestDefaultRetryPolicy_ShouldRetry(t *testing.T) {
 		Backoff:          2 * time.Second,
 		RateLimitBackoff: 10 * time.Second,
 	}
-	mc := &testutil.MockClock{}
+	mc := &agenttest.MockClock{}
 
 	tests := []struct {
 		name             string
@@ -115,7 +115,7 @@ func TestDefaultRetryPolicy_OverflowSafety(t *testing.T) {
 		Backoff:          2 * time.Second,
 		RateLimitBackoff: 10 * time.Second,
 	}
-	mc := &testutil.MockClock{}
+	mc := &agenttest.MockClock{}
 	const maxDelay = 2 * time.Minute
 
 	tests := []struct {

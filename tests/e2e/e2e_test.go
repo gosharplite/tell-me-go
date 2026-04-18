@@ -254,7 +254,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 	}
 
 	// 2. Shared Setup: Setup mock server
-	server, _ := setupProviderMockServer(t, "google", "list_files", map[string]interface{}{"path": "."}, nil)
+	server, _ := setupProviderMockServer(t, "google", "list_files", map[string]interface{}{"path": ".", "reason": "E2E verification of environment persistence"}, nil)
 	defer server.Close()
 
 	configPath := createTempConfig(t, "google", server.URL)
@@ -366,7 +366,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
 			t.Parallel()
-			server, _ := setupProviderMockServer(t, provider, "list_files", map[string]interface{}{"path": "."}, func(res string) string {
+			server, _ := setupProviderMockServer(t, provider, "list_files", map[string]interface{}{"path": ".", "reason": "E2E verification of tool orchestration loop"}, func(res string) string {
 				return "I have listed the files."
 			})
 			defer server.Close()
@@ -405,7 +405,7 @@ func TestWriteFileConfirmation(t *testing.T) {
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
 			t.Parallel()
-			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "test.txt", "content": "hello world"}, func(result string) string {
+			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "test.txt", "content": "hello world", "reason": "E2E verification of write_file approval flow"}, func(result string) string {
 				return "File written."
 			})
 			defer server.Close()
@@ -441,7 +441,7 @@ func TestWriteFileDenial(t *testing.T) {
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
 			t.Parallel()
-			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "denied.txt", "content": "should not exist"}, func(result string) string {
+			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "denied.txt", "content": "should not exist", "reason": "E2E verification of write_file denial flow"}, func(result string) string {
 				if strings.Contains(result, "User explicitly denied this action.") {
 					return "Model acknowledges denial."
 				}
@@ -482,6 +482,7 @@ func TestSecurityGate(t *testing.T) {
 			// Use helper to encapsulate mock server logic
 			server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
 				"filepath": "/etc/passwd",
+				"reason":   "E2E verification of security gate for sensitive system files",
 			}, nil)
 			defer server.Close()
 
@@ -518,6 +519,7 @@ func TestSymlinkAttack(t *testing.T) {
 	// Use helper to encapsulate mock server logic
 	server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
 		"filepath": "evil_link",
+		"reason":   "E2E verification of symlink attack mitigation",
 	}, nil)
 	defer server.Close()
 

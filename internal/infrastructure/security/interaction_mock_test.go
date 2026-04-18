@@ -10,8 +10,8 @@ import (
 	"sync"
 )
 
-// MockInteractor is a test helper that implements UserInteractor.
-type MockInteractor struct {
+// mockInteractor is a test helper that implements UserInteractor.
+type mockInteractor struct {
 	mu     sync.Mutex
 	Answer string
 	Err    error
@@ -19,7 +19,7 @@ type MockInteractor struct {
 }
 
 // Confirm returns the mocked answer.
-func (m *MockInteractor) Confirm(ctx context.Context, message string) (bool, error) {
+func (m *mockInteractor) Confirm(ctx context.Context, message string) (bool, error) {
 	select {
 	case <-ctx.Done():
 		return false, ctx.Err()
@@ -33,21 +33,21 @@ func (m *MockInteractor) Confirm(ctx context.Context, message string) (bool, err
 }
 
 // Warn captures the warning message.
-func (m *MockInteractor) Warn(message string) {
+func (m *mockInteractor) Warn(message string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Warns = append(m.Warns, message)
 }
 
 // Prompt captures the prompt message as a warning.
-func (m *MockInteractor) Prompt(message string) {
+func (m *mockInteractor) Prompt(message string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Warns = append(m.Warns, message)
 }
 
 // ReadSingleKey returns the first character of the mocked answer.
-func (m *MockInteractor) ReadSingleKey(ctx context.Context) (string, error) {
+func (m *mockInteractor) ReadSingleKey(ctx context.Context) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
@@ -63,7 +63,7 @@ func (m *MockInteractor) ReadSingleKey(ctx context.Context) (string, error) {
 }
 
 // ReadLine returns the mocked answer.
-func (m *MockInteractor) ReadLine(ctx context.Context) (string, error) {
+func (m *mockInteractor) ReadLine(ctx context.Context) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()

@@ -4,7 +4,12 @@
 package llm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,5 +198,263 @@ func TestResolveTimeout(t *testing.T) {
 				t.Errorf("resolveTimeout() = %v, want %ds", got, tt.expected)
 			}
 		})
+	}
+}
+
+// --- Task H: factory wiring of PROVIDERS.<name>.MAX_TOKENS ---
+//
+// These tests pin the contract that PROVIDERS.<name>.MAX_TOKENS in
+// YAML reaches the per-provider request payload via the appropriate
+// option (anthropic.WithMaxTokens, gemini.WithMaxOutputTokens,
+// openai.WithMaxTokens). Tests construct a Config pointed at an
+// httptest server, call NewClient + SendChat, and inspect the captured
+// request body. ResilientClient wraps the base client transparently
+// for SendChat so we still see the request hit the mock server.
+
+// runFactorySendChatAndCapture builds a client via NewClient and drives
+// one SendChat call against the supplied Config. Callers receive the
+// captured request body via their own httptest.Server closure (this
+// helper deliberately does not return the body — closures keep the
+// per-test capture types flexible).
+//
+// SendChat may return an error from the mock (e.g., empty response
+// body); we only care that the request reached the server.
+func runFactorySendChatAndCapture(
+	t *testing.T,
+	cfg *config.Config,
+	pData pricing.PricingData,
+) {
+	t.Helper()
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	events.CleanupBus(t, bus)
+
+	c, err := NewClient(cfg, pData, bus, nil)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	if c == nil {
+		t.Fatal("NewClient returned nil client")
+	}
+	_, _, _ = c.SendChat(context.Background(), nil, nil, nil)
+}
+
+func TestFactory_PassesMaxTokensToAnthropic(t *testing.T) {
+	const want = 12345
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		// Minimal Anthropic-shaped response so the client doesn't error.
+		_, _ = w.Write([]byte(`{"id":"x","content":[{"type":"text","text":"ok"}],"role":"assistant","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		SelectedProvider: "claude",
+		Providers: map[string]config.LLMProvider{
+			"claude": {
+				Type:      "anthropic",
+				URL:       server.URL,
+				Model:     "claude-3-5-sonnet",
+				APIKey:    "test-key",
+				MaxTokens: want,
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	if got, _ := captured["max_tokens"].(float64); int(got) != want {
+		t.Errorf("anthropic request max_tokens = %v; want %d (full body=%+v)", captured["max_tokens"], want, captured)
+	}
+}
+
+func TestFactory_PassesMaxTokensToOpenAI(t *testing.T) {
+	const want = 12345
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		SelectedProvider: "openai",
+		Providers: map[string]config.LLMProvider{
+			"openai": {
+				Type:      "openai",
+				URL:       server.URL,
+				Model:     "gpt-5", // reasoner → uses max_completion_tokens
+				APIKey:    "test-key",
+				MaxTokens: want,
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	if got, _ := captured["max_completion_tokens"].(float64); int(got) != want {
+		t.Errorf("openai request max_completion_tokens = %v; want %d (full body=%+v)",
+			captured["max_completion_tokens"], want, captured)
+	}
+}
+
+func TestFactory_PassesMaxTokensToGemini(t *testing.T) {
+	const want = 12345
+	var capturedConfig map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		// Gemini SDK marshals MaxOutputTokens into a "generationConfig"
+		// (or "generation_config") sub-object. Try both keys.
+		if g, ok := body["generationConfig"].(map[string]any); ok {
+			capturedConfig = g
+		} else if g, ok := body["generation_config"].(map[string]any); ok {
+			capturedConfig = g
+		} else {
+			capturedConfig = body
+		}
+		// Minimal Gemini-shaped response.
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`))
+	}))
+	defer server.Close()
+
+	// Gemini provider needs Vertex-shaped URL so initSDK picks Vertex backend
+	// without external network. Use the test server URL with a vertex-like path.
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	cfg := &config.Config{
+		SelectedProvider: "google",
+		Providers: map[string]config.LLMProvider{
+			"google": {
+				Type:      "gemini",
+				URL:       apiURL,
+				Model:     "gemini-1.5-flash",
+				APIKey:    "test-key", // resolves to APIKeyAuth, no GCP call
+				MaxTokens: want,
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	gotRaw, ok := capturedConfig["maxOutputTokens"]
+	if !ok {
+		// Some SDK versions may use snake_case
+		gotRaw = capturedConfig["max_output_tokens"]
+	}
+	got, _ := gotRaw.(float64)
+	if int(got) != want {
+		t.Errorf("gemini request maxOutputTokens = %v; want %d (captured=%+v)", gotRaw, want, capturedConfig)
+	}
+}
+
+func TestFactory_MaxTokensZero_PreservesProviderDefault(t *testing.T) {
+	// Anthropic with MaxTokens=0 should send the package default 16384.
+	t.Run("anthropic default", func(t *testing.T) {
+		var captured map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&captured)
+			_, _ = w.Write([]byte(`{"id":"x","content":[{"type":"text","text":"ok"}],"role":"assistant","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{
+			SelectedProvider: "claude",
+			Providers: map[string]config.LLMProvider{
+				"claude": {
+					Type:      "anthropic",
+					URL:       server.URL,
+					Model:     "claude-3-5-sonnet",
+					APIKey:    "test-key",
+					MaxTokens: 0, // unset → package default
+				},
+			},
+		}
+		runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+		got, _ := captured["max_tokens"].(float64)
+		if int(got) != 16384 {
+			t.Errorf("anthropic default max_tokens = %v; want 16384", captured["max_tokens"])
+		}
+	})
+
+	// OpenAI with MaxTokens=0 and ThinkingBudget=0 falls through to default 16384.
+	t.Run("openai default both unset", func(t *testing.T) {
+		var captured map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&captured)
+			_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{
+			SelectedProvider: "openai",
+			Providers: map[string]config.LLMProvider{
+				"openai": {
+					Type:   "openai",
+					URL:    server.URL,
+					Model:  "gpt-5", // reasoner
+					APIKey: "test-key",
+					// MaxTokens and ThinkingBudget both unset
+				},
+			},
+		}
+		runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+		got, _ := captured["max_completion_tokens"].(float64)
+		if int(got) != 16384 {
+			t.Errorf("openai default max_completion_tokens = %v; want 16384", captured["max_completion_tokens"])
+		}
+	})
+}
+
+// captureLogger returns an slog.Logger that writes warn+ records to
+// the returned buffer. Used to assert factory-side soft-warning
+// emissions. Wrapped in a ports.Logger adapter so it slots into the
+// factory's existing logger parameter.
+func captureLogger() (*bytes.Buffer, *slogPortAdapter) {
+	buf := &bytes.Buffer{}
+	h := slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	return buf, &slogPortAdapter{l: slog.New(h)}
+}
+
+type slogPortAdapter struct {
+	l *slog.Logger
+}
+
+func (a *slogPortAdapter) Debug(msg string, args ...any) { a.l.Debug(msg, args...) }
+func (a *slogPortAdapter) Info(msg string, args ...any)  { a.l.Info(msg, args...) }
+func (a *slogPortAdapter) Warn(msg string, args ...any)  { a.l.Warn(msg, args...) }
+func (a *slogPortAdapter) Error(msg string, args ...any) { a.l.Error(msg, args...) }
+
+func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
+	buf, logger := captureLogger()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"x","content":[{"type":"text","text":"ok"}],"role":"assistant","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		SelectedProvider: "claude",
+		Providers: map[string]config.LLMProvider{
+			"claude": {
+				Type:      "anthropic",
+				URL:       server.URL,
+				Model:     "claude-3-5-sonnet",
+				APIKey:    "test-key",
+				MaxTokens: 300_000, // above softMaxTokensCeiling
+			},
+		},
+	}
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	events.CleanupBus(t, bus)
+
+	_, err := NewClient(cfg, pricing.PricingData{}, bus, logger)
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "provider_max_tokens_unusually_high") {
+		t.Errorf("expected warn 'provider_max_tokens_unusually_high'; got %q", buf.String())
 	}
 }

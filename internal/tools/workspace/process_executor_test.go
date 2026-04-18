@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 func TestRunPipeline_TableDriven(t *testing.T) {
@@ -205,7 +205,7 @@ func assertOutputLength(t *testing.T, name string, actual string, expected int) 
 
 func TestRunPipeline_FeedbackRace(t *testing.T) {
 	executor := newprocessExecutor()
-	feedback := inframock.NewSafeBuffer()
+	feedback := testfixtures.NewSafeBuffer()
 	config := executionConfig{
 		Feedback: feedback,
 	}
@@ -463,7 +463,7 @@ func TestRunCommand_FileWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	feedback := inframock.NewSafeBuffer()
+	feedback := testfixtures.NewSafeBuffer()
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
@@ -515,7 +515,7 @@ func TestRunPipeline_FileWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	feedback := inframock.NewSafeBuffer()
+	feedback := testfixtures.NewSafeBuffer()
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,

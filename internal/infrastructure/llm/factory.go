@@ -20,6 +20,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/openai"
 )
 
+// softMaxTokensCeiling is a heuristic threshold above any current
+// published model ceiling as of 2026-04. Above this we emit a one-time
+// warning so operators notice obviously-wrong values without blocking;
+// the API will reject if the value actually exceeds the model's hard
+// ceiling. Raise this constant as model ceilings rise.
+//
+// Pinned by TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning.
+const softMaxTokensCeiling = 200_000
+
 // NewClient is the central factory for creating LLM providers.
 func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 	p := cfg.GetActiveProvider()
@@ -32,6 +41,13 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 		"name", cfg.SelectedProvider,
 		"type", p.Type,
 		"headers_count", len(p.Headers))
+
+	if p.MaxTokens > softMaxTokensCeiling {
+		logger.Warn("provider_max_tokens_unusually_high",
+			"provider", cfg.SelectedProvider,
+			"value", p.MaxTokens,
+			"note", "exceeds typical model ceilings; the API will reject if too large")
+	}
 
 	authenticator, err := createAuthenticator(&p)
 	if err != nil {
@@ -50,12 +66,14 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 			openai.WithPersona(cfg.Person),
 			openai.WithTimeout(timeout),
 			openai.WithThinkingBudget(maxBudget),
+			openai.WithMaxTokens(p.MaxTokens),
 			openai.WithLogger(logger),
 		)
 	case "anthropic":
 		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
 			anthropic.WithHeaders(p.Headers),
 			anthropic.WithThinkingBudget(maxBudget),
+			anthropic.WithMaxTokens(p.MaxTokens),
 			anthropic.WithPersona(cfg.Person),
 			anthropic.WithTimeout(timeout),
 			anthropic.WithLogger(logger),
@@ -64,6 +82,7 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
 			gemini.WithHeaders(p.Headers),
 			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+			gemini.WithMaxOutputTokens(p.MaxTokens),
 			gemini.WithSystemInstruction(cfg.Person),
 			gemini.WithSearch(cfg.UseSearch),
 			gemini.WithEventBus(bus),
@@ -75,6 +94,7 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
 			gemini.WithHeaders(p.Headers),
 			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+			gemini.WithMaxOutputTokens(p.MaxTokens),
 			gemini.WithSystemInstruction(cfg.Person),
 			gemini.WithSearch(cfg.UseSearch),
 			gemini.WithEventBus(bus),

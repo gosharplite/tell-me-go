@@ -13,7 +13,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {
@@ -29,11 +30,11 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.RegisterSafePath(tmpDir)
 	sm.SetBypassActive(true) // Avoid interactive prompts
 
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
 	// 1. Test failure when old_text appears multiple times
@@ -66,9 +67,9 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 
 func TestWriteFile(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "new.txt")
@@ -90,9 +91,9 @@ func TestWriteFile(t *testing.T) {
 
 func TestAppendText(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "append.txt")
@@ -152,11 +153,11 @@ func (m *mockFS) WriteFile(ctx context.Context, filename string, data []byte, pe
 }
 
 func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
-	return testutil.NewOSFileSystem().OpenFile(ctx, name, flag, perm)
+	return persistencetest.NewPlainOSFileSystem().OpenFile(ctx, name, flag, perm)
 }
 
 func TestWriteFile_Failures(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath("/tmp")
 	sm.RegisterSafePath("/private/tmp") // For macOS symlinks
@@ -164,7 +165,7 @@ func TestWriteFile_Failures(t *testing.T) {
 
 	t.Run("mkdir failure", func(t *testing.T) {
 		mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
-		w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
 		_, err := w.writeFile(context.Background(), map[string]interface{}{
 			"filepath": "/mock/any/file.txt",
 			"content":  "test",
@@ -177,7 +178,7 @@ func TestWriteFile_Failures(t *testing.T) {
 
 	t.Run("write failure", func(t *testing.T) {
 		mfs := &mockFS{writeErr: fmt.Errorf("write error")}
-		w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
 		tempDir := t.TempDir()
 		sm.RegisterSafePath(tempDir)
 		path := filepath.Join(tempDir, "file.txt")
@@ -201,10 +202,10 @@ func TestUndoFileChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
-	w := &fileWriter{sm: sm, bm: bm, fs: testutil.NewOSFileSystem()}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	w := &fileWriter{sm: sm, bm: bm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
 	// Perform a write
@@ -246,9 +247,9 @@ func TestReplaceText_NotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
 	_, err := w.replaceText(ctx, map[string]interface{}{
@@ -263,15 +264,15 @@ func TestReplaceText_NotFound(t *testing.T) {
 }
 
 func TestAppendText_Failures(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath("/tmp")
 	sm.RegisterSafePath("/private/tmp")
 	sm.RegisterSafePath("/mock")
 
 	t.Run("open failure", func(t *testing.T) {
-		mfs := &mockFS_Append{FileSystem: testutil.NewOSFileSystem(), openErr: fmt.Errorf("open error")}
-		w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
+		mfs := &mockFS_Append{FileSystem: persistencetest.NewPlainOSFileSystem(), openErr: fmt.Errorf("open error")}
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
 		_, err := w.appendText(context.Background(), map[string]interface{}{
 			"filepath": "/mock/any.txt",
 			"content":  "test",
@@ -293,10 +294,10 @@ func (m *mockFS_Append) OpenFile(ctx context.Context, name string, flag int, per
 }
 
 func TestUndoFileChange_Errors(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
-	w := &fileWriter{sm: sm, bm: bm, fs: testutil.NewOSFileSystem()}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	w := &fileWriter{sm: sm, bm: bm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
 	t.Run("no backups", func(t *testing.T) {
@@ -315,7 +316,7 @@ func TestUndoFileChange_Errors(t *testing.T) {
 }
 
 func TestAppendText_WriteError(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tempDir := t.TempDir()
 	sm.RegisterSafePath(tempDir)
@@ -324,8 +325,8 @@ func TestAppendText_WriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mfs := &mockFS_AppendWrite{FileSystem: testutil.NewOSFileSystem(), writeErr: fmt.Errorf("write error")}
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
+	mfs := &mockFS_AppendWrite{FileSystem: persistencetest.NewPlainOSFileSystem(), writeErr: fmt.Errorf("write error")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
 
 	_, err := w.appendText(context.Background(), map[string]interface{}{
 		"filepath": path,
@@ -380,10 +381,10 @@ func (m *mockFileWriter) ReadDir(n int) ([]os.DirEntry, error) {
 
 func TestDeletePath(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := testutil.NewOSFileSystem()
+	fs := persistencetest.NewPlainOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -454,10 +455,10 @@ func TestDeletePath(t *testing.T) {
 
 func TestCreateDirectory(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := testutil.NewOSFileSystem()
+	fs := persistencetest.NewPlainOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -514,10 +515,10 @@ func TestDeletePath_Undo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := testutil.NewOSFileSystem()
+	fs := persistencetest.NewPlainOSFileSystem()
 	bm := newBackupManager(sm, fs, 10)
 	w := &fileWriter{sm: sm, bm: bm, fs: fs}
 	ctx := context.Background()
@@ -558,10 +559,10 @@ func TestDeletePath_RecursiveWarning(t *testing.T) {
 	dir := filepath.Join(tempDir, "recursive_delete")
 	_ = os.MkdirAll(dir, 0755)
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := testutil.NewOSFileSystem()
+	fs := persistencetest.NewPlainOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -585,10 +586,10 @@ func TestDeletePath_DirectoryWithoutRecursive(t *testing.T) {
 	_ = os.MkdirAll(dir, 0755)
 	_ = os.WriteFile(filepath.Join(dir, "file.txt"), []byte("test"), 0644)
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := testutil.NewOSFileSystem()
+	fs := persistencetest.NewPlainOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -617,11 +618,11 @@ func TestDeletePath_RecursiveAuthorization(t *testing.T) {
 	dir := filepath.Join(tempDir, "auth_delete")
 	_ = os.MkdirAll(dir, 0755)
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(false) // Trigger authorization check
 	sm.RegisterSafePath(tempDir)
 
-	fs := testutil.NewOSFileSystem()
+	fs := persistencetest.NewPlainOSFileSystem()
 
 	t.Run("authorized", func(t *testing.T) {
 		ms := &mockSecurity_Authorize{writerSecurity: sm, authorized: true}
@@ -648,4 +649,134 @@ func TestDeletePath_RecursiveAuthorization(t *testing.T) {
 			t.Errorf("expected 'not authorized' error, got: %v", err)
 		}
 	})
+}
+
+// TestWriteFile_MissingContent pins the contract that writeFile rejects
+// calls in which the `content` parameter is absent from the args map. This
+// guard distinguishes "intentionally write empty file" (key present, value
+// "") from "caller forgot to emit content" (key absent).
+//
+// MOTIVATION: tools.UnmarshalArgs uses encoding/json under the hood, which
+// does not enforce required-field semantics declared in the tool schema.
+// Without the presence guard added in writer.go, a malformed tool call
+// missing `content` would silently produce a 0-byte file and return
+// "File written successfully." — a confusing failure mode that masks the
+// caller's bug. This test ensures the guard never regresses.
+//
+// FAILURE MEANING: If this test fails, the writeFile presence guard has
+// been removed or weakened. Restore it; do not "fix" by deleting this
+// test.
+func TestWriteFile_MissingContent(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	w := &fileWriter{
+		sm: sm,
+		bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10),
+		fs: persistencetest.NewPlainOSFileSystem(),
+	}
+	ctx := context.Background()
+
+	path := filepath.Join(tempDir, "should_not_exist.txt")
+
+	// Args map deliberately omits "content" — simulating a malformed
+	// tool call from the model.
+	_, err := w.writeFile(ctx, map[string]interface{}{
+		"filepath": path,
+		"reason":   "missing content guard",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error when 'content' is absent, got nil")
+	}
+	if !strings.Contains(err.Error(), "content") {
+		t.Errorf("error should mention 'content', got: %v", err)
+	}
+
+	// Critical secondary assertion: NO file should have been created.
+	// If this fails, the guard returned an error AFTER writing — wrong
+	// order of operations.
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Errorf("file must not exist after rejected write; stat err = %v", statErr)
+	}
+
+	// Sanity contrast: explicitly passing content="" must succeed and
+	// produce a 0-byte file. This proves the guard distinguishes
+	// "absent" from "explicitly empty".
+	_, err = w.writeFile(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "",
+		"reason":   "intentionally empty",
+	}, nil)
+	if err != nil {
+		t.Fatalf("explicit empty content must succeed, got: %v", err)
+	}
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Fatalf("file must exist after explicit empty write: %v", statErr)
+	}
+	if info.Size() != 0 {
+		t.Errorf("expected 0-byte file, got %d bytes", info.Size())
+	}
+}
+
+// TestAppendText_MissingContent is the appendText counterpart of
+// TestWriteFile_MissingContent. See that test's doc-comment for the
+// rationale; the same guard is mirrored in appendText for the same
+// reason (silent no-op append is almost certainly a malformed call).
+func TestAppendText_MissingContent(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	w := &fileWriter{
+		sm: sm,
+		bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10),
+		fs: persistencetest.NewPlainOSFileSystem(),
+	}
+	ctx := context.Background()
+
+	path := filepath.Join(tempDir, "append_target.txt")
+	// Pre-create the target so we can assert appendText didn't touch it.
+	if err := os.WriteFile(path, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := w.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"reason":   "missing content guard",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error when 'content' is absent, got nil")
+	}
+	if !strings.Contains(err.Error(), "content") {
+		t.Errorf("error should mention 'content', got: %v", err)
+	}
+
+	// File must be untouched — guard fires before any I/O.
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("target file should still be readable: %v", readErr)
+	}
+	if string(got) != "original" {
+		t.Errorf("file was modified despite rejected append; got %q, want %q", string(got), "original")
+	}
+
+	// Sanity: explicit empty append succeeds and is a true no-op.
+	_, err = w.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "",
+		"reason":   "intentionally empty",
+	}, nil)
+	if err != nil {
+		t.Fatalf("explicit empty content must succeed, got: %v", err)
+	}
+	got, _ = os.ReadFile(path)
+	if string(got) != "original" {
+		t.Errorf("explicit empty append must be a no-op; got %q, want %q", string(got), "original")
+	}
 }

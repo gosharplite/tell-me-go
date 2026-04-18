@@ -15,17 +15,20 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -33,11 +36,11 @@ import (
 
 func TestAgent_New_Failure(t *testing.T) {
 	t.Parallel()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	h := &testutil.MockHistoryManager{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	h := &agenttest.MockHistoryManager{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// Passing nil registry should force NewToolExecutor to fail
 	a, err := agent.NewAgent(client, bus, nil,
@@ -53,11 +56,11 @@ func TestAgent_New_Failure(t *testing.T) {
 
 func TestAgent_SetLimits(t *testing.T) {
 	t.Parallel()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
@@ -69,7 +72,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	require.NoError(t, err)
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
-	ai := agenttest.AsAgentInternal(a)
+	ai := agentinternal.AsAgentInternal(a)
 	_ = ai.GetEvents().Flush(context.Background())
 
 	limits := ai.GetCtxManager().GetLimits()
@@ -83,11 +86,11 @@ func TestAgent_Chat(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyFile, archiveFile)
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, archiveFile)
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
-	mockClient := &testutil.MockLLMClient{
+	mockClient := &agenttest.MockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{
 				Role:  "model",
@@ -129,10 +132,10 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := &testutil.MockLLMClient{}
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	client := &agenttest.MockLLMClient{}
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
@@ -146,7 +149,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Re-injecting path configuration for integration test
-	ai := agenttest.AsAgentInternal(a)
+	ai := agentinternal.AsAgentInternal(a)
 	ai.GetConfigWatcher().SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -161,11 +164,11 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 
 func TestAgent_TieredThreshold(t *testing.T) {
 	t.Parallel()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
@@ -196,20 +199,20 @@ func TestAgent_TieredThreshold(t *testing.T) {
 		t.Errorf("Timeout waiting for TieredThreshold update event")
 	}
 
-	if agenttest.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold() != 100000 {
-		t.Errorf("expected TieredThreshold 100000, got %d", agenttest.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold())
+	if agentinternal.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold() != 100000 {
+		t.Errorf("expected TieredThreshold 100000, got %d", agentinternal.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold())
 	}
 }
 
 func TestAgent_ToolFlow_Retry(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	callCount := 0
-	mockClient := &testutil.MockLLMClient{
+	mockClient := &agenttest.MockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
@@ -224,7 +227,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	mockClock := &testutil.MockClock{}
+	mockClock := &agenttest.MockClock{}
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -247,12 +250,12 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 	t.Run("Default - No internal tools", func(t *testing.T) {
 		t.Parallel()
 		reg := registry.New()
-		sm := &testutil.MockSecurityManager{AllowAll: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
-		h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
-		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+		a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 			agent.WithHistoryManager(h),
 			agent.WithProviderName("test-provider"),
 			agent.WithSecurityManager(sm),
@@ -271,12 +274,12 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 	t.Run("Opt-in - With internal tools", func(t *testing.T) {
 		t.Parallel()
 		reg := registry.New()
-		sm := &testutil.MockSecurityManager{AllowAll: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
-		h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history2.json"), filepath.Join(tmpDir, "history2.archive.jsonl"))
-		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history2.json"), filepath.Join(tmpDir, "history2.archive.jsonl"))
+		a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 			agent.WithHistoryManager(h),
 			agent.WithProviderName("test-provider"),
 			agent.WithSecurityManager(sm),
@@ -309,11 +312,11 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
-	mockClient := &testutil.MockLLMClient{
+	mockClient := &agenttest.MockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, llm.ErrContextLimitExceeded
 		},
@@ -345,10 +348,10 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	reg := registry.New()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pipeline.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
-	a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pipeline.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
 		agent.WithSecurityManager(sm),
@@ -356,10 +359,10 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	require.NoError(t, err)
 
 	// Build pipeline
-	agenttest.AsAgentInternal(a).GetCtxManager().SetPipeline(agenttest.AsAgentInternal(a).GetCtxManager().Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
+	agentinternal.AsAgentInternal(a).GetCtxManager().SetPipeline(agentinternal.AsAgentInternal(a).GetCtxManager().Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	err = session.RegisterInternal(reg, agenttest.AsAgentInternal(a).GetCtxManager())
+	err = session.RegisterInternal(reg, agentinternal.AsAgentInternal(a).GetCtxManager())
 	require.NoError(t, err)
 
 	// Verify that at least one transformer has the registry
@@ -373,7 +376,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 		defer cancel()
 		_ = a.Shutdown(shutdownCtx)
 	})
-	it := session.NewInternalTools(agenttest.AsAgentInternal(a).GetCtxManager())
+	it := session.NewInternalTools(agentinternal.AsAgentInternal(a).GetCtxManager())
 
 	t.Run("PinTurn", func(t *testing.T) {
 		verifyPinAction(t, it, h, ctx, "pin", 0)
@@ -414,9 +417,9 @@ func verifyPinAction(t *testing.T, it *session.InternalTools, h ports.HistoryMan
 func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, context.Context) {
 	t.Helper()
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pinning.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pinning.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	// Add 2 turns
@@ -426,7 +429,7 @@ func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, co
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+	a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
 		agent.WithSecurityManager(sm),
@@ -464,7 +467,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	}
 
 	// 5. Verify results
-	prepared, meta, err := agenttest.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 11)
+	prepared, meta, err := agentinternal.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 11)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -474,12 +477,12 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 
 func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "pin_prune.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "pin_prune.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	ctx := context.Background()
 
-	mockClient := &testutil.MockLLMClient{}
+	mockClient := &agenttest.MockLLMClient{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
@@ -490,7 +493,7 @@ func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, contex
 	if err != nil {
 		panic(err)
 	}
-	return a, agenttest.AsAgentInternal(a).GetCtxManager().History, ctx
+	return a, agentinternal.AsAgentInternal(a).GetCtxManager().History, ctx
 }
 
 func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
@@ -523,14 +526,14 @@ func verifyPinningResults(t *testing.T, meta *session.Metadata, prepared []*llm.
 
 func TestAgent_Reconfiguration(t *testing.T) {
 	t.Parallel()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// Test initial injection via positional args
-	tracker1 := &testutil.MockCostTracker{}
+	tracker1 := &agenttest.MockCostTracker{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, reg,
@@ -541,16 +544,16 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if agenttest.AsAgentInternal(a).GetTracker() != tracker1 {
+	if agentinternal.AsAgentInternal(a).GetTracker() != tracker1 {
 		t.Error("withSessionCostTracker didn't set tracker")
 	}
 
 	// Test tracker replacement
-	tracker2 := &testutil.MockCostTracker{}
-	agenttest.AsAgentInternal(a).SetTracker(tracker2)
-	_ = agenttest.AsAgentInternal(a).ApplyConfig(context.Background())
+	tracker2 := &agenttest.MockCostTracker{}
+	agentinternal.AsAgentInternal(a).SetTracker(tracker2)
+	_ = agentinternal.AsAgentInternal(a).ApplyConfig(context.Background())
 
-	if agenttest.AsAgentInternal(a).GetTracker() != tracker2 {
+	if agentinternal.AsAgentInternal(a).GetTracker() != tracker2 {
 		t.Error("tracker didn't update after replacement and applyConfig")
 	}
 }
@@ -561,13 +564,13 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	overrides := map[string]domain_pricing.ModelPricing{
 		"test-model": {Miss: 1.0},
 	}
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pricing.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pricing.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
@@ -577,7 +580,7 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	cfg := agenttest.AsAgentInternal(a).GetRuntimeConfig().(*agent.RuntimeConfigInternal)
+	cfg := agentinternal.AsAgentInternal(a).GetRuntimeConfig().(*agent.RuntimeConfigInternal)
 	if cfg.Model != "test-model" {
 		t.Errorf("expected model test-model, got %s", cfg.Model)
 	}
@@ -592,13 +595,13 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 func TestAgent_Subscribe(t *testing.T) {
 	t.Parallel()
 
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_sub.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_sub.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	// Subscribe BEFORE creating the agent to capture all events
 	eventsChan := make(chan events.ConfigUpdated, 5)
@@ -646,14 +649,14 @@ loop:
 func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	t.Parallel()
 
-	tracker := &testutil.MockCostTracker{}
-	client := &testutil.MockLLMClient{}
+	tracker := &agenttest.MockCostTracker{}
+	client := &agenttest.MockLLMClient{}
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_cost.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_cost.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	// 1. Test passing during New
 	a, err := agent.NewAgent(client, bus, reg,
@@ -664,28 +667,28 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if agenttest.AsAgentInternal(a).GetTracker() != tracker {
+	if agentinternal.AsAgentInternal(a).GetTracker() != tracker {
 		t.Error("a.tracker does not match passed tracker")
 	}
 
 	// 2. Test direct setting (since we removed the ability to use the option at runtime)
-	tracker2 := &testutil.MockCostTracker{}
-	agenttest.AsAgentInternal(a).SetTracker(tracker2)
+	tracker2 := &agenttest.MockCostTracker{}
+	agentinternal.AsAgentInternal(a).SetTracker(tracker2)
 	// We can't call Reconfigure easily on Engine without exporting more.
 	// But let's check tracker is updated.
 
-	if agenttest.AsAgentInternal(a).GetTracker() != tracker2 {
+	if agentinternal.AsAgentInternal(a).GetTracker() != tracker2 {
 		t.Error("a.tracker does not match updated tracker")
 	}
 }
 
 func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	t.Parallel()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
@@ -710,11 +713,11 @@ func TestAgent_Shutdown(t *testing.T) {
 	t.Parallel()
 	// 1. Setup minimal dependencies
 
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
@@ -758,11 +761,11 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancel
 
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
@@ -774,7 +777,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 	sess := ports.NewSession("test-cancel", h)
 
-	err = agenttest.AsAgentInternal(a).ApplyConfig(ctx)
+	err = agentinternal.AsAgentInternal(a).ApplyConfig(ctx)
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled from applyConfig, got %v", err)
 	}
@@ -787,14 +790,14 @@ func TestAgent_ContextCancellation(t *testing.T) {
 
 func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	t.Parallel()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	mockSumm := &testutil.MockSummarizer{}
+	mockSumm := &agenttest.MockSummarizer{}
 
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
@@ -819,7 +822,7 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	}
 
 	// Verify summarizer is bound to ContextManager
-	if agenttest.AsAgentInternal(a).GetCtxManager().Summarizer != mockSumm {
+	if agentinternal.AsAgentInternal(a).GetCtxManager().Summarizer != mockSumm {
 		t.Error("summarizer not bound to ContextManager")
 	}
 }
@@ -845,7 +848,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 
 func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	// Mock the event bus to return an error on Publish
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
 	a := agent.NewAgentInternal()
@@ -862,11 +865,11 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 
 func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 	t.Parallel()
-	mockClient := &testutil.MockLLMClient{}
+	mockClient := &agenttest.MockLLMClient{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	h := &testutil.MockHistoryManager{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	h := &agenttest.MockHistoryManager{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// Use testify mock for the registry to simulate failures
 	mockRegistry := &mockToolRegistryWithExpectations{}
@@ -939,7 +942,7 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	flushErr := errors.New("flush failed")
 	mockBus.SetFlushErr(flushErr)
 

@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,7 +56,7 @@ func (m *mockReleaseRunner) BuildCode(ctx context.Context, outputBinary, path st
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	t.Parallel()
 	root := "/test/project"
-	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.IsSafeFunc = func(path string) (string, error) {
 		return root, nil
 	}
@@ -91,7 +91,7 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	t.Parallel()
 	root := "/test/project"
-	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.IsSafeFunc = func(path string) (string, error) {
 		return root, nil
 	}
@@ -196,7 +196,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 func TestLinterChecker_Fallbacks(t *testing.T) {
 	t.Parallel()
 	root := "/test/project"
-	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.IsSafeFunc = func(path string) (string, error) {
 		return root, nil
 	}
@@ -264,7 +264,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 }
 
 func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.RegisterSafePath(".")
 
 	m := &releaseManager{

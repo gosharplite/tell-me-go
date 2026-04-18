@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +24,7 @@ func TestPruner_MidExecutionCancel(t *testing.T) {
 	var cancelOnce sync.Once
 
 	// 3. Configure the Mock
-	mockPolicy := &testutil.MockPruningPolicy{
+	mockPolicy := &agenttest.MockPruningPolicy{
 		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			cancelOnce.Do(cancel) // Deterministically cancel during execution
 			return 0, nil
@@ -81,7 +81,7 @@ func TestPruner_Policies_ContextCancelled(t *testing.T) {
 func TestPruner_ApplyPolicies_ErrorPropagation(t *testing.T) {
 	// 1. Create a mock pruning policy that returns an error
 	mockErr := errors.New("mock policy failure")
-	mockPolicy := &testutil.MockPruningPolicy{
+	mockPolicy := &agenttest.MockPruningPolicy{
 		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			return 0, mockErr
 		},
@@ -111,7 +111,7 @@ func TestPruner_ApplyPolicies_ErrorPropagation(t *testing.T) {
 func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
 	// 1. Create a sub-policy that returns an error
 	mockErr := errors.New("composite sub-policy failure")
-	mockSubPolicy := &testutil.MockPruningPolicy{
+	mockSubPolicy := &agenttest.MockPruningPolicy{
 		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			return 0, mockErr
 		},
@@ -146,7 +146,7 @@ func TestCompositePruningPolicy_MarkTurns_ErrorPropagation(t *testing.T) {
 	// Although HistoryPruner handles composites specifically, the MarkTurns method
 	// of compositePruningPolicy also has an error path that should be tested.
 	mockErr := errors.New("composite direct call failure")
-	mockSubPolicy := &testutil.MockPruningPolicy{
+	mockSubPolicy := &agenttest.MockPruningPolicy{
 		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			return 0, mockErr
 		},

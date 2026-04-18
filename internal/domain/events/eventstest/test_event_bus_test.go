@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+package eventstest_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,7 @@ func (e otherEvent) Type() string { return "otherEvent" }
 
 func TestTestEventBus(t *testing.T) {
 	t.Parallel()
-	bus := &TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 	ctx := context.Background()
 
 	require.NoError(t, bus.Publish(ctx, myEvent{ID: 1}))
@@ -52,7 +53,7 @@ func TestTestEventBus(t *testing.T) {
 
 func TestTestEventBus_Subscribe(t *testing.T) {
 	t.Parallel()
-	bus := &TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 
 	var receivedID int
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
@@ -68,21 +69,9 @@ func TestTestEventBus_Subscribe(t *testing.T) {
 
 func TestTestEventBus_NoOps(t *testing.T) {
 	t.Parallel()
-	bus := &TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 	ctx := context.Background()
 
 	assert.NoError(t, bus.Flush(ctx))
 	assert.NoError(t, bus.Shutdown(ctx))
-}
-
-func TestCountingEventBus(t *testing.T) {
-	t.Parallel()
-	bus := NewCountingEventBus()
-	events.CleanupBus(t, bus)
-	ctx := context.Background()
-
-	require.NoError(t, bus.Publish(ctx, myEvent{}))
-	require.NoError(t, bus.Publish(ctx, myEvent{}))
-
-	assert.Equal(t, 2, bus.GetCount())
 }

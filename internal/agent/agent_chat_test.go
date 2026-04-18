@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 type mockProcessor struct {
@@ -33,9 +33,9 @@ func (m *mockProcessor) Process(ctx context.Context, turn *orchestrator.Turn) (o
 
 func TestAgent_Chat_Success(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	reg := &agenttest.MockToolRegistry{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -53,7 +53,7 @@ func TestAgent_Chat_Success(t *testing.T) {
 	})
 
 	// Override engine processor to finish immediately
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, &mockProcessor{}))
 
 	ctx := context.Background()
@@ -80,9 +80,9 @@ func TestAgent_Chat_Success(t *testing.T) {
 
 func TestAgent_Chat_EngineFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	reg := &agenttest.MockToolRegistry{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -91,7 +91,7 @@ func TestAgent_Chat_EngineFailure(t *testing.T) {
 	}
 
 	expectedErr := errors.New("engine failed")
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, &mockProcessor{err: expectedErr}))
 
 	ctx := context.Background()
@@ -105,9 +105,9 @@ func TestAgent_Chat_EngineFailure(t *testing.T) {
 
 func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	reg := &agenttest.MockToolRegistry{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -127,7 +127,7 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, slowProc))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,10 +145,10 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 }
 
 func TestAgent_Chat_TelemetryFailure(t *testing.T) {
-	bus := &testutil.MockEventBusFail{PublishErr: errors.New("telemetry failed")}
-	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	bus := &agenttest.MockEventBusFail{PublishErr: errors.New("telemetry failed")}
+	reg := &agenttest.MockToolRegistry{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	// NewAgent will fail if applyConfig fails because of Publish failure?
@@ -162,10 +162,10 @@ func TestAgent_Chat_TelemetryFailure(t *testing.T) {
 		t.Skip("NewAgent failed due to telemetry, skipping Chat telemetry failure test")
 	}
 
-	_ = a.(*Agent)
+	_ = a.(*agent)
 	// Mock telemetry failure
 	// StartTelemetry calls events.Listen
-	// testutil.MockEventBusFail implements Listen
+	// agenttest.MockEventBusFail implements Listen
 	// Wait, MockEventBusFail Listen:
 	/*
 		func (m *MockEventBusFail) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
@@ -189,9 +189,9 @@ func (b *telemetryFailBus) Flush(ctx context.Context) error                   { 
 
 func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 	bus := &telemetryFailBus{}
-	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	reg := &agenttest.MockToolRegistry{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -199,7 +199,7 @@ func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	_ = agent
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, &mockProcessor{}))
 
@@ -214,10 +214,10 @@ func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 
 func TestAgent_Chat_AddContentFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
+	reg := &agenttest.MockToolRegistry{}
+	gw := &agenttest.MockGateway{}
 	expectedErr := errors.New("add content failed")
-	hManager := &testutil.MockHistoryManager{AddContentFunc: func(ctx context.Context, content *llm.Content) error {
+	hManager := &agenttest.MockHistoryManager{AddContentFunc: func(ctx context.Context, content *llm.Content) error {
 		return expectedErr
 	}}
 	sm := &mockSecurityManager{AllowAll: true}
@@ -238,9 +238,9 @@ func TestAgent_Chat_AddContentFailure(t *testing.T) {
 
 func TestAgent_Chat_ApplyConfigFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	reg := &agenttest.MockToolRegistry{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))

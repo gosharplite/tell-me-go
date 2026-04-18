@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestIsIgnoredDir(t *testing.T) {
@@ -66,7 +67,7 @@ func TestWalkAndProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.RegisterSafePath(tempDir)
 	sm.IsSafeFunc = func(path string) (string, error) {
 		if strings.HasPrefix(path, tempDir) {
@@ -83,7 +84,7 @@ func TestWalkAndProcess(t *testing.T) {
 	}
 
 	t.Run("safe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, testutil.NewOSFileSystem(), tempDir, nil, processor)
+		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), tempDir, nil, processor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,7 +94,7 @@ func TestWalkAndProcess(t *testing.T) {
 	})
 
 	t.Run("unsafe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, testutil.NewOSFileSystem(), "/etc", nil, processor)
+		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, processor)
 		if err == nil {
 			t.Error("expected error for unsafe path")
 		}

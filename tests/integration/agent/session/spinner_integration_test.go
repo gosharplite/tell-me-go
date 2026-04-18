@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -19,8 +20,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -76,8 +77,8 @@ func (c *controlledClock) Tick() {
 
 func TestSpinner_E2E_Visibility(t *testing.T) {
 	// 1. Setup Environment
-	stdoutRaw, stderrRaw := testutil.NewSafeBuffer(), testutil.NewSafeBuffer()
-	stderr := &testutil.SyncWriter{Writer: stderrRaw, OnWrite: make(chan struct{}, 100)}
+	stdoutRaw, stderrRaw := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
+	stderr := &testfixtures.SyncWriter{Writer: stderrRaw, OnWrite: make(chan struct{}, 100)}
 	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
@@ -88,9 +89,9 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	uiRenderer := ui.NewRenderer(nil, stdout, stderr, clock, nil)
 	uiRenderer.SetForceSpinner(true) // Bypass TTY check for testing
 
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
@@ -156,7 +157,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		Mode:             "mode",
 		SelectedProvider: "provider",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	assert.NoError(t, err)
@@ -183,8 +184,8 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// This test ensures that if the event bus handler times out (5s),
 	// the spinner continues to run because it's using the bridge's session context.
 
-	stdoutRaw, stderrRaw := testutil.NewSafeBuffer(), testutil.NewSafeBuffer()
-	stderr := &testutil.SyncWriter{Writer: stderrRaw, OnWrite: make(chan struct{}, 100)}
+	stdoutRaw, stderrRaw := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
+	stderr := &testfixtures.SyncWriter{Writer: stderrRaw, OnWrite: make(chan struct{}, 100)}
 	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),

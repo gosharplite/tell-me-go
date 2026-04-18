@@ -9,22 +9,24 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
@@ -32,7 +34,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{FunctionCall: &domain_llm.FunctionCall{Name: "test_tool"}}}})
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{FunctionResponse: &domain_llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
@@ -125,7 +127,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// 1. Fill history with 10 messages (5 turns)
@@ -134,8 +136,8 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "model"}}})
 	}
 
-	bus := testutil.NewCountingEventBus()
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
+	bus := newCountingEventBus()
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 
 	cm := session.NewContextManager(strategy, hManager, bus, nil)
 
@@ -188,10 +190,10 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
 	cm := session.NewContextManager(strategy, hManager, nil, nil)
 
@@ -204,7 +206,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	// Test case: Exactly below threshold (0.9 * contextWindow)
 	window := strategy.GetContextWindow()
 	counter.SetTokens(int(float64(window) * 0.89))
-	ms := &testutil.MockSummarizer{}
+	ms := &agenttest.MockSummarizer{}
 	ms.SetSummarizeFn(func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
 		return "summary", &domain_llm.Metrics{}, nil
 	})
@@ -218,13 +220,13 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	// Test case: Above threshold
 	// Use a fresh manager to ensure we have exactly 2 turns and no interference from previous call
 	historyPath2 := filepath.Join(tmpDir, "history2.json")
-	hManager2 := history.NewManager(testutil.NewOSFileSystem(), historyPath2, historyPath2+".archive")
+	hManager2 := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath2, historyPath2+".archive")
 	for i := 0; i < 2; i++ {
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 	cm2 := session.NewContextManager(strategy, hManager2, nil, nil)
-	cm2.Summarizer = &testutil.MockSummarizer{}
+	cm2.Summarizer = &agenttest.MockSummarizer{}
 
 	counter.SetTokens(int(float64(window) * 0.91))
 	t.Logf("ContextWindow: %d, counter.tokens: %d, safetyLimit: %d", window, int(float64(window)*0.91), int(float64(window)*0.9))
@@ -239,14 +241,14 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 1 turn
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "hello"}}})
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "hi"}}})
 
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	counter.SetTokens(100)
 	strategy := session.NewContextStrategy(counter)
 	strategy.SetLimits(1000, 10, 20)
@@ -292,7 +294,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 4 turns (8 messages)
@@ -301,7 +303,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(100)
 	strategy := session.NewContextStrategy(tc)
 	cm := session.NewContextManager(strategy, hManager, nil, nil)
@@ -313,7 +315,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	summarizeStarted := make(chan struct{})
 	summarizeProceed := make(chan struct{})
 
-	ms := &testutil.MockSummarizer{}
+	ms := &agenttest.MockSummarizer{}
 	ms.SetSummarizeFn(func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
 		close(summarizeStarted)
 		<-summarizeProceed
@@ -346,7 +348,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	summarizeStarted = make(chan struct{})
 	summarizeProceed = make(chan struct{})
 
-	ms2 := &testutil.MockSummarizer{}
+	ms2 := &agenttest.MockSummarizer{}
 	ms2.SetSummarizeFn(func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
 		close(summarizeStarted)
 		<-summarizeProceed
@@ -383,16 +385,16 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 func setupSummarizationTest(t *testing.T) (*session.ContextManager, *[]*domain_llm.Content) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	capturedInput := new([]*domain_llm.Content)
-	g := &testutil.MockGateway{}
+	g := &agenttest.MockGateway{}
 	g.SetGenerateFn(func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 		*capturedInput = input
 		return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
 	})
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	cm := session.NewContextManager(session.NewContextStrategy(session.NewHeuristicTokenCounter(&testutil.MockToolRegistry{})), hManager, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{})), hManager, bus, nil)
 	cm.Summarizer = llm.NewSummarizer(g, bus)
 	return cm, capturedInput
 }
@@ -485,7 +487,7 @@ func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*domain_llm.Content)
 func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.jsonl")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial message
@@ -493,13 +495,13 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	cm := session.NewContextManager(strategy, hManager, bus, nil)
 
 	// Custom transformer that blocks mid-execution
 	prepareStarted := make(chan struct{})
 	prepareResume := make(chan struct{})
-	blockingTransformer := &testutil.MockTransformer{}
+	blockingTransformer := &agenttest.MockTransformer{}
 	blockingTransformer.SetTransformFn(func(ctx context.Context, req *ports.ContextRequest) error {
 		close(prepareStarted)
 		<-prepareResume
@@ -540,7 +542,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	simulatedErr := errors.New("simulated I/O error")
 
 	t.Run("Prepare_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(simulatedErr)
 		cm := session.NewContextManager(nil, hMock, nil, nil)
 		_, _, err := cm.Prepare(ctx, 1)
@@ -550,7 +552,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("AddContent_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetInternalContents([]*domain_llm.Content{
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "test"}}},
 		})
@@ -563,7 +565,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("SummarizeRange_Metadata_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetInternalContents([]*domain_llm.Content{
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
 			{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},
@@ -571,11 +573,11 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 			{Role: "model", Parts: []*domain_llm.Part{{Text: "msg4"}}},
 		})
 		hMock.SetGetWindowErr(simulatedErr)
-		tc := &testutil.MockTokenCounter{}
+		tc := &agenttest.MockTokenCounter{}
 		tc.SetTokens(10)
 		strategy := session.NewContextStrategy(tc)
 		cm := session.NewContextManager(strategy, hMock, nil, nil)
-		cm.Summarizer = &testutil.MockSummarizer{}
+		cm.Summarizer = &agenttest.MockSummarizer{}
 
 		_, _, err := cm.SummarizeRange(ctx, 1, "")
 		if !errors.Is(err, simulatedErr) {
@@ -584,18 +586,18 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("SummarizeRange_Finalize_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetInternalContents([]*domain_llm.Content{
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
 			{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "msg3"}}},
 			{Role: "model", Parts: []*domain_llm.Part{{Text: "msg4"}}},
 		})
-		tc := &testutil.MockTokenCounter{}
+		tc := &agenttest.MockTokenCounter{}
 		tc.SetTokens(10)
 		strategy := session.NewContextStrategy(tc)
 		cm := session.NewContextManager(strategy, hMock, nil, nil)
-		ms := &testutil.MockSummarizer{}
+		ms := &agenttest.MockSummarizer{}
 		ms.SetSummarizeFn(func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
 			// Set error just before finalizing
 			hMock.SetGetWindowErr(simulatedErr)
@@ -608,4 +610,57 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 			t.Errorf("expected error %v, got %v", simulatedErr, err)
 		}
 	})
+}
+
+// countingEventBus is a simple events.EventBus that counts published
+// events. It used to live in internal/domain/testutil but was inlined
+// here when its sole consumer turned out to be this file (audit INLINE
+// bucket; see docs/refactor/testutil-audit.md, Session 6).
+type countingEventBus struct {
+	count int32
+}
+
+func newCountingEventBus() *countingEventBus {
+	return &countingEventBus{}
+}
+
+func (b *countingEventBus) Publish(ctx context.Context, e events.Event) error {
+	atomic.AddInt32(&b.count, 1)
+	return nil
+}
+
+func (b *countingEventBus) Subscribe(sub func(context.Context, events.Event)) {}
+func (b *countingEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (b *countingEventBus) Flush(ctx context.Context) error                   { return nil }
+func (b *countingEventBus) Listen(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (b *countingEventBus) WaitStarted() {}
+func (b *countingEventBus) GetCount() int {
+	return int(atomic.LoadInt32(&b.count))
+}
+
+// myCountingEvent is a minimal events.Event used only by the
+// TestCountingEventBus self-test below.
+type myCountingEvent struct{}
+
+func (e myCountingEvent) Type() string { return "myCountingEvent" }
+
+func TestCountingEventBus(t *testing.T) {
+	t.Parallel()
+	bus := newCountingEventBus()
+	events.CleanupBus(t, bus)
+	ctx := context.Background()
+
+	if err := bus.Publish(ctx, myCountingEvent{}); err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+	if err := bus.Publish(ctx, myCountingEvent{}); err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+
+	if got := bus.GetCount(); got != 2 {
+		t.Errorf("expected count 2, got %d", got)
+	}
 }

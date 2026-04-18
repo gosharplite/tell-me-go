@@ -54,6 +54,17 @@ type scanState struct {
 	declarations     map[string]*symMeta
 	totalUses        map[string]int
 	externalUses     map[string]int
+
+	// anonymousInterfaceAssertedMethodNames is a lazily-populated cache
+	// of method names appearing as direct method-shaped entries inside
+	// any *ast.TypeAssertExpr→*ast.InterfaceType literal in
+	// module-internal packages. Populated on first use by
+	// hasAnonymousInterfaceAssertionMatch (see
+	// dead_code_anon_interface.go). nil means "not yet computed";
+	// non-nil empty map means "computed and empty". Used solely to
+	// gate a [WARNING] hedge in evaluateOrphan; does NOT influence
+	// classification.
+	anonymousInterfaceAssertedMethodNames map[string]struct{}
 }
 
 func newDeadCodeAnalyzer(sp security.PathValidator, idx symbolIndex) *defaultDeadCodeAnalyzer {
@@ -131,6 +142,7 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 	a.harvestExportedSymbols(state)
 	a.analyzeUsages(ctx, state, resolvedPath, hb)
 	a.propagateInterfaceUsages(ctx, state, hb)
+	a.propagateConstructorUsagesToReturnTypes(state, hb)
 
 	return state, nil
 }
@@ -223,6 +235,142 @@ func (a *defaultDeadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 	return ok
 }
 
+// wellKnownContractSignature describes the parameter and result types of a single
+// stdlib interface method, in canonical (*types.Type).String() form (parameter
+// names are intentionally omitted).
+//
+// Type strings were captured empirically by loading the stdlib via
+// golang.org/x/tools/go/packages and printing each Param/Result type's
+// .String() value. See the original probe results for reference:
+//
+//	io.Reader.Read       params=[[]byte] results=[int error]
+//	io.Writer.Write      params=[[]byte] results=[int error]
+//	io.Closer.Close      params=[]       results=[error]
+//	io.Seeker.Seek       params=[int64 int] results=[int64 error]
+//	io.WriterTo.WriteTo  params=[io.Writer] results=[int64 error]
+//	io.ReaderFrom.ReadFrom params=[io.Reader] results=[int64 error]
+//	fmt.Stringer.String  params=[] results=[string]
+//	fmt.Formatter.Format params=[fmt.State rune] results=[]
+//	json.Marshaler.MarshalJSON   params=[] results=[[]byte error]
+//	json.Unmarshaler.UnmarshalJSON params=[[]byte] results=[error]
+//	encoding.TextMarshaler.MarshalText     params=[] results=[[]byte error]
+//	encoding.TextUnmarshaler.UnmarshalText params=[[]byte] results=[error]
+//	encoding.BinaryMarshaler.MarshalBinary     params=[] results=[[]byte error]
+//	encoding.BinaryUnmarshaler.UnmarshalBinary params=[[]byte] results=[error]
+//	http.Handler.ServeHTTP params=[net/http.ResponseWriter *net/http.Request] results=[]
+//	sql.Scanner.Scan       params=[any] results=[error]
+//
+// Note: "any" and "interface{}" canonicalize to different strings via
+// (*types.Type).String() depending on whether the implementor used the
+// modern alias or the literal empty interface. canonicalTypeString
+// normalizes both to "any".
+//
+// Decisions for this iteration:
+//   - sort.Interface (Len/Less/Swap) is intentionally omitted: those names are
+//     too common in user code, so protecting them in isolation would create
+//     more false negatives than the false positives it removes. Future work
+//     could match the triple structurally on a single receiver.
+//   - driver.Valuer (Value() (driver.Value, error)) is omitted because
+//     driver.Value is `any`, making the signature ambiguous with many
+//     unrelated user methods.
+type wellKnownContractSignature struct {
+	params  []string
+	results []string
+}
+
+// wellKnownContractMethods enumerates stdlib single-method interfaces that may
+// be satisfied structurally. A method on a user type whose name appears here
+// AND whose signature matches one of the listed shapes is protected from
+// being flagged as DEAD/PRIVATE, since it can be invoked through the
+// corresponding stdlib interface without the method's name appearing at any
+// call site visible to static analysis.
+//
+// A name maps to a slice of shapes because some method names belong to
+// multiple stdlib contracts (e.g., MarshalText and MarshalJSON share a
+// shape but have distinct names; future contracts may overload further).
+var wellKnownContractMethods = map[string][]wellKnownContractSignature{
+	// error.Error
+	"Error": {{params: nil, results: []string{"string"}}},
+	// fmt.Stringer.String
+	"String": {{params: nil, results: []string{"string"}}},
+	// io.Reader.Read
+	"Read": {{params: []string{"[]byte"}, results: []string{"int", "error"}}},
+	// io.Writer.Write
+	"Write": {{params: []string{"[]byte"}, results: []string{"int", "error"}}},
+	// io.Closer.Close
+	"Close": {{params: nil, results: []string{"error"}}},
+	// io.Seeker.Seek
+	"Seek": {{params: []string{"int64", "int"}, results: []string{"int64", "error"}}},
+	// io.WriterTo.WriteTo
+	"WriteTo": {{params: []string{"io.Writer"}, results: []string{"int64", "error"}}},
+	// io.ReaderFrom.ReadFrom
+	"ReadFrom": {{params: []string{"io.Reader"}, results: []string{"int64", "error"}}},
+	// fmt.Formatter.Format
+	"Format": {{params: []string{"fmt.State", "rune"}, results: nil}},
+	// encoding/json.Marshaler.MarshalJSON
+	"MarshalJSON": {{params: nil, results: []string{"[]byte", "error"}}},
+	// encoding/json.Unmarshaler.UnmarshalJSON
+	"UnmarshalJSON": {{params: []string{"[]byte"}, results: []string{"error"}}},
+	// encoding.TextMarshaler.MarshalText
+	"MarshalText": {{params: nil, results: []string{"[]byte", "error"}}},
+	// encoding.TextUnmarshaler.UnmarshalText
+	"UnmarshalText": {{params: []string{"[]byte"}, results: []string{"error"}}},
+	// encoding.BinaryMarshaler.MarshalBinary
+	"MarshalBinary": {{params: nil, results: []string{"[]byte", "error"}}},
+	// encoding.BinaryUnmarshaler.UnmarshalBinary
+	"UnmarshalBinary": {{params: []string{"[]byte"}, results: []string{"error"}}},
+	// net/http.Handler.ServeHTTP
+	"ServeHTTP": {{params: []string{"net/http.ResponseWriter", "*net/http.Request"}, results: nil}},
+	// database/sql.Scanner.Scan
+	"Scan": {{params: []string{"any"}, results: []string{"error"}}},
+}
+
+// canonicalTypeString returns t.String() with two stdlib-alias normalizations
+// applied:
+//
+//  1. `interface{}` → `any`. The empty-interface alias has two spellings; both
+//     satisfy database/sql.Scanner.Scan, so we collapse them.
+//  2. `[]uint8` → `[]byte`. `byte` is an alias for `uint8`, but real Go source
+//     loaded via go/packages prints byte slices as `[]byte` while
+//     programmatically-constructed slices print as `[]uint8`. Both denote the
+//     same underlying type and must compare equal here.
+func canonicalTypeString(t types.Type) string {
+	s := t.String()
+	switch s {
+	case "interface{}":
+		return "any"
+	case "[]uint8":
+		return "[]byte"
+	}
+	return s
+}
+
+// signatureMatches reports whether sig has exactly the given parameter and
+// result type strings (per canonicalTypeString).
+func signatureMatches(sig *types.Signature, want wellKnownContractSignature) bool {
+	if sig.Params().Len() != len(want.params) {
+		return false
+	}
+	if sig.Results().Len() != len(want.results) {
+		return false
+	}
+	for i, p := range want.params {
+		if canonicalTypeString(sig.Params().At(i).Type()) != p {
+			return false
+		}
+	}
+	for i, r := range want.results {
+		if canonicalTypeString(sig.Results().At(i).Type()) != r {
+			return false
+		}
+	}
+	return true
+}
+
+// isWellKnownContract reports whether obj is a method that may be invoked
+// structurally through a stdlib interface (e.g., io.Writer, fmt.Stringer,
+// http.Handler). Such methods must be protected from being flagged as
+// DEAD/PRIVATE because the call site never names them.
 func (a *defaultDeadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
 	fn, ok := obj.(*types.Func)
 	if !ok {
@@ -232,19 +380,16 @@ func (a *defaultDeadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
 	if !ok {
 		return false
 	}
-
-	// Apply signature validation uniformly. 'isNoArgStringMethod' handles nil receivers safely.
-	return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
-}
-
-func (a *defaultDeadCodeAnalyzer) isNoArgStringMethod(fn *types.Func, sig *types.Signature, name string) bool {
-	if fn.Name() != name {
+	shapes, ok := wellKnownContractMethods[fn.Name()]
+	if !ok {
 		return false
 	}
-	if sig.Params().Len() != 0 || sig.Results().Len() != 1 {
-		return false
+	for _, shape := range shapes {
+		if signatureMatches(sig, shape) {
+			return true
+		}
 	}
-	return sig.Results().At(0).Type().String() == "string"
+	return false
 }
 
 func (a *defaultDeadCodeAnalyzer) protectContractSymbol(state *scanState, id string) {
@@ -386,6 +531,16 @@ func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state
 		reason += " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
 	}
 
+	// Anonymous-interface-assertion hedge. See
+	// dead_code_anon_interface.go for the full rationale. Methods only:
+	// the pattern `x.(interface{ M() })` invokes a method, never a free
+	// function or a type. Independent of the text-search warning above
+	// — both may legitimately fire on the same orphan, in which case
+	// both appear.
+	if meta.isMethod && a.hasAnonymousInterfaceAssertionMatch(state, meta.name) {
+		reason += fmt.Sprintf(" [WARNING: method name appears in anonymous-interface assertion site(s); verify with: grep -rn \"%s\" --include='*.go' .]", meta.name)
+	}
+
 	return &orphanReport{
 		Symbol:     displayName,
 		Pkg:        meta.pkgPath,
@@ -497,11 +652,45 @@ func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, s
 
 	scope := pkg.Types.Scope()
 	for _, name := range scope.Names() {
-		a.harvestObjectSymbols(scope.Lookup(name), state)
+		a.harvestObjectSymbols(scope.Lookup(name), pkg.Fset, state)
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanState) {
+// isExportTestFile reports whether pos resolves to a file whose basename
+// is exactly "export_test.go". That filename is a well-established Go
+// convention for files that exist solely to bridge a production package
+// with an external `_test` package — typically by re-exporting internal
+// types as aliases (`type Exported = unexported`) or wrapping unexported
+// functions with thin exported shims.
+//
+// Declarations harvested from such files are by definition test-API
+// surface, NOT production code. The dead_code_graph orphan report's
+// `[DEAD]` / `[PRIVATE]` framing therefore does not apply: a maintainer
+// asked to "clean up" such a symbol would break the external `_test`
+// package's contract.
+//
+// SCOPE DECISION (NARROW, by architect approval): only the literal
+// filename "export_test.go" triggers suppression. Other `_test.go`
+// files (e.g., `helpers_test.go` declaring exported test helpers)
+// remain subject to orphan analysis — an unused exported test helper
+// IS genuine technical debt and should be flagged. Pinned by
+// TestExportTestAlias_OrdinaryTestGoStillFlagged.
+//
+// A nil fset (e.g., from a synthetic test object constructed by hand)
+// is treated as "not in export_test.go" so the filter cannot accidentally
+// suppress test fixtures that don't go through go/packages.
+func isExportTestFile(fset *token.FileSet, pos token.Pos) bool {
+	if fset == nil || !pos.IsValid() {
+		return false
+	}
+	f := fset.File(pos)
+	if f == nil {
+		return false
+	}
+	return filepath.Base(f.Name()) == "export_test.go"
+}
+
+func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, fset *token.FileSet, state *scanState) {
 	if obj == nil || obj.Pkg() == nil {
 		return
 	}
@@ -514,14 +703,21 @@ func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *
 		return
 	}
 
+	// Suppress declarations that live in `export_test.go` files — these
+	// are by convention test-API surface, not production code. See
+	// isExportTestFile for full rationale.
+	if isExportTestFile(fset, obj.Pos()) {
+		return
+	}
+
 	a.registerDeclaration(obj, state)
 
 	// Capture exported methods
 	if tn, ok := obj.(*types.TypeName); ok {
 		if named, ok := tn.Type().(*types.Named); ok {
-			a.harvestNamedMethods(named, state)
+			a.harvestNamedMethods(named, fset, state)
 			if itf, ok := named.Underlying().(*types.Interface); ok {
-				a.harvestInterfaceMethods(itf, state)
+				a.harvestInterfaceMethods(itf, fset, state)
 			}
 		}
 	}
@@ -544,13 +740,22 @@ func (a *defaultDeadCodeAnalyzer) registerDeclaration(obj types.Object, state *s
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, state *scanState) {
+func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, fset *token.FileSet, state *scanState) {
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
 		if m == nil || m.Pkg() == nil {
 			continue
 		}
 		if m.Exported() {
+			// Defense-in-depth: a method declared in export_test.go (e.g.,
+			// a method-promotion shim like `func (r *stdUIRenderer) DrawX(...)`
+			// in internal/ui/export_test.go) is test-API surface and must
+			// not be reported. In practice methods on production types are
+			// almost always defined in production files, so this guard is
+			// rarely triggered — but it keeps the contract uniform.
+			if isExportTestFile(fset, m.Pos()) {
+				continue
+			}
 			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
@@ -566,13 +771,17 @@ func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, state 
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *scanState) {
+func (a *defaultDeadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, fset *token.FileSet, state *scanState) {
 	for i := 0; i < itf.NumMethods(); i++ {
 		m := itf.Method(i)
 		if m == nil || m.Pkg() == nil {
 			continue
 		}
 		if m.Exported() {
+			// Defense-in-depth: see harvestNamedMethods for rationale.
+			if isExportTestFile(fset, m.Pos()) {
+				continue
+			}
 			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
@@ -629,6 +838,176 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 
 		if count := snapshotTotal[id]; count > 0 {
 			a.propagateUsageToImplementations(ctx, id, count, snapshotExternal, state, hb)
+		}
+	}
+}
+
+// extractNamedReturnTypes walks a function/method signature and returns the
+// named (non-interface) result types declared inside our module. It unwraps
+// a single level of pointer (so `*Widget` and `Widget` both yield `Widget`).
+//
+// Result types that are NOT *types.Named after pointer-unwrap (e.g., basic
+// types, slices, maps, channels, function types, type parameters) are
+// silently skipped: they cannot be declared targets in state.declarations.
+//
+// Interface result types are deliberately skipped. A constructor whose
+// return type is an interface (rare in idiomatic Go, but possible — e.g.,
+// `func New() io.Reader`) would, if propagated, flow the constructor's
+// usage to every implementation of that interface in the codebase. That
+// is over-propagation: it would silently protect implementations that
+// nobody actually constructs. Interface implementations already have
+// their own propagation channel via propagateInterfaceUsages, which
+// flows from real usage of the interface contract.
+func extractNamedReturnTypes(sig *types.Signature) []*types.Named {
+	if sig == nil {
+		return nil
+	}
+	results := sig.Results()
+	if results == nil || results.Len() == 0 {
+		return nil
+	}
+	out := make([]*types.Named, 0, results.Len())
+	for i := 0; i < results.Len(); i++ {
+		t := results.At(i).Type()
+		if ptr, ok := t.(*types.Pointer); ok {
+			t = ptr.Elem()
+		}
+		named, ok := t.(*types.Named)
+		if !ok {
+			continue
+		}
+		// Skip interface result types — see function doc for rationale.
+		if _, ok := named.Underlying().(*types.Interface); ok {
+			continue
+		}
+		out = append(out, named)
+	}
+	return out
+}
+
+// propagateConstructorUsagesToReturnTypes flows externalUses counts from
+// every used function/method to the named, non-interface types it returns.
+//
+// MOTIVATION (false-positive class this fixes):
+//
+// Without this pass, a type that is only consumed via an inferred receiver
+// at the call site is mis-flagged as PRIVATE. For example, given:
+//
+//	// package foo
+//	type MockClock struct{ /* … */ }
+//	func NewMockClock() *MockClock { return &MockClock{} }
+//
+//	// package bar_test
+//	mc := foo.NewMockClock()  // ← consumes MockClock structurally
+//	mc.Advance(...)
+//
+// the identifier "MockClock" never appears outside package foo. The
+// analyzer correctly counts NewMockClock as externally used, but the
+// type itself looks orphaned. This pass closes that gap by treating
+// each used function as also "using" each named type it returns.
+//
+// DESIGN DECISIONS (documented for future maintainers — see Task B-prime
+// brief for full rationale):
+//
+//  1. ONLY THE TYPE IS PROTECTED, NOT ITS METHODS. A `*MockClock` returned
+//     by a used `NewMockClock` causes `MockClock` to be marked externally
+//     used, but `MockClock`'s methods are evaluated independently. This is
+//     deliberate: blanket-protecting all methods on a constructor-protected
+//     type would silently hide genuinely dead methods on widely-used types
+//     (e.g., a long-lived `*Server` may accumulate unused legacy methods).
+//     Methods that participate in stdlib structural contracts are already
+//     protected by the well-known-contract pass (see isWellKnownContract).
+//
+//  2. INTERFACE RESULT TYPES ARE SKIPPED. See extractNamedReturnTypes
+//     for the over-propagation rationale.
+//
+//  3. ORDERING: this pass runs AFTER propagateInterfaceUsages. Because
+//     interfaces are skipped (decision 2), the two passes operate on
+//     disjoint result-type sets, so ordering is observationally
+//     equivalent in practice. Running after has the safety property of
+//     guaranteeing the new pass cannot inflate interface implementations.
+//
+//  4. SNAPSHOT PATTERN: mirrors propagateInterfaceUsages. We snapshot
+//     totalUses/externalUses before mutating, so propagated counts cannot
+//     be re-fed into another iteration's source side. Without the
+//     snapshot, a method on `*MockClock` that itself returns `*MockClock`
+//     could create an artificial feedback loop after this pass and the
+//     interface pass run in sequence.
+//
+//  5. KNOWN LIMITATION — TYPE ALIASES: when the returned type is a
+//     declared alias (`type MockClock = mockClock`), `(*types.Named).Obj()`
+//     resolves to the underlying type's TypeName (`mockClock`), not the
+//     alias's. As a result, constructor propagation does not flow usage
+//     to alias declarations. This was deemed acceptable for this
+//     iteration: aliases are uncommon in production code, and the
+//     primary motivating false-positive class (mocks declared as direct
+//     structs) is fully covered. Mocks that need to be exported via an
+//     alias from `export_test.go` may still be flagged as PRIVATE; the
+//     recommended workaround is either (a) declare the mock directly
+//     in a `_test.go` file as an exported type (so it lives outside the
+//     production-code orphan analysis entirely) or (b) accept the
+//     PRIVATE flag and add an explicit `//nolint`-style suppression
+//     mechanism if/when one is added to dead_code.go. Pinned by
+//     TestConstructorPropagation_TypeAliasNotPropagated.
+func (a *defaultDeadCodeAnalyzer) propagateConstructorUsagesToReturnTypes(state *scanState, hb chan<- struct{}) {
+	snapshotTotal, snapshotExternal, ids := takeUsageSnapshots(state)
+
+	for i, id := range ids {
+		if i%20 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
+		// Only propagate from functions/methods that have actually been used.
+		// Unused functions don't justify protecting their return types — those
+		// types should stand or fall on their own merits.
+		if snapshotTotal[id] == 0 {
+			continue
+		}
+
+		meta, ok := state.declarations[id]
+		if !ok || meta.obj == nil {
+			continue
+		}
+		fn, ok := meta.obj.(*types.Func)
+		if !ok {
+			continue
+		}
+		sig, ok := fn.Type().(*types.Signature)
+		if !ok {
+			continue
+		}
+
+		for _, named := range extractNamedReturnTypes(sig) {
+			tn := named.Obj()
+			if tn == nil {
+				continue
+			}
+			typeId := getSymbolIdentity(tn)
+			if typeId == "" || typeId == id {
+				// Self-referential safety: a fluent method T.Foo() *T must
+				// not propagate its own usage back to T as if the type itself
+				// were the source. (In practice id and typeId differ for
+				// methods because id includes the receiver name, but the
+				// check is defensive.)
+				continue
+			}
+			if _, exists := state.declarations[typeId]; !exists {
+				// The type isn't one of our harvested module-internal
+				// declarations (e.g., stdlib types like *os.File, or types
+				// in excluded packages). Nothing to protect.
+				continue
+			}
+
+			// Mirror the bookkeeping done by trackExternalUsages and
+			// processImplementations: bump totalUses to at least 1, then
+			// flow the source's external-usage count.
+			if state.totalUses[typeId] == 0 {
+				state.totalUses[typeId] = 1
+			}
+			state.externalUses[typeId] += snapshotExternal[id]
 		}
 	}
 }
