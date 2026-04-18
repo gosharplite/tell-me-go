@@ -35,7 +35,7 @@ func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 }
 
 func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
-	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
+	sm := NewSecurityManager(&mockInteractor{Answer: "y"})
 
 	mockKV := new(mockKVStore)
 	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -255,7 +255,7 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 	t.Run("RegisterSafePath denied", func(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
-		sm.SetInteractor(&MockInteractor{Answer: "n"})
+		sm.SetInteractor(&mockInteractor{Answer: "n"})
 		path := filepath.Join(t.TempDir(), "denied")
 		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
 		if err != nil {
@@ -269,7 +269,7 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 	t.Run("BypassConfirmation denied", func(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
-		sm.SetInteractor(&MockInteractor{Answer: "n"})
+		sm.SetInteractor(&mockInteractor{Answer: "n"})
 		res, err := p.BypassConfirmation(ctx, nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -287,7 +287,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
-		sm.SetInteractor(&MockInteractor{Answer: "n"})
+		sm.SetInteractor(&mockInteractor{Answer: "n"})
 		path := filepath.Join(t.TempDir(), "b1")
 		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "r"}, nil)
 		if err != nil {
@@ -302,7 +302,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
-		sm.SetInteractor(&MockInteractor{Answer: "n"})
+		sm.SetInteractor(&mockInteractor{Answer: "n"})
 		path := filepath.Join(t.TempDir(), "b1")
 		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
 		if err != nil {
@@ -317,7 +317,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
-		sm.SetInteractor(&MockInteractor{Answer: "n"})
+		sm.SetInteractor(&mockInteractor{Answer: "n"})
 		path := filepath.Join(t.TempDir(), "b2")
 		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "r"}, nil)
 		if err != nil {
@@ -332,7 +332,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
-		sm.SetInteractor(&MockInteractor{Answer: "n"})
+		sm.SetInteractor(&mockInteractor{Answer: "n"})
 		path := filepath.Join(t.TempDir(), "b2")
 		res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
 		if err != nil {

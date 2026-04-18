@@ -48,7 +48,7 @@ func TestAuditor_NoLogFile(t *testing.T) {
 
 func TestAuditor_SetLogFileError(t *testing.T) {
 	t.Parallel()
-	mock := &MockInteractor{}
+	mock := &mockInteractor{}
 	a := newAuditor()
 	a.SetInteractor(mock)
 

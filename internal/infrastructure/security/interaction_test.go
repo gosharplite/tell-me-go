@@ -44,13 +44,13 @@ func (m *mockAuditor) Close() error                                   { return n
 
 // spyInteractor captures calls to UserInteractor methods.
 type spyInteractor struct {
-	MockInteractor
+	mockInteractor
 	ConfirmCalls []string
 }
 
 func (s *spyInteractor) Confirm(ctx context.Context, message string) (bool, error) {
 	s.ConfirmCalls = append(s.ConfirmCalls, message)
-	return s.MockInteractor.Confirm(ctx, message)
+	return s.mockInteractor.Confirm(ctx, message)
 }
 
 func TestInteractionHandler_ConfirmAction(t *testing.T) {
@@ -61,7 +61,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 		target     string
 		detail     string
 		bypass     bool
-		mockSetup  func(m *MockInteractor)
+		mockSetup  func(m *mockInteractor)
 		wantResult bool
 		wantErr    bool
 		errSubstr  string
@@ -73,7 +73,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			target: "file.txt",
 			detail: "User wants to delete the file.",
 			bypass: false,
-			mockSetup: func(m *MockInteractor) {
+			mockSetup: func(m *mockInteractor) {
 				m.Answer = "y"
 			},
 			wantResult: true,
@@ -90,7 +90,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			target: "file.txt",
 			detail: "User wants to delete the file.",
 			bypass: false,
-			mockSetup: func(m *MockInteractor) {
+			mockSetup: func(m *mockInteractor) {
 				m.Answer = "n"
 			},
 			wantResult: false,
@@ -122,7 +122,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			target: "large_file.txt",
 			detail: strings.Repeat("A", 600),
 			bypass: false,
-			mockSetup: func(m *MockInteractor) {
+			mockSetup: func(m *mockInteractor) {
 				m.Answer = "y"
 			},
 			wantResult: true,
@@ -139,7 +139,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			target: "large_file.txt",
 			detail: strings.Repeat("B", 1200),
 			bypass: false,
-			mockSetup: func(m *MockInteractor) {
+			mockSetup: func(m *mockInteractor) {
 				m.Answer = "y"
 			},
 			wantResult: true,
@@ -153,7 +153,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			action: "delete",
 			target: "file.txt",
 			bypass: false,
-			mockSetup: func(m *MockInteractor) {
+			mockSetup: func(m *mockInteractor) {
 				m.Err = fmt.Errorf("interactor error")
 			},
 			wantErr:   true,
@@ -167,7 +167,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			ctx := context.Background()
 			spy := &spyInteractor{}
 			if tt.mockSetup != nil {
-				tt.mockSetup(&spy.MockInteractor)
+				tt.mockSetup(&spy.mockInteractor)
 			}
 			auditor := &mockAuditor{}
 			handler := newInteractionHandler(spy, auditor)
@@ -255,7 +255,7 @@ func TestNoOpInteractor(t *testing.T) {
 
 func TestMockInteractor_EdgeCases(t *testing.T) {
 	t.Parallel()
-	m := &MockInteractor{}
+	m := &mockInteractor{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -274,7 +274,7 @@ func TestMockInteractor_EdgeCases(t *testing.T) {
 		t.Error("Expected error on canceled context in ReadLine")
 	}
 
-	m = &MockInteractor{Answer: ""}
+	m = &mockInteractor{Answer: ""}
 	key, err := m.ReadSingleKey(context.Background())
 	if err != nil || key != "" {
 		t.Errorf("Expected empty key on empty answer in ReadSingleKey, got %v, %v", err, key)
@@ -296,7 +296,7 @@ func TestInteractionHandler_TerminalLocking(t *testing.T) {
 
 func TestMockInteractor_Errors(t *testing.T) {
 	t.Parallel()
-	m := &MockInteractor{Err: fmt.Errorf("read error")}
+	m := &mockInteractor{Err: fmt.Errorf("read error")}
 	ctx := context.Background()
 
 	_, err := m.ReadSingleKey(ctx)

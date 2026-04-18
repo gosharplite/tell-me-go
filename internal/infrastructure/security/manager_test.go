@@ -15,7 +15,7 @@ import (
 
 func TestSecurityManager_Bypass(t *testing.T) {
 	t.Parallel()
-	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
+	sm := NewSecurityManager(&mockInteractor{Answer: "y"})
 
 	// Default
 	if sm.IsBypassActive() {
@@ -75,12 +75,12 @@ func TestSecurityManager_Authorize(t *testing.T) {
 
 	// 3. Authorize with user interaction (Yes)
 	sm.SetBypassActive(false)
-	sm.SetInteractor(&MockInteractor{Answer: "y"})
+	sm.SetInteractor(&mockInteractor{Answer: "y"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
 	assertAuthorization(t, "Authorize(user=y)", ok, err, true)
 
 	// 4. Authorize with user interaction (No)
-	sm.SetInteractor(&MockInteractor{Answer: "n"})
+	sm.SetInteractor(&mockInteractor{Answer: "n"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
 	assertAuthorization(t, "Authorize(user=n)", ok, err, false)
 
@@ -126,7 +126,7 @@ func contains(slice []string, val string) bool {
 
 func TestSecurityManager_Misc(t *testing.T) {
 	t.Parallel()
-	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
+	sm := NewSecurityManager(&mockInteractor{Answer: "y"})
 	defer func() {
 		_ = sm.Close()
 	}()
@@ -184,7 +184,7 @@ func TestSecurityManager_Misc(t *testing.T) {
 func TestSecurityManager_Confirm_Bypass(t *testing.T) {
 	t.Parallel()
 	// Default behavior (no bypass) - user says No
-	interactor := &MockInteractor{Answer: "n"}
+	interactor := &mockInteractor{Answer: "n"}
 	sm := NewSecurityManager(interactor)
 	defer func() {
 		_ = sm.Close()
