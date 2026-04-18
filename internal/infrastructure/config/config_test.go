@@ -428,3 +428,90 @@ MODELS:
 		t.Errorf("expected Mode 'debug-mode', got '%s'", cfg.Mode)
 	}
 }
+
+// TestLoad_ProviderMaxTokens_RoundTrip pins that PROVIDERS.<name>.MAX_TOKENS
+// round-trips correctly from YAML through Viper + mapstructure into
+// the domain LLMProvider.MaxTokens field, and that the loader rejects
+// negative values via the domain Validate path.
+//
+// FAILURE MEANING: If round-trip breaks, operators cannot configure
+// MAX_TOKENS without recompiling — the entire purpose of Task H.
+// If negative values are accepted, the API later returns a generic
+// 400 with no breadcrumb back to the YAML field.
+func TestLoad_ProviderMaxTokens_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name    string
+		yamlVal string // text for the MAX_TOKENS line; empty omits the field
+		wantErr bool
+		wantVal int
+		errFrag string
+	}{
+		{name: "positive value round-trips", yamlVal: "MAX_TOKENS: 16384", wantVal: 16384},
+		{name: "explicit zero round-trips as zero", yamlVal: "MAX_TOKENS: 0", wantVal: 0},
+		{name: "field omitted defaults to zero", yamlVal: "", wantVal: 0},
+		{name: "negative value rejected", yamlVal: "MAX_TOKENS: -1", wantErr: true, errFrag: "MAX_TOKENS"},
+		{name: "large value accepted", yamlVal: "MAX_TOKENS: 65000", wantVal: 65000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "test_max_tokens.yaml")
+			yamlContent := `
+SELECTED_PROVIDER: "claude"
+PROVIDERS:
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    API_KEY: "test"
+    ` + tt.yamlVal + `
+`
+			if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			cfg, err := load(configPath)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("load() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				if !strings.Contains(err.Error(), tt.errFrag) {
+					t.Errorf("expected error containing %q, got %q", tt.errFrag, err.Error())
+				}
+				return
+			}
+			if got := cfg.Providers["claude"].MaxTokens; got != tt.wantVal {
+				t.Errorf("MaxTokens = %d; want %d", got, tt.wantVal)
+			}
+		})
+	}
+}
+
+// TestLoad_ProviderMaxTokens_EnvOverride pins that the Viper env-binding
+// applies to the new MAX_TOKENS field. Mirrors TestLoad_TELL_ME_EnvOverrides
+// for the THINKING_BUDGET-adjacent precedent.
+func TestLoad_ProviderMaxTokens_EnvOverride(t *testing.T) {
+	t.Setenv("TELL_ME_PROVIDERS_GOOGLE_MAX_TOKENS", "8000")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_env_max_tokens.yaml")
+	yamlContent := `
+SELECTED_PROVIDER: "google"
+PROVIDERS:
+  google:
+    TYPE: "gemini"
+    MAX_TOKENS: 32000
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+
+	if got := cfg.Providers["google"].MaxTokens; got != 8000 {
+		t.Errorf("expected env override MAX_TOKENS=8000, got %d", got)
+	}
+}

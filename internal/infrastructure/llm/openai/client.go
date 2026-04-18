@@ -23,6 +23,18 @@ import (
 
 const maxResponseBytes = 10 * 1024 * 1024 // 10 MB safety limit for LLM responses (prevents OOM from malformed/malicious payloads)
 
+// defaultMaxTokens is the safe-floor budget used when both WithMaxTokens
+// and WithThinkingBudget are unset. Matches Anthropic's defaultMaxTokens
+// to close the residual silent-truncation hole that existed when
+// neither knob was set: OpenAI's chat/completions API defaults
+// max_tokens to 4096 when the field is omitted, which routinely
+// truncated large tool calls (the same failure class fixed for
+// Anthropic in commit 5031162c and for Gemini in commit 0495c6a3).
+//
+// Pinned by TestOpenAI_DefaultMaxTokens_IsGenerous in maxtokens_test.go
+// and by TestOpenAI_WithMaxTokens_ZeroAndNoThinkingBudget_FallsBackToDefault.
+const defaultMaxTokens = 16384
+
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
 	httpClient     *http.Client
@@ -34,6 +46,7 @@ type client struct {
 	headers        map[string]string
 	persona        string
 	thinkingBudget int
+	maxTokens      int
 	logger         ports.Logger
 	timeout        time.Duration
 }
@@ -66,6 +79,37 @@ func WithTimeout(timeout time.Duration) openaiOption {
 func WithThinkingBudget(budget int) openaiOption {
 	return func(c *client) {
 		c.thinkingBudget = budget
+	}
+}
+
+// WithMaxTokens sets the per-request output-token cap, populating
+// max_completion_tokens (or max_tokens for non-reasoning models such
+// as DeepSeek Reasoner).
+//
+// Note: For backward compatibility with the pre-Task-H wiring,
+// WithMaxTokens(0) falls back to WithThinkingBudget's value (not to
+// defaultMaxTokens like Anthropic). This preserves byte-identical
+// request payloads for deployments that previously relied on
+// THINKING_BUDGET to drive max_completion_tokens. To force the package
+// default, omit both options.
+//
+// Resolution order:
+//  1. WithMaxTokens(N) where N > 0 → use N.
+//  2. WithMaxTokens(0) or unset, WithThinkingBudget(M) where M > 0 → use M.
+//  3. Both unset → use defaultMaxTokens (16384).
+//
+// See ADR-022 §References and the Task H commit message for history.
+//
+// Pinned by TestOpenAI_WithMaxTokens_Override,
+// TestOpenAI_WithMaxTokens_ZeroFallsBackToThinkingBudget,
+// TestOpenAI_WithMaxTokens_ZeroAndNoThinkingBudget_FallsBackToDefault,
+// and TestOpenAI_WithMaxTokens_DeepSeek_PopulatesMaxTokensField in
+// maxtokens_test.go.
+func WithMaxTokens(n int) openaiOption {
+	return func(c *client) {
+		if n > 0 {
+			c.maxTokens = n
+		}
 	}
 }
 
@@ -304,13 +348,35 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	}
 
 	if c.capabilities.UseMaxCompletionTokens {
-		reqPayload.MaxCompletionTokens = c.thinkingBudget
+		reqPayload.MaxCompletionTokens = c.resolveOutputBudget()
 	} else if c.capabilities.IsDeepSeek {
 		// DeepSeek Reasoner still uses 'max_tokens'
-		reqPayload.MaxTokens = c.thinkingBudget
+		reqPayload.MaxTokens = c.resolveOutputBudget()
 	}
 
 	return &reqPayload, nil
+}
+
+// resolveOutputBudget implements the three-tier resolution rule
+// documented on WithMaxTokens:
+//  1. WithMaxTokens(N) where N > 0 → N.
+//  2. WithMaxTokens(0) or unset, WithThinkingBudget(M) where M > 0 → M.
+//  3. Both unset → defaultMaxTokens.
+//
+// The thinking-budget fallback at tier 2 is intentional and load-
+// bearing: it preserves byte-identical request payloads for
+// deployments that previously relied on THINKING_BUDGET to drive the
+// max-tokens field, accepted by the architect during Task H design
+// review (Decision 5/7 reconciliation).
+func (c *client) resolveOutputBudget() int {
+	budget := c.maxTokens
+	if budget == 0 {
+		budget = c.thinkingBudget
+	}
+	if budget == 0 {
+		budget = defaultMaxTokens
+	}
+	return budget
 }
 
 func (c *client) resolveEndpoint(req *chatRequest) string {

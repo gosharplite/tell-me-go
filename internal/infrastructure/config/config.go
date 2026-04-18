@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"reflect"
@@ -54,7 +55,26 @@ func load(path string) (*domain_config.Config, error) {
 	debugLogModels(&cfg)
 	syncLegacyFields(&cfg)
 
+	// Domain-level provider validation. Hard errors fail the load;
+	// warnings (e.g., Anthropic max_tokens below the thinking-budget
+	// floor) are emitted to slog. Use a discard-backed logger when
+	// none is configured so warnings don't leak to stderr in tests.
+	if err := cfg.ValidateProviders(validationLogger()); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// validationLogger returns the logger used for domain-level provider
+// validation warnings. In debug mode it forwards to the default
+// slog logger; otherwise it discards warn output to keep test output
+// quiet. Hard errors are returned via the error path regardless.
+func validationLogger() *slog.Logger {
+	if isDebug() {
+		return slog.Default()
+	}
+	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
 }
 
 // configureViper creates a Viper instance, loads the YAML file, and binds environment variables.
