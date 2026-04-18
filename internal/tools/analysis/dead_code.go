@@ -631,11 +631,45 @@ func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, s
 
 	scope := pkg.Types.Scope()
 	for _, name := range scope.Names() {
-		a.harvestObjectSymbols(scope.Lookup(name), state)
+		a.harvestObjectSymbols(scope.Lookup(name), pkg.Fset, state)
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanState) {
+// isExportTestFile reports whether pos resolves to a file whose basename
+// is exactly "export_test.go". That filename is a well-established Go
+// convention for files that exist solely to bridge a production package
+// with an external `_test` package — typically by re-exporting internal
+// types as aliases (`type Exported = unexported`) or wrapping unexported
+// functions with thin exported shims.
+//
+// Declarations harvested from such files are by definition test-API
+// surface, NOT production code. The dead_code_graph orphan report's
+// `[DEAD]` / `[PRIVATE]` framing therefore does not apply: a maintainer
+// asked to "clean up" such a symbol would break the external `_test`
+// package's contract.
+//
+// SCOPE DECISION (NARROW, by architect approval): only the literal
+// filename "export_test.go" triggers suppression. Other `_test.go`
+// files (e.g., `helpers_test.go` declaring exported test helpers)
+// remain subject to orphan analysis — an unused exported test helper
+// IS genuine technical debt and should be flagged. Pinned by
+// TestExportTestAlias_OrdinaryTestGoStillFlagged.
+//
+// A nil fset (e.g., from a synthetic test object constructed by hand)
+// is treated as "not in export_test.go" so the filter cannot accidentally
+// suppress test fixtures that don't go through go/packages.
+func isExportTestFile(fset *token.FileSet, pos token.Pos) bool {
+	if fset == nil || !pos.IsValid() {
+		return false
+	}
+	f := fset.File(pos)
+	if f == nil {
+		return false
+	}
+	return filepath.Base(f.Name()) == "export_test.go"
+}
+
+func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, fset *token.FileSet, state *scanState) {
 	if obj == nil || obj.Pkg() == nil {
 		return
 	}
@@ -648,14 +682,21 @@ func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *
 		return
 	}
 
+	// Suppress declarations that live in `export_test.go` files — these
+	// are by convention test-API surface, not production code. See
+	// isExportTestFile for full rationale.
+	if isExportTestFile(fset, obj.Pos()) {
+		return
+	}
+
 	a.registerDeclaration(obj, state)
 
 	// Capture exported methods
 	if tn, ok := obj.(*types.TypeName); ok {
 		if named, ok := tn.Type().(*types.Named); ok {
-			a.harvestNamedMethods(named, state)
+			a.harvestNamedMethods(named, fset, state)
 			if itf, ok := named.Underlying().(*types.Interface); ok {
-				a.harvestInterfaceMethods(itf, state)
+				a.harvestInterfaceMethods(itf, fset, state)
 			}
 		}
 	}
@@ -678,13 +719,22 @@ func (a *defaultDeadCodeAnalyzer) registerDeclaration(obj types.Object, state *s
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, state *scanState) {
+func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, fset *token.FileSet, state *scanState) {
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
 		if m == nil || m.Pkg() == nil {
 			continue
 		}
 		if m.Exported() {
+			// Defense-in-depth: a method declared in export_test.go (e.g.,
+			// a method-promotion shim like `func (r *stdUIRenderer) DrawX(...)`
+			// in internal/ui/export_test.go) is test-API surface and must
+			// not be reported. In practice methods on production types are
+			// almost always defined in production files, so this guard is
+			// rarely triggered — but it keeps the contract uniform.
+			if isExportTestFile(fset, m.Pos()) {
+				continue
+			}
 			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
@@ -700,13 +750,17 @@ func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, state 
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *scanState) {
+func (a *defaultDeadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, fset *token.FileSet, state *scanState) {
 	for i := 0; i < itf.NumMethods(); i++ {
 		m := itf.Method(i)
 		if m == nil || m.Pkg() == nil {
 			continue
 		}
 		if m.Exported() {
+			// Defense-in-depth: see harvestNamedMethods for rationale.
+			if isExportTestFile(fset, m.Pos()) {
+				continue
+			}
 			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
