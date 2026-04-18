@@ -26,8 +26,8 @@ import (
 )
 
 func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
@@ -55,7 +55,7 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()

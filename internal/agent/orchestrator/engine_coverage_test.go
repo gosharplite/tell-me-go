@@ -69,10 +69,10 @@ func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	// Mock components needed for Engine
 	gw := &agenttest.MockGateway{}
 	ex := &mockToolExecutor{}
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 
 	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
@@ -128,7 +128,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 	t.Run("Terminal Error", func(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(errors.New("terminal history failure"))
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 
 		turn := &Turn{
 			CtxManager: cm,
@@ -147,7 +147,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 	t.Run("Transient Error", func(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(llm.ErrTransient)
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 
 		turn := &Turn{
 			CtxManager: cm,
@@ -223,7 +223,7 @@ func TestGuardStep_TDT(t *testing.T) {
 			}
 
 			hMock := &agenttest.MockHistoryManager{}
-			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+			cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 			cm.Reconfigure(events.Limits{MaxToolTurns: tt.maxTurns})
 
 			turn := &Turn{
@@ -316,7 +316,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 			bus := &testutil.MockEventBus{}
 
 			hMock := &agenttest.MockHistoryManager{}
-			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+			cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 			turn := &Turn{
 				Gateway:    gw,
@@ -326,7 +326,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 					PreparedHistory: tt.history,
 				},
 				Clock:    &testutil.MockClock{},
-				Registry: &testutil.MockToolRegistry{},
+				Registry: &agenttest.MockToolRegistry{},
 			}
 
 			step := &InferenceStep{}
@@ -414,7 +414,7 @@ func TestPersistenceStep_TDT(t *testing.T) {
 				}
 			}
 
-			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
+			cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 
 			turn := &Turn{
 				CtxManager: cm,
@@ -472,10 +472,10 @@ func TestEngineHooks_Coverage(t *testing.T) {
 		},
 	}
 	ex := &mockToolExecutor{}
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	hMock := &agenttest.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial message"}}}}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
@@ -520,7 +520,7 @@ func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 		return nil
 	}
 
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 	turn := &Turn{
 		CtxManager: cm,
 		State: &TurnState{
@@ -613,10 +613,10 @@ func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 func TestEngineRun_Error(t *testing.T) {
 	gw := &agenttest.MockGateway{}
 	ex := &mockToolExecutor{}
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -39,7 +40,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	})
 
 	registry := internaltools.New()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
@@ -78,7 +79,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: fmt.Sprintf("M%d", i)}}})
 	}
 
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
@@ -172,8 +173,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	}
 }
 
-func newMultiModalMockClient() *testutil.MockLLMClient {
-	return &testutil.MockLLMClient{
+func newMultiModalMockClient() *agenttest.MockLLMClient {
+	return &agenttest.MockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 			// 1. Identify the last user prompt
 			lastUserPrompt := ""

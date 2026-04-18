@@ -323,3 +323,84 @@ The architect's first remediation proposal (Option E) targeted only #1 and #2. I
 - Symbols remaining: 36 of original 39 exported symbols (was 38 after Session 2, lost MockGateway + MockHistoryManager).
 - New shared sibling package: `internal/agent/agentinternal/` (3 symbols).
 - Next-easiest candidates per the audit's AGENT bucket: `MockToolRegistry`/`NewMockToolRegistry` (~8 consumers), or `MockSummarizer`/`MockTokenCounter`/`MockTransformer` family. Architect to confirm Session 4 scope.
+
+
+## Session 4 Outcome (bulk extraction of remaining AGENT symbols)
+
+- **Date**: 2026-04-19
+- **Branch**: `refactor/testutil-extract-agent-bulk` (forked from Session 3 commit `9eeaf2b0`)
+- **Symbols relocated** (15 distinct types + 1 constructor; names preserved):
+  - `testutil.MockToolRegistry` + `testutil.NewMockToolRegistry` → `agenttest.MockToolRegistry` (`mock_tool_registry.go`)
+  - `testutil.MockSummarizer` → `agenttest.MockSummarizer` (`mock_summarizer.go`)
+  - `testutil.MockTokenCounter` → `agenttest.MockTokenCounter` (`mock_token_counter.go`) — also picked up the stray `EstimateTokens` method that lived 340 lines below the type definition
+  - `testutil.MockTransformer` → `agenttest.MockTransformer` (`mock_transformer.go`)
+  - `testutil.MockAgentExecutor` → `agenttest.MockAgentExecutor` (`mock_agent_executor.go`)
+  - `testutil.MockEventBusFail` → `agenttest.MockEventBusFail` (`mock_event_bus_fail.go`) — preserved as-is per architect direction (rejected the audit Risk Note #6 fold-into-MockEventBus suggestion)
+  - `testutil.ToolBehavior` → `agenttest.ToolBehavior` (`tool_behavior.go`)
+  - `testutil.MockChatter` → `agenttest.MockChatter` (`mock_chatter.go`)
+  - `testutil.MockCapturer` → `agenttest.MockCapturer` (`mock_capturer.go`)
+  - `testutil.MockSessionProvider` → `agenttest.MockSessionProvider` (`mock_session_provider.go`)
+  - `testutil.MockLLMClient` → `agenttest.MockLLMClient` (`mock_llm_client.go`)
+  - `testutil.PanicRegistry` → `agenttest.PanicRegistry` (`panic_registry.go`)
+  - `testutil.MockLogger` → `agenttest.MockLogger` (`mock_logger.go`)
+  - `testutil.MockCostTracker` → `agenttest.MockCostTracker` (`mock_cost_tracker.go`)
+  - `testutil.MockPruningPolicy` → `agenttest.MockPruningPolicy` (`mock_pruning_policy.go`)
+- **Symbols collapsed** (Step 3 conflict resolution):
+  - `testutil.MockTurnsLogger` was found to be **functionally identical** to the pre-existing `agenttest.MockTurnsLogger` (declared in `helpers.go` as a type alias for unexported `mockTurnsLogger`). The testutil version was deleted; its 5 call sites in 3 files were rewritten to `agenttest.MockTurnsLogger` (the existing one).
+- **Symbols inlined** (audit INLINE bucket — handled because the alias would dangle):
+  - `testutil.MockEngineCostTracker` was a one-line type alias `= MockCostTracker`. Its single call site in `tests/integration/agent/orchestrator/turn_engine_test.go:1072` was rewritten to use `agenttest.MockCostTracker` directly. The alias was deleted from testutil, completing the audit's INLINE intent for this symbol.
+- **Source file gutted**: `internal/domain/testutil/agent_mocks.go` shrank from **508 → 38 LOC** (-92%). It now contains only `MockExecutor` (TOOLS bucket — slated for a future session). A header comment marks it as such for future contributors.
+- **Destination grown**: `internal/agent/agenttest/` grew from 3 files to **18 files** (15 new + 3 from Session 3); 1144 LOC total.
+- **Call sites updated**: **40 files**, with rough reference counts as follows (per-symbol from `grep -c` Search A reconciliation):
+  - `MockTokenCounter`: 93 refs in 23 files (the densest)
+  - `MockToolRegistry`: 53 refs in 12 files
+  - `MockSummarizer`: 38 refs in 12 files
+  - `MockLLMClient`: 27 refs in 4 files
+  - `MockAgentExecutor`: 24 refs in 4 files
+  - `ToolBehavior`: 24 refs in 2 files
+  - `NewMockToolRegistry`: 19 refs in 4 files
+  - `MockSessionProvider`: 17 refs in 5 files
+  - `MockCapturer`: 15 refs in 3 files
+  - `MockChatter`: 12 refs in 3 files
+  - `MockCostTracker`: 10 refs in 5 files (combined with `MockEngineCostTracker`'s 1)
+  - `MockLogger`: 9 refs in 2 files
+  - `MockTurnsLogger`: 5 refs in 3 files
+  - `MockPruningPolicy`: 4 refs in 1 file
+  - `MockTransformer`: 3 refs in 3 files
+  - `MockEventBusFail`: 3 refs in 2 files
+  - `PanicRegistry`: 2 refs in 1 file
+  - **Total: 358 references rewritten across 40 files.**
+- **Tests**: PASS (61 packages — unchanged from Session 3; no new packages created).
+- **Race detector**: PASS.
+- **Architecture verification**: ✅ no new violations.
+- **Architectural lint**: zero non-test files import `agenttest` or `agentinternal`.
+- **Leaf rule preserved**: `agenttest/` does NOT import `internal/agent`. Verified via grep.
+
+### Step-by-step batching that worked
+
+The 14 new files in `agenttest/` were created in 4 batches of 3–5, with `go build ./internal/agent/agenttest/...` between each batch as a checkpoint. All 4 batches built first try. The bulk sed pass for 358 call-site references in 40 files completed in one shot, with `goimports -w .` handling all import bookkeeping (added new agenttest imports in some files, removed orphaned testutil imports in others).
+
+### Lessons added (apply in Sessions 5+)
+
+1. **Bulk extraction is now mechanical and safe.** With the leaf rule structurally enforced (Session 3) and 4 batches of mocks completed, the workflow has stabilized: read source → check leaf-safety → write per-type files → build-check per batch → bulk sed → goimports → run verification. A single AGENT-bucket session can comfortably handle 15+ symbols if the destination package is otherwise stable.
+
+2. **`MockEngineCostTracker = MockCostTracker` taught us about dangling aliases.** When the audit lists an INLINE symbol that is a type alias to a symbol scheduled for relocation in the same session, the alias must be inlined at the same time (not deferred), otherwise it dangles. The fix is trivial — rewrite the single call site to use the underlying type directly — but it must NOT be missed. Future sessions: scan the source file for `type X = Y` aliases where `Y` is in scope.
+
+3. **Stray methods can hide far from their type.** `MockTokenCounter.EstimateTokens` was at line 486 of `agent_mocks.go`, while the type was at line 144 — separated by 14 unrelated symbols. `get_type_info` correctly enumerated it as a method, but a naïve "copy the type definition and the contiguous methods below it" approach would have missed it. Future sessions: always cross-check `get_type_info`'s methods list against what your `replace_text` deletion captures.
+
+4. **The `MockTurnsLogger` duplication was the audit's first surprise of this kind.** The same logical mock existed in two places (likely a result of a partial earlier copy-paste). The Step 3 conflict-detection process worked — both versions were read side-by-side, confirmed functionally identical, and the testutil version was deleted in favor of the agenttest one. Future sessions targeting the AGENT bucket should always grep the destination package for the symbol name before writing a new file.
+
+### State of the testutil dump after Session 4
+
+- Files remaining in `internal/domain/testutil/`: 11 (unchanged).
+- **agent_mocks.go**: 508 → 38 LOC (-92%); now contains only `MockExecutor` (TOOLS bucket).
+- Symbols remaining in testutil: 21 (was 36 after Session 3, lost 15 + 1 collapsed `MockTurnsLogger` + 1 collapsed `MockEngineCostTracker` = 17 net symbols — 36 - 17 + 2 already-merged equivalents = 21).
+- Across the whole testutil dump:
+  - **`buffer.go`**: NewSafeBuffer + SyncWriter + dead Buffer/SafeBuffer → GENERIC bucket
+  - **`clock.go`**: MockClock + MockTicker → AGENT bucket (a future "small AGENT" session)
+  - **`config_mocks.go`**: MockConfigLoader → AGENT bucket
+  - **`event_mocks.go`**: TestEventBus, MockEventBus → EVENTS bucket
+  - **`misc_mocks.go`**: MockEntropySource, MockEstimator, TestifyMockClock → AGENT bucket
+  - **`security_mocks.go`**: 3 symbols → SECURITY/TOOLS bucket
+  - **`ui_mocks.go`**: 2 symbols → AGENT bucket per audit Risk Note #3
+- **Recommended next session (Session 5)**: bundle `clock.go` (AGENT) + `config_mocks.go` (AGENT) + `misc_mocks.go` (AGENT) + `ui_mocks.go` (AGENT) — all 4 small files, all share the `agenttest/` destination. Estimated 8 symbols, similar mechanical workflow. After that, only EVENTS, SECURITY, TOOLS, and GENERIC buckets remain.

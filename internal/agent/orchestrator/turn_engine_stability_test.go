@@ -146,7 +146,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 		Gateway:  gw,
 		State:    &orchestrator.TurnState{},
 		Clock:    &testutil.MockClock{},
-		Registry: &testutil.MockToolRegistry{},
+		Registry: &agenttest.MockToolRegistry{},
 		CtxManager: &session.ContextManager{
 			History: &agenttest.MockHistoryManager{},
 		},

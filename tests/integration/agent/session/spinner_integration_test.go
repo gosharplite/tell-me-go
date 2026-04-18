@@ -89,8 +89,8 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	uiRenderer := ui.NewRenderer(nil, stdout, stderr, clock, nil)
 	uiRenderer.SetForceSpinner(true) // Bypass TTY check for testing
 
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
@@ -157,7 +157,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		Mode:             "mode",
 		SelectedProvider: "provider",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	assert.NoError(t, err)

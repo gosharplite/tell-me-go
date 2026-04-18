@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -19,7 +20,7 @@ import (
 
 func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	t.Parallel()
-	client := &testutil.MockLLMClient{}
+	client := &agenttest.MockLLMClient{}
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), "", "")
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}

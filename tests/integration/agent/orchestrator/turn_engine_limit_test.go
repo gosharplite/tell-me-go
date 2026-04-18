@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -165,7 +166,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			counter := &testutil.MockTokenCounter{Tokens: tt.toolTokens}
+			counter := &agenttest.MockTokenCounter{Tokens: tt.toolTokens}
 			strategy := session.NewContextStrategy(counter)
 			strategy.SetLimits(tt.maxTokens, 10, 10)
 

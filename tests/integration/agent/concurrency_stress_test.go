@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -272,7 +273,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	events.CleanupBus(t, bus)
 
 	// Create a single engine instance
-	gw := &testutil.MockLLMClient{}
+	gw := &agenttest.MockLLMClient{}
 	gw.SendChatFn = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{
 			PromptTokens:   1000,
@@ -280,7 +281,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 		}, nil
 	}
 
-	mockEx := &testutil.MockAgentExecutor{
+	mockEx := &agenttest.MockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, Turn int, maxToolTurns int) (*llm.Content, error) {
 			return nil, nil
 		},
@@ -291,7 +292,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	cm := session.NewContextManager(strategy, h, bus, nil)
 	cm.SetPipeline(session.NewContextPipeline())
 
-	tracker := &testutil.MockCostTracker{} // Returns 0.05 per call
+	tracker := &agenttest.MockCostTracker{} // Returns 0.05 per call
 
 	e := orchestrator.NewEngine(gw, mockEx, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
 	strategy.SetLimits(10000, 10, 10)

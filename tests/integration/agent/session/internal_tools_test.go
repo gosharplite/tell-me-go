@@ -96,7 +96,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 }
 
 func TestRegisterInternal(t *testing.T) {
-	registry := &testutil.MockToolRegistry{}
+	registry := &agenttest.MockToolRegistry{}
 	cm := session.NewContextManager(nil, nil, nil, nil)
 	if err := session.RegisterInternal(registry, cm); err != nil {
 		t.Fatalf("RegisterInternal failed: %v", err)
@@ -154,13 +154,13 @@ func validateTool(t *testing.T, found *tools.ToolDeclaration, expectedParams []s
 }
 
 func TestInternalTools_SummarizeHistory(t *testing.T) {
-	mockSumm := &testutil.MockSummarizer{}
+	mockSumm := &agenttest.MockSummarizer{}
 	mockSumm.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary result", &llm.Metrics{ResponseTokens: 10}, nil
 	})
 	factory := &session.PipelineFactory{
 		Summarizer: mockSumm,
-		Estimator:  session.NewContextStrategy(&testutil.MockTokenCounter{}),
+		Estimator:  session.NewContextStrategy(&agenttest.MockTokenCounter{}),
 		Events:     &testutil.MockEventBus{},
 	}
 	hManager := &agenttest.MockHistoryManager{}
@@ -170,7 +170,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "U2"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
 	})
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hManager, &testutil.MockEventBus{}, factory)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hManager, &testutil.MockEventBus{}, factory)
 	it := session.NewInternalTools(cm)
 
 	ctx := context.Background()
@@ -229,7 +229,7 @@ func TestRegisterInternal_ErrorPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := &testutil.MockToolRegistry{}
+			registry := &agenttest.MockToolRegistry{}
 			registry.SetRegisterErr(fmt.Errorf("registry error"))
 			registry.SetFailAfter(tt.failAfter)
 			cm := session.NewContextManager(nil, nil, nil, nil)

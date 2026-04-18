@@ -76,7 +76,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		req2.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(95)
 	cs := session.NewContextStrategy(tc)
 	cs.SetTieredThreshold(10)
@@ -94,7 +94,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 }
 
 func TestContextManager_FirstMessageRoleError(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
 	hm := &agenttest.MockHistoryManager{}
@@ -116,7 +116,7 @@ func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 }
 
 func TestInternalTools_Errors(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
 	hm := &agenttest.MockHistoryManager{}
@@ -210,7 +210,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
@@ -224,7 +224,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	mockBus.SetPublishErr(context.Canceled)
 
 	// Create a strategy that will trigger warnings to force event publishing
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	counter.SetTokens(200)
 	strategy := session.NewContextStrategy(counter)
 	strategy.SetTieredThreshold(100) // Trigger tiered threshold
@@ -254,7 +254,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 
 	gatekeeper := &session.TokenGatekeeper{

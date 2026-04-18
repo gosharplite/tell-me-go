@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
@@ -108,7 +109,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 			Events:     bus,
 			Estimator:  strategy,
 			Registry:   registry.New(),
-			Summarizer: &testutil.MockSummarizer{},
+			Summarizer: &agenttest.MockSummarizer{},
 		}
 
 		cm := session.NewContextManager(strategy, h, bus, factory)
@@ -183,7 +184,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 			Events:     bus,
 			Estimator:  strategy,
 			Registry:   registry.New(),
-			Summarizer: &testutil.MockSummarizer{},
+			Summarizer: &agenttest.MockSummarizer{},
 		}
 
 		cm := session.NewContextManager(strategy, h, bus, factory)

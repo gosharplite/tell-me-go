@@ -208,7 +208,7 @@ func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolRe
 func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
 
-	mockCounter := &testutil.MockTokenCounter{}
+	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(950000) // Above 90% of 1M
 	strategy := session.NewContextStrategy(mockCounter)
 	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
@@ -221,7 +221,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
 	cm := session.NewContextManager(strategy, hManager, nil, nil)
-	cm.Summarizer = &testutil.MockSummarizer{}
+	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {
@@ -249,7 +249,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
 	tokenCount := 1234
-	mockCounter := &testutil.MockTokenCounter{}
+	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(tokenCount)
 	strategy := session.NewContextStrategy(mockCounter)
 	bus := &testutil.TestEventBus{}

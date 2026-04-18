@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,8 +51,8 @@ func TestContextManager_ValidateSubset_Cancelled(t *testing.T) {
 
 func TestTokenGatekeeper_AutoSummarize_GroupTurnsError(t *testing.T) {
 	tg := &TokenGatekeeper{
-		Estimator:  &testutil.MockTokenCounter{},
-		Summarizer: &testutil.MockSummarizer{},
+		Estimator:  &agenttest.MockTokenCounter{},
+		Summarizer: &agenttest.MockSummarizer{},
 	}
 
 	// Trigger invalid payload via groupTurns failing
@@ -209,7 +208,7 @@ func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 	mockBus := &mockFailingEventBus{err: errors.New("event error")}
 	tg := &TokenGatekeeper{
 		Events:    mockBus,
-		Estimator: &testutil.MockTokenCounter{},
+		Estimator: &agenttest.MockTokenCounter{},
 	}
 
 	req := &ports.ContextRequest{
@@ -223,10 +222,10 @@ func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 
 func TestTokenGatekeeper_TriggerSummarization_MaintenanceBlocked(t *testing.T) {
 	tg := &TokenGatekeeper{
-		Estimator:  &testutil.MockTokenCounter{},
-		Summarizer: &testutil.MockSummarizer{},
+		Estimator:  &agenttest.MockTokenCounter{},
+		Summarizer: &agenttest.MockSummarizer{},
 	}
-	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "", nil, errors.New("summarize error")
 	})
 
@@ -287,14 +286,14 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 
 	factory := &PipelineFactory{}
 	pipeline := NewContextPipeline(
-		&testutil.MockTransformer{
+		&agenttest.MockTransformer{
 			TransformFunc: func(ctx context.Context, req *ports.ContextRequest) error {
 				return errors.New("transform error")
 			},
 		},
 	)
 
-	strategy := NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := NewContextStrategy(&agenttest.MockTokenCounter{})
 	cm := NewContextManager(strategy, hm, nil, nil)
 	cm.Factory = factory
 	cm.SetPipeline(pipeline)
@@ -342,7 +341,7 @@ func TestContextManager_EmitSummarizationEvent_Error(t *testing.T) {
 func TestTokenGatekeeper_GetStrategy_Coverage(t *testing.T) {
 	// Strategy nil
 	tg := &TokenGatekeeper{
-		Estimator: &testutil.MockTokenCounter{},
+		Estimator: &agenttest.MockTokenCounter{},
 	}
 	strategy := tg.getStrategy()
 	require.NotNil(t, strategy)
@@ -359,10 +358,10 @@ func TestTokenGatekeeper_TriggerSummarization_EventError_Swallowed(t *testing.T)
 	mockBus := &mockFailingEventBus{err: errors.New("publish error")}
 	tg := &TokenGatekeeper{
 		Events:     mockBus,
-		Estimator:  &testutil.MockTokenCounter{},
-		Summarizer: &testutil.MockSummarizer{},
+		Estimator:  &agenttest.MockTokenCounter{},
+		Summarizer: &agenttest.MockSummarizer{},
 	}
-	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
 	})
 
@@ -422,10 +421,10 @@ func TestTokenGatekeeper_TriggerSummarization_AlreadyAttempted(t *testing.T) {
 
 func TestTokenGatekeeper_TriggerSummarization_OtherError(t *testing.T) {
 	tg := &TokenGatekeeper{
-		Estimator:  &testutil.MockTokenCounter{},
-		Summarizer: &testutil.MockSummarizer{},
+		Estimator:  &agenttest.MockTokenCounter{},
+		Summarizer: &agenttest.MockSummarizer{},
 	}
-	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "", nil, errors.New("other error")
 	})
 
@@ -451,10 +450,10 @@ func TestTokenGatekeeper_TriggerSummarization_OtherError(t *testing.T) {
 
 func TestTokenGatekeeper_TriggerSummarization_NilEvents(t *testing.T) {
 	tg := &TokenGatekeeper{
-		Estimator:  &testutil.MockTokenCounter{},
-		Summarizer: &testutil.MockSummarizer{},
+		Estimator:  &agenttest.MockTokenCounter{},
+		Summarizer: &agenttest.MockSummarizer{},
 	}
-	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
 	})
 
@@ -478,7 +477,7 @@ func TestTokenGatekeeper_TriggerSummarization_NilEvents(t *testing.T) {
 
 func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
 	tg := &TokenGatekeeper{
-		Estimator: &testutil.MockTokenCounter{},
+		Estimator: &agenttest.MockTokenCounter{},
 	}
 
 	history := make([]*llm.Content, 12)

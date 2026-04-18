@@ -15,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
@@ -23,7 +22,7 @@ import (
 // TestTurnEnv holds the standard environment for TurnEngine tests.
 type TestTurnEnv struct {
 	Gw       *agenttest.MockGateway
-	Reg      *testutil.MockToolRegistry
+	Reg      *agenttest.MockToolRegistry
 	Bus      *events.SimpleEventBus
 	Cm       *session.ContextManager
 	HManager ports.HistoryManager
@@ -34,7 +33,7 @@ func SetupTurnEngineTest(t interface {
 	Cleanup(func())
 }) *TestTurnEnv {
 	t.Helper()
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 	// Use synchronous event bus for deterministic test results
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
@@ -89,8 +88,8 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 		}
 		return content, &llm.Metrics{}, nil
 	}
-	reg := &testutil.MockToolRegistry{}
-	counter := &testutil.MockTokenCounter{}
+	reg := &agenttest.MockToolRegistry{}
+	counter := &agenttest.MockTokenCounter{}
 	turn := &orchestrator.Turn{
 		State: &orchestrator.TurnState{
 			HasToolCalls: hasTools,
@@ -105,7 +104,7 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 			Strategy: session.NewContextStrategy(session.NewHeuristicTokenCounter(reg)),
 		},
 		Gateway: mockGw,
-		Executor: &testutil.MockAgentExecutor{
+		Executor: &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turnIdx int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
 			},

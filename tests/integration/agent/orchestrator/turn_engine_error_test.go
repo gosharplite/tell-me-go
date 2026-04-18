@@ -49,12 +49,12 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.ToolExecutor, tracker *errorPhaseTracker) (*orchestrator.Engine, *session.ContextManager) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
 	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	factory := &session.PipelineFactory{
 		History:   hManager,
 		Events:    bus,
@@ -325,7 +325,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	cm := &session.ContextManager{
 		History: hm,
 	}
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 
 	Turn := &orchestrator.Turn{
 		Gateway:    gw,

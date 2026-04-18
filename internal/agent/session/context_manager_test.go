@@ -21,7 +21,7 @@ import (
 )
 
 func TestContextManager_PipelineMethods(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	history := &agenttest.MockHistoryManager{}
 	factory := &session.PipelineFactory{Estimator: strategy}
@@ -34,7 +34,7 @@ func TestContextManager_PipelineMethods(t *testing.T) {
 }
 
 func TestContextManager_GetLimits(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	strategy.SetLimits(1000, 20, 30)
 	strategy.SetTieredThreshold(500)
@@ -48,7 +48,7 @@ func TestContextManager_GetLimits(t *testing.T) {
 }
 
 func TestContextManager_Summarize(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	history := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(strategy, history, nil, nil)
@@ -63,7 +63,7 @@ func TestContextManager_Summarize(t *testing.T) {
 	assert.Nil(t, metrics)
 
 	// Case 2: cm.Summarizer is present.
-	mockSum := &testutil.MockSummarizer{}
+	mockSum := &agenttest.MockSummarizer{}
 	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary result", &llm.Metrics{PromptTokens: 10}, nil
 	})
@@ -76,7 +76,7 @@ func TestContextManager_Summarize(t *testing.T) {
 }
 
 func TestContextManager_SummarizeRange(t *testing.T) {
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{
@@ -94,7 +94,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	assert.Error(t, err)
 
 	// Setup Summarizer
-	mockSum := &testutil.MockSummarizer{}
+	mockSum := &agenttest.MockSummarizer{}
 	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "range summary", &llm.Metrics{PromptTokens: 5}, nil
 	})
@@ -232,7 +232,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 }
 
 func TestContextManager_Prepare_ClonesContent(t *testing.T) {
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	originalContent := &llm.Content{
 		Role:  "user",
 		Parts: []*llm.Part{{Text: "original"}},
@@ -253,7 +253,7 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 }
 
 func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
-	tc := &testutil.MockTokenCounter{}
+	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	factory := &session.PipelineFactory{Estimator: strategy}
 	cm := session.NewContextManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
@@ -293,7 +293,7 @@ func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 }
 
 func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
-	counter := &testutil.MockTokenCounter{}
+	counter := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
 	strategy.SetContextWindow(10000)
 
@@ -317,7 +317,7 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	history.SetInternalContents(contents)
 
 	cm := session.NewContextManager(strategy, history, nil, nil)
-	mockSum := &testutil.MockSummarizer{}
+	mockSum := &agenttest.MockSummarizer{}
 	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
 	})
@@ -359,7 +359,7 @@ func TestContextManager_SummarizeRange_ContextCancellation(t *testing.T) {
 
 func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(strategy, history, nil, nil)
 
@@ -383,7 +383,7 @@ func TestContextManager_CheckContext_Cancellation(t *testing.T) {
 }
 
 func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 
 	t.Run("fails on nil message in history", func(t *testing.T) {
 		history := &agenttest.MockHistoryManager{}
@@ -417,7 +417,7 @@ func TestContextManager_WithLogger(t *testing.T) {
 	// Set level to DEBUG to capture the "skipping summarization event" log.
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	// Add 2 turns to history so that SummarizeRange(ctx, 1, "") can proceed.
 	// Summarization requires at least (requestedTurns + 1) turns to preserve the last turn.
 	history := &agenttest.MockHistoryManager{}
@@ -430,7 +430,7 @@ func TestContextManager_WithLogger(t *testing.T) {
 
 	// Use a nil bus to trigger a DEBUG log in emitSummarizationEvent.
 	cm := session.NewContextManager(strategy, history, nil, nil, session.WithLogger(testLogger))
-	ms := &testutil.MockSummarizer{}
+	ms := &agenttest.MockSummarizer{}
 	ms.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
 	})

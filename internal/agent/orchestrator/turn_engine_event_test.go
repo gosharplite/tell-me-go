@@ -12,19 +12,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestTurnEngine_EventPublishFailure(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
-	badBus := &testutil.MockEventBusFail{PublishErr: errors.New("simulated publish failure")}
+	badBus := &agenttest.MockEventBusFail{PublishErr: errors.New("simulated publish failure")}
 
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	cm := session.NewContextManager(strategy, nil, badBus, nil)
 
 	Turn := &orchestrator.Turn{

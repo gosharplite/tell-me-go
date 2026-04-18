@@ -28,7 +28,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 		})
 
 		hMock := &agenttest.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference, RetryCount: 0},
 			CtxManager: cm,
@@ -60,7 +60,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 		})
 
 		hMock := &agenttest.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State: &TurnState{
 				Phase:   PhasePersisting,
@@ -100,7 +100,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 		})
 
 		hMock := &agenttest.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference},
 			CtxManager: cm,
@@ -169,7 +169,7 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 
 	t.Run("Scenario C: Cost accumulation", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
-		tracker := &testutil.MockCostTracker{}
+		tracker := &agenttest.MockCostTracker{}
 		engine := &Engine{events: bus}
 		mw := engine.withMetrics()
 
@@ -203,7 +203,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			State: &TurnState{
@@ -257,7 +257,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			State: &TurnState{
@@ -295,7 +295,7 @@ func TestPublishTurnStatus_EventBusError(t *testing.T) {
 	engine := &Engine{events: bus}
 
 	hMock := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 	turn := &Turn{
 		State:      &TurnState{},
 		CtxManager: cm,
@@ -339,7 +339,7 @@ func TestHandleLoopBreak_Error_Internal(t *testing.T) {
 		}
 		return nil
 	}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 	turn := &Turn{
 		State: &TurnState{
@@ -379,7 +379,7 @@ func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
 	engine := &Engine{events: bus}
 
 	hMock := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 	turn := &Turn{
 		State:       &TurnState{},
@@ -418,7 +418,7 @@ func TestHandleLoopBreak_Error_Warning(t *testing.T) {
 		hMock.Mu.Unlock()
 		return nil
 	}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 	turn := &Turn{
 		State: &TurnState{
@@ -440,7 +440,7 @@ func TestPublishTurnStatus_ErrBusNotInitialized(t *testing.T) {
 	engine := &Engine{events: bus}
 
 	hMock := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 	turn := &Turn{
 		State:      &TurnState{},
 		CtxManager: cm,

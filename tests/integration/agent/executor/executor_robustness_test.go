@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -23,14 +24,14 @@ func TestDispatcher_ConfigRace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow robustness test in short mode")
 	}
-	reg := testutil.NewMockToolRegistry()
+	reg := agenttest.NewMockToolRegistry()
 	err := reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		runtime.Gosched()
 		return tools.ToolResult{Text: "ok"}, nil
 	})
 	require.NoError(t, err)
 
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &testutil.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -65,7 +66,7 @@ func TestDispatcher_ContextCancellation_MidBatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow robustness test in short mode")
 	}
-	reg := testutil.NewMockToolRegistry()
+	reg := agenttest.NewMockToolRegistry()
 
 	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
 	blockCh := make(chan struct{})
@@ -84,7 +85,7 @@ func TestDispatcher_ContextCancellation_MidBatch(t *testing.T) {
 	})
 	require.NoError(t, regErr)
 
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &testutil.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -7,15 +7,15 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
-	strategy := NewContextStrategy(&testutil.MockTokenCounter{})
+	strategy := NewContextStrategy(&agenttest.MockTokenCounter{})
 	factory := &PipelineFactory{
 		Estimator: strategy,
 		Profile:   profilePrecise,
