@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,8 +52,8 @@ func TestIntegration_DecoratorKillsProcess(t *testing.T) {
 	t.Parallel()
 
 	// 1. Setup real dependencies
-	reg := testutil.NewMockToolRegistry()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	reg := agenttest.NewMockToolRegistry()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true) // Bypass prompts
 	logger := &ports.NoOpLogger{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -114,8 +115,8 @@ func TestIntegration_DecoratorKillsPipeline(t *testing.T) {
 	t.Parallel()
 
 	// 1. Setup real dependencies
-	reg := testutil.NewMockToolRegistry()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	reg := agenttest.NewMockToolRegistry()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true) // Bypass prompts
 	logger := &ports.NoOpLogger{}
 	ctx, cancel := context.WithCancel(context.Background())

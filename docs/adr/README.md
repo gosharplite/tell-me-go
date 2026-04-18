@@ -26,6 +26,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-018** | Migrate Orchestrator to Event-Driven Actor Model | 2026-04 | Accepted | [2026-04-event-driven-actor-model.md](2026-04-event-driven-actor-model.md) |
 | **ADR-019** | JSONL History Persistence | 2026-04 | Accepted | [2026-04-jsonl-history-persistence.md](2026-04-jsonl-history-persistence.md) |
 | **ADR-020** | Windows Compatibility Strategy | 2026-04 | Accepted | [2026-04-windows-compatibility-strategy.md](2026-04-windows-compatibility-strategy.md) |
+| **ADR-021** | Test Doubles Live in `*test` Sub-Packages, Not a Centralized `testutil` | 2026-04 | Accepted | [2026-04-test-doubles-in-pkgtest-subpackages.md](2026-04-test-doubles-in-pkgtest-subpackages.md) |
 
 ## How to Create a New ADR
 

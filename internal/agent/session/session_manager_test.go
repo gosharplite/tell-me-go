@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -20,7 +21,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
@@ -32,9 +32,9 @@ import (
 
 func TestSessionManager_Run_Success(t *testing.T) {
 	t.Parallel()
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
@@ -42,16 +42,16 @@ func TestSessionManager_Run_Success(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
-	mTurnsLogger := new(testutil.MockTurnsLogger)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	mTurnsLogger := new(agenttest.MockTurnsLogger)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), mTurnsLogger, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), mTurnsLogger, new(agenttest.MockSessionProvider), nil)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -75,9 +75,9 @@ func TestSessionManager_Run_Success(t *testing.T) {
 
 func TestSessionManager_Run_Error(t *testing.T) {
 	t.Parallel()
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
@@ -85,15 +85,15 @@ func TestSessionManager_Run_Error(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -112,8 +112,8 @@ func TestSessionManager_Run_Error(t *testing.T) {
 
 func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 	t.Parallel()
-	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
@@ -121,8 +121,8 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 		return nil, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 
 	params := session.RunParams{
 		HomeDir:         "home",
@@ -137,7 +137,7 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 		Prompt:          "",
 		LastN:           5,
 		Config:          &config.Config{},
-		Deps:            session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil),
+		Deps:            session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil),
 		Capturer:        mCapturer,
 	}
 
@@ -153,11 +153,11 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 
 func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	t.Parallel()
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
 
 	sCfg := &session.SessionConfigInternal{
 		Config: &config.Config{
@@ -172,7 +172,7 @@ func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
 
-	deps := session.NewSessionDependencies(paths, nil, nil, nil, nil, nil, nil, pData, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(paths, nil, nil, nil, nil, nil, nil, pData, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
 	require.Error(t, err)
@@ -378,7 +378,7 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 	mHistoryRenderer := &behaviorMockHistoryRenderer{tracker: tracker}
 	mUIRenderer := &behaviorMockUIRenderer{tracker: tracker}
 
-	mHistory := new(testutil.MockHistoryManager)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
@@ -404,7 +404,7 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 			Mode:             "mode",
 			SelectedProvider: "provider",
 		},
-		Deps:     session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil),
+		Deps:     session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil),
 		Capturer: mCapturer,
 	}
 
@@ -465,7 +465,7 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 func TestSessionDependencies_Accessors(t *testing.T) {
 	t.Parallel()
 	paths := &persistence.Paths{}
-	sessionProvider := new(testutil.MockSessionProvider)
+	sessionProvider := new(agenttest.MockSessionProvider)
 	deps := &session.SessionDependenciesInternal{
 		Paths:           paths,
 		SessionProvider: sessionProvider,
@@ -501,12 +501,12 @@ func TestSessionManager_AgentFactory_Error(t *testing.T) {
 
 	deps := &session.SessionDependenciesInternal{
 		Paths:           &persistence.Paths{},
-		HistoryManager:  new(testutil.MockHistoryManager),
-		SessionProvider: new(testutil.MockSessionProvider),
+		HistoryManager:  new(agenttest.MockHistoryManager),
+		SessionProvider: new(agenttest.MockSessionProvider),
 	}
 	sc := &session.SessionConfigInternal{Config: &config.Config{}}
 
-	mCapturer := new(testutil.MockCapturer)
+	mCapturer := new(agenttest.MockCapturer)
 	mCapturer.On("IsTTY", mock.Anything).Return(true)
 
 	err := o.Run(context.Background(), sc, deps, mCapturer)
@@ -550,15 +550,15 @@ func TestSessionManager_Rollback(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mHistory := new(testutil.MockHistoryManager)
+			mHistory := new(agenttest.MockHistoryManager)
 			mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
-			mHistoryRenderer := new(testutil.MockHistoryRenderer)
-			mUIRenderer := new(testutil.MockUIRenderer)
+			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+			mUIRenderer := new(agenttest.MockUIRenderer)
 			orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 			mHistory.SetRollbackErr(tt.rollbackErr)
 			sCfg := &session.SessionConfigInternal{BackN: tt.backN}
-			deps := &session.SessionDependenciesInternal{HistoryManager: mHistory, SessionProvider: new(testutil.MockSessionProvider)}
+			deps := &session.SessionDependenciesInternal{HistoryManager: mHistory, SessionProvider: new(agenttest.MockSessionProvider)}
 			err := orch.Rollback(context.Background(), sCfg, deps)
 
 			if tt.wantErr {
@@ -582,7 +582,7 @@ func TestRun_Routing(t *testing.T) {
 		}
 	}
 
-	setupParams := func(mHistory ports.HistoryManager, mChatter ports.Chatter, mHistoryRenderer *testutil.MockHistoryRenderer, mUIRenderer *testutil.MockUIRenderer, mCapturer *testutil.MockCapturer, mEventBus events.EventBus) session.RunParams {
+	setupParams := func(mHistory ports.HistoryManager, mChatter ports.Chatter, mHistoryRenderer *agenttest.MockHistoryRenderer, mUIRenderer *agenttest.MockUIRenderer, mCapturer *agenttest.MockCapturer, mEventBus events.EventBus) session.RunParams {
 		return session.RunParams{
 			HomeDir:         "home",
 			Version:         "1.0.0",
@@ -591,7 +591,7 @@ func TestRun_Routing(t *testing.T) {
 			AgentFactory:    factory(mChatter),
 			HistoryRenderer: mHistoryRenderer,
 			UIRenderer:      mUIRenderer,
-			Deps:            session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil),
+			Deps:            session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil),
 			Capturer:        mCapturer,
 			Config: &config.Config{
 				Model: "model",
@@ -602,15 +602,15 @@ func TestRun_Routing(t *testing.T) {
 
 	t.Run("Rollback only (no prompt)", func(t *testing.T) {
 		t.Parallel()
-		mHistoryRenderer := new(testutil.MockHistoryRenderer)
-		mUIRenderer := new(testutil.MockUIRenderer)
-		mCapturer := new(testutil.MockCapturer)
+		mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+		mUIRenderer := new(agenttest.MockUIRenderer)
+		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, mEventBus)
 
-		mHistory := new(testutil.MockHistoryManager)
+		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
-		mChatter := new(testutil.MockChatter)
+		mChatter := new(agenttest.MockChatter)
 		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
@@ -626,15 +626,15 @@ func TestRun_Routing(t *testing.T) {
 
 	t.Run("Rollback and Chat", func(t *testing.T) {
 		t.Parallel()
-		mHistoryRenderer := new(testutil.MockHistoryRenderer)
-		mUIRenderer := new(testutil.MockUIRenderer)
-		mCapturer := new(testutil.MockCapturer)
+		mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+		mUIRenderer := new(agenttest.MockUIRenderer)
+		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, mEventBus)
 
-		mHistory := new(testutil.MockHistoryManager)
+		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
-		mChatter := new(testutil.MockChatter)
+		mChatter := new(agenttest.MockChatter)
 		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
@@ -654,16 +654,16 @@ func TestRun_Routing(t *testing.T) {
 
 	t.Run("Rollback aborts on error", func(t *testing.T) {
 		t.Parallel()
-		mHistoryRenderer := new(testutil.MockHistoryRenderer)
-		mUIRenderer := new(testutil.MockUIRenderer)
-		mCapturer := new(testutil.MockCapturer)
+		mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+		mUIRenderer := new(agenttest.MockUIRenderer)
+		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, mEventBus)
 
-		mHistory := new(testutil.MockHistoryManager)
+		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
 		mHistory.SetRollbackErr(fmt.Errorf("rollback failed"))
-		mChatter := new(testutil.MockChatter)
+		mChatter := new(agenttest.MockChatter)
 		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
@@ -709,9 +709,9 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mChatter := new(testutil.MockChatter)
-			mCapturer := new(testutil.MockCapturer)
-			mHistory := new(testutil.MockHistoryManager)
+			mChatter := new(agenttest.MockChatter)
+			mCapturer := new(agenttest.MockCapturer)
+			mHistory := new(agenttest.MockHistoryManager)
 			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			events.CleanupBus(t, mEventBus)
 
@@ -719,15 +719,15 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 				return mChatter, nil
 			}
 
-			mHistoryRenderer := new(testutil.MockHistoryRenderer)
-			mUIRenderer := new(testutil.MockUIRenderer)
+			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+			mUIRenderer := new(agenttest.MockUIRenderer)
 			orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 			sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 				Model: "model",
 				Mode:  "mode",
 			})
-			deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+			deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 			mCapturer.On("IsTTY", io.Discard).Return(true)
 			mUIRenderer.On("SetUseColor", true).Return()
@@ -780,14 +780,14 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 
 func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	t.Parallel()
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
-	mClock := new(testutil.TestifyMockClock)
-	mEntropy := new(testutil.MockEntropySource)
+	mClock := new(agenttest.TestifyMockClock)
+	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
@@ -800,15 +800,15 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -833,14 +833,14 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 
 func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	t.Parallel()
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
-	mClock := new(testutil.TestifyMockClock)
-	mEntropy := new(testutil.MockEntropySource)
+	mClock := new(agenttest.TestifyMockClock)
+	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedEntropy := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 	mEntropy.On("Read", mock.Anything).Return(fixedEntropy, len(fixedEntropy), nil)
@@ -851,15 +851,15 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -883,14 +883,14 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 
 func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	t.Parallel()
-	mChatter := new(testutil.MockChatter)
-	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
-	mClock := new(testutil.TestifyMockClock)
-	mEntropy := new(testutil.MockEntropySource)
+	mClock := new(agenttest.TestifyMockClock)
+	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
@@ -911,15 +911,15 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()

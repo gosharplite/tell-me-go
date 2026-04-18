@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 type errorMockHistoryManager struct {
-	testutil.MockHistoryManager
+	agenttest.MockHistoryManager
 	archiveErr        error
 	setContentsErr    error
 	archiveCalled     bool
@@ -46,8 +46,8 @@ func runFinalizeSummarizationErrorTest(t *testing.T, archiveErr, setContentsErr 
 	h.archiveErr = archiveErr
 	h.setContentsErr = setContentsErr
 
-	cm := NewContextManager(NewContextStrategy(&testutil.MockTokenCounter{}), h, nil, nil)
-	cm.Summarizer = &testutil.MockSummarizer{}
+	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
+	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {

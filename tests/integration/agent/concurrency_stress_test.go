@@ -13,17 +13,19 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +38,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// Register a slow tool to keep the agent busy
 	toolProceed := make(chan struct{})
@@ -131,8 +133,8 @@ func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 		t.Skip("skipping slow stress test in short mode")
 	}
 	reg := registry.New()
-	bus := &testutil.TestEventBus{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	bus := &eventstest.TestEventBus{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
@@ -272,7 +274,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	events.CleanupBus(t, bus)
 
 	// Create a single engine instance
-	gw := &testutil.MockLLMClient{}
+	gw := &agenttest.MockLLMClient{}
 	gw.SendChatFn = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{
 			PromptTokens:   1000,
@@ -280,7 +282,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 		}, nil
 	}
 
-	mockEx := &testutil.MockAgentExecutor{
+	mockEx := &agenttest.MockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, Turn int, maxToolTurns int) (*llm.Content, error) {
 			return nil, nil
 		},
@@ -291,7 +293,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	cm := session.NewContextManager(strategy, h, bus, nil)
 	cm.SetPipeline(session.NewContextPipeline())
 
-	tracker := &testutil.MockCostTracker{} // Returns 0.05 per call
+	tracker := &agenttest.MockCostTracker{} // Returns 0.05 per call
 
 	e := orchestrator.NewEngine(gw, mockEx, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
 	strategy.SetLimits(10000, 10, 10)

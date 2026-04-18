@@ -14,8 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"go.uber.org/goleak"
 )
 
@@ -36,7 +36,7 @@ func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestHttpRequest(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	tests := []struct {
 		name       string
@@ -125,7 +125,7 @@ func TestHttpRequest(t *testing.T) {
 }
 
 func TestReadExternalDocs(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	tests := []struct {
 		name       string
@@ -207,7 +207,7 @@ func TestReadExternalDocs(t *testing.T) {
 }
 
 func TestNewNetworkTool(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, nil)
 	if tool.client == nil {
 		t.Error("newnetworkTool(sm, nil) should have initialized a default client")
@@ -217,7 +217,7 @@ func TestNewNetworkTool(t *testing.T) {
 func TestRegister(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	r := registry.New()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	if err := RegisterAll(r, nil, sm, nil, ""); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestHttpRequest_Errors(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestHttpRequest_Errors(t *testing.T) {
 }
 
 func TestReadExternalDocs_Errors(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
@@ -272,7 +272,7 @@ func TestReadExternalDocs_Errors(t *testing.T) {
 }
 
 func TestReadResponseWithLimit(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, nil)
 
 	tests := []struct {
@@ -340,7 +340,7 @@ func TestReadResponseWithLimit(t *testing.T) {
 }
 
 func TestSanitizeHTML(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, nil)
 
 	tests := []struct {
@@ -436,7 +436,7 @@ func TestHeartbeatConcurrency(t *testing.T) {
 		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
 		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
 	)
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, nil)
 	tool.heartbeatInterval = 10 * time.Millisecond
 
@@ -590,7 +590,7 @@ func runNetworkCancellationTest(t *testing.T, actionName string, args map[string
 		},
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, mock)
 	tool.heartbeatInterval = 50 * time.Millisecond
 	hb := make(chan struct{}, 10)

@@ -1,14 +1,16 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+package agenttest
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/stretchr/testify/mock"
 )
 
-// MockConfigLoader is a mock implementation of config.ConfigLoader for testing.
+// MockConfigLoader is a testify-based test double for config.ConfigLoader.
+// Defensive nil handling lets tests call Return(nil, err) without
+// triggering a nil-pointer assertion in the type assertion.
 type MockConfigLoader struct {
 	mock.Mock
 }

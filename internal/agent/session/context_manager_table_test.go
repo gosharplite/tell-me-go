@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestTokenGatekeeper_Table(t *testing.T) {
@@ -25,7 +25,7 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tg := &TokenGatekeeper{
 				MaxTokens: tt.maxTokens,
-				Estimator: &testutil.MockTokenCounter{Tokens: tt.tokens},
+				Estimator: &agenttest.MockTokenCounter{Tokens: tt.tokens},
 			}
 			req := &request{
 				History: []*llm.Content{{Role: "user"}},

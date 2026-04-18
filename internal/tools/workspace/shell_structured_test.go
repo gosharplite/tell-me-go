@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestShellTool_ExecuteCommand_Structured(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()

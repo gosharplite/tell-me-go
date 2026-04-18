@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -92,8 +93,8 @@ func TestDispatcher_EndToEnd_BarrierPattern(t *testing.T) {
 	}
 
 	reg := newIntegrationToolRegistry()
-	bus := &testutil.TestEventBus{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	bus := &eventstest.TestEventBus{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
@@ -145,8 +146,8 @@ func TestDispatcher_EndToEnd_SequentialOrder(t *testing.T) {
 	}
 
 	reg := newIntegrationToolRegistry()
-	bus := &testutil.TestEventBus{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	bus := &eventstest.TestEventBus{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
@@ -197,8 +198,8 @@ func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 
 	timeout := 50 * time.Millisecond
 	reg := newIntegrationToolRegistry()
-	bus := &testutil.TestEventBus{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	bus := &eventstest.TestEventBus{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(timeout))
 	require.NoError(t, err)

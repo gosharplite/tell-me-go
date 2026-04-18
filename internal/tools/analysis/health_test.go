@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 type mockDeadCodeAnalyzer struct {
@@ -137,12 +138,12 @@ func (m *mockHealthExecutor) CombinedOutput(ctx context.Context, name string, ar
 
 func TestHealthManager_GetCodeHealth(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, testutil.NewOSFileSystem())
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem())
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
 
 	ctx := context.Background()
@@ -170,12 +171,12 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 
 func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, testutil.NewOSFileSystem())
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem())
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 type errorPhaseTracker struct {
@@ -47,12 +48,12 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.ToolExecutor, tracker *errorPhaseTracker) (*orchestrator.Engine, *session.ContextManager) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	factory := &session.PipelineFactory{
 		History:   hManager,
 		Events:    bus,
@@ -62,7 +63,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.Too
 
 	policy := &orchestrator.DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, strategy, orchestrator.WithEngineRetryPolicy(policy), orchestrator.WithEngineHook(tracker), orchestrator.WithEngineClock(&testutil.MockClock{}))
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, strategy, orchestrator.WithEngineRetryPolicy(policy), orchestrator.WithEngineHook(tracker), orchestrator.WithEngineClock(&agenttest.MockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -75,7 +76,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
@@ -121,7 +122,7 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
@@ -172,7 +173,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			return nil, nil, orchestrator.NewAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
@@ -226,7 +227,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	t.Parallel()
 	tracker := &errorPhaseTracker{}
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{
 				Role:  "model",
@@ -271,7 +272,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			return nil, nil, orchestrator.NewAgentError(llm.ErrTransient, "always transient", nil)
@@ -311,7 +312,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 
 func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	t.Parallel()
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, nil // No error, but nil content
 		},
@@ -319,11 +320,11 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 
 	step := &orchestrator.InferenceStep{}
 
-	hm := &testutil.MockHistoryManager{}
+	hm := &agenttest.MockHistoryManager{}
 	cm := &session.ContextManager{
 		History: hm,
 	}
-	reg := &testutil.MockToolRegistry{}
+	reg := &agenttest.MockToolRegistry{}
 
 	Turn := &orchestrator.Turn{
 		Gateway:    gw,
@@ -332,7 +333,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 		State: &orchestrator.TurnState{
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		},
-		Clock: &testutil.MockClock{},
+		Clock: &agenttest.MockClock{},
 	}
 
 	_, err := step.Process(context.Background(), Turn)
@@ -351,7 +352,7 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 	t.Parallel()
 	expectedErr := errors.New("mock db failure")
 
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		AddContentFunc: func(ctx context.Context, content *llm.Content) error {
 			return expectedErr
@@ -383,7 +384,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	t.Parallel()
 	expectedErr := llm.ErrTransient // Use transient error to hit the 'if isTransient' block
 
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "Model"}}},
@@ -432,7 +433,7 @@ func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 				return nil, expectedErr
 			},
 		},
-		Clock: &testutil.MockClock{},
+		Clock: &agenttest.MockClock{},
 	}
 
 	_, err := step.Process(ctx, turnObj)

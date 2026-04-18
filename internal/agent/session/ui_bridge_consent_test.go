@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -19,7 +19,7 @@ import (
 
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	block := make(chan struct{})
 
 	// Setup a block to freeze the actor loop
@@ -67,7 +67,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -102,7 +102,7 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	var mu sync.Mutex
 	spinnerRunning := false
 	consentActive := false
@@ -209,7 +209,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 
 func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewUIBridge(mRenderer)
 
 	// Start the bridge to initialize everything

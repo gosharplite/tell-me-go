@@ -16,16 +16,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/genai"
@@ -121,7 +123,7 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 func setupTestHistory(t *testing.T, turns int) ports.HistoryManager {
 	t.Helper()
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 	for i := 1; i <= turns; i++ {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "Turn User"}}})
@@ -206,10 +208,10 @@ func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolRe
 func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
 
-	mockCounter := &testutil.MockTokenCounter{}
+	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(950000) // Above 90% of 1M
 	strategy := session.NewContextStrategy(mockCounter)
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyFile, historyFile+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
 
 	ctx := context.Background()
 	// Add 2 turns (4 messages)
@@ -219,7 +221,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
 	cm := session.NewContextManager(strategy, hManager, nil, nil)
-	cm.Summarizer = &testutil.MockSummarizer{}
+	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {
@@ -237,7 +239,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 
 func TestSummarizeRange_Logging(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_logging_history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyFile, historyFile+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
 	ctx := context.Background()
 
 	// Add 2 turns (4 messages)
@@ -247,13 +249,13 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
 	tokenCount := 1234
-	mockCounter := &testutil.MockTokenCounter{}
+	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(tokenCount)
 	strategy := session.NewContextStrategy(mockCounter)
-	bus := &testutil.TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 
 	// Use real summarizer but mock gateway
-	mockG := &testutil.MockGateway{}
+	mockG := &agenttest.MockGateway{}
 	mockG.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "summary"}}}, &domain_llm.Metrics{}, nil)
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
@@ -24,7 +24,7 @@ func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
 	cache := newASTCache()
 	sp := &mockSecurityProvider{}
 
-	m := newAnalysisManager(idx, cache, sp, nil, &mockHealthExecutor{}, infrapersistence.NewOSFileSystem())
+	m := newAnalysisManager(idx, cache, sp, nil, &mockHealthExecutor{}, persistencetest.NewPlainOSFileSystem())
 	return m, tmpDir
 }
 

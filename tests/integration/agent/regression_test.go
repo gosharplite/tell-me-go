@@ -11,14 +11,16 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +30,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	// to prevent API errors.
 
 	tmpFile := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), tmpFile, tmpFile+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), tmpFile, tmpFile+".archive")
 	ctx := context.Background()
 
 	// Manually add a content with no parts
@@ -38,8 +40,8 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	})
 
 	registry := internaltools.New()
-	client := &testutil.MockLLMClient{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	client := &agenttest.MockLLMClient{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, registry,
@@ -50,7 +52,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Prepare should trigger the contentCleaner transformer
-	preparedHistory, _, err := agenttest.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
+	preparedHistory, _, err := agentinternal.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// via the orchestration pipeline.
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	registry := internaltools.New()
 	ctx := context.Background()
 
@@ -77,8 +79,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: fmt.Sprintf("M%d", i)}}})
 	}
 
-	client := &testutil.MockLLMClient{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	client := &agenttest.MockLLMClient{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, registry,
@@ -90,7 +92,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
-	preparedHistory, _, err := agenttest.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
+	preparedHistory, _, err := agentinternal.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -118,8 +120,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	require.NoError(t, regErr)
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool
 	mockClient := newMultiModalMockClient()
@@ -171,8 +173,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	}
 }
 
-func newMultiModalMockClient() *testutil.MockLLMClient {
-	return &testutil.MockLLMClient{
+func newMultiModalMockClient() *agenttest.MockLLMClient {
+	return &agenttest.MockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 			// 1. Identify the last user prompt
 			lastUserPrompt := ""

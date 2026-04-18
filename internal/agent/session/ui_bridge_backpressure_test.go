@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -224,7 +224,7 @@ func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 
 func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(testutil.MockUIRenderer)
+	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewUIBridge(mRenderer)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

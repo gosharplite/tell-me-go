@@ -9,16 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 )
 
 // controllableUIRenderer provides synchronization hooks for testing bridge backpressure.
 type controllableUIRenderer struct {
-	testutil.MockUIRenderer
+	agenttest.MockUIRenderer
 	reachedCh chan struct{}
 	blockCh   chan struct{}
 }

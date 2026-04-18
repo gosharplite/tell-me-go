@@ -7,9 +7,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +50,7 @@ func TestTokenGatekeeper_DomainBoundaryValidation(t *testing.T) {
 			t.Parallel()
 
 			gatekeeper := &TokenGatekeeper{
-				Estimator: &testutil.MockTokenCounter{Tokens: 10},
+				Estimator: &agenttest.MockTokenCounter{Tokens: 10},
 			}
 
 			req := &ports.ContextRequest{

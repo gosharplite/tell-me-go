@@ -13,8 +13,8 @@ import (
 	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,9 +22,9 @@ import (
 // Compile-time assertions to ensure the infrastructure strictly implements the domain interfaces.
 // This creates a hard AST reference to clear dead-code false positives in static analysis tools
 // that do not respect //nolint directives.
-var _ domain_security.ActionConfirmer = (*testutil.MockSecurityManager)(nil)
-var _ domain_security.TerminalController = (*testutil.MockSecurityManager)(nil)
-var _ domain_security.UserInteractor = (*testutil.MockInteractor)(nil)
+var _ domain_security.ActionConfirmer = (*toolstest.MockSecurityManager)(nil)
+var _ domain_security.TerminalController = (*toolstest.MockSecurityManager)(nil)
+var _ domain_security.UserInteractor = (*toolstest.MockInteractor)(nil)
 
 type mockDevExecutor struct {
 	executeFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
@@ -108,14 +108,14 @@ func (m *mockGoRunner) RunTests(ctx context.Context, path string) ([]byte, error
 	return []byte("success"), nil
 }
 
-func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *testutil.MockSecurityManager) {
+func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *toolstest.MockSecurityManager) {
 	t.Helper()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	executor := &mockDevExecutor{}
 	runner := &mockGoRunner{}
 	m := &devManager{
 		sm:             sm,
-		validator:      &testutil.MockCommandValidator{},
+		validator:      &toolstest.MockCommandValidator{},
 		executor:       executor,
 		runner:         runner,
 		createTempFile: os.CreateTemp,
@@ -517,12 +517,12 @@ func TestRunTests_Violations(t *testing.T) {
 			t.Parallel()
 			m, _, _ := setupDevManager(t)
 			if tt.name == "Path safety violation" {
-				m.validator.(*testutil.MockCommandValidator).CheckPathSafetyFunc = func(parts []string) (bool, string) {
+				m.validator.(*toolstest.MockCommandValidator).CheckPathSafetyFunc = func(parts []string) (bool, string) {
 					return false, "forced violation"
 				}
 			}
 			if tt.name == "Invalid command structure" {
-				m.validator.(*testutil.MockCommandValidator).ValidateStructureFunc = func(parts []string) error {
+				m.validator.(*toolstest.MockCommandValidator).ValidateStructureFunc = func(parts []string) error {
 					return errors.New("forced structure error")
 				}
 			}
@@ -552,8 +552,8 @@ func TestRunTests_Failure(t *testing.T) {
 
 func TestNewDevManager(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
-	validator := &testutil.MockCommandValidator{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	validator := &toolstest.MockCommandValidator{}
 	runner := &mockGoRunner{}
 	m := newDevManager(sm, validator, runner)
 	assert.NotNil(t, m)
@@ -701,7 +701,7 @@ func TestSecurityRemediation(t *testing.T) {
 	})
 
 	t.Run("getCoverage sandbox evasion", func(t *testing.T) {
-		m.validator.(*testutil.MockCommandValidator).CheckPathSafetyFunc = func(parts []string) (bool, string) {
+		m.validator.(*toolstest.MockCommandValidator).CheckPathSafetyFunc = func(parts []string) (bool, string) {
 			return false, "security violation"
 		}
 		_, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "../../etc/passwd"}, nil)
@@ -710,7 +710,7 @@ func TestSecurityRemediation(t *testing.T) {
 	})
 
 	t.Run("runBenchmark sandbox evasion", func(t *testing.T) {
-		m.validator.(*testutil.MockCommandValidator).CheckPathSafetyFunc = func(parts []string) (bool, string) {
+		m.validator.(*toolstest.MockCommandValidator).CheckPathSafetyFunc = func(parts []string) (bool, string) {
 			return false, "security violation"
 		}
 		_, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "../../etc/passwd"}, nil)
