@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	// to prevent API errors.
 
 	tmpFile := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), tmpFile, tmpFile+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), tmpFile, tmpFile+".archive")
 	ctx := context.Background()
 
 	// Manually add a content with no parts
@@ -67,7 +68,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// via the orchestration pipeline.
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	registry := internaltools.New()
 	ctx := context.Background()
 
@@ -118,7 +119,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	require.NoError(t, regErr)
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool

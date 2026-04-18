@@ -14,12 +14,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func TestAgent_ManageHistory(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Fill history with 2 turns (4 messages)

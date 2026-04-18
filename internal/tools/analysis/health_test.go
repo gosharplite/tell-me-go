@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
 
@@ -142,7 +143,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, testutil.NewOSFileSystem())
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem())
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
 
 	ctx := context.Background()
@@ -175,7 +176,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, testutil.NewOSFileSystem())
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem())
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ import (
 func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	t.Parallel()
 	client := &testutil.MockLLMClient{}
-	h := history.NewManager(testutil.NewOSFileSystem(), "", "")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), "", "")
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))

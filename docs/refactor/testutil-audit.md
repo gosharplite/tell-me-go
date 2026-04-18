@@ -130,9 +130,9 @@ Legend for *Bucket*:
 
 ### File: persistence_mocks.go
 
-| Symbol | Kind | Bucket | Importers (count) | Importing Packages |
-|---|---|---|---|---|
-| `NewOSFileSystem` | func | TOOLS (cross-cuts persistence + tools) | 5 | internal/tools (tools_test.go), internal/tools/workspace (many _test.go files), internal/tools/analysis (health_test.go, manager_test.go), tests/integration/agent (many), tests/integration/agent/orchestrator/* and tests/integration/agent/session/* (history.NewManager calls) |
+| Symbol | Kind | Bucket | Status | Importers (count) | Importing Packages |
+|---|---|---|---|---|---|
+| `NewOSFileSystem` | func | `persistencetest` sub-package (renamed `NewPlainOSFileSystem`) | **RELOCATED in Session 2** | 5 | internal/tools (tools_test.go), internal/tools/workspace (many _test.go files), internal/tools/analysis (health_test.go, manager_test.go), tests/integration/agent (many), tests/integration/agent/orchestrator/* and tests/integration/agent/session/* (history.NewManager calls) |
 
 > **Important**: `NewOSFileSystem` is misnamed — it is **NOT a mock**. It returns a real OS-backed `persistence.FileSystem` (just unwrapped from DI). It is essentially a test convenience constructor. The destination should match this reality: it belongs in either `internal/infrastructure/persistence` as a public constructor `persistence.NewOSFileSystem()` (a one-line factory the production code already wires through DI) **OR** in a `internal/tools/toolstest/` shared helper. See Risk Notes.
 
@@ -218,3 +218,46 @@ These tests test the test-helpers themselves and must move with their subjects:
 - Flagged symbols explicitly addressed: `SyncWriter` ✓, `MockEntropySource` ✓, `CountingEventBus` ✓, `SafeBuffer` ✓, `MockInteractor` ✓.
 - `go test ./...` re-run after report write: **PASS** (see commit log).
 - `git diff --name-only HEAD` lists only `docs/refactor/testutil-audit.md`.
+
+## Session 2 Outcome (NewOSFileSystem extraction)
+
+- **Date**: 2026-04-18
+- **Branch**: `refactor/testutil-extract-plainosfs` (renamed from `refactor/testutil-promote-osfs` after the Step 3 halt — see below)
+- **Symbol relocated and renamed**: `testutil.NewOSFileSystem` → `persistencetest.NewPlainOSFileSystem`
+- **Destination file**: `internal/infrastructure/persistence/persistencetest/plain_os_fs.go` (new package)
+- **Call sites updated**: 103 (across 23 test files; pre-edit grep estimated ~100, the audit's earlier "~80" figure was an undercount because it did not include aliased imports)
+- **Files deleted**: `internal/domain/testutil/persistence_mocks.go`
+- **Files created**: `internal/infrastructure/persistence/persistencetest/plain_os_fs.go`
+- **Tests**: PASS (60 packages — was 59, +1 for the new `persistencetest` package which has no tests yet)
+- **Race detector**: PASS (`go test -count=1 -race ./...`)
+- **Architecture verification**: ✅ no new violations
+- **Architectural lint (Step 9)**: all 23 importers of `persistencetest` are `_test.go` files. Convention enforced: production code never imports `persistencetest`.
+
+### Why the rename and destination differ from the original Session 2 plan
+
+The original Session 2 spec instructed promoting the function into the production `internal/infrastructure/persistence` package as `persistence.NewOSFileSystem`. The Step 3 collision guard halted that approach because **a function with that exact name and signature already exists in production** (`internal/infrastructure/persistence/os_fs.go:190`) but with **different semantics**:
+
+| Aspect | Production `persistence.NewOSFileSystem` | Test helper (now `persistencetest.NewPlainOSFileSystem`) |
+|---|---|---|
+| Concrete type | `&domainFS{fs: &OSFileSystem{}}` (two-layer) | `&plainOSFS{}` (single-layer, was `mockOSFS`) |
+| Retry on transient errors | ✅ via `fsRetry` wrapper | ❌ none — surface errors immediately |
+| `WriteFile` semantics | Routed through `AtomicWrite` (write-temp-then-rename) | Plain `os.WriteFile` (non-atomic) |
+| `Walk` | Checks `ctx.Err()` per entry | Ignores ctx (faster, simpler) |
+
+The architect's verdict was Option B with refinement: **keep both, name them honestly, package them honestly**. The test helper now lives in a sibling sub-package following the stdlib `httptest`/`iotest` convention, with a name (`Plain*`) that actively signals what it omits. This establishes the `<layer>/<pkg>/<pkg>test/` pattern as the convention for the rest of the testutil dissolution.
+
+### Notes / surprises encountered
+
+1. **Two files used a misleading import alias** that masked the relocation: `internal/tools/analysis/manager_test.go` and `internal/tools/workspace/search_bench_test.go` aliased `internal/domain/testutil` AS `infrapersistence` — the alias actively *advertised* the architectural smell that motivated this refactor (a test was pretending to import the production persistence package while actually importing the testutil package). The bulk `sed` pass missed these because the source qualifier was `infrapersistence.NewOSFileSystem`, not `testutil.NewOSFileSystem`. Found and fixed during `go vet`. **Lesson for Session 3+**: always grep the *import path* (`tell-me-go/internal/domain/testutil`), not just the qualifier (`testutil.`), when enumerating relocations.
+
+2. **Five other files** (`tests/integration/agent/concurrency_stress_test.go`, `internal/ui/history_test.go`, `internal/infrastructure/history/store_test.go`, `internal/infrastructure/history/history_test.go`, `internal/infrastructure/history/migration_test.go`) also use the `infrapersistence` alias, but they alias the **real** `internal/infrastructure/persistence` package and call the **production** `NewOSFileSystem`. Those are correct as-is and out of scope.
+
+3. **`goimports` did most of the import-management work automatically** — it added the new `persistencetest` import to all 21 bulk-edited files and removed the `testutil` import from the 2 files where it became unused (`turn_engine_loop_test.go`, `auto_summarize_test.go`). Manual import editing was needed only on the 2 misleading-alias files.
+
+4. **The audit's "~80 call sites" estimate was 23% low** (actual: 103). Acceptable for an audit, but Session 3+ estimates for the bigger AGENT/TOOLS buckets should be regenerated with `grep -c` rather than read off the audit.
+
+### State of the testutil dump after Session 2
+
+- Files remaining in `internal/domain/testutil/`: 11 (was 12)
+- Symbols remaining: 38 of original 39 exported symbols
+- Next-easiest candidate (architect to confirm Session 3 scope): a single AGENT-bucket symbol with no naming collision, e.g. `MockGateway` or `MockHistoryManager`.

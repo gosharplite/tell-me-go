@@ -25,6 +25,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -55,7 +56,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	t.Parallel()
 	client := &testutil.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -83,7 +84,7 @@ func TestAgent_Chat(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyFile, archiveFile)
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, archiveFile)
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
@@ -130,7 +131,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	}
 
 	client := &testutil.MockLLMClient{}
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -163,7 +164,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	t.Parallel()
 	client := &testutil.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -204,7 +205,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 func TestAgent_ToolFlow_Retry(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
@@ -251,7 +252,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
-		h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
 			agent.WithHistoryManager(h),
 			agent.WithProviderName("test-provider"),
@@ -275,7 +276,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
-		h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history2.json"), filepath.Join(tmpDir, "history2.archive.jsonl"))
+		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history2.json"), filepath.Join(tmpDir, "history2.archive.jsonl"))
 		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
 			agent.WithHistoryManager(h),
 			agent.WithProviderName("test-provider"),
@@ -309,7 +310,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
@@ -347,7 +348,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	events.CleanupBus(t, bus)
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pipeline.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pipeline.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -416,7 +417,7 @@ func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, co
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pinning.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pinning.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	// Add 2 turns
@@ -474,7 +475,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 
 func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "pin_prune.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "pin_prune.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	ctx := context.Background()
@@ -525,7 +526,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	t.Parallel()
 	client := &testutil.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
@@ -567,7 +568,7 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pricing.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pricing.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
@@ -598,7 +599,7 @@ func TestAgent_Subscribe(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_sub.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_sub.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	// Subscribe BEFORE creating the agent to capture all events
 	eventsChan := make(chan events.ConfigUpdated, 5)
@@ -653,7 +654,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_cost.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_cost.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	// 1. Test passing during New
 	a, err := agent.NewAgent(client, bus, reg,
@@ -683,7 +684,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	t.Parallel()
 	client := &testutil.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -712,7 +713,7 @@ func TestAgent_Shutdown(t *testing.T) {
 
 	client := &testutil.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -760,7 +761,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 
 	client := &testutil.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -789,7 +790,7 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	t.Parallel()
 	client := &testutil.MockLLMClient{}
 	tmpDir := t.TempDir()
-	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))

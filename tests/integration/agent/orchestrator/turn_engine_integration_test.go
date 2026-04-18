@@ -21,6 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -95,7 +96,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, bus)
 		historyPath := filepath.Join(t.TempDir(), "history_a.jsonl")
-		h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}
 		strategy := session.NewContextStrategy(counter)
@@ -170,7 +171,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, bus)
 		historyPath := filepath.Join(t.TempDir(), "history_b.jsonl")
-		h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}
 		strategy := session.NewContextStrategy(counter)
@@ -265,7 +266,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history_cancel.jsonl")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 
 	reg := &cancelIntegrationRegistry{}
 

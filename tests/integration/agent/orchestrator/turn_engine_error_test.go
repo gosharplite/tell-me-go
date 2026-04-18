@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 type errorPhaseTracker struct {
@@ -51,7 +52,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.Too
 
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
 	factory := &session.PipelineFactory{
 		History:   hManager,

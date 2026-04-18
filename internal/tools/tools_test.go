@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
@@ -43,7 +44,7 @@ func TestNewToolRegistry(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      testutil.NewOSFileSystem(),
+		FileSystem:      persistencetest.NewPlainOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestRegisterAll_WithSessionProvider(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      testutil.NewOSFileSystem(),
+		FileSystem:      persistencetest.NewPlainOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll with SessionProvider failed: %v", err)
 	}
@@ -85,7 +86,7 @@ func TestToolExecution(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      testutil.NewOSFileSystem(),
+		FileSystem:      persistencetest.NewPlainOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      testutil.NewOSFileSystem(),
+		FileSystem:      persistencetest.NewPlainOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}

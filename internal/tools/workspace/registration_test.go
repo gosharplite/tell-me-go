@@ -9,6 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,7 +57,7 @@ func TestRegister(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	exec := &testutil.MockExecutor{}
 	validator := &testutil.MockCommandValidator{}
-	fs := testutil.NewOSFileSystem()
+	fs := persistencetest.NewPlainOSFileSystem()
 
 	if err := Register(registry, sm, exec, validator, fs, nil); err != nil {
 		t.Fatalf("Register failed: %v", err)

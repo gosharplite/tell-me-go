@@ -13,13 +13,14 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func TestBackupManager_Undo(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.RegisterSafePath(tempDir)
-	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "test.txt")
@@ -161,7 +162,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 	tempDir := t.TempDir()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
 	ctx := context.Background()
 
 	cleanup := tc.setup(t, tempDir, sm)

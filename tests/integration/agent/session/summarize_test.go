@@ -26,6 +26,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/genai"
@@ -121,7 +122,7 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 func setupTestHistory(t *testing.T, turns int) ports.HistoryManager {
 	t.Helper()
 	historyPath := filepath.Join(t.TempDir(), "history.json")
-	h := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 	for i := 1; i <= turns; i++ {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "Turn User"}}})
@@ -209,7 +210,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	mockCounter := &testutil.MockTokenCounter{}
 	mockCounter.SetTokens(950000) // Above 90% of 1M
 	strategy := session.NewContextStrategy(mockCounter)
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyFile, historyFile+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
 
 	ctx := context.Background()
 	// Add 2 turns (4 messages)
@@ -237,7 +238,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 
 func TestSummarizeRange_Logging(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_logging_history.json")
-	hManager := history.NewManager(testutil.NewOSFileSystem(), historyFile, historyFile+".archive")
+	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
 	ctx := context.Background()
 
 	// Add 2 turns (4 messages)

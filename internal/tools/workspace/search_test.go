@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
 func TestSearchFiles_SkipsBinary(t *testing.T) {
@@ -35,7 +36,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	s := &fileSearcher{sm: sm, fs: testutil.NewOSFileSystem()}
+	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -77,7 +78,7 @@ func setupGrepTest(t *testing.T, files map[string]string) (persistence.FileSyste
 			t.Fatal(err)
 		}
 	}
-	return testutil.NewOSFileSystem(), tempDir
+	return persistencetest.NewPlainOSFileSystem(), tempDir
 }
 
 type grepResult struct {
@@ -219,7 +220,7 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	s := &fileSearcher{sm: sm, fs: testutil.NewOSFileSystem()}
+	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
 	args := map[string]interface{}{
