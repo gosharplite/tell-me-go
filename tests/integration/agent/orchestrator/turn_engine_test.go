@@ -20,9 +20,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -1292,7 +1292,7 @@ func TestTurnEngine_ExecuteTurn_Publish_Error(t *testing.T) {
 	engine := orchestrator.NewEngine(env.Gw, nil, env.Cm, env.Reg, env.Bus, env.Cm.Strategy)
 
 	// Mock the event bus to return an error on Publish
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
 	tr := engine.CreateTurn(1, time.Now())
@@ -1316,7 +1316,7 @@ func TestTurnEngine_InvokeModel_SafePublish_ErrorLogging(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	// mockBus that returns error on Publish
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(errors.New("bus full"))
 
 	e := orchestrator.NewEngine(env.Gw, nil, env.Cm, env.Reg, mockBus, env.Cm.Strategy, orchestrator.WithEngineLogger(logger))

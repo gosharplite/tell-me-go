@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -189,7 +190,7 @@ func TestExecutionStep_Process(t *testing.T) {
 	})
 
 	t.Run("Successful execution", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		ex := &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "tool"}, nil
@@ -222,7 +223,7 @@ func TestExecutionStep_Process(t *testing.T) {
 	})
 
 	t.Run("Execution error", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		ex := &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return nil, errors.New("exec failed")
@@ -267,7 +268,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Scenario A: Tool response within limits", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		counter := &agenttest.MockTokenCounter{}
 		counter.SetTokens(100)
 
@@ -293,7 +294,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 	})
 
 	t.Run("Scenario B: Individual tool response > 50% limit", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		counter := &agenttest.MockTokenCounter{}
 		counter.SetTokens(600)
 
@@ -325,7 +326,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 	})
 
 	t.Run("Scenario C: Total conversation context > 90%", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		counter := &agenttest.MockTokenCounter{}
 		counter.SetTokens(100)
 
@@ -358,7 +359,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 }
 
 func TestEngine_StartTelemetry(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 
 	tl := &agenttest.MockTurnsLogger{}
 	tl.On("Listen", mock.Anything).Return(nil)
@@ -385,7 +386,7 @@ func TestEngine_Run(t *testing.T) {
 	gw := &agenttest.MockGateway{}
 	ex := &agenttest.MockAgentExecutor{}
 	reg := &agenttest.MockToolRegistry{}
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	counter := &agenttest.MockTokenCounter{}
 
 	hMock := &agenttest.MockHistoryManager{}
@@ -439,7 +440,7 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Duplicate Response", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
@@ -474,7 +475,7 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 	})
 
 	t.Run("Tool Call Count", func(t *testing.T) {
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
@@ -548,7 +549,7 @@ func (m *mockTurnHook) OnPhaseTransition(from, to TurnPhase, state *TurnState) {
 }
 
 func TestExecuteTurn_TraceEventBusError(t *testing.T) {
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	bus.SetPublishErr(errors.New("bus failure"))
 
 	gw := &agenttest.MockGateway{}

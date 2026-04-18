@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
@@ -132,7 +133,7 @@ func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 		t.Skip("skipping slow stress test in short mode")
 	}
 	reg := registry.New()
-	bus := &testutil.TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)

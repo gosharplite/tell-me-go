@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
@@ -16,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -136,7 +136,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "model"}}})
 	}
 
-	bus := testutil.NewCountingEventBus()
+	bus := newCountingEventBus()
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 
 	cm := session.NewContextManager(strategy, hManager, bus, nil)
@@ -610,4 +610,57 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 			t.Errorf("expected error %v, got %v", simulatedErr, err)
 		}
 	})
+}
+
+// countingEventBus is a simple events.EventBus that counts published
+// events. It used to live in internal/domain/testutil but was inlined
+// here when its sole consumer turned out to be this file (audit INLINE
+// bucket; see docs/refactor/testutil-audit.md, Session 6).
+type countingEventBus struct {
+	count int32
+}
+
+func newCountingEventBus() *countingEventBus {
+	return &countingEventBus{}
+}
+
+func (b *countingEventBus) Publish(ctx context.Context, e events.Event) error {
+	atomic.AddInt32(&b.count, 1)
+	return nil
+}
+
+func (b *countingEventBus) Subscribe(sub func(context.Context, events.Event)) {}
+func (b *countingEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (b *countingEventBus) Flush(ctx context.Context) error                   { return nil }
+func (b *countingEventBus) Listen(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (b *countingEventBus) WaitStarted() {}
+func (b *countingEventBus) GetCount() int {
+	return int(atomic.LoadInt32(&b.count))
+}
+
+// myCountingEvent is a minimal events.Event used only by the
+// TestCountingEventBus self-test below.
+type myCountingEvent struct{}
+
+func (e myCountingEvent) Type() string { return "myCountingEvent" }
+
+func TestCountingEventBus(t *testing.T) {
+	t.Parallel()
+	bus := newCountingEventBus()
+	events.CleanupBus(t, bus)
+	ctx := context.Background()
+
+	if err := bus.Publish(ctx, myCountingEvent{}); err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+	if err := bus.Publish(ctx, myCountingEvent{}); err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+
+	if got := bus.GetCount(); got != 2 {
+		t.Errorf("expected count 2, got %d", got)
+	}
 }

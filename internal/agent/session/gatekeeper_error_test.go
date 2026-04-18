@@ -17,11 +17,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
@@ -220,7 +220,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 
 func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	// Create a mock event bus that always returns an error
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
 	// Create a strategy that will trigger warnings to force event publishing

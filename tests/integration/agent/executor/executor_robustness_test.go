@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
@@ -31,7 +32,7 @@ func TestDispatcher_ConfigRace(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -85,7 +86,7 @@ func TestDispatcher_ContextCancellation_MidBatch(t *testing.T) {
 	})
 	require.NoError(t, regErr)
 
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

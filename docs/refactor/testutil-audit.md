@@ -463,3 +463,56 @@ Two viable bundles, architect to pick:
 - **Option β (TOOLS bundle, ~5 symbols)**: Move `MockExecutor` (+ `exec_test.go`), `MockSecurityManager`, and `MockCommandValidator` to a new `internal/tools/toolstest/` sub-package per audit Risk Note #1. Note: `MockSecurityManager` has a single consumer in `internal/agent/orchestrator` that may need to stay on the security bucket — verify in Step 2. This establishes the TOOLS bucket destination.
 
 Suggest Option α first because (a) `event_mocks.go` is mostly self-contained and (b) it depends only on the `domain/events` package, making the leaf-rule check trivial.
+
+
+## Session 6 Outcome (EVENTS bucket extraction + CountingEventBus inline)
+
+- **Date**: 2026-04-19
+- **Branch**: `refactor/testutil-extract-events` (forked from Session 5 commit `1f83b93c`)
+- **Source files deleted (2)**: `event_mocks.go`, `events_test.go` — all symbols and tests moved.
+- **New sub-package created**: `internal/domain/events/eventstest/` — the **first** `*test` sub-package in the **domain** layer (the third architectural ring after `infrastructure/persistence/persistencetest/` from Session 2 and `agent/agenttest/` from Session 3). The `<layer>/<pkg>/<pkg>test/` convention is now proven across all three rings.
+- **Symbols relocated (2 distinct types, names preserved):**
+  - `testutil.TestEventBus` → `eventstest.TestEventBus` (`test_event_bus.go`)
+  - `testutil.MockEventBus` (a type alias for `TestEventBus`) → `eventstest.MockEventBus` (`mock_event_bus.go`, preserved as `type MockEventBus = TestEventBus`)
+- **Symbols inlined (audit INLINE bucket)**:
+  - `testutil.CountingEventBus` → `countingEventBus` (lowercased; private to the consumer file) inlined into `tests/integration/agent/session/context_manager_robustness_test.go`.
+  - `testutil.NewCountingEventBus` → `newCountingEventBus` (lowercased) inlined into the same file.
+  - `TestCountingEventBus` test function inlined into the same file, alongside the type. Used a custom `myCountingEvent` helper rather than reusing `myEvent`/`otherEvent` from the original `testutil/events_test.go` (those go to `eventstest_test`; not reachable from `session_test`).
+- **Tests moved**: `TestTestEventBus`, `TestTestEventBus_Subscribe`, `TestTestEventBus_NoOps` (along with the unexported `myEvent` and `otherEvent` event types they use) → `internal/domain/events/eventstest/test_event_bus_test.go`. Used external test package `package eventstest_test` (the standard Go idiom for testing a public API).
+- **Call sites updated**: 14 files, **~45 references** rewritten in a single sed pass:
+  - `testutil.MockEventBus` → `eventstest.MockEventBus`: 32 refs in 6 files
+  - `testutil.TestEventBus` → `eventstest.TestEventBus`: 13 refs in 9 files (some files had both)
+- **Tests**: PASS (62 packages — was 61; +1 for the new `eventstest` package, which is the **first `*test` sub-package to ship its own test suite** instead of being `[no test files]`).
+- **Race detector**: PASS.
+- **Architecture verification**: ✅ no new violations.
+- **Architectural lint**: zero non-test files import `eventstest`.
+
+### Notable details
+
+1. **Type alias preservation.** `MockEventBus = TestEventBus` was kept as an alias rather than collapsed because consumers across the codebase mix the two names (32 refs to `MockEventBus` vs 13 to `TestEventBus`). Collapsing now would force a third name to win on the rewrite — needless churn. The alias travels to `eventstest` and is documented in its own file with a "prefer TestEventBus directly" GoDoc.
+2. **Package GoDoc placement.** Following the established convention from Sessions 2–4: package GoDoc lives in the FIRST file alphabetically (`mock_event_bus.go` would sort first, but conceptually `test_event_bus.go` is the primary symbol — the GoDoc went there to keep semantic primacy over alphabetical ordering, matching Session 3's `mock_gateway.go` choice).
+3. **External test package convention.** This session was the first to need a `_test.go` file inside a new `*test` sub-package. Used `package eventstest_test` (external) — the Go idiomatic choice for testing a public API surface. Sets a precedent for future sessions where test-helper sub-packages need self-tests.
+4. **The leaf-rule check was trivial here**, as predicted — `eventstest` lives at `internal/domain/events/eventstest/`, sibling to `events`. Domain packages are leaf-friendly by definition; no upward dependency is possible. Contrast Session 3 where `agenttest` had to extract `agentinternal` to break a cycle.
+
+### State of the testutil dump after Session 6
+
+- Files remaining in `internal/domain/testutil/`: **5** (was 7):
+  - `agent_mocks.go` (38 LOC) — only `MockExecutor` (TOOLS bucket)
+  - `buffer.go` + `buffer_test.go` (108 + 42 LOC = 150 total) — GENERIC bucket: `NewSafeBuffer`, `SyncWriter`
+  - `exec_test.go` (45 LOC) — TOOLS bucket; tests `MockExecutor`
+  - `security_mocks.go` (199 LOC) — mixed SECURITY/TOOLS bucket: `MockSecurityManager`, `MockInteractor`, `MockCommandValidator`
+- **Total `testutil` LOC: 432** (was 690 after Session 5; baseline was 1,664). Net reduction since baseline: **−74%.**
+- Symbols remaining in testutil: ~7 of original 39.
+- Buckets remaining: TOOLS (3 symbols across 2 files), SECURITY (1 symbol — `MockInteractor`), GENERIC (3 symbols including 2 unexported).
+
+### Recommended Session 7
+
+Three viable options (architect to pick):
+
+- **Option α (TOOLS bundle, biggest impact)**: Extract `MockExecutor` (+ `exec_test.go`) and per audit Risk Note #1, `MockSecurityManager` and `MockCommandValidator` to a new `internal/tools/toolstest/` sub-package. Note: per audit, `MockSecurityManager` has a single non-tools consumer (`internal/agent/orchestrator`) — verify in Step 2; if consumer count makes that mock truly cross-cutting, route it to the SECURITY bucket instead. Bundling here would shrink `agent_mocks.go` to deletion and fully drain `exec_test.go` and most of `security_mocks.go`. Estimated 4 symbols, ~20+ files.
+
+- **Option β (SECURITY bundle)**: Extract `MockInteractor` to a new `internal/infrastructure/security/securitytest/` sub-package. Smaller scope (1 symbol, 3 consumer files per audit). Establishes the **fourth** `*test` sub-package shape.
+
+- **Option γ (GENERIC bundle, leaves the dump completely empty of mocks)**: Extract `NewSafeBuffer`, `SyncWriter` (and unexport `Buffer`/`SafeBuffer`) to a new `internal/pkg/testfixtures/` package. After this, `testutil/` would contain ONLY mocks (TOOLS + SECURITY).
+
+Suggest Option α first — it's the largest remaining bucket and `agent_mocks.go` going to zero LOC is symbolic milestone for the refactor. The SECURITY/GENERIC bundles can be a tidy pair for Session 8.

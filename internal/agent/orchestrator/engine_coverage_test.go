@@ -14,8 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
@@ -217,7 +217,7 @@ func TestGuardStep_TDT(t *testing.T) {
 				cancel()
 			}
 
-			bus := &testutil.MockEventBus{}
+			bus := &eventstest.MockEventBus{}
 			if tt.busErr != nil {
 				bus.SetPublishErr(tt.busErr)
 			}
@@ -313,7 +313,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 				},
 			}
 
-			bus := &testutil.MockEventBus{}
+			bus := &eventstest.MockEventBus{}
 
 			hMock := &agenttest.MockHistoryManager{}
 			cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
@@ -556,7 +556,7 @@ func TestRecoveryStep_AttemptRetry_ContextCancelled(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Hour} // Long backoff
 	step := &RecoveryStep{Policy: policy}
 
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	turn := &Turn{
 		State: &TurnState{
 			LastError: llm.ErrTransient,
@@ -589,7 +589,7 @@ func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 
 	clk := &blockingClock{ch: make(chan time.Time)}
 
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	turn := &Turn{
 		State: &TurnState{
 			LastError: llm.ErrTransient,

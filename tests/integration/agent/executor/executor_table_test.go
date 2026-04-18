@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
@@ -71,11 +72,11 @@ func setupMockSecurityManager(allowedTools []string) *testutil.MockSecurityManag
 	return &testutil.MockSecurityManager{AllowAll: true}
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]agenttest.ToolBehavior, allowedTools []string, opts ...executor.ExecutorOption) (*executor.Dispatcher, *testutil.MockEventBus, map[string]*agenttest.ToolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]agenttest.ToolBehavior, allowedTools []string, opts ...executor.ExecutorOption) (*executor.Dispatcher, *eventstest.MockEventBus, map[string]*agenttest.ToolBehavior) {
 	reg, behaviors := setupTestRegistry(t, toolsMap)
 	sm := setupMockSecurityManager(allowedTools)
 
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
 
@@ -103,7 +104,7 @@ func assertExecutionSuccess(t *testing.T, resp *llm.Content, err error, expected
 	}
 }
 
-func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *testutil.MockEventBus, expectedMsg string, expectedErr error) {
+func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *eventstest.MockEventBus, expectedMsg string, expectedErr error) {
 	t.Helper()
 	if expectedErr != nil && errors.Is(expectedErr, llm.ErrTerminal) {
 		if err == nil {
@@ -133,7 +134,7 @@ func verifyErrorResponse(t *testing.T, resp *llm.Content, expectedMsg string) {
 	}
 }
 
-func verifyToolEventError(t *testing.T, bus *testutil.MockEventBus, expectedErr error) {
+func verifyToolEventError(t *testing.T, bus *eventstest.MockEventBus, expectedErr error) {
 	t.Helper()
 	evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
 	if len(evs) == 0 {
@@ -505,7 +506,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := agenttest.NewMockToolRegistry()
-	e, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{})
+	e, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{})
 	require.NoError(t, err)
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
@@ -582,7 +583,7 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	bus := &testutil.MockEventBus{}
+	bus := &eventstest.MockEventBus{}
 	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
@@ -609,7 +610,7 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 func TestDispatcher_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := agenttest.NewMockToolRegistry()
-	e, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
@@ -626,7 +627,7 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 	t.Run("Serial executeTool Panic", func(t *testing.T) {
 		t.Parallel()
 		reg := &agenttest.PanicRegistry{PanicOnExec: true, Serial: true}
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
@@ -645,7 +646,7 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 	t.Run("Parallel executeTool Panic", func(t *testing.T) {
 		t.Parallel()
 		reg := &agenttest.PanicRegistry{PanicOnExec: true, Serial: false}
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
@@ -779,7 +780,7 @@ func TestDispatcher_ZombieTool(t *testing.T) {
 	}, tools.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &testutil.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)

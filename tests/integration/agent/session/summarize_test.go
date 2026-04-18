@@ -19,9 +19,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -252,7 +252,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(tokenCount)
 	strategy := session.NewContextStrategy(mockCounter)
-	bus := &testutil.TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 
 	// Use real summarizer but mock gateway
 	mockG := &agenttest.MockGateway{}

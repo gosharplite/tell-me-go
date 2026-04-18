@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
@@ -92,7 +93,7 @@ func TestDispatcher_EndToEnd_BarrierPattern(t *testing.T) {
 	}
 
 	reg := newIntegrationToolRegistry()
-	bus := &testutil.TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
@@ -145,7 +146,7 @@ func TestDispatcher_EndToEnd_SequentialOrder(t *testing.T) {
 	}
 
 	reg := newIntegrationToolRegistry()
-	bus := &testutil.TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
@@ -197,7 +198,7 @@ func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 
 	timeout := 50 * time.Millisecond
 	reg := newIntegrationToolRegistry()
-	bus := &testutil.TestEventBus{}
+	bus := &eventstest.TestEventBus{}
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(timeout))

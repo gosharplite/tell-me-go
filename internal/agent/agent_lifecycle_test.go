@@ -11,10 +11,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -227,7 +227,7 @@ func TestAgent_Shutdown(t *testing.T) {
 
 	t.Run("EventBus.Shutdown error", func(t *testing.T) {
 		sm := &mockSecurityManager{AllowAll: true}
-		bus := &testutil.MockEventBus{}
+		bus := &eventstest.MockEventBus{}
 		bus.SetShutdownErr(assert.AnError)
 
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))

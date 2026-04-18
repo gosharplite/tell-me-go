@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -847,7 +848,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 
 func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	// Mock the event bus to return an error on Publish
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
 	a := agent.NewAgentInternal()
@@ -941,7 +942,7 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mockBus := &testutil.TestEventBus{}
+	mockBus := &eventstest.TestEventBus{}
 	flushErr := errors.New("flush failed")
 	mockBus.SetFlushErr(flushErr)
 

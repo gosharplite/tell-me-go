@@ -11,8 +11,8 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -161,7 +161,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 	factory := &session.PipelineFactory{
 		Summarizer: mockSumm,
 		Estimator:  session.NewContextStrategy(&agenttest.MockTokenCounter{}),
-		Events:     &testutil.MockEventBus{},
+		Events:     &eventstest.MockEventBus{},
 	}
 	hManager := &agenttest.MockHistoryManager{}
 	hManager.SetInternalContents([]*llm.Content{
@@ -170,7 +170,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "U2"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
 	})
-	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hManager, &testutil.MockEventBus{}, factory)
+	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hManager, &eventstest.MockEventBus{}, factory)
 	it := session.NewInternalTools(cm)
 
 	ctx := context.Background()
