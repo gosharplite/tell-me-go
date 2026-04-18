@@ -30,14 +30,14 @@ func TestMultiTurnToolOrchestration(t *testing.T) {
 	// 3. Final answer
 	responses := []func(reqBody []byte) string{
 		func(reqBody []byte) string {
-			return createToolCallResponse(provider, "list_files", map[string]interface{}{"path": "."})
+			return createToolCallResponse(provider, "list_files", map[string]interface{}{"path": ".", "reason": "E2E multi-turn step 1: list workspace files"})
 		},
 		func(reqBody []byte) string {
 			// Verify previous tool result was sent back
 			if !strings.Contains(string(reqBody), "test.txt") {
 				t.Errorf("Expected request to contain 'test.txt' from list_files result, got: %s", string(reqBody))
 			}
-			return createToolCallResponse(provider, "read_file", map[string]interface{}{"filepath": "test.txt"})
+			return createToolCallResponse(provider, "read_file", map[string]interface{}{"filepath": "test.txt", "reason": "E2E multi-turn step 2: read discovered file"})
 		},
 		func(reqBody []byte) string {
 			// Verify read_file result was sent back
@@ -119,7 +119,7 @@ func TestToolExecutionInHistory(t *testing.T) {
 	}
 
 	provider := "google"
-	server, _ := setupProviderMockServer(t, provider, "list_files", map[string]interface{}{"path": "."}, func(res string) string {
+	server, _ := setupProviderMockServer(t, provider, "list_files", map[string]interface{}{"path": ".", "reason": "E2E verification of tool execution in history"}, func(res string) string {
 		return "Files are listed."
 	})
 	defer server.Close()
