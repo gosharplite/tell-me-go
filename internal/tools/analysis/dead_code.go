@@ -54,6 +54,17 @@ type scanState struct {
 	declarations     map[string]*symMeta
 	totalUses        map[string]int
 	externalUses     map[string]int
+
+	// anonymousInterfaceAssertedMethodNames is a lazily-populated cache
+	// of method names appearing as direct method-shaped entries inside
+	// any *ast.TypeAssertExpr→*ast.InterfaceType literal in
+	// module-internal packages. Populated on first use by
+	// hasAnonymousInterfaceAssertionMatch (see
+	// dead_code_anon_interface.go). nil means "not yet computed";
+	// non-nil empty map means "computed and empty". Used solely to
+	// gate a [WARNING] hedge in evaluateOrphan; does NOT influence
+	// classification.
+	anonymousInterfaceAssertedMethodNames map[string]struct{}
 }
 
 func newDeadCodeAnalyzer(sp security.PathValidator, idx symbolIndex) *defaultDeadCodeAnalyzer {
@@ -518,6 +529,16 @@ func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state
 
 	if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
 		reason += " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
+	}
+
+	// Anonymous-interface-assertion hedge. See
+	// dead_code_anon_interface.go for the full rationale. Methods only:
+	// the pattern `x.(interface{ M() })` invokes a method, never a free
+	// function or a type. Independent of the text-search warning above
+	// — both may legitimately fire on the same orphan, in which case
+	// both appear.
+	if meta.isMethod && a.hasAnonymousInterfaceAssertionMatch(state, meta.name) {
+		reason += fmt.Sprintf(" [WARNING: method name appears in anonymous-interface assertion site(s); verify with: grep -rn \"%s\" --include='*.go' .]", meta.name)
 	}
 
 	return &orphanReport{
