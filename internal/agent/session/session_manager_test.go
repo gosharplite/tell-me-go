@@ -21,7 +21,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
@@ -43,8 +42,8 @@ func TestSessionManager_Run_Success(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	mTurnsLogger := new(agenttest.MockTurnsLogger)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
@@ -86,8 +85,8 @@ func TestSessionManager_Run_Error(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
@@ -122,8 +121,8 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 		return nil, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 
 	params := session.RunParams{
 		HomeDir:         "home",
@@ -154,8 +153,8 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 
 func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	t.Parallel()
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 	mChatter := new(agenttest.MockChatter)
 	mCapturer := new(agenttest.MockCapturer)
@@ -553,8 +552,8 @@ func TestSessionManager_Rollback(t *testing.T) {
 			t.Parallel()
 			mHistory := new(agenttest.MockHistoryManager)
 			mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
-			mHistoryRenderer := new(testutil.MockHistoryRenderer)
-			mUIRenderer := new(testutil.MockUIRenderer)
+			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+			mUIRenderer := new(agenttest.MockUIRenderer)
 			orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 			mHistory.SetRollbackErr(tt.rollbackErr)
@@ -583,7 +582,7 @@ func TestRun_Routing(t *testing.T) {
 		}
 	}
 
-	setupParams := func(mHistory ports.HistoryManager, mChatter ports.Chatter, mHistoryRenderer *testutil.MockHistoryRenderer, mUIRenderer *testutil.MockUIRenderer, mCapturer *agenttest.MockCapturer, mEventBus events.EventBus) session.RunParams {
+	setupParams := func(mHistory ports.HistoryManager, mChatter ports.Chatter, mHistoryRenderer *agenttest.MockHistoryRenderer, mUIRenderer *agenttest.MockUIRenderer, mCapturer *agenttest.MockCapturer, mEventBus events.EventBus) session.RunParams {
 		return session.RunParams{
 			HomeDir:         "home",
 			Version:         "1.0.0",
@@ -603,8 +602,8 @@ func TestRun_Routing(t *testing.T) {
 
 	t.Run("Rollback only (no prompt)", func(t *testing.T) {
 		t.Parallel()
-		mHistoryRenderer := new(testutil.MockHistoryRenderer)
-		mUIRenderer := new(testutil.MockUIRenderer)
+		mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+		mUIRenderer := new(agenttest.MockUIRenderer)
 		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, mEventBus)
@@ -627,8 +626,8 @@ func TestRun_Routing(t *testing.T) {
 
 	t.Run("Rollback and Chat", func(t *testing.T) {
 		t.Parallel()
-		mHistoryRenderer := new(testutil.MockHistoryRenderer)
-		mUIRenderer := new(testutil.MockUIRenderer)
+		mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+		mUIRenderer := new(agenttest.MockUIRenderer)
 		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, mEventBus)
@@ -655,8 +654,8 @@ func TestRun_Routing(t *testing.T) {
 
 	t.Run("Rollback aborts on error", func(t *testing.T) {
 		t.Parallel()
-		mHistoryRenderer := new(testutil.MockHistoryRenderer)
-		mUIRenderer := new(testutil.MockUIRenderer)
+		mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+		mUIRenderer := new(agenttest.MockUIRenderer)
 		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		events.CleanupBus(t, mEventBus)
@@ -720,8 +719,8 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 				return mChatter, nil
 			}
 
-			mHistoryRenderer := new(testutil.MockHistoryRenderer)
-			mUIRenderer := new(testutil.MockUIRenderer)
+			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+			mUIRenderer := new(agenttest.MockUIRenderer)
 			orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 			sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
@@ -787,8 +786,8 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
-	mClock := new(testutil.TestifyMockClock)
-	mEntropy := new(testutil.MockEntropySource)
+	mClock := new(agenttest.TestifyMockClock)
+	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
@@ -801,8 +800,8 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
@@ -840,8 +839,8 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
-	mClock := new(testutil.TestifyMockClock)
-	mEntropy := new(testutil.MockEntropySource)
+	mClock := new(agenttest.TestifyMockClock)
+	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedEntropy := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 	mEntropy.On("Read", mock.Anything).Return(fixedEntropy, len(fixedEntropy), nil)
@@ -852,8 +851,8 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
@@ -890,8 +889,8 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
-	mClock := new(testutil.TestifyMockClock)
-	mEntropy := new(testutil.MockEntropySource)
+	mClock := new(agenttest.TestifyMockClock)
+	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
@@ -912,8 +911,8 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{

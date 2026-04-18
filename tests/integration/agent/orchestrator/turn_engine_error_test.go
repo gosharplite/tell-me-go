@@ -16,7 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -64,7 +63,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.Too
 
 	policy := &orchestrator.DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, strategy, orchestrator.WithEngineRetryPolicy(policy), orchestrator.WithEngineHook(tracker), orchestrator.WithEngineClock(&testutil.MockClock{}))
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, strategy, orchestrator.WithEngineRetryPolicy(policy), orchestrator.WithEngineHook(tracker), orchestrator.WithEngineClock(&agenttest.MockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -334,7 +333,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 		State: &orchestrator.TurnState{
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		},
-		Clock: &testutil.MockClock{},
+		Clock: &agenttest.MockClock{},
 	}
 
 	_, err := step.Process(context.Background(), Turn)
@@ -434,7 +433,7 @@ func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 				return nil, expectedErr
 			},
 		},
-		Clock: &testutil.MockClock{},
+		Clock: &agenttest.MockClock{},
 	}
 
 	_, err := step.Process(ctx, turnObj)

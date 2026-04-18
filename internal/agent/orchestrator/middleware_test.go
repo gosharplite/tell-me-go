@@ -32,7 +32,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference, RetryCount: 0},
 			CtxManager: cm,
-			Clock:      &testutil.MockClock{},
+			Clock:      &agenttest.MockClock{},
 		}
 
 		_, err := mw(next).Process(context.Background(), turn)
@@ -67,7 +67,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 				Metrics: &llm.Metrics{PromptTokens: 10},
 			},
 			CtxManager: cm,
-			Clock:      &testutil.MockClock{},
+			Clock:      &agenttest.MockClock{},
 		}
 
 		_, err := mw(next).Process(context.Background(), turn)
@@ -104,7 +104,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference},
 			CtxManager: cm,
-			Clock:      &testutil.MockClock{},
+			Clock:      &agenttest.MockClock{},
 		}
 
 		_, err := mw(next).Process(context.Background(), turn)
@@ -299,7 +299,7 @@ func TestPublishTurnStatus_EventBusError(t *testing.T) {
 	turn := &Turn{
 		State:      &TurnState{},
 		CtxManager: cm,
-		Clock:      &testutil.MockClock{},
+		Clock:      &agenttest.MockClock{},
 	}
 
 	// This should not panic and should log the error
@@ -384,7 +384,7 @@ func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
 	turn := &Turn{
 		State:       &TurnState{},
 		CtxManager:  cm,
-		Clock:       &testutil.MockClock{},
+		Clock:       &agenttest.MockClock{},
 		CostTracker: nil,
 	}
 
@@ -444,7 +444,7 @@ func TestPublishTurnStatus_ErrBusNotInitialized(t *testing.T) {
 	turn := &Turn{
 		State:      &TurnState{},
 		CtxManager: cm,
-		Clock:      &testutil.MockClock{},
+		Clock:      &agenttest.MockClock{},
 	}
 
 	// This should not panic and should NOT log the error

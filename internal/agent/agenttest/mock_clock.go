@@ -1,7 +1,11 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+// mock_clock.go contains MockClock and the MockTicker type returned by
+// MockClock.NewTicker. They are kept together because separating them
+// would orphan a method receiver and force a circular import.
+
+package agenttest
 
 import (
 	"time"
@@ -9,7 +13,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-// MockClock implements clock.Clock for testing.
+// MockClock is a test double for clock.Clock. CurrentTime, when
+// non-zero, fixes the value returned by Now() and is advanced by
+// Sleep(); when zero, Now() falls through to the real wall clock.
+// After() returns a buffered channel pre-loaded with CurrentTime+d so
+// it never blocks. NewTicker() returns a *MockTicker fed from the
+// same After() channel.
 type MockClock struct {
 	CurrentTime time.Time
 }
@@ -43,7 +52,9 @@ func (m *MockClock) Jitter(base float64) float64 {
 	return base
 }
 
-// MockTicker implements clock.Ticker for testing.
+// MockTicker is a test double for clock.Ticker. C() returns the channel
+// supplied via CVal (typically wired up by MockClock.NewTicker); Stop
+// is a no-op.
 type MockTicker struct {
 	CVal <-chan time.Time
 }

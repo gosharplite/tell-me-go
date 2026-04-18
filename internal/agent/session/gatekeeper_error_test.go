@@ -54,10 +54,10 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 
 	gatekeeper := &session.TokenGatekeeper{
 		MaxTokens:  100,
-		Estimator:  &testutil.MockEstimator{},
+		Estimator:  &agenttest.MockEstimator{},
 		Summarizer: &mockFailingSummarizer{},
 	}
-	gatekeeper.Estimator.(*testutil.MockEstimator).SetTokens(95)
+	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95)
 
 	err := gatekeeper.Transform(ctx, req)
 	if err == nil || err.Error() != "summarizer failed" {

@@ -325,7 +325,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 				State: &TurnState{
 					PreparedHistory: tt.history,
 				},
-				Clock:    &testutil.MockClock{},
+				Clock:    &agenttest.MockClock{},
 				Registry: &agenttest.MockToolRegistry{},
 			}
 
@@ -561,7 +561,7 @@ func TestRecoveryStep_AttemptRetry_ContextCancelled(t *testing.T) {
 		State: &TurnState{
 			LastError: llm.ErrTransient,
 		},
-		Clock:  &testutil.MockClock{}, // Mock clock to control time if needed, but we'll cancel ctx
+		Clock:  &agenttest.MockClock{}, // Mock clock to control time if needed, but we'll cancel ctx
 		Events: bus,
 	}
 

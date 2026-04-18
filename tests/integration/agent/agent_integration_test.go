@@ -226,7 +226,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	mockClock := &testutil.MockClock{}
+	mockClock := &agenttest.MockClock{}
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),

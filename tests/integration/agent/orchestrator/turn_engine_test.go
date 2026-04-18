@@ -318,7 +318,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	}
 
 	cm := orchestratortest.NewTestContextManager(strategy, hManager, bus)
-	e := orchestrator.NewEngine(mockGw, nil, cm, reg, bus, strategy, orchestrator.WithEngineClock(&testutil.MockClock{}))
+	e := orchestrator.NewEngine(mockGw, nil, cm, reg, bus, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -377,7 +377,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	}
 	cm.SetPipeline(session.NewContextPipeline(mt))
 
-	e := orchestrator.NewEngine(mockGw, nil, cm, reg, bus, strategy, orchestrator.WithEngineClock(&testutil.MockClock{}))
+	e := orchestrator.NewEngine(mockGw, nil, cm, reg, bus, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -435,7 +435,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 		Gateway:    mockGw,
 		CtxManager: orchestratortest.NewTestContextManager(strategy, hManager, nil), // Needs to be some CtxManager
 		Registry:   reg,
-		Clock:      &testutil.MockClock{},
+		Clock:      &agenttest.MockClock{},
 	}
 
 	if _, err := e.Processors()[orchestrator.PhaseInference].Process(context.Background(), Turn); err != nil {
@@ -451,7 +451,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 func TestTurnEngine_ClockInjection(t *testing.T) {
 	t.Parallel()
 	fixedTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	mockClock := &testutil.MockClock{CurrentTime: fixedTime}
+	mockClock := &agenttest.MockClock{CurrentTime: fixedTime}
 
 	var capturedTime time.Time
 	var Mu sync.Mutex
@@ -532,7 +532,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 					LastError: tt.err,
 					Phase:     orchestrator.PhaseRecovering,
 				},
-				Clock: &testutil.MockClock{},
+				Clock: &agenttest.MockClock{},
 			}
 
 			p := &orchestrator.RecoveryStep{Policy: &orchestrator.DefaultRetryPolicy{MaxRetries: 3, Backoff: 10 * time.Millisecond}}
@@ -566,7 +566,7 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 	}
 
-	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineClock(&testutil.MockClock{}))
+	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -594,7 +594,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 		return nil, nil, llm.ErrTransient
 	}
 
-	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineClock(&testutil.MockClock{}))
+	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -849,7 +849,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 		},
 	}
 
-	e := orchestrator.NewEngine(mockGw, mockEx, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineClock(&testutil.MockClock{}))
+	e := orchestrator.NewEngine(mockGw, mockEx, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
 	// Default MaxRetries is 3.
 	// If retries were global, Turn 1 would fail because totalRetries would be 2 from Turn 0,
 	// and Turn 1's first failure would set it to 3, then second would hit limit.
@@ -1106,7 +1106,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	t.Parallel()
 	policy := &orchestrator.DefaultRetryPolicy{MaxRetries: 2, Backoff: 10 * time.Millisecond, RateLimitBackoff: 5 * time.Second}
-	c := &testutil.MockClock{}
+	c := &agenttest.MockClock{}
 
 	t.Run("Transient error", func(t *testing.T) {
 		t.Parallel()
@@ -1181,7 +1181,7 @@ func (m *mockBlockingClock) After(d time.Duration) <-chan time.Time {
 	return m.afterChan
 }
 func (m *mockBlockingClock) NewTicker(d time.Duration) clock.Ticker {
-	return &testutil.MockTicker{CVal: m.afterChan}
+	return &agenttest.MockTicker{CVal: m.afterChan}
 }
 func (m *mockBlockingClock) Jitter(base float64) float64 { return base }
 
@@ -1224,7 +1224,7 @@ func testContextCancellation_ExecutionStep(t *testing.T) {
 			HasToolCalls: true,
 		},
 		Executor: ex,
-		Clock:    &testutil.MockClock{},
+		Clock:    &agenttest.MockClock{},
 	}
 
 	p := &orchestrator.ExecutionStep{}
@@ -1374,7 +1374,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, bus), reg, bus, strategy, orchestrator.WithEngineClock(&testutil.MockClock{}))
+	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, bus), reg, bus, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())

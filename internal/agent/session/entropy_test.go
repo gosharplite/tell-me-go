@@ -19,7 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -32,8 +31,8 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 
-	mClock := new(testutil.TestifyMockClock)
-	mEntropy := new(testutil.MockEntropySource)
+	mClock := new(agenttest.TestifyMockClock)
+	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
@@ -47,8 +46,8 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(testutil.MockHistoryRenderer)
-	mUIRenderer := new(testutil.MockUIRenderer)
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, &stderr, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{

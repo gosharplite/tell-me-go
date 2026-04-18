@@ -404,3 +404,62 @@ The 14 new files in `agenttest/` were created in 4 batches of 3–5, with `go bu
   - **`security_mocks.go`**: 3 symbols → SECURITY/TOOLS bucket
   - **`ui_mocks.go`**: 2 symbols → AGENT bucket per audit Risk Note #3
 - **Recommended next session (Session 5)**: bundle `clock.go` (AGENT) + `config_mocks.go` (AGENT) + `misc_mocks.go` (AGENT) + `ui_mocks.go` (AGENT) — all 4 small files, all share the `agenttest/` destination. Estimated 8 symbols, similar mechanical workflow. After that, only EVENTS, SECURITY, TOOLS, and GENERIC buckets remain.
+
+
+## Session 5 Outcome (small AGENT files bulk extraction)
+
+- **Date**: 2026-04-19
+- **Branch**: `refactor/testutil-extract-agent-smallfiles` (forked from Session 4 commit `7b40b4eb`)
+- **Source files deleted (4)**: `clock.go`, `config_mocks.go`, `misc_mocks.go`, `ui_mocks.go` — all of their symbols moved.
+- **Symbols relocated (8 distinct types, names preserved):**
+  - `testutil.MockClock` + `testutil.MockTicker` → `agenttest.MockClock`, `agenttest.MockTicker` (`mock_clock.go`, bundled per audit explicit guidance because `MockClock.NewTicker()` returns `*MockTicker`)
+  - `testutil.MockConfigLoader` → `agenttest.MockConfigLoader` (`mock_config_loader.go`)
+  - `testutil.MockEntropySource` → `agenttest.MockEntropySource` (`mock_entropy_source.go`)
+  - `testutil.MockEstimator` → `agenttest.MockEstimator` (`mock_estimator.go`) — preserved as-is per architect direction (rejected audit Risk Note #7 deletion suggestion)
+  - `testutil.TestifyMockClock` → `agenttest.TestifyMockClock` (`testify_mock_clock.go`)
+  - `testutil.MockUIRenderer` → `agenttest.MockUIRenderer` (`mock_ui_renderer.go`) — AGENT bucket per audit Risk Note #3 (despite the name, all consumers are agent/session tests)
+  - `testutil.MockHistoryRenderer` → `agenttest.MockHistoryRenderer` (`mock_history_renderer.go`) — same
+- **New files in `agenttest/`**: 7 (1 per type, with `MockClock` + `MockTicker` sharing `mock_clock.go`).
+- **Call sites updated**: 22 files, **127 references** rewritten in a single sed pass:
+  - `MockUIRenderer`: 59 refs in 9 files (densest)
+  - `MockClock`: 38 refs in 11 files
+  - `MockHistoryRenderer`: 14 refs in 2 files
+  - `MockConfigLoader`: 5 refs in 2 files
+  - `MockEntropySource`: 4 refs in 2 files
+  - `TestifyMockClock`: 4 refs in 2 files
+  - `MockEstimator`: 2 refs in 1 file
+  - `MockTicker`: 1 ref in 1 file
+- **Tests**: PASS (61 packages — unchanged).
+- **Race detector**: PASS.
+- **Architecture verification**: ✅ no new violations.
+- **Architectural lint**: zero non-test files import `agenttest` or `agentinternal`.
+- **Leaf rule preserved**: `agenttest/` does NOT import `internal/agent`. Verified via grep.
+
+### Workflow notes
+
+- All 7 destination files were written in one batch (small symbols, low risk), with one consolidated `go build ./internal/agent/agenttest/...` checkpoint that passed first try.
+- Source-file-deletion approach worked cleanly because every source file's content was 100% in scope (different from Session 4, where `agent_mocks.go` had to be rewritten-from-scratch to keep `MockExecutor` for the TOOLS bucket).
+- The `inframock` aliased imports (in 3 files: `internal/ui/renderer_test.go`, `internal/tools/workspace/process_executor_test.go`, `internal/domain/events/events_test.go`) were verified to NOT reference any in-scope symbol — they all only use `inframock.NewSafeBuffer` (GENERIC bucket, future session).
+- Total broken-state-window between source-file deletion and call-site rewrite: < 60 seconds.
+
+### State of the testutil dump after Session 5
+
+- Files remaining in `internal/domain/testutil/`: **7** (was 11):
+  - `agent_mocks.go` (38 LOC, only `MockExecutor` — TOOLS bucket)
+  - `buffer.go` + `buffer_test.go` (GENERIC bucket: `NewSafeBuffer`, `SyncWriter`)
+  - `event_mocks.go` + `events_test.go` (EVENTS bucket: `TestEventBus`, `MockEventBus`, `CountingEventBus`+`NewCountingEventBus` INLINE)
+  - `exec_test.go` (TOOLS bucket — tests `MockExecutor`)
+  - `security_mocks.go` (mixed SECURITY/TOOLS bucket: `MockSecurityManager`, `MockInteractor`, `MockCommandValidator`)
+- **Total `testutil` LOC: 690** (was 938 after Session 4; was 1664 baseline). Net reduction since baseline: **-58%.**
+- Symbols remaining in testutil: ~13 (of original 39).
+- All AGENT-bucket symbols are now relocated. The remaining buckets are: EVENTS, SECURITY, TOOLS, GENERIC.
+
+### Recommended Session 6
+
+Two viable bundles, architect to pick:
+
+- **Option α (EVENTS bundle, ~5 symbols)**: Move `event_mocks.go` to a new `internal/domain/events/eventstest/` sub-package. `TestEventBus` and `MockEventBus` are the cross-cutting consumers; `CountingEventBus`+`NewCountingEventBus` get inlined into their sole consumer file (`tests/integration/agent/session/context_manager_robustness_test.go`). This establishes the EVENTS bucket destination for the first time. The `events_test.go` file (testing `TestEventBus`) follows.
+
+- **Option β (TOOLS bundle, ~5 symbols)**: Move `MockExecutor` (+ `exec_test.go`), `MockSecurityManager`, and `MockCommandValidator` to a new `internal/tools/toolstest/` sub-package per audit Risk Note #1. Note: `MockSecurityManager` has a single consumer in `internal/agent/orchestrator` that may need to stay on the security bucket — verify in Step 2. This establishes the TOOLS bucket destination.
+
+Suggest Option α first because (a) `event_mocks.go` is mostly self-contained and (b) it depends only on the `domain/events` package, making the leaf-rule check trivial.

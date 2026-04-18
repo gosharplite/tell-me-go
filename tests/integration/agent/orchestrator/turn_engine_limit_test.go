@@ -14,7 +14,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -203,7 +202,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 					},
 				},
 				Events: bus,
-				Clock:  &testutil.MockClock{},
+				Clock:  &agenttest.MockClock{},
 			}
 
 			p := &orchestrator.ExecutionStep{}

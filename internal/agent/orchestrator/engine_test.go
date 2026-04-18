@@ -28,7 +28,7 @@ func TestEngine_ConfigurationOptions(t *testing.T) {
 	reg := &agenttest.MockToolRegistry{}
 	counter := &agenttest.MockTokenCounter{}
 
-	mockClock := &testutil.MockClock{}
+	mockClock := &agenttest.MockClock{}
 	mockLogger := &ports.NoOpLogger{}
 	mockPricing := make(map[string]domain_pricing.ModelPricing)
 	mockRetry := &DefaultRetryPolicy{MaxRetries: 3}
@@ -64,7 +64,7 @@ func TestEngine_ApplyOptions(t *testing.T) {
 	e := &Engine{}
 	e.config.Store(&engineConfig{})
 
-	mockClock := &testutil.MockClock{}
+	mockClock := &agenttest.MockClock{}
 	e.ApplyOptions(WithEngineClock(mockClock))
 
 	assert.Equal(t, mockClock, e.clock)
@@ -204,7 +204,7 @@ func TestExecutionStep_Process(t *testing.T) {
 			Executor:     ex,
 			TokenCounter: counter,
 			CtxManager:   cm,
-			Clock:        &testutil.MockClock{},
+			Clock:        &agenttest.MockClock{},
 			State: &TurnState{
 				HasToolCalls: true,
 				Response: &llm.Content{
@@ -231,7 +231,7 @@ func TestExecutionStep_Process(t *testing.T) {
 		turn := &Turn{
 			Events:   bus,
 			Executor: ex,
-			Clock:    &testutil.MockClock{},
+			Clock:    &agenttest.MockClock{},
 			State: &TurnState{
 				HasToolCalls: true,
 			},
@@ -249,7 +249,7 @@ func TestExecutionStep_Process(t *testing.T) {
 		}
 		turn := &Turn{
 			Executor: ex,
-			Clock:    &testutil.MockClock{},
+			Clock:    &agenttest.MockClock{},
 			State: &TurnState{
 				HasToolCalls: true,
 			},

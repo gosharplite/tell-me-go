@@ -1,48 +1,20 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+package agenttest
 
 import (
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/mock"
 )
 
-// MockEntropySource is a mock implementation of io.Reader for entropy.
-type MockEntropySource struct {
-	mock.Mock
-}
-
-func (m *MockEntropySource) Read(p []byte) (n int, err error) {
-	args := m.Called(p)
-	if args.Get(0) != nil {
-		copy(p, args.Get(0).([]byte))
-	}
-	return args.Int(1), args.Error(2)
-}
-
-// MockEstimator is a mock implementation of TokenGatekeeper's tokenEstimator.
-type MockEstimator struct {
-	tokens int
-}
-
-func (m *MockEstimator) EstimateTokens(contents []*llm.Content) int {
-	return m.tokens
-}
-
-func (m *MockEstimator) SetTokens(n int) {
-	m.tokens = n
-}
-
-// Implement llm.TokenEstimator
-func (m *MockEstimator) Count(contents []*llm.Content) int {
-	return m.tokens
-}
-
-// TestifyMockClock is a mock implementation of clock.Clock using testify/mock.
+// TestifyMockClock is a testify-based test double for clock.Clock. It
+// is the more verbose alternative to MockClock for tests that need to
+// assert exactly which clock methods were called and with what
+// arguments. For tests that just need a fixed time source, prefer the
+// simpler MockClock.
 type TestifyMockClock struct {
 	mock.Mock
 }

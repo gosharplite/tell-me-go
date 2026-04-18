@@ -35,7 +35,7 @@ func TestNewAgent_Initialization(t *testing.T) {
 		WithSummarizer(&agenttest.MockSummarizer{}),
 		WithPricing("model", "mode", map[string]pricing.ModelPricing{"model": {Hit: 1.0}}),
 		WithSessionCostTracker(&agenttest.MockCostTracker{}),
-		WithClock(&testutil.MockClock{}),
+		WithClock(&agenttest.MockClock{}),
 		WithProviderName("provider"),
 		WithLogger(slog.Default()),
 	)
@@ -309,7 +309,7 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	loader := &testutil.MockConfigLoader{}
+	loader := &agenttest.MockConfigLoader{}
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
 	require.NoError(t, err)
 
