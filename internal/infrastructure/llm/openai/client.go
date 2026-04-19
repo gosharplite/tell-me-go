@@ -848,15 +848,36 @@ func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem
 
 func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 	promptTokens, completionTokens, totalTokens := c.normalizeTokenCounts(u)
+	thinkingTokens := c.resolveThinkingTokens(u)
+
+	// OpenAI-compatible providers (DeepSeek reasoner, OpenAI gpt-5/o-series)
+	// report completion_tokens as the SUM of final-content tokens and
+	// reasoning tokens (CoT). The reasoning_tokens field inside
+	// completion_tokens_details is a SUBSET, not an addend.
+	//
+	// Verified against the live deepseek-reasoner API on 2025-12-XX:
+	//   prompt_tokens=16, completion_tokens=190, total_tokens=206,
+	//   reasoning_tokens=147   →   total = prompt + completion (NOT + reasoning)
+	//
+	// Downstream pricing.go::Calculate treats ResponseTokens and
+	// ThinkingTokens as disjoint and sums them. Subtract here so that
+	// invariant holds: ResponseTokens + ThinkingTokens == completion_tokens.
+	// Without this fix, reasoning tokens are billed twice (up to ~2×
+	// overcharge on heavy-reasoning turns) and the UI's "O:" output total
+	// is structurally wrong.
+	contentTokens := completionTokens
+	if thinkingTokens > 0 && contentTokens >= thinkingTokens {
+		contentTokens -= thinkingTokens
+	}
 
 	metrics := &llm.Metrics{
 		Model:          c.model,
 		PromptTokens:   promptTokens,
-		ResponseTokens: completionTokens,
+		ResponseTokens: contentTokens,
 		TotalTokens:    totalTokens,
 		Duration:       duration,
 		CachedTokens:   c.resolveCachedTokens(u),
-		ThinkingTokens: c.resolveThinkingTokens(u),
+		ThinkingTokens: thinkingTokens,
 		TrafficType:    c.resolveTrafficType(u),
 	}
 

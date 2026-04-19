@@ -1623,3 +1623,97 @@ func TestVertexTrafficTypeSourceOfTruth(t *testing.T) {
 		t.Errorf("expected TrafficType 'COLOCATED_BATCH', got %q", metrics.TrafficType)
 	}
 }
+
+// TestDeepSeek_ReasoningTokens_DisjointFromContent pins the invariant
+// that ResponseTokens (content-only) and ThinkingTokens (CoT) are
+// reported as disjoint quantities, derived by subtracting
+// reasoning_tokens from the API's completion_tokens.
+//
+// Pinned to live deepseek-reasoner response captured 2025-12-XX:
+//
+//	prompt=16, completion=190, total=206, reasoning=147
+//
+// True content = 190 - 147 = 43.
+//
+// Regression: prior to this fix, ResponseTokens == completion_tokens (190),
+// causing pricing.go::Calculate to bill reasoning tokens twice
+// (up to ~2× overcharge on heavy-reasoning turns).
+func TestDeepSeek_ReasoningTokens_DisjointFromContent(t *testing.T) {
+	c := &client{model: "deepseek-reasoner", logger: &ports.NoOpLogger{}}
+
+	raw := usage{
+		PromptTokens:     16,
+		CompletionTokens: 190,
+		TotalTokens:      206,
+		CompletionTokensDetails: &completionTokensDetails{
+			ReasoningTokens: 147,
+		},
+	}
+
+	m := c.calculateFinalMetrics(raw, 1.0)
+
+	if got, want := m.PromptTokens, int32(16); got != want {
+		t.Errorf("PromptTokens=%d want %d", got, want)
+	}
+	if got, want := m.ThinkingTokens, int32(147); got != want {
+		t.Errorf("ThinkingTokens=%d want %d", got, want)
+	}
+	// Critical: ResponseTokens must be content-only.
+	if got, want := m.ResponseTokens, int32(43); got != want {
+		t.Errorf("ResponseTokens=%d want %d (content-only, must exclude reasoning)", got, want)
+	}
+	// Invariant: subtraction round-trips to the API's completion_tokens.
+	if got := m.ResponseTokens + m.ThinkingTokens; got != 190 {
+		t.Errorf("ResponseTokens+ThinkingTokens=%d want 190 (must equal raw completion_tokens)", got)
+	}
+}
+
+// TestDeepSeek_NoReasoning_PassesThrough guards against over-eager
+// subtraction when a response carries no reasoning tokens (e.g.
+// deepseek-chat, or any non-thinking model). ResponseTokens must
+// equal completion_tokens unchanged.
+func TestDeepSeek_NoReasoning_PassesThrough(t *testing.T) {
+	c := &client{model: "deepseek-chat", logger: &ports.NoOpLogger{}}
+
+	raw := usage{
+		PromptTokens:     16,
+		CompletionTokens: 50,
+		TotalTokens:      66,
+		// CompletionTokensDetails intentionally nil — no reasoning emitted.
+	}
+
+	m := c.calculateFinalMetrics(raw, 1.0)
+
+	if got, want := m.ResponseTokens, int32(50); got != want {
+		t.Errorf("ResponseTokens=%d want %d (no subtraction when reasoning=0)", got, want)
+	}
+	if got, want := m.ThinkingTokens, int32(0); got != want {
+		t.Errorf("ThinkingTokens=%d want %d", got, want)
+	}
+}
+
+// TestDeepSeek_MalformedReasoning_GuardsAgainstNegative defends
+// against a provider returning reasoning_tokens > completion_tokens.
+// Should never happen in practice, but the subtraction guard must
+// preserve the original completion_tokens rather than underflow.
+func TestDeepSeek_MalformedReasoning_GuardsAgainstNegative(t *testing.T) {
+	c := &client{model: "deepseek-reasoner", logger: &ports.NoOpLogger{}}
+
+	raw := usage{
+		PromptTokens:     10,
+		CompletionTokens: 100,
+		TotalTokens:      110,
+		CompletionTokensDetails: &completionTokensDetails{
+			ReasoningTokens: 200, // intentionally malformed: > completion
+		},
+	}
+
+	m := c.calculateFinalMetrics(raw, 1.0)
+
+	if got, want := m.ResponseTokens, int32(100); got != want {
+		t.Errorf("ResponseTokens=%d want %d (must not underflow when reasoning > completion)", got, want)
+	}
+	if got, want := m.ThinkingTokens, int32(200); got != want {
+		t.Errorf("ThinkingTokens=%d want %d (preserved as reported)", got, want)
+	}
+}
