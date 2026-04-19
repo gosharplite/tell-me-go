@@ -12,7 +12,7 @@ LLM providers differ in how they report token usage when a model emits chain-of-
 | **Google Gemini** | `usage_metadata.thoughts_token_count` | **Disjoint** from `usage_metadata.candidates_token_count` |
 | **Anthropic Claude** | (no separate reasoning field; thinking is interleaved with content blocks) | N/A |
 
-Verified empirically against the live DeepSeek API on 2025-12-XX:
+Verified empirically against the live DeepSeek API on 2025-12-04:
 
 ```json
 {

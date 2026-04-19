@@ -855,7 +855,7 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 	// reasoning tokens (CoT). The reasoning_tokens field inside
 	// completion_tokens_details is a SUBSET, not an addend.
 	//
-	// Verified against the live deepseek-reasoner API on 2025-12-XX:
+	// Verified against the live deepseek-reasoner API on 2025-12-04:
 	//   prompt_tokens=16, completion_tokens=190, total_tokens=206,
 	//   reasoning_tokens=147   →   total = prompt + completion (NOT + reasoning)
 	//

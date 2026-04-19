@@ -1629,7 +1629,7 @@ func TestVertexTrafficTypeSourceOfTruth(t *testing.T) {
 // reported as disjoint quantities, derived by subtracting
 // reasoning_tokens from the API's completion_tokens.
 //
-// Pinned to live deepseek-reasoner response captured 2025-12-XX:
+// Pinned to live deepseek-reasoner response captured 2025-12-04:
 //
 //	prompt=16, completion=190, total=206, reasoning=147
 //
