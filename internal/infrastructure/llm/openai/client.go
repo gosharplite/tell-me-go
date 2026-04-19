@@ -163,6 +163,7 @@ type chatRequest struct {
 	Tools               []tool           `json:"tools,omitempty"`
 	MaxTokens           int              `json:"max_tokens,omitempty"`
 	MaxCompletionTokens int              `json:"max_completion_tokens,omitempty"`
+	MaxOutputTokens     int              `json:"max_output_tokens,omitempty"` // NEW: for /responses endpoint
 	Reasoning           *reasoningConfig `json:"reasoning,omitempty"`
 	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
 	// ChatTemplateKwargs carries non-standard template parameters required
@@ -352,11 +353,17 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 		}
 	}
 
-	if c.capabilities.UseMaxCompletionTokens {
-		reqPayload.MaxCompletionTokens = c.resolveOutputBudget()
-	} else if c.capabilities.IsDeepSeek {
-		// DeepSeek Reasoner still uses 'max_tokens'
-		reqPayload.MaxTokens = c.resolveOutputBudget()
+	budget := c.resolveOutputBudget()
+	switch {
+	case useResponsesAPI:
+		// /responses endpoint requires max_output_tokens; max_completion_tokens
+		// is rejected with HTTP 400 "unsupported_parameter".
+		reqPayload.MaxOutputTokens = budget
+	case c.capabilities.UseMaxCompletionTokens:
+		reqPayload.MaxCompletionTokens = budget
+	case c.capabilities.IsDeepSeek:
+		// DeepSeek Reasoner still uses 'max_tokens' on /chat/completions.
+		reqPayload.MaxTokens = budget
 	}
 
 	if c.capabilities.RequiresVertexThinkingKwargs {
