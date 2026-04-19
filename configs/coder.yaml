@@ -67,9 +67,7 @@ TOOL_TIMEOUT: 300
 
 # --- Safety & History ---
 MAX_TURNS: 500
-# Reserves OUTPUT_BUDGET (32768, from google.THINKING_BUDGET) + safety_margin (10000) below CONTEXT_WINDOW (200000).
-# Recompute if SELECTED_PROVIDER changes to one with a smaller window (e.g. direct deepseek = 128000).
-MAX_HISTORY_TOKENS: 157000
+MAX_HISTORY_TOKENS: 180000
 
 # Model's hardcoded physical limits
 MODELS:
