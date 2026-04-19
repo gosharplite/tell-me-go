@@ -14,9 +14,9 @@ import (
 // budget are mutually exclusive at the API layer:
 //
 //   - max_tokens               → DeepSeek (all variants), legacy
-//                                 OpenAI Chat Completions models.
+//     OpenAI Chat Completions models.
 //   - max_completion_tokens    → OpenAI o-series and gpt-5.0..gpt-5.3
-//                                 on /chat/completions.
+//     on /chat/completions.
 //   - max_output_tokens        → OpenAI gpt-5.4+ on /responses.
 //
 // Encoding these as an enum (rather than two coupled booleans, the
