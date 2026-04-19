@@ -88,7 +88,7 @@ func assertHeaderFormat(t *testing.T, errOut string, mode string) {
 			regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: \d+/\d+ tokens - ` + mode + `$`),
 		},
 		{
-			name:  "metrics_line",
+			name: "metrics_line",
 			// Th: segment is optional in the rendered metrics line: it is
 			// suppressed when ThinkingTokens == 0 (notably for Anthropic,
 			// which does not separately report reasoning tokens, and for
