@@ -239,3 +239,35 @@ func TestSessionCostTracker_ThinkingTokens(t *testing.T) {
 		t.Errorf("Expected 25 thinking tokens in stats, got %d", stats.ThinkingTokens)
 	}
 }
+
+func TestSessionCostTracker_CacheWriteTokens(t *testing.T) {
+	t.Parallel()
+	// Use Miss = 6.25 so 200 * 6.25 * 1.25 / 1e6 = 0.0000156250 (clean arithmetic).
+	model := domain_pricing.ModelPricing{Hit: 1.0, Miss: 6.25, Comp: 3.0}
+	pricingData := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
+			"test-model": model,
+		},
+	}
+
+	tracker := NewSessionCostTracker(nil, "", "test", "test-model", model, pricingData)
+
+	tracker.Accumulate(llm.Metrics{
+		PromptTokens:     100,
+		ResponseTokens:   50,
+		CacheWriteTokens: 200,
+	})
+
+	stats, cost := tracker.GetStats(context.Background())
+	// Input: 100 * 6.25 / 1e6 = 0.000625
+	// Output: 50 * 3.0 / 1e6 = 0.00015
+	// CacheWrite: 200 * (6.25 * 1.25) / 1e6 = 0.0000156250
+	wantCost := (100.0*6.25+50.0*3.0)/1e6 + 200.0*(6.25*1.25)/1e6
+	if cost < wantCost-1e-12 || cost > wantCost+1e-12 {
+		t.Errorf("Expected cost with cache-write tokens %f, got %f", wantCost, cost)
+	}
+
+	if stats.CacheWriteTokens != 200 {
+		t.Errorf("Expected 200 cache-write tokens in stats, got %d", stats.CacheWriteTokens)
+	}
+}
