@@ -354,15 +354,20 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	}
 
 	budget := c.resolveOutputBudget()
-	switch {
-	case useResponsesAPI:
-		// /responses endpoint requires max_output_tokens; max_completion_tokens
-		// is rejected with HTTP 400 "unsupported_parameter".
+	// useResponsesAPI overrides the model's static MaxTokensField because
+	// the same model uses different field names on different endpoints
+	// (e.g., gpt-5.4 uses max_completion_tokens on /chat/completions but
+	// max_output_tokens on /responses).
+	field := c.capabilities.MaxTokensField
+	if useResponsesAPI {
+		field = llm.MaxTokensFieldOutput
+	}
+	switch field {
+	case llm.MaxTokensFieldOutput:
 		reqPayload.MaxOutputTokens = budget
-	case c.capabilities.UseMaxCompletionTokens:
+	case llm.MaxTokensFieldCompletion:
 		reqPayload.MaxCompletionTokens = budget
-	case c.capabilities.IsDeepSeek:
-		// DeepSeek Reasoner still uses 'max_tokens' on /chat/completions.
+	case llm.MaxTokensFieldLegacy:
 		reqPayload.MaxTokens = budget
 	}
 

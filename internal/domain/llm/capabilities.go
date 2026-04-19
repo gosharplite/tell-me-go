@@ -8,6 +8,34 @@ import (
 	"strings"
 )
 
+// MaxTokensField identifies which JSON field name the model's transport
+// requires for the per-request output-token budget. The three fields
+// are mutually exclusive at the wire level — sending the wrong one
+// yields an HTTP 400 from the provider.
+//
+// See ADR-024 (forthcoming) for the historical rationale: OpenAI
+// renamed the field across two API generations (Chat Completions →
+// Responses), and DeepSeek retained the original name. Modeling this
+// as an enum rather than coupled booleans makes invalid combinations
+// unrepresentable.
+type MaxTokensField int
+
+const (
+	// MaxTokensFieldLegacy → JSON key "max_tokens".
+	// Used by: DeepSeek (all variants), legacy OpenAI Chat Completions
+	// models that predate the o-series (e.g., gpt-4, gpt-3.5).
+	MaxTokensFieldLegacy MaxTokensField = iota
+
+	// MaxTokensFieldCompletion → JSON key "max_completion_tokens".
+	// Used by: OpenAI o-series and gpt-5.0..gpt-5.3 on /chat/completions.
+	MaxTokensFieldCompletion
+
+	// MaxTokensFieldOutput → JSON key "max_output_tokens".
+	// Used by: OpenAI gpt-5.4+ when routed to /responses (i.e., when
+	// tools are present and reasoning_effort is set).
+	MaxTokensFieldOutput
+)
+
 // Capabilities defines the feature set supported by a specific LLM model.
 type Capabilities struct {
 	// SupportsReasoningEffort indicates if the model supports the 'reasoning_effort' field.
@@ -16,8 +44,13 @@ type Capabilities struct {
 	RequiresResponsesAPI bool
 	// UseDeveloperRole indicates if the model prefers the 'developer' role over the 'system' role.
 	UseDeveloperRole bool
-	// UseMaxCompletionTokens indicates if the model uses 'max_completion_tokens' instead of 'max_tokens'.
-	UseMaxCompletionTokens bool
+	// MaxTokensField names the wire-format field used for the per-request
+	// output-token budget. Replaces the earlier UseMaxCompletionTokens
+	// boolean so that the three mutually exclusive choices are
+	// represented as three mutually exclusive enum values rather than
+	// as a coupled boolean plus an implicit precedence rule. See
+	// MaxTokensField for the per-value semantics.
+	MaxTokensField MaxTokensField
 	// IsDeepSeek indicates if the model follows DeepSeek-specific conventions (e.g., reasoning_content in assistant messages).
 	IsDeepSeek bool
 	// RequiresVertexThinkingKwargs indicates that the transport silently
@@ -61,13 +94,25 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 	}
 
 	if isOpenAIReasoner {
-		caps.UseMaxCompletionTokens = true
 		caps.UseDeveloperRole = true
 		caps.SupportsReasoningEffort = true
 	}
 
 	if isGpt54OrNewer(model) {
 		caps.RequiresResponsesAPI = true
+	}
+
+	// Resolve MaxTokensField. The three values are mutually exclusive:
+	//   RequiresResponsesAPI true → Output    (gpt-5.4+ on /responses)
+	//   isOpenAIReasoner    true  → Completion (o-series, gpt-5.0..5.3)
+	//   otherwise                 → Legacy    (DeepSeek, plain gpt-4)
+	switch {
+	case caps.RequiresResponsesAPI:
+		caps.MaxTokensField = MaxTokensFieldOutput
+	case isOpenAIReasoner:
+		caps.MaxTokensField = MaxTokensFieldCompletion
+	default:
+		caps.MaxTokensField = MaxTokensFieldLegacy
 	}
 
 	return caps
