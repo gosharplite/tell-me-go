@@ -104,3 +104,51 @@ func TestGetModelPricing_LongestMatch(t *testing.T) {
 	got := p.GetModelPricing("gemini-3-flash-preview")
 	assert.Equal(t, 0.5, got.Miss, "Should consistently choose the longest matching substring")
 }
+
+func TestCostCalculator_CacheWriteCost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		cacheWriteTokens int64
+		miss             float64
+		want             float64
+	}{
+		{
+			name:             "zero tokens",
+			cacheWriteTokens: 0,
+			miss:             10.0,
+			want:             0.0,
+		},
+		{
+			name:             "one million tokens at $10",
+			cacheWriteTokens: 1_000_000,
+			miss:             10.0,
+			want:             12.50,
+		},
+		{
+			name:             "200 tokens at $6.25 (Opus 4.x realistic)",
+			cacheWriteTokens: 200,
+			miss:             6.25,
+			want:             0.0015625,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			calc := &CostCalculator{
+				Model: ModelPricing{Miss: tt.miss},
+			}
+			stats := UsageStats{
+				CacheWriteTokens: tt.cacheWriteTokens,
+			}
+
+			got := calc.Calculate(stats)
+
+			// Pin the formula: CacheWriteTokens * (Miss * 1.25) / 1e6
+			assert.Equal(t, tt.want, got.CacheWriteCost)
+		})
+	}
+}
