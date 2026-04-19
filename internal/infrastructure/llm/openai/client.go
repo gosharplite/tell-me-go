@@ -130,7 +130,7 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...
 		authenticator: authenticator,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		model:         model,
-		capabilities:  llm.ResolveCapabilities(model),
+		capabilities:  llm.ResolveCapabilities(model, strings.TrimSuffix(baseURL, "/")),
 		logger:        &ports.NoOpLogger{},
 	}
 
@@ -165,6 +165,11 @@ type chatRequest struct {
 	MaxCompletionTokens int              `json:"max_completion_tokens,omitempty"`
 	Reasoning           *reasoningConfig `json:"reasoning,omitempty"`
 	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
+	// ChatTemplateKwargs carries non-standard template parameters required
+	// by certain transports. Used to enable thinking mode on Vertex AI's
+	// deepseek-ai/deepseek-v3.2-maas, which silently ignores the standard
+	// "thinking" field. See Capabilities.RequiresVertexThinkingKwargs.
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 type historyItem struct {
@@ -352,6 +357,10 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	} else if c.capabilities.IsDeepSeek {
 		// DeepSeek Reasoner still uses 'max_tokens'
 		reqPayload.MaxTokens = c.resolveOutputBudget()
+	}
+
+	if c.capabilities.RequiresVertexThinkingKwargs {
+		reqPayload.ChatTemplateKwargs = map[string]any{"thinking": true}
 	}
 
 	return &reqPayload, nil

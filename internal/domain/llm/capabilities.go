@@ -20,10 +20,23 @@ type Capabilities struct {
 	UseMaxCompletionTokens bool
 	// IsDeepSeek indicates if the model follows DeepSeek-specific conventions (e.g., reasoning_content in assistant messages).
 	IsDeepSeek bool
+	// RequiresVertexThinkingKwargs indicates that the transport silently
+	// disables DeepSeek thinking mode unless the non-standard parameter
+	// chat_template_kwargs.thinking=true is included in the request body.
+	// Set when the model is a DeepSeek variant served via Vertex AI MaaS.
+	// Verified empirically against Vertex deepseek-ai/deepseek-v3.2-maas
+	// on 2025-12-04: without this flag completion_tokens=56 and no
+	// reasoning_content; with it completion_tokens=203 and
+	// reasoning_content present.
+	RequiresVertexThinkingKwargs bool
 }
 
-// ResolveCapabilities returns the capability set for a given model name.
-func ResolveCapabilities(model string) Capabilities {
+// ResolveCapabilities returns the capability set for a given model name and
+// provider base URL. The base URL is required for transport-conditional
+// capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
+// if the URL is not available; transport-conditional capabilities will
+// default to false.
+func ResolveCapabilities(model, baseURL string) Capabilities {
 	var caps Capabilities
 
 	// OpenAI Reasoner detection
@@ -42,6 +55,10 @@ func ResolveCapabilities(model string) Capabilities {
 	isDeepSeek := strings.Contains(model, "deepseek-")
 
 	caps.IsDeepSeek = isDeepSeek
+
+	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
+		caps.RequiresVertexThinkingKwargs = true
+	}
 
 	if isOpenAIReasoner {
 		caps.UseMaxCompletionTokens = true

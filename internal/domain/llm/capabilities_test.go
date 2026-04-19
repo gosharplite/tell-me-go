@@ -9,12 +9,15 @@ import (
 
 func TestResolveCapabilities(t *testing.T) {
 	tests := []struct {
-		model                   string
-		supportsReasoningEffort bool
-		requiresResponsesAPI    bool
-		useDeveloperRole        bool
-		useMaxCompletionTokens  bool
-		isDeepSeek              bool
+		name                         string
+		model                        string
+		baseURL                      string
+		supportsReasoningEffort      bool
+		requiresResponsesAPI         bool
+		useDeveloperRole             bool
+		useMaxCompletionTokens       bool
+		isDeepSeek                   bool
+		requiresVertexThinkingKwargs bool
 	}{
 		{
 			model:                   "gpt-4",
@@ -104,11 +107,43 @@ func TestResolveCapabilities(t *testing.T) {
 			useMaxCompletionTokens:  false,
 			isDeepSeek:              true,
 		},
+		{
+			name:                         "vertex deepseek requires thinking kwargs",
+			model:                        "deepseek-ai/deepseek-v3.2-maas",
+			baseURL:                      "https://aiplatform.googleapis.com/v1beta1/projects/p/locations/global/endpoints/openapi",
+			isDeepSeek:                   true,
+			requiresVertexThinkingKwargs: true,
+		},
+		{
+			name:                         "direct deepseek does not require thinking kwargs",
+			model:                        "deepseek-reasoner",
+			baseURL:                      "https://api.deepseek.com",
+			isDeepSeek:                   true,
+			requiresVertexThinkingKwargs: false,
+		},
+		{
+			name:                         "non-deepseek on vertex does not require thinking kwargs",
+			model:                        "gemini-3-flash-preview",
+			baseURL:                      "https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models",
+			isDeepSeek:                   false,
+			requiresVertexThinkingKwargs: false,
+		},
+		{
+			name:                         "deepseek with empty base URL does not require thinking kwargs (defensive default)",
+			model:                        "deepseek-reasoner",
+			baseURL:                      "",
+			isDeepSeek:                   true,
+			requiresVertexThinkingKwargs: false,
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.model, func(t *testing.T) {
-			caps := ResolveCapabilities(tt.model)
+		testName := tt.name
+		if testName == "" {
+			testName = tt.model
+		}
+		t.Run(testName, func(t *testing.T) {
+			caps := ResolveCapabilities(tt.model, tt.baseURL)
 			if caps.SupportsReasoningEffort != tt.supportsReasoningEffort {
 				t.Errorf("expected SupportsReasoningEffort %v, got %v", tt.supportsReasoningEffort, caps.SupportsReasoningEffort)
 			}
@@ -123,6 +158,9 @@ func TestResolveCapabilities(t *testing.T) {
 			}
 			if caps.IsDeepSeek != tt.isDeepSeek {
 				t.Errorf("expected IsDeepSeek %v, got %v", tt.isDeepSeek, caps.IsDeepSeek)
+			}
+			if caps.RequiresVertexThinkingKwargs != tt.requiresVertexThinkingKwargs {
+				t.Errorf("expected RequiresVertexThinkingKwargs %v, got %v", tt.requiresVertexThinkingKwargs, caps.RequiresVertexThinkingKwargs)
 			}
 		})
 	}

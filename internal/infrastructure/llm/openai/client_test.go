@@ -1717,3 +1717,114 @@ func TestDeepSeek_MalformedReasoning_GuardsAgainstNegative(t *testing.T) {
 		t.Errorf("ThinkingTokens=%d want %d (preserved as reported)", got, want)
 	}
 }
+
+// TestPrepareChatRequest_VertexDeepSeek_IncludesThinkingKwargs pins the
+// behaviour that Vertex-hosted DeepSeek requests automatically include
+// chat_template_kwargs.thinking=true. Without this, Vertex MaaS silently
+// runs in non-thinking mode despite the model being capable of reasoning.
+//
+// Verified against the live Vertex deepseek-ai/deepseek-v3.2-maas
+// endpoint on 2025-12-04: omitting the kwarg returned completion_tokens=56
+// with no reasoning_content; including it returned completion_tokens=203
+// with reasoning_content populated.
+func TestPrepareChatRequest_VertexDeepSeek_IncludesThinkingKwargs(t *testing.T) {
+	c := NewClient(
+		"https://aiplatform.googleapis.com/v1beta1/projects/p/locations/global/endpoints/openapi",
+		"deepseek-ai/deepseek-v3.2-maas",
+		&auth.BearerAuth{Token: "test"},
+	)
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	}
+
+	req, err := c.prepareChatRequest(context.Background(), history, nil, nil)
+	if err != nil {
+		t.Fatalf("prepareChatRequest failed: %v", err)
+	}
+
+	got, ok := req.ChatTemplateKwargs["thinking"]
+	if !ok {
+		t.Fatalf("ChatTemplateKwargs missing 'thinking' key; got %#v", req.ChatTemplateKwargs)
+	}
+	if got != true {
+		t.Errorf("ChatTemplateKwargs[thinking]=%v, want true", got)
+	}
+}
+
+// TestPrepareChatRequest_DirectDeepSeek_OmitsThinkingKwargs guards against
+// regressing direct-API behaviour. Direct DeepSeek's deepseek-reasoner
+// emits CoT natively without any kwarg; sending an unknown parameter
+// could trigger 400 errors on stricter providers.
+func TestPrepareChatRequest_DirectDeepSeek_OmitsThinkingKwargs(t *testing.T) {
+	c := NewClient(
+		"https://api.deepseek.com",
+		"deepseek-reasoner",
+		&auth.BearerAuth{Token: "test"},
+	)
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	}
+
+	req, err := c.prepareChatRequest(context.Background(), history, nil, nil)
+	if err != nil {
+		t.Fatalf("prepareChatRequest failed: %v", err)
+	}
+
+	if req.ChatTemplateKwargs != nil {
+		t.Errorf("ChatTemplateKwargs should be nil for direct DeepSeek; got %#v", req.ChatTemplateKwargs)
+	}
+}
+
+// TestPrepareChatRequest_OpenAI_OmitsThinkingKwargs guards against the
+// kwarg leaking into non-DeepSeek providers.
+func TestPrepareChatRequest_OpenAI_OmitsThinkingKwargs(t *testing.T) {
+	c := NewClient(
+		"https://api.openai.com/v1",
+		"gpt-5.2",
+		&auth.BearerAuth{Token: "test"},
+	)
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	}
+
+	req, err := c.prepareChatRequest(context.Background(), history, nil, nil)
+	if err != nil {
+		t.Fatalf("prepareChatRequest failed: %v", err)
+	}
+
+	if req.ChatTemplateKwargs != nil {
+		t.Errorf("ChatTemplateKwargs should be nil for OpenAI; got %#v", req.ChatTemplateKwargs)
+	}
+}
+
+func TestChatRequest_ChatTemplateKwargs_OmittedWhenNil(t *testing.T) {
+	req := &chatRequest{
+		Model: "test",
+		// ChatTemplateKwargs intentionally unset
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if strings.Contains(string(body), "chat_template_kwargs") {
+		t.Errorf("chat_template_kwargs should be omitted from JSON when nil; got: %s", body)
+	}
+}
+
+func TestChatRequest_ChatTemplateKwargs_IncludedWhenSet(t *testing.T) {
+	req := &chatRequest{
+		Model:              "test",
+		ChatTemplateKwargs: map[string]any{"thinking": true},
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	want := `"chat_template_kwargs":{"thinking":true}`
+	if !strings.Contains(string(body), want) {
+		t.Errorf("expected %q in JSON; got: %s", want, body)
+	}
+}
