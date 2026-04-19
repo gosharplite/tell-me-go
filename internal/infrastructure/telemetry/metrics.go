@@ -753,6 +753,7 @@ func (m *metricsManager) accumulateRecord(totals map[string]float64, usage map[s
 	u.ResponseTokens += r.Usage.ResponseTokens
 	u.CachedTokens += r.Usage.CachedTokens
 	u.ThinkingTokens += r.Usage.ThinkingTokens
+	u.CacheWriteTokens += r.Usage.CacheWriteTokens
 	u.SearchQueries += r.Usage.SearchQueries
 	usage[key] = u
 }
