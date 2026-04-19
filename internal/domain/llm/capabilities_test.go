@@ -15,7 +15,7 @@ func TestResolveCapabilities(t *testing.T) {
 		supportsReasoningEffort      bool
 		requiresResponsesAPI         bool
 		useDeveloperRole             bool
-		useMaxCompletionTokens       bool
+		maxTokensField               MaxTokensField
 		isDeepSeek                   bool
 		requiresVertexThinkingKwargs bool
 	}{
@@ -24,7 +24,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: false,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        false,
-			useMaxCompletionTokens:  false,
+			maxTokensField:          MaxTokensFieldLegacy,
 			isDeepSeek:              false,
 		},
 		{
@@ -32,7 +32,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: true,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        true,
-			useMaxCompletionTokens:  true,
+			maxTokensField:          MaxTokensFieldCompletion,
 			isDeepSeek:              false,
 		},
 		{
@@ -40,7 +40,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: true,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        true,
-			useMaxCompletionTokens:  true,
+			maxTokensField:          MaxTokensFieldCompletion,
 			isDeepSeek:              false,
 		},
 		{
@@ -48,7 +48,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: true,
 			requiresResponsesAPI:    true,
 			useDeveloperRole:        true,
-			useMaxCompletionTokens:  true,
+			maxTokensField:          MaxTokensFieldOutput,
 			isDeepSeek:              false,
 		},
 		{
@@ -56,7 +56,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: true,
 			requiresResponsesAPI:    true,
 			useDeveloperRole:        true,
-			useMaxCompletionTokens:  true,
+			maxTokensField:          MaxTokensFieldOutput,
 			isDeepSeek:              false,
 		},
 		{
@@ -64,7 +64,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: true,
 			requiresResponsesAPI:    true,
 			useDeveloperRole:        true,
-			useMaxCompletionTokens:  true,
+			maxTokensField:          MaxTokensFieldOutput,
 			isDeepSeek:              false,
 		},
 		{
@@ -72,7 +72,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: false,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        false,
-			useMaxCompletionTokens:  false,
+			maxTokensField:          MaxTokensFieldLegacy,
 			isDeepSeek:              true,
 		},
 		{
@@ -80,7 +80,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: false,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        false,
-			useMaxCompletionTokens:  false,
+			maxTokensField:          MaxTokensFieldLegacy,
 			isDeepSeek:              true,
 		},
 		{
@@ -88,7 +88,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: false,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        false,
-			useMaxCompletionTokens:  false,
+			maxTokensField:          MaxTokensFieldLegacy,
 			isDeepSeek:              true,
 		},
 		{
@@ -96,7 +96,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: false,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        false,
-			useMaxCompletionTokens:  false,
+			maxTokensField:          MaxTokensFieldLegacy,
 			isDeepSeek:              true,
 		},
 		{
@@ -104,13 +104,14 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningEffort: false,
 			requiresResponsesAPI:    false,
 			useDeveloperRole:        false,
-			useMaxCompletionTokens:  false,
+			maxTokensField:          MaxTokensFieldLegacy,
 			isDeepSeek:              true,
 		},
 		{
 			name:                         "vertex deepseek requires thinking kwargs",
 			model:                        "deepseek-ai/deepseek-v3.2-maas",
 			baseURL:                      "https://aiplatform.googleapis.com/v1beta1/projects/p/locations/global/endpoints/openapi",
+			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			requiresVertexThinkingKwargs: true,
 		},
@@ -118,6 +119,7 @@ func TestResolveCapabilities(t *testing.T) {
 			name:                         "direct deepseek does not require thinking kwargs",
 			model:                        "deepseek-reasoner",
 			baseURL:                      "https://api.deepseek.com",
+			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			requiresVertexThinkingKwargs: false,
 		},
@@ -125,6 +127,7 @@ func TestResolveCapabilities(t *testing.T) {
 			name:                         "non-deepseek on vertex does not require thinking kwargs",
 			model:                        "gemini-3-flash-preview",
 			baseURL:                      "https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models",
+			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   false,
 			requiresVertexThinkingKwargs: false,
 		},
@@ -132,6 +135,7 @@ func TestResolveCapabilities(t *testing.T) {
 			name:                         "deepseek with empty base URL does not require thinking kwargs (defensive default)",
 			model:                        "deepseek-reasoner",
 			baseURL:                      "",
+			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			requiresVertexThinkingKwargs: false,
 		},
@@ -153,8 +157,8 @@ func TestResolveCapabilities(t *testing.T) {
 			if caps.UseDeveloperRole != tt.useDeveloperRole {
 				t.Errorf("expected UseDeveloperRole %v, got %v", tt.useDeveloperRole, caps.UseDeveloperRole)
 			}
-			if caps.UseMaxCompletionTokens != tt.useMaxCompletionTokens {
-				t.Errorf("expected UseMaxCompletionTokens %v, got %v", tt.useMaxCompletionTokens, caps.UseMaxCompletionTokens)
+			if caps.MaxTokensField != tt.maxTokensField {
+				t.Errorf("expected MaxTokensField %d, got %d", tt.maxTokensField, caps.MaxTokensField)
 			}
 			if caps.IsDeepSeek != tt.isDeepSeek {
 				t.Errorf("expected IsDeepSeek %v, got %v", tt.isDeepSeek, caps.IsDeepSeek)

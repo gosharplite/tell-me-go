@@ -163,6 +163,7 @@ type chatRequest struct {
 	Tools               []tool           `json:"tools,omitempty"`
 	MaxTokens           int              `json:"max_tokens,omitempty"`
 	MaxCompletionTokens int              `json:"max_completion_tokens,omitempty"`
+	MaxOutputTokens     int              `json:"max_output_tokens,omitempty"` // NEW: for /responses endpoint
 	Reasoning           *reasoningConfig `json:"reasoning,omitempty"`
 	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
 	// ChatTemplateKwargs carries non-standard template parameters required
@@ -352,11 +353,22 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 		}
 	}
 
-	if c.capabilities.UseMaxCompletionTokens {
-		reqPayload.MaxCompletionTokens = c.resolveOutputBudget()
-	} else if c.capabilities.IsDeepSeek {
-		// DeepSeek Reasoner still uses 'max_tokens'
-		reqPayload.MaxTokens = c.resolveOutputBudget()
+	budget := c.resolveOutputBudget()
+	// useResponsesAPI overrides the model's static MaxTokensField because
+	// the same model uses different field names on different endpoints
+	// (e.g., gpt-5.4 uses max_completion_tokens on /chat/completions but
+	// max_output_tokens on /responses).
+	field := c.capabilities.MaxTokensField
+	if useResponsesAPI {
+		field = llm.MaxTokensFieldOutput
+	}
+	switch field {
+	case llm.MaxTokensFieldOutput:
+		reqPayload.MaxOutputTokens = budget
+	case llm.MaxTokensFieldCompletion:
+		reqPayload.MaxCompletionTokens = budget
+	case llm.MaxTokensFieldLegacy:
+		reqPayload.MaxTokens = budget
 	}
 
 	if c.capabilities.RequiresVertexThinkingKwargs {
