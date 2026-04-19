@@ -150,7 +150,7 @@ TOOL_TIMEOUT: 300
 
 # --- Safety & History ---
 MAX_TURNS: 200
-MAX_HISTORY_TOKENS: 157000
+MAX_HISTORY_TOKENS: 180000
 
 # --- Model Overrides ---
 MODELS:
