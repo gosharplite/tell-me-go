@@ -865,6 +865,8 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 	// Without this fix, reasoning tokens are billed twice (up to ~2×
 	// overcharge on heavy-reasoning turns) and the UI's "O:" output total
 	// is structurally wrong.
+	//
+	// See: docs/adr/2026-04-reasoning-token-accounting.md (ADR-023)
 	contentTokens := completionTokens
 	if thinkingTokens > 0 && contentTokens >= thinkingTokens {
 		contentTokens -= thinkingTokens
