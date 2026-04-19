@@ -929,3 +929,63 @@ func TestStdUIRenderer_RenderHealthReport(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderMetricsLine_ThinkingSegmentSuppression(t *testing.T) {
+	// Pins issue #72: the metrics line must omit the " Th: <n>"
+	// segment entirely when ThinkingTokens == 0 (because providers
+	// like Anthropic genuinely never count reasoning separately, and
+	// "Th: 0" misleads users into thinking no reasoning occurred).
+	// When ThinkingTokens > 0, the segment must render as before.
+	tests := []struct {
+		name           string
+		thinkingTokens int32
+		shouldContain  string // segment that must appear
+		shouldNotHave  string // segment that must NOT appear
+	}{
+		{
+			name:           "zero_thinking_suppressed",
+			thinkingTokens: 0,
+			shouldContain:  "C: 100", // immediately precedes where Th: would go
+			shouldNotHave:  "Th:",
+		},
+		{
+			name:           "nonzero_thinking_rendered",
+			thinkingTokens: 147,
+			shouldContain:  "Th: 147",
+			shouldNotHave:  "", // not used
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
+			locker := ui.NewMockLocker()
+			mc := ui.NewMockClock(time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC))
+			r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
+
+			r.LogTurnStatus(context.Background(), events.TurnStatus{
+				Timestamp:       r.NowSafe(),
+				CurrentTurns:    1,
+				MaxHistoryTurns: 10,
+				IsPostCall:      true,
+				Metrics: &llm.Metrics{
+					PromptTokens:   500,
+					CachedTokens:   0,
+					ResponseTokens: 100,
+					ThinkingTokens: tt.thinkingTokens,
+					Duration:       1.0,
+				},
+				StartTime: r.NowSafe().Add(-1 * time.Second),
+			})
+
+			output := stderr.String()
+
+			if !strings.Contains(output, tt.shouldContain) {
+				t.Errorf("expected output to contain %q, got: %q", tt.shouldContain, output)
+			}
+			if tt.shouldNotHave != "" && strings.Contains(output, tt.shouldNotHave) {
+				t.Errorf("expected output to NOT contain %q, got: %q", tt.shouldNotHave, output)
+			}
+		})
+	}
+}

@@ -872,7 +872,6 @@ func TestMetricsMapping(t *testing.T) {
 				OutputTokens:             500,
 				CacheReadInputTokens:     1000,
 				CacheCreationInputTokens: 200,
-				ThinkingTokens:           300,
 			},
 		}
 
@@ -890,6 +889,16 @@ func TestMetricsMapping(t *testing.T) {
 		if metrics.CacheWriteTokens != 200 {
 			t.Errorf("expected CacheWriteTokens 200, got %d", metrics.CacheWriteTokens)
 		}
+		// Pins issue #72: Anthropic does not separately report
+		// reasoning tokens on the wire. The client must always set
+		// ThinkingTokens=0 so the pricing layer's
+		//   OutputCost = ResponseTokens × Comp + ThinkingTokens × Thinking
+		// reduces to ResponseTokens × Comp (wire-correct: Anthropic
+		// rolls reasoning into output_tokens at the standard rate).
+		// See ADR-023.
+		if metrics.ThinkingTokens != 0 {
+			t.Errorf("Anthropic must always report ThinkingTokens=0; got %d", metrics.ThinkingTokens)
+		}
 	})
 
 	t.Run("Vertex AI (Incremental InputTokens)", func(t *testing.T) {
@@ -900,7 +909,6 @@ func TestMetricsMapping(t *testing.T) {
 				OutputTokens:             500,
 				CacheReadInputTokens:     1000,
 				CacheCreationInputTokens: 200,
-				ThinkingTokens:           300,
 			},
 		}
 
@@ -918,6 +926,16 @@ func TestMetricsMapping(t *testing.T) {
 		}
 		if metrics.CacheWriteTokens != 200 {
 			t.Errorf("expected CacheWriteTokens 200, got %d", metrics.CacheWriteTokens)
+		}
+		// Pins issue #72: Anthropic does not separately report
+		// reasoning tokens on the wire. The client must always set
+		// ThinkingTokens=0 so the pricing layer's
+		//   OutputCost = ResponseTokens × Comp + ThinkingTokens × Thinking
+		// reduces to ResponseTokens × Comp (wire-correct: Anthropic
+		// rolls reasoning into output_tokens at the standard rate).
+		// See ADR-023.
+		if metrics.ThinkingTokens != 0 {
+			t.Errorf("Anthropic must always report ThinkingTokens=0; got %d", metrics.ThinkingTokens)
 		}
 	})
 }
@@ -952,5 +970,59 @@ func TestTransientPartsSupport(t *testing.T) {
 	}
 	if blocks[1].Text != "Transient part" {
 		t.Errorf("expected second block text 'Transient part', got %q", blocks[1].Text)
+	}
+}
+
+func TestThinkingTokens_AlwaysZero_PerWireContract(t *testing.T) {
+	// Pins issue #72: Anthropic's Messages API does not expose a
+	// separate reasoning-token field. Even if a future API revision
+	// introduces one with a different JSON name, this client must
+	// not silently start reporting it without a deliberate change.
+	// See ADR-023 for the broader "displayed numbers come from the
+	// wire" principle this test protects.
+	raw := []byte(`{
+        "id":"msg_test",
+        "role":"assistant",
+        "stop_reason":"end_turn",
+        "content":[
+            {"type":"thinking","thinking":"Let me reason about this carefully...","signature":"sig_x"},
+            {"type":"text","text":"The answer is 42."}
+        ],
+        "usage":{
+            "input_tokens":1000,
+            "output_tokens":750,
+            "cache_read_input_tokens":0,
+            "cache_creation_input_tokens":0
+        }
+    }`)
+	var resp messagesResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	c := &client{model: "claude-opus-4", logger: &ports.NoOpLogger{}, baseURL: "https://api.anthropic.com/v1"}
+	content, metrics, err := c.fromAnthropicResponse(&resp, 1.0)
+	if err != nil {
+		t.Fatalf("fromAnthropicResponse: %v", err)
+	}
+
+	// Wire-correct invariants:
+	if metrics.ThinkingTokens != 0 {
+		t.Errorf("ThinkingTokens must be 0 for Anthropic (no wire field); got %d", metrics.ThinkingTokens)
+	}
+	if metrics.ResponseTokens != 750 {
+		t.Errorf("ResponseTokens must equal raw output_tokens=750 (includes thinking); got %d", metrics.ResponseTokens)
+	}
+
+	// Reasoning *content* must still be parsed into a thought Part —
+	// this is the user's only signal that thinking actually fired.
+	var sawThought bool
+	for _, p := range content.Parts {
+		if p.IsThought && p.Text != "" {
+			sawThought = true
+		}
+	}
+	if !sawThought {
+		t.Error("expected at least one IsThought Part with non-empty Text")
 	}
 }

@@ -74,7 +74,8 @@ func TestResolveEndpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &client{model: tt.model, capabilities: llm.ResolveCapabilities(tt.model)}
+			// baseURL added for ResolveCapabilities transport-conditional caps.
+			c := &client{model: tt.model, capabilities: llm.ResolveCapabilities(tt.model, "")}
 			req := &chatRequest{
 				ReasoningEffort: tt.reasoningEffort,
 			}
