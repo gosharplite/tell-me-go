@@ -132,16 +132,18 @@ func calculateLineCost(mt llm.Metrics, turnStats domain_pricing.UsageStats, pd d
 // Accumulate adds metrics to usage statistics and returns the newly added stats.
 func accumulate(stats *domain_pricing.UsageStats, mt llm.Metrics) domain_pricing.UsageStats {
 	turn := domain_pricing.UsageStats{
-		PromptTokens:   int64(mt.PromptTokens),
-		ResponseTokens: int64(mt.ResponseTokens),
-		CachedTokens:   int64(mt.CachedTokens),
-		SearchQueries:  int64(mt.SearchQueries),
-		ThinkingTokens: int64(mt.ThinkingTokens),
+		PromptTokens:     int64(mt.PromptTokens),
+		ResponseTokens:   int64(mt.ResponseTokens),
+		CachedTokens:     int64(mt.CachedTokens),
+		SearchQueries:    int64(mt.SearchQueries),
+		ThinkingTokens:   int64(mt.ThinkingTokens),
+		CacheWriteTokens: int64(mt.CacheWriteTokens),
 	}
 	stats.PromptTokens += turn.PromptTokens
 	stats.ResponseTokens += turn.ResponseTokens
 	stats.CachedTokens += turn.CachedTokens
 	stats.SearchQueries += turn.SearchQueries
 	stats.ThinkingTokens += turn.ThinkingTokens
+	stats.CacheWriteTokens += turn.CacheWriteTokens
 	return turn
 }
