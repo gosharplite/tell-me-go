@@ -625,6 +625,9 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 
 	fmt.Fprintf(&sb, "| Text Input | %d | $%.2f | $%.6f |\n", stats.PromptTokens-stats.CachedTokens, p.Miss, breakdown.InputCost)
 	fmt.Fprintf(&sb, "| Input Caching | %d | $%.2f | $%.6f |\n", stats.CachedTokens, p.Hit, breakdown.CacheCost)
+	if stats.CacheWriteTokens > 0 {
+		fmt.Fprintf(&sb, "| Cache Write | %d | $%.2f | $%.6f |\n", stats.CacheWriteTokens, p.Miss*1.25, breakdown.CacheWriteCost)
+	}
 
 	thinkingRate := p.Thinking
 	if thinkingRate == 0 {
