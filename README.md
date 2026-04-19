@@ -160,6 +160,10 @@ MODELS:
     CONTEXT_WINDOW: 200000
 ```
 
+> ℹ️  Before changing `SELECTED_PROVIDER:` or `MAX_HISTORY_TOKENS:`, see the
+> [Configuration guide](docs/user/configuration.md) for the context-window
+> headroom rule and the provider-switch hazard.
+
 ## ⌨️ Shell Integration (Recommended)
 Choose the configuration that matches your operating system and shell.
 
