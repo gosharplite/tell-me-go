@@ -382,8 +382,20 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 		costStr = fmt.Sprintf(" %s($%.4f)%s", ui.c(colorGray), m.Cost, ui.c(colorGray))
 	}
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
-		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
+	// Prepare thinking-tokens segment. Suppressed when zero because
+	// providers that do not expose a separate reasoning-token counter
+	// (notably Anthropic — see issue #72) would otherwise always
+	// display "Th: 0", misleading users into thinking no reasoning
+	// occurred. Providers that DO expose reasoning tokens (Gemini,
+	// OpenAI/DeepSeek) populate this field from their wire schema and
+	// the "Th: <n>" segment continues to render whenever n > 0.
+	thStr := ""
+	if m.ThinkingTokens > 0 {
+		thStr = fmt.Sprintf(" Th: %d", m.ThinkingTokens)
+	}
+
+	_, _ = fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d%s%s %s[%s]%s\n",
+		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, thStr, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
 }
 
 func (r *stdUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {

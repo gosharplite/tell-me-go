@@ -240,10 +240,22 @@ func (l *asyncTurnsLogger) renderTurnMetrics(sb *strings.Builder, status events.
 		}
 	}
 
+	// Prepare thinking-tokens segment. Suppressed when zero — kept in
+	// lockstep with the on-screen renderer (see internal/ui/renderer.go
+	// and issue #72) so that grep-based cost reconciliation between
+	// terminal output and log files stays consistent. Providers that
+	// do not separately report reasoning tokens (notably Anthropic)
+	// will never emit this segment; Gemini and OpenAI/DeepSeek will
+	// emit it whenever reasoning actually fired.
+	thStr := ""
+	if m.ThinkingTokens > 0 {
+		thStr = fmt.Sprintf(" Th: %d", m.ThinkingTokens)
+	}
+
 	if m.Cost > 0 {
-		fmt.Fprintf(sb, "[%s]%s M: %d H: %d C: %d Th: %d ($%.4f) [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, m.Cost, timingRaw)
+		fmt.Fprintf(sb, "[%s]%s M: %d H: %d C: %d%s ($%.4f) [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, thStr, m.Cost, timingRaw)
 	} else {
-		fmt.Fprintf(sb, "[%s]%s M: %d H: %d C: %d Th: %d [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, timingRaw)
+		fmt.Fprintf(sb, "[%s]%s M: %d H: %d C: %d%s [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, thStr, timingRaw)
 	}
 }
 

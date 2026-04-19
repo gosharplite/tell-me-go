@@ -23,7 +23,10 @@ PROVIDERS:
     MODEL: "claude-opus-4-6"
     URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/anthropic/models"
     API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
-    THINKING_BUDGET: 32768
+    THINKING_BUDGET: 32768  # Anthropic: enables extended thinking. Reasoning
+                            # tokens are billed inside output_tokens (no
+                            # separate Th: metric — set SHOW_THOUGHTS: true
+                            # to see reasoning rendered as [Thinking] blocks).
     HEADERS:
       X-Vertex-AI-LLM-Request-Type: "shared"
       X-Vertex-AI-LLM-Shared-Request-Type: "priority"
@@ -54,7 +57,10 @@ PROVIDERS:
     MODEL: "claude-opus-4-6"
     URL: "https://api.anthropic.com/v1"
     API_KEY: '${ANTHROPIC_API_KEY}'
-    THINKING_BUDGET: 32768
+    THINKING_BUDGET: 32768  # Anthropic: enables extended thinking. Reasoning
+                            # tokens are billed inside output_tokens (no
+                            # separate Th: metric — set SHOW_THOUGHTS: true
+                            # to see reasoning rendered as [Thinking] blocks).
 
 # --- Tools & Features ---
 USE_SEARCH: false

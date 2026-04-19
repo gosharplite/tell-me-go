@@ -551,8 +551,12 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 					Duration:       0,
 				},
 			},
+			// Note: "Th: 0" is intentionally suppressed in the rendered
+			// output; see issue #72. The absence-of-Th case is pinned
+			// directly by TestRenderMetricsLine_ThinkingSegmentSuppression
+			// in internal/ui/renderer_test.go.
 			contains: []string{
-				"[12:00:00] M: 0 H: 0 C: 0 Th: 0 [0.00s (ΣT: 0.00s)]",
+				"[12:00:00] M: 0 H: 0 C: 0 [0.00s (ΣT: 0.00s)]",
 			},
 		},
 		{

@@ -89,7 +89,12 @@ func assertHeaderFormat(t *testing.T, errOut string, mode string) {
 		},
 		{
 			name:  "metrics_line",
-			regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+ Th: \d+.*\[.*\]$`),
+			// Th: segment is optional in the rendered metrics line: it is
+			// suppressed when ThinkingTokens == 0 (notably for Anthropic,
+			// which does not separately report reasoning tokens, and for
+			// any provider on a non-reasoning turn). When present, the
+			// segment is " Th: <n>". See issue #72.
+			regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+( Th: \d+)?.*\[.*\]$`),
 		},
 		{
 			name:  "ready_line",
@@ -137,7 +142,12 @@ func assertHeaderFormat(t *testing.T, errOut string, mode string) {
 
 	if mIdx := indices["metrics_line"]; mIdx != -1 {
 		metricsLine := lines[mIdx]
-		required := []string{" M: ", " H: ", " C: ", " Th: ", " ["}
+		// Th: is intentionally absent from the required-component list.
+		// The renderer suppresses " Th: <n>" when ThinkingTokens == 0
+		// (issue #72). The metrics_line regex above tolerates either
+		// presence or absence; presence-when-non-zero is pinned by
+		// internal/ui/renderer_test.go::TestRenderMetricsLine_ThinkingSegmentSuppression.
+		required := []string{" M: ", " H: ", " C: ", " ["}
 		for _, r := range required {
 			if !strings.Contains(metricsLine, r) {
 				t.Errorf("Metrics line missing required component %q: %q", r, metricsLine)

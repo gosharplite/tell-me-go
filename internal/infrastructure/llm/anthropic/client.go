@@ -222,9 +222,14 @@ type messagesResponse struct {
 }
 
 type usage struct {
-	InputTokens              int32            `json:"input_tokens"`
-	OutputTokens             int32            `json:"output_tokens"`
-	ThinkingTokens           int32            `json:"thinking_tokens,omitempty"`
+	InputTokens  int32 `json:"input_tokens"`
+	OutputTokens int32 `json:"output_tokens"`
+	// NOTE: Anthropic's Messages API does not expose a separate
+	// reasoning-token counter. Extended-thinking output is rolled into
+	// output_tokens and billed at the standard output rate. Reasoning
+	// *content* arrives in content[].type=="thinking" blocks (handled
+	// in extractContent). See issue #72 and ADR-023 for the rationale
+	// on why we do NOT estimate or synthesise a thinking-token count.
 	CacheCreationInputTokens int32            `json:"cache_creation_input_tokens,omitempty"`
 	CacheReadInputTokens     int32            `json:"cache_read_input_tokens,omitempty"`
 	ExtraProperties          *extraProperties `json:"extra_properties,omitempty"`
@@ -614,10 +619,16 @@ func (c *client) buildMetrics(resp *messagesResponse, duration float64) *llm.Met
 	}
 
 	metrics := &llm.Metrics{
-		Model:            c.model,
-		PromptTokens:     promptTokens,
-		ResponseTokens:   resp.Usage.OutputTokens,
-		ThinkingTokens:   resp.Usage.ThinkingTokens,
+		Model:          c.model,
+		PromptTokens:   promptTokens,
+		ResponseTokens: resp.Usage.OutputTokens,
+		// Anthropic does not separately report reasoning tokens; the
+		// count is rolled into OutputTokens. Setting this to 0 ensures
+		// the pricing layer's
+		//   OutputCost = ResponseTokens × Comp + ThinkingTokens × Thinking
+		// reduces to ResponseTokens × Comp, which is the wire-correct
+		// charge. See issue #72 and ADR-023.
+		ThinkingTokens:   0,
 		CachedTokens:     resp.Usage.CacheReadInputTokens,
 		CacheWriteTokens: resp.Usage.CacheCreationInputTokens,
 		TotalTokens:      promptTokens + resp.Usage.OutputTokens,
@@ -637,7 +648,6 @@ func (c *client) buildMetrics(resp *messagesResponse, duration float64) *llm.Met
 			"tokens_per_sec", tokensPerSec,
 			"cached_tokens", metrics.CachedTokens,
 			"cache_creation_tokens", resp.Usage.CacheCreationInputTokens,
-			"thinking_tokens", metrics.ThinkingTokens,
 		)
 	}
 
