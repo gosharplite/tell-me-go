@@ -561,14 +561,14 @@ func checkTruncation(resp *messagesResponse) error {
 					"(tool=%q): the tool arguments are incomplete and "+
 					"cannot be safely dispatched. Increase MaxTokens "+
 					"via WithMaxTokens, or break the tool call into "+
-					"smaller pieces.",
+					"smaller pieces",
 				block.Name,
 			)
 		}
 	}
 	return fmt.Errorf("response truncated at max_tokens: output budget " +
 		"was exhausted before the model finished. Increase MaxTokens " +
-		"via WithMaxTokens, or shorten the prompt/response.")
+		"via WithMaxTokens, or shorten the prompt/response")
 }
 
 // extractContent deserializes response content blocks into domain llm.Part objects.

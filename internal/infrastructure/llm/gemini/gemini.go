@@ -438,7 +438,7 @@ func checkGeminiTruncation(candidate *genai.Candidate) error {
 						"are incomplete and cannot be safely "+
 						"dispatched. Increase MaxOutputTokens via "+
 						"WithMaxOutputTokens, or break the tool call "+
-						"into smaller pieces.",
+						"into smaller pieces",
 					part.FunctionCall.Name,
 				)
 			}
@@ -447,7 +447,7 @@ func checkGeminiTruncation(candidate *genai.Candidate) error {
 	return fmt.Errorf("response truncated at MaxOutputTokens: output " +
 		"budget was exhausted before the model finished. Increase " +
 		"MaxOutputTokens via WithMaxOutputTokens, or shorten the " +
-		"prompt/response.")
+		"prompt/response")
 }
 
 func (c *Client) checkResponse(resp *genai.GenerateContentResponse) error {
