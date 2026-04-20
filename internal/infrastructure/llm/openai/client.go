@@ -1097,7 +1097,7 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 			"response truncated at max_tokens (finish_reason=%q): "+
 				"output budget was exhausted before the model "+
 				"finished. Increase the max_tokens budget or shorten "+
-				"the prompt/response.",
+				"the prompt/response",
 			choice.FinishReason,
 		)
 	}
