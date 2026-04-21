@@ -205,6 +205,7 @@ _toby_existing_pairs() {
 # $1 = prompt, stdin = candidates. Echoes selection (possibly a new value).
 _toby_pick() {
     local prompt="$1"
+    local allow_new="${2:-0}"
     local -a candidates=()
     mapfile -t candidates
 
@@ -216,7 +217,7 @@ _toby_pick() {
         query=$(printf '%s\n' "$out" | head -n1)
         selected=$(printf '%s\n' "$out" | tail -n +2 | head -n1)
         
-        if (( TOBY_CREATE == 0 )); then
+        if (( allow_new == 0 )); then
             [[ -n "$selected" ]] || return 1
             printf '%s\n' "$selected"
         else
@@ -229,7 +230,7 @@ _toby_pick() {
     echo "$prompt" >&2
     local choice
     local -a menu_items=("${candidates[@]}")
-    (( TOBY_CREATE != 0 )) && menu_items+=("<enter new>")
+    (( allow_new != 0 )) && menu_items+=("<enter new>")
 
     select choice in "${menu_items[@]}"; do
         if [[ "$choice" == "<enter new>" ]]; then
@@ -280,13 +281,13 @@ case $# in
         _toby_tag_prompt="Tag (or type new): "
         (( TOBY_CREATE == 0 )) && _toby_tag_prompt="Tag: "
         TOBY_TAG=$(_toby_existing_pairs | cut -d: -f1 | sort -u \
-            | _toby_pick "$_toby_tag_prompt") \
+            | _toby_pick "$_toby_tag_prompt" "$TOBY_CREATE") \
             || { _toby_fail "no tag selected"; return 1 2>/dev/null || exit 1; }
 
         echo "Select provider..."
         if (( TOBY_CREATE == 0 )); then
             TOBY_PROVIDER=$(_toby_existing_pairs | awk -F: -v t="$TOBY_TAG" '$1 == t { print $2 }' | sort -u \
-                | _toby_pick "Provider for [$TOBY_TAG]: ") \
+                | _toby_pick "Provider for [$TOBY_TAG]: " 0) \
                 || { _toby_fail "no provider selected"; return 1 2>/dev/null || exit 1; }
         else
             _toby_existing_for_tag=$(_toby_existing_pairs | awk -F: -v t="$TOBY_TAG" '$1 == t { print $2 }' | sort -u)
@@ -297,7 +298,7 @@ case $# in
                 else
                     echo "$_toby_p"
                 fi
-            done | _toby_pick "Provider for [$TOBY_TAG] (or type new, *** exists): ") \
+            done | _toby_pick "Provider for [$TOBY_TAG] (*** exists): " 0) \
                 || { _toby_fail "no provider selected"; unset _toby_existing_for_tag _toby_p; return 1 2>/dev/null || exit 1; }
             TOBY_PROVIDER="${TOBY_PROVIDER% ***}"
             unset _toby_existing_for_tag _toby_p
