@@ -574,15 +574,8 @@ _toby_modify_configs "$TOBY_TAG" "$TOBY_PROVIDER" \
 _toby_setup_environment
 
 # ---------------------------------------------------------------------------
-# Prompt: replace any leading "[...] " tag, then prepend the new one.
-# Uses bash regex to be precise about a literal "[tag] " prefix and to
-# avoid mangling \[ \] colour escapes elsewhere in PS1.
+# Prompt: Prepend the new tag.
 # ---------------------------------------------------------------------------
-_toby_ps1_regex='^\[(\\\[\\e\[[0-9;]*m\\\]|[^]])*\]\ (.*)$'
-if [[ "$PS1" =~ $_toby_ps1_regex ]]; then
-    PS1="${BASH_REMATCH[2]}"
-fi
-
 # Colors for PS1 (must be wrapped in \[ \] to avoid prompt width issues)
 _toby_red="\[\e[0;31m\]"
 _toby_green="\[\e[0;32m\]"
@@ -613,4 +606,4 @@ unset -f _toby_fail _toby_realpath _toby_known_providers _toby_existing_pairs \
          _toby_update_max_history_tokens _toby_modify_configs \
          _toby_setup_environment 2>/dev/null
 unset TOBY_DEFAULT_BASE_DIR TOBY_PROVIDERS_FILE
-unset TOBY_CREATE _toby_tag_prompt _toby_red _toby_green _toby_reset _toby_ps1_regex
+unset TOBY_CREATE _toby_tag_prompt _toby_red _toby_green _toby_reset
