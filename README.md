@@ -221,6 +221,19 @@ function b-install {
 
 For advanced usage with piped multi-agent workflows and role-based review checklists, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md), [docs/steps/review-by-roles.md](docs/steps/review-by-roles.md), and [docs/steps/reduce-cyclomatic-complexity.md](docs/steps/reduce-cyclomatic-complexity.md).
 
+### Advanced Environment Management with Toby
+
+If you work with multiple LLM providers or need isolated configuration/history per project, consider using **Toby** – a Bash environment manager that creates and switches between isolated `tell-me-go` environments.
+
+Toby provides:
+- **Tag‑based environments** (`ait‑<tag>‑<provider>` directories)
+- **Interactive selection** (with `fzf`)
+- **Automatic configuration updates** and API‑key path rewriting
+- **Role‑specific helper functions** (`c`, `t`, `r`, `a`, `b`) scoped to the current environment
+- **Visual shell prompt** showing the active tag and provider
+
+See the [Toby documentation](docs/user/toby/README.md) for installation and usage.
+
 ## 🛠️ Development
 
 To build from source, run tests, or contribute to `tell-me-go`, install the following Go development tools:
