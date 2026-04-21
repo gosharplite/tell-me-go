@@ -8,7 +8,7 @@ PROVIDERS:
     TYPE: "deepseek"
     MODEL: "deepseek-reasoner"
     URL: "https://api.deepseek.com"
-    API_KEY: "${DEEPSEEK_API_KEY}"
+    API_KEY: "${DEEPSEEK_API_TOKEN}"
   vertex-deepseek:
     TYPE: "deepseek"
     MODEL: "deepseek-ai/deepseek-v3.2-maas"
