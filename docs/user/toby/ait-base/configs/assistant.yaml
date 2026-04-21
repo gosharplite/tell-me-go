@@ -1,0 +1,123 @@
+MODE: "assistant"
+PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
+
+SELECTED_PROVIDER: "deepseek"
+
+PROVIDERS:
+  deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-reasoner"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+  vertex-deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-ai/deepseek-v3.2-maas"
+    URL: "https://aiplatform.googleapis.com/v1beta1/projects/websc-dev-433809/locations/global/endpoints/openapi"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    #HEADERS:
+    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
+    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
+  vertex-flash:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/google/models"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+    #HEADERS:
+    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
+    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
+  vertex-pro:
+    TYPE: "gemini"
+    MODEL: "gemini-3.1-pro-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/google/models"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+    #HEADERS:
+    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
+    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
+  vertex-claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-7"
+    URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/anthropic/models"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    THINKING_BUDGET: 32768 
+    #HEADERS:
+    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
+    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-5.4"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-7"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
+
+# --- Tools & Features ---
+USE_SEARCH: false
+SHOW_THOUGHTS: false
+SHOW_TOOLS: true
+
+# --- Global Timeouts & Streaming ---
+HTTP_TIMEOUT: 300
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
+
+# --- Safety & History ---
+MAX_TURNS: 1000
+MAX_HISTORY_TOKENS: 200000
+
+MODELS:
+  "deepseek-reasoner":
+    CONTEXT_WINDOW: 128000
+    PRICING:
+      HIT:      0.028
+      MISS:     0.28
+      COMP:     0.42
+      THINKING: 0.42
+  "deepseek-ai/deepseek-v3.2-maas":
+    CONTEXT_WINDOW: 163840
+    PRICING:
+      HIT:      0.056
+      MISS:     0.56
+      COMP:     1.68
+      THINKING: 1.68
+  "gemini-3-flash-preview":
+    CONTEXT_WINDOW: 200000
+    PRICING:
+      HIT: 0.09
+      MISS: 0.90
+      COMP: 5.40
+      THINKING: 5.40
+  "gemini-3.1-pro-preview":
+    CONTEXT_WINDOW: 200000
+    PRICING:                                                              
+      HIT: 0.36
+      MISS: 3.60
+      COMP: 21.60
+      THINKING: 21.60
+  "gpt-5.4":
+    CONTEXT_WINDOW: 200000
+    PRICING:
+      HIT: 0.25
+      MISS: 2.50
+      COMP: 15.00
+      THINKING: 15.00
+  "claude-opus-4-7":
+    CONTEXT_WINDOW: 200000
+    PRICING:
+      HIT: 0.50
+      MISS: 6.25
+      COMP: 25.00
+      THINKING: 25.00
