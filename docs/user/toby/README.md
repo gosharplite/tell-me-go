@@ -28,8 +28,8 @@ mkdir -p ait-base/secrets
 # Place your key files here (e.g., cp ~/downloads/key.json ait-base/secrets/key.json)
 ```
 
-Update `ait-base/configs/assistant.yaml` to reference these files using the **virtual `/ait/` path**. For example:
-`API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"`
+Update `ait-base/configs/assistant.yaml` to reference these files using the **template `ait-base` path**. For example:
+`API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"`
 
 When you create a new environment, Toby automatically clones the template (including your keys) and rewrites the YAML paths to point to the local project's copy.
 
@@ -171,7 +171,7 @@ Compare the same prompt across different models:
 - **"Must be sourced"**: Use `source toby.sh`, not `./toby.sh`.
 - **"yq not found"**: Install `yq` version 4.
 - **"Provider not in assistant.yaml"**: Add the provider definition to `ait-base/configs/assistant.yaml`.
-- **Keys not working**: Verify they exist in `ait/secrets/` and that `assistant.yaml` points to them.
+- **Keys not working**: Verify they exist in `ait-base/secrets/` and that `assistant.yaml` points to them.
 - **No completion**: Ensure `tell-me-go` is in your path and run `c-install`.
 
 ---
