@@ -154,12 +154,12 @@ type secretScanner struct {
 func (s *secretScanner) Name() string { return "Security Scan" }
 func (s *secretScanner) Run(ctx context.Context) checkResult {
 	secretPatterns := []string{
-		`sk-[a-zA-Z0-9]{32,}`,                               // OpenAI/Generic
-		`ant-api-key-v1-[a-zA-Z0-9_-]{95,}`,                 // Anthropic
-		`AIza[0-9A-Za-z-_]{35}`,                             // Google AI
-		`AKIA[0-9A-Z]{16}`,                                  // AWS Access Key
-		`(?i)(AI|OPENAI|ANTHROPIC|GEMINI|AWS|DEEPSEEK)_(API_)?KEY`,   // Environment Keys
-		`https?://[a-zA-Z0-9]+:[a-zA-Z0-9]+@[a-zA-Z0-9.-]+`, // URLs with Credentials
+		`sk-[a-zA-Z0-9]{32,}`,                                      // OpenAI/Generic
+		`ant-api-key-v1-[a-zA-Z0-9_-]{95,}`,                        // Anthropic
+		`AIza[0-9A-Za-z-_]{35}`,                                    // Google AI
+		`AKIA[0-9A-Z]{16}`,                                         // AWS Access Key
+		`(?i)(AI|OPENAI|ANTHROPIC|GEMINI|AWS|DEEPSEEK)_(API_)?KEY`, // Environment Keys
+		`https?://[a-zA-Z0-9]+:[a-zA-Z0-9]+@[a-zA-Z0-9.-]+`,        // URLs with Credentials
 	}
 
 	compiledPatterns := make([]*regexp.Regexp, len(secretPatterns))
