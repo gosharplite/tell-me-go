@@ -29,7 +29,7 @@
 #   - Prepends "[<tag>] " to PS1
 
 # ---------------------------------------------------------------------------
-# Guard: must be sourced
+# Guard: must be sourced and only once
 # ---------------------------------------------------------------------------
 # When sourced in bash, ${BASH_SOURCE[0]} != $0
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -37,6 +37,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     echo "Run:   source ${0##*/}   (or: . ${0##*/})" >&2
     exit 1
 fi
+
+if [[ -n "${TOBY_SOURCED:-}" ]]; then
+    echo "Notice: toby.sh is already sourced for [$TOBY_TAG|$TOBY_PROVIDER]." >&2
+    echo "Please exit (Ctrl+D) and use a clean shell to change settings." >&2
+    return 0 2>/dev/null || exit 0
+fi
+export TOBY_SOURCED=1
 
 # Require bash >= 4 (mapfile, associative arrays).
 if (( BASH_VERSINFO[0] < 4 )); then
