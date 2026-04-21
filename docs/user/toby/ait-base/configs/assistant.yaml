@@ -13,7 +13,7 @@ PROVIDERS:
     TYPE: "deepseek"
     MODEL: "deepseek-ai/deepseek-v3.2-maas"
     URL: "https://aiplatform.googleapis.com/v1beta1/projects/websc-dev-433809/locations/global/endpoints/openapi"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
     #HEADERS:
     #  X-Vertex-AI-LLM-Request-Type: "shared"                              
     #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
@@ -21,7 +21,7 @@ PROVIDERS:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
     URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/google/models"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
     MAX_TOKENS: 40960
@@ -32,7 +32,7 @@ PROVIDERS:
     TYPE: "gemini"
     MODEL: "gemini-3.1-pro-preview"
     URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/google/models"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
     MAX_TOKENS: 40960
@@ -43,7 +43,7 @@ PROVIDERS:
     TYPE: "anthropic"
     MODEL: "claude-opus-4-7"
     URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/anthropic/models"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait/secrets/key.json"
+    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
     THINKING_BUDGET: 32768 
     #HEADERS:
     #  X-Vertex-AI-LLM-Request-Type: "shared"                              
