@@ -15,9 +15,6 @@
 #                        be determined, falls back to TOBY_DEFAULT_BASE_DIR below.
 #   TOBY_BASE_TEMPLATE   Override the template directory.
 #                        Default: $TOBY_BASE_DIR/ait-base
-#   TOBY_SHARED_AIT_DIR  Override the source-of-truth ait/ dir whose API_KEY
-#                        paths get rewritten into TELL_ME_HOME.
-#                        Default: $TOBY_BASE_DIR/ait
 #   TOBY_DEV_GO_SRC      Override the local source path used by `c-install-dev`.
 #                        Default: hard-coded developer path (see below).
 #
@@ -135,7 +132,6 @@ unset -f _toby_is_valid_base
 
 # Derived paths (also overridable via env).
 TOBY_BASE_TEMPLATE="${TOBY_BASE_TEMPLATE:-${TOBY_BASE_DIR}/ait-base}"
-TOBY_SHARED_AIT_DIR="${TOBY_SHARED_AIT_DIR:-${TOBY_BASE_DIR}/ait}"
 TOBY_PROVIDERS_FILE="${TOBY_BASE_TEMPLATE}/configs/assistant.yaml"
 
 # ---------------------------------------------------------------------------
@@ -481,7 +477,7 @@ _toby_modify_configs() (
         assistant.yaml \
         || { echo "Error: failed to update assistant.yaml" >&2; return 1; }
 
-    _toby_update_api_key_paths assistant.yaml "$TOBY_SHARED_AIT_DIR" "$TELL_ME_HOME"
+    _toby_update_api_key_paths assistant.yaml "$TOBY_BASE_TEMPLATE" "$TELL_ME_HOME"
     _toby_update_max_history_tokens assistant.yaml "$provider" \
         || echo "Warning: MAX_HISTORY_TOKENS not updated" >&2
 
@@ -566,7 +562,7 @@ _toby_setup_environment() {
 # ---------------------------------------------------------------------------
 # Drive the workflow
 # ---------------------------------------------------------------------------
-export TOBY_BASE_DIR TOBY_BASE_TEMPLATE TOBY_SHARED_AIT_DIR
+export TOBY_BASE_DIR TOBY_BASE_TEMPLATE
 export TOBY_TAG TOBY_PROVIDER TELL_ME_HOME TELL_ME_GOBIN
 
 _toby_modify_configs "$TOBY_TAG" "$TOBY_PROVIDER" \
@@ -598,7 +594,7 @@ EOF
 # ---------------------------------------------------------------------------
 # Cleanup internal helpers from the user's namespace.
 # Keep _toby_setup_environment side-effects (aliases, functions, exports).
-# Keep TOBY_BASE_DIR / TOBY_BASE_TEMPLATE / TOBY_SHARED_AIT_DIR exported so
+# Keep TOBY_BASE_DIR / TOBY_BASE_TEMPLATE exported so
 # the user (and child processes) can inspect / reuse them.
 # ---------------------------------------------------------------------------
 unset -f _toby_fail _toby_realpath _toby_known_providers _toby_existing_pairs \
