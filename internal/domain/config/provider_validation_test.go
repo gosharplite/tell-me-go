@@ -39,7 +39,7 @@ func TestLLMProvider_Validate_NegativeMaxTokensRejected(t *testing.T) {
 	t.Parallel()
 	logger, _ := newWarnBuffer()
 	p := LLMProvider{Type: "anthropic", MaxTokens: -1}
-	err := p.Validate("claude", logger)
+	err := p.validate("claude", logger)
 	if err == nil {
 		t.Fatal("expected error for negative MAX_TOKENS, got nil")
 	}
@@ -61,7 +61,7 @@ func TestLLMProvider_Validate_ZeroAccepted(t *testing.T) {
 	t.Parallel()
 	logger, _ := newWarnBuffer()
 	p := LLMProvider{Type: "anthropic", MaxTokens: 0}
-	if err := p.Validate("claude", logger); err != nil {
+	if err := p.validate("claude", logger); err != nil {
 		t.Errorf("MaxTokens=0 (unset) must validate; got %v", err)
 	}
 }
@@ -76,7 +76,7 @@ func TestLLMProvider_Validate_PositiveAccepted(t *testing.T) {
 	cases := []int{1, 4096, 16384, 65000, 999999999}
 	for _, n := range cases {
 		p := LLMProvider{Type: "anthropic", MaxTokens: n}
-		if err := p.Validate("claude", logger); err != nil {
+		if err := p.validate("claude", logger); err != nil {
 			t.Errorf("positive MaxTokens=%d must validate; got %v", n, err)
 		}
 	}
@@ -101,7 +101,7 @@ func TestLLMProvider_Validate_AnthropicBelowThinkingBudgetFloorWarns(t *testing.
 		MaxTokens:      4096,  // below the 32768 + 1024 floor
 		ThinkingBudget: 32768, // typical "high reasoning" budget
 	}
-	if err := p.Validate("claude", logger); err != nil {
+	if err := p.validate("claude", logger); err != nil {
 		t.Fatalf("validation must not return error for warn-only case; got %v", err)
 	}
 	logged := buf.String()
@@ -131,7 +131,7 @@ func TestLLMProvider_Validate_NonAnthropicBelowThinkingBudgetFloorDoesNotWarn(t 
 				MaxTokens:      4096,
 				ThinkingBudget: 32768,
 			}
-			if err := p.Validate("test", logger); err != nil {
+			if err := p.validate("test", logger); err != nil {
 				t.Fatalf("validation must not return error; got %v", err)
 			}
 			if strings.Contains(buf.String(), "provider_max_tokens_below_thinking_budget_floor") {

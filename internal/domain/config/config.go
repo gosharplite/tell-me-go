@@ -63,7 +63,7 @@ const anthropicThinkingBudgetHeadroom = 1024
 //     the Anthropic runtime will silently bump max_tokens at request
 //     time, overriding the configured cap. Surfacing as a warning
 //     gives operators visibility into the silent override.
-func (p *LLMProvider) Validate(name string, logger *slog.Logger) error {
+func (p *LLMProvider) validate(name string, logger *slog.Logger) error {
 	if p.MaxTokens < 0 {
 		return fmt.Errorf("PROVIDERS.%s.MAX_TOKENS must be >= 0, got %d", name, p.MaxTokens)
 	}
@@ -131,7 +131,7 @@ func (c *Config) GetActiveProvider() LLMProvider {
 func (c *Config) ValidateProviders(logger *slog.Logger) error {
 	for name, p := range c.Providers {
 		provider := p // copy to avoid taking the address of the range variable
-		if err := provider.Validate(name, logger); err != nil {
+		if err := provider.validate(name, logger); err != nil {
 			return err
 		}
 	}
