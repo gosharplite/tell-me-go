@@ -699,8 +699,8 @@ func (r *stdUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCa
 					continue // Already shown as [Tool Reason]
 				}
 				valStr := fmt.Sprintf("%v", v)
-				if len(valStr) > 60 {
-					valStr = valStr[:57] + "..."
+				if len(valStr) > 189 {
+					valStr = valStr[:186] + "..."
 				}
 				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
 			}
