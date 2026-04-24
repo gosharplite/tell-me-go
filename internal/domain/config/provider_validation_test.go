@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// This file pins the contract for the LLMProvider.Validate() method
+// This file pins the contract for the LLMProvider.validate() method
 // and Config.ValidateProviders() helper introduced by Task H. The
 // validation lives in the domain layer (not infrastructure) because
 // "MaxTokens must be >= 0" is a semantic invariant of LLMProvider, not

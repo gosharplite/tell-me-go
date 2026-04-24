@@ -118,7 +118,7 @@ func (c *Config) GetActiveProvider() LLMProvider {
 	}
 }
 
-// ValidateProviders runs LLMProvider.Validate against every entry in
+// ValidateProviders runs validation against every provider entry in
 // Providers and returns the first error encountered. Warnings are
 // emitted via the supplied logger (non-fatal). The logger must be
 // non-nil; callers without a configured logger should pass a logger
