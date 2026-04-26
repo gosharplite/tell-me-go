@@ -1,65 +1,70 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
+# Multi-Provider AI Assistant Configuration
 MODE: "assistant"
 PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
 
-SELECTED_PROVIDER: "deepseek"
+SELECTED_PROVIDER: "deepseek-flash"
 
 PROVIDERS:
-  deepseek:
+  deepseek-flash:
     TYPE: "deepseek"
-    MODEL: "deepseek-reasoner"
+    MODEL: "deepseek-v4-flash"
     URL: "https://api.deepseek.com"
-    API_KEY: "${DEEPSEEK_API_TOKEN}"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
+  deepseek-pro:
+    TYPE: "deepseek"
+    MODEL: "deepseek-v4-pro"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
   vertex-deepseek:
     TYPE: "deepseek"
     MODEL: "deepseek-ai/deepseek-v3.2-maas"
-    URL: "https://aiplatform.googleapis.com/v1beta1/projects/websc-dev-433809/locations/global/endpoints/openapi"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
-    #HEADERS:
-    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
-    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
+    URL: "https://aiplatform.googleapis.com/v1beta1/projects/${GOOGLE_PROJECT_ID}/locations/global/endpoints/openapi"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"                              
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
   vertex-flash:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
-    URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/google/models"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
     MAX_TOKENS: 40960
-    #HEADERS:
-    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
-    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"                              
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
   vertex-pro:
     TYPE: "gemini"
     MODEL: "gemini-3.1-pro-preview"
-    URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/google/models"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
     MAX_TOKENS: 40960
-    #HEADERS:
-    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
-    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
   vertex-claude:
     TYPE: "anthropic"
     MODEL: "claude-opus-4-7"
-    URL: "https://aiplatform.googleapis.com/v1/projects/websc-dev-433809/locations/global/publishers/anthropic/models"
-    API_KEY: "<value>/tell-me-go/docs/user/toby/ait-base/secrets/key.json"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/anthropic/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
     THINKING_BUDGET: 32768 
-    #HEADERS:
-    #  X-Vertex-AI-LLM-Request-Type: "shared"                              
-    #  X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
   openai:
     TYPE: "openai"
-    MODEL: "gpt-5.4"
+    MODEL: "gpt-5.5"
     URL: "https://api.openai.com/v1"
-    API_KEY: "${OPENAI_API_TOKEN}"
+    API_KEY: "${OPENAI_API_KEY}"
     HEADERS:
       reasoning_effort: "high"
   claude:
     TYPE: "anthropic"
     MODEL: "claude-opus-4-7"
     URL: "https://api.anthropic.com/v1"
-    API_KEY: "${ANTHROPIC_API_TOKEN}"
+    API_KEY: "${ANTHROPIC_API_KEY}"
     THINKING_BUDGET: 32768
 
 # --- Tools & Features ---
@@ -76,16 +81,23 @@ TOOL_TIMEOUT: 300
 
 # --- Safety & History ---
 MAX_TURNS: 1000
-MAX_HISTORY_TOKENS: 200000
+MAX_HISTORY_TOKENS: 1000000
 
 MODELS:
-  "deepseek-reasoner":
-    CONTEXT_WINDOW: 128000
+  "deepseek-v4-flash":
+    CONTEXT_WINDOW: 1000000
     PRICING:
       HIT:      0.028
       MISS:     0.28
       COMP:     0.42
       THINKING: 0.42
+  "deepseek-v4-pro":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.145
+      MISS:     1.74
+      COMP:     3.84
+      THINKING: 3.84
   "deepseek-ai/deepseek-v3.2-maas":
     CONTEXT_WINDOW: 163840
     PRICING:
@@ -107,13 +119,13 @@ MODELS:
       MISS: 3.60
       COMP: 21.60
       THINKING: 21.60
-  "gpt-5.4":
+  "gpt-5.5":
     CONTEXT_WINDOW: 200000
     PRICING:
-      HIT: 0.25
-      MISS: 2.50
-      COMP: 15.00
-      THINKING: 15.00
+      HIT: 0.50
+      MISS: 5.00
+      COMP: 30.00
+      THINKING: 30.00
   "claude-opus-4-7":
     CONTEXT_WINDOW: 200000
     PRICING:
