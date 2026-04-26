@@ -55,7 +55,7 @@ PROVIDERS:
     THINKING_BUDGET: 32768 
   openai:
     TYPE: "openai"
-    MODEL: "gpt-5.4"
+    MODEL: "gpt-5.5"
     URL: "https://api.openai.com/v1"
     API_KEY: "${OPENAI_API_KEY}"
     HEADERS:
@@ -119,13 +119,13 @@ MODELS:
       MISS: 3.60
       COMP: 21.60
       THINKING: 21.60
-  "gpt-5.4":
+  "gpt-5.5":
     CONTEXT_WINDOW: 200000
     PRICING:
-      HIT: 0.25
-      MISS: 2.50
-      COMP: 15.00
-      THINKING: 15.00
+      HIT: 0.50
+      MISS: 5.00
+      COMP: 30.00
+      THINKING: 30.00
   "claude-opus-4-7":
     CONTEXT_WINDOW: 200000
     PRICING:
