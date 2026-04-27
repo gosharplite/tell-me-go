@@ -204,6 +204,7 @@ func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]s
 // StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
 func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Config, out io.Writer) (err error) {
 	paths := persistence.ResolvePaths(s.HomeDir, cfg.Mode)
+	// Coverage: defensive guard — ResolvePaths always produces a non-empty TurnsLogPath for all valid modes.
 	if paths.TurnsLogPath == "" {
 		return errors.New("turns log path not available")
 	}
@@ -252,6 +253,7 @@ func (s *chatService) RunDiagnostics(ctx context.Context, cfg *domain_config.Con
 
 	// 3. Render report
 	if jsonOutput {
+		// Coverage: defensive guard — HealthReport contains only JSON-safe types (string, map, time.Time); marshal failure requires memory corruption.
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to serialize health report: %w", err)
