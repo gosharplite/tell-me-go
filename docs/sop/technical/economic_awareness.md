@@ -13,6 +13,7 @@ The "Economic Awareness" milestone implements cost monitoring and loop detection
 ### 1. Cost Tracking (`internal/infrastructure/telemetry/metrics.go`)
 - **Event-Driven**: The `TurnEngine` and `Agent` do not calculate costs directly. Instead, they publish `UsageMetricsEvent` containing `llm.Metrics`.
 - **SessionCostTracker**: A central component (often used by `TurnEngine`) that subscribes to metrics events and calculates USD costs using `pricing.PricingData`.
+- **Unified Output Rate**: To simplify calculations and maintain consistency across providers, `tell-me-go` uses the standard Completion (`COMP`) rate for all output tokens, including reasoning/thinking tokens. There is no separate "Thinking Rate" or "Reasoning Surcharge".
 - **Persistence**: Costs are logged to `tokens.log` and summarized in `history.json`.
 
 ### 2. Budget Enforcement (`internal/agent/turn_engine.go`)

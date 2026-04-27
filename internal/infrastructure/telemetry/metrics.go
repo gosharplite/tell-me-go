@@ -217,8 +217,7 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 		slog.Debug("retrieved pricing",
 			slog.Float64("hit", p.Hit),
 			slog.Float64("miss", p.Miss),
-			slog.Float64("comp", p.Comp),
-			slog.Float64("thinking", p.Thinking))
+			slog.Float64("comp", p.Comp))
 	}
 
 	var dummy domain_pricing.UsageStats
@@ -629,13 +628,9 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 		fmt.Fprintf(&sb, "| Cache Write | %d | $%.2f | $%.6f |\n", stats.CacheWriteTokens, p.Miss*1.25, breakdown.CacheWriteCost)
 	}
 
-	thinkingRate := p.Thinking
-	if thinkingRate == 0 {
-		thinkingRate = p.Comp
-	}
 	fmt.Fprintf(&sb, "| Text Output | %d | $%.2f | $%.6f |\n", stats.ResponseTokens, p.Comp, (float64(stats.ResponseTokens) * p.Comp / 1e6))
 	if stats.ThinkingTokens > 0 {
-		fmt.Fprintf(&sb, "| Thinking Tokens | %d | $%.2f | $%.6f |\n", stats.ThinkingTokens, thinkingRate, (float64(stats.ThinkingTokens) * thinkingRate / 1e6))
+		fmt.Fprintf(&sb, "| Thinking Tokens | %d | $%.2f | $%.6f |\n", stats.ThinkingTokens, p.Comp, (float64(stats.ThinkingTokens) * p.Comp / 1e6))
 	}
 	fmt.Fprintf(&sb, "| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, p.SearchQuery, breakdown.SearchCost)
 	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")

@@ -33,7 +33,6 @@ type ModelPricing struct {
 	Hit            float64 `json:"hit" yaml:"HIT"`
 	Miss           float64 `json:"miss" yaml:"MISS"`
 	Comp           float64 `json:"comp" yaml:"COMP"`
-	Thinking       float64 `json:"thinking,omitempty" yaml:"THINKING,omitempty"`
 	ThinkingBudget int     `json:"thinking_budget,omitempty" yaml:"THINKING_BUDGET,omitempty"`
 	SearchQuery    float64 `json:"search_query,omitempty" yaml:"SEARCH_QUERY,omitempty"`
 }
@@ -90,15 +89,10 @@ func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 		inputTokens = 0
 	}
 
-	thinkingRate := p.Thinking
-	if thinkingRate == 0 {
-		thinkingRate = p.Comp
-	}
-
 	cb.InputCost = float64(inputTokens) * p.Miss / 1e6
 	cb.CacheCost = float64(stats.CachedTokens) * p.Hit / 1e6
 	cb.CacheWriteCost = float64(stats.CacheWriteTokens) * (p.Miss * 1.25) / 1e6
-	cb.OutputCost = (float64(stats.ResponseTokens) * p.Comp / 1e6) + (float64(stats.ThinkingTokens) * thinkingRate / 1e6)
+	cb.OutputCost = float64(stats.ResponseTokens+stats.ThinkingTokens) * p.Comp / 1e6
 	cb.SearchCost = float64(stats.SearchQueries) * p.SearchQuery
 
 	cb.TotalCost = cb.InputCost + cb.CacheCost + cb.CacheWriteCost + cb.OutputCost + cb.SearchCost

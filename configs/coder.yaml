@@ -90,46 +90,39 @@ MODELS:
       HIT:      0.028
       MISS:     0.28
       COMP:     0.42
-      THINKING: 0.42
   "deepseek-v4-pro":
     CONTEXT_WINDOW: 1000000
     PRICING:
       HIT:      0.145
       MISS:     1.74
       COMP:     3.84
-      THINKING: 3.84
   "deepseek-ai/deepseek-v3.2-maas":
     CONTEXT_WINDOW: 163840
     PRICING:
       HIT:      0.056
       MISS:     0.56
       COMP:     1.68
-      THINKING: 1.68
   "gemini-3-flash-preview":
     CONTEXT_WINDOW: 200000
     PRICING:
       HIT: 0.09
       MISS: 0.90
       COMP: 5.40
-      THINKING: 5.40
   "gemini-3.1-pro-preview":
     CONTEXT_WINDOW: 200000
     PRICING:                                                              
       HIT: 0.36
       MISS: 3.60
       COMP: 21.60
-      THINKING: 21.60
   "gpt-5.5":
     CONTEXT_WINDOW: 200000
     PRICING:
       HIT: 0.50
       MISS: 5.00
       COMP: 30.00
-      THINKING: 30.00
   "claude-opus-4-7":
     CONTEXT_WINDOW: 200000
     PRICING:
       HIT: 0.50
       MISS: 6.25
       COMP: 25.00
-      THINKING: 25.00

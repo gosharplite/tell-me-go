@@ -211,12 +211,12 @@ func TestParseUsage_VeryLargeLine(t *testing.T) {
 	}
 }
 
-func TestCalculate_ThinkingRate(t *testing.T) {
+func TestCalculate_UnifiedOutputRate(t *testing.T) {
 	t.Parallel()
 	pricing := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{
-			"ds-reasoner": {Miss: 0.27, Comp: 1.10, Thinking: 1.10},
-			"claude":      {Miss: 3.00, Comp: 15.00}, // No thinking rate, should use Comp
+			"ds-reasoner": {Miss: 0.27, Comp: 1.10},
+			"claude":      {Miss: 3.00, Comp: 15.00},
 		},
 	}
 
@@ -227,17 +227,17 @@ func TestCalculate_ThinkingRate(t *testing.T) {
 		expectedCost float64
 	}{
 		{
-			name:      "DeepSeek with Thinking",
+			name:      "DeepSeek with Unified Thinking/Response",
 			modelName: "ds-reasoner",
 			stats:     domain_pricing.UsageStats{PromptTokens: 1000000, ResponseTokens: 1000000, ThinkingTokens: 1000000},
-			// (1M * 0.27) + (1M * 1.10) + (1M * 1.10) = 0.27 + 1.10 + 1.10 = 2.47
+			// (1M * 0.27) + (2M * 1.10) = 0.27 + 2.20 = 2.47
 			expectedCost: 2.47,
 		},
 		{
-			name:      "Claude with Thinking Fallback",
+			name:      "Claude with Unified Thinking/Response",
 			modelName: "claude",
 			stats:     domain_pricing.UsageStats{PromptTokens: 1000000, ResponseTokens: 1000000, ThinkingTokens: 1000000},
-			// (1M * 3.00) + (1M * 15.00) + (1M * 15.00) = 3.00 + 15.00 + 15.00 = 33.00
+			// (1M * 3.00) + (2M * 15.00) = 3.00 + 30.00 = 33.00
 			expectedCost: 33.00,
 		},
 	}

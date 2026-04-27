@@ -63,8 +63,7 @@ func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 				slog.String("model", modelName),
 				slog.Float64("hit", override.Hit),
 				slog.Float64("miss", override.Miss),
-				slog.Float64("comp", override.Comp),
-				slog.Float64("thinking", override.Thinking))
+				slog.Float64("comp", override.Comp))
 			pricingData.Models[modelName] = override
 		}
 		f.Logger.Debug("After applying overrides",
@@ -78,8 +77,7 @@ func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 		slog.String("model", cfg.Model),
 		slog.Float64("hit", modelPricing.Hit),
 		slog.Float64("miss", modelPricing.Miss),
-		slog.Float64("comp", modelPricing.Comp),
-		slog.Float64("thinking", modelPricing.Thinking))
+		slog.Float64("comp", modelPricing.Comp))
 
 	tracker := telemetry.NewSessionCostTracker(f.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()

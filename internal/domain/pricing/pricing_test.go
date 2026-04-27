@@ -63,7 +63,8 @@ func TestCostCalculator_Calculate(t *testing.T) {
 
 	// InputTokens = 2M - 1M = 1M. Cost = 1M * 10 / 1e6 = 10.0
 	// CacheTokens = 1M. Cost = 1M * 5 / 1e6 = 5.0
-	// OutputTokens = 0.5M + 0.5M = 1M. Cost = 1M * 20 / 1e6 = 20.0
+	// OutputTokens = 0.5M (Response) + 0.5M (Thinking) = 1M.
+	// Cost = 1M * 20 (Comp Rate) / 1e6 = 20.0
 	// SearchCost = 2 * 0.01 = 0.02
 	// Total = 10 + 5 + 20 + 0.02 = 35.02
 
@@ -71,7 +72,7 @@ func TestCostCalculator_Calculate(t *testing.T) {
 
 	assert.Equal(t, 10.0, got.InputCost)
 	assert.Equal(t, 5.0, got.CacheCost)
-	assert.Equal(t, 20.0, got.OutputCost)
+	assert.Equal(t, 20.0, got.OutputCost, "OutputCost should sum Response and Thinking tokens at the Comp rate")
 	assert.Equal(t, 0.02, got.SearchCost)
 	assert.Equal(t, 35.02, got.TotalCost)
 }

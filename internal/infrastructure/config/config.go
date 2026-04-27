@@ -188,8 +188,7 @@ func debugLogModels(cfg *domain_config.Config) {
 			slog.Int("context_window", v.ContextWindow),
 			slog.Float64("pricing_comp", v.Pricing.Comp),
 			slog.Float64("pricing_hit", v.Pricing.Hit),
-			slog.Float64("pricing_miss", v.Pricing.Miss),
-			slog.Float64("pricing_thinking", v.Pricing.Thinking))
+			slog.Float64("pricing_miss", v.Pricing.Miss))
 	}
 }
 

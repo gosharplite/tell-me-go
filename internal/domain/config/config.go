@@ -215,10 +215,9 @@ func DefaultPricing() pricing.PricingData {
 				Comp: 14.00,
 			},
 			"deepseek-": {
-				Hit:      0.028,
-				Miss:     0.28,
-				Comp:     0.42,
-				Thinking: 0.42,
+				Hit:  0.028,
+				Miss: 0.28,
+				Comp: 0.42,
 			},
 			"claude-sonnet-4-6": {
 				Hit:  0.30,
