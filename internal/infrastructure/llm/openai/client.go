@@ -324,6 +324,7 @@ type completionTokensDetails struct {
 
 // prepareChatRequest constructs the chat request payload.
 // It returns an error if message conversion or JSON serialization fails.
+//nolint:gocyclo // Structural complexity from dual API surfaces and mutually-exclusive token field variants.
 func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
 	effort, hasEffort := c.headers["reasoning_effort"]
 	// useResponsesAPI requires gpt-4o-2024-11-20+ (gpt-5.4+ mock in resolution logic), tools, and reasoning_effort

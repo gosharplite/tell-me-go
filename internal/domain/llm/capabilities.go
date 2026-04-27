@@ -69,6 +69,7 @@ type Capabilities struct {
 // capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
 // if the URL is not available; transport-conditional capabilities will
 // default to false.
+//nolint:gocyclo // Structural complexity from model-variant detection. Splitting would break mutual-exclusion.
 func ResolveCapabilities(model, baseURL string) Capabilities {
 	var caps Capabilities
 
