@@ -148,6 +148,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		return nil, nil, err
 	}
 
+	// Coverage: defensive guard — version mismatch requires a concurrent Reconfigure() between loadHistory and commitToCache; intentionally untested to avoid flaky race tests.
 	if err := cm.commitToCache(snapshotVersion, persisted, req); err != nil {
 		return nil, nil, err
 	}

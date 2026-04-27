@@ -106,9 +106,21 @@ func TestInternalTools_Errors(t *testing.T) {
 		t.Errorf("Expected summarizer error, got: %v", err)
 	}
 
+	// Test turns <= 0 validation guard
+	_, err = it.SummarizeHistory(context.Background(), map[string]interface{}{"turns": float64(0)}, nil)
+	if err == nil || err.Error() != "invalid 'turns' parameter: must be > 0" {
+		t.Errorf("Expected 'invalid turns' error, got: %v", err)
+	}
+
 	_, err = it.ManageHistory(context.Background(), map[string]interface{}{"index": "invalid"}, nil)
 	if err == nil {
 		t.Error("Expected error from unmarshal in ManageHistory")
+	}
+
+	// Test unsupported action validation guard
+	_, err = it.ManageHistory(context.Background(), map[string]interface{}{"action": "bogus", "index": float64(0)}, nil)
+	if err == nil || err.Error() != "unsupported action: bogus" {
+		t.Errorf("Expected 'unsupported action' error, got: %v", err)
 	}
 }
 
@@ -185,6 +197,35 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
 		t.Errorf("Expected config failed error, got: %v", err)
 	}
+}
+
+func TestTokenGatekeeper_NilSummarizer(t *testing.T) {
+	ctx := context.Background()
+	req := &ports.ContextRequest{
+		History:  make([]*llm.Content, 20),
+		Metadata: ports.ContextMetadata{},
+	}
+	for i := 0; i < 20; i++ {
+		role := "user"
+		if i%2 != 0 {
+			role = "model"
+		}
+		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
+	}
+
+	gatekeeper := &session.TokenGatekeeper{
+		MaxTokens: 100000,
+		Estimator: &agenttest.MockEstimator{},
+		// Summarizer intentionally nil — tests the nil-guard path
+	}
+	// 95% tokens triggers safety pressure (90% threshold) but stays under
+	// the hard limit (MaxTokens - reserved = 100000 - min(1000, 10000) = 99000)
+	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95000)
+
+	err := gatekeeper.Transform(ctx, req)
+	require.ErrorIs(t, err, llm.ErrTerminal)
+	require.True(t, req.Metadata.MaintenanceBlocked)
+	require.Contains(t, err.Error(), "summarizer not initialized")
 }
 
 func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {

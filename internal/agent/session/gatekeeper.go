@@ -83,8 +83,8 @@ func (t *TokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 
 	n, err := t.autoSummarize(ctx, req)
 	if err != nil {
-		// Propagate critical errors, but continue if blocked
-		if errors.Is(err, ErrInvalidPayload) {
+		// Propagate structural and terminal errors, but continue if blocked.
+		if errors.Is(err, ErrInvalidPayload) || errors.Is(err, llm.ErrTerminal) {
 			return tokens, err
 		}
 		if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {

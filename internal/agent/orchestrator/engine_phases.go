@@ -145,6 +145,7 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, Turn *Turn, delay time.
 	// Publish RetryWaitingEvent to show the spinner during the backoff delay
 	_ = events.SafePublish(ctx, Turn.Events, events.RetryWaitingEvent{Duration: delay})
 
+	// Coverage: defensive guard — ctx cancellation between event publish and select is caught by the select:case itself; this early-check handles the interleaving edge case.
 	if err := ctx.Err(); err != nil {
 		return ProcessResult{}, err
 	}
