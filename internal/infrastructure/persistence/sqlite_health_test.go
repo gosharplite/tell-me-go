@@ -13,90 +13,105 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestSQLiteHealthChecker_Check(t *testing.T) {
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
+func TestSQLiteHealthChecker_Healthy(t *testing.T) {
+	t.Parallel()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
 
-	// Ensure the database file exists
 	if _, err := db.Exec("CREATE TABLE test (id INTEGER);"); err != nil {
 		t.Fatalf("failed to create table: %v", err)
 	}
 
 	checker := newSQLiteHealthChecker(db, dbPath)
-	ctx := context.Background()
+	report, err := checker.Check(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	t.Run("Healthy", func(t *testing.T) {
-		report, err := checker.Check(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	if report.Status != ports.StatusHealthy {
+		t.Errorf("expected StatusHealthy, got %s: %s", report.Status, report.Message)
+	}
 
-		if report.Status != ports.StatusHealthy {
-			t.Errorf("expected StatusHealthy, got %s: %s", report.Status, report.Message)
-		}
+	details, ok := report.Details.(map[string]any)
+	if !ok {
+		t.Fatal("expected Details to be a map[string]any")
+	}
 
-		details, ok := report.Details.(map[string]any)
-		if !ok {
-			t.Fatal("expected Details to be a map[string]any")
-		}
+	if details["path"] != dbPath {
+		t.Errorf("expected path %s, got %v", dbPath, details["path"])
+	}
 
-		if details["path"] != dbPath {
-			t.Errorf("expected path %s, got %v", dbPath, details["path"])
-		}
+	if details["integrity_result"] != "ok" {
+		t.Errorf("expected integrity_result ok, got %v", details["integrity_result"])
+	}
 
-		if details["integrity_result"] != "ok" {
-			t.Errorf("expected integrity_result ok, got %v", details["integrity_result"])
-		}
+	if _, ok := details["size_bytes"].(int64); !ok {
+		t.Errorf("expected size_bytes to be int64, got %T", details["size_bytes"])
+	}
+}
 
-		if _, ok := details["size_bytes"].(int64); !ok {
-			t.Errorf("expected size_bytes to be int64, got %T", details["size_bytes"])
-		}
-	})
+func TestSQLiteHealthChecker_UnhealthyDirNotFound(t *testing.T) {
+	t.Parallel()
+	badPath := filepath.Join(t.TempDir(), "nonexistent", "test.db")
+	db, err := sql.Open("sqlite", badPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
 
-	t.Run("Unhealthy_DirNotFound", func(t *testing.T) {
-		badPath := filepath.Join(tmpDir, "nonexistent", "test.db")
-		badChecker := newSQLiteHealthChecker(db, badPath)
-		report, _ := badChecker.Check(ctx)
+	checker := newSQLiteHealthChecker(db, badPath)
+	report, _ := checker.Check(context.Background())
 
-		if report.Status != ports.StatusUnhealthy {
-			t.Errorf("expected StatusUnhealthy, got %s", report.Status)
-		}
-	})
+	if report.Status != ports.StatusUnhealthy {
+		t.Errorf("expected StatusUnhealthy, got %s", report.Status)
+	}
+}
 
-	t.Run("Degraded_ReadOnly", func(t *testing.T) {
-		// Set the database to query_only
-		if _, err := db.Exec("PRAGMA query_only = 1;"); err != nil {
-			t.Fatalf("failed to set query_only: %v", err)
-		}
-		defer func() { _, _ = db.Exec("PRAGMA query_only = 0;") }()
+func TestSQLiteHealthChecker_DegradedReadOnly(t *testing.T) {
+	t.Parallel()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
 
-		report, err := checker.Check(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	if _, err := db.Exec("CREATE TABLE test (id INTEGER);"); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
 
-		if report.Status != ports.StatusDegraded {
-			t.Errorf("expected StatusDegraded, got %s", report.Status)
-		}
-	})
+	if _, err := db.Exec("PRAGMA query_only = 1;"); err != nil {
+		t.Fatalf("failed to set query_only: %v", err)
+	}
 
-	t.Run("Unhealthy_Corruption", func(t *testing.T) {
-		// We can't easily corrupt it, but we can mock a bad integrity result
-		// by closing the DB or using a mock. Here we just verify the logic path.
-		// Actually, let's close the DB and see how it behaves.
-		db2, _ := sql.Open("sqlite", filepath.Join(tmpDir, "db2.db"))
-		_ = db2.Close()
-		badChecker := newSQLiteHealthChecker(db2, filepath.Join(tmpDir, "db2.db"))
-		report, _ := badChecker.Check(ctx)
+	checker := newSQLiteHealthChecker(db, dbPath)
+	report, err := checker.Check(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-		if report.Status != ports.StatusUnhealthy {
-			t.Errorf("expected StatusUnhealthy when DB is closed, got %s", report.Status)
-		}
-	})
+	if report.Status != ports.StatusDegraded {
+		t.Errorf("expected StatusDegraded, got %s", report.Status)
+	}
+}
+
+func TestSQLiteHealthChecker_UnhealthyCorruption(t *testing.T) {
+	t.Parallel()
+	dbPath := filepath.Join(t.TempDir(), "db2.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	_ = db.Close()
+
+	checker := newSQLiteHealthChecker(db, dbPath)
+	report, _ := checker.Check(context.Background())
+
+	if report.Status != ports.StatusUnhealthy {
+		t.Errorf("expected StatusUnhealthy when DB is closed, got %s", report.Status)
+	}
 }

@@ -86,81 +86,56 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 	}
 }
 
-func TestUIBridge_EnqueueEvent_RoutingLogic(t *testing.T) {
+func TestUIBridge_EnqueueEvent_CriticalAccepted(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name          string
-		event         events.Event
-		fillQueue     bool
-		expectInQueue bool
-	}{
-		{
-			name:          "critical event - queued",
-			event:         events.ResponseEvent{},
-			fillQueue:     false,
-			expectInQueue: true,
-		},
-		{
-			name:          "non-critical event - queued",
-			event:         events.InferenceStartedEvent{},
-			fillQueue:     false,
-			expectInQueue: true,
-		},
-		{
-			name:          "non-critical event - shed when full",
-			event:         events.InferenceStartedEvent{},
-			fillQueue:     true,
-			expectInQueue: false,
-		},
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := &UIBridge{
+		loopCtx: loopCtx,
+		eventCh: make(chan events.Event, 1),
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			loopCtx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			b := &UIBridge{
-				loopCtx: loopCtx,
-				eventCh: make(chan events.Event, 1),
-				logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-			}
-
-			if tt.fillQueue {
-				b.eventCh <- events.TurnStarted{}
-			}
-
-			_ = b.enqueueEvent(context.Background(), tt.event)
-
-			if tt.expectInQueue {
-				if tt.fillQueue {
-					// This case would block if we didn't use a goroutine.
-					// For critical events, they block.
-					// For non-critical with fillQueue=true, they should be shed.
-				} else {
-					select {
-					case e := <-b.eventCh:
-						assert.Equal(t, tt.event, e)
-					default:
-						t.Error("Expected event to be in queue")
-					}
-				}
-			} else {
-				// Verify queue still has the filler and nothing else
-				select {
-				case e := <-b.eventCh:
-					assert.IsType(t, events.TurnStarted{}, e)
-				default:
-					t.Error("Expected filler to be in queue")
-				}
-				select {
-				case e := <-b.eventCh:
-					t.Errorf("Expected only filler in queue, but got %v", e)
-				default:
-					// Success
-				}
-			}
-		})
+	_ = b.enqueueEvent(context.Background(), events.ResponseEvent{})
+	select {
+	case e := <-b.eventCh:
+		assert.IsType(t, events.ResponseEvent{}, e)
+	default:
+		t.Error("expected critical event to be enqueued")
 	}
+}
+
+func TestUIBridge_EnqueueEvent_NonCriticalAccepted(t *testing.T) {
+	t.Parallel()
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := &UIBridge{
+		loopCtx: loopCtx,
+		eventCh: make(chan events.Event, 1),
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	_ = b.enqueueEvent(context.Background(), events.InferenceStartedEvent{})
+	select {
+	case e := <-b.eventCh:
+		assert.IsType(t, events.InferenceStartedEvent{}, e)
+	default:
+		t.Error("expected non-critical event to be enqueued")
+	}
+}
+
+func TestUIBridge_EnqueueEvent_ShedWhenFull(t *testing.T) {
+	t.Parallel()
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := &UIBridge{
+		loopCtx: loopCtx,
+		eventCh: make(chan events.Event, 1),
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	b.eventCh <- events.TurnStarted{}
+	_ = b.enqueueEvent(context.Background(), events.InferenceStartedEvent{})
+	assert.Equal(t, 1, len(b.eventCh))
+	e := <-b.eventCh
+	assert.IsType(t, events.TurnStarted{}, e)
 }
 
 func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
