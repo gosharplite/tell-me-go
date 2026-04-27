@@ -187,6 +187,35 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	}
 }
 
+func TestTokenGatekeeper_NilSummarizer(t *testing.T) {
+	ctx := context.Background()
+	req := &ports.ContextRequest{
+		History:  make([]*llm.Content, 20),
+		Metadata: ports.ContextMetadata{},
+	}
+	for i := 0; i < 20; i++ {
+		role := "user"
+		if i%2 != 0 {
+			role = "model"
+		}
+		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
+	}
+
+	gatekeeper := &session.TokenGatekeeper{
+		MaxTokens: 100000,
+		Estimator: &agenttest.MockEstimator{},
+		// Summarizer intentionally nil — tests the nil-guard path
+	}
+	// 95% tokens triggers safety pressure (90% threshold) but stays under
+	// the hard limit (MaxTokens - reserved = 100000 - min(1000, 10000) = 99000)
+	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95000)
+
+	err := gatekeeper.Transform(ctx, req)
+	require.ErrorIs(t, err, llm.ErrTerminal)
+	require.True(t, req.Metadata.MaintenanceBlocked)
+	require.Contains(t, err.Error(), "summarizer not initialized")
+}
+
 func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	// Create a mock event bus that always returns an error
 	mockBus := &eventstest.TestEventBus{}
