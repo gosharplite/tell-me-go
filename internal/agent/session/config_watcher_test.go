@@ -5,6 +5,7 @@ package session_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/stretchr/testify/assert"
 )
 
 type testSessionLoader struct{}
@@ -296,4 +298,84 @@ MAX_TURNS: 5
 
 func TestConfigWatcher_ManualLimits(t *testing.T) {
 	// Not implemented
+}
+
+// stubFileInfo implements os.FileInfo for testing.
+type stubFileInfo struct{ modTime time.Time }
+
+func (s stubFileInfo) Name() string       { return "stub" }
+func (s stubFileInfo) Size() int64        { return 0 }
+func (s stubFileInfo) Mode() os.FileMode  { return 0 }
+func (s stubFileInfo) ModTime() time.Time { return s.modTime }
+func (s stubFileInfo) IsDir() bool        { return false }
+func (s stubFileInfo) Sys() interface{}   { return nil }
+
+// stubFileStat implements session.FileStat for testing.
+type stubFileStat struct {
+	statErr error
+	modTime time.Time
+}
+
+func (s stubFileStat) Stat(name string) (os.FileInfo, error) {
+	if s.statErr != nil {
+		return nil, s.statErr
+	}
+	return stubFileInfo{modTime: s.modTime}, nil
+}
+
+// stubConfigLoader implements config.ConfigLoader for testing.
+type stubConfigLoader struct {
+	loadErr error
+	cfg     *config.Config
+}
+
+func (l stubConfigLoader) Load(path string) (*config.Config, error) {
+	if l.loadErr != nil {
+		return nil, l.loadErr
+	}
+	if l.cfg != nil {
+		return l.cfg, nil
+	}
+	return &config.Config{
+		MaxHistoryTokens: 10000,
+		MaxToolTurns:     20,
+		MaxHistoryTurns:  50,
+	}, nil
+}
+
+func TestFileConfigWatcher_Refresh_LoadError(t *testing.T) {
+	// Setup: Create FileConfigWatcher with a future mod time (triggers Stat) and a loader that errors.
+	fcw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := fcw.(*session.FileConfigWatcher)
+
+	cw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	cw.Loader = stubConfigLoader{loadErr: errors.New("parse error")}
+	cw.SetPaths("/fake/main.yaml", "")
+
+	// Action: Refresh should call Load, get error, keep original limits.
+	cw.Refresh("gpt-5")
+
+	// Assert: Limits unchanged from defaults.
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	assert.Equal(t, 100, tokens, "tokens should remain at default")
+	assert.Equal(t, 10, toolTurns, "toolTurns should remain at default")
+	assert.Equal(t, 20, historyTurns, "historyTurns should remain at default")
+}
+
+func TestFileConfigWatcher_Refresh_StatError(t *testing.T) {
+	// Setup: Create FileConfigWatcher with Stat returning os.ErrNotExist.
+	fcw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := fcw.(*session.FileConfigWatcher)
+
+	cw.FS = stubFileStat{statErr: os.ErrNotExist}
+	cw.SetPaths("/fake/main.yaml", "")
+
+	// Action: Refresh should call Stat, get error, return false immediately (no Load call).
+	cw.Refresh("gpt-5")
+
+	// Assert: Limits unchanged from defaults.
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	assert.Equal(t, 100, tokens, "tokens should remain at default")
+	assert.Equal(t, 10, toolTurns, "toolTurns should remain at default")
+	assert.Equal(t, 20, historyTurns, "historyTurns should remain at default")
 }
