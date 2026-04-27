@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-03-30T12:00:00Z",
+  "updated_at": "2026-04-27T10:45:00Z",
   "models": {
     "default": {
       "hit": 0.0,
@@ -8,36 +8,46 @@
       "thinking_budget": 0
     },
     "gpt-5": {
-      "hit": 0.25,
-      "miss": 2.5,
-      "comp": 15.00
+      "hit": 0.50,
+      "miss": 5.0,
+      "comp": 30.00
     },
     "deepseek-": {
       "hit": 0.028,
       "miss": 0.28,
       "comp": 0.42
     },
-    "claude-sonnet-4-6": {
-      "hit": 0.30,
-      "miss": 3.00,
-      "comp": 15.00
+    "deepseek-v4-flash": {
+      "hit": 0.028,
+      "miss": 0.28,
+      "comp": 0.42
     },
-    "claude-opus-4-6": {
+    "deepseek-v4-pro": {
+      "hit": 0.145,
+      "miss": 1.74,
+      "comp": 3.84
+    },
+    "claude-": {
       "hit": 0.50,
-      "miss": 5.00,
+      "miss": 6.25,
+      "comp": 25.00
+    },
+    "claude-opus-4-7": {
+      "hit": 0.50,
+      "miss": 6.25,
       "comp": 25.00
     },
     "gemini-3-flash-preview": {
-      "hit": 0.05,
-      "miss": 0.50,
-      "comp": 3.00,
+      "hit": 0.09,
+      "miss": 0.90,
+      "comp": 5.40,
       "thinking_budget": 32768,
       "search_query": 0.014
     },
     "gemini-3.1-pro-preview": {
-      "hit": 0.20,
-      "miss": 2.00,
-      "comp": 12.0,
+      "hit": 0.36,
+      "miss": 3.60,
+      "comp": 21.60,
       "thinking_budget": 65536,
       "search_query": 0.014
     }
