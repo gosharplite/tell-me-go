@@ -69,26 +69,40 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 	result, err = p.runtime.Execute(parentCtx, tool, call, nil)
 	status, msg := classifyToolError(err, result.Error)
 
-	switch status {
-	case "user_declined":
-		return tools.ToolResult{Text: msg, Error: nil}
-	case "security_blocked":
-		// Identify the actual security error
-		secErr := err
-		if secErr == nil {
-			secErr = result.Error
-		}
-		if secErr == nil {
-			secErr = tools.ErrSecurityPolicy // fallback
-		}
-		// Return the security error without wrapping as terminal.
-		// The LLM will see the message and can adjust its behavior.
-		return tools.ToolResult{
-			Text:  msg,
-			Error: secErr, // NOT wrapped with llm.ErrTerminal
-		}
+	if classified, handled := handleClassifiedError(status, msg, err, result.Error); handled {
+		return classified
 	}
 
+	return applyGenericErrorHandling(result, call, err)
+}
+
+// handleClassifiedError returns a ToolResult for classified error statuses
+// (user_declined, security_blocked). It returns (ToolResult{}, false) for
+// unclassified statuses, meaning the caller should apply generic error handling.
+func handleClassifiedError(status, msg string, err, resultErr error) (tools.ToolResult, bool) {
+	switch status {
+	case "user_declined":
+		return tools.ToolResult{Text: msg, Error: nil}, true
+	case "security_blocked":
+		secErr := err
+		if secErr == nil {
+			secErr = resultErr
+		}
+		if secErr == nil {
+			secErr = tools.ErrSecurityPolicy
+		}
+		return tools.ToolResult{
+			Text:  msg,
+			Error: secErr,
+		}, true
+	default:
+		return tools.ToolResult{}, false
+	}
+}
+
+// applyGenericErrorHandling enriches result with err when the error is not
+// classified as user_declined or security_blocked.
+func applyGenericErrorHandling(result tools.ToolResult, call *llm.FunctionCall, err error) tools.ToolResult {
 	if err != nil {
 		if result.Error == nil {
 			result.Error = err
@@ -96,7 +110,6 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 		if result.Text == "" {
 			result.Text = fmt.Sprintf("Error: tool execution failed: %s: %v", call.Name, err)
 		}
-		// Do not wrap in llm.ErrTerminal so the LLM can see the error and retry.
 	}
 	return result
 }

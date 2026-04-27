@@ -595,3 +595,223 @@ func TestExecutor_PanicRecovery(t *testing.T) {
 	assert.Contains(t, result.Text, "encountered an internal fatal error (panic)")
 	assert.Contains(t, result.Error.Error(), "simulated fatal error")
 }
+
+func TestExecuteTool_ResolverFailure_ReturnsErrorWithText(t *testing.T) {
+	t.Parallel()
+
+	// Registry with no getDeclarationsFn set → defaults to [{Name: "test_tool"}]
+	// So "nonexistent_tool" won't be found by the resolver
+	reg := &mockToolRegistry{}
+
+	pipeline := newDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{AllowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	result := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "nonexistent_tool"})
+
+	assert.Error(t, result.Error)
+	assert.Contains(t, result.Text, "not defined")
+	assert.Contains(t, result.Text, "nonexistent_tool")
+}
+
+func TestExecuteTool_UserDeclined_ReturnsErrorNilTextHasMessage(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "risky_tool"}}
+		},
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{}, tools.ErrUserDeclined
+		},
+	}
+
+	pipeline := newDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{AllowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	result := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "risky_tool"})
+
+	assert.Nil(t, result.Error, "user_declined must result in Error: nil")
+	assert.Contains(t, result.Text, "denied")
+}
+
+func TestExecuteTool_SecurityBlocked_ErrNonNil_ReturnsSecurityError(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "blocked_tool"}}
+		},
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{}, tools.ErrSecurityPolicy
+		},
+	}
+
+	pipeline := newDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{AllowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	result := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "blocked_tool"})
+
+	assert.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, tools.ErrSecurityPolicy))
+	assert.Contains(t, result.Text, "blocked")
+}
+
+func TestExecuteTool_SecurityBlocked_ResultErrorNonNil_ReturnsSecurityError(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "blocked_tool"}}
+		},
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Error: tools.ErrSecurityPolicy, Text: "raw output"}, nil
+		},
+	}
+
+	pipeline := newDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{AllowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	result := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "blocked_tool"})
+
+	assert.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, tools.ErrSecurityPolicy))
+	assert.Contains(t, result.Text, "blocked")
+}
+
+func TestExecuteTool_GenericError_ResultErrorNil_AutoFillsError(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{}, fmt.Errorf("disk full")
+		},
+	}
+
+	pipeline := newDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{AllowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	result := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "test_tool"})
+
+	assert.Error(t, result.Error, "Error should be set from err")
+	assert.NotEmpty(t, result.Text, "Text should be auto-filled")
+	assert.Contains(t, result.Text, "disk full")
+}
+
+func TestExecuteTool_GenericError_ResultTextPreserved_DoesNotOverwrite(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Text: "custom error message from tool"}, fmt.Errorf("wrapped failure")
+		},
+	}
+
+	pipeline := newDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{AllowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	result := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "test_tool"})
+
+	assert.Error(t, result.Error, "Error should be auto-filled from err")
+	assert.Equal(t, "custom error message from tool", result.Text, "Text must NOT be overwritten")
+}
+
+func TestDispatcher_Execute_MaxTurnsExhausted_ReturnsErrMaxTurnsReached(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{}
+
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
+
+	result, execErr := exec.Execute(context.Background(), respContent, 5, 5)
+
+	assert.Nil(t, result, "result should be nil when max turns exhausted")
+	assert.Error(t, execErr)
+	assert.True(t, errors.Is(execErr, llm.ErrMaxTurnsReached), "error should be ErrMaxTurnsReached")
+}
+
+func TestDispatcher_Execute_ErrTerminal_PropagatesErrorWithResponse(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			if name == "fatal_tool" {
+				panic("fatal: out of memory")
+			}
+			return tools.ToolResult{Text: "ok"}, nil
+		},
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "fatal_tool"}}
+		},
+	}
+
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "fatal_tool"}},
+		},
+	}
+
+	result, execErr := exec.Execute(context.Background(), respContent, 0, 10)
+
+	assert.NotNil(t, result, "result should be the assembled response")
+	assert.NotEmpty(t, result.Parts, "result should have at least one part")
+	assert.Error(t, execErr)
+	assert.True(t, errors.Is(execErr, llm.ErrTerminal), "error should be ErrTerminal")
+}
