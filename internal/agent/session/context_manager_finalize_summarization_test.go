@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
@@ -88,5 +89,81 @@ func TestFinalizeSummarization_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			runFinalizeSummarizationErrorTest(t, tt.archiveErr, tt.setContentsErr, tt.expectedErr, tt.checkSetContents)
 		})
+	}
+}
+
+// callCountingHM extends MockHistoryManager with a GetWindow that can be
+// scripted to fail on a specific call index. All other methods delegate
+// to the embedded MockHistoryManager.
+type callCountingHM struct {
+	agenttest.MockHistoryManager
+	getWindowCallCount int
+	failOnCallN        int   // 1-indexed: fail on the Nth GetWindow call
+	getWindowErr       error // error to return on the failing call
+}
+
+func (m *callCountingHM) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	m.getWindowCallCount++
+	if m.failOnCallN > 0 && m.getWindowCallCount == m.failOnCallN {
+		return nil, m.getWindowErr
+	}
+	return m.MockHistoryManager.GetWindow(ctx, startIdx, endIdx)
+}
+
+// TestSummarizeRange_GetWindowErrorInCheckWindowSize verifies that a GetWindow
+// error in checkWindowSize (the first call site, during boundary search)
+// propagates back through SummarizeRange.
+func TestSummarizeRange_GetWindowErrorInCheckWindowSize(t *testing.T) {
+	ctx := context.Background()
+	content := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "how are you?"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "I'm fine"}}},
+	}
+
+	h := &callCountingHM{}
+	h.Contents = cloneContentSlice(content)
+	h.failOnCallN = 1
+	h.getWindowErr = errors.New("db read error")
+
+	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
+	cm.Summarizer = &agenttest.MockSummarizer{}
+
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "db read error") {
+		t.Errorf("expected error containing 'db read error', got: %v", err)
+	}
+}
+
+// TestSummarizeRange_GetWindowErrorInFinalizeSummarization verifies that a
+// GetWindow error in finalizeSummarization (the second call site, after the
+// summarizer succeeds) propagates back through SummarizeRange.
+func TestSummarizeRange_GetWindowErrorInFinalizeSummarization(t *testing.T) {
+	ctx := context.Background()
+	content := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "how are you?"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "I'm fine"}}},
+	}
+
+	h := &callCountingHM{}
+	h.Contents = cloneContentSlice(content)
+	h.failOnCallN = 2
+	h.getWindowErr = errors.New("concurrent modification")
+
+	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
+	cm.Summarizer = &agenttest.MockSummarizer{}
+
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "concurrent modification") {
+		t.Errorf("expected error containing 'concurrent modification', got: %v", err)
 	}
 }
