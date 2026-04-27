@@ -132,47 +132,55 @@ func (a *defaultDeadCodeAnalyzer) propagateConstructorUsagesToReturnTypes(state 
 			continue
 		}
 
-		meta, ok := state.declarations[id]
-		if !ok || meta.obj == nil {
+		a.processConstructorUsage(id, snapshotExternal[id], state)
+	}
+}
+
+func (a *defaultDeadCodeAnalyzer) processConstructorUsage(id string, externalCount int, state *scanState) {
+	meta, ok := state.declarations[id]
+	if !ok || meta.obj == nil {
+		return
+	}
+	fn, ok := meta.obj.(*types.Func)
+	if !ok {
+		return
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok {
+		return
+	}
+
+	a.markPropagated(id, sig, externalCount, state)
+}
+
+func (a *defaultDeadCodeAnalyzer) markPropagated(sourceId string, sig *types.Signature, externalCount int, state *scanState) {
+	for _, named := range extractNamedReturnTypes(sig) {
+		tn := named.Obj()
+		if tn == nil {
 			continue
 		}
-		fn, ok := meta.obj.(*types.Func)
-		if !ok {
+		typeId := getSymbolIdentity(tn)
+		if typeId == "" || typeId == sourceId {
+			// Self-referential safety: a fluent method T.Foo() *T must
+			// not propagate its own usage back to T as if the type itself
+			// were the source. (In practice id and typeId differ for
+			// methods because id includes the receiver name, but the
+			// check is defensive.)
 			continue
 		}
-		sig, ok := fn.Type().(*types.Signature)
-		if !ok {
+		if _, exists := state.declarations[typeId]; !exists {
+			// The type isn't one of our harvested module-internal
+			// declarations (e.g., stdlib types like *os.File, or types
+			// in excluded packages). Nothing to protect.
 			continue
 		}
 
-		for _, named := range extractNamedReturnTypes(sig) {
-			tn := named.Obj()
-			if tn == nil {
-				continue
-			}
-			typeId := getSymbolIdentity(tn)
-			if typeId == "" || typeId == id {
-				// Self-referential safety: a fluent method T.Foo() *T must
-				// not propagate its own usage back to T as if the type itself
-				// were the source. (In practice id and typeId differ for
-				// methods because id includes the receiver name, but the
-				// check is defensive.)
-				continue
-			}
-			if _, exists := state.declarations[typeId]; !exists {
-				// The type isn't one of our harvested module-internal
-				// declarations (e.g., stdlib types like *os.File, or types
-				// in excluded packages). Nothing to protect.
-				continue
-			}
-
-			// Mirror the bookkeeping done by trackExternalUsages and
-			// processImplementations: bump totalUses to at least 1, then
-			// flow the source's external-usage count.
-			if state.totalUses[typeId] == 0 {
-				state.totalUses[typeId] = 1
-			}
-			state.externalUses[typeId] += snapshotExternal[id]
+		// Mirror the bookkeeping done by trackExternalUsages and
+		// processImplementations: bump totalUses to at least 1, then
+		// flow the source's external-usage count.
+		if state.totalUses[typeId] == 0 {
+			state.totalUses[typeId] = 1
 		}
+		state.externalUses[typeId] += externalCount
 	}
 }
