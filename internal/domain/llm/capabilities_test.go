@@ -169,3 +169,28 @@ func TestResolveCapabilities(t *testing.T) {
 		})
 	}
 }
+
+func TestParseGPTVersion(t *testing.T) {
+	tests := []struct {
+		model string
+		want  gptVersion
+	}{
+		{"gpt-4", gptVersion{major: 4, minor: 0, ok: true}},
+		{"gpt-5", gptVersion{major: 5, minor: 0, ok: true}},
+		{"gpt-5.4", gptVersion{major: 5, minor: 4, ok: true}},
+		{"gpt-6", gptVersion{major: 6, minor: 0, ok: true}},
+		{"gpt-6.1", gptVersion{major: 6, minor: 1, ok: true}},
+		{"gpt-4o", gptVersion{major: 4, minor: 0, ok: true}}, // Sscanf stops at 'o'
+		{"deepseek-v3", gptVersion{ok: false}},
+		{"o1", gptVersion{ok: false}},
+		{"claude-3", gptVersion{ok: false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			got := parseGPTVersion(tt.model)
+			if got != tt.want {
+				t.Errorf("parseGPTVersion(%q) = %+v; want %+v", tt.model, got, tt.want)
+			}
+		})
+	}
+}

@@ -592,43 +592,65 @@ func TestGoRunner_GetModuleDir(t *testing.T) {
 	}
 }
 
+// mockForShortAndProfile returns a mock executor that captures test args
+// and returns success for both test and cover commands.
+func mockForShortAndProfile(t *testing.T) (*mockExecutor, *[]string) {
+	t.Helper()
+	var capturedArgs []string
+	mock := &mockExecutor{
+		combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if name == "go" && len(args) > 0 && args[0] == "test" {
+				capturedArgs = args
+			}
+			if len(args) > 0 && args[0] == "test" {
+				return []byte("ok"), nil
+			}
+			if len(args) > 1 && args[0] == "tool" && args[1] == "cover" {
+				return []byte("total: (statements) 50.0%"), nil
+			}
+			return nil, nil
+		},
+	}
+	return mock, &capturedArgs
+}
+
+// mockForUnmatchedRegex returns a mock executor that returns a coverage
+// output with no percentage match, forcing "N/A".
+func mockForUnmatchedRegex() *mockExecutor {
+	return &mockExecutor{
+		combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if len(args) > 0 && args[0] == "test" {
+				return []byte("ok"), nil
+			}
+			if len(args) > 1 && args[0] == "tool" && args[1] == "cover" {
+				return []byte("no match"), nil
+			}
+			return nil, nil
+		},
+	}
+}
+
 func TestRunTestsWithCoverage_Options(t *testing.T) {
 	t.Run("short and profilePath", func(t *testing.T) {
-		var capturedArgs []string
-		mock := &mockExecutor{
-			combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "go" && len(args) > 0 && args[0] == "test" {
-					capturedArgs = args
-				}
-				if len(args) > 0 && args[0] == "test" {
-					return []byte("ok"), nil
-				}
-				if len(args) > 1 && args[0] == "tool" && args[1] == "cover" {
-					return []byte("total: (statements) 50.0%"), nil
-				}
-				return nil, nil
-			},
-		}
+		mock, capturedArgs := mockForShortAndProfile(t)
 		runner := NewGoRunner(mock)
 		report, err := runner.RunTestsWithCoverage(context.Background(), "./...", true, "custom.out")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		foundShort := false
-		foundProfile := false
-		for _, arg := range capturedArgs {
-			if arg == "-short" {
-				foundShort = true
+		hasFlag := func(slice []string, flag string) bool {
+			for _, s := range slice {
+				if s == flag || strings.HasPrefix(s, flag+"=") {
+					return true
+				}
 			}
-			if strings.HasPrefix(arg, "-coverprofile=custom.out") {
-				foundProfile = true
-			}
+			return false
 		}
-		if !foundShort {
+		if !hasFlag(*capturedArgs, "-short") {
 			t.Error("expected -short flag")
 		}
-		if !foundProfile {
+		if !hasFlag(*capturedArgs, "-coverprofile=custom.out") {
 			t.Error("expected -coverprofile=custom.out")
 		}
 		if report.CoveragePct != "50.0%" {
@@ -637,17 +659,7 @@ func TestRunTestsWithCoverage_Options(t *testing.T) {
 	})
 
 	t.Run("unmatched regex", func(t *testing.T) {
-		mock := &mockExecutor{
-			combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if len(args) > 0 && args[0] == "test" {
-					return []byte("ok"), nil
-				}
-				if len(args) > 1 && args[0] == "tool" && args[1] == "cover" {
-					return []byte("no match"), nil
-				}
-				return nil, nil
-			},
-		}
+		mock := mockForUnmatchedRegex()
 		runner := NewGoRunner(mock)
 		report, _ := runner.RunTestsWithCoverage(context.Background(), "./...", false, "")
 		if report.CoveragePct != "N/A" {

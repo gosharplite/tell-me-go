@@ -21,30 +21,35 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
+// appendContent writes a single llm.Content as a JSON line to the archive
+// and returns the byte offset where the line was written.
+func appendContent(archivePath string, c *llm.Content) int64 {
+	stat, err := os.Stat(archivePath)
+	var start int64
+	if err == nil && stat != nil {
+		start = stat.Size()
+	}
+	f, err := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		panic(fmt.Sprintf("appendContent: %v", err))
+	}
+	defer func() { _ = f.Close() }()
+	data, _ := json.Marshal(c)
+	data = append(data, '\n')
+	_, _ = f.Write(data)
+	return start
+}
+
 func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	ctx := context.Background()
 	fs := persistence.NewOSFileSystem()
 	tmpDir := t.TempDir()
 	archivePath := filepath.Join(tmpDir, "archive.jsonl")
 
-	appendContent := func(c *llm.Content) int64 {
-		stat, _ := os.Stat(archivePath)
-		var start int64
-		if stat != nil {
-			start = stat.Size()
-		}
-		f, _ := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-		defer func() { _ = f.Close() }()
-		data, _ := json.Marshal(c)
-		data = append(data, '\n')
-		_, _ = f.Write(data)
-		return start
-	}
-
-	off1 := appendContent(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 1"}}})
-	appendContent(&llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 1"}}})
-	off3 := appendContent(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 2"}}})
-	appendContent(&llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 2"}}})
+	off1 := appendContent(archivePath, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 1"}}})
+	appendContent(archivePath, &llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 1"}}})
+	off3 := appendContent(archivePath, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 2"}}})
+	appendContent(archivePath, &llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 2"}}})
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
 
@@ -72,7 +77,7 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	})
 
 	t.Run("masking large binary data", func(t *testing.T) {
-		off := appendContent(&llm.Content{
+		off := appendContent(archivePath, &llm.Content{
 			Role: "user",
 			Parts: []*llm.Part{
 				{Text: "A picture:"},
@@ -89,7 +94,7 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	})
 
 	t.Run("complex content parts", func(t *testing.T) {
-		off := appendContent(&llm.Content{
+		off := appendContent(archivePath, &llm.Content{
 			Role: "assistant",
 			Parts: []*llm.Part{
 				{IsThought: true, Text: "Thinking..."},
@@ -118,7 +123,7 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	})
 
 	t.Run("function response part", func(t *testing.T) {
-		off := appendContent(&llm.Content{
+		off := appendContent(archivePath, &llm.Content{
 			Role: "user",
 			Parts: []*llm.Part{
 				{FunctionResponse: &llm.FunctionResponse{Name: "get_weather", Response: map[string]interface{}{"temp": 22}}},
