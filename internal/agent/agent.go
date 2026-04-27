@@ -162,13 +162,12 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	oldCfg := a.config.Load()
 	a.configWatcher.Refresh(oldCfg.Model)
 
-	tokens, toolTurns, histTurns, threshold := a.configWatcher.GetLimits()
+	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
 
 	newCfg := *oldCfg // shallow copy
 	newCfg.Limits.MaxHistoryTokens = tokens
 	newCfg.Limits.MaxToolTurns = toolTurns
 	newCfg.Limits.MaxHistoryTurns = histTurns
-	newCfg.Limits.TieredThreshold = threshold
 
 	if a.strategy != nil {
 		a.configWatcher.SyncToStrategy(a.strategy)
@@ -221,13 +220,6 @@ func (a *agent) emit(ctx context.Context, e events.Event) {
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
 func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-	return a.applyConfig(ctx)
-}
-
-// SetTieredThreshold sets the tiered threshold for the agent.
-// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
-	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
 	return a.applyConfig(ctx)
 }
 

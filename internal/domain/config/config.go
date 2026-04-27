@@ -18,10 +18,9 @@ const (
 	DefaultMaxHistoryTokens   = 120000
 	DefaultMaxConcurrentTools = 5
 	DefaultToolTimeoutSeconds = 30
-	DefaultTieredThreshold    = 0
 	DefaultMaxLoopRepetitions = 5
 	DefaultHTTPTimeoutSeconds = 300  // 5 minutes
-	WarningRatio              = 0.78 // ~100k for 128k cliff
+	WarningRatio              = 0.78 // Ratio to trigger safety warnings before hard limits
 	SystemContextBuffer       = 1000 // Reserved space for system warnings/instructions
 )
 
@@ -170,16 +169,6 @@ func (c *Config) ResolveContextWindow() int {
 		return maxTokens
 	}
 	return maxTokens
-}
-
-// ResolveTieredThreshold returns the tiered cost threshold for the model.
-func (c *Config) ResolveTieredThreshold(pData pricing.PricingData) int {
-	if mPricing, ok := findBestMatch(pData.Models, c.Model, func(p pricing.ModelPricing) bool {
-		return p.TieredThreshold > 0
-	}); ok {
-		return int(mPricing.TieredThreshold)
-	}
-	return DefaultTieredThreshold
 }
 
 // findBestMatch encapsulates the priority matching logic: exact match first, then substring match.

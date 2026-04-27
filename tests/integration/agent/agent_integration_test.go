@@ -162,48 +162,6 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	}
 }
 
-func TestAgent_TieredThreshold(t *testing.T) {
-	t.Parallel()
-	client := &agenttest.MockLLMClient{}
-	tmpDir := t.TempDir()
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
-	reg := registry.New()
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
-
-	a, err := agent.NewAgent(client, bus, reg,
-		agent.WithHistoryManager(h),
-		agent.WithProviderName("test-provider"),
-		agent.WithSecurityManager(sm),
-	)
-	require.NoError(t, err)
-
-	// Subscribe to track updates
-	updated := make(chan struct{}, 10)
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
-		if cfg, ok := e.(events.ConfigUpdated); ok && cfg.Limits.TieredThreshold == 100000 {
-			select {
-			case updated <- struct{}{}:
-			default:
-			}
-		}
-	})
-
-	_ = a.SetTieredThreshold(context.Background(), 100000)
-
-	// Wait for the update to propagate through the event bus to the strategy
-	select {
-	case <-updated:
-	case <-time.After(2 * time.Second):
-		t.Errorf("Timeout waiting for TieredThreshold update event")
-	}
-
-	if agentinternal.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold() != 100000 {
-		t.Errorf("expected TieredThreshold 100000, got %d", agentinternal.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold())
-	}
-}
-
 func TestAgent_ToolFlow_Retry(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()

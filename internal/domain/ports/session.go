@@ -47,7 +47,6 @@ type ChatExecutor interface {
 // ChatConfigurator defines the interface for configuring chat parameters.
 type ChatConfigurator interface {
 	SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error
-	SetTieredThreshold(ctx context.Context, threshold int) error
 }
 
 // ChatEventSource defines the interface for subscribing to chat events.

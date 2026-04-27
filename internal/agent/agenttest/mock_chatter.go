@@ -28,11 +28,6 @@ func (m *MockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, h
 	return args.Error(0)
 }
 
-func (m *MockChatter) SetTieredThreshold(ctx context.Context, threshold int) error {
-	args := m.Called(ctx, threshold)
-	return args.Error(0)
-}
-
 func (m *MockChatter) Subscribe(sub func(context.Context, events.Event)) {
 	m.Called(sub)
 }

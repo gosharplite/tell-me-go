@@ -191,9 +191,6 @@ func (m *mockServiceAgent) Chat(ctx context.Context, sess *ports.Session, prompt
 func (m *mockServiceAgent) SetLimits(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
 	return m.Called(ctx, maxTurns, contextWindow, historyTurns).Error(0)
 }
-func (m *mockServiceAgent) SetTieredThreshold(ctx context.Context, threshold int) error {
-	return m.Called(ctx, threshold).Error(0)
-}
 func (m *mockServiceAgent) Subscribe(handler func(context.Context, events.Event)) { m.Called(handler) }
 func (m *mockServiceAgent) Shutdown(ctx context.Context) error                    { return m.Called(ctx).Error(0) }
 

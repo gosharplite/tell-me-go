@@ -23,29 +23,18 @@ type ContextStrategy struct {
 	maxHistoryTokens int
 	maxToolTurns     int
 	maxHistoryTurns  int
-	tieredThreshold  int
 	contextWindow    int
 }
 
 // NewContextStrategy creates a new context strategy.
 func NewContextStrategy(counter llm.TokenCounter) *ContextStrategy {
-	defaultThreshold := config.DefaultTieredThreshold
 	defaultWindow := 1000000 // Default to 1M if unknown
-	if dp := config.DefaultPricing(); dp.Models != nil {
-		if m, ok := dp.Models["default"]; ok {
-			if m.TieredThreshold > 0 {
-				defaultThreshold = int(m.TieredThreshold)
-			}
-			// Note: Pricing might not have context window, it's in config.ModelConfig
-		}
-	}
 
 	cs := &ContextStrategy{
 		counter:          counter,
 		maxHistoryTokens: config.DefaultMaxHistoryTokens,
 		maxToolTurns:     config.DefaultMaxToolTurns,
 		maxHistoryTurns:  config.DefaultMaxHistoryTurns,
-		tieredThreshold:  defaultThreshold,
 		contextWindow:    defaultWindow,
 	}
 
@@ -83,25 +72,11 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 	}
 }
 
-func (cs *ContextStrategy) SetTieredThreshold(threshold int) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	if threshold >= 0 {
-		cs.tieredThreshold = threshold
-	}
-}
-
 // getLimits returns the current limits.
 func (cs *ContextStrategy) getLimits() (int, int, int) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.maxHistoryTokens, cs.maxToolTurns, cs.maxHistoryTurns
-}
-
-func (cs *ContextStrategy) GetTieredThreshold() int {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.tieredThreshold
 }
 
 // EstimateTokens provides a heuristic-based token count with incremental caching.
@@ -129,26 +104,8 @@ func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns, prunedTurns i
 	if w := cs.getHistoryTurnWarningLocked(currentTurns, prunedTurns); w != "" {
 		warnings = append(warnings, warning{Message: w})
 	}
-	if w := cs.getPriceWarningLocked(tokens); w != "" {
-		warnings = append(warnings, warning{Message: w})
-	}
 
 	return warnings
-}
-
-func (cs *ContextStrategy) getPriceWarningLocked(tokens int) string {
-	cliff := cs.tieredThreshold
-	if cliff <= 0 {
-		return ""
-	}
-	warning := int(float64(cliff) * config.WarningRatio)
-
-	if tokens >= cliff {
-		return "[URGENT ECONOMIC NOTICE: The high-tier billing threshold has been reached. Current operational costs are now 2x higher. You MUST be extremely concise, minimize internal reasoning (Thinking Tokens), and combine multiple operations into single turns where possible to conserve the user's budget.]"
-	} else if tokens >= warning {
-		return "[ECONOMIC NOTICE: You are approaching the high-tier billing threshold. To protect the user's budget, please be highly selective with tool calls and avoid redundant operations. Focus on high-impact actions and be concise in your reasoning.]"
-	}
-	return ""
 }
 
 func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {

@@ -111,7 +111,6 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	}).Return()
 
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 	mCapturer.On("IsTTY", mock.Anything).Return(true)
 

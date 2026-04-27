@@ -37,14 +37,12 @@ func TestContextManager_GetLimits(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	strategy.SetLimits(1000, 20, 30)
-	strategy.SetTieredThreshold(500)
 	cm := session.NewContextManager(strategy, &agenttest.MockHistoryManager{}, nil, nil)
 
 	limits := cm.GetLimits()
 	assert.Equal(t, 1000, limits.MaxHistoryTokens)
 	assert.Equal(t, 20, limits.MaxToolTurns)
 	assert.Equal(t, 30, limits.MaxHistoryTurns)
-	assert.Equal(t, 500, limits.TieredThreshold)
 }
 
 func TestContextManager_Summarize(t *testing.T) {
@@ -267,7 +265,6 @@ func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 		MaxToolTurns:     50,
 		MaxHistoryTurns:  100,
 		ContextWindow:    2000,
-		TieredThreshold:  1000,
 	}
 
 	cm.Reconfigure(newLimits)
@@ -279,7 +276,6 @@ func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	assert.Equal(t, 9999, strategy.GetMaxHistoryTokens())
 	assert.Equal(t, 50, strategy.GetMaxToolTurns())
 	assert.Equal(t, 2000, strategy.GetContextWindow())
-	assert.Equal(t, 1000, strategy.GetTieredThreshold())
 
 	// Reconfigure again to ensure it updates again (rebuilds pipeline)
 	newLimits.MaxHistoryTokens = 8888

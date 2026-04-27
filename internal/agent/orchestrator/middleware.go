@@ -53,7 +53,6 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 	limits := Turn.CtxManager.GetLimits()
 	maxTokens := limits.MaxHistoryTokens
 	maxHistTurns := limits.MaxHistoryTurns
-	threshold := limits.TieredThreshold
 
 	var cost float64
 	var dailyCost float64
@@ -75,7 +74,6 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 			MaxHistoryTurns:  maxHistTurns,
 			Tokens:           Turn.State.Tokens,
 			MaxHistoryTokens: maxTokens,
-			TieredThreshold:  threshold,
 			Metrics:          Turn.State.Metrics,
 			IsPostCall:       isPostCall,
 			IsFinal:          isFinal,

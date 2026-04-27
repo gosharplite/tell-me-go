@@ -60,7 +60,6 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
