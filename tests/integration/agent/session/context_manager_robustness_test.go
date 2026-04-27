@@ -613,7 +613,9 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 }
 
 // countingEventBus is a simple events.EventBus that counts published
-// events. It used to live in internal/domain/testutil but was inlined
+// events. Originally lived in the old centralized testutil dump that
+// was dissolved per ADR-021; inlined here when its sole consumer turned
+// out to be this file (audit INLINE
 // here when its sole consumer turned out to be this file (audit INLINE
 // bucket; see docs/refactor/testutil-audit.md, Session 6).
 type countingEventBus struct {

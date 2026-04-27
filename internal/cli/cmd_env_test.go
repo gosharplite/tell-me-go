@@ -28,6 +28,29 @@ func (m *mockLoader) Load(path string) (*domain_config.Config, error) {
 	return &m.Config, nil
 }
 
+// assertEnvOutput validates the env command's YAML output.
+// When checkMasking is true, it also verifies API keys are redacted.
+func assertEnvOutput(t *testing.T, output string, expectedMode string, checkMasking bool) {
+	t.Helper()
+	if checkMasking {
+		if strings.Contains(output, "sk-1234567890") {
+			t.Errorf("Execute() output contains unmasked API Key")
+		}
+		if !strings.Contains(output, "********") {
+			t.Errorf("Execute() output missing redacted mask")
+		}
+	}
+
+	var decoded domain_config.Config
+	if err := yaml.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("Execute() output is not valid YAML: %v", err)
+	}
+
+	if expectedMode != "" && decoded.Mode != expectedMode {
+		t.Errorf("Execute() YAML mismatch: got mode %q, want %q", decoded.Mode, expectedMode)
+	}
+}
+
 func TestEnvCommand_Execute(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -89,11 +112,11 @@ func TestEnvCommand_Execute(t *testing.T) {
 			cmd := newEnvCommand(cmdCtx)
 			root.AddCommand(cmd)
 
-			if len(tt.args) > 0 {
-				root.SetArgs(tt.args)
-			} else {
-				root.SetArgs([]string{"env"})
+			args := tt.args
+			if len(args) == 0 {
+				args = []string{"env"}
 			}
+			root.SetArgs(args)
 
 			err := root.ExecuteContext(stdctx.Background())
 
@@ -102,26 +125,7 @@ func TestEnvCommand_Execute(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				output := stdout.String()
-				if tt.wantMask {
-					if strings.Contains(output, "sk-1234567890") {
-						t.Errorf("Execute() output contains unmasked API Key")
-					}
-					if !strings.Contains(output, "********") {
-						t.Errorf("Execute() output missing redacted mask")
-					}
-				}
-
-				// Verify it's valid YAML
-				var decoded domain_config.Config
-				if err := yaml.Unmarshal([]byte(output), &decoded); err != nil {
-					t.Fatalf("Execute() output is not valid YAML: %v", err)
-				}
-
-				// Check that uppercase tags are preserved (via unmarshaling back)
-				if tt.config.Mode != "" && decoded.Mode != tt.config.Mode {
-					t.Errorf("Execute() YAML mismatch: got mode %q, want %q", decoded.Mode, tt.config.Mode)
-				}
+				assertEnvOutput(t, stdout.String(), tt.config.Mode, tt.wantMask)
 			}
 		})
 	}

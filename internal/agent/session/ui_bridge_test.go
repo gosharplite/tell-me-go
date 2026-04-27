@@ -20,6 +20,44 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// newStartedTestBridge creates a UIBridge with default test options,
+// starts its background Listen loop, and registers cleanup.
+// Returns the bridge and a context.CancelFunc for the bridge's lifecycle.
+func newStartedTestBridge(t *testing.T) (*UIBridge, context.CancelFunc, *agenttest.MockUIRenderer) {
+	t.Helper()
+	mRenderer := new(agenttest.MockUIRenderer)
+	bridge := NewUIBridge(mRenderer,
+		WithBridgeThoughts(true),
+		WithBridgeTools(true),
+		WithBridgeRawOutput(false),
+		WithBridgeColor(true),
+		WithBridgeLogFile("log.txt"),
+		WithBridgeLogger(slog.Default()),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
+	return bridge, cancel, mRenderer
+}
+
+// waitOrFatal waits for done to close, or calls t.Fatal with the given
+// message after the timeout expires.
+func waitOrFatal(t *testing.T, done <-chan struct{}, msg string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal(msg)
+	}
+}
+
 func TestUIBridge_HandleEvent(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -594,18 +632,8 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 
 func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-	bridge.WaitStarted()
+	bridge, _, mRenderer := newStartedTestBridge(t)
+	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// 1. Summarization starts
 	stopSummarizationCalled := make(chan struct{})
@@ -617,13 +645,9 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	}).Once()
 
 	_ = bridge.HandleEvent(context.Background(), events.SummarizationStartedEvent{})
-	select {
-	case <-doneSummarization:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for summarization spinner")
-	}
+	waitOrFatal(t, doneSummarization, "timeout waiting for summarization spinner")
 
-	// 2. Inference starts (without previous response)
+	// 2. Inference starts (should stop summarization spinner first)
 	stopInferenceCalled := make(chan struct{})
 	doneInference := make(chan struct{})
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
@@ -633,27 +657,15 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	}).Once()
 
 	_ = bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
-	select {
-	case <-doneInference:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for inference spinner")
-	}
+	waitOrFatal(t, doneInference, "timeout waiting for inference spinner")
 
-	// Verification
-	select {
-	case <-stopSummarizationCalled:
-	case <-time.After(2 * time.Second):
-		t.Error("Expected summarization spinner to be stopped before inference started")
-	}
+	// Verify summarization spinner was stopped before inference started
+	waitOrFatal(t, stopSummarizationCalled, "Expected summarization spinner to be stopped before inference started")
 
 	// Cleanup remaining
 	bridge.CloseInput()
 	bridge.Cleanup()
-	select {
-	case <-stopInferenceCalled:
-	case <-time.After(2 * time.Second):
-		t.Error("Expected inference spinner to be stopped during cleanup")
-	}
+	waitOrFatal(t, stopInferenceCalled, "Expected inference spinner to be stopped during cleanup")
 
 	mRenderer.AssertExpectations(t)
 }
