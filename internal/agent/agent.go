@@ -272,7 +272,10 @@ func (a *agent) Shutdown(ctx context.Context) error {
 
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {
-			a.getLogger().Debug("event bus flush incomplete during shutdown", "error", err)
+			if !errors.Is(err, events.ErrBusClosed) {
+				a.getLogger().Debug("event bus flush incomplete during shutdown", "error", err)
+				errs = append(errs, err)
+			}
 		}
 		if err := a.events.Shutdown(ctx); err != nil {
 			if !errors.Is(err, events.ErrBusNotInitialized) {

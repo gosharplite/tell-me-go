@@ -911,7 +911,8 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	ctx := context.Background()
 	err := a.Shutdown(ctx)
 
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.ErrorIs(t, err, flushErr)
 
 	// Verify that the error was logged at Debug level
 	output := buf.String()
