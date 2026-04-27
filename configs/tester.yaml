@@ -25,9 +25,6 @@ PROVIDERS:
     MODEL: "deepseek-ai/deepseek-v3.2-maas"
     URL: "https://aiplatform.googleapis.com/v1beta1/projects/${GOOGLE_PROJECT_ID}/locations/global/endpoints/openapi"
     API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
-    HEADERS:
-      X-Vertex-AI-LLM-Request-Type: "shared"                              
-      X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
   vertex-flash:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
@@ -36,9 +33,6 @@ PROVIDERS:
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
     MAX_TOKENS: 40960
-    HEADERS:
-      X-Vertex-AI-LLM-Request-Type: "shared"                              
-      X-Vertex-AI-LLM-Shared-Request-Type: "priority"                     
   vertex-pro:
     TYPE: "gemini"
     MODEL: "gemini-3.1-pro-preview"
@@ -114,6 +108,12 @@ MODELS:
       HIT: 0.36
       MISS: 3.60
       COMP: 21.60
+  "gpt-5.4":
+    CONTEXT_WINDOW: 200000
+    PRICING:
+      HIT: 0.25
+      MISS: 2.50
+      COMP: 15.00
   "gpt-5.5":
     CONTEXT_WINDOW: 200000
     PRICING:
