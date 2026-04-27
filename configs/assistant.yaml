@@ -93,15 +93,15 @@ MODELS:
   "deepseek-v4-flash":
     CONTEXT_WINDOW: 1000000
     PRICING:
-      HIT:      0.028
-      MISS:     0.28
-      COMP:     0.42
+      HIT:      0.0028
+      MISS:     0.14
+      COMP:     0.28
   "deepseek-v4-pro":
     CONTEXT_WINDOW: 1000000
     PRICING:
-      HIT:      0.145
-      MISS:     1.74
-      COMP:     3.84
+      HIT:      0.003625
+      MISS:     0.435
+      COMP:     0.87
   "deepseek-ai/deepseek-v3.2-maas":
     CONTEXT_WINDOW: 163840
     PRICING:
