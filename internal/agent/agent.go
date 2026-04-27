@@ -162,13 +162,12 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	oldCfg := a.config.Load()
 	a.configWatcher.Refresh(oldCfg.Model)
 
-	tokens, toolTurns, histTurns, threshold := a.configWatcher.GetLimits()
+	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
 
 	newCfg := *oldCfg // shallow copy
 	newCfg.Limits.MaxHistoryTokens = tokens
 	newCfg.Limits.MaxToolTurns = toolTurns
 	newCfg.Limits.MaxHistoryTurns = histTurns
-	newCfg.Limits.TieredThreshold = threshold
 
 	if a.strategy != nil {
 		a.configWatcher.SyncToStrategy(a.strategy)
@@ -224,13 +223,6 @@ func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, history
 	return a.applyConfig(ctx)
 }
 
-// SetTieredThreshold sets the tiered threshold for the agent.
-// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
-	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
-	return a.applyConfig(ctx)
-}
-
 // Chat runs the multi-turn orchestration loop.
 func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
@@ -280,7 +272,10 @@ func (a *agent) Shutdown(ctx context.Context) error {
 
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {
-			a.getLogger().Debug("event bus flush incomplete during shutdown", "error", err)
+			if !errors.Is(err, events.ErrBusClosed) {
+				a.getLogger().Debug("event bus flush incomplete during shutdown", "error", err)
+				errs = append(errs, err)
+			}
 		}
 		if err := a.events.Shutdown(ctx); err != nil {
 			if !errors.Is(err, events.ErrBusNotInitialized) {

@@ -38,9 +38,6 @@ func (m *integrationMockChatter) Chat(ctx stdctx.Context, s *ports.Session, prom
 func (m *integrationMockChatter) SetLimits(ctx stdctx.Context, toolTurns, historyTokens, historyTurns int) error {
 	return nil
 }
-func (m *integrationMockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error {
-	return nil
-}
 func (m *integrationMockChatter) Subscribe(sub func(stdctx.Context, events.Event)) {}
 func (m *integrationMockChatter) Shutdown(ctx stdctx.Context) error                { return nil }
 

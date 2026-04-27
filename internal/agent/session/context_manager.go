@@ -85,7 +85,6 @@ func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	if cm.Strategy != nil {
 		cm.Strategy.SetLimits(limits.MaxHistoryTokens, limits.MaxToolTurns, limits.MaxHistoryTurns)
 		cm.Strategy.SetContextWindow(limits.ContextWindow)
-		cm.Strategy.SetTieredThreshold(limits.TieredThreshold)
 	}
 	if cm.Factory != nil {
 		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
@@ -284,7 +283,6 @@ func (cm *ContextManager) GetLimits() events.Limits {
 		MaxHistoryTokens: tokens,
 		MaxToolTurns:     turns,
 		MaxHistoryTurns:  histTurns,
-		TieredThreshold:  cm.Strategy.GetTieredThreshold(),
 		ContextWindow:    cm.Strategy.getContextWindow(),
 	}
 }

@@ -134,38 +134,6 @@ func TestAgent_SetLimits(t *testing.T) {
 	assert.Equal(t, 10, rc.Limits.MaxHistoryTurns)
 }
 
-func TestAgent_SetTieredThreshold(t *testing.T) {
-	ctx := context.Background()
-	gw := &agenttest.MockGateway{}
-	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-	reg := agenttest.NewMockToolRegistry()
-	sm := &mockSecurityManager{AllowAll: true}
-
-	var capturedEvent events.Event
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
-		if e.Type() == "ConfigUpdated" {
-			capturedEvent = e
-		}
-	})
-
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
-	require.NoError(t, err)
-
-	err = chatter.SetTieredThreshold(ctx, 500)
-	require.NoError(t, err)
-
-	// Verify event publication
-	require.NotNil(t, capturedEvent)
-	cfgEvent, ok := capturedEvent.(events.ConfigUpdated)
-	require.True(t, ok)
-	assert.Equal(t, 500, cfgEvent.Limits.TieredThreshold)
-
-	// Verify internal runtimeConfig update
-	a := AsInternal(chatter)
-	rc := a.GetRuntimeConfig().(*runtimeConfig)
-	assert.Equal(t, 500, rc.Limits.TieredThreshold)
-}
-
 func TestAgent_Shutdown(t *testing.T) {
 	ctx := context.Background()
 	gw := &agenttest.MockGateway{}

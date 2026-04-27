@@ -57,7 +57,6 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
@@ -99,7 +98,6 @@ func TestSessionManager_Run_Error(t *testing.T) {
 	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(fmt.Errorf("chat error"))
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
@@ -210,12 +208,6 @@ func (m *behaviorMockChatter) Chat(ctx context.Context, s *ports.Session, prompt
 func (m *behaviorMockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	m.tracker.record("Chatter.SetLimits")
 	args := m.Called(ctx, toolTurns, historyTokens, historyTurns)
-	return args.Error(0)
-}
-
-func (m *behaviorMockChatter) SetTieredThreshold(ctx context.Context, threshold int) error {
-	m.tracker.record("Chatter.SetTieredThreshold")
-	args := m.Called(ctx, threshold)
 	return args.Error(0)
 }
 
@@ -418,7 +410,6 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 	}).Return()
 
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 
 	spinnerStarted := make(chan struct{})
 	mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Run(func(args mock.Arguments) {
@@ -439,16 +430,15 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedSequence := []string{
-		"Capturer.IsTTY",             // Initial check in Run
-		"HistoryRenderer.Render",     // Rendering history because LastN > 0
-		"AgentFactory",               // Creating the agent
-		"Chatter.Subscribe",          // Connect TurnsLogger events
-		"Capturer.IsTTY",             // Check in setupUIRendering
-		"UIRenderer.SetUseColor",     // Config UI
-		"Chatter.Subscribe",          // Connect UI events
-		"Chatter.SetLimits",          // Apply constraints
-		"Chatter.SetTieredThreshold", // Apply cost threshold
-		"Chatter.Chat",               // Start conversation
+		"Capturer.IsTTY",         // Initial check in Run
+		"HistoryRenderer.Render", // Rendering history because LastN > 0
+		"AgentFactory",           // Creating the agent
+		"Chatter.Subscribe",      // Connect TurnsLogger events
+		"Capturer.IsTTY",         // Check in setupUIRendering
+		"UIRenderer.SetUseColor", // Config UI
+		"Chatter.Subscribe",      // Connect UI events
+		"Chatter.SetLimits",      // Apply constraints
+		"Chatter.Chat",           // Start conversation
 		"UIRenderer.StartSpinnerWithStatus",
 		"UIRenderer.StopSpinner", // [REFACTOR] Stop Consumer first because it finishes when Chat returns
 		"Chatter.Shutdown",       // Stop Producers last
@@ -644,7 +634,6 @@ func TestRun_Routing(t *testing.T) {
 		mUIRenderer.On("SetUseColor", true).Return()
 		mChatter.On("Subscribe", mock.Anything).Return()
 		mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-		mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 		mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
 		mChatter.On("Shutdown", mock.Anything).Return(nil)
 
@@ -745,7 +734,6 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			}).Return()
 
 			mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-			mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 			mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Run(func(args mock.Arguments) {
 				// Wait for the spinner to start before failing chat to avoid racing with fast-drain
 				select {
@@ -814,7 +802,6 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 
 	// Exact match on Session ID
 	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
@@ -865,7 +852,6 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 
 	// Exact match on Session ID
 	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
@@ -925,7 +911,6 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 
 	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
 		return s.ID == expectedSessionID

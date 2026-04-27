@@ -63,34 +63,6 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 	if err == nil || err.Error() != "summarizer failed" {
 		t.Errorf("Expected 'summarizer failed' error from handleSafetyPressure, got: %v", err)
 	}
-
-	req2 := &ports.ContextRequest{
-		History:  make([]*llm.Content, 20),
-		Metadata: ports.ContextMetadata{},
-	}
-	for i := 0; i < 20; i++ {
-		role := "user"
-		if i%2 != 0 {
-			role = "model"
-		}
-		req2.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
-	}
-
-	tc := &agenttest.MockTokenCounter{}
-	tc.SetTokens(95)
-	cs := session.NewContextStrategy(tc)
-	cs.SetTieredThreshold(10)
-
-	gatekeeper2 := &session.TokenGatekeeper{
-		MaxTokens:  100,
-		Estimator:  cs,
-		Summarizer: &mockFailingSummarizer{},
-	}
-
-	err = gatekeeper2.Transform(ctx, req2)
-	if err == nil || err.Error() != "summarizer failed" {
-		t.Errorf("Expected 'summarizer failed' error from handleTieredThreshold, got: %v", err)
-	}
 }
 
 func TestContextManager_FirstMessageRoleError(t *testing.T) {
@@ -151,9 +123,6 @@ func (m *mockFailingChatter) Shutdown(ctx context.Context) error                
 func (m *mockFailingChatter) Subscribe(handler func(context.Context, events.Event)) {}
 func (m *mockFailingChatter) SetLimits(ctx context.Context, maxToolTurns, contextWindow, maxHistoryTurns int) error {
 	return m.err
-}
-func (m *mockFailingChatter) SetTieredThreshold(ctx context.Context, tieredThreshold int) error {
-	return nil
 }
 func (m *mockFailingChatter) SetCostTracker(tracker domain_pricing.CostTracker) {}
 func (m *mockFailingChatter) GetName() string                                   { return "mock" }
@@ -225,9 +194,8 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 
 	// Create a strategy that will trigger warnings to force event publishing
 	counter := &agenttest.MockTokenCounter{}
-	counter.SetTokens(200)
+	counter.SetTokens(950)
 	strategy := session.NewContextStrategy(counter)
-	strategy.SetTieredThreshold(100) // Trigger tiered threshold
 
 	gatekeeper := &session.TokenGatekeeper{
 		MaxTokens: 1000,
@@ -235,7 +203,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 		Events:    mockBus,
 	}
 
-	// We need a large payload to trigger the token limit warning (if tiered threshold wasn't enough)
+	// We need a large payload to trigger the token limit warning
 	largeText := ""
 	for i := 0; i < 200; i++ {
 		largeText += "token "

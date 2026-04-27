@@ -338,52 +338,6 @@ func TestContextManager_EmitSummarizationEvent_Error(t *testing.T) {
 	cm.emitSummarizationEvent(context.Background(), 1, 1)
 }
 
-func TestTokenGatekeeper_GetStrategy_Coverage(t *testing.T) {
-	// Strategy nil
-	tg := &TokenGatekeeper{
-		Estimator: &agenttest.MockTokenCounter{},
-	}
-	strategy := tg.getStrategy()
-	require.NotNil(t, strategy)
-
-	// Strategy not found
-	tg.Strategies = map[string]ThresholdStrategy{"other": nil}
-	tg.DefaultTier = "main"
-	strategy = tg.getStrategy()
-	require.NotNil(t, strategy)
-}
-
-func TestTokenGatekeeper_TriggerSummarization_EventError_Swallowed(t *testing.T) {
-	// We want to verify that other errors from SafePublish are NOT swallowed.
-	mockBus := &mockFailingEventBus{err: errors.New("publish error")}
-	tg := &TokenGatekeeper{
-		Events:     mockBus,
-		Estimator:  &agenttest.MockTokenCounter{},
-		Summarizer: &agenttest.MockSummarizer{},
-	}
-	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-		return "summary", nil, nil
-	})
-
-	history := make([]*llm.Content, 20)
-	for i := range history {
-		role := "user"
-		if i%2 != 0 {
-			role = "model"
-		}
-		history[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "u"}}}
-	}
-
-	req := &ports.ContextRequest{
-		History:  history,
-		Metadata: ports.ContextMetadata{},
-	}
-
-	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
-	require.Error(t, err, "Event publish error should not be swallowed anymore")
-	require.Contains(t, err.Error(), "publish error")
-}
-
 func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -397,16 +351,6 @@ func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 	start, num := tg.locateCandidateBlock(ctx, turns, 10)
 	require.Equal(t, -1, start)
 	require.Equal(t, 0, num)
-}
-
-func TestTokenGatekeeper_GetStrategy_Found(t *testing.T) {
-	mockStrategy := &dynamicThresholdStrategy{}
-	tg := &TokenGatekeeper{
-		Strategies:  map[string]ThresholdStrategy{"main": mockStrategy},
-		DefaultTier: "main",
-	}
-	strategy := tg.getStrategy()
-	require.Equal(t, mockStrategy, strategy)
 }
 
 func TestTokenGatekeeper_TriggerSummarization_AlreadyAttempted(t *testing.T) {

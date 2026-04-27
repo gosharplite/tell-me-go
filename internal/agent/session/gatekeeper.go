@@ -22,22 +22,11 @@ type TokenEstimator interface {
 
 // TokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type TokenGatekeeper struct {
-	MaxTokens   int
-	Estimator   TokenEstimator
-	Summarizer  ports.Summarizer
-	Events      events.EventBus
-	Strategies  map[string]ThresholdStrategy
-	DefaultTier string
-	Logger      ports.Logger
-}
-
-func (t *TokenGatekeeper) getStrategy() ThresholdStrategy {
-	if t.Strategies != nil {
-		if s, ok := t.Strategies[t.DefaultTier]; ok {
-			return s
-		}
-	}
-	return &dynamicThresholdStrategy{Estimator: t.Estimator}
+	MaxTokens  int
+	Estimator  TokenEstimator
+	Summarizer ports.Summarizer
+	Events     events.EventBus
+	Logger     ports.Logger
 }
 
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -46,36 +35,22 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextReque
 		return fmt.Errorf("gatekeeper validation failed: %w", err)
 	}
 
-	// Stage 1: Initial Analysis (includes Tiered Threshold)
-	tokens, err := t.handleTieredThreshold(ctx, req)
+	tokens := t.Estimator.EstimateTokens(req.History)
+	req.Metadata.OriginalTokenCount = tokens
+
+	// Stage 1: Pressure Management (90% threshold)
+	tokens, err := t.handleSafetyPressure(ctx, req, tokens)
 	if err != nil {
 		return err
 	}
 
-	// Stage 2: Pressure Management (90% threshold)
-	tokens, err = t.handleSafetyPressure(ctx, req, tokens)
-	if err != nil {
-		return err
-	}
-
-	// Stage 3: Boundary Validation (Hard limits + Buffer)
+	// Stage 2: Boundary Validation (Hard limits + Buffer)
 	if err := t.validateHardLimits(ctx, req, tokens); err != nil {
 		return err
 	}
 
 	req.Metadata.FinalTokenCount = tokens
 	return nil
-}
-
-func (t *TokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.ContextRequest) (int, error) {
-	tokens := t.Estimator.EstimateTokens(req.History)
-	req.Metadata.OriginalTokenCount = tokens
-
-	strategy := t.getStrategy()
-	if strategy.Evaluate(tokens) {
-		return t.triggerSummarization(ctx, req, tokens, strategy.GetThreshold(), "high-tier pricing threshold reached")
-	}
-	return tokens, nil
 }
 
 func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {

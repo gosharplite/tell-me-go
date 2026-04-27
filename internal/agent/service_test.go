@@ -80,7 +80,6 @@ func TestProcessMessage(t *testing.T) {
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
 				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 				agentMock.On("Subscribe", mock.Anything).Return()
 				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
 				agentMock.On("Shutdown", mock.Anything).Return(nil)
@@ -147,7 +146,6 @@ func TestProcessMessage(t *testing.T) {
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
 				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 				agentMock.On("Subscribe", mock.Anything).Return()
 				agentMock.On("Chat", mock.Anything, mock.Anything, "retry this").Return(nil)
 				agentMock.On("Shutdown", mock.Anything).Return(nil)
@@ -278,7 +276,6 @@ func TestProcessMessage(t *testing.T) {
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
 				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 				agentMock.On("Subscribe", mock.Anything).Return()
 				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
 				agentMock.On("Shutdown", mock.Anything).Return(nil)
@@ -325,7 +322,6 @@ func TestProcessMessage(t *testing.T) {
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
 				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 				agentMock.On("Subscribe", mock.Anything).Return()
 				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(errChat)
 				agentMock.On("Shutdown", mock.Anything).Return(nil)

@@ -262,7 +262,6 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*UIBridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
-	pData := sd.GetPricingData()
 	logger := sd.GetLogger()
 	turnsLogger := sd.GetTurnsLogger()
 
@@ -276,7 +275,7 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return bridge, err
 	}
-	return bridge, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
+	return bridge, nil
 }
 
 func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *UIBridge {

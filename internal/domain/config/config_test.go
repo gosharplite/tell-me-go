@@ -101,51 +101,6 @@ func TestResolveContextWindow(t *testing.T) {
 	}
 }
 
-func TestResolveTieredThreshold(t *testing.T) {
-	t.Parallel()
-	pData := pricing.PricingData{
-		Models: map[string]pricing.ModelPricing{
-			"pro":   {TieredThreshold: 50000},
-			"flash": {TieredThreshold: 0},
-		},
-	}
-
-	tests := []struct {
-		name     string
-		model    string
-		expected int
-	}{
-		{
-			name:     "Exact match",
-			model:    "pro",
-			expected: 50000,
-		},
-		{
-			name:     "Substring match",
-			model:    "gemini-2.0-pro-exp",
-			expected: 50000,
-		},
-		{
-			name:     "No match",
-			model:    "unknown",
-			expected: 0,
-		},
-		{
-			name:     "Match with zero threshold returns default",
-			model:    "flash",
-			expected: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			cfg := &Config{Model: tt.model}
-			assert.Equal(t, tt.expected, cfg.ResolveTieredThreshold(pData))
-		})
-	}
-}
-
 func TestFindBestMatch(t *testing.T) {
 	t.Parallel()
 	m := map[string]string{

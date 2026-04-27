@@ -17,7 +17,6 @@ type Limits struct {
 	MaxHistoryTokens int
 	MaxToolTurns     int
 	MaxHistoryTurns  int
-	TieredThreshold  int
 	ContextWindow    int
 }
 
@@ -34,7 +33,6 @@ type TurnStatus struct {
 	MaxHistoryTurns  int
 	Tokens           int
 	MaxHistoryTokens int
-	TieredThreshold  int
 	Metrics          *llm.Metrics
 	IsPostCall       bool
 	IsFinal          bool // True if the agent is stopping and yielding control to user
