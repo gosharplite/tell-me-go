@@ -950,4 +950,3 @@ func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 	assert.Equal(t, "No turns log found for this session yet.\n", out.String())
 	mFS.AssertExpectations(t)
 }
-
