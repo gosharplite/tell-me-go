@@ -64,58 +64,77 @@ type Capabilities struct {
 	RequiresVertexThinkingKwargs bool
 }
 
+// gptVersion holds the parsed major.minor components of a gpt- model name.
+type gptVersion struct {
+	major int
+	minor int
+	ok    bool // true if the model name had a parseable gpt- prefix
+}
+
+// parseGPTVersion extracts the major and minor version from a gpt-X or
+// gpt-X.Y model name. The ok field is false for non-gpt models.
+func parseGPTVersion(model string) gptVersion {
+	if !strings.HasPrefix(model, "gpt-") {
+		return gptVersion{}
+	}
+	version := strings.TrimPrefix(model, "gpt-")
+	var major, minor int
+	n, _ := fmt.Sscanf(version, "%d.%d", &major, &minor)
+	if n >= 1 {
+		return gptVersion{major: major, minor: minor, ok: true}
+	}
+	return gptVersion{}
+}
+
+// isGpt5OrNewer returns true for any gpt-5.x or later model.
+func isGpt5OrNewer(v gptVersion) bool {
+	return v.ok && v.major >= 5
+}
+
+// resolveTokenField picks the correct MaxTokensField enum value given
+// the requireResponses flag and whether the model is a reasoner.
+func resolveTokenField(requireResponses, isReasoner bool) MaxTokensField {
+	switch {
+	case requireResponses:
+		return MaxTokensFieldOutput
+	case isReasoner:
+		return MaxTokensFieldCompletion
+	default:
+		return MaxTokensFieldLegacy
+	}
+}
+
 // ResolveCapabilities returns the capability set for a given model name and
 // provider base URL. The base URL is required for transport-conditional
 // capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
 // if the URL is not available; transport-conditional capabilities will
 // default to false.
-//
-//nolint:gocyclo // Structural complexity from model-variant detection. Splitting would break mutual-exclusion.
 func ResolveCapabilities(model, baseURL string) Capabilities {
-	var caps Capabilities
-
-	// OpenAI Reasoner detection
-	isOpenAIReasoner := strings.HasPrefix(model, "o1") ||
-		strings.HasPrefix(model, "o3")
-
-	if strings.HasPrefix(model, "gpt-") {
-		version := strings.TrimPrefix(model, "gpt-")
-		var major int
-		n, _ := fmt.Sscanf(version, "%d", &major)
-		if n >= 1 && major >= 5 {
-			isOpenAIReasoner = true
-		}
-	}
-
+	v := parseGPTVersion(model)
 	isDeepSeek := strings.Contains(model, "deepseek-")
+	isReasoner := strings.HasPrefix(model, "o1") ||
+		strings.HasPrefix(model, "o3") ||
+		isGpt5OrNewer(v)
+	requireResponses := isGpt54OrNewer(model)
 
-	caps.IsDeepSeek = isDeepSeek
+	caps := Capabilities{
+		IsDeepSeek: isDeepSeek,
+	}
 
 	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
 		caps.RequiresVertexThinkingKwargs = true
 	}
 
-	if isOpenAIReasoner {
+	if isReasoner {
 		caps.UseDeveloperRole = true
 		caps.SupportsReasoningEffort = true
 	}
 
-	if isGpt54OrNewer(model) {
+	if requireResponses {
 		caps.RequiresResponsesAPI = true
 	}
 
-	// Resolve MaxTokensField. The three values are mutually exclusive:
-	//   RequiresResponsesAPI true → Output    (gpt-5.4+ on /responses)
-	//   isOpenAIReasoner    true  → Completion (o-series, gpt-5.0..5.3)
-	//   otherwise                 → Legacy    (DeepSeek, plain gpt-4)
-	switch {
-	case caps.RequiresResponsesAPI:
-		caps.MaxTokensField = MaxTokensFieldOutput
-	case isOpenAIReasoner:
-		caps.MaxTokensField = MaxTokensFieldCompletion
-	default:
-		caps.MaxTokensField = MaxTokensFieldLegacy
-	}
+	caps.MaxTokensField = resolveTokenField(requireResponses, isReasoner)
 
 	return caps
 }

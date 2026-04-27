@@ -61,30 +61,15 @@ func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.C
 }
 
 func (t *TokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.ContextRequest, tokens, limit int, reason string) (int, error) {
-	if t.Events != nil {
-		evt := events.SummarizationRequired{
-			Tokens:   tokens,
-			MaxLimit: limit,
-			Reason:   reason,
-		}
-		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
-			if !errors.Is(err, events.ErrBusNotInitialized) {
-				t.getLogger().Error("event_publish_failed",
-					"event_type", string(evt.Type()),
-					"error", err)
-				return tokens, err
-			}
-		}
+	if err := t.publishSummarizationEvent(ctx, tokens, limit, reason); err != nil {
+		return tokens, err
 	}
-
 	if req.Metadata.SummarizationAttempted {
 		return tokens, nil
 	}
-
 	n, err := t.autoSummarize(ctx, req)
 	if err != nil {
-		// Propagate structural and terminal errors, but continue if blocked.
-		if errors.Is(err, ErrInvalidPayload) || errors.Is(err, llm.ErrTerminal) {
+		if isBlockingError(err) {
 			return tokens, err
 		}
 		if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
@@ -92,10 +77,7 @@ func (t *TokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 		}
 		return tokens, err
 	}
-
-	newTokens := t.Estimator.EstimateTokens(req.History)
-	req.Metadata.SummarizedTurns = n
-	return newTokens, nil
+	return t.applySummarizationResult(req, n), nil
 }
 
 func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
@@ -201,6 +183,46 @@ func (t *TokenGatekeeper) publishSystemEvent(ctx context.Context, message, level
 				"error", err)
 		}
 	}
+}
+
+// publishSummarizationEvent emits a SummarizationRequired event on the bus
+// following the same resilience pattern as publishSystemEvent but propagates
+// non-initialization errors to the caller so that event-bus failures can
+// halt the summarization pipeline.
+func (t *TokenGatekeeper) publishSummarizationEvent(ctx context.Context, tokens, limit int, reason string) error {
+	if t.Events == nil {
+		return nil
+	}
+	evt := events.SummarizationRequired{
+		Tokens:   tokens,
+		MaxLimit: limit,
+		Reason:   reason,
+	}
+	if err := events.SafePublish(ctx, t.Events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.getLogger().Error("event_publish_failed",
+				"event_type", string(evt.Type()),
+				"error", err)
+			return err
+		}
+	}
+	return nil
+}
+
+// isBlockingError returns true for errors that should halt the request
+// pipeline rather than being silently swallowed.
+func isBlockingError(err error) bool {
+	return errors.Is(err, ErrInvalidPayload) || errors.Is(err, llm.ErrTerminal)
+}
+
+// applySummarizationResult updates the context request with the summarization
+// outcome and returns the new token count.
+func (t *TokenGatekeeper) applySummarizationResult(req *ports.ContextRequest, summarizedTurns int) int {
+	newTokens := t.Estimator.EstimateTokens(req.History)
+	req.Metadata.SummarizedTurns = summarizedTurns
+	req.Metadata.SummarizationAttempted = true
+	req.PersistHistory = true
+	return newTokens
 }
 
 func (t *TokenGatekeeper) FindSummarizableRange(ctx context.Context, history []*llm.Content) (int, int, int, error) {

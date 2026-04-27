@@ -322,62 +322,94 @@ type completionTokensDetails struct {
 	ReasoningTokens int32 `json:"reasoning_tokens"`
 }
 
-// prepareChatRequest constructs the chat request payload.
-// It returns an error if message conversion or JSON serialization fails.
-//
-//nolint:gocyclo // Structural complexity from dual API surfaces and mutually-exclusive token field variants.
-func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
-	effort, hasEffort := c.headers["reasoning_effort"]
-	// useResponsesAPI requires gpt-4o-2024-11-20+ (gpt-5.4+ mock in resolution logic), tools, and reasoning_effort
-	useResponsesAPI := c.capabilities.RequiresResponsesAPI && len(toolDecls) > 0 && hasEffort
+// apiStrategy bundles the decisions made when selecting between the
+// standard /chat/completions and the /responses API surfaces.
+type apiStrategy struct {
+	useResponses bool
+	effort       string
+	hasEffort    bool
+}
 
-	reqPayload := chatRequest{
+// resolveAPIStrategy decides between the standard and /responses API
+// surfaces based on model capabilities and the presence of tools with
+// a reasoning-effort header.
+func (c *client) resolveAPIStrategy(toolCount int) apiStrategy {
+	effort, hasEffort := c.headers["reasoning_effort"]
+	useResponses := c.capabilities.RequiresResponsesAPI && toolCount > 0 && hasEffort
+	return apiStrategy{useResponses: useResponses, effort: effort, hasEffort: hasEffort}
+}
+
+// buildRequestBody assembles the chat request payload, populating
+// either Input (for /responses) or Messages (for /chat/completions)
+// depending on the selected API strategy.
+func (c *client) buildRequestBody(ctx context.Context, strat apiStrategy, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
+	req := chatRequest{
 		Model: c.model,
-		Tools: c.toOpenAITools(toolDecls, useResponsesAPI),
+		Tools: c.toOpenAITools(toolDecls, strat.useResponses),
 	}
 
-	// Dynamic selection for Messages/Input
-	if useResponsesAPI {
+	if strat.useResponses {
 		items, err := c.toResponsesInput(ctx, history, resolver)
 		if err != nil {
 			return nil, err
 		}
-		reqPayload.Input = items
-		reqPayload.Reasoning = &reasoningConfig{Effort: effort}
+		req.Input = items
+		req.Reasoning = &reasoningConfig{Effort: strat.effort}
 	} else {
 		messages, err := c.toStandardMessages(ctx, history, resolver)
 		if err != nil {
 			return nil, err
 		}
-		reqPayload.Messages = messages
-		if hasEffort && c.capabilities.SupportsReasoningEffort {
-			reqPayload.ReasoningEffort = effort
+		req.Messages = messages
+		if strat.hasEffort && c.capabilities.SupportsReasoningEffort {
+			req.ReasoningEffort = strat.effort
 		}
 	}
 
+	return &req, nil
+}
+
+// applyOutputBudget resolves and sets the appropriate max-tokens field
+// on the request, accounting for the /responses endpoint override.
+func (c *client) applyOutputBudget(req *chatRequest, useResponses bool) {
 	budget := c.resolveOutputBudget()
-	// useResponsesAPI overrides the model's static MaxTokensField because
-	// the same model uses different field names on different endpoints
-	// (e.g., gpt-5.4 uses max_completion_tokens on /chat/completions but
-	// max_output_tokens on /responses).
 	field := c.capabilities.MaxTokensField
-	if useResponsesAPI {
+	if useResponses {
 		field = llm.MaxTokensFieldOutput
 	}
 	switch field {
 	case llm.MaxTokensFieldOutput:
-		reqPayload.MaxOutputTokens = budget
+		req.MaxOutputTokens = budget
 	case llm.MaxTokensFieldCompletion:
-		reqPayload.MaxCompletionTokens = budget
+		req.MaxCompletionTokens = budget
 	case llm.MaxTokensFieldLegacy:
-		reqPayload.MaxTokens = budget
+		req.MaxTokens = budget
 	}
+}
 
+// injectTransportHints adds transport-specific kwargs required by
+// certain API surfaces (e.g., Vertex AI thinking mode).
+func (c *client) injectTransportHints(req *chatRequest) {
 	if c.capabilities.RequiresVertexThinkingKwargs {
-		reqPayload.ChatTemplateKwargs = map[string]any{"thinking": true}
+		req.ChatTemplateKwargs = map[string]any{"thinking": true}
+	}
+}
+
+// prepareChatRequest constructs the chat request payload by delegating
+// to focused helpers for API strategy, body assembly, output budget,
+// and transport hints.
+func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
+	strat := c.resolveAPIStrategy(len(toolDecls))
+
+	req, err := c.buildRequestBody(ctx, strat, history, toolDecls, resolver)
+	if err != nil {
+		return nil, err
 	}
 
-	return &reqPayload, nil
+	c.applyOutputBudget(req, strat.useResponses)
+	c.injectTransportHints(req)
+
+	return req, nil
 }
 
 // resolveOutputBudget implements the three-tier resolution rule
