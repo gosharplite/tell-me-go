@@ -57,7 +57,7 @@ The system provides native support for the following flagship models (as of Feb 
 
 ### Phase 3: Orchestration & Telemetry (Completed)
 - **Registry:** Implementation of `LLMProvider` registry and `SelectedProvider` logic in `internal/domain/config`.
-- **Pricing:** Telemetry support for token-based billing, including specialized "Thinking Rates" for reasoning models.
+- **Pricing:** Telemetry support for token-based billing. Note: `tell-me-go` uses a unified output rate where reasoning/thinking tokens are billed at the standard Completion (`COMP`) rate.
 - **Status:** [x]
 
 ## 4. References

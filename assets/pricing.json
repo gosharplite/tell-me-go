@@ -15,8 +15,7 @@
     "deepseek-": {
       "hit": 0.028,
       "miss": 0.28,
-      "comp": 0.42,
-      "thinking": 0.42
+      "comp": 0.42
     },
     "claude-sonnet-4-6": {
       "hit": 0.30,
