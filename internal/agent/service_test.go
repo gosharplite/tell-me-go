@@ -923,3 +923,30 @@ func TestGetToolNames(t *testing.T) {
 		})
 	}
 }
+
+func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
+	ctx := context.Background()
+
+	// With empty mode, ResolvePaths falls back to "default", so TurnsLogPath
+	// is non-empty.  The empty-path error guard at service.go:209 is
+	// unreachable through ResolvePaths.  This test verifies the actual fallback
+	// behaviour: the call proceeds to LogOpener.Open which fails with
+	// os.ErrNotExist, yielding a graceful "No turns log found" message.
+	mFS := new(mockFileSystemStream)
+	logPath := persistence.ResolvePaths("/nonexistent", "").TurnsLogPath
+	mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrNotExist)
+
+	service := agent.NewChatService(
+		"/nonexistent", "v1", io.Discard, io.Discard, nil,
+		nil, nil, nil, nil, nil, mFS,
+	)
+
+	var out bytes.Buffer
+	cfg := &config.Config{Mode: ""}
+	err := service.StreamTurnsLog(ctx, cfg, &out)
+
+	// Empty mode → default mode; file doesn't exist → graceful message, no error.
+	assert.NoError(t, err)
+	assert.Equal(t, "No turns log found for this session yet.\n", out.String())
+	mFS.AssertExpectations(t)
+}
