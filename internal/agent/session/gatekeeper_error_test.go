@@ -106,9 +106,21 @@ func TestInternalTools_Errors(t *testing.T) {
 		t.Errorf("Expected summarizer error, got: %v", err)
 	}
 
+	// Test turns <= 0 validation guard
+	_, err = it.SummarizeHistory(context.Background(), map[string]interface{}{"turns": float64(0)}, nil)
+	if err == nil || err.Error() != "invalid 'turns' parameter: must be > 0" {
+		t.Errorf("Expected 'invalid turns' error, got: %v", err)
+	}
+
 	_, err = it.ManageHistory(context.Background(), map[string]interface{}{"index": "invalid"}, nil)
 	if err == nil {
 		t.Error("Expected error from unmarshal in ManageHistory")
+	}
+
+	// Test unsupported action validation guard
+	_, err = it.ManageHistory(context.Background(), map[string]interface{}{"action": "bogus", "index": float64(0)}, nil)
+	if err == nil || err.Error() != "unsupported action: bogus" {
+		t.Errorf("Expected 'unsupported action' error, got: %v", err)
 	}
 }
 
