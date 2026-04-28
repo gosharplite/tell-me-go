@@ -8,11 +8,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestAtomicWrite_ErrorHandling(t *testing.T) {
@@ -413,4 +417,106 @@ func TestFallbackCopy_Errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRenameWithRetry_DebugLog(t *testing.T) {
+	// Set the env var that gates the debug printf.
+	t.Setenv("TELL_ME_DEBUG", "atomic")
+
+	// Capture stdout to verify the debug log.
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	m := newMockFS()
+	// Rename always fails with "Access is denied" (transient).
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		return errors.New("Access is denied")
+	}
+	// Stat returns a regular file (not a directory), so the error IS transient.
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		return &mockFileInfo{name: name}, nil
+	}
+
+	ctx := context.Background()
+	err := renameWithRetry(ctx, m, "/tmp/src", "/dst/path", 0644)
+
+	// Close the write end and read captured output.
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if !strings.Contains(err.Error(), "failed to rename temp file after 5 attempts") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "retrying rename due to lock") {
+		t.Errorf("expected debug log 'retrying rename due to lock', got: %s", output)
+	}
+}
+
+func TestCleanupOldBackups_RemoveAllError(t *testing.T) {
+	// Capture stderr to verify the warning message.
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	defer func() { os.Stderr = oldStderr }()
+
+	m := newMockFS()
+	cutoff := time.Now().AddDate(0, 0, -30)
+	oldTimestamp := cutoff.AddDate(0, 0, -1).Format("20060102_150405")
+	backupDirName := oldTimestamp + "_suffix"
+
+	m.ReadDirFunc = func(ctx context.Context, name string) ([]os.DirEntry, error) {
+		return []os.DirEntry{&mockDirEntry{name: backupDirName, isDir: true}}, nil
+	}
+	m.RemoveAllFunc = func(ctx context.Context, path string) error {
+		return errors.New("remove failed")
+	}
+
+	paths := persistencePaths("home", "default")
+
+	ctx := context.Background()
+	err := cleanupOldBackups(ctx, m, *paths, 7)
+	// cleanupOldBackups never returns an error for RemoveAll failures; it only logs.
+	if err != nil {
+		t.Fatalf("cleanupOldBackups should not return error for RemoveAll failures: %v", err)
+	}
+
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	output := buf.String()
+	if !strings.Contains(output, "Warning: Failed to cleanup old backup") {
+		t.Errorf("expected stderr warning 'Failed to cleanup old backup', got: %s", output)
+	}
+}
+
+// mockDirEntry implements os.DirEntry for testing.
+type mockDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (e *mockDirEntry) Name() string { return e.name }
+func (e *mockDirEntry) IsDir() bool  { return e.isDir }
+func (e *mockDirEntry) Type() os.FileMode {
+	if e.isDir {
+		return os.ModeDir
+	}
+	return 0
+}
+func (e *mockDirEntry) Info() (os.FileInfo, error) {
+	return &mockFileInfo{name: e.name, isDir: e.isDir}, nil
+}
+
+// persistencePaths builds a Paths struct for backup cleanup testing.
+func persistencePaths(homeDir, mode string) *persistence.Paths {
+	return persistence.ResolvePaths(homeDir, mode)
 }

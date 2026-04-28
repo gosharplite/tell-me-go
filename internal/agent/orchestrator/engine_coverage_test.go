@@ -644,3 +644,41 @@ func TestExecutePhase_Private(t *testing.T) {
 	_, err := engine.executePhase(context.Background(), turn)
 	assert.NoError(t, err)
 }
+
+// passThroughEventBus is an EventBus whose Publish always returns nil regardless of context.
+// This allows testing the ctx.Err() defensive check in attemptRetry between event publish and select.
+type passThroughEventBus struct{}
+
+func (b *passThroughEventBus) Publish(ctx context.Context, e events.Event) error { return nil }
+func (b *passThroughEventBus) Subscribe(func(context.Context, events.Event))     {}
+func (b *passThroughEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (b *passThroughEventBus) Flush(ctx context.Context) error                   { return nil }
+func (b *passThroughEventBus) Listen(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (b *passThroughEventBus) WaitStarted() {}
+
+func TestRecoveryStep_AttemptRetry_ContextCancelledAfterPublish(t *testing.T) {
+	// Tests the defensive ctx.Err() check between event publish and select in attemptRetry (line 149).
+	// A pass-through event bus allows SafePublish to succeed even with a cancelled context,
+	// then the explicit ctx.Err() check catches the cancellation.
+	policy := &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Hour}
+	step := &RecoveryStep{Policy: policy}
+
+	bus := &passThroughEventBus{}
+	turn := &Turn{
+		State: &TurnState{
+			LastError: llm.ErrTransient,
+		},
+		Clock:  &agenttest.MockClock{},
+		Events: bus,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := step.Process(ctx, turn)
+	assert.Equal(t, ProcessResult{}, res)
+	assert.ErrorIs(t, err, context.Canceled)
+}

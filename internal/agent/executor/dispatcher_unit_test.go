@@ -347,3 +347,28 @@ func TestDispatcher_ContextCanceledMidFlight_Parallel(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 	require.NotNil(t, resp)
 }
+
+func TestDispatcher_RunExecutionPlan_ContextCancelledAfterEmptyBatches(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockZombieRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "any"}}
+		},
+	}
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+
+	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, logger, observer)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// No tool calls → empty batches → for-loop skipped → hits post-loop ctx.Err() check.
+	err = dispatcher.runExecutionPlan(ctx, nil, nil, nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
