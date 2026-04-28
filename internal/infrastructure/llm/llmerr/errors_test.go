@@ -220,6 +220,24 @@ func TestClassify(t *testing.T) {
 			containsMatch: "RATE LIMIT",
 		},
 		{
+			name:          "String matching CONNECTION RESET BY PEER fallback",
+			input:         errors.New("read tcp 127.0.0.1: read: connection reset by peer"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "CONNECTION RESET BY PEER",
+		},
+		{
+			name:          "String matching BROKEN PIPE fallback",
+			input:         errors.New("write tcp 127.0.0.1: write: broken pipe"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "BROKEN PIPE",
+		},
+		{
+			name:          "String matching EOF fallback",
+			input:         errors.New("unexpected EOF"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "EOF",
+		},
+		{
 			name:         "wrapped syscall.ECONNRESET",
 			input:        fmt.Errorf("read tcp 10.80.9.9:47548->3.173.21.63:443: read: %w", syscall.ECONNRESET),
 			expectedWrap: llm.ErrTransient,

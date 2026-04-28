@@ -152,8 +152,16 @@ func classifyStandard(err error) (error, bool) {
 
 func classifyString(err error) (error, bool) {
 	msg := err.Error() // Regex handles (?i) case-insensitivity
+	upperMsg := strings.ToUpper(msg)
 
-	if strings.Contains(strings.ToUpper(msg), "UNAUTHENTICATED") || strings.Contains(strings.ToUpper(msg), "API_KEY_INVALID") {
+	// Fallback for brittle network errors that wrap syscalls in opaque strings
+	if strings.Contains(upperMsg, "CONNECTION RESET BY PEER") ||
+		strings.Contains(upperMsg, "BROKEN PIPE") ||
+		strings.Contains(upperMsg, "EOF") {
+		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+	}
+
+	if strings.Contains(upperMsg, "UNAUTHENTICATED") || strings.Contains(upperMsg, "API_KEY_INVALID") {
 		return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
 	}
 
