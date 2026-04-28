@@ -4,10 +4,13 @@
 package llmerr
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"google.golang.org/grpc/codes"
@@ -64,6 +67,10 @@ func Classify(err error) error {
 		return wrapped
 	}
 
+	if wrapped, ok := classifyStandard(err); ok {
+		return wrapped
+	}
+
 	if wrapped, ok := classifyString(err); ok {
 		return wrapped
 	}
@@ -113,6 +120,33 @@ func classifyHTTP(err error) (error, bool) {
 			return fmt.Errorf("%w: %w", llm.ErrTerminal, err), true
 		}
 	}
+	return nil, false
+}
+
+// classifyStandard intercepts standard Go network and context errors
+// using errors.Is / errors.As rather than brittle string matching.
+func classifyStandard(err error) (error, bool) {
+	// 1. TCP-level connection failures
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) {
+		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+	}
+
+	// 2. Context deadline (transient: fresh context may succeed on retry)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+	}
+
+	// 3. Context cancellation (terminal: caller explicitly abandoned the operation)
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("operation canceled: %w", err), true
+	}
+
+	// 4. Generic Go network timeouts (net.Error interface)
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+	}
+
 	return nil, false
 }
 

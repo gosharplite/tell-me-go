@@ -137,21 +137,24 @@ func (d *safetyDecorator) resolveTimeout(call *llm.FunctionCall, opts tools.Tool
 }
 
 func (d *safetyDecorator) handleTimeout(parentCtx context.Context, errCtx error, toolName string, activeTimeout time.Duration, outCh chan tools.ToolOutput) tools.ToolResult {
-	msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
-	errorWrapMsg := "tool execution failed"
-	switch errCtx {
-	case context.Canceled:
-		msg = "Execution was interrupted or cancelled by the user."
-	case context.DeadlineExceeded:
-		msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
-		errorWrapMsg = "tool execution timed out"
-	}
-
 	go d.zombie.Monitor(context.WithoutCancel(parentCtx), toolName, time.Now(), outCh, d.zombieTimeout)
 
-	return tools.ToolResult{
-		Text:  msg,
-		Error: fmt.Errorf("%w: %s: %w", llm.ErrTransient, errorWrapMsg, errCtx),
+	switch errCtx {
+	case context.Canceled:
+		return tools.ToolResult{
+			Text:  "Execution was interrupted or cancelled by the user.",
+			Error: fmt.Errorf("tool execution canceled: %w", errCtx),
+		}
+	case context.DeadlineExceeded:
+		return tools.ToolResult{
+			Text:  fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout),
+			Error: fmt.Errorf("%w: tool execution timed out: %w", llm.ErrTransient, errCtx),
+		}
+	default:
+		return tools.ToolResult{
+			Text:  fmt.Sprintf("Error: Tool execution failed: %v", errCtx),
+			Error: fmt.Errorf("%w: tool execution failed: %w", llm.ErrTransient, errCtx),
+		}
 	}
 }
 
