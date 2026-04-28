@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,10 +98,10 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	return renameWithRetry(ctx, fs, tmpPath, targetPath, perm)
+	return renameWithRetry(ctx, fs, tmpPath, targetPath, perm, nil)
 }
 
-func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath string, perm os.FileMode) error {
+func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath string, perm os.FileMode, logger *slog.Logger) error {
 	var lastErr error
 	for i := 0; i < maxRenameAttempts; i++ {
 		if err := fs.Rename(ctx, tmpPath, targetPath); err != nil {
@@ -110,8 +111,12 @@ func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath str
 			lastErr = err
 
 			if isTransientRenameError(ctx, fs, err, targetPath) {
-				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
-					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d/%d): %s\n", i+1, maxRenameAttempts, targetPath)
+				if logger != nil {
+					logger.Debug("retrying rename due to lock",
+						slog.Int("attempt", i+1),
+						slog.Int("max_attempts", maxRenameAttempts),
+						slog.String("target", targetPath),
+					)
 				}
 				select {
 				case <-ctx.Done():

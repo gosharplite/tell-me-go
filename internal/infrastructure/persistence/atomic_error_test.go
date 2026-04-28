@@ -8,7 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 func TestAtomicWrite_ErrorHandling(t *testing.T) {
@@ -420,14 +421,8 @@ func TestFallbackCopy_Errors(t *testing.T) {
 }
 
 func TestRenameWithRetry_DebugLog(t *testing.T) {
-	// Set the env var that gates the debug printf.
-	t.Setenv("TELL_ME_DEBUG", "atomic")
-
-	// Capture stdout to verify the debug log.
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
+	var buf testfixtures.SyncWriter
+	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	m := newMockFS()
 	// Rename always fails with "Access is denied" (transient).
@@ -440,12 +435,7 @@ func TestRenameWithRetry_DebugLog(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	err := renameWithRetry(ctx, m, "/tmp/src", "/dst/path", 0644)
-
-	// Close the write end and read captured output.
-	_ = w.Close()
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	err := renameWithRetry(ctx, m, "/tmp/src", "/dst/path", 0644, testLogger)
 
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
@@ -461,11 +451,8 @@ func TestRenameWithRetry_DebugLog(t *testing.T) {
 }
 
 func TestCleanupOldBackups_RemoveAllError(t *testing.T) {
-	// Capture stderr to verify the warning message.
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-	defer func() { os.Stderr = oldStderr }()
+	var buf testfixtures.SyncWriter
+	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	m := newMockFS()
 	cutoff := time.Now().AddDate(0, 0, -30)
@@ -482,19 +469,15 @@ func TestCleanupOldBackups_RemoveAllError(t *testing.T) {
 	paths := persistencePaths("home", "default")
 
 	ctx := context.Background()
-	err := cleanupOldBackups(ctx, m, *paths, 7)
+	err := cleanupOldBackups(ctx, m, *paths, 7, testLogger)
 	// cleanupOldBackups never returns an error for RemoveAll failures; it only logs.
 	if err != nil {
 		t.Fatalf("cleanupOldBackups should not return error for RemoveAll failures: %v", err)
 	}
 
-	_ = w.Close()
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-
 	output := buf.String()
-	if !strings.Contains(output, "Warning: Failed to cleanup old backup") {
-		t.Errorf("expected stderr warning 'Failed to cleanup old backup', got: %s", output)
+	if !strings.Contains(output, "Failed to cleanup old backup") {
+		t.Errorf("expected warning 'Failed to cleanup old backup', got: %s", output)
 	}
 }
 
