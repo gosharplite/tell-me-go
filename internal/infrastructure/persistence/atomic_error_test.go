@@ -420,36 +420,6 @@ func TestFallbackCopy_Errors(t *testing.T) {
 	}
 }
 
-func TestRenameWithRetry_DebugLog(t *testing.T) {
-	var buf testfixtures.SyncWriter
-	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	m := newMockFS()
-	// Rename always fails with "Access is denied" (transient).
-	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
-		return errors.New("Access is denied")
-	}
-	// Stat returns a regular file (not a directory), so the error IS transient.
-	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
-		return &mockFileInfo{name: name}, nil
-	}
-
-	ctx := context.Background()
-	err := renameWithRetry(ctx, m, "/tmp/src", "/dst/path", 0644, testLogger)
-
-	if err == nil {
-		t.Fatal("expected error after exhausting retries")
-	}
-	if !strings.Contains(err.Error(), "failed to rename temp file after 5 attempts") {
-		t.Errorf("unexpected error: %v", err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "retrying rename due to lock") {
-		t.Errorf("expected debug log 'retrying rename due to lock', got: %s", output)
-	}
-}
-
 func TestCleanupOldBackups_RemoveAllError(t *testing.T) {
 	var buf testfixtures.SyncWriter
 	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
