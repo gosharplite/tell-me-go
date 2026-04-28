@@ -42,36 +42,10 @@ import (
 // cost is dominated by the same O(F × N) shape that calculateImpactScore
 // already pays elsewhere in the analyzer.
 //
-// SCOPE DECISIONS (architect-approved, see Task D Session 2 brief):
-//
-//  1. NAME-ONLY MATCHING. We deliberately do NOT compare signatures.
-//     The architect's reasoning: the warning is operator alerting, not
-//     classification; over-warning on coincidentally-named methods
-//     causes the operator to grep one extra time, which is the
-//     prescribed verification step anyway. Signature matching adds
-//     considerable code (types.Identical threading, parameter-list
-//     resolution from AST FieldList) for no operator-visible benefit.
-//
-//  2. METHOD-SHAPED ENTRIES ONLY. *ast.InterfaceType.Methods.List
-//     entries are either methods (have non-nil Names AND a *ast.FuncType
-//     Type) or embedded interfaces (Names is nil/empty, Type is an
-//     *ast.Ident or *ast.SelectorExpr referring to another interface).
-//     We index only method-shaped entries. Embedded interfaces are
-//     declared types whose methods already participate in
-//     propagateInterfaceUsages — re-walking them here would duplicate
-//     work and over-warn.
-//
-//  3. MODULE-INTERNAL PACKAGES ONLY. Mirrors the guard used by
-//     harvestPackageSymbols: pkg.Module != nil && strings.HasPrefix(
-//     pkg.PkgPath, state.targetModule). Without this, every assertion
-//     in dependency packages would contribute to the name set, which
-//     would over-warn on common stdlib method names (Close, Read,
-//     etc.) that appear in countless library assertion sites.
-//
-//  4. AST-ONLY TRAVERSAL. We do NOT consult pkg.TypesInfo. Name-only
-//     matching does not need resolved type info, and avoiding TypesInfo
-//     keeps the helper resilient to packages with type-check errors
-//     (which the broader analyzer already tolerates per identifyModule).
+// Design decisions are documented on the helpers that enforce them:
+// collectMethodNamesFromPackage (MODULE-INTERNAL only),
+// getAnonymousInterfaceMethods (AST-ONLY, no TypesInfo),
+// and collectNamesFromInterfaceField (NAME-ONLY, METHOD-SHAPED only).
 func (a *defaultDeadCodeAnalyzer) hasAnonymousInterfaceAssertionMatch(state *scanState, methodName string) bool {
 	if state == nil || methodName == "" {
 		return false
@@ -104,28 +78,70 @@ func collectAnonymousInterfaceAssertedMethodNames(state *scanState) map[string]s
 	return names
 }
 
+// isModuleInternalPackage gates package traversal to module-internal
+// packages only. Mirrors the guard used by harvestPackageSymbols.
+// Without this, every assertion in dependency packages would contribute
+// to the name set, over-warning on common stdlib method names (Close,
+// Read, etc.) that appear in countless library assertion sites.
+func isModuleInternalPackage(pkg *packages.Package, targetModule string) bool {
+	return pkg != nil && pkg.Module != nil && strings.HasPrefix(pkg.PkgPath, targetModule)
+}
+
 // collectMethodNamesFromPackage walks all syntax files in a package
 // and collects method names from anonymous interface type assertions.
 //
-// MODULE-INTERNAL PACKAGES ONLY. Mirrors the guard used by
-// harvestPackageSymbols: pkg.Module != nil && strings.HasPrefix(
-// pkg.PkgPath, state.targetModule). Without this, every assertion
-// in dependency packages would contribute to the name set, which
-// would over-warn on common stdlib method names (Close, Read,
-// etc.) that appear in countless library assertion sites.
+// MODULE-INTERNAL PACKAGES ONLY: see isModuleInternalPackage.
 func collectMethodNamesFromPackage(pkg *packages.Package, targetModule string, names map[string]struct{}) {
-	if pkg == nil || pkg.Module == nil || !strings.HasPrefix(pkg.PkgPath, targetModule) {
+	if !isModuleInternalPackage(pkg, targetModule) {
 		return
 	}
 	for _, file := range pkg.Syntax {
-		if file != nil {
-			ast.Inspect(file, makeAssertionCollector(names))
-		}
+		collectNamesFromFile(file, names)
 	}
 }
 
-// makeAssertionCollector returns an ast.Inspect callback that collects
-// method names from anonymous interface type assertions.
+// collectNamesFromFile runs ast.Inspect on a single *ast.File and
+// collects method names from anonymous interface type assertions
+// into the provided names map.
+func collectNamesFromFile(file *ast.File, names map[string]struct{}) {
+	if file == nil {
+		return
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		methods := getAnonymousInterfaceMethods(n)
+		if methods == nil {
+			return true
+		}
+		for _, field := range methods.List {
+			collectNamesFromInterfaceField(field, names)
+		}
+		return true
+	})
+}
+
+// getAnonymousInterfaceMethods extracts the *ast.FieldList from an
+// anonymous interface literal used as the asserted type of a
+// *ast.TypeAssertExpr. Returns nil if the node is not such an
+// expression or the asserted type is not an *ast.InterfaceType.
+//
+// AST-ONLY TRAVERSAL. We do NOT consult pkg.TypesInfo. Name-only
+// matching does not need resolved type info, and avoiding TypesInfo
+// keeps the helper resilient to packages with type-check errors
+// (which the broader analyzer already tolerates per identifyModule).
+func getAnonymousInterfaceMethods(n ast.Node) *ast.FieldList {
+	ta, ok := n.(*ast.TypeAssertExpr)
+	if !ok || ta.Type == nil {
+		return nil
+	}
+	it, ok := ta.Type.(*ast.InterfaceType)
+	if !ok || it.Methods == nil {
+		return nil
+	}
+	return it.Methods
+}
+
+// collectNamesFromInterfaceField collects method names from a single
+// *ast.Field within an interface literal's method list.
 //
 // NAME-ONLY MATCHING. We deliberately do NOT compare signatures.
 // The architect's reasoning: the warning is operator alerting, not
@@ -143,34 +159,16 @@ func collectMethodNamesFromPackage(pkg *packages.Package, targetModule string, n
 // declared types whose methods already participate in
 // propagateInterfaceUsages — re-walking them here would duplicate
 // work and over-warn.
-//
-// AST-ONLY TRAVERSAL. We do NOT consult pkg.TypesInfo. Name-only
-// matching does not need resolved type info, and avoiding TypesInfo
-// keeps the helper resilient to packages with type-check errors
-// (which the broader analyzer already tolerates per identifyModule).
-func makeAssertionCollector(names map[string]struct{}) func(ast.Node) bool {
-	return func(n ast.Node) bool {
-		ta, ok := n.(*ast.TypeAssertExpr)
-		if !ok || ta.Type == nil {
-			return true
+func collectNamesFromInterfaceField(field *ast.Field, names map[string]struct{}) {
+	if len(field.Names) == 0 {
+		return
+	}
+	if _, isFunc := field.Type.(*ast.FuncType); !isFunc {
+		return
+	}
+	for _, name := range field.Names {
+		if name != nil {
+			names[name.Name] = struct{}{}
 		}
-		it, ok := ta.Type.(*ast.InterfaceType)
-		if !ok || it.Methods == nil {
-			return true
-		}
-		for _, field := range it.Methods.List {
-			if len(field.Names) == 0 {
-				continue
-			}
-			if _, isFunc := field.Type.(*ast.FuncType); !isFunc {
-				continue
-			}
-			for _, name := range field.Names {
-				if name != nil && name.Name != "" {
-					names[name.Name] = struct{}{}
-				}
-			}
-		}
-		return true
 	}
 }
