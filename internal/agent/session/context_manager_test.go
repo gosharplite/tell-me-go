@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -439,4 +440,91 @@ func TestContextManager_WithLogger(t *testing.T) {
 	output := buf.String()
 	assert.Contains(t, output, `"level":"DEBUG"`)
 	assert.Contains(t, output, "skipping summarization event")
+}
+
+// countingHistoryManager wraps a MockHistoryManager to track GetWindow calls.
+type countingHistoryManager struct {
+	*agenttest.MockHistoryManager
+	mu             sync.Mutex
+	getWindowCalls int
+}
+
+func (m *countingHistoryManager) GetWindow(ctx context.Context, start, end int) ([]*llm.Content, error) {
+	m.mu.Lock()
+	m.getWindowCalls++
+	m.mu.Unlock()
+	return m.MockHistoryManager.GetWindow(ctx, start, end)
+}
+
+func (m *countingHistoryManager) GetWindowCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getWindowCalls
+}
+
+func TestContextManager_Prepare_CacheHit(t *testing.T) {
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	baseHistory := &agenttest.MockHistoryManager{}
+	baseHistory.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	})
+	countingHM := &countingHistoryManager{MockHistoryManager: baseHistory}
+
+	cm := session.NewContextManager(strategy, countingHM, nil, nil)
+
+	ctx := context.Background()
+
+	// First call — cache miss, loads history and populates cache.
+	h1, m1, err := cm.Prepare(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, h1, 1)
+	require.Equal(t, "hello", h1[0].Parts[0].Text)
+	require.Equal(t, 1, countingHM.GetWindowCalls())
+
+	// Second call — cache hit, should NOT call GetWindow again.
+	h2, m2, err := cm.Prepare(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, h2, 1)
+	require.Equal(t, "hello", h2[0].Parts[0].Text)
+	// GetWindow should still be 1 — no additional call for cache hit.
+	require.Equal(t, 1, countingHM.GetWindowCalls())
+
+	// Verify metadata is present (even if empty) on both calls.
+	require.NotNil(t, m1)
+	require.NotNil(t, m2)
+}
+
+// versionBumpingTransformer is a transient pipeline transformer that bumps the
+// ContextManager's internal version counter between loadHistory and commitToCache,
+// causing commitToCache to detect a version mismatch and return ErrTransient.
+type versionBumpingTransformer struct {
+	cm *session.ContextManager
+}
+
+func (t *versionBumpingTransformer) Priority() int { return 200 } // transient: runs after persistFn
+
+func (t *versionBumpingTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	t.cm.Reconfigure(events.Limits{})
+	return nil
+}
+
+func TestContextManager_Prepare_CommitToCacheError(t *testing.T) {
+	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	})
+
+	cm := session.NewContextManager(strategy, history, nil, nil)
+
+	// Install a pipeline whose transient transformer bumps the version after
+	// loadHistory snapshots it but before commitToCache checks it.
+	bumper := &versionBumpingTransformer{cm: cm}
+	cm.Pipeline = session.NewContextPipeline(bumper)
+
+	ctx := context.Background()
+	_, _, err := cm.Prepare(ctx, 1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, llm.ErrTransient)
+	require.Contains(t, err.Error(), "concurrent history modification detected")
 }

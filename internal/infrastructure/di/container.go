@@ -60,7 +60,7 @@ type Bootstrapper struct {
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
-	RotateSession    func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
+	RotateSession    func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
@@ -91,8 +91,8 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 	}
 
 	b.sessionFactory = newSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
-		func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
-			return b.RotateSession(ctx, fs, stdout, paths, retentionDays)
+		func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
+			return b.RotateSession(ctx, fs, stdout, paths, retentionDays, logger)
 		},
 		func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error) {
 			return b.NewSessionState(ctx, modeDir)

@@ -6,6 +6,7 @@ package session_test
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -378,4 +380,47 @@ func TestFileConfigWatcher_Refresh_StatError(t *testing.T) {
 	assert.Equal(t, 100, tokens, "tokens should remain at default")
 	assert.Equal(t, 10, toolTurns, "toolTurns should remain at default")
 	assert.Equal(t, 20, historyTurns, "historyTurns should remain at default")
+}
+
+func TestConfigWatcher_LoadSessionConfig_ReadError(t *testing.T) {
+	// Tests the Warn log path in loadSessionConfig when LoadSession returns
+	// a non-IsNotExist error AND the logger is non-nil.
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Create a file that exists (so FS.Stat succeeds) but will cause LoadSession to fail.
+	if err := os.WriteFile(sessionPath, []byte(`valid json but loader errors`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf testfixtures.SyncWriter
+	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	cw := session.NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, testLogger)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	// Override FS to return a future mod time so updateFromSession triggers loadSessionConfig.
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	// Trigger the load
+	fcw.Refresh("default")
+
+	// Assert the Warn was logged
+	output := buf.String()
+	assert.Contains(t, output, "Failed to load session config")
+	assert.Contains(t, output, "permission denied")
+
+	// Limits should remain at defaults
+	tokens, _, _ := cw.GetLimits()
+	assert.Equal(t, 100, tokens)
+}
+
+// errorSessionLoader returns a fixed error from LoadSession.
+type errorSessionLoader struct {
+	err error
+}
+
+func (l *errorSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
+	return nil, l.err
 }
