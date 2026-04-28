@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -33,7 +34,7 @@ func EnsureDirectories(ctx context.Context, fs FileSystem, paths *persistence.Pa
 }
 
 // RotateSession archives existing session files and cleans up old backups.
-func RotateSession(ctx context.Context, fs FileSystem, w io.Writer, paths persistence.Paths, retentionDays int) error {
+func RotateSession(ctx context.Context, fs FileSystem, w io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
 	timestamp := time.Now().Format("20060102_150405")
 	outputDir := filepath.Dir(paths.ModeDir)
 
@@ -69,7 +70,7 @@ func RotateSession(ctx context.Context, fs FileSystem, w io.Writer, paths persis
 	}
 
 	// Always execute cleanup regardless of previous file archiving failures
-	if cleanupErr := cleanupOldBackups(ctx, fs, paths, retentionDays); cleanupErr != nil {
+	if cleanupErr := cleanupOldBackups(ctx, fs, paths, retentionDays, logger); cleanupErr != nil {
 		errs = append(errs, cleanupErr)
 	}
 
@@ -80,7 +81,7 @@ func RotateSession(ctx context.Context, fs FileSystem, w io.Writer, paths persis
 }
 
 // cleanupOldBackups removes backups older than the specified retention days.
-func cleanupOldBackups(ctx context.Context, fs FileSystem, paths persistence.Paths, retentionDays int) error {
+func cleanupOldBackups(ctx context.Context, fs FileSystem, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
 	if retentionDays <= 0 {
 		return nil
 	}
@@ -108,7 +109,12 @@ func cleanupOldBackups(ctx context.Context, fs FileSystem, paths persistence.Pat
 
 		path := filepath.Join(backupBaseDir, entry.Name())
 		if err := fs.RemoveAll(ctx, path); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
+			if logger != nil {
+				logger.Warn("Failed to cleanup old backup",
+					slog.String("path", path),
+					slog.Any("error", err),
+				)
+			}
 		}
 	}
 

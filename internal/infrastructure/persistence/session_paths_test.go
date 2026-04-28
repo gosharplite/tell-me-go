@@ -62,7 +62,7 @@ func TestRotateSession(t *testing.T) {
 	}
 
 	// Rotate
-	err = RotateSession(ctx, &OSFileSystem{}, nil, *paths, 30)
+	err = RotateSession(ctx, &OSFileSystem{}, nil, *paths, 30, nil)
 	if err != nil {
 		t.Fatalf("RotateSession failed: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	}
 
 	// Cleanup with 30 day retention
-	err = cleanupOldBackups(ctx, &OSFileSystem{}, *paths, 30)
+	err = cleanupOldBackups(ctx, &OSFileSystem{}, *paths, 30, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestCleanupOldBackups(t *testing.T) {
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
 	t.Parallel()
-	err := cleanupOldBackups(context.Background(), &OSFileSystem{}, persistence.Paths{}, 0)
+	err := cleanupOldBackups(context.Background(), &OSFileSystem{}, persistence.Paths{}, 0, nil)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestCleanupOldBackups_NoDir(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	paths := persistence.Paths{ModeDir: filepath.Join(tmp, "nonexistent")}
-	err := cleanupOldBackups(context.Background(), &OSFileSystem{}, paths, 30)
+	err := cleanupOldBackups(context.Background(), &OSFileSystem{}, paths, 30, nil)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)
 	}

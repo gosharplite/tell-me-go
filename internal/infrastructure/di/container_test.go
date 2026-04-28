@@ -654,7 +654,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "SessionRotationFails",
 			mockSetup: func(b *Bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RotateSession = func(ctx context.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
+				b.RotateSession = func(ctx context.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
 					return simulatedErr
 				}
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()

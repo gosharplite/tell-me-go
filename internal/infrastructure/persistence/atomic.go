@@ -110,9 +110,6 @@ func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath str
 			lastErr = err
 
 			if isTransientRenameError(ctx, fs, err, targetPath) {
-				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
-					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d/%d): %s\n", i+1, maxRenameAttempts, targetPath)
-				}
 				select {
 				case <-ctx.Done():
 					return ctx.Err()

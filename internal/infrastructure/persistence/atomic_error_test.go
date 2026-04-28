@@ -8,11 +8,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 func TestAtomicWrite_ErrorHandling(t *testing.T) {
@@ -413,4 +418,58 @@ func TestFallbackCopy_Errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCleanupOldBackups_RemoveAllError(t *testing.T) {
+	var buf testfixtures.SyncWriter
+	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	m := newMockFS()
+	cutoff := time.Now().AddDate(0, 0, -30)
+	oldTimestamp := cutoff.AddDate(0, 0, -1).Format("20060102_150405")
+	backupDirName := oldTimestamp + "_suffix"
+
+	m.ReadDirFunc = func(ctx context.Context, name string) ([]os.DirEntry, error) {
+		return []os.DirEntry{&mockDirEntry{name: backupDirName, isDir: true}}, nil
+	}
+	m.RemoveAllFunc = func(ctx context.Context, path string) error {
+		return errors.New("remove failed")
+	}
+
+	paths := persistencePaths("home", "default")
+
+	ctx := context.Background()
+	err := cleanupOldBackups(ctx, m, *paths, 7, testLogger)
+	// cleanupOldBackups never returns an error for RemoveAll failures; it only logs.
+	if err != nil {
+		t.Fatalf("cleanupOldBackups should not return error for RemoveAll failures: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Failed to cleanup old backup") {
+		t.Errorf("expected warning 'Failed to cleanup old backup', got: %s", output)
+	}
+}
+
+// mockDirEntry implements os.DirEntry for testing.
+type mockDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (e *mockDirEntry) Name() string { return e.name }
+func (e *mockDirEntry) IsDir() bool  { return e.isDir }
+func (e *mockDirEntry) Type() os.FileMode {
+	if e.isDir {
+		return os.ModeDir
+	}
+	return 0
+}
+func (e *mockDirEntry) Info() (os.FileInfo, error) {
+	return &mockFileInfo{name: e.name, isDir: e.isDir}, nil
+}
+
+// persistencePaths builds a Paths struct for backup cleanup testing.
+func persistencePaths(homeDir, mode string) *persistence.Paths {
+	return persistence.ResolvePaths(homeDir, mode)
 }

@@ -225,7 +225,7 @@ func TestDispatcher_ZombieHeartbeatDetection(t *testing.T) {
 		// We assert it's less than 1 second, proving it didn't wait for 5s global timeout.
 		assert.Less(t, duration, 1*time.Second, "Zombie tool should be cancelled by liveness threshold (%v), not global timeout (5s)", duration)
 		assert.Error(t, result.Error)
-		assert.Contains(t, result.Error.Error(), "failed")
+		assert.Contains(t, result.Error.Error(), "canceled")
 	case <-time.After(6 * time.Second):
 		t.Fatal("Test timed out: Dispatcher failed to cancel the zombie tool")
 	}
