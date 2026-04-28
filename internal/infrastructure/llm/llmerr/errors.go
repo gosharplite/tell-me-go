@@ -131,12 +131,17 @@ func classifyStandard(err error) (error, bool) {
 		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 	}
 
-	// 2. Context deadline and cancellation
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	// 2. Context deadline (transient: fresh context may succeed on retry)
+	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 	}
 
-	// 3. Generic Go network timeouts (net.Error interface)
+	// 3. Context cancellation (terminal: caller explicitly abandoned the operation)
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("operation canceled: %w", err), true
+	}
+
+	// 4. Generic Go network timeouts (net.Error interface)
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true

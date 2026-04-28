@@ -242,7 +242,7 @@ func TestClassify(t *testing.T) {
 		{
 			name:         "context.Canceled",
 			input:        context.Canceled,
-			expectedWrap: llm.ErrTransient,
+			expectedWrap: context.Canceled, // not transient; cancellation is terminal
 		},
 		{
 			name:         "net.Error with Timeout",
