@@ -3,6 +3,7 @@ package llmerr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"syscall"
 	"testing"
@@ -219,10 +220,9 @@ func TestClassify(t *testing.T) {
 			containsMatch: "RATE LIMIT",
 		},
 		{
-			name:          "connection reset by peer",
-			input:         errors.New("read tcp 10.80.9.9:47548->3.173.21.63:443: read: connection reset by peer"),
-			expectedWrap:  llm.ErrTransient,
-			containsMatch: "TRANSIENT",
+			name:         "wrapped syscall.ECONNRESET",
+			input:        fmt.Errorf("read tcp 10.80.9.9:47548->3.173.21.63:443: read: %w", syscall.ECONNRESET),
+			expectedWrap: llm.ErrTransient,
 		},
 		{
 			name:         "syscall.ECONNRESET",
