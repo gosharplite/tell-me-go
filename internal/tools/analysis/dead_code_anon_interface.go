@@ -12,6 +12,8 @@ package analysis
 import (
 	"go/ast"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // hasAnonymousInterfaceAssertionMatch reports whether the given method
@@ -89,9 +91,6 @@ func (a *defaultDeadCodeAnalyzer) hasAnonymousInterfaceAssertionMatch(state *sca
 // The returned map is always non-nil (possibly empty), so a subsequent
 // `state.anonymousInterfaceAssertedMethodNames == nil` check correctly
 // distinguishes "not yet populated" from "populated but empty".
-//
-// Embedded interfaces (Field.Names == nil or len 0) are skipped — see
-// design decision #2 in hasAnonymousInterfaceAssertionMatch's doc.
 func collectAnonymousInterfaceAssertedMethodNames(state *scanState) map[string]struct{} {
 	names := make(map[string]struct{})
 	if state == nil {
@@ -99,49 +98,79 @@ func collectAnonymousInterfaceAssertedMethodNames(state *scanState) map[string]s
 	}
 
 	for _, pkg := range state.pkgs {
-		// Module-internal guard: see design decision #3.
-		if pkg == nil || pkg.Module == nil {
-			continue
-		}
-		if !strings.HasPrefix(pkg.PkgPath, state.targetModule) {
-			continue
-		}
-
-		for _, file := range pkg.Syntax {
-			if file == nil {
-				continue
-			}
-			ast.Inspect(file, func(n ast.Node) bool {
-				ta, ok := n.(*ast.TypeAssertExpr)
-				if !ok || ta.Type == nil {
-					return true
-				}
-				it, ok := ta.Type.(*ast.InterfaceType)
-				if !ok || it.Methods == nil {
-					return true
-				}
-				for _, field := range it.Methods.List {
-					// Method-shaped: has at least one name AND its Type
-					// is a function signature. Embedded interfaces have
-					// nil/empty Names and an *ast.Ident or
-					// *ast.SelectorExpr Type — skip them.
-					if len(field.Names) == 0 {
-						continue
-					}
-					if _, isFunc := field.Type.(*ast.FuncType); !isFunc {
-						continue
-					}
-					for _, name := range field.Names {
-						if name == nil || name.Name == "" {
-							continue
-						}
-						names[name.Name] = struct{}{}
-					}
-				}
-				return true
-			})
-		}
+		collectMethodNamesFromPackage(pkg, state.targetModule, names)
 	}
 
 	return names
+}
+
+// collectMethodNamesFromPackage walks all syntax files in a package
+// and collects method names from anonymous interface type assertions.
+//
+// MODULE-INTERNAL PACKAGES ONLY. Mirrors the guard used by
+// harvestPackageSymbols: pkg.Module != nil && strings.HasPrefix(
+// pkg.PkgPath, state.targetModule). Without this, every assertion
+// in dependency packages would contribute to the name set, which
+// would over-warn on common stdlib method names (Close, Read,
+// etc.) that appear in countless library assertion sites.
+func collectMethodNamesFromPackage(pkg *packages.Package, targetModule string, names map[string]struct{}) {
+	if pkg == nil || pkg.Module == nil || !strings.HasPrefix(pkg.PkgPath, targetModule) {
+		return
+	}
+	for _, file := range pkg.Syntax {
+		if file != nil {
+			ast.Inspect(file, makeAssertionCollector(names))
+		}
+	}
+}
+
+// makeAssertionCollector returns an ast.Inspect callback that collects
+// method names from anonymous interface type assertions.
+//
+// NAME-ONLY MATCHING. We deliberately do NOT compare signatures.
+// The architect's reasoning: the warning is operator alerting, not
+// classification; over-warning on coincidentally-named methods
+// causes the operator to grep one extra time, which is the
+// prescribed verification step anyway. Signature matching adds
+// considerable code (types.Identical threading, parameter-list
+// resolution from AST FieldList) for no operator-visible benefit.
+//
+// METHOD-SHAPED ENTRIES ONLY. *ast.InterfaceType.Methods.List
+// entries are either methods (have non-nil Names AND a *ast.FuncType
+// Type) or embedded interfaces (Names is nil/empty, Type is an
+// *ast.Ident or *ast.SelectorExpr referring to another interface).
+// We index only method-shaped entries. Embedded interfaces are
+// declared types whose methods already participate in
+// propagateInterfaceUsages — re-walking them here would duplicate
+// work and over-warn.
+//
+// AST-ONLY TRAVERSAL. We do NOT consult pkg.TypesInfo. Name-only
+// matching does not need resolved type info, and avoiding TypesInfo
+// keeps the helper resilient to packages with type-check errors
+// (which the broader analyzer already tolerates per identifyModule).
+func makeAssertionCollector(names map[string]struct{}) func(ast.Node) bool {
+	return func(n ast.Node) bool {
+		ta, ok := n.(*ast.TypeAssertExpr)
+		if !ok || ta.Type == nil {
+			return true
+		}
+		it, ok := ta.Type.(*ast.InterfaceType)
+		if !ok || it.Methods == nil {
+			return true
+		}
+		for _, field := range it.Methods.List {
+			if len(field.Names) == 0 {
+				continue
+			}
+			if _, isFunc := field.Type.(*ast.FuncType); !isFunc {
+				continue
+			}
+			for _, name := range field.Names {
+				if name != nil && name.Name != "" {
+					names[name.Name] = struct{}{}
+				}
+			}
+		}
+		return true
+	}
 }
