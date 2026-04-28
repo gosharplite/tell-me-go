@@ -1,8 +1,10 @@
 package llmerr
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -223,6 +225,31 @@ func TestClassify(t *testing.T) {
 			containsMatch: "TRANSIENT",
 		},
 		{
+			name:         "syscall.ECONNRESET",
+			input:        syscall.ECONNRESET,
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "syscall.ECONNREFUSED",
+			input:        syscall.ECONNREFUSED,
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "context.DeadlineExceeded",
+			input:        context.DeadlineExceeded,
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "context.Canceled",
+			input:        context.Canceled,
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "net.Error with Timeout",
+			input:        &mockNetError{msg: "i/o timeout", timeout: true},
+			expectedWrap: llm.ErrTransient,
+		},
+		{
 			name:         "Unclassified error defaults to terminal",
 			input:        errors.New("unknown error"),
 			expectedWrap: llm.ErrTerminal,
@@ -308,3 +335,13 @@ func TestClassify_GreedyAvoidance(t *testing.T) {
 		})
 	}
 }
+
+// mockNetError implements net.Error for testing classifyStandard.
+type mockNetError struct {
+	msg     string
+	timeout bool
+}
+
+func (e *mockNetError) Error() string   { return e.msg }
+func (e *mockNetError) Timeout() bool   { return e.timeout }
+func (e *mockNetError) Temporary() bool { return false }
