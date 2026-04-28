@@ -217,6 +217,12 @@ func TestClassify(t *testing.T) {
 			containsMatch: "RATE LIMIT",
 		},
 		{
+			name:          "connection reset by peer",
+			input:         errors.New("read tcp 10.80.9.9:47548->3.173.21.63:443: read: connection reset by peer"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "TRANSIENT",
+		},
+		{
 			name:         "Unclassified error defaults to terminal",
 			input:        errors.New("unknown error"),
 			expectedWrap: llm.ErrTerminal,

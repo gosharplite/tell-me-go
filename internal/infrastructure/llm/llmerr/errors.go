@@ -24,7 +24,7 @@ var (
 	// 2. Uses word boundaries (\b) and specific prefix requirements to avoid greedy false positives
 	//    like "500 tokens" or "context window: 128000".
 	// 3. Delimiters are flexible (space, underscore, colon) to handle varied SDK logging formats.
-	reTransient = regexp.MustCompile(`(?i)(\b(?:HTTP|STATUS|CODE|ERROR|ERR|STATUS_CODE)[\s_:]*(?:5\d{2}|499|408)\b|[:]\s*(?:5\d{2}|499|408)\b|CANCELLED|INTERNAL[\s_:]+SERVER[\s_:]+ERROR|BAD[\s_:]+GATEWAY|SERVICE[\s_:]+UNAVAILABLE|DEADLINE[\s_:]+EXCEEDED|UNAVAILABLE|\b(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[\s_:]+TIMEOUT\b)`)
+	reTransient = regexp.MustCompile(`(?i)(\b(?:HTTP|STATUS|CODE|ERROR|ERR|STATUS_CODE)[\s_:]*(?:5\d{2}|499|408)\b|[:]\s*(?:5\d{2}|499|408)\b|CANCELLED|INTERNAL[\s_:]+SERVER[\s_:]+ERROR|BAD[\s_:]+GATEWAY|SERVICE[\s_:]+UNAVAILABLE|DEADLINE[\s_:]+EXCEEDED|UNAVAILABLE|\b(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[\s_:]+TIMEOUT\b|\bCONNECTION[\s_:]+RESET\b)`)
 )
 
 // APIError represents an error returned by an LLM provider's API.
