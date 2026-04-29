@@ -90,8 +90,7 @@ type UIBridge struct {
 	useColor           bool
 	logFile            string
 	state              uiState
-	stopSpinner        func()
-	activePhase        events.Event
+	spinner            *spinnerCoord
 	eventCh            chan events.Event
 	closeOnce          sync.Once
 	cleanupOnce        sync.Once
@@ -122,6 +121,7 @@ func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
 	if b.logger == nil {
 		b.logger = slog.Default()
 	}
+	b.spinner = newSpinnerCoord(b.renderer, b.logger)
 	b.wg.Add(1)
 	return b
 }
@@ -133,14 +133,14 @@ func (b *UIBridge) transition(next uiState) {
 	// Side effects for entering the new state
 	switch next {
 	case stateIdle, stateRendering, stateAwaitingConsent:
-		b.stopActiveSpinner()
+		b.spinner.stopActiveSpinner()
 	case stateThinking:
 		// stateThinking side effects are typically handled via transitionSpinner
 		// but we ensure old spinner is stopped if we were in another state.
 		// If we were already in stateThinking, we don't stop here to avoid flicker
 		// unless transitionSpinner is called.
 		if b.state != stateThinking {
-			b.stopActiveSpinner()
+			b.spinner.stopActiveSpinner()
 		}
 	}
 
@@ -148,28 +148,6 @@ func (b *UIBridge) transition(next uiState) {
 }
 func (b *UIBridge) is(state uiState) bool {
 	return b.state == state
-}
-func (b *UIBridge) stopActiveSpinner() {
-	stop := b.stopSpinner
-	b.stopSpinner = nil
-
-	if stop != nil {
-		// Protect the boundary against double-panics from external UI dependencies
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					b.logger.Debug("Recovered from panic while stopping spinner", "panic", r)
-				}
-			}()
-			stop()
-		}()
-	}
-}
-func (b *UIBridge) resumeActiveSpinner(ctx context.Context) {
-	phase := b.activePhase
-	if phase != nil {
-		b.startSpinnerForPhase(ctx, phase)
-	}
 }
 func (b *UIBridge) CloseInput() {
 	b.closeOnce.Do(func() {
@@ -236,7 +214,7 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			b.logger.Error("panic in UIBridge loop", "error", r, "stack", string(debug.Stack()))
-			b.stopActiveSpinner()
+			b.spinner.stopActiveSpinner()
 			err = fmt.Errorf("uibridge panicked: %v", r)
 		}
 	}()
@@ -252,11 +230,11 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 			// This ensures that even if cancellation is triggered (e.g., via timeout),
 			// what was already in the channel is processed if the renderer is free.
 			b.drainRemainingEvents()
-			b.stopActiveSpinner()
+			b.spinner.stopActiveSpinner()
 			return nil
 		case e, ok := <-b.eventCh:
 			if !ok {
-				b.stopActiveSpinner()
+				b.spinner.stopActiveSpinner()
 				return nil
 			}
 			b.processRecoverable(ctx, e)
@@ -270,7 +248,7 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 // final rendering. The drain terminates as soon as the channel is closed OR
 // no events are immediately available (non-blocking via default).
 //
-// The caller is responsible for invoking b.stopActiveSpinner() after this
+// The caller is responsible for invoking b.spinner.stopActiveSpinner() after this
 // returns; the helper deliberately does not, to keep the "stop spinner exactly
 // once before return" invariant centralized in Listen.
 func (b *UIBridge) drainRemainingEvents() {
@@ -291,7 +269,7 @@ func (b *UIBridge) processRecoverable(ctx context.Context, e events.Event) {
 		if r := recover(); r != nil {
 			b.logger.Error("UIBridge actor recovered from panic", "error", r)
 			b.logger.Debug("UIBridge recovery stack trace", "stack", string(debug.Stack()))
-			b.stopActiveSpinner()
+			b.spinner.stopActiveSpinner()
 			panic(r) // Re-panic to stop the Listen loop
 		}
 	}()
@@ -355,7 +333,9 @@ func (b *UIBridge) processEvent(ctx context.Context, e events.Event) {
 		// Transition back to Idle, which stops any lingering (though should be stopped by ConsentStarted)
 		// resumeActiveSpinner will transition to stateThinking if a phase exists.
 		b.transition(stateIdle)
-		b.resumeActiveSpinner(ctx)
+		if b.spinner.resumeActiveSpinner(ctx, b.state, nil) {
+			b.state = stateThinking
+		}
 	case events.ResponseEvent:
 		b.handleResponse(ctx, ev)
 	case events.UsageMetricsEvent:
@@ -379,71 +359,59 @@ func (b *UIBridge) handleSystemMessage(ctx context.Context, e events.Event) {
 	default:
 		return
 	}
-	b.stopActiveSpinner()
+	b.spinner.stopActiveSpinner()
 	b.renderer.LogSystemMessage(ctx, msg, lvl)
-	b.resumeActiveSpinner(ctx)
+	if b.spinner.resumeActiveSpinner(ctx, b.state, nil) {
+		b.state = stateThinking
+	}
 }
 func (b *UIBridge) handleSpinnerEvent(ctx context.Context, e events.Event) {
-	b.activePhase = e
-	b.startSpinnerForPhase(ctx, e)
-}
-func (b *UIBridge) startSpinnerForPhase(ctx context.Context, e events.Event) {
-	info, ok := getSpinnerInfo(e)
-	if !ok {
-		return
-	}
-
-	if info.resetRendering && b.is(stateRendering) {
+	b.spinner.activePhase = e
+	started := b.spinner.startSpinnerForPhase(ctx, e, b.state, func() uiState {
 		b.transition(stateIdle)
-	}
-
-	b.transitionSpinner(func() func() {
-		if info.withMetrics {
-			return b.renderer.StartSpinnerWithMetrics(ctx, info.status)
-		}
-		return b.renderer.StartSpinnerWithStatus(ctx, info.status)
+		return b.state
 	})
+	if started {
+		b.state = stateThinking
+	}
 }
 func (b *UIBridge) handleTurnStatus(ctx context.Context, ev events.TurnStatusEvent) {
-	b.activePhase = nil // Clear phase on new turn/header
+	b.spinner.activePhase = nil // Clear phase on new turn/header
 	b.transition(stateIdle)
 	b.renderer.LogTurnStatus(ctx, ev.Status)
 }
 func (b *UIBridge) handleResponse(ctx context.Context, ev events.ResponseEvent) {
-	b.activePhase = nil // Clear phase on response
+	b.spinner.activePhase = nil // Clear phase on response
 	b.transition(stateRendering)
 	b.renderer.RenderResponse(ctx, ev.Content, b.showThoughts, b.rawOutput)
 }
 func (b *UIBridge) handleUsageMetrics(ev events.UsageMetricsEvent) {
 	ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
-	b.stopActiveSpinner()
+	b.spinner.stopActiveSpinner()
 	b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
-	b.resumeActiveSpinner(ctx)
+	if b.spinner.resumeActiveSpinner(ctx, b.state, nil) {
+		b.state = stateThinking
+	}
 }
 func (b *UIBridge) handleToolEvents(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.ToolCallEvent:
-		b.stopActiveSpinner()
+		b.spinner.stopActiveSpinner()
 		b.renderer.LogToolCall(ctx, ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
-		b.resumeActiveSpinner(ctx)
+		if b.spinner.resumeActiveSpinner(ctx, b.state, nil) {
+			b.state = stateThinking
+		}
 	case events.ToolResultEvent:
-		b.stopActiveSpinner()
+		b.spinner.stopActiveSpinner()
 		b.renderer.LogToolResult(ctx, ev.Name, ev.Result, b.showTools)
-		b.resumeActiveSpinner(ctx)
+		if b.spinner.resumeActiveSpinner(ctx, b.state, nil) {
+			b.state = stateThinking
+		}
 	}
 }
 func (b *UIBridge) handleTurnStarted() {
-	b.activePhase = nil
+	b.spinner.activePhase = nil
 	b.transition(stateIdle)
-}
-func (b *UIBridge) transitionSpinner(startFn func() func()) {
-	if b.state == stateRendering || b.state == stateAwaitingConsent {
-		return
-	}
-
-	b.stopActiveSpinner()
-	b.stopSpinner = startFn()
-	b.state = stateThinking
 }
 func (b *UIBridge) ensureContext(ctx context.Context, name string) context.Context {
 	if ctx == nil {
