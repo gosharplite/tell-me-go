@@ -19,41 +19,48 @@ import (
 //	"interface{}".
 //
 // Anything else triggers t.Fatalf.
+func parseBasicType(t *testing.T, tok string) types.Type {
+	t.Helper()
+	switch tok {
+	case "string":
+		return types.Typ[types.String]
+	case "int":
+		return types.Typ[types.Int]
+	case "int64":
+		return types.Typ[types.Int64]
+	case "rune":
+		return types.Typ[types.Rune]
+	case "error":
+		return types.Universe.Lookup("error").Type()
+	case "[]byte":
+		return types.NewSlice(types.Typ[types.Byte])
+	case "any":
+		return types.Universe.Lookup("any").Type()
+	case "interface{}":
+		i := types.NewInterfaceType(nil, nil)
+		i.Complete()
+		return i
+	default:
+		t.Fatalf("parseBasicType: unsupported token %q", tok)
+		return nil
+	}
+}
+
+func makeTuple(t *testing.T, toks []string) *types.Tuple {
+	t.Helper()
+	if len(toks) == 0 {
+		return types.NewTuple()
+	}
+	vars := make([]*types.Var, len(toks))
+	for i, tok := range toks {
+		vars[i] = types.NewVar(token.NoPos, nil, "", parseBasicType(t, tok))
+	}
+	return types.NewTuple(vars...)
+}
+
 func makeSig(t *testing.T, params, results []string) *types.Signature {
 	t.Helper()
-	mkType := func(tok string) types.Type {
-		switch tok {
-		case "string":
-			return types.Typ[types.String]
-		case "int":
-			return types.Typ[types.Int]
-		case "int64":
-			return types.Typ[types.Int64]
-		case "rune":
-			return types.Typ[types.Rune]
-		case "error":
-			return types.Universe.Lookup("error").Type()
-		case "[]byte":
-			return types.NewSlice(types.Typ[types.Byte])
-		case "any":
-			return types.Universe.Lookup("any").Type()
-		case "interface{}":
-			i := types.NewInterfaceType(nil, nil)
-			i.Complete()
-			return i
-		default:
-			t.Fatalf("makeSig: unsupported token %q", tok)
-			return nil
-		}
-	}
-	mkTuple := func(toks []string) *types.Tuple {
-		vars := make([]*types.Var, len(toks))
-		for i, tok := range toks {
-			vars[i] = types.NewVar(token.NoPos, nil, "", mkType(tok))
-		}
-		return types.NewTuple(vars...)
-	}
-	return types.NewSignatureType(nil, nil, nil, mkTuple(params), mkTuple(results), false)
+	return types.NewSignatureType(nil, nil, nil, makeTuple(t, params), makeTuple(t, results), false)
 }
 
 // TestIsWellKnownContract_Table covers the public API of isWellKnownContract

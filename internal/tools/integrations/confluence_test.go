@@ -662,10 +662,6 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 }
 
 func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
-	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
-	t.Setenv("ATLASSIAN_TOKEN", "api-token")
-	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
-
 	tests := []struct {
 		name          string
 		spaceKey      string
@@ -673,6 +669,8 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 		mockStatus    int
 		mockErr       error
 		baseURL       string
+		email         string // Added field
+		skipMock      bool   // Added field
 		expectedID    string
 		expectedError string
 	}{
@@ -680,6 +678,8 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 			name:       "Numeric ID",
 			spaceKey:   "12345",
 			expectedID: "12345",
+			email:      "test@example.com",
+			skipMock:   true,
 		},
 		{
 			name:       "Resolution Success",
@@ -687,6 +687,7 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 			mockResp:   `{"results": [{"id": "98765"}]}`,
 			mockStatus: http.StatusOK,
 			expectedID: "98765",
+			email:      "test@example.com",
 		},
 		{
 			name:          "Resolution Not Found (Empty Results)",
@@ -694,30 +695,36 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 			mockResp:      `{"results": []}`,
 			mockStatus:    http.StatusOK,
 			expectedError: "space key 'MISSING' not found",
+			email:         "test@example.com",
 		},
 		{
 			name:          "Resolution Not Found (404)",
 			spaceKey:      "NOTFOUND",
 			mockStatus:    http.StatusNotFound,
 			expectedError: "space key 'NOTFOUND' not found",
+			email:         "test@example.com",
 		},
 		{
 			name:          "API Failure (500)",
 			spaceKey:      "ERROR",
 			mockStatus:    http.StatusInternalServerError,
 			expectedError: "failed to resolve space key 'ERROR', status: 500",
+			email:         "test@example.com",
 		},
 		{
 			name:          "Network Error",
 			spaceKey:      "NETWORK",
 			mockErr:       fmt.Errorf("network error"),
 			expectedError: "network error",
+			email:         "test@example.com",
 		},
 		{
 			name:          "Auth Error",
 			spaceKey:      "AUTH_ERR",
-			mockStatus:    http.StatusOK, // won't be used
+			mockStatus:    http.StatusOK,
 			expectedError: "missing ATLASSIAN_EMAIL",
+			email:         "", // Simulate empty email
+			skipMock:      true,
 		},
 		{
 			name:          "Decode Error",
@@ -725,30 +732,31 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 			mockResp:      `{invalid json}`,
 			mockStatus:    http.StatusOK,
 			expectedError: "invalid character",
+			email:         "test@example.com",
 		},
 		{
 			name:          "Invalid URL",
 			spaceKey:      "INVALID_URL",
 			baseURL:       " ://invalid",
 			expectedError: "parse",
+			email:         "test@example.com",
+			skipMock:      true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.name == "Auth Error" {
-				t.Setenv("ATLASSIAN_EMAIL", "")
-			} else {
-				t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
-			}
+			t.Setenv("ATLASSIAN_EMAIL", tt.email)
+			t.Setenv("ATLASSIAN_TOKEN", "api-token")
+
 			if tt.baseURL != "" {
 				t.Setenv("ATLASSIAN_BASE_URL", tt.baseURL)
 			} else {
 				t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 			}
+
 			mockClient := new(mockConfluenceClient)
 			m, err := newconfluenceManager(nil, mockClient)
-			// Handle constructor error which might happen if baseURL is invalid
 			if err != nil {
 				if tt.expectedError != "" {
 					assert.Contains(t, err.Error(), tt.expectedError)
@@ -757,9 +765,7 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 				t.Fatalf("unexpected constructor error: %v", err)
 			}
 
-			if tt.spaceKey == "12345" || tt.name == "Auth Error" || tt.name == "Invalid URL" {
-				// No mock needed
-			} else {
+			if !tt.skipMock {
 				if tt.mockErr != nil {
 					mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), tt.mockErr)
 				} else {
@@ -781,7 +787,8 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedID, id)
 			}
-			if tt.spaceKey != "12345" {
+			
+			if !tt.skipMock {
 				mockClient.AssertExpectations(t)
 			}
 		})

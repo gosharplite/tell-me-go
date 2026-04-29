@@ -13,29 +13,44 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
+type loadTestCase struct {
+	name          string
+	fileContent   string
+	useValidPath  bool
+	wantErr       bool
+	wantMode      string
+	wantModel     string
+	wantToolTurns int
+}
+
+func assertLoadConfig(t *testing.T, cfg *domain_config.Config, tt loadTestCase) {
+	t.Helper()
+	if tt.wantMode != "" && cfg.Mode != tt.wantMode {
+		t.Errorf("expected Mode '%s', got '%s'", tt.wantMode, cfg.Mode)
+	}
+	if tt.wantModel != "" && cfg.Model != tt.wantModel {
+		t.Errorf("expected Model '%s', got '%s'", tt.wantModel, cfg.Model)
+	}
+	if cfg.MaxToolTurns != tt.wantToolTurns {
+		t.Errorf("expected default MaxToolTurns %d, got %d", tt.wantToolTurns, cfg.MaxToolTurns)
+	}
+}
+
 func TestLoad(t *testing.T) {
-	tests := []struct {
-		name         string
-		fileContent  string
-		useValidPath bool
-		wantErr      bool
-		wantMode     string
-		wantModel    string
-		wantToolTurns int
-	}{
+	tests := []loadTestCase{
 		{
-			name:         "ValidConfig",
-			fileContent:  "MODE: \"test-mode\"\nPERSON: \"test-person\"\nAIMODEL: \"test-model\"\nAIURL: \"http://test.url\"",
-			useValidPath: true,
-			wantErr:      false,
-			wantMode:     "test-mode",
-			wantModel:    "test-model",
+			name:          "ValidConfig",
+			fileContent:   "MODE: \"test-mode\"\nPERSON: \"test-person\"\nAIMODEL: \"test-model\"\nAIURL: \"http://test.url\"",
+			useValidPath:  true,
+			wantErr:       false,
+			wantMode:      "test-mode",
+			wantModel:     "test-model",
 			wantToolTurns: 200,
 		},
 		{
-			name:         "NonExistentFile",
-			useValidPath: false,
-			wantErr:      false,
+			name:          "NonExistentFile",
+			useValidPath:  false,
+			wantErr:       false,
 			wantToolTurns: 200,
 		},
 		{
@@ -70,15 +85,7 @@ func TestLoad(t *testing.T) {
 				t.Fatal("expected config to be initialized")
 			}
 
-			if tt.wantMode != "" && cfg.Mode != tt.wantMode {
-				t.Errorf("expected Mode '%s', got '%s'", tt.wantMode, cfg.Mode)
-			}
-			if tt.wantModel != "" && cfg.Model != tt.wantModel {
-				t.Errorf("expected Model '%s', got '%s'", tt.wantModel, cfg.Model)
-			}
-			if cfg.MaxToolTurns != tt.wantToolTurns {
-				t.Errorf("expected default MaxToolTurns %d, got %d", tt.wantToolTurns, cfg.MaxToolTurns)
-			}
+			assertLoadConfig(t, cfg, tt)
 		})
 	}
 }
