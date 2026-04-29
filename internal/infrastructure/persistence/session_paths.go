@@ -86,8 +86,7 @@ func cleanupOldBackups(ctx context.Context, fs FileSystem, paths persistence.Pat
 		return nil
 	}
 
-	outputDir := filepath.Dir(paths.ModeDir)
-	backupBaseDir := filepath.Join(outputDir, "backups")
+	backupBaseDir := filepath.Join(filepath.Dir(paths.ModeDir), "backups")
 	entries, err := fs.ReadDir(ctx, backupBaseDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -98,25 +97,29 @@ func cleanupOldBackups(ctx context.Context, fs FileSystem, paths persistence.Pat
 
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 	for _, entry := range entries {
-		if !entry.IsDir() || len(entry.Name()) < 15 {
+		if !isExpiredBackup(entry, cutoff) {
 			continue
 		}
-
-		folderTime, err := time.Parse("20060102_150405", entry.Name()[:15])
-		if err != nil || !folderTime.Before(cutoff) {
-			continue
-		}
-
 		path := filepath.Join(backupBaseDir, entry.Name())
-		if err := fs.RemoveAll(ctx, path); err != nil {
-			if logger != nil {
-				logger.Warn("Failed to cleanup old backup",
-					slog.String("path", path),
-					slog.Any("error", err),
-				)
-			}
+		if rmErr := fs.RemoveAll(ctx, path); rmErr != nil && logger != nil {
+			logger.Warn("Failed to cleanup old backup",
+				slog.String("path", path),
+				slog.Any("error", rmErr),
+			)
 		}
 	}
-
 	return nil
+}
+
+// isExpiredBackup reports whether a directory entry is a timestamp-named
+// backup folder older than the cutoff. Returns false for non-conforming names.
+func isExpiredBackup(entry os.DirEntry, cutoff time.Time) bool {
+	if !entry.IsDir() || len(entry.Name()) < 15 {
+		return false
+	}
+	folderTime, err := time.Parse("20060102_150405", entry.Name()[:15])
+	if err != nil {
+		return false
+	}
+	return folderTime.Before(cutoff)
 }
