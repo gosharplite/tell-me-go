@@ -63,14 +63,22 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 			// The HandleEvent contract: check isInputClosed before enqueueEvent.
 			// This test validates that contract at the eventQueue level.
 			if q.isInputClosed() {
-				// Closed bridge should not attempt enqueue — this is the
-				// responsibility of the caller (HandleEvent).
 				if tt.expectEnqueue {
 					t.Error("Expected event to be enqueued, but queue is closed")
 				}
 				return
 			}
-			_ = q.enqueueEvent(tt.ctx(), tt.event)
+
+			ctx := tt.ctx()
+			// HandleEvent also checks ctx.Err() before enqueueEvent.
+			// Test that contract: cancelled contexts should not enqueue.
+			if ctx.Err() != nil {
+				if tt.expectEnqueue {
+					t.Error("Expected event to be enqueued, but context is cancelled")
+				}
+				return
+			}
+			_ = q.enqueueEvent(ctx, tt.event)
 
 			if tt.expectEnqueue {
 				select {

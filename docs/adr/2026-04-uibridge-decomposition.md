@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 # ADR-025: Decompose UIBridge God Object into Composable Sub-Components
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 The `UIBridge` in `internal/agent/session/ui_bridge.go` has grown to ~420 LOC and now handles 5 distinct responsibilities within a single struct of 20+ fields:

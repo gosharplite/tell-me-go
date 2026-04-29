@@ -78,6 +78,7 @@ type UIBridge struct {
 	stateMachine       *uiStateMachine
 	spinner            *spinnerCoord
 	queue              *eventQueue
+	dispatcher         *eventDispatcher
 	cleanupOnce        sync.Once
 	cleanupInvocations int32
 	wg                 sync.WaitGroup
@@ -107,6 +108,10 @@ func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
 	b.queue = newEventQueue(b.logger, loopCtx, 100)
 	b.spinner = newSpinnerCoord(b.renderer, b.logger)
 	b.stateMachine = newUIStateMachine(b.spinner)
+	b.dispatcher = newEventDispatcher(
+		b.renderer, b.logger, b.stateMachine, b.spinner,
+		b.showThoughts, b.showTools, b.rawOutput, b.logFile,
+	)
 	b.wg.Add(1)
 	return b
 }
@@ -231,103 +236,7 @@ func (b *UIBridge) HandleEvent(ctx context.Context, e events.Event) error {
 	return b.queue.enqueueEvent(ctx, e)
 }
 func (b *UIBridge) processEvent(ctx context.Context, e events.Event) {
-	switch ev := e.(type) {
-	case events.TurnStatusEvent:
-		b.handleTurnStatus(ctx, ev)
-	case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
-		b.handleSpinnerEvent(ctx, ev)
-	case events.ConsentStartedEvent:
-		b.stateMachine.transition(stateAwaitingConsent)
-	case events.ConsentFinishedEvent:
-		// Transition back to Idle, which stops any lingering (though should be stopped by ConsentStarted)
-		// resumeActiveSpinner will transition to stateThinking if a phase exists.
-		b.stateMachine.transition(stateIdle)
-		if b.spinner.resumeActiveSpinner(ctx, b.stateMachine.current(), nil) {
-			b.stateMachine.setState(stateThinking)
-		}
-	case events.ResponseEvent:
-		b.handleResponse(ctx, ev)
-	case events.UsageMetricsEvent:
-		b.handleUsageMetrics(ev)
-	case events.ToolCallEvent, events.ToolResultEvent:
-		b.handleToolEvents(ctx, ev)
-	case events.TurnStarted:
-		b.handleTurnStarted()
-	case events.SystemMessageEvent, events.StatusUpdate:
-		b.handleSystemMessage(ctx, ev)
-	}
-}
-func (b *UIBridge) handleSystemMessage(ctx context.Context, e events.Event) {
-	var msg, lvl string
-
-	switch ev := e.(type) {
-	case events.SystemMessageEvent:
-		msg, lvl = ev.Message, ev.Level
-	case events.StatusUpdate:
-		msg, lvl = ev.Message, ev.Level
-	default:
-		return
-	}
-	b.spinner.stopActiveSpinner()
-	b.renderer.LogSystemMessage(ctx, msg, lvl)
-	if b.spinner.resumeActiveSpinner(ctx, b.stateMachine.current(), nil) {
-		b.stateMachine.setState(stateThinking)
-	}
-}
-func (b *UIBridge) handleSpinnerEvent(ctx context.Context, e events.Event) {
-	b.spinner.activePhase = e
-	started := b.spinner.startSpinnerForPhase(ctx, e, b.stateMachine.current(), func() uiState {
-		b.stateMachine.transition(stateIdle)
-		return b.stateMachine.current()
-	})
-	if started {
-		b.stateMachine.setState(stateThinking)
-	}
-}
-func (b *UIBridge) handleTurnStatus(ctx context.Context, ev events.TurnStatusEvent) {
-	b.spinner.activePhase = nil // Clear phase on new turn/header
-	b.stateMachine.transition(stateIdle)
-	b.renderer.LogTurnStatus(ctx, ev.Status)
-}
-func (b *UIBridge) handleResponse(ctx context.Context, ev events.ResponseEvent) {
-	b.spinner.activePhase = nil // Clear phase on response
-	b.stateMachine.transition(stateRendering)
-	b.renderer.RenderResponse(ctx, ev.Content, b.showThoughts, b.rawOutput)
-}
-func (b *UIBridge) handleUsageMetrics(ev events.UsageMetricsEvent) {
-	ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
-	b.spinner.stopActiveSpinner()
-	b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
-	if b.spinner.resumeActiveSpinner(ctx, b.stateMachine.current(), nil) {
-		b.stateMachine.setState(stateThinking)
-	}
-}
-func (b *UIBridge) handleToolEvents(ctx context.Context, e events.Event) {
-	switch ev := e.(type) {
-	case events.ToolCallEvent:
-		b.spinner.stopActiveSpinner()
-		b.renderer.LogToolCall(ctx, ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
-		if b.spinner.resumeActiveSpinner(ctx, b.stateMachine.current(), nil) {
-			b.stateMachine.setState(stateThinking)
-		}
-	case events.ToolResultEvent:
-		b.spinner.stopActiveSpinner()
-		b.renderer.LogToolResult(ctx, ev.Name, ev.Result, b.showTools)
-		if b.spinner.resumeActiveSpinner(ctx, b.stateMachine.current(), nil) {
-			b.stateMachine.setState(stateThinking)
-		}
-	}
-}
-func (b *UIBridge) handleTurnStarted() {
-	b.spinner.activePhase = nil
-	b.stateMachine.transition(stateIdle)
-}
-func (b *UIBridge) ensureContext(ctx context.Context, name string) context.Context {
-	if ctx == nil {
-		b.logger.Debug(name + " missing context")
-		return context.Background()
-	}
-	return ctx
+	b.dispatcher.dispatch(ctx, e)
 }
 
 type spinnerInfo struct {
