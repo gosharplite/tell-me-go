@@ -418,4 +418,3 @@ func TestMonitorLiveness_HeartbeatDropOnFullChannel(t *testing.T) {
 	// Drain the pre-filled value to prevent goroutine leak warnings
 	<-heartbeat
 }
-

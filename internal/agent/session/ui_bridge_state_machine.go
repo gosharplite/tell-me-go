@@ -57,11 +57,6 @@ func (sm *uiStateMachine) transition(next uiState) {
 	sm.state = next
 }
 
-// is reports whether the current state equals s.
-func (sm *uiStateMachine) is(s uiState) bool {
-	return sm.state == s
-}
-
 // current returns the current state. Used where callers need to read the state
 // for passing to spinnerCoord methods.
 func (sm *uiStateMachine) current() uiState {

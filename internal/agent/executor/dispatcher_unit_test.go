@@ -416,9 +416,9 @@ func TestRunExecutionPlan_PostLoopContextCancellation(t *testing.T) {
 	//   1. post-loop guard (line ~397): nil — planErrors stays empty
 	//   2. final return (line ~402):   context.Canceled
 	togglingCtx := &togglingErrContext{
-		Context:     context.Background(),
-		toggleAt:    1,
-		toggledErr:  context.Canceled,
+		Context:    context.Background(),
+		toggleAt:   1,
+		toggledErr: context.Canceled,
 	}
 
 	err = dispatcher.runExecutionPlan(togglingCtx, nil, nil, nil)
@@ -459,9 +459,9 @@ func TestRunExecutionPlan_PostLoopContextCancellation_WithBatches(t *testing.T) 
 	//   3. post-loop guard:         need nil
 	//   4. final return:            need context.Canceled
 	togglingCtx := &togglingErrContext{
-		Context:     context.Background(),
-		toggleAt:    3,
-		toggledErr:  context.Canceled,
+		Context:    context.Background(),
+		toggleAt:   3,
+		toggledErr: context.Canceled,
 	}
 
 	calls := []*llm.FunctionCall{{Name: "p1"}}
@@ -479,20 +479,19 @@ func TestRunExecutionPlan_PostLoopContextCancellation_WithBatches(t *testing.T) 
 	assert.Equal(t, int32(4), togglingCtx.calls.Load())
 }
 
-
 // TestBuildExecutionBatches_EdgeCases covers the declined + serial + parallel
 // mix paths in buildExecutionBatches that were at 73.3% coverage.
 func TestBuildExecutionBatches_EdgeCases(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		name          string
-		calls         []*llm.FunctionCall
-		isSerialMap   map[string]bool // toolName → isSerial
-		declinedMap   map[int]bool
-		wantBatchCnt  int
-		wantBatches   []taskBatch // nil means only check count
-		wantDeclined  map[int]bool // indices that should have ErrUserDeclined in results
+		name         string
+		calls        []*llm.FunctionCall
+		isSerialMap  map[string]bool // toolName → isSerial
+		declinedMap  map[int]bool
+		wantBatchCnt int
+		wantBatches  []taskBatch  // nil means only check count
+		wantDeclined map[int]bool // indices that should have ErrUserDeclined in results
 	}
 
 	tests := []testCase{
@@ -658,4 +657,3 @@ func TestBuildExecutionBatches_EdgeCases(t *testing.T) {
 		})
 	}
 }
-

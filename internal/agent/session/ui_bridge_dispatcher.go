@@ -118,9 +118,9 @@ func (d *eventDispatcher) handleResponse(ctx context.Context, e events.Event) {
 	d.renderer.RenderResponse(ctx, ev.Content, d.showThoughts, d.rawOutput)
 }
 
-func (d *eventDispatcher) handleUsageMetrics(ctx context.Context, e events.Event) {
+func (d *eventDispatcher) handleUsageMetrics(_ context.Context, e events.Event) {
 	ev := e.(events.UsageMetricsEvent)
-	ctx = d.ensureContext(ev.Context, "UsageMetricsEvent")
+	ctx := d.ensureContext(ev.Context, "UsageMetricsEvent")
 	d.spinner.stopActiveSpinner()
 	d.renderer.LogUsage(ctx, ev.Metrics, d.logFile, ev.StartTime)
 	if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {

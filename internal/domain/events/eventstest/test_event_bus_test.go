@@ -186,4 +186,3 @@ func TestTestEventBus_AssertEventPublished_EdgeCases(t *testing.T) {
 	// Wrong concrete type
 	assert.False(t, bus.AssertEventPublished(reflect.TypeOf(otherEvent{})))
 }
-
