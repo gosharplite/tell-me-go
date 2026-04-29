@@ -77,13 +77,11 @@ type UIBridge struct {
 	logFile            string
 	stateMachine       *uiStateMachine
 	spinner            *spinnerCoord
-	eventCh            chan events.Event
-	closeOnce          sync.Once
+	queue              *eventQueue
 	cleanupOnce        sync.Once
 	cleanupInvocations int32
 	wg                 sync.WaitGroup
 	cleanupTimeout     time.Duration
-	isClosed           atomic.Bool
 	started            chan struct{}
 	startOnce          sync.Once
 }
@@ -97,7 +95,6 @@ func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
 		renderer:       renderer,
 		logger:         slog.Default(),
 		clock:          clock.RealClock{},
-		eventCh:        make(chan events.Event, 100),
 		cleanupTimeout: 5 * time.Second,
 		started:        make(chan struct{}),
 	}
@@ -107,16 +104,14 @@ func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
 	if b.logger == nil {
 		b.logger = slog.Default()
 	}
+	b.queue = newEventQueue(b.logger, loopCtx, 100)
 	b.spinner = newSpinnerCoord(b.renderer, b.logger)
 	b.stateMachine = newUIStateMachine(b.spinner)
 	b.wg.Add(1)
 	return b
 }
 func (b *UIBridge) CloseInput() {
-	b.closeOnce.Do(func() {
-		b.isClosed.Store(true)
-		close(b.eventCh)
-	})
+	b.queue.closeInput()
 }
 func (b *UIBridge) Cleanup() {
 	b.cleanupOnce.Do(func() {
@@ -192,10 +187,10 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 			// Forced abort: Drain remaining events if any, but don't block forever.
 			// This ensures that even if cancellation is triggered (e.g., via timeout),
 			// what was already in the channel is processed if the renderer is free.
-			b.drainRemainingEvents()
+			b.queue.drainRemainingEvents(b.processRecoverable)
 			b.spinner.stopActiveSpinner()
 			return nil
-		case e, ok := <-b.eventCh:
+		case e, ok := <-b.queue.recv():
 			if !ok {
 				b.spinner.stopActiveSpinner()
 				return nil
@@ -205,28 +200,6 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 	}
 }
 
-// drainRemainingEvents processes any events still buffered in b.eventCh after
-// the Listen loop's parent context has been cancelled. It uses a fresh
-// context.Background() for each event to avoid immediate cancellation during
-// final rendering. The drain terminates as soon as the channel is closed OR
-// no events are immediately available (non-blocking via default).
-//
-// The caller is responsible for invoking b.spinner.stopActiveSpinner() after this
-// returns; the helper deliberately does not, to keep the "stop spinner exactly
-// once before return" invariant centralized in Listen.
-func (b *UIBridge) drainRemainingEvents() {
-	for {
-		select {
-		case e, ok := <-b.eventCh:
-			if !ok {
-				return
-			}
-			b.processRecoverable(context.Background(), e)
-		default:
-			return
-		}
-	}
-}
 func (b *UIBridge) processRecoverable(ctx context.Context, e events.Event) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -239,7 +212,7 @@ func (b *UIBridge) processRecoverable(ctx context.Context, e events.Event) {
 	b.processEvent(ctx, e)
 }
 func (b *UIBridge) HandleEvent(ctx context.Context, e events.Event) error {
-	if b.isClosed.Load() {
+	if b.queue.isInputClosed() {
 		b.logger.Debug("Shedding event: bridge is closed")
 		return nil
 	}
@@ -255,34 +228,7 @@ func (b *UIBridge) HandleEvent(ctx context.Context, e events.Event) error {
 		return ctx.Err()
 	}
 
-	return b.enqueueEvent(ctx, e)
-}
-func (b *UIBridge) enqueueEvent(ctx context.Context, e events.Event) error {
-	if isCriticalEvent(e) {
-		// Critical events: ensure delivery and enforce true backpressure.
-		select {
-		case b.eventCh <- e:
-			return nil
-		case <-ctx.Done():
-			b.logger.Debug("Caller context cancelled while waiting to queue critical event")
-			return ctx.Err()
-		case <-b.loopCtx.Done(): // NEW: Consumer liveness check
-			return fmt.Errorf("uibridge actor is dead: %w", b.loopCtx.Err())
-		}
-	}
-
-	// Safe to shed visual/transient events if queue is full
-	select {
-	case b.eventCh <- e:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-b.loopCtx.Done(): // NEW: Consumer liveness check
-		return fmt.Errorf("uibridge actor is dead: %w", b.loopCtx.Err())
-	default:
-		b.logger.Debug("UI Bridge queue full, shedding load/visual event")
-		return nil
-	}
+	return b.queue.enqueueEvent(ctx, e)
 }
 func (b *UIBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {

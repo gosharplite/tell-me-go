@@ -233,11 +233,11 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	bridge.wg.Wait()
 
 	// Fill the bridge's event channel buffer to its capacity (100)
-	// This ensures that `b.eventCh <- e` blocks deterministically,
-	// forcing the `select` block to rely on `<-b.loopCtx.Done()`
+	// This ensures that the enqueue blocks deterministically,
+	// forcing the select block to rely on <-loopCtx.Done()
 	for i := 0; i < 100; i++ {
 		// Bypass the enqueue method to strictly fill the channel
-		bridge.eventCh <- events.TurnStarted{}
+		bridge.queue.sendDirect(events.TurnStarted{})
 	}
 
 	// Attempt to send a critical event that requires delivery (e.g., ConsentStartedEvent)
