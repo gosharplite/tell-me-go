@@ -787,7 +787,7 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedID, id)
 			}
-			
+
 			if !tt.skipMock {
 				mockClient.AssertExpectations(t)
 			}

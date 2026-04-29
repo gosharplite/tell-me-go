@@ -124,9 +124,9 @@ func TestToolchainHealthChecker_Check(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			checker := NewToolchainHealthChecker(tt.mock, []string{"git", "go"}, []string{"make"})
 			report, err := checker.Check(ctx)
-			
+
 			assertBasicStatus(t, report, err, tt.wantStatus, tt.wantMsg)
-			
+
 			if tt.wantBins > 0 {
 				assertBinaries(t, report, tt.wantBins)
 			}

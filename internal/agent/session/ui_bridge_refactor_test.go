@@ -67,13 +67,15 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 				enqueued = true
 			}
 			assert.Equal(t, tt.expectEnqueue, enqueued)
-			
+
 			if tt.expectEnqueue {
 				assert.Equal(t, tt.event, <-q.recv())
 			} else {
 				select {
 				case e, ok := <-q.recv():
-					if ok { t.Errorf("unexpected %v", e) }
+					if ok {
+						t.Errorf("unexpected %v", e)
+					}
 				default:
 				}
 			}
