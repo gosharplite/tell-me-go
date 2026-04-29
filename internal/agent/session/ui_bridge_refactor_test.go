@@ -59,40 +59,24 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 			q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 10)
 
 			tt.setup(q)
-
-			// The HandleEvent contract: check isInputClosed before enqueueEvent.
-			// This test validates that contract at the eventQueue level.
-			if q.isInputClosed() {
-				if tt.expectEnqueue {
-					t.Error("Expected event to be enqueued, but queue is closed")
-				}
-				return
-			}
-
 			ctx := tt.ctx()
-			// HandleEvent also checks ctx.Err() before enqueueEvent.
-			// Test that contract: cancelled contexts should not enqueue.
-			if ctx.Err() != nil {
-				if tt.expectEnqueue {
-					t.Error("Expected event to be enqueued, but context is cancelled")
-				}
-				return
+
+			var enqueued bool
+			if !q.isInputClosed() && ctx.Err() == nil {
+				_ = q.enqueueEvent(ctx, tt.event)
+				enqueued = true
 			}
-			_ = q.enqueueEvent(ctx, tt.event)
+			assert.Equal(t, tt.expectEnqueue, enqueued)
 
 			if tt.expectEnqueue {
-				select {
-				case e := <-q.recv():
-					assert.Equal(t, tt.event, e)
-				default:
-					t.Error("Expected event to be enqueued")
-				}
+				assert.Equal(t, tt.event, <-q.recv())
 			} else {
 				select {
-				case e := <-q.recv():
-					t.Errorf("Expected NO event to be enqueued, but got %v", e)
+				case e, ok := <-q.recv():
+					if ok {
+						t.Errorf("unexpected %v", e)
+					}
 				default:
-					// Success
 				}
 			}
 		})

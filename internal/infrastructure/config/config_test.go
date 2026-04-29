@@ -13,65 +13,81 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
+type loadTestCase struct {
+	name          string
+	fileContent   string
+	useValidPath  bool
+	wantErr       bool
+	wantMode      string
+	wantModel     string
+	wantToolTurns int
+}
+
+func assertLoadConfig(t *testing.T, cfg *domain_config.Config, tt loadTestCase) {
+	t.Helper()
+	if tt.wantMode != "" && cfg.Mode != tt.wantMode {
+		t.Errorf("expected Mode '%s', got '%s'", tt.wantMode, cfg.Mode)
+	}
+	if tt.wantModel != "" && cfg.Model != tt.wantModel {
+		t.Errorf("expected Model '%s', got '%s'", tt.wantModel, cfg.Model)
+	}
+	if cfg.MaxToolTurns != tt.wantToolTurns {
+		t.Errorf("expected default MaxToolTurns %d, got %d", tt.wantToolTurns, cfg.MaxToolTurns)
+	}
+}
+
 func TestLoad(t *testing.T) {
+	tests := []loadTestCase{
+		{
+			name:          "ValidConfig",
+			fileContent:   "MODE: \"test-mode\"\nPERSON: \"test-person\"\nAIMODEL: \"test-model\"\nAIURL: \"http://test.url\"",
+			useValidPath:  true,
+			wantErr:       false,
+			wantMode:      "test-mode",
+			wantModel:     "test-model",
+			wantToolTurns: 200,
+		},
+		{
+			name:          "NonExistentFile",
+			useValidPath:  false,
+			wantErr:       false,
+			wantToolTurns: 200,
+		},
+		{
+			name:         "InvalidYAML",
+			fileContent:  ": invalid",
+			useValidPath: true,
+			wantErr:      true,
+		},
+	}
 
-	t.Run("ValidConfig", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "test.yaml")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := "non-existent.yaml"
+			if tt.useValidPath {
+				tmpDir := t.TempDir()
+				path = filepath.Join(tmpDir, "test.yaml")
+				if err := os.WriteFile(path, []byte(tt.fileContent), 0644); err != nil {
+					t.Fatalf("failed to write test config: %v", err)
+				}
+			}
 
-		yamlContent := `
-MODE: "test-mode"
-PERSON: "test-person"
-AIMODEL: "test-model"
-AIURL: "http://test.url"
-`
-		if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
-			t.Fatalf("failed to write test config: %v", err)
-		}
+			cfg, err := load(path)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("load() error = %v, wantErr %v", err, tt.wantErr)
+			}
 
-		cfg, err := load(configPath)
-		if err != nil {
-			t.Fatalf("load() failed: %v", err)
-		}
+			if tt.wantErr {
+				return
+			}
 
-		if cfg.Mode != "test-mode" {
-			t.Errorf("expected Mode 'test-mode', got '%s'", cfg.Mode)
-		}
-		if cfg.Model != "test-model" {
-			t.Errorf("expected Model 'test-model', got '%s'", cfg.Model)
-		}
-		// Verify defaults
-		if cfg.MaxToolTurns != 200 {
-			t.Errorf("expected default MaxToolTurns 200, got %d", cfg.MaxToolTurns)
-		}
-	})
+			if cfg == nil {
+				t.Fatal("expected config to be initialized")
+			}
 
-	t.Run("NonExistentFile", func(t *testing.T) {
-		cfg, err := load("non-existent.yaml")
-		if err != nil {
-			t.Errorf("expected no error for non-existent file, got %v", err)
-		}
-		if cfg == nil {
-			t.Fatal("expected config to be initialized even without file")
-		}
-		// Verify defaults are set
-		if cfg.MaxToolTurns != 200 {
-			t.Errorf("expected default MaxToolTurns 200, got %d", cfg.MaxToolTurns)
-		}
-	})
-
-	t.Run("InvalidYAML", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "invalid.yaml")
-		if err := os.WriteFile(configPath, []byte(": invalid"), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		_, err := load(configPath)
-		if err == nil {
-			t.Error("expected error for invalid YAML, got nil")
-		}
-	})
+			assertLoadConfig(t, cfg, tt)
+		})
+	}
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
