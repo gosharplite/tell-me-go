@@ -341,31 +341,23 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 
 func TestUIBridge_EnsureContext(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-	bridge.WaitStarted()
-	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
+	// Test ensureContext via the eventDispatcher where it now lives.
+	d := newEventDispatcher(
+		nil, slog.Default(), nil, nil,
+		false, false, false, "",
+	)
 
 	t.Run("Returns existing context", func(t *testing.T) {
 		type contextKey string
 		const testKey contextKey = "key"
 		ctx := context.WithValue(context.Background(), testKey, "value")
-		result := bridge.ensureContext(ctx, "test")
+		result := d.ensureContext(ctx, "test")
 		assert.Equal(t, ctx, result)
 	})
 
 	t.Run("Returns background context and logs debug if nil", func(t *testing.T) {
 		var nilCtx context.Context
-		result := bridge.ensureContext(nilCtx, "test")
+		result := d.ensureContext(nilCtx, "test")
 		assert.NotNil(t, result)
 	})
 }

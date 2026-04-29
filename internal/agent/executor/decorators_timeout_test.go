@@ -54,6 +54,26 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 			nextDelay:        1 * time.Second,
 			defaultTimeout:   500 * time.Millisecond,
 		},
+		{
+			name:             "int64 timeout success",
+			requestedTimeout: int64(3), // 3 seconds
+			nextDelay:        1 * time.Second,
+			defaultTimeout:   500 * time.Millisecond,
+		},
+		{
+			name:              "zero float timeout falls back to default",
+			requestedTimeout:  float64(0),
+			nextDelay:         100 * time.Millisecond,
+			defaultTimeout:    50 * time.Millisecond,
+			expectedErrSubstr: "timed out",
+		},
+		{
+			name:              "negative float timeout falls back to default",
+			requestedTimeout:  float64(-5),
+			nextDelay:         100 * time.Millisecond,
+			defaultTimeout:    50 * time.Millisecond,
+			expectedErrSubstr: "timed out",
+		},
 	}
 
 	for _, tt := range tests {

@@ -5,6 +5,7 @@ package session
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"sync"
 	"testing"
@@ -25,11 +26,10 @@ func syncBridge(t *testing.T, b *UIBridge, m interface {
 		close(done)
 	}).Return().Once()
 
-	// Use a non-polling send with timeout to guarantee delivery without flakiness.
-	select {
-	case b.eventCh <- events.SystemMessageEvent{Message: "SYNC_SENTINEL", Level: "info"}:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Failed to queue sync sentinel (queue full?)")
+	// Use a non-polling send via HandleEvent. SystemMessageEvent is critical
+	// and will be delivered with backpressure.
+	if err := b.HandleEvent(context.Background(), events.SystemMessageEvent{Message: "SYNC_SENTINEL", Level: "info"}); err != nil {
+		t.Fatalf("Failed to queue sync sentinel: %v", err)
 	}
 
 	select {

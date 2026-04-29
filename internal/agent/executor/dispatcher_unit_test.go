@@ -372,3 +372,288 @@ func TestDispatcher_RunExecutionPlan_ContextCancelledAfterEmptyBatches(t *testin
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
+
+// togglingErrContext wraps a context.Context and toggles Err() after a
+// specified number of calls. This simulates a race where the context is
+// cancelled between two sequential ctx.Err() checks.
+type togglingErrContext struct {
+	context.Context
+	calls      atomic.Int32
+	toggleAt   int32
+	toggledErr error
+}
+
+func (c *togglingErrContext) Err() error {
+	if c.calls.Add(1) > c.toggleAt {
+		return c.toggledErr
+	}
+	return nil
+}
+
+// TestRunExecutionPlan_PostLoopContextCancellation covers the final
+// return ctx.Err() in runExecutionPlan when the context is cancelled
+// after the post-loop check but before the return. With zero tool calls
+// (empty batches), the for-loop is skipped and only two ctx.Err() calls
+// occur: the post-loop guard and the final return.
+func TestRunExecutionPlan_PostLoopContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockZombieRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "any"}}
+		},
+	}
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+
+	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, logger, observer)
+	require.NoError(t, err)
+
+	// toggleAt=1: first Err() returns nil, second Err() returns Canceled.
+	// With empty batches the call sequence is:
+	//   1. post-loop guard (line ~397): nil — planErrors stays empty
+	//   2. final return (line ~402):   context.Canceled
+	togglingCtx := &togglingErrContext{
+		Context:    context.Background(),
+		toggleAt:   1,
+		toggledErr: context.Canceled,
+	}
+
+	err = dispatcher.runExecutionPlan(togglingCtx, nil, nil, nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Verify exactly 2 calls were made
+	assert.Equal(t, int32(2), togglingCtx.calls.Load())
+}
+
+// TestRunExecutionPlan_PostLoopContextCancellation_WithBatches covers the
+// final return ctx.Err() when there are successful batches and the context
+// toggles after all batch-level checks.
+func TestRunExecutionPlan_PostLoopContextCancellation_WithBatches(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockZombieRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "p1"}}
+		},
+	}
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+
+	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, logger, observer)
+	require.NoError(t, err)
+
+	// Replace runtime with a fast mock that succeeds immediately
+	dispatcher.pipeline.(*defaultToolPipeline).runtime = &mockExecutor{
+		Result: tools.ToolResult{Text: "ok"},
+	}
+
+	// With one parallel tool that succeeds, the call sequence is:
+	//   1. checkPreconditions:      need nil
+	//   2. evaluateBatchOutcome:    need nil (parallel, success, no ctx err)
+	//   3. post-loop guard:         need nil
+	//   4. final return:            need context.Canceled
+	togglingCtx := &togglingErrContext{
+		Context:    context.Background(),
+		toggleAt:   3,
+		toggledErr: context.Canceled,
+	}
+
+	calls := []*llm.FunctionCall{{Name: "p1"}}
+	results := make([]tools.ToolResult, 1)
+
+	err = dispatcher.runExecutionPlan(togglingCtx, calls, nil, results)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Verify the successful tool result before the context cancellation
+	assert.Equal(t, "ok", results[0].Text)
+	assert.NoError(t, results[0].Error)
+
+	// Verify exactly 4 calls were made
+	assert.Equal(t, int32(4), togglingCtx.calls.Load())
+}
+
+// TestBuildExecutionBatches_EdgeCases covers the declined + serial + parallel
+// mix paths in buildExecutionBatches that were at 73.3% coverage.
+func TestBuildExecutionBatches_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name         string
+		calls        []*llm.FunctionCall
+		isSerialMap  map[string]bool // toolName → isSerial
+		declinedMap  map[int]bool
+		wantBatchCnt int
+		wantBatches  []taskBatch  // nil means only check count
+		wantDeclined map[int]bool // indices that should have ErrUserDeclined in results
+	}
+
+	tests := []testCase{
+		{
+			name:         "AllDeclined",
+			calls:        []*llm.FunctionCall{{Name: "a"}, {Name: "b"}, {Name: "c"}},
+			isSerialMap:  map[string]bool{},
+			declinedMap:  map[int]bool{0: true, 1: true, 2: true},
+			wantBatchCnt: 0,
+			wantDeclined: map[int]bool{0: true, 1: true, 2: true},
+		},
+		{
+			name:         "DeclinedThenParallel",
+			calls:        []*llm.FunctionCall{{Name: "a"}, {Name: "b"}, {Name: "c"}},
+			isSerialMap:  map[string]bool{},
+			declinedMap:  map[int]bool{0: true}, // only first is declined
+			wantBatchCnt: 1,
+			wantBatches:  []taskBatch{{isSerial: false, tasks: []int{1, 2}}},
+			wantDeclined: map[int]bool{0: true},
+		},
+		{
+			name:         "DeclinedBetweenParallel",
+			calls:        []*llm.FunctionCall{{Name: "a"}, {Name: "b"}, {Name: "c"}},
+			isSerialMap:  map[string]bool{},
+			declinedMap:  map[int]bool{1: true}, // middle declined
+			wantBatchCnt: 1,
+			wantBatches:  []taskBatch{{isSerial: false, tasks: []int{0, 2}}},
+			wantDeclined: map[int]bool{1: true},
+		},
+		{
+			name:  "DeclinedBeforeSerial",
+			calls: []*llm.FunctionCall{{Name: "a"}, {Name: "s1"}},
+			isSerialMap: map[string]bool{
+				"s1": true,
+			},
+			declinedMap:  map[int]bool{0: true},
+			wantBatchCnt: 1,
+			wantBatches:  []taskBatch{{isSerial: true, tasks: []int{1}}},
+			wantDeclined: map[int]bool{0: true},
+		},
+		{
+			name:  "SerialThenDeclinedThenParallel",
+			calls: []*llm.FunctionCall{{Name: "s1"}, {Name: "d"}, {Name: "p1"}},
+			isSerialMap: map[string]bool{
+				"s1": true,
+			},
+			declinedMap:  map[int]bool{1: true},
+			wantBatchCnt: 2,
+			wantBatches: []taskBatch{
+				{isSerial: true, tasks: []int{0}},
+				{isSerial: false, tasks: []int{2}},
+			},
+			wantDeclined: map[int]bool{1: true},
+		},
+		{
+			name:  "SerialAfterDeclinedParallelBatch",
+			calls: []*llm.FunctionCall{{Name: "p1"}, {Name: "d"}, {Name: "s1"}},
+			isSerialMap: map[string]bool{
+				"s1": true,
+			},
+			declinedMap:  map[int]bool{1: true},
+			wantBatchCnt: 2,
+			wantBatches: []taskBatch{
+				{isSerial: false, tasks: []int{0}},
+				{isSerial: true, tasks: []int{2}},
+			},
+			wantDeclined: map[int]bool{1: true},
+		},
+		{
+			name:  "ParallelThenSerialNoDeclined",
+			calls: []*llm.FunctionCall{{Name: "p1"}, {Name: "p2"}, {Name: "s1"}},
+			isSerialMap: map[string]bool{
+				"s1": true,
+			},
+			declinedMap:  map[int]bool{},
+			wantBatchCnt: 2,
+			wantBatches: []taskBatch{
+				{isSerial: false, tasks: []int{0, 1}},
+				{isSerial: true, tasks: []int{2}},
+			},
+		},
+		{
+			name:  "SerialThenParallelNoDeclined",
+			calls: []*llm.FunctionCall{{Name: "s1"}, {Name: "p1"}, {Name: "p2"}},
+			isSerialMap: map[string]bool{
+				"s1": true,
+			},
+			declinedMap:  map[int]bool{},
+			wantBatchCnt: 2,
+			wantBatches: []taskBatch{
+				{isSerial: true, tasks: []int{0}},
+				{isSerial: false, tasks: []int{1, 2}},
+			},
+		},
+		{
+			name:  "AllSerial",
+			calls: []*llm.FunctionCall{{Name: "s1"}, {Name: "s2"}},
+			isSerialMap: map[string]bool{
+				"s1": true,
+				"s2": true,
+			},
+			declinedMap:  map[int]bool{},
+			wantBatchCnt: 2,
+			wantBatches: []taskBatch{
+				{isSerial: true, tasks: []int{0}},
+				{isSerial: true, tasks: []int{1}},
+			},
+		},
+		{
+			name:  "DeclinedAmongSerial",
+			calls: []*llm.FunctionCall{{Name: "s1"}, {Name: "s2"}, {Name: "s3"}},
+			isSerialMap: map[string]bool{
+				"s1": true,
+				"s2": true,
+				"s3": true,
+			},
+			declinedMap:  map[int]bool{1: true}, // middle declined
+			wantBatchCnt: 2,
+			wantBatches: []taskBatch{
+				{isSerial: true, tasks: []int{0}},
+				{isSerial: true, tasks: []int{2}},
+			},
+			wantDeclined: map[int]bool{1: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Dispatcher{
+				pipeline: &mockToolPipeline{
+					IsSerialFunc: func(name string) bool {
+						return tt.isSerialMap[name]
+					},
+				},
+			}
+
+			results := make([]tools.ToolResult, len(tt.calls))
+			batches := d.buildExecutionBatches(tt.calls, tt.declinedMap, results)
+
+			assert.Equal(t, tt.wantBatchCnt, len(batches), "batch count mismatch")
+
+			if tt.wantBatches != nil {
+				require.Equal(t, len(tt.wantBatches), len(batches), "batch slice length mismatch")
+				for i, want := range tt.wantBatches {
+					assert.Equal(t, want.isSerial, batches[i].isSerial,
+						"batch[%d].isSerial mismatch", i)
+					assert.Equal(t, want.tasks, batches[i].tasks,
+						"batch[%d].tasks mismatch", i)
+				}
+			}
+
+			// Verify declined entries have ErrUserDeclined
+			for i := range tt.calls {
+				if tt.wantDeclined[i] {
+					assert.Equal(t, "User explicitly denied this action.", results[i].Text)
+					assert.ErrorIs(t, results[i].Error, tools.ErrUserDeclined)
+				} else if !tt.declinedMap[i] {
+					// Non-declined entries should not have been touched before execution
+					assert.Empty(t, results[i].Text)
+					assert.NoError(t, results[i].Error)
+				}
+			}
+		})
+	}
+}

@@ -203,3 +203,218 @@ func TestClassifyToolError(t *testing.T) {
 		assert.Equal(t, "", msg)
 	})
 }
+
+// TestHandleTimeout_DefaultBranch covers the default case in handleTimeout
+// that wraps unknown errors with llm.ErrTransient.
+func TestHandleTimeout_DefaultBranch(t *testing.T) {
+	t.Parallel()
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	decorator := newSafetyDecorator(
+		&mockExecutor{},
+		registry,
+		logger,
+		bus,
+		zombie,
+		1*time.Second,
+		1*time.Second,
+		10*time.Millisecond, // short zombie timeout
+	).(*safetyDecorator)
+
+	// A custom error that is NOT context.Canceled and NOT context.DeadlineExceeded
+	customErr := errors.New("custom transport error")
+	outCh := make(chan tools.ToolOutput, 1)
+
+	result := HandleTimeout(
+		decorator,
+		context.Background(),
+		customErr,
+		"test_tool",
+		5*time.Second,
+		outCh,
+	)
+
+	// The default branch wraps with ErrTransient
+	assert.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, llm.ErrTransient),
+		"expected error to wrap llm.ErrTransient")
+	assert.Contains(t, result.Text, "custom transport error")
+	assert.Contains(t, result.Text, "Error: Tool execution failed")
+}
+
+// TestHandleTimeout_ContextCanceled verifies the Canceled branch (already covered,
+// but included for completeness of the handleTimeout contract).
+func TestHandleTimeout_ContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	decorator := newSafetyDecorator(
+		&mockExecutor{},
+		registry,
+		logger,
+		bus,
+		zombie,
+		1*time.Second,
+		1*time.Second,
+		10*time.Millisecond,
+	).(*safetyDecorator)
+
+	outCh := make(chan tools.ToolOutput, 1)
+
+	result := HandleTimeout(
+		decorator,
+		context.Background(),
+		context.Canceled,
+		"test_tool",
+		5*time.Second,
+		outCh,
+	)
+
+	assert.Error(t, result.Error)
+	assert.Contains(t, result.Text, "interrupted or cancelled")
+	assert.Contains(t, result.Error.Error(), "tool execution canceled")
+}
+
+// TestHandleTimeout_DeadlineExceeded verifies the DeadlineExceeded branch.
+func TestHandleTimeout_DeadlineExceeded(t *testing.T) {
+	t.Parallel()
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	decorator := newSafetyDecorator(
+		&mockExecutor{},
+		registry,
+		logger,
+		bus,
+		zombie,
+		1*time.Second,
+		1*time.Second,
+		10*time.Millisecond,
+	).(*safetyDecorator)
+
+	outCh := make(chan tools.ToolOutput, 1)
+
+	result := HandleTimeout(
+		decorator,
+		context.Background(),
+		context.DeadlineExceeded,
+		"test_tool",
+		2*time.Second,
+		outCh,
+	)
+
+	assert.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, llm.ErrTransient))
+	assert.Contains(t, result.Text, "timed out after 2s")
+}
+
+// TestLivenessTimer_ResetAfterFire covers the drain path in livenessTimer.reset
+// when timer.Stop() returns false (timer already fired).
+func TestLivenessTimer_ResetAfterFire(t *testing.T) {
+	t.Parallel()
+
+	lt := NewLivenessTimer(1 * time.Millisecond)
+
+	// Wait for timer to fire
+	select {
+	case <-lt.channel():
+		// timer fired as expected
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timer did not fire within expected window")
+	}
+
+	// Reset after fire — exercises the !t.timer.Stop() drain path
+	lt.reset()
+
+	// Timer should fire again after reset
+	select {
+	case <-lt.channel():
+		// success
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timer did not fire after reset")
+	}
+
+	lt.stop()
+}
+
+// TestLivenessTimer_ResetBeforeFire covers the normal reset path
+// when timer.Stop() returns true (timer hasn't fired yet).
+func TestLivenessTimer_ResetBeforeFire(t *testing.T) {
+	t.Parallel()
+
+	lt := NewLivenessTimer(1 * time.Hour)
+	// Timer hasn't fired — Stop() returns true
+	lt.reset()
+	lt.stop()
+}
+
+// TestLivenessTimer_NilTimer covers the nil timer path in reset()
+func TestLivenessTimer_NilTimer(t *testing.T) {
+	t.Parallel()
+
+	lt := NewLivenessTimer(0) // zero threshold → nil timer
+	// reset() should be a no-op when timer is nil
+	lt.reset()
+	lt.stop()
+}
+
+// TestMonitorLiveness_HeartbeatDropOnFullChannel covers the default branch
+// in monitorLiveness where the heartbeat channel is full and the heartbeat is dropped.
+func TestMonitorLiveness_HeartbeatDropOnFullChannel(t *testing.T) {
+	t.Parallel()
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	// Pre-fill the heartbeat channel so it's full
+	heartbeat := make(chan struct{}, 1)
+	heartbeat <- struct{}{}
+
+	// Mock executor sends one heartbeat on hbCh before returning success
+	next := &mockExecutor{
+		Result:     tools.ToolResult{Text: "ok"},
+		Heartbeats: 1,
+	}
+
+	decorator := newSafetyDecorator(
+		next,
+		registry,
+		logger,
+		bus,
+		zombie,
+		5*time.Second, // long timeout so we don't hit deadline
+		5*time.Second,
+		10*time.Millisecond,
+	)
+
+	result, _ := decorator.Execute(
+		context.Background(),
+		&tools.ToolDeclaration{Name: "test"},
+		&llm.FunctionCall{Name: "test"},
+		heartbeat,
+	)
+
+	// The tool should complete successfully — heartbeat was silently dropped
+	assert.NoError(t, result.Error)
+	assert.Equal(t, "ok", result.Text)
+
+	// Drain the pre-filled value to prevent goroutine leak warnings
+	<-heartbeat
+}
