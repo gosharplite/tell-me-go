@@ -175,32 +175,61 @@ func (d *safetyDecorator) monitorLiveness(
 			if !ok {
 				return
 			}
-			// Forward to upper layer if any
-			if heartbeat != nil {
-				select {
-				case heartbeat <- v:
-				default:
-				}
-			}
-
+			forwardHeartbeat(heartbeat, v)
 			timer.reset()
+
 		case <-timer.channel():
-			d.logger.Error("tool_liveness_timeout", "tool_name", toolName, "threshold", opts.LivenessThreshold)
-			cancel()
+			d.handleLivenessTimeout(toolName, opts.LivenessThreshold, cancel)
 			return
+
 		case <-ctx.Done():
-			// FIX: Start a background drainer to prevent the tool from blocking on hbCh
-			go func() {
-				defer func() {
-					_ = recover() // Ignore panic, preventing crash on drainer
-				}()
-				for range hbCh {
-					// Draining until hbCh is closed by the tool's defer block
-				}
-			}()
+			drainHeartbeats(hbCh)
 			return
 		}
 	}
+}
+
+// forwardHeartbeat performs a non-blocking send of the heartbeat signal to
+// an upstream consumer. Drops the signal if the consumer is not ready or
+// nil. The non-blocking semantics are intentional: heartbeat consumers are
+// observers, never backpressure points.
+func forwardHeartbeat(out chan<- struct{}, v struct{}) {
+	if out == nil {
+		return
+	}
+	select {
+	case out <- v:
+	default:
+	}
+}
+
+// handleLivenessTimeout records the liveness violation and cancels the
+// tool's execution context. Caller must return after invoking this.
+func (d *safetyDecorator) handleLivenessTimeout(
+	toolName string,
+	threshold time.Duration,
+	cancel context.CancelFunc,
+) {
+	d.logger.Error("tool_liveness_timeout",
+		"tool_name", toolName,
+		"threshold", threshold,
+	)
+	cancel()
+}
+
+// drainHeartbeats prevents the tool goroutine from blocking on hbCh after
+// the parent context is cancelled. This MUST run in a separate goroutine:
+// hbCh is owned and closed by the tool's defer block (see executeToolSafe),
+// which may not have fired yet at the moment of cancellation. The recover()
+// guards against accidental double-close of hbCh, which has been observed
+// historically; it intentionally swallows the panic to keep the drainer
+// non-fatal.
+func drainHeartbeats(hbCh <-chan struct{}) {
+	go func() {
+		defer func() { _ = recover() }()
+		for range hbCh {
+		}
+	}()
 }
 
 // livenessTimer encapsulates the timer logic for tool liveness checks.
