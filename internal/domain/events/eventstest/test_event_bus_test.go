@@ -5,8 +5,10 @@ package eventstest_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -75,3 +77,113 @@ func TestTestEventBus_NoOps(t *testing.T) {
 	assert.NoError(t, bus.Flush(ctx))
 	assert.NoError(t, bus.Shutdown(ctx))
 }
+
+// ----- Sub-Task 5A: Error injection setters and error return paths -----
+
+func TestTestEventBus_ErrorInjection(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("SetPublishErr", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		bus.SetPublishErr(errors.New("pub down"))
+
+		err := bus.Publish(ctx, myEvent{ID: 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "pub down")
+		assert.Empty(t, bus.GetEvents(), "event must not be recorded when publish error is set")
+
+		// Reset and verify normal behavior resumes
+		bus.SetPublishErr(nil)
+		assert.NoError(t, bus.Publish(ctx, myEvent{ID: 2}))
+		assert.Len(t, bus.GetEvents(), 1)
+	})
+
+	t.Run("SetFlushErr", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		bus.SetFlushErr(errors.New("flush fail"))
+		assert.EqualError(t, bus.Flush(ctx), "flush fail")
+
+		bus.SetFlushErr(nil)
+		assert.NoError(t, bus.Flush(ctx))
+	})
+
+	t.Run("SetShutdownErr", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		bus.SetShutdownErr(errors.New("shutdown hang"))
+		assert.EqualError(t, bus.Shutdown(ctx), "shutdown hang")
+
+		bus.SetShutdownErr(nil)
+		assert.NoError(t, bus.Shutdown(ctx))
+	})
+}
+
+// ----- Sub-Task 5B: Publish context-cancelled branch -----
+
+func TestTestEventBus_Publish_ContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	bus := &eventstest.TestEventBus{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := bus.Publish(ctx, myEvent{ID: 1})
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, bus.GetEvents(), "event must not be recorded when context is cancelled")
+}
+
+// ----- Sub-Task 5C: Listen and WaitStarted -----
+
+func TestTestEventBus_Listen(t *testing.T) {
+	t.Parallel()
+
+	bus := &eventstest.TestEventBus{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- bus.Listen(ctx)
+	}()
+
+	// Verify Listen blocks and does not return before cancellation
+	select {
+	case <-errCh:
+		t.Fatal("Listen returned before context was cancelled")
+	case <-time.After(50 * time.Millisecond):
+		// expected — still blocking
+	}
+
+	cancel()
+
+	// Listen should return ctx.Err() after cancellation
+	select {
+	case err := <-errCh:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(1 * time.Second):
+		t.Fatal("Listen did not return after context cancellation")
+	}
+}
+
+func TestTestEventBus_WaitStarted(t *testing.T) {
+	bus := &eventstest.TestEventBus{}
+	bus.WaitStarted() // must not panic or block
+}
+
+// ----- Sub-Task 5D: AssertEventPublished edge cases -----
+
+func TestTestEventBus_AssertEventPublished_EdgeCases(t *testing.T) {
+	t.Parallel()
+	bus := &eventstest.TestEventBus{}
+
+	require.NoError(t, bus.Publish(context.Background(), myEvent{ID: 1}))
+
+	// Nil type — should return false, no panic
+	assert.False(t, bus.AssertEventPublished(nil))
+
+	// Concrete type match
+	assert.True(t, bus.AssertEventPublished(reflect.TypeOf(myEvent{})))
+
+	// Wrong concrete type
+	assert.False(t, bus.AssertEventPublished(reflect.TypeOf(otherEvent{})))
+}
+

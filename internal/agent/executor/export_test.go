@@ -3,5 +3,10 @@
 
 package executor
 
-// No exported wrappers for private types.
-// Use unexported types directly from within the same package.
+// Exported wrappers for private symbols used in tests.
+
+// HandleTimeout exposes the private (*safetyDecorator).handleTimeout method.
+var HandleTimeout = (*safetyDecorator).handleTimeout
+
+// NewLivenessTimer exposes the private newLivenessTimer constructor.
+var NewLivenessTimer = newLivenessTimer

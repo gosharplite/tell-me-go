@@ -23,6 +23,7 @@ type mockExecutor struct {
 	Called      bool
 	BlockCh     chan struct{}
 	ExecuteHook func()
+	Heartbeats  int // number of heartbeats to send on hb before returning (0 = none)
 }
 
 func (m *mockExecutor) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -32,6 +33,17 @@ func (m *mockExecutor) Execute(ctx context.Context, tool *tools.ToolDeclaration,
 
 	if m.ExecuteHook != nil {
 		m.ExecuteHook()
+	}
+
+	// Send heartbeats if configured
+	for i := 0; i < m.Heartbeats; i++ {
+		select {
+		case hb <- struct{}{}:
+		case <-ctx.Done():
+			return tools.ToolResult{}, ctx.Err()
+		default:
+			// hb channel is nil or full — drop (same behavior as real tools)
+		}
 	}
 
 	if m.Delay > 0 {

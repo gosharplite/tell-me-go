@@ -124,3 +124,40 @@ func TestGetSessionEvents_CloseErrorWhenParseSucceeds(t *testing.T) {
 	// propagation is in TestGetSessionEvents_CloseError.
 	t.Skip("err==nil close-error branch unreachable with database/sql semantics")
 }
+
+// TestGetSessionEvents_CloseErrorPropagationPath proves that close errors
+// ARE propagated to the caller — they just flow through the rows.Err() path
+// inside parseSessionEvents rather than the err==nil defer branch.
+//
+// With database/sql semantics:
+//   1. When rows.Next() exhausts the result set, the sql package calls
+//      the driver's Close internally and surfaces any error via rows.Err().
+//   2. parseSessionEvents calls rows.Err() after the scan loop and wraps it:
+//      "event rows iteration: <close error>"
+//   3. This makes err non-nil when getSessionEvents evaluates its defer.
+//   4. The defer's err==nil guard (lines 43-45) is therefore unreachable
+//      in practice — it exists as defensive code only.
+//
+// This test exercises the full propagation chain: data parses successfully,
+// CloseError fires, the error reaches the caller.
+func TestGetSessionEvents_CloseErrorPropagationPath(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	r := newEventStore(db)
+	mock.ExpectQuery("SELECT id, payload, created_at FROM events").
+		WithArgs("event-1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "payload", "created_at"}).
+			AddRow("event-1", `{"status": "ok"}`, "2023-10-27T10:00:00Z").
+			CloseError(errors.New("close failed")))
+
+	events, err := r.getSessionEvents(context.Background(), []string{"event-1"})
+
+	// The close error is propagated — database/sql surfaces it through
+	// rows.Err() inside parseSessionEvents, not through the defer's
+	// rows.Close() (which runs second and finds err already non-nil).
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "close failed")
+	assert.Nil(t, events)
+}
