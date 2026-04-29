@@ -39,114 +39,131 @@ func (m *mockToolchainExecutor) CombinedOutput(ctx context.Context, name string,
 	return nil, fmt.Errorf("combinedOutput not implemented")
 }
 
+var healthyMock = &mockToolchainExecutor{
+	lookPathFunc: func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	},
+	outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte(name + " version 1.0.0"), nil
+	},
+}
+
+var missingRequiredMock = &mockToolchainExecutor{
+	lookPathFunc: func(file string) (string, error) {
+		if file == "git" {
+			return "", fmt.Errorf("not found")
+		}
+		return "/usr/bin/" + file, nil
+	},
+	outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("version"), nil
+	},
+}
+
+var missingOptionalMock = &mockToolchainExecutor{
+	lookPathFunc: func(file string) (string, error) {
+		if file == "make" {
+			return "", fmt.Errorf("not found")
+		}
+		return "/usr/bin/" + file, nil
+	},
+	outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("version"), nil
+	},
+}
+
+var executionFailedMock = &mockToolchainExecutor{
+	lookPathFunc: func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	},
+	outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if name == "git" {
+			return nil, fmt.Errorf("exec error")
+		}
+		return []byte("version"), nil
+	},
+}
+
 func TestToolchainHealthChecker_Check(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("Healthy", func(t *testing.T) {
-		mock := &mockToolchainExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				return "/usr/bin/" + file, nil
-			},
-			outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte(name + " version 1.0.0"), nil
-			},
-		}
+	tests := []struct {
+		name       string
+		mock       *mockToolchainExecutor
+		wantStatus ports.HealthStatus
+		wantMsg    string
+		wantBins   int
+	}{
+		{
+			name:       "Healthy",
+			mock:       healthyMock,
+			wantStatus: ports.StatusHealthy,
+			wantBins:   3,
+		},
+		{
+			name:       "Unhealthy_MissingRequired",
+			mock:       missingRequiredMock,
+			wantStatus: ports.StatusUnhealthy,
+			wantMsg:    "git",
+		},
+		{
+			name:       "Degraded_MissingOptional",
+			mock:       missingOptionalMock,
+			wantStatus: ports.StatusDegraded,
+			wantMsg:    "make",
+		},
+		{
+			name:       "Unhealthy_ExecutionFailed",
+			mock:       executionFailedMock,
+			wantStatus: ports.StatusUnhealthy,
+			wantMsg:    "git",
+		},
+	}
 
-		checker := NewToolchainHealthChecker(mock, []string{"git", "go"}, []string{"make"})
-		report, err := checker.Check(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := NewToolchainHealthChecker(tt.mock, []string{"git", "go"}, []string{"make"})
+			report, err := checker.Check(ctx)
+			
+			assertBasicStatus(t, report, err, tt.wantStatus, tt.wantMsg)
+			
+			if tt.wantBins > 0 {
+				assertBinaries(t, report, tt.wantBins)
+			}
+		})
+	}
+}
 
-		if report.Status != ports.StatusHealthy {
-			t.Errorf("expected StatusHealthy, got %s: %s", report.Status, report.Message)
-		}
+func assertBasicStatus(t *testing.T, report *ports.ComponentReport, err error, wantStatus ports.HealthStatus, wantMsg string) {
+	t.Helper()
+	if err != nil && wantStatus == ports.StatusHealthy {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-		details := report.Details.(map[string]any)
-		binaries := details["binaries"].(map[string]binaryInfo)
+	if report.Status != wantStatus {
+		t.Errorf("expected Status %s, got %s: %s", wantStatus, report.Status, report.Message)
+	}
 
-		if len(binaries) != 3 {
-			t.Errorf("expected 3 binaries, got %d", len(binaries))
-		}
+	if wantMsg != "" && !strings.Contains(report.Message, wantMsg) {
+		t.Errorf("expected message to mention '%s', got %s", wantMsg, report.Message)
+	}
+}
 
-		if binaries["git"].Path != "/usr/bin/git" {
-			t.Errorf("expected path /usr/bin/git, got %s", binaries["git"].Path)
-		}
+func assertBinaries(t *testing.T, report *ports.ComponentReport, wantBins int) {
+	t.Helper()
+	details := report.Details.(map[string]any)
+	binaries := details["binaries"].(map[string]binaryInfo)
 
-		if !strings.Contains(binaries["git"].Version, "git version") {
-			t.Errorf("expected version to contain 'git version', got %s", binaries["git"].Version)
-		}
-	})
+	if len(binaries) != wantBins {
+		t.Errorf("expected %d binaries, got %d", wantBins, len(binaries))
+	}
 
-	t.Run("Unhealthy_MissingRequired", func(t *testing.T) {
-		mock := &mockToolchainExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				if file == "git" {
-					return "", fmt.Errorf("not found")
-				}
-				return "/usr/bin/" + file, nil
-			},
-			outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte("version"), nil
-			},
+	if git, ok := binaries["git"]; ok {
+		if git.Path != "/usr/bin/git" {
+			t.Errorf("expected path /usr/bin/git, got %s", git.Path)
 		}
-
-		checker := NewToolchainHealthChecker(mock, []string{"git", "go"}, []string{"make"})
-		report, _ := checker.Check(ctx)
-
-		if report.Status != ports.StatusUnhealthy {
-			t.Errorf("expected StatusUnhealthy, got %s", report.Status)
+		if !strings.Contains(git.Version, "git version") {
+			t.Errorf("expected version to contain 'git version', got %s", git.Version)
 		}
-		if !strings.Contains(report.Message, "git") {
-			t.Errorf("expected message to mention 'git', got %s", report.Message)
-		}
-	})
-
-	t.Run("Degraded_MissingOptional", func(t *testing.T) {
-		mock := &mockToolchainExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				if file == "make" {
-					return "", fmt.Errorf("not found")
-				}
-				return "/usr/bin/" + file, nil
-			},
-			outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte("version"), nil
-			},
-		}
-
-		checker := NewToolchainHealthChecker(mock, []string{"git", "go"}, []string{"make"})
-		report, _ := checker.Check(ctx)
-
-		if report.Status != ports.StatusDegraded {
-			t.Errorf("expected StatusDegraded, got %s", report.Status)
-		}
-		if !strings.Contains(report.Message, "make") {
-			t.Errorf("expected message to mention 'make', got %s", report.Message)
-		}
-	})
-
-	t.Run("Unhealthy_ExecutionFailed", func(t *testing.T) {
-		mock := &mockToolchainExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				return "/usr/bin/" + file, nil
-			},
-			outputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "git" {
-					return nil, fmt.Errorf("exec error")
-				}
-				return []byte("version"), nil
-			},
-		}
-
-		checker := NewToolchainHealthChecker(mock, []string{"git", "go"}, []string{"make"})
-		report, _ := checker.Check(ctx)
-
-		if report.Status != ports.StatusUnhealthy {
-			t.Errorf("expected StatusUnhealthy, got %s", report.Status)
-		}
-		if !strings.Contains(report.Message, "git") {
-			t.Errorf("expected message to mention 'git', got %s", report.Message)
-		}
-	})
+	}
 }
