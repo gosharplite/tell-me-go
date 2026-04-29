@@ -201,52 +201,68 @@ func (r *jsonlArchiveReader) readPageInternal(ctx context.Context, limit int, of
 	return dtos, currentOffset, nil
 }
 
+// toDTO converts an archived llm.Content into a HistoryViewDTO.
+//
+// Note: llm.Content currently lacks ID and Timestamp in its base struct.
+// These would be zero-valued unless the persistence layer is extended.
 func (r *jsonlArchiveReader) toDTO(content llm.Content) ports.HistoryViewDTO {
-	dto := ports.HistoryViewDTO{
-		Role:       content.Role,
-		IsArchived: true,
-		// Note: llm.Content currently lacks ID and Timestamp in its base struct.
-		// These would be zero-valued unless the persistence layer is extended.
-	}
-
-	var preview strings.Builder
-	var thought strings.Builder
-	var toolCalls []string
-
+	agg := newPartAggregator()
 	for _, part := range content.Parts {
-		if part == nil {
-			continue
-		}
-
-		if part.IsThought {
-			thought.WriteString(part.Text)
-			continue
-		}
-
-		if part.FunctionCall != nil {
-			toolCalls = append(toolCalls, part.FunctionCall.Name)
-		}
-		if part.FunctionResponse != nil {
-			toolCalls = append(toolCalls, part.FunctionResponse.Name)
-		}
-
-		if part.Text != "" {
-			preview.WriteString(part.Text)
-		}
-
-		// Mask large binary data
-		if part.InlineData != nil && len(part.InlineData.Data) > 0 {
-			preview.WriteString(" [Attached Image] ")
-		}
-
-		if part.AssetID != "" {
-			preview.WriteString(" [Attached Asset] ")
-		}
+		agg.absorb(part)
 	}
+	return ports.HistoryViewDTO{
+		Role:           content.Role,
+		IsArchived:     true,
+		ContentPreview: strings.TrimSpace(agg.preview.String()),
+		ThoughtProcess: strings.TrimSpace(agg.thought.String()),
+		ToolCalls:      agg.toolCalls,
+	}
+}
 
-	dto.ContentPreview = strings.TrimSpace(preview.String())
-	dto.ThoughtProcess = strings.TrimSpace(thought.String())
-	dto.ToolCalls = toolCalls
+// partAggregator accumulates display-relevant data from llm.Part instances
+// for archived history rendering.
+type partAggregator struct {
+	preview   strings.Builder
+	thought   strings.Builder
+	toolCalls []string
+}
 
-	return dto
+func newPartAggregator() *partAggregator { return &partAggregator{} }
+
+// absorb folds a single part into the aggregator. Nil parts are ignored.
+// Thought parts contribute only to the thought buffer; all other parts may
+// contribute tool names and/or preview text.
+func (a *partAggregator) absorb(part *llm.Part) {
+	if part == nil {
+		return
+	}
+	if part.IsThought {
+		a.thought.WriteString(part.Text)
+		return
+	}
+	a.collectToolNames(part)
+	a.collectPreview(part)
+}
+
+func (a *partAggregator) collectToolNames(part *llm.Part) {
+	if part.FunctionCall != nil {
+		a.toolCalls = append(a.toolCalls, part.FunctionCall.Name)
+	}
+	if part.FunctionResponse != nil {
+		a.toolCalls = append(a.toolCalls, part.FunctionResponse.Name)
+	}
+}
+
+// collectPreview appends preview text and mask placeholders for binary assets.
+func (a *partAggregator) collectPreview(part *llm.Part) {
+	if part.Text != "" {
+		a.preview.WriteString(part.Text)
+	}
+	// Mask large binary data
+	if part.InlineData != nil && len(part.InlineData.Data) > 0 {
+		a.preview.WriteString(" [Attached Image] ")
+	}
+	if part.AssetID != "" {
+		a.preview.WriteString(" [Attached Asset] ")
+	}
 }

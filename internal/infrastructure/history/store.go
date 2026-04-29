@@ -68,17 +68,9 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 	_ = s.migrateLegacyJSONFile(ctx)
 
 	if _, err := s.fs.Stat(ctx, s.filePath); os.IsNotExist(err) {
-		// Fallback: Check if old .json file exists
-		if filepath.Ext(s.filePath) == ".jsonl" {
-			oldPath := s.filePath[:len(s.filePath)-1] // .jsonl -> .json
-			if _, err := s.fs.Stat(ctx, oldPath); err == nil {
-				data, readErr := s.fs.ReadFile(ctx, oldPath)
-				if readErr == nil {
-					return s.loadLegacyJSON(ctx, data)
-				}
-			}
+		if data, ok := s.tryLoadLegacySibling(ctx); ok {
+			return s.decodeLegacyJSON(data)
 		}
-		// Return ErrHistoryNotFound to allow domain layers to make decisions (like starting fresh)
 		return nil, fmt.Errorf("stat history file %s: %w", s.filePath, ports.ErrHistoryNotFound)
 	}
 
@@ -93,20 +85,30 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 	if len(data) == 0 {
 		return []*llm.Content{}, nil
 	}
-
-	// Try decoding as a JSON array first
-	var contents []*llm.Content
-	if data[0] == '[' {
-		if err := json.Unmarshal(data, &contents); err == nil {
-			return contents, nil
-		}
-	}
-
-	// Fallback to JSONL format
-	return s.loadJSONL(ctx, data)
+	return s.decodeHistoryBytes(ctx, data)
 }
 
-func (s *jsonlStore) loadLegacyJSON(ctx context.Context, data []byte) ([]*llm.Content, error) {
+// tryLoadLegacySibling attempts to read a legacy .json file when the
+// configured path has a .jsonl extension. Returns (data, true) on success.
+func (s *jsonlStore) tryLoadLegacySibling(ctx context.Context) ([]byte, bool) {
+	if filepath.Ext(s.filePath) != ".jsonl" {
+		return nil, false
+	}
+	oldPath := s.filePath[:len(s.filePath)-1] // .jsonl -> .json
+	if _, err := s.fs.Stat(ctx, oldPath); err != nil {
+		return nil, false
+	}
+	data, err := s.fs.ReadFile(ctx, oldPath)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
+// decodeLegacyJSON decodes a legacy JSON-array history file. Distinct from
+// decodeHistoryBytes because the legacy path has its own documented error
+// contract ("failed to decode legacy JSON") that callers and tests rely on.
+func (s *jsonlStore) decodeLegacyJSON(data []byte) ([]*llm.Content, error) {
 	var contents []*llm.Content
 	if err := json.Unmarshal(data, &contents); err != nil {
 		return nil, fmt.Errorf("failed to decode legacy JSON: %w", err)
@@ -115,6 +117,23 @@ func (s *jsonlStore) loadLegacyJSON(ctx context.Context, data []byte) ([]*llm.Co
 		c.Validate()
 	}
 	return contents, nil
+}
+
+// decodeHistoryBytes decodes the primary history file, which may be either a
+// JSON array (early format) or JSONL. Validate() is invoked in both branches:
+// the JSONL path validates per-content inside parseContent; the array branch
+// validates here to keep sanitization consistent across formats.
+func (s *jsonlStore) decodeHistoryBytes(ctx context.Context, data []byte) ([]*llm.Content, error) {
+	if data[0] == '[' {
+		var contents []*llm.Content
+		if err := json.Unmarshal(data, &contents); err == nil {
+			for _, c := range contents {
+				c.Validate()
+			}
+			return contents, nil
+		}
+	}
+	return s.loadJSONL(ctx, data)
 }
 
 func (s *jsonlStore) migrateLegacyJSONFile(ctx context.Context) error {
