@@ -508,7 +508,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 
 	// Test tracker replacement
 	tracker2 := &agenttest.MockCostTracker{}
-	agentinternal.AsAgentInternal(a).SetTracker(tracker2)
+	agentinternal.AsAgentInternal(a).SetTrackerForTest(tracker2)
 	_ = agentinternal.AsAgentInternal(a).ApplyConfig(context.Background())
 
 	if agentinternal.AsAgentInternal(a).GetTracker() != tracker2 {
@@ -538,7 +538,7 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	cfg := agentinternal.AsAgentInternal(a).GetRuntimeConfig().(*agent.RuntimeConfigInternal)
+	cfg := agentinternal.AsAgentInternal(a).GetRuntimeConfig()
 	if cfg.Model != "test-model" {
 		t.Errorf("expected model test-model, got %s", cfg.Model)
 	}
@@ -631,7 +631,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 
 	// 2. Test direct setting (since we removed the ability to use the option at runtime)
 	tracker2 := &agenttest.MockCostTracker{}
-	agentinternal.AsAgentInternal(a).SetTracker(tracker2)
+	agentinternal.AsAgentInternal(a).SetTrackerForTest(tracker2)
 	// We can't call Reconfigure easily on Engine without exporting more.
 	// But let's check tracker is updated.
 
@@ -707,7 +707,7 @@ func TestAgent_Shutdown(t *testing.T) {
 
 func TestAgent_Shutdown_NilDeps(t *testing.T) {
 	t.Parallel()
-	a := agent.NewAgentInternal()
+	a := agentinternal.NewBareAgent()
 	err := a.Shutdown(context.Background())
 	if err != nil {
 		t.Errorf("Expected nil error for nil dependencies, got %v", err)
@@ -789,9 +789,9 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	// Create an agent with mock dependencies
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	a := agent.NewAgentInternal()
-	a.SetEvents(bus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
+	a := agentinternal.NewBareAgent()
+	a.SetEventsForTest(bus)
+	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -809,10 +809,10 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
-	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
-	a.SetRuntimeConfig(&agent.RuntimeConfigInternal{})
+	a := agentinternal.NewBareAgent()
+	a.SetEventsForTest(mockBus)
+	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetRuntimeConfigForTest(agentinternal.RuntimeSnapshot{})
 
 	err := a.ApplyConfig(context.Background())
 
@@ -904,9 +904,9 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	flushErr := errors.New("flush failed")
 	mockBus.SetFlushErr(flushErr)
 
-	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetLogger(logger)
+	a := agentinternal.NewBareAgent()
+	a.SetEventsForTest(mockBus)
+	a.SetLoggerForTest(logger)
 
 	ctx := context.Background()
 	err := a.Shutdown(ctx)

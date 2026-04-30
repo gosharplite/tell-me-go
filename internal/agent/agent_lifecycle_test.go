@@ -19,6 +19,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// asAgent is a same-package shorthand that converts a ports.Chatter back
+// to *agent for direct field access. Cleaner than litter the test body
+// with type assertions, and only legal because this file is package agent.
+func asAgent(t *testing.T, c ports.Chatter) *agent {
+	t.Helper()
+	a, ok := c.(*agent)
+	require.True(t, ok, "ports.Chatter is not the production *agent type")
+	return a
+}
+
 func TestNewAgent_Initialization(t *testing.T) {
 	ctx := context.Background()
 	gw := &agenttest.MockGateway{}
@@ -42,17 +52,14 @@ func TestNewAgent_Initialization(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, chatter)
 
-	// Use AsInternal to verify internal components
-	a := AsInternal(chatter)
-	require.NotNil(t, a)
-
-	assert.NotNil(t, a.GetCtxManager())
-	assert.NotNil(t, a.GetConfigWatcher())
-
-	assert.Equal(t, bus, a.GetEvents())
+	// Same-package: read internal state via direct field access.
+	a := asAgent(t, chatter)
+	assert.NotNil(t, a.ctxManager)
+	assert.NotNil(t, a.configWatcher)
+	assert.Equal(t, bus, a.events)
 }
 
-func TestAgent_InternalAccessor(t *testing.T) {
+func TestAgent_InternalState_MutationAndReadback(t *testing.T) {
 	ctx := context.Background()
 	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
@@ -62,19 +69,18 @@ func TestAgent_InternalAccessor(t *testing.T) {
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
 	require.NoError(t, err)
 
-	a := AsInternal(chatter)
-	require.NotNil(t, a)
+	a := asAgent(t, chatter)
 
-	// Test setters/getters
+	// Same-package mutation/readback — no bridge needed.
 	bus2 := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-	a.SetEvents(bus2)
-	assert.Equal(t, bus2, a.GetEvents())
+	a.events = bus2
+	assert.Equal(t, bus2, a.events)
 
-	a.SetTracker(&agenttest.MockCostTracker{})
-	assert.NotNil(t, a.GetTracker())
+	a.tracker = &agenttest.MockCostTracker{}
+	assert.NotNil(t, a.tracker)
 
-	// Test ApplyConfig
-	err = a.ApplyConfig(ctx)
+	// applyConfig is unexported and same-package callable.
+	err = a.applyConfig(ctx)
 	assert.NoError(t, err)
 }
 
@@ -126,9 +132,10 @@ func TestAgent_SetLimits(t *testing.T) {
 	assert.Equal(t, 1000, cfgEvent.Limits.MaxHistoryTokens)
 	assert.Equal(t, 10, cfgEvent.Limits.MaxHistoryTurns)
 
-	// Verify internal runtimeConfig update
-	a := AsInternal(chatter)
-	rc := a.GetRuntimeConfig().(*runtimeConfig)
+	// Verify internal runtimeConfig update — direct field access since
+	// this file is package agent.
+	a := asAgent(t, chatter)
+	rc := a.config.Load()
 	assert.Equal(t, 5, rc.Limits.MaxToolTurns)
 	assert.Equal(t, 1000, rc.Limits.MaxHistoryTokens)
 	assert.Equal(t, 10, rc.Limits.MaxHistoryTurns)
@@ -154,7 +161,8 @@ func TestAgent_Shutdown(t *testing.T) {
 	})
 
 	t.Run("Graceful handling of nil components", func(t *testing.T) {
-		// Create an agent manually with some nil components
+		// Create an agent manually with some nil components — same-package
+		// composite literal works because we live in package agent.
 		a := &agent{
 			logger:      nil, // Should default to slog.Default()
 			events:      nil,
@@ -242,23 +250,23 @@ func TestNewAgent_Errors(t *testing.T) {
 	})
 }
 
-func TestAgent_InternalAccessor_Remaining(t *testing.T) {
-	chatter := &agent{}
-	a := AsInternal(chatter)
-	require.NotNil(t, a)
+func TestAgent_BareConstruction_FieldAssignment(t *testing.T) {
+	// Same-package construction of a bare agent. Replaces the previous
+	// TestAgent_InternalAccessor_Remaining which exercised the now-removed
+	// Set*/Get* accessors.
+	a := &agent{}
 
 	cw := session.NewNoOpConfigWatcher(0, 0, 0)
-	a.SetConfigWatcher(cw)
-	assert.Equal(t, cw, a.GetConfigWatcher())
+	a.configWatcher = cw
+	assert.Equal(t, cw, a.configWatcher)
 
 	logger := slog.Default()
-	a.SetLogger(logger)
-	// getLogger is private, but we can call it via other methods if needed
-	assert.Equal(t, logger, chatter.getLogger())
+	a.logger = logger
+	assert.Equal(t, logger, a.getLogger())
 
 	rc := &runtimeConfig{Model: "test-model"}
-	a.SetRuntimeConfig(rc)
-	assert.Equal(t, rc, a.GetRuntimeConfig())
+	a.config.Store(rc)
+	assert.Equal(t, rc, a.config.Load())
 }
 
 func TestAsInternal_Nil(t *testing.T) {
@@ -281,8 +289,8 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
 	require.NoError(t, err)
 
-	a := AsInternal(chatter)
-	assert.NotNil(t, a.GetConfigWatcher())
+	a := asAgent(t, chatter)
+	assert.NotNil(t, a.configWatcher)
 	// Verify it's not the no-op one if we can, but at least we covered the branch
 }
 
