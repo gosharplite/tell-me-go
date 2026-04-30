@@ -41,25 +41,25 @@ type ConfigurableSecurityManager interface {
 
 // Bootstrapper handles the instantiation and wiring of system components.
 type Bootstrapper struct {
-	sessionFactory   sessionFactory
-	toolchainFactory toolchainFactory
-	telemetryFactory telemetryFactory
-	historyFactory   historyFactory
-	uiFactory        uiFactory
-	chatFactory      chatFactory
+	sessionFactory    sessionFactory
+	toolchainFactory  toolchainFactory
+	telemetryFactory  telemetryFactory
+	historyFactory    historyFactory
+	uiFactory         uiFactory
+	chatFactory       chatFactory
 	suggestionFactory suggestionFactory
-	HomeDir          string
-	SM               ConfigurableSecurityManager
-	Version          string
-	Stdout           io.Writer
-	Stderr           io.Writer
-	Logger           *slog.Logger
-	FileSystem       infra_persistence.FileSystem
-	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
-	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
-	RotateSession    func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error
-	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
+	HomeDir           string
+	SM                ConfigurableSecurityManager
+	Version           string
+	Stdout            io.Writer
+	Stderr            io.Writer
+	Logger            *slog.Logger
+	FileSystem        infra_persistence.FileSystem
+	ClientFactory     func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
+	RegisterAllTools  func(params infra_tools.ToolRegistrationParams) error
+	RegisterMetrics   func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
+	RotateSession     func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error
+	NewSessionState   func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
 // NewBootstrapper creates a new Bootstrapper instance.
