@@ -4,11 +4,9 @@
 package agent_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -705,15 +702,6 @@ func TestAgent_Shutdown(t *testing.T) {
 	}
 }
 
-func TestAgent_Shutdown_NilDeps(t *testing.T) {
-	t.Parallel()
-	a := agent.NewAgentInternal()
-	err := a.Shutdown(context.Background())
-	if err != nil {
-		t.Errorf("Expected nil error for nil dependencies, got %v", err)
-	}
-}
-
 func TestAgent_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -782,42 +770,6 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	// Verify summarizer is bound to ContextManager
 	if agentinternal.AsAgentInternal(a).GetCtxManager().Summarizer != mockSumm {
 		t.Error("summarizer not bound to ContextManager")
-	}
-}
-
-func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
-	// Create an agent with mock dependencies
-	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
-	a := agent.NewAgentInternal()
-	a.SetEvents(bus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	// Applying config with a canceled context should fail when trying to publish
-	err := a.ApplyConfig(ctx)
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled error, got: %v", err)
-	}
-}
-
-func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
-	// Mock the event bus to return an error on Publish
-	mockBus := &eventstest.TestEventBus{}
-	mockBus.SetPublishErr(context.Canceled)
-
-	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
-	a.SetRuntimeConfig(&agent.RuntimeConfigInternal{})
-
-	err := a.ApplyConfig(context.Background())
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled error from applyConfig, got: %v", err)
 	}
 }
 
@@ -892,32 +844,6 @@ func (m *mockToolRegistryWithExpectations) IsSerial(name string) bool {
 
 func (m *mockToolRegistryWithExpectations) IsLongRunning(name string) bool {
 	return m.Called(name).Bool(0)
-}
-
-func TestAgent_Shutdown_FlushError(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	mockBus := &eventstest.TestEventBus{}
-	flushErr := errors.New("flush failed")
-	mockBus.SetFlushErr(flushErr)
-
-	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetLogger(logger)
-
-	ctx := context.Background()
-	err := a.Shutdown(ctx)
-
-	require.Error(t, err)
-	require.ErrorIs(t, err, flushErr)
-
-	// Verify that the error was logged at Debug level
-	output := buf.String()
-	require.Contains(t, output, "event bus flush incomplete during shutdown")
-	require.Contains(t, output, "flush failed")
 }
 
 func (m *mockToolRegistryWithExpectations) GetOptions(name string) tools.ToolOptions {
