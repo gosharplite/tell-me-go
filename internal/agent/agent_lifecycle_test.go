@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -27,54 +26,56 @@ func TestNewAgent_Initialization(t *testing.T) {
 	sm := &mockSecurityManager{AllowAll: true}
 
 	// Use all options to increase coverage
-	chatter, err := NewAgent(gw, bus, reg,
-		WithSecurityManager(sm),
-		WithInternalTools(),
-		WithHistoryManager(&mockHistoryManager{}),
-		WithSessionProvider(&agenttest.MockSessionProvider{}),
-		WithSummarizer(&agenttest.MockSummarizer{}),
-		WithPricing("model", "mode", map[string]pricing.ModelPricing{"model": {Hit: 1.0}}),
-		WithSessionCostTracker(&agenttest.MockCostTracker{}),
-		WithClock(&agenttest.MockClock{}),
-		WithProviderName("provider"),
-		WithLogger(slog.Default()),
-	)
-	require.NoError(t, err)
+	chatter := NewAgentBuilder(t).
+		WithGateway(gw).
+		WithEventBus(bus).
+		WithRegistry(reg).
+		WithSecurityManager(sm).
+		WithInternalTools().
+		WithHistoryManager(&mockHistoryManager{}).
+		WithSessionProvider(&agenttest.MockSessionProvider{}).
+		WithSummarizer(&agenttest.MockSummarizer{}).
+		WithPricing("model", "mode", map[string]pricing.ModelPricing{"model": {Hit: 1.0}}).
+		WithTracker(&agenttest.MockCostTracker{}).
+		WithClock(&agenttest.MockClock{}).
+		WithProviderName("provider").
+		WithLogger(slog.Default()).
+		Build()
+
 	assert.NotNil(t, chatter)
 
-	// Use AsInternal to verify internal components
-	a := AsInternal(chatter)
-	require.NotNil(t, a)
+	// Verify internal components via direct field access
+	ag := chatter.(*agent)
+	require.NotNil(t, ag)
 
-	assert.NotNil(t, a.GetCtxManager())
-	assert.NotNil(t, a.GetConfigWatcher())
-
-	assert.Equal(t, bus, a.GetEvents())
+	assert.NotNil(t, ag.ctxManager)
+	assert.NotNil(t, ag.configWatcher)
+	assert.Equal(t, bus, ag.events)
 }
 
-func TestAgent_InternalAccessor(t *testing.T) {
+func TestAgent_BuilderReplacesInternalAccessor(t *testing.T) {
 	ctx := context.Background()
 	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
-	require.NoError(t, err)
+	chatter := NewAgentBuilder(t).
+		WithGateway(gw).
+		WithEventBus(bus).
+		WithRegistry(reg).
+		WithSecurityManager(sm).
+		Build()
 
-	a := AsInternal(chatter)
-	require.NotNil(t, a)
+	ag := chatter.(*agent)
+	require.NotNil(t, ag)
 
-	// Test setters/getters
-	bus2 := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-	a.SetEvents(bus2)
-	assert.Equal(t, bus2, a.GetEvents())
+	// Verify components initialized by the builder (replaces old Get* assertions)
+	assert.NotNil(t, ag.ctxManager)
+	assert.Equal(t, bus, ag.events)
 
-	a.SetTracker(&agenttest.MockCostTracker{})
-	assert.NotNil(t, a.GetTracker())
-
-	// Test ApplyConfig
-	err = a.ApplyConfig(ctx)
+	// ApplyConfig still works
+	err := ag.ApplyConfig(ctx)
 	assert.NoError(t, err)
 }
 
@@ -126,9 +127,9 @@ func TestAgent_SetLimits(t *testing.T) {
 	assert.Equal(t, 1000, cfgEvent.Limits.MaxHistoryTokens)
 	assert.Equal(t, 10, cfgEvent.Limits.MaxHistoryTurns)
 
-	// Verify internal runtimeConfig update
-	a := AsInternal(chatter)
-	rc := a.GetRuntimeConfig().(*runtimeConfig)
+	// Verify internal runtimeConfig update via direct field access
+	ag := chatter.(*agent)
+	rc := ag.config.Load()
 	assert.Equal(t, 5, rc.Limits.MaxToolTurns)
 	assert.Equal(t, 1000, rc.Limits.MaxHistoryTokens)
 	assert.Equal(t, 10, rc.Limits.MaxHistoryTurns)
@@ -242,25 +243,6 @@ func TestNewAgent_Errors(t *testing.T) {
 	})
 }
 
-func TestAgent_InternalAccessor_Remaining(t *testing.T) {
-	chatter := &agent{}
-	a := AsInternal(chatter)
-	require.NotNil(t, a)
-
-	cw := session.NewNoOpConfigWatcher(0, 0, 0)
-	a.SetConfigWatcher(cw)
-	assert.Equal(t, cw, a.GetConfigWatcher())
-
-	logger := slog.Default()
-	a.SetLogger(logger)
-	// getLogger is private, but we can call it via other methods if needed
-	assert.Equal(t, logger, chatter.getLogger())
-
-	rc := &runtimeConfig{Model: "test-model"}
-	a.SetRuntimeConfig(rc)
-	assert.Equal(t, rc, a.GetRuntimeConfig())
-}
-
 func TestAsInternal_Nil(t *testing.T) {
 	assert.Nil(t, AsInternal(nil))
 }
@@ -281,9 +263,8 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
 	require.NoError(t, err)
 
-	a := AsInternal(chatter)
-	assert.NotNil(t, a.GetConfigWatcher())
-	// Verify it's not the no-op one if we can, but at least we covered the branch
+	ag := chatter.(*agent)
+	assert.NotNil(t, ag.configWatcher)
 }
 
 func TestAgent_Chat_AddContentError(t *testing.T) {
