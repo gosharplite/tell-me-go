@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -36,7 +37,7 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -78,7 +79,7 @@ func TestSessionManager_Run_Error(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -113,7 +114,7 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return nil, nil
@@ -372,7 +373,7 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		tracker.record("AgentFactory")
@@ -596,7 +597,7 @@ func TestRun_Routing(t *testing.T) {
 		mUIRenderer := new(agenttest.MockUIRenderer)
 		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, mEventBus)
+		eventstest.CleanupBus(t, mEventBus)
 
 		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
@@ -620,7 +621,7 @@ func TestRun_Routing(t *testing.T) {
 		mUIRenderer := new(agenttest.MockUIRenderer)
 		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, mEventBus)
+		eventstest.CleanupBus(t, mEventBus)
 
 		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
@@ -647,7 +648,7 @@ func TestRun_Routing(t *testing.T) {
 		mUIRenderer := new(agenttest.MockUIRenderer)
 		mCapturer := new(agenttest.MockCapturer)
 		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, mEventBus)
+		eventstest.CleanupBus(t, mEventBus)
 
 		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
@@ -702,7 +703,7 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			mCapturer := new(agenttest.MockCapturer)
 			mHistory := new(agenttest.MockHistoryManager)
 			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-			events.CleanupBus(t, mEventBus)
+			eventstest.CleanupBus(t, mEventBus)
 
 			factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 				return mChatter, nil
@@ -772,7 +773,7 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	mClock := new(agenttest.TestifyMockClock)
 	mEntropy := new(agenttest.MockEntropySource)
@@ -824,7 +825,7 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	mClock := new(agenttest.TestifyMockClock)
 	mEntropy := new(agenttest.MockEntropySource)
@@ -873,7 +874,7 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	mClock := new(agenttest.TestifyMockClock)
 	mEntropy := new(agenttest.MockEntropySource)

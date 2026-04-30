@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -95,7 +96,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Run("Scenario A - Single Massive Payload", func(t *testing.T) {
 		t.Parallel()
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, bus)
+		eventstest.CleanupBus(t, bus)
 		historyPath := filepath.Join(t.TempDir(), "history_a.jsonl")
 		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -170,7 +171,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Run("Scenario B - Context Exhaustion", func(t *testing.T) {
 		t.Parallel()
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, bus)
+		eventstest.CleanupBus(t, bus)
 		historyPath := filepath.Join(t.TempDir(), "history_b.jsonl")
 		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -265,7 +266,7 @@ func (m *cancelIntegrationRegistry) GetDeclarations() []*tools.ToolDeclaration {
 func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history_cancel.jsonl")
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 

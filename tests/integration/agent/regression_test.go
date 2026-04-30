@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -43,7 +44,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	client := &agenttest.MockLLMClient{}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, registry,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -82,7 +83,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	client := &agenttest.MockLLMClient{}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, registry,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -127,7 +128,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	mockClient := newMultiModalMockClient()
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	a, err := agent.NewAgent(mockClient, bus, registry,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),

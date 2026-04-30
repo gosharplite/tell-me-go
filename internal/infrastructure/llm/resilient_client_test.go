@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -112,7 +113,7 @@ func TestNewClient(t *testing.T) {
 			}
 			pData := pricing.PricingData{}
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-			events.CleanupBus(t, bus)
+			eventstest.CleanupBus(t, bus)
 
 			client, err := NewClient(cfg, pData, bus, nil)
 

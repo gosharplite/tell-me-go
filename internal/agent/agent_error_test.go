@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -32,10 +33,15 @@ func TestAgent_ConfigFailure(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
-	a := agent.NewAgentInternal()
-	a.SetEvents(bus)
-	a.SetCtxManager(&session.ContextManager{
+	eventstest.CleanupBus(t, bus)
+
+	// Construct a deliberately bare agent: no engine, no executor, no
+	// configWatcher. We only set the two fields applyConfig and Chat
+	// touch on the path under test, so cancelling ctx forces applyConfig
+	// to return context.Canceled — the assertion below.
+	a := agentinternal.NewBareAgent()
+	a.SetEventsForTest(bus)
+	a.SetCtxManagerForTest(&session.ContextManager{
 		History: hm,
 	})
 

@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -225,7 +226,7 @@ func TestTraceTelemetry(t *testing.T) {
 	t.Run("RegisterTraceSubscriber", func(t *testing.T) {
 		t.Parallel()
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, bus)
+		eventstest.CleanupBus(t, bus)
 		RegisterTraceSubscriber(bus, traceFile)
 
 		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})
