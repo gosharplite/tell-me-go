@@ -15,7 +15,31 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 )
+
+// allowAllSM is a minimal security.Manager that permits everything.
+type allowAllSM struct{}
+
+func (allowAllSM) IsPathSafe(string) (string, error) { return "", nil }
+func (allowAllSM) IsPathWritable(string) (string, error) {
+	return "", nil
+}
+func (allowAllSM) Authorize(context.Context, string, string, string, bool) (bool, error) {
+	return true, nil
+}
+func (allowAllSM) LogAudit(string, ...any)                   {}
+func (allowAllSM) TerminalLock()                              {}
+func (allowAllSM) TerminalUnlock()                            {}
+func (allowAllSM) Prompt(string)                              {}
+func (allowAllSM) Warn(string)                                {}
+func (allowAllSM) Confirm(context.Context, string) (bool, error) { return true, nil }
+func (allowAllSM) ReadLine(context.Context) (string, error)   { return "", nil }
+func (allowAllSM) IsCommandAllowed(string) bool               { return true }
+func (allowAllSM) IsBypassActive() bool                       { return false }
+func (allowAllSM) Close() error                               { return nil }
+
+var _ security.Manager = allowAllSM{}
 
 func TestAgent_ConfigFailure(t *testing.T) {
 	t.Parallel()
@@ -33,11 +57,15 @@ func TestAgent_ConfigFailure(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	a := agent.NewAgentInternal()
-	a.SetEvents(bus)
-	a.SetCtxManager(&session.ContextManager{
-		History: hm,
-	})
+
+	a := agent.NewAgentBuilder(t).
+		WithGateway(&agenttest.MockGateway{}).
+		WithEventBus(bus).
+		WithRegistry(agenttest.NewMockToolRegistry()).
+		WithSecurityManager(allowAllSM{}).
+		WithHistoryManager(hm).
+		WithCtxManager(&session.ContextManager{History: hm}).
+		Build()
 
 	sess := &ports.Session{StartTime: time.Now()}
 	err := a.Chat(ctx, sess, "hello")
