@@ -51,8 +51,6 @@ func (f *defaultUIFactory) HistoryRenderer() ports.HistoryRenderer {
 
 // tuiHistoryBrowser implements ports.HistoryBrowser using the TUI.
 type tuiHistoryBrowser struct {
-	stdout io.Writer
-	stderr io.Writer
 	logger *slog.Logger
 }
 
@@ -76,8 +74,6 @@ func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHis
 
 func (f *defaultUIFactory) HistoryBrowser() ports.HistoryBrowser {
 	return &tuiHistoryBrowser{
-		stdout: f.Stdout,
-		stderr: f.Stderr,
 		logger: f.Logger,
 	}
 }
