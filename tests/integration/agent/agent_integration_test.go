@@ -324,6 +324,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 	t.Skip("TODO(#86): GetCtxManager() removed — needs ContextManager construction")
 }
 
+//nolint:unused // used by TestAgent_PinningFlow (skipped, TODO #86)
 func verifyPinAction(t *testing.T, it *session.InternalTools, h ports.HistoryManager, ctx context.Context, action string, index float64) {
 	t.Helper()
 	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": index}, nil)
@@ -351,6 +352,7 @@ func verifyPinAction(t *testing.T, it *session.InternalTools, h ports.HistoryMan
 	}
 }
 
+//nolint:unused // used by TestAgent_PinningFlow (skipped, TODO #86)
 func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, context.Context) {
 	t.Helper()
 	reg := registry.New()
@@ -441,6 +443,7 @@ func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
 	}
 }
 
+//nolint:unused // used by TestAgent_Integration_PinningPruning (skipped, TODO #86)
 func verifyPinningResults(t *testing.T, meta *session.Metadata, prepared []*llm.Content) {
 	// Look for "u1" (the pinned turn)
 	foundPinned := false
