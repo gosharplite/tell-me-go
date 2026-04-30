@@ -19,6 +19,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // appendContent writes a single llm.Content as a JSON line to the archive
@@ -411,62 +413,37 @@ func TestJSONLArchiveReader_Resilience(t *testing.T) {
 	valid2 := `{"role":"assistant","parts":[{"text":"valid 2"}]}` + "\n"
 
 	content := valid1 + invalid + partial + emptyLines + largeLine + valid2
-	if err := os.WriteFile(archivePath, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write resilience test file: %v", err)
-	}
+	err := os.WriteFile(archivePath, []byte(content), 0644)
+	require.NoError(t, err, "failed to write resilience test file")
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
 
 	t.Run("ReadPage handles corruption", func(t *testing.T) {
 		// Read 10 entries (should get 3 valid ones: valid1, largeLine, valid2)
 		dtos, nextOffset, err := reader.ReadPage(ctx, 10, 0)
-		if err != nil {
-			t.Fatalf("ReadPage failed: %v", err)
-		}
+		require.NoError(t, err, "ReadPage failed")
 
-		if len(dtos) != 3 {
-			t.Fatalf("expected 3 valid DTOs, got %d", len(dtos))
-		}
+		require.Len(t, dtos, 3, "expected 3 valid DTOs")
 
-		if dtos[0].ContentPreview != "valid 1" {
-			t.Errorf("expected 'valid 1', got %q", dtos[0].ContentPreview)
-		}
-		if dtos[1].ContentPreview != largeLineText {
-			t.Errorf("expected large text, got length %d", len(dtos[1].ContentPreview))
-		}
-		if dtos[2].ContentPreview != "valid 2" {
-			t.Errorf("expected 'valid 2', got %q", dtos[2].ContentPreview)
-		}
+		assert.Equal(t, "valid 1", dtos[0].ContentPreview)
+		assert.Equal(t, largeLineText, dtos[1].ContentPreview)
+		assert.Equal(t, "valid 2", dtos[2].ContentPreview)
 
-		if nextOffset != int64(len(content)) {
-			t.Errorf("expected nextOffset %d, got %d", len(content), nextOffset)
-		}
+		assert.Equal(t, int64(len(content)), nextOffset)
 	})
 
 	t.Run("ReadPrevious handles corruption", func(t *testing.T) {
 		// Read 10 entries backwards from EOF
 		dtos, startOffset, err := reader.ReadPrevious(ctx, 10, -1)
-		if err != nil {
-			t.Fatalf("ReadPrevious failed: %v", err)
-		}
+		require.NoError(t, err, "ReadPrevious failed")
 
-		if len(dtos) != 3 {
-			t.Fatalf("expected 3 valid DTOs, got %d", len(dtos))
-		}
+		require.Len(t, dtos, 3, "expected 3 valid DTOs")
 
-		if dtos[0].ContentPreview != "valid 1" {
-			t.Errorf("expected 'valid 1', got %q", dtos[0].ContentPreview)
-		}
-		if dtos[1].ContentPreview != largeLineText {
-			t.Errorf("expected large text, got length %d", len(dtos[1].ContentPreview))
-		}
-		if dtos[2].ContentPreview != "valid 2" {
-			t.Errorf("expected 'valid 2', got %q", dtos[2].ContentPreview)
-		}
+		assert.Equal(t, "valid 1", dtos[0].ContentPreview)
+		assert.Equal(t, largeLineText, dtos[1].ContentPreview)
+		assert.Equal(t, "valid 2", dtos[2].ContentPreview)
 
-		if startOffset != 0 {
-			t.Errorf("expected startOffset 0, got %d", startOffset)
-		}
+		assert.Equal(t, int64(0), startOffset)
 	})
 }
 
