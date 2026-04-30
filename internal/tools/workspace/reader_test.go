@@ -275,12 +275,17 @@ func TestReadFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
 	f2 := filepath.Join(tempDir, "f2.txt")
+	fbin := filepath.Join(tempDir, "bin")
 	content1 := "content 1"
 	content2 := "content 2"
+
 	if err := os.WriteFile(f1, []byte(content1), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(f2, []byte(content2), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -288,55 +293,61 @@ func TestReadFiles(t *testing.T) {
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
-	t.Run("read multiple files", func(t *testing.T) {
-		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, f2}, "reason": "testing"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "--- File: "+f1+" ---") || !strings.Contains(res.Text, content1) {
-			t.Errorf("f1 missing or incorrect: %s", res.Text)
-		}
-		if !strings.Contains(res.Text, "--- File: "+f2+" ---") || !strings.Contains(res.Text, content2) {
-			t.Errorf("f2 missing or incorrect: %s", res.Text)
-		}
-	})
+	tests := []struct {
+		name          string
+		filepaths     any
+		expectedTexts []string
+	}{
+		{
+			name:      "read multiple files",
+			filepaths: []interface{}{f1, f2},
+			expectedTexts: []string{
+				"--- File: " + f1 + " ---",
+				content1,
+				"--- File: " + f2 + " ---",
+				content2,
+			},
+		},
+		{
+			name:      "partial success",
+			filepaths: []interface{}{f1, "missing.txt"},
+			expectedTexts: []string{
+				content1,
+				"ERROR: failed to read file",
+			},
+		},
+		{
+			name:      "binary file in batch",
+			filepaths: []interface{}{f1, fbin},
+			expectedTexts: []string{
+				"(Binary file, cannot display as text)",
+			},
+		},
+		{
+			name:      "using []string instead of []interface{}",
+			filepaths: []string{f1, f2},
+			expectedTexts: []string{
+				content1,
+			},
+		},
+	}
 
-	t.Run("partial success", func(t *testing.T) {
-		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, "missing.txt"}, "reason": "testing"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, content1) {
-			t.Errorf("f1 missing: %s", res.Text)
-		}
-		if !strings.Contains(res.Text, "ERROR: failed to read file") {
-			t.Errorf("expected error message for missing file: %s", res.Text)
-		}
-	})
-
-	t.Run("binary file in batch", func(t *testing.T) {
-		fbin := filepath.Join(tempDir, "bin")
-		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
-			t.Fatal(err)
-		}
-		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, fbin}, "reason": "testing"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "(Binary file, cannot display as text)") {
-			t.Errorf("expected binary message for fbin: %s", res.Text)
-		}
-	})
-
-	t.Run("using []string instead of []interface{}", func(t *testing.T) {
-		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []string{f1, f2}, "reason": "testing"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, content1) {
-			t.Errorf("f1 missing: %s", res.Text)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := r.readFiles(ctx, map[string]interface{}{
+				"filepaths": tt.filepaths,
+				"reason":    "testing",
+			}, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, expectedText := range tt.expectedTexts {
+				if !strings.Contains(res.Text, expectedText) {
+					t.Errorf("expected output to contain %q, but got: %s", expectedText, res.Text)
+				}
+			}
+		})
+	}
 }
 
 func TestReadFile_UTF8Truncation(t *testing.T) {
