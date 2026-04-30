@@ -38,7 +38,7 @@ func TestAgent_New_Failure(t *testing.T) {
 	t.Parallel()
 	client := &agenttest.MockLLMClient{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	h := &agenttest.MockHistoryManager{}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -62,7 +62,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
@@ -100,7 +100,7 @@ func TestAgent_Chat(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -137,7 +137,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
@@ -184,7 +184,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	mockClock := &agenttest.MockClock{}
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
@@ -210,7 +210,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		reg := registry.New()
 		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, bus)
+		eventstest.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
 		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 		a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
@@ -234,7 +234,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		reg := registry.New()
 		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, bus)
+		eventstest.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
 		h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history2.json"), filepath.Join(tmpDir, "history2.archive.jsonl"))
 		a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
@@ -281,7 +281,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -305,7 +305,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tmpDir := t.TempDir()
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pipeline.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -493,7 +493,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	// Test initial injection via positional args
 	tracker1 := &agenttest.MockCostTracker{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -508,7 +508,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 
 	// Test tracker replacement
 	tracker2 := &agenttest.MockCostTracker{}
-	agentinternal.AsAgentInternal(a).SetTracker(tracker2)
+	agentinternal.AsAgentInternal(a).SetTrackerForTest(tracker2)
 	_ = agentinternal.AsAgentInternal(a).ApplyConfig(context.Background())
 
 	if agentinternal.AsAgentInternal(a).GetTracker() != tracker2 {
@@ -526,7 +526,7 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_pricing.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
@@ -538,7 +538,7 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	cfg := agentinternal.AsAgentInternal(a).GetRuntimeConfig().(*agent.RuntimeConfigInternal)
+	cfg := agentinternal.AsAgentInternal(a).GetRuntimeConfig()
 	if cfg.Model != "test-model" {
 		t.Errorf("expected model test-model, got %s", cfg.Model)
 	}
@@ -557,7 +557,7 @@ func TestAgent_Subscribe(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_sub.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
@@ -612,7 +612,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	tmpDir := t.TempDir()
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), filepath.Join(tmpDir, "history_cost.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
@@ -631,7 +631,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 
 	// 2. Test direct setting (since we removed the ability to use the option at runtime)
 	tracker2 := &agenttest.MockCostTracker{}
-	agentinternal.AsAgentInternal(a).SetTracker(tracker2)
+	agentinternal.AsAgentInternal(a).SetTrackerForTest(tracker2)
 	// We can't call Reconfigure easily on Engine without exporting more.
 	// But let's check tracker is updated.
 
@@ -648,7 +648,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
@@ -677,7 +677,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	// 2. Initialize Agent
 	a, err := agent.NewAgent(client, bus, reg,
@@ -707,7 +707,7 @@ func TestAgent_Shutdown(t *testing.T) {
 
 func TestAgent_Shutdown_NilDeps(t *testing.T) {
 	t.Parallel()
-	a := agent.NewAgentInternal()
+	a := agentinternal.NewBareAgent()
 	err := a.Shutdown(context.Background())
 	if err != nil {
 		t.Errorf("Expected nil error for nil dependencies, got %v", err)
@@ -725,7 +725,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
@@ -754,7 +754,7 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	reg := registry.New()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	mockSumm := &agenttest.MockSummarizer{}
 
 	a, err := agent.NewAgent(client, bus, reg,
@@ -788,10 +788,10 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	// Create an agent with mock dependencies
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
-	a := agent.NewAgentInternal()
-	a.SetEvents(bus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
+	eventstest.CleanupBus(t, bus)
+	a := agentinternal.NewBareAgent()
+	a.SetEventsForTest(bus)
+	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -809,10 +809,10 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	mockBus := &eventstest.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
-	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
-	a.SetRuntimeConfig(&agent.RuntimeConfigInternal{})
+	a := agentinternal.NewBareAgent()
+	a.SetEventsForTest(mockBus)
+	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetRuntimeConfigForTest(agentinternal.RuntimeSnapshot{})
 
 	err := a.ApplyConfig(context.Background())
 
@@ -825,7 +825,7 @@ func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 	t.Parallel()
 	mockClient := &agenttest.MockLLMClient{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	h := &agenttest.MockHistoryManager{}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -904,9 +904,9 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	flushErr := errors.New("flush failed")
 	mockBus.SetFlushErr(flushErr)
 
-	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetLogger(logger)
+	a := agentinternal.NewBareAgent()
+	a.SetEventsForTest(mockBus)
+	a.SetLoggerForTest(logger)
 
 	ctx := context.Background()
 	err := a.Shutdown(ctx)

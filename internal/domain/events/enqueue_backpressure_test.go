@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 )
 
 // blockingSubscriber is a Subscriber whose Handle blocks on a release channel
@@ -82,7 +83,7 @@ func TestPublish_DropsEventWhenSubscriberQueueIsFull(t *testing.T) {
 		events.WithQueueSize(1),
 		events.WithLogger(logger),
 	)
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	releaseCh, release := newReleaseChan(t)
 	bus.SubscribeGlobal(&blockingSubscriber{release: releaseCh})
@@ -215,7 +216,7 @@ func TestPublish_ReturnsContextErrorWhenCancelledDuringEnqueue(t *testing.T) {
 		events.WithAsync(true),
 		events.WithQueueSize(1),
 	)
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	// Many subscribers widen the dispatchAsync loop, giving the racing
 	// cancel a much larger time window to land mid-loop.

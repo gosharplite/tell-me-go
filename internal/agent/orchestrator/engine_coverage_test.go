@@ -36,7 +36,7 @@ func (m *mockToolExecutor) Execute(ctx context.Context, respContent *llm.Content
 
 func TestExecuteTurn_TraceEvent(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	var traceReceived bool
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
@@ -71,7 +71,7 @@ func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	ex := &mockToolExecutor{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	counter := &agenttest.MockTokenCounter{}
 
 	hMock := &agenttest.MockHistoryManager{}
@@ -474,7 +474,7 @@ func TestEngineHooks_Coverage(t *testing.T) {
 	ex := &mockToolExecutor{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	counter := &agenttest.MockTokenCounter{}
 	hMock := &agenttest.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial message"}}}}
@@ -615,7 +615,7 @@ func TestEngineRun_Error(t *testing.T) {
 	ex := &mockToolExecutor{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	counter := &agenttest.MockTokenCounter{}
 	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -142,7 +143,7 @@ func runSendChatTest(t *testing.T, tt sendChatTestCase) {
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	client, err := NewClient(
 		apiURL,
 		"test-model",
@@ -194,7 +195,7 @@ func TestRefreshAuth(t *testing.T) {
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	client, _ := NewClient(apiURL, "test-model", authenticator, WithEventBus(bus), WithTimeout(5*time.Second))
 
 	err := client.RefreshAuth()
@@ -260,7 +261,7 @@ func runGenerateImagesTest(t *testing.T, tt generateImagesTestCase) {
 	t.Setenv("GOOGLE_API_KEY", "dummy")
 	apiURL := "http://localhost/v1" // Trigger GeminiAPI backend with v1
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	client, err := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, WithEventBus(bus), WithTimeout(5*time.Second))
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
@@ -459,7 +460,7 @@ func TestToSDKTool(t *testing.T) {
 func TestApplyThinkingBudget(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	client := &Client{eventBus: bus}
 	ctx := context.Background()
 
@@ -474,7 +475,7 @@ func TestApplyThinkingBudget(t *testing.T) {
 
 	t.Run("Exceeds Max Budget", func(t *testing.T) {
 		localBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		events.CleanupBus(t, localBus)
+		eventstest.CleanupBus(t, localBus)
 		localClient := &Client{eventBus: localBus}
 
 		var mu sync.Mutex

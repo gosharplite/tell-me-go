@@ -104,7 +104,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	var capturedEvents []string
 	var Mu sync.Mutex
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		Mu.Lock()
 		defer Mu.Unlock()
@@ -217,9 +217,9 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 			bus1 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-			events.CleanupBus(t, bus1)
+			eventstest.CleanupBus(t, bus1)
 			bus2 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-			events.CleanupBus(t, bus2)
+			eventstest.CleanupBus(t, bus2)
 			e := orchestrator.NewEngine(mockGw, mockEx, orchestratortest.NewTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 			strategy.SetLimits(1000, 5, 10)
 
@@ -272,9 +272,9 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	bus1 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus1)
+	eventstest.CleanupBus(t, bus1)
 	bus2 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus2)
+	eventstest.CleanupBus(t, bus2)
 	e := orchestrator.NewEngine(mockGw, mockEx, orchestratortest.NewTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 	strategy.SetLimits(1000, 5, 10)
 
@@ -293,7 +293,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	mockGw := &agenttest.MockGateway{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -344,7 +344,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	mockGw := &agenttest.MockGateway{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -456,7 +456,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	var capturedTime time.Time
 	var Mu sync.Mutex
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if st, ok := e.(events.TurnStatusEvent); ok {
 			Mu.Lock()
@@ -1017,7 +1017,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	mockGw := &agenttest.MockGateway{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 
@@ -1068,7 +1068,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	tracker := &agenttest.MockCostTracker{}
 	reg := &agenttest.MockToolRegistry{}
 	hManager := &agenttest.MockHistoryManager{}
@@ -1342,7 +1342,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	var capturedEvents []string
 	var Mu sync.Mutex
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		Mu.Lock()
 		defer Mu.Unlock()

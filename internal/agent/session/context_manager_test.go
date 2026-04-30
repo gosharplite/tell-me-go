@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
@@ -184,7 +185,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 
 	// Case 9: Event publishing
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	var logBuf testfixtures.SyncWriter
 	testLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))

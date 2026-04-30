@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 
@@ -70,7 +71,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Synchronous bus for deterministic testing
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -36,7 +37,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	strategy.SetLimits(1000, 5, 20) // turn 3/5 (remaining 2) -> Triggers warning
 
@@ -393,7 +394,7 @@ func setupSummarizationTest(t *testing.T) (*session.ContextManager, *[]*domain_l
 		return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
 	})
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	cm := session.NewContextManager(session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{})), hManager, bus, nil)
 	cm.Summarizer = llm.NewSummarizer(g, bus)
 	return cm, capturedInput
@@ -494,7 +495,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	cm := session.NewContextManager(strategy, hManager, bus, nil)
 
@@ -652,7 +653,7 @@ func (e myCountingEvent) Type() string { return "myCountingEvent" }
 func TestCountingEventBus(t *testing.T) {
 	t.Parallel()
 	bus := newCountingEventBus()
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	ctx := context.Background()
 
 	if err := bus.Publish(ctx, myCountingEvent{}); err != nil {
