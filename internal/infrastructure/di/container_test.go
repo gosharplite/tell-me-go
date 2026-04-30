@@ -778,7 +778,7 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 		Logger: logger,
 	}
 
-	factory.applySessionSecuritySettings(ctx, mockSP)
+	factory.applySessionSecuritySettings(ctx, mockSP, &config.Config{})
 
 	logOutput := logBuf.String()
 	assert.Contains(t, logOutput, "failed to unmarshal authorized_safe_paths")
@@ -1023,4 +1023,69 @@ func TestSessionDeps_GetRegistry_Failure(t *testing.T) {
 	reg, err := deps.GetRegistry()
 	assert.Error(t, err)
 	assert.Nil(t, reg)
+}
+
+func TestBypassConfirmationPriority(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name         string
+		yamlBypass   bool
+		dbBypass     string
+		expectActive bool
+		expectDBSet  bool
+	}{
+		{
+			name:         "YAML_True_DB_False_Active",
+			yamlBypass:   true,
+			dbBypass:     "false",
+			expectActive: true,
+			expectDBSet:  true,
+		},
+		{
+			name:         "YAML_False_DB_True_Active",
+			yamlBypass:   false,
+			dbBypass:     "true",
+			expectActive: true,
+			expectDBSet:  false,
+		},
+		{
+			name:         "YAML_False_DB_False_Inactive",
+			yamlBypass:   false,
+			dbBypass:     "false",
+			expectActive: false,
+			expectDBSet:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := new(mockConfigurableSecurityManager)
+			mockKV := new(mockKVStore)
+			mockSP := new(mockSessionProvider)
+			mockSP.On("GetSettings").Return(mockKV)
+
+			mockKV.On("Get", mock.Anything, "bypass_confirmation").Return(tt.dbBypass, nil).Maybe()
+			mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return("", nil).Maybe()
+			mockKV.On("Get", mock.Anything, "authorized_read_paths").Return("", nil).Maybe()
+
+			if tt.expectActive {
+				sm.On("SetBypassActive", true).Return().Once()
+			}
+			if tt.expectDBSet {
+				mockKV.On("Set", mock.Anything, "bypass_confirmation", "true").Return(nil).Once()
+			}
+
+			factory := &defaultSessionFactory{
+				SM:     sm,
+				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			}
+
+			cfg := &config.Config{BypassConfirmation: tt.yamlBypass}
+			factory.applySessionSecuritySettings(ctx, mockSP, cfg)
+
+			sm.AssertExpectations(t)
+			mockKV.AssertExpectations(t)
+		})
+	}
 }

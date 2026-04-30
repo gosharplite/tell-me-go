@@ -72,9 +72,17 @@ func (f *defaultSessionFactory) buildSessionProvider(ctx stdctx.Context, paths *
 	return sessionProvider, cleanup, nil
 }
 
-func (f *defaultSessionFactory) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
-	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
+func (f *defaultSessionFactory) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider, cfg *config.Config) {
+	// 1. Declarative YAML Override
+	if cfg.BypassConfirmation {
 		f.SM.SetBypassActive(true)
+		// Sync to DB to maintain consistency across session rotations
+		_ = sessionProvider.GetSettings().Set(ctx, "bypass_confirmation", "true")
+	} else {
+		// 2. Fallback to Persistent DB State
+		if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
+			f.SM.SetBypassActive(true)
+		}
 	}
 
 	// Load authorized paths from settings
@@ -145,7 +153,7 @@ func (f *defaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Con
 		return nil, nil, nil, err // buildSessionProvider already wraps it
 	}
 
-	f.applySessionSecuritySettings(ctx, sessionProvider)
+	f.applySessionSecuritySettings(ctx, sessionProvider, cfg)
 
 	if newSession {
 		if err := f.handleNewSession(ctx, paths, cfg, pricingOverrides, sessionProvider.GetSettings()); err != nil {

@@ -86,6 +86,8 @@ MAX_CONCURRENT_TOOLS: 5
 TOOL_TIMEOUT: 300
 
 # --- Safety & History ---
+# Set to true to disable all interactive security prompts (ideal for automated workflows)
+# BYPASS_CONFIRMATION: false
 MAX_TURNS: 1000
 MAX_HISTORY_TOKENS: 1000000
 
