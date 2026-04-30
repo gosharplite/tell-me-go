@@ -22,14 +22,18 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/stretchr/testify/mock"
 )
 
 // agentInternal provides a wrapper around the agent's internal accessor.
 type agentInternal struct {
-	agent.InternalAccessor
+	chatter ports.Chatter
+	inner   agent.InternalAccessor
 }
 
 // AsAgentInternal wraps a ports.Chatter to provide access to internal components.
@@ -38,7 +42,75 @@ func AsAgentInternal(c ports.Chatter) *agentInternal {
 	if inner == nil {
 		return nil
 	}
-	return &agentInternal{inner}
+	return &agentInternal{chatter: c, inner: inner}
+}
+
+// --- Getters via export_test.go functions ---
+
+// GetCtxManager returns the agent's internal ContextManager.
+func (a *agentInternal) GetCtxManager() *session.ContextManager {
+	return agent.CtxManagerForTest(a.chatter)
+}
+
+// GetEvents returns the agent's internal EventBus.
+func (a *agentInternal) GetEvents() events.EventBus {
+	return agent.EventsForTest(a.chatter)
+}
+
+// GetConfigWatcher returns the agent's internal ConfigWatcher.
+func (a *agentInternal) GetConfigWatcher() session.ConfigWatcher {
+	return agent.ConfigWatcherForTest(a.chatter)
+}
+
+// GetRuntimeConfig returns the agent's runtime configuration snapshot.
+func (a *agentInternal) GetRuntimeConfig() any {
+	return agent.RuntimeConfigForTest(a.chatter)
+}
+
+// --- Setters via export_test.go functions ---
+
+// SetCtxManager replaces the agent's internal ContextManager.
+func (a *agentInternal) SetCtxManager(cm *session.ContextManager) {
+	agent.SetCtxManagerForTest(a.chatter, cm)
+}
+
+// SetEvents replaces the agent's internal EventBus.
+func (a *agentInternal) SetEvents(bus events.EventBus) {
+	agent.SetEventsForTest(a.chatter, bus)
+}
+
+// SetConfigWatcher replaces the agent's internal ConfigWatcher.
+func (a *agentInternal) SetConfigWatcher(cw session.ConfigWatcher) {
+	agent.SetConfigWatcherForTest(a.chatter, cw)
+}
+
+// SetLogger replaces the agent's internal Logger.
+func (a *agentInternal) SetLogger(l ports.Logger) {
+	agent.SetLoggerForTest(a.chatter, l)
+}
+
+// SetRuntimeConfig replaces the agent's runtime configuration.
+func (a *agentInternal) SetRuntimeConfig(cfg any) {
+	if rc, ok := cfg.(*agent.RuntimeConfigInternal); ok {
+		agent.SetRuntimeConfigForTest(a.chatter, rc)
+	}
+}
+
+// SetTracker replaces the agent's internal CostTracker.
+func (a *agentInternal) SetTracker(t domain_pricing.CostTracker) {
+	agent.SetTrackerForTest(a.chatter, t)
+}
+
+// --- Pass-through methods for remaining InternalAccessor members ---
+
+// ApplyConfig delegates to the internal accessor.
+func (a *agentInternal) ApplyConfig(ctx context.Context) error {
+	return a.inner.ApplyConfig(ctx)
+}
+
+// GetTracker delegates to the internal accessor.
+func (a *agentInternal) GetTracker() domain_pricing.CostTracker {
+	return a.inner.GetTracker()
 }
 
 // mockSessionLifecycleManager is a mock of agent.SessionLifecycleManager.

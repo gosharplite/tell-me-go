@@ -29,6 +29,10 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-021** | Test Doubles Live in `*test` Sub-Packages, Not a Centralized `testutil` | 2026-04 | Accepted | [2026-04-test-doubles-in-pkgtest-subpackages.md](2026-04-test-doubles-in-pkgtest-subpackages.md) |
 | **ADR-022** | Tool-Result Error Convention | 2026-04 | Accepted | [2026-04-tool-result-error-convention.md](2026-04-tool-result-error-convention.md) |
 | **ADR-023** | Reasoning-Token Accounting for OpenAI-Compatible Providers | 2026-04 | Accepted | [2026-04-reasoning-token-accounting.md](2026-04-reasoning-token-accounting.md) |
+| **ADR-024** | OpenAI Chat-vs-Responses Budget-Field Divergence | 2026-04 | Accepted | [2026-04-openai-budget-field-divergence.md](2026-04-openai-budget-field-divergence.md) |
+| **ADR-025** | Decompose UIBridge God Object into Composable Sub-Components | 2026-04 | Accepted | [2026-04-uibridge-decomposition.md](2026-04-uibridge-decomposition.md) |
+| **ADR-026** | Decompose `agent/session` Package via `context/` Sub-Package Extraction | 2026-04 | Accepted | [2026-04-session-context-subpackage-extraction.md](2026-04-session-context-subpackage-extraction.md) |
+| **ADR-027** | Test-Only Access via export_test.go and *internal Sub-Packages | 2026-06 | Accepted | [2026-06-test-only-access-via-export-test.md](2026-06-test-only-access-via-export-test.md) |
 
 ## How to Create a New ADR
 

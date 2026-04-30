@@ -34,8 +34,8 @@ func TestAgent_ConfigFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	a := agent.NewAgentInternal()
-	a.SetEvents(bus)
-	a.SetCtxManager(&session.ContextManager{
+	agent.SetEventsForTest(a, bus)
+	agent.SetCtxManagerForTest(a, &session.ContextManager{
 		History: hm,
 	})
 

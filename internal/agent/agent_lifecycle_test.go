@@ -42,14 +42,10 @@ func TestNewAgent_Initialization(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, chatter)
 
-	// Use AsInternal to verify internal components
-	a := AsInternal(chatter)
-	require.NotNil(t, a)
-
-	assert.NotNil(t, a.GetCtxManager())
-	assert.NotNil(t, a.GetConfigWatcher())
-
-	assert.Equal(t, bus, a.GetEvents())
+	// Verify internal components via export_test.go helpers
+	assert.NotNil(t, CtxManagerForTest(chatter))
+	assert.NotNil(t, ConfigWatcherForTest(chatter))
+	assert.Equal(t, bus, EventsForTest(chatter))
 }
 
 func TestAgent_InternalAccessor(t *testing.T) {
@@ -62,15 +58,17 @@ func TestAgent_InternalAccessor(t *testing.T) {
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
 	require.NoError(t, err)
 
+	// Test events override via export_test.go setter
+	bus2 := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	SetEventsForTest(chatter, bus2)
+	assert.Equal(t, bus2, EventsForTest(chatter))
+
+	// Test tracker override via export_test.go setter
+	SetTrackerForTest(chatter, &agenttest.MockCostTracker{})
+
+	// Test remaining InternalAccessor methods
 	a := AsInternal(chatter)
 	require.NotNil(t, a)
-
-	// Test setters/getters
-	bus2 := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-	a.SetEvents(bus2)
-	assert.Equal(t, bus2, a.GetEvents())
-
-	a.SetTracker(&agenttest.MockCostTracker{})
 	assert.NotNil(t, a.GetTracker())
 
 	// Test ApplyConfig
@@ -126,9 +124,8 @@ func TestAgent_SetLimits(t *testing.T) {
 	assert.Equal(t, 1000, cfgEvent.Limits.MaxHistoryTokens)
 	assert.Equal(t, 10, cfgEvent.Limits.MaxHistoryTurns)
 
-	// Verify internal runtimeConfig update
-	a := AsInternal(chatter)
-	rc := a.GetRuntimeConfig().(*runtimeConfig)
+	// Verify internal runtimeConfig update via export_test.go getter
+	rc := RuntimeConfigForTest(chatter)
 	assert.Equal(t, 5, rc.Limits.MaxToolTurns)
 	assert.Equal(t, 1000, rc.Limits.MaxHistoryTokens)
 	assert.Equal(t, 10, rc.Limits.MaxHistoryTurns)
@@ -248,17 +245,17 @@ func TestAgent_InternalAccessor_Remaining(t *testing.T) {
 	require.NotNil(t, a)
 
 	cw := session.NewNoOpConfigWatcher(0, 0, 0)
-	a.SetConfigWatcher(cw)
-	assert.Equal(t, cw, a.GetConfigWatcher())
+	SetConfigWatcherForTest(chatter, cw)
+	assert.Equal(t, cw, ConfigWatcherForTest(chatter))
 
 	logger := slog.Default()
-	a.SetLogger(logger)
+	SetLoggerForTest(chatter, logger)
 	// getLogger is private, but we can call it via other methods if needed
 	assert.Equal(t, logger, chatter.getLogger())
 
 	rc := &runtimeConfig{Model: "test-model"}
-	a.SetRuntimeConfig(rc)
-	assert.Equal(t, rc, a.GetRuntimeConfig())
+	SetRuntimeConfigForTest(chatter, rc)
+	assert.Equal(t, rc, RuntimeConfigForTest(chatter))
 }
 
 func TestAsInternal_Nil(t *testing.T) {
@@ -281,8 +278,7 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
 	require.NoError(t, err)
 
-	a := AsInternal(chatter)
-	assert.NotNil(t, a.GetConfigWatcher())
+	assert.NotNil(t, ConfigWatcherForTest(chatter))
 	// Verify it's not the no-op one if we can, but at least we covered the branch
 }
 

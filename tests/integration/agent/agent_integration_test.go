@@ -790,8 +790,9 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	a := agent.NewAgentInternal()
-	a.SetEvents(bus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
+	ai := agentinternal.AsAgentInternal(a)
+	ai.SetEvents(bus)
+	ai.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -810,9 +811,10 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	mockBus.SetPublishErr(context.Canceled)
 
 	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
-	a.SetRuntimeConfig(&agent.RuntimeConfigInternal{})
+	ai := agentinternal.AsAgentInternal(a)
+	ai.SetEvents(mockBus)
+	ai.SetConfigWatcher(session.NewNoOpConfigWatcher(1000, 5, 10))
+	ai.SetRuntimeConfig(&agent.RuntimeConfigInternal{})
 
 	err := a.ApplyConfig(context.Background())
 
@@ -905,8 +907,9 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	mockBus.SetFlushErr(flushErr)
 
 	a := agent.NewAgentInternal()
-	a.SetEvents(mockBus)
-	a.SetLogger(logger)
+	ai := agentinternal.AsAgentInternal(a)
+	ai.SetEvents(mockBus)
+	ai.SetLogger(logger)
 
 	ctx := context.Background()
 	err := a.Shutdown(ctx)
