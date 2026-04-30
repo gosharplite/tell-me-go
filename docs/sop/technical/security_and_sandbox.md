@@ -52,6 +52,7 @@ For trusted environments or highly repetitive automated tasks, a `bypass_confirm
 *   **Scope**: Disables all interactive security prompts.
 *   **Persistence**: The `bypass_confirmation` state is stored in the `settings` table of `tellmego.db`. Unlike conversation history, it is **not cleared** by the `-new` flag, ensuring a consistent developer experience across restarts.
 *   **Revocation**: Use the `revoke_bypass` tool to re-enable confirmations.
+*   **Declarative Bypass**: You can also enable this globally for a mode by adding `BYPASS_CONFIRMATION: true` to your configuration YAML. This is ideal for automated environments or dynamically generated configs. **Note:** Because YAML cannot distinguish between an omitted field and an explicit `false`, you can only use this setting to *enable* the bypass. To disable a persistently active bypass, you must use the `revoke_bypass` tool.
 *   **AI Awareness**: The AI "remembers" it has enabled bypass via chat history. Because the state is persistent, the AI's mental model and the process state will remain in sync across multiple runs (sessions) within the same mode.
 
 ### 4. Terminal Interaction (Stdin Independence)
