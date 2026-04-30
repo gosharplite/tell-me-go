@@ -1040,7 +1040,7 @@ func TestBypassConfirmationPriority(t *testing.T) {
 			yamlBypass:   true,
 			dbBypass:     "false",
 			expectActive: true,
-			expectDBSet:  true,
+			expectDBSet:  false,
 		},
 		{
 			name:         "YAML_False_DB_True_Active",

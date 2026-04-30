@@ -76,8 +76,6 @@ func (f *defaultSessionFactory) applySessionSecuritySettings(ctx stdctx.Context,
 	// 1. Declarative YAML Override
 	if cfg.BypassConfirmation {
 		f.SM.SetBypassActive(true)
-		// Sync to DB to maintain consistency across session rotations
-		_ = sessionProvider.GetSettings().Set(ctx, "bypass_confirmation", "true")
 	} else {
 		// 2. Fallback to Persistent DB State
 		if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
