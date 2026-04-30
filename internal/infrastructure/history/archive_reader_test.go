@@ -40,103 +40,171 @@ func appendContent(archivePath string, c *llm.Content) int64 {
 	return start
 }
 
+func validateFirstPage(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, offsets []int64) {
+	t.Helper()
+	if len(dtos) != 2 || dtos[0].ContentPreview != "Hello 1" {
+		t.Errorf("got %d dtos, first: %q", len(dtos), dtos[0].ContentPreview)
+	}
+	if nextOffset != offsets[2] {
+		t.Errorf("expected nextOffset %d, got %d", offsets[2], nextOffset)
+	}
+}
+
+func validateSecondPage(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, offsets []int64) {
+	t.Helper()
+	if len(dtos) != 2 || dtos[0].ContentPreview != "Hello 2" {
+		t.Errorf("got %d dtos, first: %q", len(dtos), dtos[0].ContentPreview)
+	}
+}
+
+func validateMaskingLargeBinaryData(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, offsets []int64) {
+	t.Helper()
+	if len(dtos) != 1 {
+		t.Fatalf("expected 1 dto, got %d", len(dtos))
+	}
+	if !strings.Contains(dtos[0].ContentPreview, "[Attached Image]") {
+		t.Errorf("expected masked image, got: %s", dtos[0].ContentPreview)
+	}
+}
+
+func validateComplexContentParts(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, offsets []int64) {
+	t.Helper()
+	if len(dtos) != 1 {
+		t.Fatalf("expected 1 dto, got %d", len(dtos))
+	}
+	if dtos[0].ThoughtProcess != "Thinking..." {
+		t.Errorf("expected thought 'Thinking...', got %q", dtos[0].ThoughtProcess)
+	}
+	if !strings.Contains(dtos[0].ContentPreview, "Result:") {
+		t.Errorf("expected preview to contain 'Result:', got %q", dtos[0].ContentPreview)
+	}
+	if !strings.Contains(dtos[0].ContentPreview, "[Attached Asset]") {
+		t.Errorf("expected preview to contain '[Attached Asset]', got %q", dtos[0].ContentPreview)
+	}
+	if len(dtos[0].ToolCalls) != 1 || dtos[0].ToolCalls[0] != "get_weather" {
+		t.Errorf("expected tool call 'get_weather', got %v", dtos[0].ToolCalls)
+	}
+}
+
+func validateFunctionResponsePart(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, offsets []int64) {
+	t.Helper()
+	if len(dtos) != 1 {
+		t.Fatalf("expected 1 dto, got %d", len(dtos))
+	}
+	if len(dtos[0].ToolCalls) != 1 || dtos[0].ToolCalls[0] != "get_weather" {
+		t.Errorf("expected tool call 'get_weather', got %v", dtos[0].ToolCalls)
+	}
+}
+
 func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	ctx := context.Background()
 	fs := persistence.NewOSFileSystem()
-	tmpDir := t.TempDir()
-	archivePath := filepath.Join(tmpDir, "archive.jsonl")
 
-	off1 := appendContent(archivePath, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 1"}}})
-	appendContent(archivePath, &llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 1"}}})
-	off3 := appendContent(archivePath, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 2"}}})
-	appendContent(archivePath, &llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 2"}}})
-
-	reader := history.NewJSONLArchiveReader(fs, archivePath)
-
-	t.Run("read first page", func(t *testing.T) {
-		dtos, nextOffset, err := reader.ReadPage(ctx, 2, off1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(dtos) != 2 || dtos[0].ContentPreview != "Hello 1" {
-			t.Errorf("got %d dtos, first: %q", len(dtos), dtos[0].ContentPreview)
-		}
-		if nextOffset != off3 {
-			t.Errorf("expected nextOffset %d, got %d", off3, nextOffset)
-		}
-	})
-
-	t.Run("read second page", func(t *testing.T) {
-		dtos, _, err := reader.ReadPage(ctx, 2, off3)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(dtos) != 2 || dtos[0].ContentPreview != "Hello 2" {
-			t.Errorf("got %d dtos, first: %q", len(dtos), dtos[0].ContentPreview)
-		}
-	})
-
-	t.Run("masking large binary data", func(t *testing.T) {
-		off := appendContent(archivePath, &llm.Content{
-			Role: "user",
-			Parts: []*llm.Part{
-				{Text: "A picture:"},
-				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake binary data")}},
+	tests := []struct {
+		name       string
+		contents   []*llm.Content
+		limit      int
+		startIndex int // The index in 'contents' to use as the starting offset
+		validate   func(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, offsets []int64)
+	}{
+		{
+			name: "read first page",
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "Hello 1"}}},
+				{Role: "assistant", Parts: []*llm.Part{{Text: "Response 1"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "Hello 2"}}},
+				{Role: "assistant", Parts: []*llm.Part{{Text: "Response 2"}}},
 			},
-		})
-		dtos, _, err := reader.ReadPage(ctx, 1, off)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(dtos[0].ContentPreview, "[Attached Image]") {
-			t.Errorf("expected masked image, got: %s", dtos[0].ContentPreview)
-		}
-	})
-
-	t.Run("complex content parts", func(t *testing.T) {
-		off := appendContent(archivePath, &llm.Content{
-			Role: "assistant",
-			Parts: []*llm.Part{
-				{IsThought: true, Text: "Thinking..."},
-				{Text: "Result:"},
-				{FunctionCall: &llm.FunctionCall{Name: "get_weather"}},
-				{AssetID: "asset-123"},
-				nil,
+			limit:      2,
+			startIndex: 0,
+			validate:   validateFirstPage,
+		},
+		{
+			name: "read second page",
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "Hello 1"}}},
+				{Role: "assistant", Parts: []*llm.Part{{Text: "Response 1"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "Hello 2"}}},
+				{Role: "assistant", Parts: []*llm.Part{{Text: "Response 2"}}},
 			},
-		})
-		dtos, _, err := reader.ReadPage(ctx, 1, off)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if dtos[0].ThoughtProcess != "Thinking..." {
-			t.Errorf("expected thought 'Thinking...', got %q", dtos[0].ThoughtProcess)
-		}
-		if !strings.Contains(dtos[0].ContentPreview, "Result:") {
-			t.Errorf("expected preview to contain 'Result:', got %q", dtos[0].ContentPreview)
-		}
-		if !strings.Contains(dtos[0].ContentPreview, "[Attached Asset]") {
-			t.Errorf("expected preview to contain '[Attached Asset]', got %q", dtos[0].ContentPreview)
-		}
-		if len(dtos[0].ToolCalls) != 1 || dtos[0].ToolCalls[0] != "get_weather" {
-			t.Errorf("expected tool call 'get_weather', got %v", dtos[0].ToolCalls)
-		}
-	})
-
-	t.Run("function response part", func(t *testing.T) {
-		off := appendContent(archivePath, &llm.Content{
-			Role: "user",
-			Parts: []*llm.Part{
-				{FunctionResponse: &llm.FunctionResponse{Name: "get_weather", Response: map[string]interface{}{"temp": 22}}},
+			limit:      2,
+			startIndex: 2,
+			validate:   validateSecondPage,
+		},
+		{
+			name: "masking large binary data",
+			contents: []*llm.Content{
+				{
+					Role: "user",
+					Parts: []*llm.Part{
+						{Text: "A picture:"},
+						{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake binary data")}},
+					},
+				},
 			},
+			limit:      1,
+			startIndex: 0,
+			validate:   validateMaskingLargeBinaryData,
+		},
+		{
+			name: "complex content parts",
+			contents: []*llm.Content{
+				{
+					Role: "assistant",
+					Parts: []*llm.Part{
+						{IsThought: true, Text: "Thinking..."},
+						{Text: "Result:"},
+						{FunctionCall: &llm.FunctionCall{Name: "get_weather"}},
+						{AssetID: "asset-123"},
+						nil,
+					},
+				},
+			},
+			limit:      1,
+			startIndex: 0,
+			validate:   validateComplexContentParts,
+		},
+		{
+			name: "function response part",
+			contents: []*llm.Content{
+				{
+					Role: "user",
+					Parts: []*llm.Part{
+						{FunctionResponse: &llm.FunctionResponse{Name: "get_weather", Response: map[string]interface{}{"temp": 22}}},
+					},
+				},
+			},
+			limit:      1,
+			startIndex: 0,
+			validate:   validateFunctionResponsePart,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			archivePath := filepath.Join(tmpDir, "archive.jsonl")
+
+			var offsets []int64
+			for _, c := range tt.contents {
+				off := appendContent(archivePath, c)
+				offsets = append(offsets, off)
+			}
+
+			reader := history.NewJSONLArchiveReader(fs, archivePath)
+			startOffset := int64(0)
+			if len(offsets) > tt.startIndex {
+				startOffset = offsets[tt.startIndex]
+			}
+
+			dtos, nextOffset, err := reader.ReadPage(ctx, tt.limit, startOffset)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			tt.validate(t, dtos, nextOffset, offsets)
 		})
-		dtos, _, err := reader.ReadPage(ctx, 1, off)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(dtos[0].ToolCalls) != 1 || dtos[0].ToolCalls[0] != "get_weather" {
-			t.Errorf("expected tool call 'get_weather', got %v", dtos[0].ToolCalls)
-		}
-	})
+	}
 }
 
 func BenchmarkReadPage(b *testing.B) {

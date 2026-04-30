@@ -234,71 +234,85 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 }
 
 func TestShellTool_PipeCommands(t *testing.T) {
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	sm.SetBypassActive(true)
-	validator := &toolstest.MockCommandValidator{}
-	tool := newTestShellTool(sm, validator)
 	ctx := context.Background()
-
 	helperSlash := filepath.ToSlash(helperPath)
 
-	t.Run("Simple pipe", func(t *testing.T) {
-		args := map[string]interface{}{
-			"commands": []interface{}{fmt.Sprintf("%s echo hello world", helperSlash), fmt.Sprintf("%s grep hello", helperSlash)},
-			"reason":   "test pipe",
-		}
-		res, err := tool.PipeCommands(ctx, args, nil)
-		if err != nil {
-			t.Fatalf("PipeCommands failed: %v", err)
-		}
-		if !strings.Contains(res.Text, "hello world") {
-			t.Errorf("expected output to contain 'hello world', got %q", res.Text)
-		}
-	})
+	tests := []struct {
+		name         string
+		commands     any
+		setupMocks   func(sm *toolstest.MockSecurityManager, v *toolstest.MockCommandValidator)
+		expectedText string
+		wantErr      bool
+	}{
+		{
+			name:         "Simple pipe",
+			commands:     []interface{}{fmt.Sprintf("%s echo hello world", helperSlash), fmt.Sprintf("%s grep hello", helperSlash)},
+			expectedText: "hello world",
+		},
+		{
+			name:     "Pipe with invalid command",
+			commands: []interface{}{fmt.Sprintf("%s echo hello", helperSlash), "invalid-cmd-12345"},
+			wantErr:  true,
+		},
+		{
+			name:     "Pipe with shell operators (denied)",
+			commands: []interface{}{fmt.Sprintf("%s echo hello", helperSlash), "grep hi > out.txt"},
+			setupMocks: func(sm *toolstest.MockSecurityManager, v *toolstest.MockCommandValidator) {
+				sm.AllowAll = false
+				sm.SetBypassActive(false)
+				v.IsSafeFunc = func(cmd string) (bool, string) {
+					if strings.Contains(cmd, ">") {
+						return false, "redirection not allowed"
+					}
+					return true, ""
+				}
+			},
+			wantErr: true,
+		},
+		{
+			name:     "Empty commands list",
+			commands: []interface{}{},
+			wantErr:  true,
+		},
+		{
+			name:     "Invalid commands type",
+			commands: "not a list",
+			wantErr:  true,
+		},
+	}
 
-	t.Run("Pipe with invalid command", func(t *testing.T) {
-		args := map[string]interface{}{
-			"commands": []interface{}{fmt.Sprintf("%s echo hello", helperSlash), "invalid-cmd-12345"},
-			"reason":   "test pipe failure",
-		}
-		res, err := tool.PipeCommands(ctx, args, nil)
-		if res.Error == nil && err == nil {
-			t.Error("expected error for invalid command in pipe")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := &toolstest.MockSecurityManager{AllowAll: true}
+			sm.SetBypassActive(true)
+			validator := &toolstest.MockCommandValidator{}
 
-	t.Run("Pipe with shell operators (denied)", func(t *testing.T) {
-		sm.AllowAll = false
-		sm.SetBypassActive(false)
-		validator.IsSafeFunc = func(cmd string) (bool, string) {
-			if strings.Contains(cmd, ">") {
-				return false, "redirection not allowed"
+			if tt.setupMocks != nil {
+				tt.setupMocks(sm, validator)
 			}
-			return true, ""
-		}
-		args := map[string]interface{}{
-			"commands": []interface{}{fmt.Sprintf("%s echo hello", helperSlash), "grep hi > out.txt"},
-			"reason":   "test pipe security",
-		}
-		res, err := tool.PipeCommands(ctx, args, nil)
-		if res.Error == nil && err == nil {
-			t.Error("expected error for shell operator in pipe")
-		}
-	})
 
-	t.Run("Empty commands list", func(t *testing.T) {
-		res, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}}, nil)
-		if res.Error == nil && err == nil {
-			t.Error("expected error for empty commands list")
-		}
-	})
+			tool := newTestShellTool(sm, validator)
 
-	t.Run("Invalid commands type", func(t *testing.T) {
-		res, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"}, nil)
-		if res.Error == nil && err == nil {
-			t.Error("expected error for invalid commands type")
-		}
-	})
+			args := map[string]interface{}{
+				"commands": tt.commands,
+				"reason":   "test pipe",
+			}
+			res, err := tool.PipeCommands(ctx, args, nil)
+
+			if tt.wantErr {
+				if res.Error == nil && err == nil {
+					t.Error("expected error, got none")
+				}
+				return
+			}
+			if err != nil || res.Error != nil {
+				t.Fatalf("unexpected error: %v, res.Error: %v", err, res.Error)
+			}
+			if tt.expectedText != "" && !strings.Contains(res.Text, tt.expectedText) {
+				t.Errorf("expected output to contain %q, got %q", tt.expectedText, res.Text)
+			}
+		})
+	}
 }
 
 func TestShellTool_SecurityVisibility(t *testing.T) {

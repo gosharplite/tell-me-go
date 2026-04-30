@@ -12,20 +12,35 @@
       "miss": 5.0,
       "comp": 30.00
     },
+    "gpt-5.4": {
+      "hit": 0.25,
+      "miss": 2.50,
+      "comp": 15.00
+    },
+    "gpt-5.5": {
+      "hit": 0.50,
+      "miss": 5.0,
+      "comp": 30.00
+    },
     "deepseek-": {
-      "hit": 0.028,
-      "miss": 0.28,
-      "comp": 0.42
+      "hit": 0.0028,
+      "miss": 0.14,
+      "comp": 0.28
     },
     "deepseek-v4-flash": {
-      "hit": 0.028,
-      "miss": 0.28,
-      "comp": 0.42
+      "hit": 0.0028,
+      "miss": 0.14,
+      "comp": 0.28
     },
     "deepseek-v4-pro": {
-      "hit": 0.145,
-      "miss": 1.74,
-      "comp": 3.84
+      "hit": 0.003625,
+      "miss": 0.435,
+      "comp": 0.87
+    },
+    "deepseek-ai/deepseek-v3.2-maas": {
+      "hit": 0.056,
+      "miss": 0.56,
+      "comp": 1.68
     },
     "claude-": {
       "hit": 0.50,
