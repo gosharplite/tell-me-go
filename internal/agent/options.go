@@ -6,7 +6,9 @@ package agent
 import (
 	"context"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -121,5 +123,37 @@ func WithClock(c clock.Clock) AgentOption {
 func WithProviderName(name string) AgentOption {
 	return func(a *agent) {
 		a.providerName = name
+	}
+}
+
+// WithCtxManager injects a pre-built ContextManager. Used primarily by tests
+// that need to substitute a mock implementation.
+func WithCtxManager(cm *session.ContextManager) AgentOption {
+	return func(a *agent) {
+		a.ctxManager = cm
+	}
+}
+
+// WithEvents injects a pre-built EventBus. Used primarily by tests
+// that need to substitute a mock implementation.
+func WithEvents(bus events.EventBus) AgentOption {
+	return func(a *agent) {
+		a.events = bus
+	}
+}
+
+// WithConfigWatcher injects a pre-built ConfigWatcher. Used primarily by tests
+// that need to substitute a mock implementation.
+func WithConfigWatcher(cw session.ConfigWatcher) AgentOption {
+	return func(a *agent) {
+		a.configWatcher = cw
+	}
+}
+
+// WithRuntimeConfig injects a pre-built runtime configuration. Used primarily
+// by tests that need to control agent configuration directly.
+func WithRuntimeConfig(cfg *runtimeConfig) AgentOption {
+	return func(a *agent) {
+		a.config.Store(cfg)
 	}
 }
