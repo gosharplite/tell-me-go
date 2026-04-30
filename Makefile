@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -38,7 +38,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -94,6 +94,129 @@ else
 		} \
 	"
 	@echo "  ✓ No testutil violations found."
+endif
+
+# Verify ADR-022: no production file imports the "testing" package.
+# Test-only helpers that legitimately need "testing" must live in a
+# *test or *internal sibling sub-package whitelisted below. Any other
+# non-_test.go file matching '"testing"' fails the build.
+#
+# Whitelist:
+#   internal/domain/events/eventstest/  (CleanupBus helper)
+#   internal/agent/agentinternal/       (white-box bridge — but currently
+#                                        does not import "testing"; kept
+#                                        as a safety net for future
+#                                        helpers in that package)
+verify-no-testing-import:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking that no production file imports \"testing\" (ADR-022)..."
+	@VIOLATIONS="$$( grep -rln '^[[:space:]]*\"testing\"' --include='*.go' . \
+		| grep -v '_test\.go$$' \
+		| grep -v '^\./internal/domain/events/eventstest/' \
+		| grep -v '^\./internal/agent/agentinternal/' \
+		| sort -u )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-022 violation: production file imports \"testing\"."; \
+		echo "   Test helpers that need \"testing\" must live in a *test or"; \
+		echo "   *internal sibling sub-package. See:"; \
+		echo "   docs/adr/2026-04-test-only-access-via-agentinternal-bridge.md"; \
+		echo ""; \
+		echo "Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		echo "Fix: relocate the helper to a <pkg>test/ sub-package, or update"; \
+		echo "the whitelist in this Makefile target if a new such package is"; \
+		echo "being added (and document the addition in ADR-022)."; \
+		exit 1; \
+	fi
+	@echo "  ✓ No \"testing\" imports outside whitelisted sub-packages."
+else
+	@echo "Checking that no production file imports \"testing\" (ADR-022)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			$$_.FullName -notmatch '\\\\internal\\\\domain\\\\events\\\\eventstest\\\\' -and \
+			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\agentinternal\\\\' -and \
+			$$_.FullName -notmatch '\\\\\.git\\\\' -and \
+			$$_.FullName -notmatch '\\\\vendor\\\\' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern '^\s*\"testing\"'; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-022 violation: production file imports testing.'; \
+			Write-Host '   See: docs/adr/2026-04-test-only-access-via-agentinternal-bridge.md'; \
+			Write-Host ''; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			exit 1 \
+		} \
+	"
+	@echo "  ✓ No \"testing\" imports outside whitelisted sub-packages."
+endif
+
+# Verify ADR-022: the *ForInternalUse brand is consumed only by the
+# agentinternal bridge package. The brand exists to make every
+# production-side touchpoint of the white-box test bridge trivially
+# greppable; this target enforces that contract.
+#
+# Allowed locations:
+#   internal/agent/agent.go            (declares the brand on the interface)
+#   internal/agent/internal_bridge.go  (implements the brand on *agent)
+#   internal/agent/agentinternal/      (the lone consumer package)
+#   any *_test.go file                 (tests directly under the agent
+#                                       tree may legitimately use the
+#                                       brand for white-box assertions)
+verify-internal-bridge-brand:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking *ForInternalUse brand containment (ADR-022)..."
+	@VIOLATIONS="$$( grep -rln 'ForInternalUse' --include='*.go' . \
+		| grep -v '_test\.go$$' \
+		| grep -v '^\./internal/agent/agent\.go$$' \
+		| grep -v '^\./internal/agent/internal_bridge\.go$$' \
+		| grep -v '^\./internal/agent/agentinternal/' \
+		| sort -u )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-022 violation: *ForInternalUse used outside the bridge."; \
+		echo "   Only internal/agent/{agent.go,internal_bridge.go} and the"; \
+		echo "   agentinternal sibling package may reference the brand."; \
+		echo "   See: docs/adr/2026-04-test-only-access-via-agentinternal-bridge.md"; \
+		echo ""; \
+		echo "Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		exit 1; \
+	fi
+	@echo "  ✓ *ForInternalUse brand contained to bridge package."
+else
+	@echo "Checking *ForInternalUse brand containment (ADR-022)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\agent\.go$$' -and \
+			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\internal_bridge\.go$$' -and \
+			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\agentinternal\\\\' -and \
+			$$_.FullName -notmatch '\\\\\.git\\\\' -and \
+			$$_.FullName -notmatch '\\\\vendor\\\\' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'ForInternalUse' -SimpleMatch:$$true; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-022 violation: *ForInternalUse used outside bridge.'; \
+			Write-Host '   See: docs/adr/2026-04-test-only-access-via-agentinternal-bridge.md'; \
+			Write-Host ''; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			exit 1 \
+		} \
+	"
+	@echo "  ✓ *ForInternalUse brand contained to bridge package."
 endif
 
 # AI-SAFE RACE TEST: 
