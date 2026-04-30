@@ -1,18 +1,16 @@
+//go:build test_helpers
+// +build test_helpers
+
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-// This file exports typed accessor functions for unexported agent fields so
-// that same-package _test.go files (both package agent and package agent_test)
-// and cross-package test helpers (agentinternal) can read and mutate internal
-// state without unsafe casts or reflect.
-//
-// All functions accept ports.Chatter and use a type assertion internally,
-// making them safe for cross-package callers that hold a ports.Chatter
-// reference.
+// This file exports typed accessor functions for unexported agent fields.
+// It is guarded by the test_helpers build tag and excluded from production
+// binaries. Same-package _test.go files and cross-package test helpers
+// (agentinternal) that need white-box access must also use this tag.
 //
 // Per ADR-027, this file MUST NOT import "testing" and MUST NOT contain test
-// logic or assertions. Cross-package test construction MUST use the
-// AgentBuilder in the agentinternal sub-package instead.
+// logic or assertions.
 
 package agent
 

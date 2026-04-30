@@ -1,3 +1,6 @@
+//go:build test_helpers
+// +build test_helpers
+
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 

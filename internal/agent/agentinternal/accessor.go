@@ -1,3 +1,6 @@
+//go:build test_helpers
+// +build test_helpers
+
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
@@ -6,16 +9,18 @@
 // internal state, and mocks of interfaces it owns whose method
 // signatures reference internal/agent types.
 //
+// This file is guarded by the test_helpers build tag because it calls
+// functions from internal/agent/internal_accessors.go (which is also
+// tagged). Without this tag the package is effectively empty; any file
+// that imports agentinternal must also carry the test_helpers tag.
+//
 // These helpers cannot live in internal/agent/agenttest because that
 // package must remain a leaf with no upward dependency on
 // internal/agent: any such dependency creates an import cycle for
 // internal/agent's own internal-package _test.go files (those declared
 // `package agent` rather than `package agent_test`).
 //
-// This package is itself a regular (non-test) package because Go's
-// import rules forbid non-test code from importing _test packages. Its
-// visibility is correctly restricted by Go's internal/ rules to the
-// internal/agent/... subtree, plus the project's tests/ tree.
+// Per ADR-027, this file MUST NOT import "testing".
 package agentinternal
 
 import (
@@ -45,7 +50,7 @@ func AsAgentInternal(c ports.Chatter) *agentInternal {
 	return &agentInternal{chatter: c, inner: inner}
 }
 
-// --- Getters via export_test.go functions ---
+// --- Getters via internal_accessors.go functions ---
 
 // GetCtxManager returns the agent's internal ContextManager.
 func (a *agentInternal) GetCtxManager() *session.ContextManager {
@@ -67,7 +72,7 @@ func (a *agentInternal) GetRuntimeConfig() any {
 	return agent.RuntimeConfigForTest(a.chatter)
 }
 
-// --- Setters via export_test.go functions ---
+// --- Setters via internal_accessors.go functions ---
 
 // SetCtxManager replaces the agent's internal ContextManager.
 func (a *agentInternal) SetCtxManager(cm *session.ContextManager) {

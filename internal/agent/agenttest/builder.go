@@ -1,63 +1,93 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agentinternal
+package agenttest
 
 import (
 	"context"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
+// AgentConstructor mirrors the signature of agent.NewAgent. It accepts
+// opaque client and registry values plus variadic options so that the
+// builder can remain decoupled from internal/agent (avoiding import cycles).
+type AgentConstructor func(client any, bus events.EventBus, registry any, opts ...any) (ports.Chatter, error)
+
+// AgentTestSetters provides the mutation operations that export_test.go
+// exposes. The caller (test code in package agent or agent_test) injects a
+// concrete implementation that wraps the export_test.go setters.
+//
+// Session-scoped parameters (ctxManager, configWatcher) use any to avoid
+// importing internal/agent/session, which would create an import cycle.
+type AgentTestSetters interface {
+	SetEvents(c ports.Chatter, e events.EventBus)
+	SetCtxManager(c ports.Chatter, cm any)
+	SetConfigWatcher(c ports.Chatter, cw any)
+	SetTracker(c ports.Chatter, t domain_pricing.CostTracker)
+	SetLogger(c ports.Chatter, l ports.Logger)
+	SetRuntimeConfig(c ports.Chatter, rc any)
+}
+
 // AgentBuilder provides a fluent API for constructing an agent with
 // custom overrides suitable for integration tests.
 //
-// The builder lives in agentinternal (not agenttest) because it must
-// import internal/agent to call NewAgent and AsInternal. Placing it
-// in agenttest would create an import cycle:
-//
-//	agent/*_test.go → agenttest → agent
-//
-// agentinternal is already a leaf package that imports agent, so
-// adding the builder here is safe.
+// The builder lives in agenttest and uses Dependency Injection to avoid
+// importing internal/agent. The constructor (mirroring agent.NewAgent)
+// and setters (wrapping export_test.go) are injected by the caller.
 type AgentBuilder struct {
-	t *testing.T
+	t     *testing.T
+	ctor  AgentConstructor
+	setts AgentTestSetters
+
+	// Opaque dependencies forwarded to the constructor.
+	client   any
+	registry any
+	opts     []any
 
 	events        events.EventBus
-	ctxManager    *session.ContextManager
-	configWatcher session.ConfigWatcher
+	ctxManager    any
+	configWatcher any
 	tracker       domain_pricing.CostTracker
 	logger        ports.Logger
-	runtimeCfg    *agent.RuntimeConfigInternal
+	runtimeCfg    any
 }
 
-// NewAgentBuilder creates a new AgentBuilder for the given test.
-func NewAgentBuilder(t *testing.T) *AgentBuilder {
-	return &AgentBuilder{t: t}
+// NewAgentBuilder creates a new AgentBuilder.
+//
+// ctor should be agent.NewAgent (or a compatible wrapper). setts should
+// wrap the export_test.go setters (e.g. agent.SetEventsForTest). client
+// and registry are the LLM gateway and tool registry respectively; opts
+// are functional options (agent.WithSecurityManager, etc.).
+func NewAgentBuilder(t *testing.T, ctor AgentConstructor, client any, registry any, setts AgentTestSetters, opts ...any) *AgentBuilder {
+	return &AgentBuilder{
+		t:        t,
+		ctor:     ctor,
+		client:   client,
+		registry: registry,
+		setts:    setts,
+		opts:     opts,
+	}
 }
 
-// WithEvents sets the EventBus override. When nil (default), the builder
-// will create a minimal synchronous event bus.
+// WithEvents sets the EventBus override.
 func (b *AgentBuilder) WithEvents(e events.EventBus) *AgentBuilder {
 	b.events = e
 	return b
 }
 
 // WithCtxManager sets the ContextManager override.
-func (b *AgentBuilder) WithCtxManager(cm *session.ContextManager) *AgentBuilder {
+func (b *AgentBuilder) WithCtxManager(cm any) *AgentBuilder {
 	b.ctxManager = cm
 	return b
 }
 
 // WithConfigWatcher sets the ConfigWatcher override.
-func (b *AgentBuilder) WithConfigWatcher(cw session.ConfigWatcher) *AgentBuilder {
+func (b *AgentBuilder) WithConfigWatcher(cw any) *AgentBuilder {
 	b.configWatcher = cw
 	return b
 }
@@ -75,17 +105,12 @@ func (b *AgentBuilder) WithLogger(l ports.Logger) *AgentBuilder {
 }
 
 // WithRuntimeConfig sets the RuntimeConfig override.
-func (b *AgentBuilder) WithRuntimeConfig(rc *agent.RuntimeConfigInternal) *AgentBuilder {
+func (b *AgentBuilder) WithRuntimeConfig(rc any) *AgentBuilder {
 	b.runtimeCfg = rc
 	return b
 }
 
-// Build constructs the agent with the configured overrides. It calls
-// the standard NewAgent constructor with minimal valid defaults and then
-// injects test-specific overrides through the export_test.go setters.
-//
-// The returned ports.Chatter can be further unwrapped via
-// agent.AsInternal() if the caller needs to read internal state back.
+// Build constructs the agent with the configured overrides.
 func (b *AgentBuilder) Build() ports.Chatter {
 	b.t.Helper()
 
@@ -94,41 +119,33 @@ func (b *AgentBuilder) Build() ports.Chatter {
 		bus = events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	}
 
-	reg := agenttest.NewMockToolRegistry()
-	gw := &agenttest.MockGateway{}
-	sm := &stubSecurityManager{allowAll: true}
-
-	chatter, err := agent.NewAgent(gw, bus, reg,
-		agent.WithSecurityManager(sm),
-	)
+	chatter, err := b.ctor(b.client, bus, b.registry, b.opts...)
 	if err != nil {
-		b.t.Fatalf("AgentBuilder.Build: NewAgent failed: %v", err)
+		b.t.Fatalf("AgentBuilder.Build: constructor failed: %v", err)
 	}
 
-	// Inject overrides via the export_test.go setters (avoiding InternalAccessor).
 	if b.ctxManager != nil {
-		agent.SetCtxManagerForTest(chatter, b.ctxManager)
+		b.setts.SetCtxManager(chatter, b.ctxManager)
 	}
 	if b.configWatcher != nil {
-		agent.SetConfigWatcherForTest(chatter, b.configWatcher)
+		b.setts.SetConfigWatcher(chatter, b.configWatcher)
 	}
 	if b.tracker != nil {
-		agent.SetTrackerForTest(chatter, b.tracker)
+		b.setts.SetTracker(chatter, b.tracker)
 	}
 	if b.logger != nil {
-		agent.SetLoggerForTest(chatter, b.logger)
+		b.setts.SetLogger(chatter, b.logger)
 	}
 	if b.runtimeCfg != nil {
-		agent.SetRuntimeConfigForTest(chatter, b.runtimeCfg)
+		b.setts.SetRuntimeConfig(chatter, b.runtimeCfg)
 	}
 
 	return chatter
 }
 
 // stubSecurityManager is a minimal security.Manager that allows
-// everything. It is used by AgentBuilder to satisfy NewAgent's
-// mandatory WithSecurityManager requirement without forcing callers
-// to configure mock expectations.
+// everything. It is exported so that callers can wrap it into an
+// agent.WithSecurityManager option.
 type stubSecurityManager struct {
 	domain_security.Manager
 	allowAll bool
@@ -156,5 +173,4 @@ func (s *stubSecurityManager) IsCommandAllowed(command string) bool {
 }
 func (s *stubSecurityManager) IsBypassActive() bool { return false }
 
-// Compile-time interface check.
 var _ domain_security.Manager = (*stubSecurityManager)(nil)
