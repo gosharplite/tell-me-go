@@ -52,6 +52,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Prepare should trigger the contentCleaner transformer
+	// TODO(#86): Replace GetCtxManager().Prepare() — needs ContextManager construction
 	preparedHistory, _, err := agentinternal.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
@@ -92,6 +93,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
+	// TODO(#86): Replace GetCtxManager().Prepare() — needs ContextManager construction
 	preparedHistory, _, err := agentinternal.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
