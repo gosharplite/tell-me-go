@@ -18,24 +18,26 @@ type chatFactory interface {
 }
 
 type defaultChatFactory struct {
-	HomeDir      string
-	Version      string
-	Stdout       io.Writer
-	Stderr       io.Writer
-	SM           ConfigurableSecurityManager
-	FileSystem   infra_persistence.FileSystem
-	Bootstrapper *Bootstrapper
+	HomeDir          string
+	Version          string
+	Stdout           io.Writer
+	Stderr           io.Writer
+	SM               ConfigurableSecurityManager
+	FileSystem       infra_persistence.FileSystem
+	LifecycleManager agent.SessionLifecycleManager
+	UIFact           uiFactory
 }
 
-func newChatFactory(homeDir, version string, stdout, stderr io.Writer, sm ConfigurableSecurityManager, fs infra_persistence.FileSystem, b *Bootstrapper) chatFactory {
+func newChatFactory(homeDir, version string, stdout, stderr io.Writer, sm ConfigurableSecurityManager, fs infra_persistence.FileSystem, lifecycleManager agent.SessionLifecycleManager, uiFact uiFactory) chatFactory {
 	return &defaultChatFactory{
-		HomeDir:      homeDir,
-		Version:      version,
-		Stdout:       stdout,
-		Stderr:       stderr,
-		SM:           sm,
-		FileSystem:   fs,
-		Bootstrapper: b,
+		HomeDir:          homeDir,
+		Version:          version,
+		Stdout:           stdout,
+		Stderr:           stderr,
+		SM:               sm,
+		FileSystem:       fs,
+		LifecycleManager: lifecycleManager,
+		UIFact:           uiFact,
 	}
 }
 
@@ -50,11 +52,11 @@ func (f *defaultChatFactory) ChatService() agent.ChatService {
 		f.Stdout,
 		f.Stderr,
 		f.SM,
-		f.Bootstrapper,
-		f.Bootstrapper.GetAgentFactory(),
-		f.Bootstrapper.GetUIRenderer(),
-		f.Bootstrapper.GetHistoryRenderer(),
-		f.Bootstrapper.GetHistoryBrowser(),
+		f.LifecycleManager,
+		f.AgentFactory(),
+		f.UIFact.UIRenderer(),
+		f.UIFact.HistoryRenderer(),
+		f.UIFact.HistoryBrowser(),
 		infra_persistence.NewDomainFS(f.FileSystem),
 	)
 }

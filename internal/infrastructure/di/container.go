@@ -105,7 +105,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 	b.telemetryFactory = newTelemetryFactory(homeDir, fs, sm, logger)
 	b.historyFactory = newHistoryFactory(homeDir, fs)
 	b.uiFactory = newUIFactory(sm, stdout, stderr, logger)
-	b.chatFactory = newChatFactory(homeDir, version, stdout, stderr, sm, fs, b)
+	b.chatFactory = newChatFactory(homeDir, version, stdout, stderr, sm, fs, b, b.uiFactory)
 	b.suggestionFactory = newSuggestionFactory(homeDir, fs, stderr, logger)
 	return b
 }
