@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -58,7 +59,7 @@ func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -183,7 +184,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 			}
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-			events.CleanupBus(t, bus)
+			eventstest.CleanupBus(t, bus)
 
 			exec := &limitMockExecutor{}
 			// ExecutionStep.Process calls Execute, then validatePayloadLimits.

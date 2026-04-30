@@ -71,7 +71,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(hManager),
 		agent.WithProviderName("test-provider"),
@@ -200,7 +200,7 @@ func TestContextManager_Race(t *testing.T) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(nil))
 	factory := &session.PipelineFactory{
 		Estimator: strategy,
@@ -271,7 +271,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	// Setup
 	reg := registry.New()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	// Create a single engine instance
 	gw := &agenttest.MockLLMClient{}

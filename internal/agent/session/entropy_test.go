@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -29,7 +30,7 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, mEventBus)
+	eventstest.CleanupBus(t, mEventBus)
 
 	mClock := new(agenttest.TestifyMockClock)
 	mEntropy := new(agenttest.MockEntropySource)

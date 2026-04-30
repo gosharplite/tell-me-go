@@ -152,7 +152,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 	t.Helper()
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
@@ -163,7 +163,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 func setupInternalTools(t *testing.T, client *gemini.Client, h ports.HistoryManager) *session.InternalTools {
 	t.Helper()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	reg := registry.New()
 	gw := llm.NewResilientClient(client)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))

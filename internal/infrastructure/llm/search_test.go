@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
 )
@@ -83,7 +84,7 @@ func TestSearchToolSelection(t *testing.T) {
 			t.Setenv("TELL_ME_MOCK_URL", server.URL)
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-			events.CleanupBus(t, bus)
+			eventstest.CleanupBus(t, bus)
 			client, err := gemini.NewClient(tt.apiURL, "model", &auth.VertexAuth{Token: "test"}, gemini.WithSearch(true), gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)

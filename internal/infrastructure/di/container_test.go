@@ -17,6 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -408,7 +409,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 
 	// Execute the factory
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	client := new(mockLLMClient)
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
@@ -526,7 +527,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	reg := registry.New()
 	sm := new(mockConfigurableSecurityManager)
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
 	sessionProvider := new(mockSessionProvider)

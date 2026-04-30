@@ -17,6 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
@@ -159,7 +160,7 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	pData := pricing.PricingData{}
 
@@ -226,7 +227,7 @@ func runFactorySendChatAndCapture(
 ) {
 	t.Helper()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	c, err := NewClient(cfg, pData, bus, nil)
 	if err != nil {
@@ -447,7 +448,7 @@ func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
 		},
 	}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	events.CleanupBus(t, bus)
+	eventstest.CleanupBus(t, bus)
 
 	_, err := NewClient(cfg, pricing.PricingData{}, bus, logger)
 	if err != nil {
