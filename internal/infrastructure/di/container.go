@@ -11,9 +11,7 @@ import (
 	"log/slog"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -24,15 +22,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	infra_toolchain "github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
-	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/ui"
-	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
 // ConfigurableSecurityManager extends the domain security manager with configuration methods.
@@ -50,6 +44,10 @@ type Bootstrapper struct {
 	sessionFactory   sessionFactory
 	toolchainFactory toolchainFactory
 	telemetryFactory telemetryFactory
+	historyFactory   historyFactory
+	uiFactory        uiFactory
+	chatFactory      chatFactory
+	suggestionFactory suggestionFactory
 	HomeDir          string
 	SM               ConfigurableSecurityManager
 	Version          string
@@ -105,6 +103,10 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 			return b.RegisterMetrics(r, sm, logFile, traceFile, model, mode, pricingOverrides, kvStore)
 		})
 	b.telemetryFactory = newTelemetryFactory(homeDir, fs, sm, logger)
+	b.historyFactory = newHistoryFactory(homeDir, fs)
+	b.uiFactory = newUIFactory(sm, stdout, stderr, logger)
+	b.chatFactory = newChatFactory(homeDir, version, stdout, stderr, sm, fs, b)
+	b.suggestionFactory = newSuggestionFactory(homeDir, fs, stderr, logger)
 	return b
 }
 
@@ -127,7 +129,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	hManager, err := b.buildHistoryManager(ctx, paths)
+	hManager, err := b.historyFactory.BuildHistoryManager(ctx, cfg)
 	if err != nil {
 		_ = cleanup(ctx)
 		return nil, nil, nil, err
@@ -182,16 +184,6 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	deps.regFactory = regFactory
 
 	return deps, hManager, cleanup, nil
-}
-
-func (b *Bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistence.Paths) (*history.Manager, error) {
-	hManager := history.NewManager(infra_persistence.NewDomainFS(b.FileSystem), paths.HistoryPath, paths.HistoryArchivePath)
-	if err := hManager.Load(ctx); err != nil {
-		if !errors.Is(err, ports.ErrHistoryNotFound) {
-			return nil, fmt.Errorf("%w: failed to load history from %s: %w", errInfraInit, paths.HistoryPath, err)
-		}
-	}
-	return hManager, nil
 }
 
 type sessionDeps struct {
@@ -303,7 +295,7 @@ func (d *sessionDeps) GetClient() llm.LLMClient {
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *Bootstrapper) GetAgentFactory() ports.ChatterFactory {
-	return factory.NewChatter
+	return b.chatFactory.AgentFactory()
 }
 
 // FinalizeSession saves history and records session cost.
@@ -340,104 +332,35 @@ func (b *Bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 }
 
 func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
-	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
-	if err := infra_persistence.EnsureDirectories(ctx, b.FileSystem, paths); err != nil {
-		return nil, fmt.Errorf("%w: failed to ensure session directories for %s: %w", errInfraInit, cfg.Mode, err)
-	}
-
-	hManager, err := b.buildHistoryManager(ctx, paths)
-	if err != nil {
-		return nil, err // buildHistoryManager already wraps it
-	}
-
-	return hManager, nil
+	return b.historyFactory.BuildHistoryManager(ctx, cfg)
 }
 
 // GetUnifiedHistoryProvider assembles the read-model for the history browser.
 func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
-	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
-	if err := infra_persistence.EnsureDirectories(ctx, b.FileSystem, paths); err != nil {
-		return nil, fmt.Errorf("%w: failed to ensure session directories for unified history: %w", errInfraInit, err)
-	}
-
-	archiveReader := history.NewJSONLArchiveReader(infra_persistence.NewDomainFS(b.FileSystem), paths.HistoryArchivePath)
-
-	return history.NewUnifiedProvider(archiveReader, hManager), nil
+	return b.historyFactory.BuildUnifiedHistoryProvider(ctx, cfg, hManager)
 }
 
 // GetSuggestionService initializes and returns the suggestion service.
 func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
-	tracker, err := history.NewGlobalPromptTracker(infra_persistence.NewDomainFS(b.FileSystem), b.HomeDir)
-	if err != nil {
-		b.Logger.Warn("failed to initialize global prompt tracker, falling back to no-op", "error", err)
-		tracker = history.NewNoOpTracker()
-	}
-
-	return suggestions.NewMultiSourceSuggestionService(ctx, infra_persistence.NewDomainFS(b.FileSystem), tracker, recentHistory, b.Stderr)
-}
-
-// getSystemMetricsProvider returns the system metrics provider based on the platform.
-func (b *Bootstrapper) getSystemMetricsProvider() ports.SystemMetricsProvider {
-	return telemetry.NewSystemMetricsProvider()
-}
-
-// GetUIRenderer returns a UI renderer configured with the bootstrapper's output writers.
-func (b *Bootstrapper) GetUIRenderer() ports.UIRenderer {
-	return ui.NewRenderer(b.SM, b.Stdout, b.Stderr, clock.RealClock{}, b.getSystemMetricsProvider())
-}
-
-// GetHistoryRenderer returns a history renderer.
-func (b *Bootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
-	return &ui.StdHistoryRenderer{}
-}
-
-// tuiHistoryBrowser implements ports.HistoryBrowser using the TUI.
-type tuiHistoryBrowser struct {
-	stdout io.Writer
-	stderr io.Writer
-	logger *slog.Logger
-}
-
-// Browse launches the TUI history browser.
-func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
-	if closer, err := tui.InitLogger(); err == nil {
-		defer func() {
-			if closeErr := closer.Close(); closeErr != nil {
-				b.logger.Warn("failed to close tui logger", "error", closeErr)
-			}
-		}()
-	}
-
-	model := tui.NewRootBrowserModel(ctx, provider, hManager)
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("tui program error: %w", err)
-	}
-	return nil
+	return b.suggestionFactory.BuildSuggestionService(ctx, recentHistory)
 }
 
 // GetHistoryBrowser returns a history browser that launches the TUI.
 func (b *Bootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
-	return &tuiHistoryBrowser{
-		stdout: b.Stdout,
-		stderr: b.Stderr,
-		logger: b.Logger,
-	}
+	return b.uiFactory.HistoryBrowser()
+}
+
+// GetUIRenderer returns a UI renderer configured with the bootstrapper's output writers.
+func (b *Bootstrapper) GetUIRenderer() ports.UIRenderer {
+	return b.uiFactory.UIRenderer()
+}
+
+// GetHistoryRenderer returns a history renderer.
+func (b *Bootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
+	return b.uiFactory.HistoryRenderer()
 }
 
 // GetChatService returns a chat service instance.
 func (b *Bootstrapper) GetChatService() agent.ChatService {
-	return agent.NewChatService(
-		b.HomeDir,
-		b.Version,
-		b.Stdout,
-		b.Stderr,
-		b.SM,
-		b,
-		b.GetAgentFactory(),
-		b.GetUIRenderer(),
-		b.GetHistoryRenderer(),
-		b.GetHistoryBrowser(),
-		infra_persistence.NewDomainFS(b.FileSystem),
-	)
+	return b.chatFactory.ChatService()
 }
