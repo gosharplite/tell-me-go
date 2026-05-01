@@ -140,7 +140,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	t.Parallel()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
-	cache := newASTCache()
+	cache := newASTCache(".")
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
 	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem())
@@ -173,7 +173,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	t.Parallel()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
-	cache := newASTCache()
+	cache := newASTCache(".")
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
 	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem())

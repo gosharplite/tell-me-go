@@ -223,7 +223,7 @@ func TestASTCache(t *testing.T) {
 }
 
 func testASTCacheGet(t *testing.T, path string) {
-	cache := newASTCache()
+	cache := newASTCache(".")
 	f, _, err := cache.Get(path)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
@@ -234,7 +234,7 @@ func testASTCacheGet(t *testing.T, path string) {
 }
 
 func testASTCacheHit(t *testing.T, path string) {
-	cache := newASTCache()
+	cache := newASTCache(".")
 	f1, fset1, err := cache.Get(path)
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +249,7 @@ func testASTCacheHit(t *testing.T, path string) {
 }
 
 func testASTCacheInvalidation(t *testing.T, path string) {
-	cache := newASTCache()
+	cache := newASTCache(".")
 
 	// Set initial time
 	t1 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -281,7 +281,7 @@ func testASTCacheInvalidation(t *testing.T, path string) {
 }
 
 func testASTCacheNonExistent(t *testing.T) {
-	cache := newASTCache()
+	cache := newASTCache(".")
 	_, _, err := cache.Get("non_existent.go")
 	if err == nil {
 		t.Error("expected error for non-existent file")
@@ -289,7 +289,7 @@ func testASTCacheNonExistent(t *testing.T) {
 }
 
 func testASTCacheSyntaxError(t *testing.T, tmpDir string) {
-	cache := newASTCache()
+	cache := newASTCache(".")
 	invalidPath := filepath.Join(tmpDir, "invalid.go")
 	if err := os.WriteFile(invalidPath, []byte("package"), 0644); err != nil {
 		t.Fatal(err)
@@ -301,7 +301,7 @@ func testASTCacheSyntaxError(t *testing.T, tmpDir string) {
 }
 
 func testASTCacheEviction(t *testing.T, tmpDir string) {
-	cache := newASTCache()
+	cache := newASTCache(".")
 	cache.maxSize = 2
 
 	files := []string{
@@ -358,7 +358,7 @@ func unexportedFunc() {}
 		t.Fatal(err)
 	}
 
-	cache := newASTCache()
+	cache := newASTCache(".")
 	skeleton, err := cache.GetFileSkeletonGo(path)
 	if err != nil {
 		t.Fatalf("GetFileSkeletonGo failed: %v", err)
@@ -391,7 +391,7 @@ func TestGetCachedLineCount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cache := newASTCache()
+	cache := newASTCache(".")
 
 	// 1. Set specific time
 	t1 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -442,7 +442,7 @@ func TestASTCache_DeterministicEviction(t *testing.T) {
 
 	// Repeat 100 times to ensure determinism
 	for i := 0; i < 100; i++ {
-		cache := newASTCache()
+		cache := newASTCache(".")
 		cache.maxSize = 2
 
 		f1 := filepath.Join(tmpDir, "f1.go")

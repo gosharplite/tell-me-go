@@ -26,7 +26,7 @@ func Complex(a, b bool) {
 		t.Fatal(err)
 	}
 
-	cache := newASTCache()
+	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
@@ -57,7 +57,7 @@ func C() {} // 1
 		t.Fatal(err)
 	}
 
-	cache := newASTCache()
+	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 

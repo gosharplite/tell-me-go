@@ -17,7 +17,7 @@ func TestChangeAnalyzer_SemanticDiff(t *testing.T) {
 	setupSemanticDiffFile(t, tmpDir, relPath)
 
 	mockExec := setupSemanticDiffMock(relPath)
-	cache := newASTCache()
+	cache := newASTCache(".")
 
 	oldDir := changeToTempDir(t, tmpDir)
 	defer restoreDir(t, oldDir)

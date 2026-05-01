@@ -21,7 +21,7 @@ func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	cache := newASTCache()
+	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 
 	m := newAnalysisManager(idx, cache, sp, nil, &mockHealthExecutor{}, persistencetest.NewPlainOSFileSystem())
