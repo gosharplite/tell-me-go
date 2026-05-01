@@ -69,13 +69,13 @@ else
 		$$ErrorActionPreference = 'Stop'; \
 		$$violations = @(); \
 		Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { \
-			$$_.FullName -match '\\internal\\.*\\testutil\\' -and \
-			$$_.FullName -notmatch '\\\\\.git\\\\' -and \
-			$$_.FullName -notmatch '\\\\vendor\\\\' \
+			($$_.FullName.Replace('\', '/')) -match 'internal/.*/testutil/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
 		} | ForEach-Object { $$violations += $$_.FullName }; \
 		Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { \
-			$$_.FullName -notmatch '\\\\vendor\\\\' -and \
-			$$_.FullName -notmatch '\\\\\.git\\\\' \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' \
 		} | ForEach-Object { \
 			$$matches = Select-String -Path $$_.FullName -Pattern 'internal/.*/testutil' -SimpleMatch:$$false; \
 			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}:{2}' -f $$m.Path, $$m.LineNumber, $$m.Line.Trim()) } } \
@@ -138,10 +138,10 @@ else
 		$$violations = @(); \
 		Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { \
 			$$_.Name -notlike '*_test.go' -and \
-			$$_.FullName -notmatch '\\\\internal\\\\domain\\\\events\\\\eventstest\\\\' -and \
-			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\agentinternal\\\\' -and \
-			$$_.FullName -notmatch '\\\\\.git\\\\' -and \
-			$$_.FullName -notmatch '\\\\vendor\\\\' \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/domain/events/eventstest/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/agent/agentinternal/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
 		} | ForEach-Object { \
 			$$matches = Select-String -Path $$_.FullName -Pattern '^\s*\"testing\"'; \
 			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
@@ -198,11 +198,11 @@ else
 		$$violations = @(); \
 		Get-ChildItem -Path . -Recurse -Filter '*.go' | Where-Object { \
 			$$_.Name -notlike '*_test.go' -and \
-			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\agent\.go$$' -and \
-			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\internal_bridge\.go$$' -and \
-			$$_.FullName -notmatch '\\\\internal\\\\agent\\\\agentinternal\\\\' -and \
-			$$_.FullName -notmatch '\\\\\.git\\\\' -and \
-			$$_.FullName -notmatch '\\\\vendor\\\\' \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/agent/agent\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/agent/internal_bridge\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/agent/agentinternal/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
 		} | ForEach-Object { \
 			$$matches = Select-String -Path $$_.FullName -Pattern 'ForInternalUse' -SimpleMatch:$$true; \
 			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
