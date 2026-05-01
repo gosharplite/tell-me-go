@@ -352,8 +352,7 @@ func findTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
 // GetFileSkeletonGo extracts exported types and function signatures from a Go file.
 // filePath must be relative to the cache's baseDir.
 func (c *astCache) GetFileSkeletonGo(filePath string) (string, error) {
-	abs := c.absPath(filePath)
-	f, fset, err := c.Get(abs)
+	f, fset, err := c.Get(filePath) // Get is the single resolution point per ADR-022
 	if err != nil {
 		return "", err
 	}
