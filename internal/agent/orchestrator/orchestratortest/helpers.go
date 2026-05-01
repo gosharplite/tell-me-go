@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -24,7 +25,7 @@ type TestTurnEnv struct {
 	Gw       *agenttest.MockGateway
 	Reg      *agenttest.MockToolRegistry
 	Bus      *events.SimpleEventBus
-	Cm       *session.ContextManager
+	Cm       *sessctx.Manager
 	HManager ports.HistoryManager
 }
 
@@ -38,7 +39,7 @@ func SetupTurnEngineTest(t interface {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	cm := NewTestContextManager(strategy, hManager, bus)
 	gw := &agenttest.MockGateway{}
@@ -55,9 +56,9 @@ func SetupTurnEngineTest(t interface {
 	}
 }
 
-func NewTestContextManager(s *session.ContextStrategy, h ports.HistoryManager, bus events.EventBus) *session.ContextManager {
-	cm := session.NewContextManager(s, h, bus, nil)
-	cm.Pipeline = session.NewContextPipeline()
+func NewTestContextManager(s *sessctx.Strategy, h ports.HistoryManager, bus events.EventBus) *sessctx.Manager {
+	cm := sessctx.NewManager(s, h, bus, nil)
+	cm.Pipeline = sessctx.NewContextPipeline()
 	return cm
 }
 
@@ -99,9 +100,9 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
-		CtxManager: &session.ContextManager{
+		CtxManager: &sessctx.Manager{
 			History:  &agenttest.MockHistoryManager{},
-			Strategy: session.NewContextStrategy(session.NewHeuristicTokenCounter(reg)),
+			Strategy: sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg)),
 		},
 		Gateway: mockGw,
 		Executor: &agenttest.MockAgentExecutor{
@@ -114,7 +115,7 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 		Clock:        &clock.RealClock{},
 	}
 	if phase == orchestrator.PhaseRefining || phase == orchestrator.PhaseGuard {
-		turn.CtxManager.Pipeline = session.NewContextPipeline()
+		turn.CtxManager.Pipeline = sessctx.NewContextPipeline()
 	}
 	return turn
 }
