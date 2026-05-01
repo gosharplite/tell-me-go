@@ -64,7 +64,7 @@ func NewManager(strategy *Strategy, history ports.HistoryManager, bus events.Eve
 		if factory.Summarizer != nil {
 			cm.Summarizer = factory.Summarizer
 		}
-		cm.Pipeline = factory.BuildStandardPipeline(cm.GetLimits())
+		cm.Pipeline = factory.BuildStandardPipeline(cm.GetLimits(), factory.Extras...)
 	}
 
 	return cm
@@ -87,7 +87,7 @@ func (cm *Manager) Reconfigure(limits events.Limits) {
 		cm.Strategy.SetContextWindow(limits.ContextWindow)
 	}
 	if cm.Factory != nil {
-		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
+		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits, cm.Factory.Extras...)
 	}
 }
 

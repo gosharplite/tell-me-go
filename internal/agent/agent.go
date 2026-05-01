@@ -134,6 +134,7 @@ func (a *agent) initComponents() error {
 		Summarizer: a.summarizer,
 		Estimator:  strategy,
 		Events:     a.events,
+		Extras:     []ports.ContextTransformer{session.NewSkillInjector(a.skillSelector)},
 	}
 
 	a.ctxManager = sessctx.NewManager(strategy, a.hManager, a.events, factory,

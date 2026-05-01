@@ -27,6 +27,7 @@ type Factory struct {
 	Events     events.EventBus
 	Profile    optimizationProfile
 	Logger     ports.Logger
+	Extras     []ports.ContextTransformer // Injected by session/ layer (e.g., skillInjector)
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
