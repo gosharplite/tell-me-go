@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"strings"
@@ -17,9 +17,9 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func TestContextStrategy_EstimateTokens(t *testing.T) {
+func TestStrategy_EstimateTokens(t *testing.T) {
 	registry := &agenttest.MockToolRegistry{}
-	cs := NewContextStrategy(NewHeuristicTokenCounter(registry))
+	cs := NewStrategy(NewHeuristicTokenCounter(registry))
 
 	t.Run("Base overhead", func(t *testing.T) {
 		registry.Declarations = nil
@@ -94,13 +94,13 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 	})
 }
 
-func setupWarningTest() *ContextStrategy {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+func setupWarningTest() *Strategy {
+	cs := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	cs.SetLimits(1000, 10, 100)
 	return cs
 }
 
-func TestContextStrategy_Warnings_WarningVerification(t *testing.T) {
+func TestStrategy_Warnings_WarningVerification(t *testing.T) {
 	cs := setupWarningTest()
 	warnings := cs.getWarnings(0, 0, 0, 0)
 	if len(warnings) != 0 {
@@ -108,7 +108,7 @@ func TestContextStrategy_Warnings_WarningVerification(t *testing.T) {
 	}
 }
 
-func TestContextStrategy_Warnings_TokenPressureValidation(t *testing.T) {
+func TestStrategy_Warnings_TokenPressureValidation(t *testing.T) {
 	cs := setupWarningTest()
 
 	tests := []struct {
@@ -141,7 +141,7 @@ func TestContextStrategy_Warnings_TokenPressureValidation(t *testing.T) {
 	}
 }
 
-func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
+func TestStrategy_Warnings_TurnCountLimits(t *testing.T) {
 	cs := setupWarningTest()
 
 	tests := []struct {
@@ -166,8 +166,8 @@ func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
 	}
 }
 
-func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+func TestStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
+	cs := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
@@ -178,7 +178,7 @@ func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
 	})
 }
 
-func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
+func TestStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	cs := setupWarningTest()
 
 	t.Run("History turn Warnings", func(t *testing.T) {
@@ -209,7 +209,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	})
 }
 
-func checkTurnWarnings(t *testing.T, cs *ContextStrategy) {
+func checkTurnWarnings(t *testing.T, cs *Strategy) {
 	t.Helper()
 	tests := []struct {
 		turns    int
@@ -256,7 +256,7 @@ func verifyWarningContains(t *testing.T, turns int, warnings []warning, expected
 	}
 }
 
-func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
+func TestStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 	tests := []struct {
 		name         string
 		maxTurns     int
@@ -332,7 +332,7 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 
-			cs := &ContextStrategy{
+			cs := &Strategy{
 				maxHistoryTurns: tt.maxTurns,
 			}
 
@@ -353,9 +353,9 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 	}
 }
 
-func TestContextStrategy_Count(t *testing.T) {
+func TestStrategy_Count(t *testing.T) {
 	mockCounter := &agenttest.MockTokenCounter{Tokens: 42}
-	cs := NewContextStrategy(mockCounter)
+	cs := NewStrategy(mockCounter)
 
 	contents := []*llm.Content{{Parts: []*llm.Part{{Text: "hello"}}}}
 	got := cs.Count(contents)

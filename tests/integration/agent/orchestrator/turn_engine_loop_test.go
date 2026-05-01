@@ -11,7 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -27,18 +27,18 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
-	counter := &session.HeuristicTokenCounter{}
-	strategy := session.NewContextStrategy(counter)
+	counter := &sessctx.HeuristicTokenCounter{}
+	strategy := sessctx.NewStrategy(counter)
 	gw := &limitMockLLMGateway{}
 	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &session.PipelineFactory{
+	factory := &sessctx.Factory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := session.NewContextManager(strategy, h, bus, factory)
+	cm := sessctx.NewManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
@@ -89,18 +89,18 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
-	counter := &session.HeuristicTokenCounter{}
-	strategy := session.NewContextStrategy(counter)
+	counter := &sessctx.HeuristicTokenCounter{}
+	strategy := sessctx.NewStrategy(counter)
 	gw := &limitMockLLMGateway{}
 	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &session.PipelineFactory{
+	factory := &sessctx.Factory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := session.NewContextManager(strategy, h, bus, factory)
+	cm := sessctx.NewManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)

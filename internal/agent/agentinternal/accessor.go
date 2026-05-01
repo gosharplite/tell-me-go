@@ -28,6 +28,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -80,7 +81,7 @@ func (a *AgentInternal) Chatter() ports.Chatter {
 // ---------------------------------------------------------------------
 
 // GetCtxManager returns the agent's session.ContextManager.
-func (a *AgentInternal) GetCtxManager() *session.ContextManager {
+func (a *AgentInternal) GetCtxManager() *sessctx.Manager {
 	return a.raw.GetCtxManagerForInternalUse()
 }
 
@@ -164,7 +165,7 @@ func (a *AgentInternal) SetConfigWatcherForTest(cw session.ConfigWatcher) {
 }
 
 // SetCtxManagerForTest replaces the agent's session.ContextManager.
-func (a *AgentInternal) SetCtxManagerForTest(cm *session.ContextManager) {
+func (a *AgentInternal) SetCtxManagerForTest(cm *sessctx.Manager) {
 	a.raw.SetCtxManagerForInternalUse(cm)
 }
 

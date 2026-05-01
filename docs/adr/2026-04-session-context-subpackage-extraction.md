@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 # ADR-026: Decompose `agent/session` Package via `context/` Sub-Package Extraction
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -461,7 +462,7 @@ func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
 	}
 }
 
-func verifyPinningResults(t *testing.T, meta *session.Metadata, prepared []*llm.Content) {
+func verifyPinningResults(t *testing.T, meta *sessctx.Metadata, prepared []*llm.Content) {
 	// Look for "u1" (the pinned turn)
 	foundPinned := false
 	for _, c := range prepared {

@@ -18,6 +18,14 @@ type skillInjector struct {
 	Selector skills.SkillSelector
 }
 
+// NewSkillInjector creates a ports.ContextTransformer that injects skills
+// into the context. It exists as a constructor so the session/ package can
+// inject skill selection into the session/context pipeline without the
+// context/ sub-package importing domain/skills.
+func NewSkillInjector(selector skills.SkillSelector) ports.ContextTransformer {
+	return &skillInjector{Selector: selector}
+}
+
 func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	if t.Selector == nil || len(req.History) == 0 {
 		return nil

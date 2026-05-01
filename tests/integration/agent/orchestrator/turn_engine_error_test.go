@@ -13,7 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -46,7 +46,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.ToolExecutor, tracker *errorPhaseTracker) (*orchestrator.Engine, *session.ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.ToolExecutor, tracker *errorPhaseTracker) (*orchestrator.Engine, *sessctx.Manager) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	reg := &agenttest.MockToolRegistry{}
@@ -54,13 +54,13 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.Too
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
 	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
-	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
-	factory := &session.PipelineFactory{
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+	factory := &sessctx.Factory{
 		History:   hManager,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := session.NewContextManager(strategy, hManager, bus, factory)
+	cm := sessctx.NewManager(strategy, hManager, bus, factory)
 
 	policy := &orchestrator.DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
@@ -322,7 +322,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	step := &orchestrator.InferenceStep{}
 
 	hm := &agenttest.MockHistoryManager{}
-	cm := &session.ContextManager{
+	cm := &sessctx.Manager{
 		History: hm,
 	}
 	reg := &agenttest.MockToolRegistry{}
@@ -363,7 +363,7 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 	step := &orchestrator.PersistenceStep{}
 
 	Turn := &orchestrator.Turn{
-		CtxManager: &session.ContextManager{
+		CtxManager: &sessctx.Manager{
 			History: hm,
 		},
 		State: &orchestrator.TurnState{
@@ -398,7 +398,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	step := &orchestrator.PersistenceStep{}
 
 	Turn := &orchestrator.Turn{
-		CtxManager: &session.ContextManager{
+		CtxManager: &sessctx.Manager{
 			History: hm,
 		},
 		State: &orchestrator.TurnState{

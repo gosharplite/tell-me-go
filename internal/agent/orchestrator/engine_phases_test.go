@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -36,7 +36,7 @@ func TestGuardStep_Process(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxToolTurns: 3})
 
 		turn := &Turn{
@@ -63,7 +63,7 @@ func TestGuardStep_Process(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, nil, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, nil, nil)
 		cm.Reconfigure(events.Limits{MaxToolTurns: 10})
 
 		turn := &Turn{
@@ -91,7 +91,7 @@ func TestGuardStep_Process(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxToolTurns: 10})
 
 		turn := &Turn{
@@ -120,7 +120,7 @@ func TestContextRefiner_Process(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, nil, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, nil, nil)
 
 		turn := &Turn{
 			Index:        0,
@@ -144,7 +144,7 @@ func TestContextRefiner_Process(t *testing.T) {
 		hMock.GetWindowErr = llm.ErrTerminal
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, nil, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, nil, nil)
 
 		turn := &Turn{
 			Index:        0,
@@ -172,7 +172,7 @@ func TestContextRefiner_Process(t *testing.T) {
 		hMock.GetWindowErr = llm.ErrTransient
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, nil, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, nil, nil)
 
 		turn := &Turn{
 			Index:        0,
@@ -205,7 +205,7 @@ func TestPersistenceStep_Process(t *testing.T) {
 			return llm.ErrTerminal
 		}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 		turn := &Turn{
 			CtxManager: cm,
@@ -235,7 +235,7 @@ func TestPersistenceStep_Process(t *testing.T) {
 			return errors.New("db down")
 		}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 		turn := &Turn{
 			CtxManager: cm,
@@ -266,7 +266,7 @@ func TestPersistenceStep_Process(t *testing.T) {
 			return llm.ErrTransient
 		}
 		counter := &agenttest.MockTokenCounter{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 		turn := &Turn{
 			CtxManager: cm,

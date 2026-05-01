@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -29,7 +30,7 @@ type ConfigWatcher interface {
 	SetLimits(tokens, toolTurns, historyTurns int)
 	GetLimits() (tokens, toolTurns, historyTurns int)
 	ApplyLimits(l events.Limits)
-	SyncToStrategy(cs *ContextStrategy)
+	SyncToStrategy(cs *sessctx.Strategy)
 }
 
 // fileConfigWatcher monitors configuration files for changes and caches values.
@@ -209,7 +210,7 @@ func (cw *FileConfigWatcher) ApplyLimits(l events.Limits) {
 }
 
 // SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
-func (cw *FileConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
+func (cw *FileConfigWatcher) SyncToStrategy(cs *sessctx.Strategy) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	if cs != nil {
@@ -281,7 +282,7 @@ func (cw *noOpConfigWatcher) ApplyLimits(l events.Limits) {
 }
 
 // SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
-func (cw *noOpConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
+func (cw *noOpConfigWatcher) SyncToStrategy(cs *sessctx.Strategy) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	if cs != nil {

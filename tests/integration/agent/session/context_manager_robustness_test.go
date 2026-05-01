@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -38,26 +38,26 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	strategy.SetLimits(1000, 5, 20) // turn 3/5 (remaining 2) -> Triggers warning
 
-	cm := session.NewContextManager(strategy, hManager, bus, nil)
+	cm := sessctx.NewManager(strategy, hManager, bus, nil)
 
 	// Manually set up pipeline for the test as we are bypassing Agent.New()
-	cm.Pipeline = session.NewContextPipeline(
-		&session.HistoryPruner{
-			Policy: &session.SlidingWindowPolicy{MaxTurns: 20},
+	cm.Pipeline = sessctx.NewContextPipeline(
+		&sessctx.HistoryPruner{
+			Policy: &sessctx.SlidingWindowPolicy{MaxTurns: 20},
 		},
-		&session.TokenGatekeeper{
+		&sessctx.TokenGatekeeper{
 			MaxTokens:  1000,
 			Estimator:  strategy,
 			Summarizer: cm.Summarizer,
 			Events:     cm.Events,
 		},
-		&session.WarningInjector{
+		&sessctx.WarningInjector{
 			Strategy: strategy,
 		},
-		&session.TransientMerger{},
+		&sessctx.TransientMerger{},
 	)
 
 	// Prepare at turn 3 (approaching limit)
@@ -138,14 +138,14 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	}
 
 	bus := newCountingEventBus()
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 
-	cm := session.NewContextManager(strategy, hManager, bus, nil)
+	cm := sessctx.NewManager(strategy, hManager, bus, nil)
 
 	// Configure pipeline with a pruner that will prune history
-	cm.Pipeline = session.NewContextPipeline(
-		&session.HistoryPruner{
-			Policy: &session.SlidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
+	cm.Pipeline = sessctx.NewContextPipeline(
+		&sessctx.HistoryPruner{
+			Policy: &sessctx.SlidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
 			Events: bus,
 		},
 	)
@@ -195,8 +195,8 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	ctx := context.Background()
 
 	counter := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(counter)
-	cm := session.NewContextManager(strategy, hManager, nil, nil)
+	strategy := sessctx.NewStrategy(counter)
+	cm := sessctx.NewManager(strategy, hManager, nil, nil)
 
 	// Add 4 messages (2 turns)
 	for i := 0; i < 2; i++ {
@@ -226,7 +226,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
-	cm2 := session.NewContextManager(strategy, hManager2, nil, nil)
+	cm2 := sessctx.NewManager(strategy, hManager2, nil, nil)
 	cm2.Summarizer = &agenttest.MockSummarizer{}
 
 	counter.SetTokens(int(float64(window) * 0.91))
@@ -251,15 +251,15 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 
 	counter := &agenttest.MockTokenCounter{}
 	counter.SetTokens(100)
-	strategy := session.NewContextStrategy(counter)
+	strategy := sessctx.NewStrategy(counter)
 	strategy.SetLimits(1000, 10, 20)
 
-	cm := session.NewContextManager(strategy, hManager, nil, nil)
+	cm := sessctx.NewManager(strategy, hManager, nil, nil)
 
 	// Pipeline with warningInjector (Transient)
-	cm.Pipeline = session.NewContextPipeline(
-		&session.WarningInjector{Strategy: strategy},
-		&session.TransientMerger{},
+	cm.Pipeline = sessctx.NewContextPipeline(
+		&sessctx.WarningInjector{Strategy: strategy},
+		&sessctx.TransientMerger{},
 	)
 
 	// Prepare at turn 8 (2 remaining -> triggers warning "Only 2 turns remain")
@@ -306,8 +306,8 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(100)
-	strategy := session.NewContextStrategy(tc)
-	cm := session.NewContextManager(strategy, hManager, nil, nil)
+	strategy := sessctx.NewStrategy(tc)
+	cm := sessctx.NewManager(strategy, hManager, nil, nil)
 
 	// Case 1: Safe Concurrent Append
 	// We summarize first 2 turns. While summarization is happening, we append turn 5.
@@ -383,7 +383,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	}
 }
 
-func setupSummarizationTest(t *testing.T) (*session.ContextManager, *[]*domain_llm.Content) {
+func setupSummarizationTest(t *testing.T) (*sessctx.Manager, *[]*domain_llm.Content) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
 	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
@@ -395,7 +395,7 @@ func setupSummarizationTest(t *testing.T) (*session.ContextManager, *[]*domain_l
 	})
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	cm := session.NewContextManager(session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{})), hManager, bus, nil)
+	cm := sessctx.NewManager(sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{})), hManager, bus, nil)
 	cm.Summarizer = llm.NewSummarizer(g, bus)
 	return cm, capturedInput
 }
@@ -418,7 +418,7 @@ func createTestSubset() []*domain_llm.Content {
 	}
 }
 
-func verifyExecuteSummarize(t *testing.T, cm *session.ContextManager, subset []*domain_llm.Content, capturedInput *[]*domain_llm.Content) {
+func verifyExecuteSummarize(t *testing.T, cm *sessctx.Manager, subset []*domain_llm.Content, capturedInput *[]*domain_llm.Content) {
 	_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 	if len(*capturedInput) == 0 {
 		t.Fatal("Generate was not called")
@@ -496,8 +496,8 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
-	cm := session.NewContextManager(strategy, hManager, bus, nil)
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	cm := sessctx.NewManager(strategy, hManager, bus, nil)
 
 	// Custom transformer that blocks mid-execution
 	prepareStarted := make(chan struct{})
@@ -509,7 +509,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 		return nil
 	})
 
-	cm.Pipeline = session.NewContextPipeline(blockingTransformer)
+	cm.Pipeline = sessctx.NewContextPipeline(blockingTransformer)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -545,7 +545,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	t.Run("Prepare_Error", func(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(simulatedErr)
-		cm := session.NewContextManager(nil, hMock, nil, nil)
+		cm := sessctx.NewManager(nil, hMock, nil, nil)
 		_, _, err := cm.Prepare(ctx, 1)
 		if !errors.Is(err, simulatedErr) {
 			t.Errorf("expected error %v, got %v", simulatedErr, err)
@@ -558,7 +558,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "test"}}},
 		})
 		hMock.SetGetWindowErr(simulatedErr)
-		cm := session.NewContextManager(nil, hMock, nil, nil)
+		cm := sessctx.NewManager(nil, hMock, nil, nil)
 		err := cm.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "test"}}})
 		if !errors.Is(err, simulatedErr) {
 			t.Errorf("expected error %v, got %v", simulatedErr, err)
@@ -576,8 +576,8 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 		hMock.SetGetWindowErr(simulatedErr)
 		tc := &agenttest.MockTokenCounter{}
 		tc.SetTokens(10)
-		strategy := session.NewContextStrategy(tc)
-		cm := session.NewContextManager(strategy, hMock, nil, nil)
+		strategy := sessctx.NewStrategy(tc)
+		cm := sessctx.NewManager(strategy, hMock, nil, nil)
 		cm.Summarizer = &agenttest.MockSummarizer{}
 
 		_, _, err := cm.SummarizeRange(ctx, 1, "")
@@ -596,8 +596,8 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 		})
 		tc := &agenttest.MockTokenCounter{}
 		tc.SetTokens(10)
-		strategy := session.NewContextStrategy(tc)
-		cm := session.NewContextManager(strategy, hMock, nil, nil)
+		strategy := sessctx.NewStrategy(tc)
+		cm := sessctx.NewManager(strategy, hMock, nil, nil)
 		ms := &agenttest.MockSummarizer{}
 		ms.SetSummarizeFn(func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
 			// Set error just before finalizing

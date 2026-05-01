@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"context"
@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
-	strategy := NewContextStrategy(&agenttest.MockTokenCounter{})
-	factory := &PipelineFactory{
+func TestFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
+	strategy := NewStrategy(&agenttest.MockTokenCounter{})
+	factory := &Factory{
 		Estimator: strategy,
 		Profile:   profilePrecise,
 	}
@@ -54,4 +54,46 @@ func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestFactory_BuildStandardPipeline_ExtraTransformerOrdering(t *testing.T) {
+	strategy := NewStrategy(&agenttest.MockTokenCounter{})
+	factory := &Factory{
+		Estimator: strategy,
+		Profile:   profilePrecise,
+	}
+
+	extra := &mockTransformer{name: "extra-skill"}
+	pipeline := factory.BuildStandardPipeline(events.Limits{MaxHistoryTurns: 10, MaxHistoryTokens: 1000}, extra)
+
+	// extra transformers must appear after HistoryRepairer (index 0)
+	// and before toolResponseCleaner
+	foundExtra := false
+	foundRepairer := false
+	for _, tr := range pipeline.transformers {
+		if _, ok := tr.(*HistoryRepairer); ok {
+			foundRepairer = true
+		}
+		if tr == extra {
+			foundExtra = true
+			assert.True(t, foundRepairer, "extra transformer must appear after HistoryRepairer")
+		}
+	}
+	assert.True(t, foundExtra, "extra transformer must be present in pipeline")
+}
+
+type mockTransformer struct {
+	name string
+}
+
+func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	return nil
+}
+
+func (m *mockTransformer) Name() string {
+	return m.name
+}
+
+func (m *mockTransformer) Priority() int {
+	return 0
 }

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 // WarningInjector adds safety warnings to the context.
 type WarningInjector struct {
-	Strategy *ContextStrategy
+	Strategy *Strategy
 }
 
 func (t *WarningInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {

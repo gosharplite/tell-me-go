@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -33,9 +33,9 @@ func TestSummarizeRange_Archival(t *testing.T) {
 
 	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(100)
-	strategy := session.NewContextStrategy(tc)
+	strategy := sessctx.NewStrategy(tc)
 
-	cm := session.NewContextManager(strategy, hManager, nil, nil)
+	cm := sessctx.NewManager(strategy, hManager, nil, nil)
 	ms := &agenttest.MockSummarizer{}
 	ms.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "Summary of history", &llm.Metrics{}, nil

@@ -17,7 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator/orchestratortest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -129,7 +129,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	}
 
 	reg := &agenttest.MockToolRegistry{}
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -210,7 +210,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 				},
 			}
 			reg := &agenttest.MockToolRegistry{}
-			strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+			strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 			hManager := &agenttest.MockHistoryManager{}
 			tt.setup(mockGw, hManager)
 
@@ -267,7 +267,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	}
 
 	reg := &agenttest.MockToolRegistry{}
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -294,7 +294,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -345,7 +345,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -375,7 +375,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 			return nil
 		},
 	}
-	cm.SetPipeline(session.NewContextPipeline(mt))
+	cm.SetPipeline(sessctx.NewContextPipeline(mt))
 
 	e := orchestrator.NewEngine(mockGw, nil, cm, reg, bus, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
@@ -421,14 +421,14 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineMiddleware(m1, m2))
 
 	// We only want to test one phase to see order
 	Turn := &orchestrator.Turn{
 		State: &orchestrator.TurnState{
 			Phase: orchestrator.PhaseInference,
-			Metadata: &session.Metadata{
+			Metadata: &sessctx.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
@@ -474,7 +474,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, bus), reg, bus, strategy, orchestrator.WithEngineClock(mockClock))
 
 	err := e.Run(context.Background(), fixedTime)
@@ -552,7 +552,7 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &agenttest.MockGateway{}
 	reg := &agenttest.MockToolRegistry{}
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -583,7 +583,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	t.Parallel()
 	mockGw := &agenttest.MockGateway{}
 	reg := &agenttest.MockToolRegistry{}
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -624,13 +624,13 @@ func TestTurnEngine_WithEngineProcessor(t *testing.T) {
 	customRefinerCalled := false
 	customRefiner := orchestrator.TurnProcessorFunc(func(ctx context.Context, Turn *orchestrator.Turn) (orchestrator.ProcessResult, error) {
 		customRefinerCalled = true
-		Turn.State.Metadata = &session.Metadata{
+		Turn.State.Metadata = &sessctx.Metadata{
 			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "custom"}}}},
 		}
 		return orchestrator.ProcessResult{NextPhase: orchestrator.PhaseInference}, nil
 	})
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineProcessor(orchestrator.PhaseRefining, customRefiner))
 
 	err := e.Run(context.Background(), time.Now())
@@ -655,7 +655,7 @@ func TestTurnEngine_Hooks(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	hook := &orchestratortest.MockHook{}
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineHook(hook))
 
 	err := e.Run(context.Background(), time.Now())
@@ -687,7 +687,7 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	policy := &orchestratortest.MockRetryPolicy{Retry: false} // Don't actually retry to keep test fast
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineRetryPolicy(policy))
 
 	_ = e.Run(context.Background(), time.Now())
@@ -713,7 +713,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	})
 
 	// Override PhaseInference with a processor that returns Stop: true
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, nil), reg, nil, strategy, orchestrator.WithEngineProcessor(orchestrator.PhaseInference, stopProcessor))
 
 	err := e.Run(context.Background(), time.Now())
@@ -801,7 +801,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 	t.Parallel()
 	mockGw := &agenttest.MockGateway{}
 	reg := &agenttest.MockToolRegistry{}
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -1018,7 +1018,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 
 	persistedContents := []*llm.Content{}
@@ -1075,7 +1075,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	// Seed history
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	cm := orchestratortest.NewTestContextManager(strategy, hManager, bus)
 	gw := &agenttest.MockGateway{}
 
@@ -1370,7 +1370,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	}
 
 	reg := &agenttest.MockToolRegistry{}
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 

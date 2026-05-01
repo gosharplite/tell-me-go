@@ -5,6 +5,7 @@ package agent
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -49,7 +50,7 @@ func (a *agent) GetTracker() domain_pricing.CostTracker {
 // Typed read-only accessors (consumed by agentinternal wrappers).
 // ---------------------------------------------------------------------
 
-func (a *agent) GetCtxManagerForInternalUse() *session.ContextManager {
+func (a *agent) GetCtxManagerForInternalUse() *sessctx.Manager {
 	return a.ctxManager
 }
 
@@ -96,7 +97,7 @@ func (a *agent) SetConfigWatcherForInternalUse(cw session.ConfigWatcher) {
 	a.configWatcher = cw
 }
 
-func (a *agent) SetCtxManagerForInternalUse(cm *session.ContextManager) {
+func (a *agent) SetCtxManagerForInternalUse(cm *sessctx.Manager) {
 	a.ctxManager = cm
 }
 
