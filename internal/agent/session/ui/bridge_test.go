@@ -388,14 +388,14 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	var wg sync.WaitGroup
+	var WG sync.WaitGroup
 	const iterations = 1000
 	start := make(chan struct{})
 
 	// Fire InferenceStartedEvent and ResponseEvent simultaneously
-	wg.Add(2)
+	WG.Add(2)
 	go func() {
-		defer wg.Done()
+		defer WG.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
@@ -403,7 +403,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	go func() {
-		defer wg.Done()
+		defer WG.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.ResponseEvent{
@@ -413,9 +413,9 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	// Fire other events to simulate real event bus behavior and increase noise
-	wg.Add(2)
+	WG.Add(2)
 	go func() {
-		defer wg.Done()
+		defer WG.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.TurnStarted{})
@@ -424,7 +424,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	go func() {
-		defer wg.Done()
+		defer WG.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.UsageMetricsEvent{
@@ -441,7 +441,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	close(start)
-	wg.Wait()
+	WG.Wait()
 	// No explicit sync needed here, Cleanup will wait for the loop to finish
 }
 
@@ -686,11 +686,11 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 		atomic.AddInt32(&activeSpinners, -1)
 	})
 
-	var wg sync.WaitGroup
+	var WG sync.WaitGroup
 	for i := 0; i < 50; i++ {
-		wg.Add(1)
+		WG.Add(1)
 		go func(idx int) {
-			defer wg.Done()
+			defer WG.Done()
 			if idx%2 == 0 {
 				_ = bridge.HandleEvent(context.Background(), events.SummarizationStartedEvent{})
 			} else {
@@ -698,7 +698,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 			}
 		}(i)
 	}
-	wg.Wait()
+	WG.Wait()
 
 	// Wait for all spinners to be stopped eventually
 	bridge.CloseInput()
@@ -750,8 +750,8 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 	bridgeCtx := bridge.getLoopContext() // Use the internal loop context for verification
 
 	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop
-	bridge.wg.Add(1)
-	defer bridge.wg.Done() // Ensure the hung WaitGroup is eventually released to prevent goroutine leaks in the test suite.
+	bridge.WG.Add(1)
+	defer bridge.WG.Done() // Ensure the hung WaitGroup is eventually released to prevent goroutine leaks in the test suite.
 
 	// Execute Cleanup. It should timeout after 10ms and return normally.
 	done := make(chan struct{})
@@ -778,7 +778,7 @@ func TestUIBridge_HandleEvent_ContextCancelled(t *testing.T) {
 	bridge := NewBridge(mRenderer)
 	// We don't start the bridge's background loop to specifically test load shedding logic
 	defer func() {
-		bridge.wg.Done()
+		bridge.WG.Done()
 		bridge.CloseInput()
 		bridge.Cleanup()
 	}()

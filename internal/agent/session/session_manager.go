@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -184,7 +185,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		// 2. Clean up Consumer (UI) second
 		if bridge != nil {
 			if !listenStarted {
-				bridge.wg.Done()
+				bridge.WG.Done()
 			}
 			bridge.CloseInput()
 			bridge.Cleanup()
@@ -259,7 +260,7 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 	})
 }
 
-func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*UIBridge, error) {
+func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*ui.Bridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	logger := sd.GetLogger()
@@ -278,17 +279,17 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 	return bridge, nil
 }
 
-func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *UIBridge {
+func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *ui.Bridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := NewUIBridge(o.UIRenderer,
-		WithBridgeThoughts(cfg.ShowThoughts),
-		WithBridgeTools(cfg.ShowTools),
-		WithBridgeRawOutput(rawOutput),
-		WithBridgeColor(useColor),
-		WithBridgeLogFile(logPath),
-		WithBridgeLogger(logger),
-		withBridgeClock(o.Clock),
+	bridge := ui.NewBridge(o.UIRenderer,
+		ui.WithBridgeThoughts(cfg.ShowThoughts),
+		ui.WithBridgeTools(cfg.ShowTools),
+		ui.WithBridgeRawOutput(rawOutput),
+		ui.WithBridgeColor(useColor),
+		ui.WithBridgeLogFile(logPath),
+		ui.WithBridgeLogger(logger),
+		ui.WithBridgeClock(o.Clock),
 	)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
 		if err := bridge.HandleEvent(ctx, e); err != nil {

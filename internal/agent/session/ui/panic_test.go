@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -196,7 +195,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	// 2. Wait for the event to be processed and b.stopSpinner to be set.
 	// Use SyncBridge to ensure the first event is fully processed.
-	session.SyncBridge(t, bridge, mRenderer)
+	ui.SyncBridge(t, bridge, mRenderer)
 
 	// 3. Trigger a primary panic.
 	// This will trigger the recovery block, which calls b.stopActiveSpinner().

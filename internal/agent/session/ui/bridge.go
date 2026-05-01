@@ -51,8 +51,8 @@ func WithBridgeLogger(l ports.Logger) bridgeOption {
 	return func(b *Bridge) { b.logger = l }
 }
 
-// withBridgeClock sets the clock for deterministic timestamps.
-func withBridgeClock(c clock.Clock) bridgeOption {
+// WithBridgeClock sets the clock for deterministic timestamps.
+func WithBridgeClock(c clock.Clock) bridgeOption {
 	return func(b *Bridge) { b.clock = c }
 }
 
@@ -81,7 +81,7 @@ type Bridge struct {
 	dispatcher         *eventDispatcher
 	cleanupOnce        sync.Once
 	cleanupInvocations int32
-	wg                 sync.WaitGroup
+	WG                 sync.WaitGroup
 	cleanupTimeout     time.Duration
 	started            chan struct{}
 	startOnce          sync.Once
@@ -112,7 +112,7 @@ func NewBridge(renderer ports.UIRenderer, opts ...bridgeOption) *Bridge {
 		b.renderer, b.logger, b.stateMachine, b.spinner,
 		b.showThoughts, b.showTools, b.rawOutput, b.logFile,
 	)
-	b.wg.Add(1)
+	b.WG.Add(1)
 	return b
 }
 func (b *Bridge) CloseInput() {
@@ -135,7 +135,7 @@ func (b *Bridge) Cleanup() {
 					close(done)
 				}
 			}()
-			b.wg.Wait()
+			b.WG.Wait()
 			close(done)
 		}()
 
@@ -172,7 +172,7 @@ func (b *Bridge) Listen(ctx context.Context) (err error) {
 	b.mu.Unlock()
 	defer cancel()
 
-	defer b.wg.Done()
+	defer b.WG.Done()
 	defer b.loopCancel()
 	defer func() {
 		if r := recover(); r != nil {

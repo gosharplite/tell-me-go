@@ -146,14 +146,14 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		bridge.Cleanup()
 	}()
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	var WG sync.WaitGroup
+	WG.Add(2)
 
 	consentActiveCh := make(chan struct{})
 	inferenceDoneCh := make(chan struct{})
 
 	go func() {
-		defer wg.Done()
+		defer WG.Done()
 		// 1. Simulation of consent cycle
 		_ = bridge.HandleEvent(testCtx, events.ConsentStartedEvent{})
 
@@ -178,7 +178,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	}()
 
 	go func() {
-		defer wg.Done()
+		defer WG.Done()
 		// 1. Wait for consent to become active
 		<-consentActiveCh
 
@@ -197,7 +197,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		close(inferenceDoneCh)
 	}()
 
-	wg.Wait()
+	WG.Wait()
 
 	mu.Lock()
 	if overlap {
@@ -230,7 +230,7 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	cancel()
 
 	// Wait for the consumer loop to exit to ensure it's truly dead and not reading
-	bridge.wg.Wait()
+	bridge.WG.Wait()
 
 	// Fill the bridge's event channel buffer to its capacity (100)
 	// This ensures that the enqueue blocks deterministically,
