@@ -173,8 +173,6 @@ func WithTimeout(timeout time.Duration) geminiOption {
 	}
 }
 
-
-
 // GenerateImages calls the Imagen model to generate images from a prompt.
 func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	c.mu.RLock()

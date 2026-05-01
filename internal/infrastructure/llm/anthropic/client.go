@@ -405,4 +405,3 @@ func (c *client) buildHTTPRequest(ctx context.Context, body []byte) (*http.Reque
 
 	return req, nil
 }
-
