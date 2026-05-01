@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -19,8 +19,8 @@ const (
 	profilePrecise optimizationProfile = "precise"
 )
 
-// PipelineFactory encapsulates the logic for creating context processing pipelines.
-type PipelineFactory struct {
+// Factory encapsulates the logic for creating context processing pipelines.
+type Factory struct {
 	Registry      tools.Registry
 	History       ports.HistoryManager
 	Summarizer    ports.Summarizer
@@ -32,7 +32,7 @@ type PipelineFactory struct {
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
-func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *contextPipeline {
+func (f *Factory) BuildStandardPipeline(limits events.Limits) *contextPipeline {
 	// 1. Calculate window size based on profile
 	windowTurns := limits.MaxHistoryTurns
 	if f.Profile == profilePrecise {

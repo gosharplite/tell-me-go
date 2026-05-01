@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"context"
@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
+func TestFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
 	strategy := NewContextStrategy(&agenttest.MockTokenCounter{})
-	factory := &PipelineFactory{
+	factory := &Factory{
 		Estimator: strategy,
 		Profile:   profilePrecise,
 	}
