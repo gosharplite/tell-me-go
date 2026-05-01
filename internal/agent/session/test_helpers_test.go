@@ -4,10 +4,7 @@
 package session
 
 import (
-	"bytes"
 	"context"
-	"io"
-	"sync"
 	"testing"
 	"time"
 
@@ -38,54 +35,4 @@ func syncBridge(t *testing.T, b *ui.Bridge, m interface {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for sync sentinel processing")
 	}
-}
-
-type syncWriter struct {
-	mu      sync.Mutex
-	Writer  io.Writer
-	buf     bytes.Buffer
-	onWrite chan struct{}
-}
-
-func (w *syncWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	var n int
-	var err error
-	if w.Writer != nil {
-		n, err = w.Writer.Write(p)
-	} else {
-		n, err = w.buf.Write(p)
-	}
-
-	if w.onWrite != nil {
-		select {
-		case w.onWrite <- struct{}{}:
-		default:
-		}
-	}
-	return n, err
-}
-
-func (w *syncWriter) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.Writer != nil {
-		if s, ok := w.Writer.(interface{ String() string }); ok {
-			return s.String()
-		}
-	}
-	return w.buf.String()
-}
-
-func (w *syncWriter) Reset() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.Writer != nil {
-		if r, ok := w.Writer.(interface{ Reset() }); ok {
-			r.Reset()
-		}
-	}
-	w.buf.Reset()
 }

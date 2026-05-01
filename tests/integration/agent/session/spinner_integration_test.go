@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessionui "github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -196,13 +197,13 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	uiRenderer.SetForceSpinner(true)
 
 	// Create bridge with a long-lived context
-	bridge := session.NewUIBridge(uiRenderer,
-		session.WithBridgeThoughts(true),
-		session.WithBridgeTools(true),
-		session.WithBridgeRawOutput(false),
-		session.WithBridgeColor(true),
-		session.WithBridgeLogFile("log.txt"),
-		session.WithBridgeLogger(slog.Default()),
+	bridge := sessionui.NewBridge(uiRenderer,
+		sessionui.WithBridgeThoughts(true),
+		sessionui.WithBridgeTools(true),
+		sessionui.WithBridgeRawOutput(false),
+		sessionui.WithBridgeColor(true),
+		sessionui.WithBridgeLogFile("log.txt"),
+		sessionui.WithBridgeLogger(slog.Default()),
 	)
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	t.Cleanup(sessionCancel)
