@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"context"
@@ -91,7 +91,7 @@ func TestContextManager_GroupTurnsErrorPropagation(t *testing.T) {
 	}
 	mockHistory := &agenttest.MockHistoryManager{Contents: history}
 
-	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), mockHistory, nil, nil)
+	cm := NewManager(NewStrategy(&agenttest.MockTokenCounter{}), mockHistory, nil, nil)
 	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
@@ -152,7 +152,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(mockCounter), mockHistory, nil, nil)
+	cm := NewManager(NewStrategy(mockCounter), mockHistory, nil, nil)
 	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	subset, _, _, err := cm.prepareSummarizationMetadata(ctx, 2)
@@ -186,7 +186,7 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), mockHistory, nil, nil)
+	cm := NewManager(NewStrategy(&agenttest.MockTokenCounter{}), mockHistory, nil, nil)
 	cm.Summarizer = mockSumm
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")

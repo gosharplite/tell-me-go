@@ -16,7 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -201,13 +201,13 @@ func TestContextManager_Race(t *testing.T) {
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(nil))
-	factory := &session.PipelineFactory{
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(nil))
+	factory := &sessctx.Factory{
 		Estimator: strategy,
 		Events:    bus,
 		History:   h,
 	}
-	cm := session.NewContextManager(strategy, h, bus, factory)
+	cm := sessctx.NewManager(strategy, h, bus, factory)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -289,9 +289,9 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	}
 
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	cm := session.NewContextManager(strategy, h, bus, nil)
-	cm.SetPipeline(session.NewContextPipeline())
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
+	cm := sessctx.NewManager(strategy, h, bus, nil)
+	cm.SetPipeline(sessctx.NewContextPipeline())
 
 	tracker := &agenttest.MockCostTracker{} // Returns 0.05 per call
 

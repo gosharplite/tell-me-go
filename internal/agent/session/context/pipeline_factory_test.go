@@ -93,3 +93,7 @@ func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextReque
 func (m *mockTransformer) Name() string {
 	return m.name
 }
+
+func (m *mockTransformer) Priority() int {
+	return 0
+}

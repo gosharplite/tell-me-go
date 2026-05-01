@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -30,7 +31,7 @@ func TestManageHistory_SetPinnedError(t *testing.T) {
 		err:            errors.New("set pinned failed"),
 	}
 
-	cm := &ContextManager{History: failingHM}
+	cm := &sessctx.Manager{History: failingHM}
 	tools := NewInternalTools(cm)
 
 	args := map[string]interface{}{
@@ -50,7 +51,7 @@ func TestManageHistory_SetPinnedError_Unpin(t *testing.T) {
 		err:            errors.New("set pinned failed"),
 	}
 
-	cm := &ContextManager{History: failingHM}
+	cm := &sessctx.Manager{History: failingHM}
 	tools := NewInternalTools(cm)
 
 	args := map[string]interface{}{
@@ -66,9 +67,9 @@ func TestManageHistory_SetPinnedError_Unpin(t *testing.T) {
 
 func TestSummarizeHistory_SummarizeRangeError(t *testing.T) {
 	// ContextManager without a Summarizer will fail SummarizeRange via validateSummarizer().
-	cm := &ContextManager{
+	cm := &sessctx.Manager{
 		History:  &failingHMBase{},
-		Strategy: NewContextStrategy(&mockTokenCounter{}),
+		Strategy: sessctx.NewStrategy(&mockTokenCounter{}),
 	}
 	tools := NewInternalTools(cm)
 
@@ -139,7 +140,7 @@ func TestRegisterInternal_RegisterWithOptionsError(t *testing.T) {
 		registerWithOptionsErr: errors.New("register with options failed"),
 	}
 
-	err := RegisterInternal(reg, &ContextManager{History: &failingHMBase{}})
+	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "register with options failed")
 }
@@ -149,7 +150,7 @@ func TestRegisterInternal_RegisterError(t *testing.T) {
 		registerErr: errors.New("register failed"),
 	}
 
-	err := RegisterInternal(reg, &ContextManager{History: &failingHMBase{}})
+	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "register failed")
 }

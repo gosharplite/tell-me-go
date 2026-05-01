@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
@@ -49,10 +50,10 @@ func (t *noopTransformer) Priority() int {
 	return t.priority
 }
 
-func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
+func TestManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	// 1. Setup CM with a blocking transformer (Priority 50)
 
-	strategy := NewContextStrategy(&agenttest.MockTokenCounter{})
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
 
 	blockCh := make(chan struct{})
@@ -62,8 +63,8 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	// The pipeline calls persistFn when it transitions from Priority < 100 to Priority >= 100
 	nt := &noopTransformer{priority: 150}
 
-	pipeline := NewContextPipeline(bt, nt)
-	cm := NewContextManager(strategy, history, nil, nil)
+	pipeline := sessctx.NewContextPipeline(bt, nt)
+	cm := sessctx.NewManager(strategy, history, nil, nil)
 	cm.SetPipeline(pipeline)
 
 	// 2. Start cm.Prepare(...) in goroutine

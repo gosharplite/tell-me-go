@@ -15,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -52,7 +53,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	gatekeeper := &session.TokenGatekeeper{
+	gatekeeper := &sessctx.TokenGatekeeper{
 		MaxTokens:  100,
 		Estimator:  &agenttest.MockEstimator{},
 		Summarizer: &mockFailingSummarizer{},
@@ -68,9 +69,9 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 func TestManager_FirstMessageRoleError(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(10)
-	cs := session.NewContextStrategy(tc)
+	cs := sessctx.NewStrategy(tc)
 	hm := &agenttest.MockHistoryManager{}
-	cm := session.NewManager(cs, hm, nil, nil)
+	cm := sessctx.NewManager(cs, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "first"}}})
 	if err == nil || err.Error() != "first message must be 'user', got 'model'" {
@@ -79,7 +80,7 @@ func TestManager_FirstMessageRoleError(t *testing.T) {
 }
 
 func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
-	hr := &session.HistoryRepairer{}
+	hr := &sessctx.HistoryRepairer{}
 	req := &ports.ContextRequest{History: nil}
 	err := hr.Transform(context.Background(), req)
 	if err != nil {
@@ -90,9 +91,9 @@ func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 func TestInternalTools_Errors(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(10)
-	cs := session.NewContextStrategy(tc)
+	cs := sessctx.NewStrategy(tc)
 	hm := &agenttest.MockHistoryManager{}
-	cm := session.NewManager(cs, hm, nil, nil)
+	cm := sessctx.NewManager(cs, hm, nil, nil)
 
 	it := session.NewInternalTools(cm)
 
@@ -213,7 +214,7 @@ func TestTokenGatekeeper_NilSummarizer(t *testing.T) {
 		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	gatekeeper := &session.TokenGatekeeper{
+	gatekeeper := &sessctx.TokenGatekeeper{
 		MaxTokens: 100000,
 		Estimator: &agenttest.MockEstimator{},
 		// Summarizer intentionally nil — tests the nil-guard path
@@ -236,9 +237,9 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	// Create a strategy that will trigger warnings to force event publishing
 	counter := &agenttest.MockTokenCounter{}
 	counter.SetTokens(950)
-	strategy := session.NewContextStrategy(counter)
+	strategy := sessctx.NewStrategy(counter)
 
-	gatekeeper := &session.TokenGatekeeper{
+	gatekeeper := &sessctx.TokenGatekeeper{
 		MaxTokens: 1000,
 		Estimator: strategy,
 		Events:    mockBus,
@@ -264,9 +265,9 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(tc)
+	strategy := sessctx.NewStrategy(tc)
 
-	gatekeeper := &session.TokenGatekeeper{
+	gatekeeper := &sessctx.TokenGatekeeper{
 		MaxTokens: 10,
 		Estimator: strategy,
 	}

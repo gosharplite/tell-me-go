@@ -264,7 +264,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 
 func TestWarningInjector_Transform(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}
@@ -342,7 +342,7 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 
 func TestWarningInjector_Transform_Clogged(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}
@@ -421,7 +421,7 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 
 func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}
@@ -673,7 +673,7 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 
 func TestFinalContextValidator_Transform(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
-	strategy := NewContextStrategy(counter)
+	strategy := NewStrategy(counter)
 	validator := &finalContextValidator{Strategy: strategy}
 
 	tests := []struct {
@@ -945,9 +945,9 @@ func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 	})
 }
 
-func setupTestPipeline(maxTokens int) (*contextPipeline, *ContextStrategy) {
+func setupTestPipeline(maxTokens int) (*contextPipeline, *Strategy) {
 	counter := NewHeuristicTokenCounter(&agenttest.MockToolRegistry{})
-	strategy := NewContextStrategy(counter)
+	strategy := NewStrategy(counter)
 	strategy.SetLimits(maxTokens, 10, 20)
 
 	pipeline := NewContextPipeline(

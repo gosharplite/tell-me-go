@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -24,22 +24,22 @@ import (
 
 func TestManager_PipelineMethods(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(tc)
+	strategy := sessctx.NewStrategy(tc)
 	history := &agenttest.MockHistoryManager{}
-	factory := &session.PipelineFactory{Estimator: strategy}
-	cm := session.NewManager(strategy, history, nil, factory)
+	factory := &sessctx.Factory{Estimator: strategy}
+	cm := sessctx.NewManager(strategy, history, nil, factory)
 
 	// Test SetPipeline
-	p := session.NewContextPipeline()
+	p := sessctx.NewContextPipeline()
 	cm.SetPipeline(p)
 	assert.Equal(t, p, cm.Pipeline)
 }
 
 func TestManager_GetLimits(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(tc)
+	strategy := sessctx.NewStrategy(tc)
 	strategy.SetLimits(1000, 20, 30)
-	cm := session.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, nil)
+	cm := sessctx.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, nil)
 
 	limits := cm.GetLimits()
 	assert.Equal(t, 1000, limits.MaxHistoryTokens)
@@ -49,9 +49,9 @@ func TestManager_GetLimits(t *testing.T) {
 
 func TestManager_Summarize(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(tc)
+	strategy := sessctx.NewStrategy(tc)
 	history := &agenttest.MockHistoryManager{}
-	cm := session.NewManager(strategy, history, nil, nil)
+	cm := sessctx.NewManager(strategy, history, nil, nil)
 
 	ctx := context.Background()
 	contents := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
@@ -77,7 +77,7 @@ func TestManager_Summarize(t *testing.T) {
 
 func TestManager_SummarizeRange(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(counter)
+	strategy := sessctx.NewStrategy(counter)
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
@@ -85,7 +85,7 @@ func TestManager_SummarizeRange(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	})
-	cm := session.NewManager(strategy, history, nil, nil)
+	cm := sessctx.NewManager(strategy, history, nil, nil)
 
 	ctx := context.Background()
 
@@ -232,14 +232,14 @@ func TestManager_SummarizeRange(t *testing.T) {
 }
 
 func TestManager_Prepare_ClonesContent(t *testing.T) {
-	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	originalContent := &llm.Content{
 		Role:  "user",
 		Parts: []*llm.Part{{Text: "original"}},
 	}
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{originalContent})
-	cm := session.NewManager(strategy, history, nil, nil)
+	cm := sessctx.NewManager(strategy, history, nil, nil)
 
 	ctx := context.Background()
 	preparedHistory, _, err := cm.Prepare(ctx, 1)
@@ -254,9 +254,9 @@ func TestManager_Prepare_ClonesContent(t *testing.T) {
 
 func TestManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(tc)
-	factory := &session.PipelineFactory{Estimator: strategy}
-	cm := session.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
+	strategy := sessctx.NewStrategy(tc)
+	factory := &sessctx.Factory{Estimator: strategy}
+	cm := sessctx.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
 
 	// Initially not nil because NewManager builds it with default limits immediately.
 	p0 := cm.Pipeline
@@ -292,7 +292,7 @@ func TestManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 
 func TestManager_WindowSize_BoundaryCondition(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(counter)
+	strategy := sessctx.NewStrategy(counter)
 	strategy.SetContextWindow(10000)
 
 	// totalEntries = 25, numTurns = 5.
@@ -314,7 +314,7 @@ func TestManager_WindowSize_BoundaryCondition(t *testing.T) {
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents(contents)
 
-	cm := session.NewManager(strategy, history, nil, nil)
+	cm := sessctx.NewManager(strategy, history, nil, nil)
 	mockSum := &agenttest.MockSummarizer{}
 	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
@@ -336,7 +336,7 @@ func TestManager_WindowSize_BoundaryCondition(t *testing.T) {
 }
 
 func TestManager_AddContent_ContextCancellation(t *testing.T) {
-	cm := session.NewManager(nil, nil, nil, nil)
+	cm := sessctx.NewManager(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -346,7 +346,7 @@ func TestManager_AddContent_ContextCancellation(t *testing.T) {
 }
 
 func TestManager_SummarizeRange_ContextCancellation(t *testing.T) {
-	cm := session.NewManager(nil, nil, nil, nil)
+	cm := sessctx.NewManager(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -357,9 +357,9 @@ func TestManager_SummarizeRange_ContextCancellation(t *testing.T) {
 
 func TestManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
-	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
-	cm := session.NewManager(strategy, history, nil, nil)
+	cm := sessctx.NewManager(strategy, history, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -371,7 +371,7 @@ func TestManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 }
 
 func TestManager_CheckContext_Cancellation(t *testing.T) {
-	_ = session.NewManager(nil, nil, nil, nil)
+	_ = sessctx.NewManager(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -381,7 +381,7 @@ func TestManager_CheckContext_Cancellation(t *testing.T) {
 }
 
 func TestManager_Prepare_BoundaryValidation(t *testing.T) {
-	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 
 	t.Run("fails on nil message in history", func(t *testing.T) {
 		history := &agenttest.MockHistoryManager{}
@@ -389,10 +389,10 @@ func TestManager_Prepare_BoundaryValidation(t *testing.T) {
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 			nil, // malformed entry
 		})
-		cm := session.NewManager(strategy, history, nil, nil)
+		cm := sessctx.NewManager(strategy, history, nil, nil)
 		_, _, err := cm.Prepare(context.Background(), 1)
 		require.Error(t, err)
-		require.ErrorIs(t, err, session.ErrInvalidPayload)
+		require.ErrorIs(t, err, sessctx.ErrInvalidPayload)
 		require.Contains(t, err.Error(), "nil message at index 1")
 	})
 
@@ -401,10 +401,10 @@ func TestManager_Prepare_BoundaryValidation(t *testing.T) {
 		history.SetInternalContents([]*llm.Content{
 			{Role: "user", Parts: []*llm.Part{nil}}, // malformed entry
 		})
-		cm := session.NewManager(strategy, history, nil, nil)
+		cm := sessctx.NewManager(strategy, history, nil, nil)
 		_, _, err := cm.Prepare(context.Background(), 1)
 		require.Error(t, err)
-		require.ErrorIs(t, err, session.ErrInvalidPayload)
+		require.ErrorIs(t, err, sessctx.ErrInvalidPayload)
 		require.Contains(t, err.Error(), "invalid content at index 0")
 	})
 }
@@ -415,7 +415,7 @@ func TestManager_WithLogger(t *testing.T) {
 	// Set level to DEBUG to capture the "skipping summarization event" log.
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	// Add 2 turns to history so that SummarizeRange(ctx, 1, "") can proceed.
 	// Summarization requires at least (requestedTurns + 1) turns to preserve the last turn.
 	history := &agenttest.MockHistoryManager{}
@@ -427,7 +427,7 @@ func TestManager_WithLogger(t *testing.T) {
 	})
 
 	// Use a nil bus to trigger a DEBUG log in emitSummarizationEvent.
-	cm := session.NewManager(strategy, history, nil, nil, session.WithLogger(testLogger))
+	cm := sessctx.NewManager(strategy, history, nil, nil, sessctx.WithLogger(testLogger))
 	ms := &agenttest.MockSummarizer{}
 	ms.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
@@ -464,14 +464,14 @@ func (m *countingHistoryManager) GetWindowCalls() int {
 }
 
 func TestManager_Prepare_CacheHit(t *testing.T) {
-	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	baseHistory := &agenttest.MockHistoryManager{}
 	baseHistory.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 	})
 	countingHM := &countingHistoryManager{MockHistoryManager: baseHistory}
 
-	cm := session.NewManager(strategy, countingHM, nil, nil)
+	cm := sessctx.NewManager(strategy, countingHM, nil, nil)
 
 	ctx := context.Background()
 
@@ -499,7 +499,7 @@ func TestManager_Prepare_CacheHit(t *testing.T) {
 // Manager's internal version counter between loadHistory and commitToCache,
 // causing commitToCache to detect a version mismatch and return ErrTransient.
 type versionBumpingTransformer struct {
-	cm *session.Manager
+	cm *sessctx.Manager
 }
 
 func (t *versionBumpingTransformer) Priority() int { return 200 } // transient: runs after persistFn
@@ -510,18 +510,18 @@ func (t *versionBumpingTransformer) Transform(ctx context.Context, req *ports.Co
 }
 
 func TestManager_Prepare_CommitToCacheError(t *testing.T) {
-	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 	})
 
-	cm := session.NewManager(strategy, history, nil, nil)
+	cm := sessctx.NewManager(strategy, history, nil, nil)
 
 	// Install a pipeline whose transient transformer bumps the version after
 	// loadHistory snapshots it but before commitToCache checks it.
 	bumper := &versionBumpingTransformer{cm: cm}
-	cm.Pipeline = session.NewContextPipeline(bumper)
+	cm.Pipeline = sessctx.NewContextPipeline(bumper)
 
 	ctx := context.Background()
 	_, _, err := cm.Prepare(ctx, 1)
