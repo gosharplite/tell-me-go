@@ -33,30 +33,30 @@ type filterResult struct {
 // Core dispatcher
 // ---------------------------------------------------------------------------
 
-func (m *adoManager) processLogContent(ctx context.Context, reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int, hb chan<- struct{}) (filterResult, error) {
+func processLogContent(ctx context.Context, reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int, hb chan<- struct{}) (filterResult, error) {
 	if filterQuery != "" {
-		return m.streamRegexFilter(ctx, reader, filterQuery, logFilterOptions{MaxLines: maxLines, ContextLines: contextLines}, hb)
+		return streamRegexFilter(ctx, reader, filterQuery, logFilterOptions{MaxLines: maxLines, ContextLines: contextLines}, hb)
 	}
 
 	if startLine > 0 || maxLines > 0 {
-		return m.streamPagination(ctx, reader, startLine, maxLines, hb)
+		return streamPagination(ctx, reader, startLine, maxLines, hb)
 	}
 
 	if headLines > 0 {
-		return m.streamHead(ctx, reader, headLines, hb)
+		return streamHead(ctx, reader, headLines, hb)
 	}
 
 	if tailLines <= 0 {
 		tailLines = 200
 	}
-	return m.streamTail(ctx, reader, tailLines, hb)
+	return streamTail(ctx, reader, tailLines, hb)
 }
 
 // ---------------------------------------------------------------------------
 // Filter subsystem
 // ---------------------------------------------------------------------------
 
-func (m *adoManager) streamRegexFilter(ctx context.Context, reader io.Reader, query string, opts logFilterOptions, hb chan<- struct{}) (filterResult, error) {
+func streamRegexFilter(ctx context.Context, reader io.Reader, query string, opts logFilterOptions, hb chan<- struct{}) (filterResult, error) {
 	re, err := regexp.Compile(query)
 	if err != nil {
 		return filterResult{}, fmt.Errorf("invalid filter_query regex: %w", err)
@@ -70,7 +70,7 @@ func (m *adoManager) streamRegexFilter(ctx context.Context, reader io.Reader, qu
 	matchCount := 0
 	truncated := false
 
-	_, err = m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
+	_, err = scanLog(ctx, reader, hb, func(line string) (bool, error) {
 		if re.MatchString(line) {
 			if matchCount >= maxMatchedLines {
 				truncated = true
@@ -188,7 +188,7 @@ func (s *logFilterState) printLine(line string, lineNum int) {
 // Stream helpers
 // ---------------------------------------------------------------------------
 
-func (m *adoManager) streamPagination(ctx context.Context, reader io.Reader, startLine, maxLines int, hb chan<- struct{}) (filterResult, error) {
+func streamPagination(ctx context.Context, reader io.Reader, startLine, maxLines int, hb chan<- struct{}) (filterResult, error) {
 	if startLine <= 0 {
 		startLine = 1
 	}
@@ -197,7 +197,7 @@ func (m *adoManager) streamPagination(ctx context.Context, reader io.Reader, sta
 	printed := 0
 	truncated := false
 
-	totalLines, err := m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
+	totalLines, err := scanLog(ctx, reader, hb, func(line string) (bool, error) {
 		localCount++
 		if localCount < startLine {
 			return true, nil
@@ -230,12 +230,12 @@ func (m *adoManager) streamPagination(ctx context.Context, reader io.Reader, sta
 	}, nil
 }
 
-func (m *adoManager) streamHead(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}) (filterResult, error) {
+func streamHead(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}) (filterResult, error) {
 	var result strings.Builder
 	localCount := 0
 	truncated := false
 
-	count, err := m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
+	count, err := scanLog(ctx, reader, hb, func(line string) (bool, error) {
 		localCount++
 		if localCount > n {
 			truncated = true
@@ -259,7 +259,7 @@ func (m *adoManager) streamHead(ctx context.Context, reader io.Reader, n int, hb
 	}, nil
 }
 
-func (m *adoManager) streamTail(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}) (filterResult, error) {
+func streamTail(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}) (filterResult, error) {
 	if n <= 0 {
 		return filterResult{}, nil
 	}
@@ -269,7 +269,7 @@ func (m *adoManager) streamTail(ctx context.Context, reader io.Reader, n int, hb
 
 	ring := make([]string, n)
 	localCount := 0
-	count, err := m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
+	count, err := scanLog(ctx, reader, hb, func(line string) (bool, error) {
 		ring[localCount%n] = line
 		localCount++
 		return true, nil
@@ -283,7 +283,7 @@ func (m *adoManager) streamTail(ctx context.Context, reader io.Reader, n int, hb
 		return filterResult{}, nil
 	}
 
-	content := m.assembleTail(ring, count, n)
+	content := assembleTail(ring, count, n)
 
 	limit := n
 	if count < n {
@@ -301,7 +301,7 @@ func (m *adoManager) streamTail(ctx context.Context, reader io.Reader, n int, hb
 // Foundation
 // ---------------------------------------------------------------------------
 
-func (m *adoManager) scanLog(ctx context.Context, reader io.Reader, hb chan<- struct{}, processFn func(line string) (bool, error)) (int, error) {
+func scanLog(ctx context.Context, reader io.Reader, hb chan<- struct{}, processFn func(line string) (bool, error)) (int, error) {
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
@@ -337,7 +337,7 @@ func (m *adoManager) scanLog(ctx context.Context, reader io.Reader, hb chan<- st
 	return count, nil
 }
 
-func (m *adoManager) assembleTail(ring []string, count, n int) string {
+func assembleTail(ring []string, count, n int) string {
 	var result strings.Builder
 	start := 0
 	if count > n {

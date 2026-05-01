@@ -396,7 +396,7 @@ func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project s
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	res, err := m.processLogContent(ctx, resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines, hb)
+	res, err := processLogContent(ctx, resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines, hb)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
 	}
@@ -480,7 +480,7 @@ func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	res, err := m.processLogContent(ctx, resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
+	res, err := processLogContent(ctx, resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
 	}
