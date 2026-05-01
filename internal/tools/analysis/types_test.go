@@ -87,7 +87,7 @@ type I2 interface {
 			}
 
 			idx, _ := newIndexer(tmpDir)
-			cache := newASTCache()
+			cache := newASTCache(".")
 			sp := &mockSecurityProvider{}
 			m := newTypeManager(idx, cache, sp)
 
@@ -122,7 +122,7 @@ func (s S) M() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache(), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
 
 	res, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": "I"}, nil)
 	if err != nil {
@@ -150,7 +150,7 @@ const C = 1
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache(), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func F() {
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache(), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
 	res, err := m.FindUsages(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func MyFunc() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache(), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
 	res, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "MyFunc"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func TestTypeManager_ListImplementations_Error(t *testing.T) {
 func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	analyzer := newComplexityAnalyzer(newASTCache(), &mockSecurityProvider{})
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{})
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func unexported() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache(), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir, "exported_only": true}, nil)
 	if err != nil {
 		t.Fatal(err)
