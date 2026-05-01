@@ -177,7 +177,7 @@ func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
 	require.NotNil(t, bridge)
-	bridge.Wg().Done() // Manually satisfy constructor wg.Add(1) since Listen wasn't called
+	bridge.AbortStart() // Manually satisfy constructor wg.Add(1) since Listen wasn't called
 	bridge.CloseInput()
 	bridge.Cleanup()
 }
