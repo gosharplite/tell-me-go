@@ -29,8 +29,8 @@ func NewBareForInternalUse() InternalAccessor {
 }
 
 // AsChatter returns the underlying *agent typed as ports.Chatter. Used
-// by the agentinternal wrapper to expose a Chatter() method to test code
-// that needs to pass the agent into production functions.
+// by agentinternal to pass the agent into production functions that
+// accept the ports.Chatter interface.
 func (a *agent) AsChatter() ports.Chatter {
 	return a
 }

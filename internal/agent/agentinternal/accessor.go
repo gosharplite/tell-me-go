@@ -66,12 +66,6 @@ func NewBareAgent() *AgentInternal {
 	return &AgentInternal{raw: agent.NewBareForInternalUse()}
 }
 
-// Chatter returns the underlying ports.Chatter, suitable for passing to
-// production methods that accept the public interface.
-func (a *AgentInternal) Chatter() ports.Chatter {
-	return a.raw.AsChatter()
-}
-
 // ---------------------------------------------------------------------
 // Typed read-only accessors.
 //
@@ -136,7 +130,7 @@ func (a *AgentInternal) ApplyConfig(ctx context.Context) error {
 
 // Chat invokes the underlying agent's Chat method. Provided for
 // convenience so test code holding an *AgentInternal does not have to
-// call .Chatter().Chat(...) explicitly.
+// call .raw.AsChatter().Chat(...) explicitly.
 func (a *AgentInternal) Chat(ctx context.Context, sess *ports.Session, prompt string) error {
 	return a.raw.AsChatter().Chat(ctx, sess, prompt)
 }
