@@ -8,16 +8,17 @@ import (
 	"fmt"
 	"time"
 
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // InternalTools provides tool wrappers that interact with agent services.
 type InternalTools struct {
-	ctxManager *ContextManager
+	ctxManager *sessctx.Manager
 }
 
 // NewInternalTools creates a new InternalTools provider.
-func NewInternalTools(cm *ContextManager) *InternalTools {
+func NewInternalTools(cm *sessctx.Manager) *InternalTools {
 	return &InternalTools{ctxManager: cm}
 }
 
@@ -111,7 +112,7 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 }
 
 // RegisterInternal registers the internal tools with the provided registrar.
-func RegisterInternal(r tools.ToolRegistrar, cm *ContextManager) error {
+func RegisterInternal(r tools.ToolRegistrar, cm *sessctx.Manager) error {
 	it := NewInternalTools(cm)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
