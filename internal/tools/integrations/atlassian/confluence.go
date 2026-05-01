@@ -46,29 +46,29 @@ var (
 	reItalic2 = regexp.MustCompile(`_(.*?)_`)
 )
 
-type confluenceManager struct {
+type ConfluenceManager struct {
 	sm       confluenceSecurity
 	client   tools.HTTPClient
-	provider *atlassianProvider
+	provider *AtlassianProvider
 }
 
-// NewConfluenceManager creates a new instance of confluenceManager.
-func NewConfluenceManager(sm confluenceSecurity, client tools.HTTPClient) (*confluenceManager, error) {
+// NewConfluenceManager creates a new instance of ConfluenceManager.
+func NewConfluenceManager(sm confluenceSecurity, client tools.HTTPClient) (*ConfluenceManager, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	provider, err := newAtlassianProvider()
+	provider, err := NewAtlassianProvider()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Atlassian provider: %w", err)
 	}
-	return &confluenceManager{
+	return &ConfluenceManager{
 		sm:       sm,
 		client:   client,
 		provider: provider,
 	}, nil
 }
 
-func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string) (string, error) {
+func (m *ConfluenceManager) resolveSpaceID(ctx context.Context, spaceKey string) (string, error) {
 	// If it's already numeric, return it
 	if _, err := strconv.Atoi(spaceKey); err == nil {
 		return spaceKey, nil
@@ -137,7 +137,7 @@ type pageVersionInfo struct {
 	} `json:"version"`
 }
 
-func (m *confluenceManager) fetchSearchPage(ctx context.Context, url string) (*searchResponse, error) {
+func (m *ConfluenceManager) FetchSearchPage(ctx context.Context, url string) (*searchResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -171,7 +171,7 @@ type searchMatch struct {
 	Title string
 }
 
-func (m *confluenceManager) processSearchResults(results []struct {
+func (m *ConfluenceManager) processSearchResults(results []struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 }, keyword string) []searchMatch {
@@ -185,7 +185,7 @@ func (m *confluenceManager) processSearchResults(results []struct {
 	return matches
 }
 
-func (m *confluenceManager) resolveNextURL(baseURL, nextPath string) string {
+func (m *ConfluenceManager) resolveNextURL(baseURL, nextPath string) string {
 	if nextPath == "" {
 		return ""
 	}
@@ -203,7 +203,7 @@ func (m *confluenceManager) resolveNextURL(baseURL, nextPath string) string {
 	return parsedBase.ResolveReference(parsedNext).String()
 }
 
-func (m *confluenceManager) ConfluenceSearch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *ConfluenceManager) ConfluenceSearch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Title   string `json:"title"`
 		SpaceID string `json:"space_id"`
@@ -234,7 +234,7 @@ func (m *confluenceManager) ConfluenceSearch(ctx context.Context, args map[strin
 	pagesProcessed := 0
 
 	for i := 0; i < maxIterations && nextURL != ""; i++ {
-		responseData, err := m.fetchSearchPage(ctx, nextURL)
+		responseData, err := m.FetchSearchPage(ctx, nextURL)
 		if err != nil {
 			return tools.ToolResult{}, err
 		}
@@ -249,7 +249,7 @@ func (m *confluenceManager) ConfluenceSearch(ctx context.Context, args map[strin
 	return m.formatSearchResults(matches, warning, pagesProcessed, params.SpaceID, params.Title), nil
 }
 
-func (m *confluenceManager) resolveSpaceIDIfNeeded(ctx context.Context, spaceID string) (string, error) {
+func (m *ConfluenceManager) resolveSpaceIDIfNeeded(ctx context.Context, spaceID string) (string, error) {
 	if spaceID == "" {
 		return "", nil
 	}
@@ -260,7 +260,7 @@ func (m *confluenceManager) resolveSpaceIDIfNeeded(ctx context.Context, spaceID 
 	return resolved, nil
 }
 
-func (m *confluenceManager) prepareSearchURL(spaceID string) (*url.URL, error) {
+func (m *ConfluenceManager) prepareSearchURL(spaceID string) (*url.URL, error) {
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base url: %w", err)
@@ -277,7 +277,7 @@ func (m *confluenceManager) prepareSearchURL(spaceID string) (*url.URL, error) {
 	return u, nil
 }
 
-func (m *confluenceManager) getSearchLimit(limit int) (int, string) {
+func (m *ConfluenceManager) getSearchLimit(limit int) (int, string) {
 	maxPages := limit
 	if maxPages <= 0 {
 		maxPages = 1000
@@ -290,7 +290,7 @@ func (m *confluenceManager) getSearchLimit(limit int) (int, string) {
 	return maxPages, warning
 }
 
-func (m *confluenceManager) formatSearchResults(matches []searchMatch, warning string, pagesProcessed int, spaceID, title string) tools.ToolResult {
+func (m *ConfluenceManager) formatSearchResults(matches []searchMatch, warning string, pagesProcessed int, spaceID, title string) tools.ToolResult {
 	if len(matches) == 0 {
 		if title != "" {
 			return tools.ToolResult{Text: fmt.Sprintf("%sSearched the %d most recently modified pages in space '%s' but found no pages containing '%s'. Please try an exact title or a different keyword.", warning, pagesProcessed, spaceID, title)}
@@ -308,7 +308,7 @@ func (m *confluenceManager) formatSearchResults(matches []searchMatch, warning s
 	return tools.ToolResult{Text: resultText.String()}
 }
 
-func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID string) (*http.Response, error) {
+func (m *ConfluenceManager) fetchPageContent(ctx context.Context, pageID string) (*http.Response, error) {
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base url: %w", err)
@@ -346,7 +346,7 @@ func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID string)
 	return resp, nil
 }
 
-func (m *confluenceManager) readAndValidateBody(respBody io.ReadCloser) ([]byte, error) {
+func (m *ConfluenceManager) readAndValidateBody(respBody io.ReadCloser) ([]byte, error) {
 	defer func() { _ = respBody.Close() }()
 	const maxPageSize = 5 * 1024 * 1024
 	body, err := io.ReadAll(io.LimitReader(respBody, int64(maxPageSize)+1))
@@ -360,7 +360,7 @@ func (m *confluenceManager) readAndValidateBody(respBody io.ReadCloser) ([]byte,
 	return body, nil
 }
 
-func (m *confluenceManager) decodePageResponse(body []byte) (title, storageValue string, err error) {
+func (m *ConfluenceManager) decodePageResponse(body []byte) (title, storageValue string, err error) {
 	var responseData struct {
 		Title string `json:"title"`
 		Body  struct {
@@ -376,7 +376,7 @@ func (m *confluenceManager) decodePageResponse(body []byte) (title, storageValue
 	return responseData.Title, responseData.Body.Storage.Value, nil
 }
 
-func (m *confluenceManager) ConfluenceRead(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *ConfluenceManager) ConfluenceRead(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		PageID string `json:"page_id"`
 	}
@@ -409,7 +409,7 @@ func (m *confluenceManager) ConfluenceRead(ctx context.Context, args map[string]
 	return tools.ToolResult{Text: resultText}, nil
 }
 
-func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
+func (m *ConfluenceManager) xhtmlToMarkdown(xhtml string) string {
 	// 1. Normalize whitespace - replace all newlines and tabs with spaces
 	content := strings.ReplaceAll(xhtml, "\r", "")
 	content = strings.ReplaceAll(content, "\n", " ")
@@ -454,7 +454,7 @@ func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
 	return strings.TrimSpace(content)
 }
 
-func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID string) (*pageVersionInfo, error) {
+func (m *ConfluenceManager) getCurrentPageVersion(ctx context.Context, pageID string) (*pageVersionInfo, error) {
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base url: %w", err)
@@ -484,7 +484,7 @@ func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID st
 	return &currentData, nil
 }
 
-func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, payload map[string]interface{}) error {
+func (m *ConfluenceManager) executeUpdate(ctx context.Context, pageID string, payload map[string]interface{}) error {
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return fmt.Errorf("invalid base url: %w", err)
@@ -520,7 +520,7 @@ func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 	return nil
 }
 
-func (m *confluenceManager) ConfluenceWrite(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *ConfluenceManager) ConfluenceWrite(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		PageID          string `json:"page_id"`
 		Title           string `json:"title"`
@@ -571,7 +571,7 @@ func (m *confluenceManager) ConfluenceWrite(ctx context.Context, args map[string
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully updated Confluence page %s to version %d.", params.PageID, nextVersion)}, nil
 }
 
-func (m *confluenceManager) markdownToXhtml(markdown string) string {
+func (m *ConfluenceManager) markdownToXhtml(markdown string) string {
 	lines := strings.Split(markdown, "\n")
 	var result strings.Builder
 

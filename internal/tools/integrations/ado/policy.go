@@ -31,7 +31,7 @@ type adoContext struct {
 	Genre string `json:"genre"`
 }
 
-func (m *adoManager) AdoGetPrStatuses(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPrStatuses(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -55,9 +55,9 @@ func (m *adoManager) AdoGetPrStatuses(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: m.formatPrStatuses(params.PullRequestId, statusData)}, nil
 }
 
-func (m *adoManager) fetchPrStatuses(ctx context.Context, org, project, repo string, prID int) (adoStatusResponse, error) {
+func (m *AdoManager) fetchPrStatuses(ctx context.Context, org, project, repo string, prID int) (adoStatusResponse, error) {
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID))
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID))
 	if err != nil {
 		return adoStatusResponse{}, fmt.Errorf("failed to parse statuses base URL: %w", err)
 	}
@@ -66,7 +66,7 @@ func (m *adoManager) fetchPrStatuses(ctx context.Context, org, project, repo str
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
 		return adoStatusResponse{}, fmt.Errorf("executing fetch pr statuses request: %w", err)
 	}
@@ -79,7 +79,7 @@ func (m *adoManager) fetchPrStatuses(ctx context.Context, org, project, repo str
 	return statusData, nil
 }
 
-func (m *adoManager) formatPrStatuses(pullRequestId int, statusData adoStatusResponse) string {
+func (m *AdoManager) formatPrStatuses(pullRequestId int, statusData adoStatusResponse) string {
 	if len(statusData.Value) == 0 {
 		return "No statuses found for this pull request."
 	}
@@ -142,7 +142,7 @@ type adoPolicyType struct {
 	Id          string `json:"id"`
 }
 
-func (m *adoManager) AdoGetPrPolicyEvaluations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPrPolicyEvaluations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -173,11 +173,11 @@ func (m *adoManager) AdoGetPrPolicyEvaluations(ctx context.Context, args map[str
 	return m.formatPolicyEvaluations(params.PullRequestId, policyData)
 }
 
-func (m *adoManager) fetchPrProjectID(ctx context.Context, org, project, repo string, prID int) (string, error) {
+func (m *AdoManager) fetchPrProjectID(ctx context.Context, org, project, repo string, prID int) (string, error) {
 	prRequestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID)
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, prRequestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, prRequestURL, nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("executing fetch pr project ID request: %w", err)
 	}
@@ -201,9 +201,9 @@ func (m *adoManager) fetchPrProjectID(ctx context.Context, org, project, repo st
 	return prData.Repository.Project.Id, nil
 }
 
-func (m *adoManager) fetchPolicyEvaluations(ctx context.Context, org, project, artifactID string) (adoPolicyResponse, error) {
+func (m *AdoManager) fetchPolicyEvaluations(ctx context.Context, org, project, artifactID string) (adoPolicyResponse, error) {
 	baseURL := fmt.Sprintf("%s/%s/%s/_apis/policy/evaluations",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project))
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project))
 
 	u, err := url.Parse(baseURL)
 	if err != nil {
@@ -218,8 +218,8 @@ func (m *adoManager) fetchPolicyEvaluations(ctx context.Context, org, project, a
 	return m.performPolicyEvaluationRequest(ctx, u.String())
 }
 
-func (m *adoManager) performPolicyEvaluationRequest(ctx context.Context, requestURL string) (adoPolicyResponse, error) {
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+func (m *AdoManager) performPolicyEvaluationRequest(ctx context.Context, requestURL string) (adoPolicyResponse, error) {
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return adoPolicyResponse{}, fmt.Errorf("performing policy evaluation request: %w", err)
 	}
@@ -232,7 +232,7 @@ func (m *adoManager) performPolicyEvaluationRequest(ctx context.Context, request
 	return policyData, nil
 }
 
-func (m *adoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPolicyResponse) (tools.ToolResult, error) {
+func (m *AdoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPolicyResponse) (tools.ToolResult, error) {
 	var resultText strings.Builder
 	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Policy Evaluations:\n\n", pullRequestId)
 
@@ -269,7 +269,7 @@ func (m *adoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPo
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) AdoListBranchPolicies(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoListBranchPolicies(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -298,11 +298,11 @@ func (m *adoManager) AdoListBranchPolicies(ctx context.Context, args map[string]
 	return tools.ToolResult{Text: m.formatBranchPolicies(params.BranchName, params.Repository, policyConfigs, targetRepoId)}, nil
 }
 
-func (m *adoManager) fetchRepositoryId(ctx context.Context, org, project, repo string) (string, error) {
+func (m *AdoManager) fetchRepositoryId(ctx context.Context, org, project, repo string) (string, error) {
 	repoURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s?api-version=7.1",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo))
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo))
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, repoURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, repoURL, nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch repository metadata: %w", err)
 	}
@@ -317,11 +317,11 @@ func (m *adoManager) fetchRepositoryId(ctx context.Context, org, project, repo s
 	return repoData.Id, nil
 }
 
-func (m *adoManager) fetchPolicyConfigurations(ctx context.Context, org, project string) ([]adoPolicyConfig, error) {
+func (m *AdoManager) fetchPolicyConfigurations(ctx context.Context, org, project string) ([]adoPolicyConfig, error) {
 	policyURL := fmt.Sprintf("%s/%s/%s/_apis/policy/configurations?api-version=7.1",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project))
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project))
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, policyURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, policyURL, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch policy configurations: %w", err)
 	}
@@ -336,7 +336,7 @@ func (m *adoManager) fetchPolicyConfigurations(ctx context.Context, org, project
 	return policyConfigs.Value, nil
 }
 
-func (m *adoManager) formatBranchPolicies(branchName, repositoryName string, policyConfigs []adoPolicyConfig, targetRepoId string) string {
+func (m *AdoManager) formatBranchPolicies(branchName, repositoryName string, policyConfigs []adoPolicyConfig, targetRepoId string) string {
 	fullBranchRef := branchName
 	if !strings.HasPrefix(fullBranchRef, "refs/heads/") {
 		fullBranchRef = "refs/heads/" + fullBranchRef
@@ -380,7 +380,7 @@ func (m *adoManager) formatBranchPolicies(branchName, repositoryName string, pol
 	return resultText.String()
 }
 
-func (m *adoManager) policyMatchesBranch(config adoPolicyConfig, targetRepoId, fullBranchRef string) bool {
+func (m *AdoManager) policyMatchesBranch(config adoPolicyConfig, targetRepoId, fullBranchRef string) bool {
 	scope, ok := config.Settings["scope"].([]interface{})
 	if !ok {
 		return false

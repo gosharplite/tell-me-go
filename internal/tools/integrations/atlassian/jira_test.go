@@ -159,7 +159,7 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 			mockClient := new(mockJiraClient)
 			m, err := NewJiraManager(nil, mockClient)
 			assert.NoError(t, err)
-			m.provider.baseDelay = 1 * time.Microsecond
+			m.provider.BaseDelay = 1 * time.Microsecond
 
 			if tt.mockResp != nil || tt.mockErr != nil {
 				mockClient.On("Do", mock.Anything).Return(tt.mockResp, tt.mockErr)
@@ -288,7 +288,7 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 			mockClient := new(mockJiraClient)
 			m, err := NewJiraManager(nil, mockClient)
 			assert.NoError(t, err)
-			m.provider.baseDelay = 1 * time.Microsecond
+			m.provider.BaseDelay = 1 * time.Microsecond
 
 			if tt.mockResp != nil || tt.mockErr != nil {
 				mockClient.On("Do", mock.Anything).Return(tt.mockResp, tt.mockErr)

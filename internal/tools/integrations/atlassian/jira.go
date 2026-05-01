@@ -18,29 +18,29 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type jiraManager struct {
+type JiraManager struct {
 	sm       security.PathValidator
 	client   tools.HTTPClient
-	provider *atlassianProvider
+	provider *AtlassianProvider
 }
 
-// NewJiraManager creates a new instance of jiraManager.
-func NewJiraManager(sm security.PathValidator, client tools.HTTPClient) (*jiraManager, error) {
+// NewJiraManager creates a new instance of JiraManager.
+func NewJiraManager(sm security.PathValidator, client tools.HTTPClient) (*JiraManager, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	provider, err := newAtlassianProvider()
+	provider, err := NewAtlassianProvider()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Atlassian provider: %w", err)
 	}
-	return &jiraManager{
+	return &JiraManager{
 		sm:       sm,
 		client:   client,
 		provider: provider,
 	}, nil
 }
 
-func (m *jiraManager) JiraSearchIssues(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *JiraManager) JiraSearchIssues(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		JQL   string `json:"jql"`
 		Limit int    `json:"limit"`
@@ -86,7 +86,7 @@ func (m *jiraManager) JiraSearchIssues(ctx context.Context, args map[string]inte
 	return tools.ToolResult{Text: resultText}, nil
 }
 
-func (m *jiraManager) prepareSearchURL(jql string, limit int) (*url.URL, error) {
+func (m *JiraManager) prepareSearchURL(jql string, limit int) (*url.URL, error) {
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base url: %w", err)
@@ -107,7 +107,7 @@ func (m *jiraManager) prepareSearchURL(jql string, limit int) (*url.URL, error) 
 	return u, nil
 }
 
-func (m *jiraManager) formatSearchResponse(body io.ReadCloser) (string, error) {
+func (m *JiraManager) formatSearchResponse(body io.ReadCloser) (string, error) {
 	var responseData struct {
 		Issues []struct {
 			Key    string `json:"key"`
@@ -150,7 +150,7 @@ func (m *jiraManager) formatSearchResponse(body io.ReadCloser) (string, error) {
 	return resultText.String(), nil
 }
 
-func (m *jiraManager) JiraGetIssue(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *JiraManager) JiraGetIssue(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		IssueKey string `json:"issue_key"`
 	}
@@ -199,7 +199,7 @@ func (m *jiraManager) JiraGetIssue(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: resultText}, nil
 }
 
-func (m *jiraManager) formatGetIssueResponse(body io.ReadCloser) (string, error) {
+func (m *JiraManager) formatGetIssueResponse(body io.ReadCloser) (string, error) {
 	var issueData struct {
 		Key    string `json:"key"`
 		Fields struct {
@@ -243,7 +243,7 @@ func (m *jiraManager) formatGetIssueResponse(body io.ReadCloser) (string, error)
 }
 
 // parseADF extracts plain text from Atlassian Document Format (ADF)
-func (m *jiraManager) parseADF(adf interface{}) string {
+func (m *JiraManager) parseADF(adf interface{}) string {
 	if adf == nil {
 		return ""
 	}
@@ -253,7 +253,7 @@ func (m *jiraManager) parseADF(adf interface{}) string {
 	return strings.TrimSpace(builder.String())
 }
 
-func (m *jiraManager) extractTextFromADF(node interface{}, builder *strings.Builder) {
+func (m *JiraManager) extractTextFromADF(node interface{}, builder *strings.Builder) {
 	switch v := node.(type) {
 	case map[string]interface{}:
 		m.handleMapNode(v, builder)
@@ -262,7 +262,7 @@ func (m *jiraManager) extractTextFromADF(node interface{}, builder *strings.Buil
 	}
 }
 
-func (m *jiraManager) handleMapNode(v map[string]interface{}, builder *strings.Builder) {
+func (m *JiraManager) handleMapNode(v map[string]interface{}, builder *strings.Builder) {
 	nodeType, _ := v["type"].(string)
 
 	if nodeType == "text" {
@@ -284,13 +284,13 @@ func (m *jiraManager) handleMapNode(v map[string]interface{}, builder *strings.B
 	}
 }
 
-func (m *jiraManager) handleContent(content []interface{}, builder *strings.Builder) {
+func (m *JiraManager) handleContent(content []interface{}, builder *strings.Builder) {
 	for _, child := range content {
 		m.extractTextFromADF(child, builder)
 	}
 }
 
-func (m *jiraManager) ensureNewline(builder *strings.Builder) {
+func (m *JiraManager) ensureNewline(builder *strings.Builder) {
 	if builder.Len() > 0 && !strings.HasSuffix(builder.String(), "\n") {
 		builder.WriteString("\n")
 	}

@@ -106,7 +106,7 @@ func TestAdoListPipelines(t *testing.T) {
 
 			var opts []AdoOption
 			if server != nil {
-				opts = append(opts, withBaseURL(server.URL))
+				opts = append(opts, WithBaseURL(server.URL))
 			}
 			opts = append(opts, WithToken("test-pat"))
 			m := NewADOManager(sm, opts...)
@@ -260,11 +260,11 @@ func setupMockPipelineServer(t *testing.T, postHandler func(w http.ResponseWrite
 	}))
 }
 
-func setupADOManager(t *testing.T, baseURL string, approved bool) (*adoManager, context.Context) {
+func setupADOManager(t *testing.T, baseURL string, approved bool) (*AdoManager, context.Context) {
 	t.Helper()
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mc := &mockConfirmer{approved: approved}
-	m := NewADOManager(mc, withBaseURL(baseURL), WithToken("test-pat"))
+	m := NewADOManager(mc, WithBaseURL(baseURL), WithToken("test-pat"))
 	return m, context.Background()
 }
 
@@ -309,7 +309,7 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
+	m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -389,7 +389,7 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := NewADOManager(mc, withBaseURL(server.URL), WithToken("test-pat"))
+	m := NewADOManager(mc, WithBaseURL(server.URL), WithToken("test-pat"))
 
 	ctx := context.Background()
 	args := map[string]interface{}{

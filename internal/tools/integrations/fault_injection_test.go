@@ -13,9 +13,39 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/ado"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/atlassian"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mockSecurityManager provides a test double for security.Manager used in ADO/Atlassian tests.
+type mockSecurityManager struct {
+	approved      bool
+	err           error
+	confirmCalled bool
+}
+
+func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (m *mockSecurityManager) IsPathWritable(path string) (string, error) {
+	return path, nil
+}
+func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return m.approved, m.err
+}
+func (m *mockSecurityManager) LogAudit(action string, args ...any) {}
+func (m *mockSecurityManager) TerminalLock()                       {}
+func (m *mockSecurityManager) TerminalUnlock()                     {}
+func (m *mockSecurityManager) Prompt(message string)               {}
+func (m *mockSecurityManager) Warn(message string)                 {}
+func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	m.confirmCalled = true
+	return m.approved, m.err
+}
+func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool         { return true }
+func (m *mockSecurityManager) IsBypassActive() bool                         { return false }
+func (m *mockSecurityManager) Close() error                                 { return nil }
 
 type mockRoundTripper struct {
 	roundTrip func(*http.Request) (*http.Response, error)
@@ -32,15 +62,15 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 		name       string
 		setupMock  func(m *mockRoundTripper)
 		inputURL   string
-		call       func(ctx context.Context, m *adoManager) error
+		call       func(ctx context.Context, m *ado.AdoManager) error
 		wantErrMsg string
 	}{
 		{
 			name: "Request Creation Failure",
 			// Invalid URL with control character to force http.NewRequestWithContext to fail
 			inputURL: "https://api.example.com/" + string([]byte{0x7f}),
-			call: func(ctx context.Context, m *adoManager) error {
-				_, err := m.executeRequest(ctx, http.MethodGet, m.baseURL, nil, nil)
+			call: func(ctx context.Context, m *ado.AdoManager) error {
+				_, err := m.ExecuteRequest(ctx, http.MethodGet, m.BaseURL, nil, nil)
 				return err
 			},
 			wantErrMsg: "failed to create request",
@@ -52,8 +82,8 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					return nil, errors.New("network unreachable")
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
-				_, err := m.executeRequest(ctx, http.MethodGet, "https://api.example.com", nil, nil)
+			call: func(ctx context.Context, m *ado.AdoManager) error {
+				_, err := m.ExecuteRequest(ctx, http.MethodGet, "https://api.example.com", nil, nil)
 				return err
 			},
 			wantErrMsg: "network unreachable",
@@ -68,13 +98,13 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization": "org",
 					"project":      "proj",
 					"repository":   "repo",
 				}
-				_, err := m.adoListRepositoryItems(ctx, args, nil)
+				_, err := m.AdoListRepositoryItems(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -86,8 +116,8 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					return nil, context.Canceled
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
-				_, err := m.executeRequest(ctx, http.MethodGet, "https://api.example.com", nil, nil)
+			call: func(ctx context.Context, m *ado.AdoManager) error {
+				_, err := m.ExecuteRequest(ctx, http.MethodGet, "https://api.example.com", nil, nil)
 				return err
 			},
 			wantErrMsg: "context canceled",
@@ -102,14 +132,14 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization": "org",
 					"project":      "proj",
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.adoGetPipelineRun(ctx, args, nil)
+				_, err := m.AdoGetPipelineRun(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -129,10 +159,10 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 				baseURL = tt.inputURL
 			}
 
-			m := newADOManager(sm,
-				withBaseURL(baseURL),
-				withHTTPClient(client),
-				withToken("test-pat"),
+			m := ado.NewADOManager(sm,
+				ado.WithBaseURL(baseURL),
+				ado.WithHTTPClient(client),
+				ado.WithToken("test-pat"),
 			)
 
 			err := tt.call(context.Background(), m)
@@ -145,10 +175,10 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 
 func TestAtlassianProvider_ErrorPaths(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://jira.com")
-	p, err := newAtlassianProvider()
+	p, err := atlassian.NewAtlassianProvider()
 	require.NoError(t, err)
-	p.email = "test@example.com"
-	p.token = "test-token"
+	p.Email = "test@example.com"
+	p.Token = "test-token"
 
 	tests := []struct {
 		name       string
@@ -216,7 +246,7 @@ func TestConfluenceManager_ErrorPaths(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupMock  func(m *mockRoundTripper)
-		call       func(ctx context.Context, m *confluenceManager) error
+		call       func(ctx context.Context, m *atlassian.ConfluenceManager) error
 		wantErrMsg string
 	}{
 		{
@@ -229,8 +259,8 @@ func TestConfluenceManager_ErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *confluenceManager) error {
-				_, err := m.fetchSearchPage(ctx, "https://confluence.com/api")
+			call: func(ctx context.Context, m *atlassian.ConfluenceManager) error {
+				_, err := m.FetchSearchPage(ctx, "https://confluence.com/api")
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -245,9 +275,9 @@ func TestConfluenceManager_ErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *confluenceManager) error {
+			call: func(ctx context.Context, m *atlassian.ConfluenceManager) error {
 				args := map[string]interface{}{"page_id": "123"}
-				_, err := m.confluenceRead(ctx, args, nil)
+				_, err := m.ConfluenceRead(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -266,7 +296,7 @@ func TestConfluenceManager_ErrorPaths(t *testing.T) {
 			}
 			client := &http.Client{Transport: rt}
 
-			m, err := newconfluenceManager(sm, client)
+			m, err := atlassian.NewConfluenceManager(sm, client)
 			require.NoError(t, err)
 
 			err = tt.call(context.Background(), m)
@@ -283,7 +313,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupMock  func(m *mockRoundTripper)
-		call       func(ctx context.Context, m *jiraManager) error
+		call       func(ctx context.Context, m *atlassian.JiraManager) error
 		wantErrMsg string
 	}{
 		{
@@ -296,9 +326,9 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *jiraManager) error {
+			call: func(ctx context.Context, m *atlassian.JiraManager) error {
 				args := map[string]interface{}{"jql": "project=PROJ"}
-				_, err := m.jiraSearchIssues(ctx, args, nil)
+				_, err := m.JiraSearchIssues(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -313,9 +343,9 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *jiraManager) error {
+			call: func(ctx context.Context, m *atlassian.JiraManager) error {
 				args := map[string]interface{}{"issue_key": "PROJ-1"}
-				_, err := m.jiraGetIssue(ctx, args, nil)
+				_, err := m.JiraGetIssue(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -334,7 +364,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 			}
 			client := &http.Client{Transport: rt}
 
-			m, err := newjiraManager(sm, client)
+			m, err := atlassian.NewJiraManager(sm, client)
 			require.NoError(t, err)
 
 			err = tt.call(context.Background(), m)
@@ -351,7 +381,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupMock  func(m *mockRoundTripper)
-		call       func(ctx context.Context, m *adoManager) error
+		call       func(ctx context.Context, m *ado.AdoManager) error
 		wantErrMsg string
 	}{
 		{
@@ -364,13 +394,13 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization": "org",
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.adoListPipelineRuns(ctx, args, nil)
+				_, err := m.AdoListPipelineRuns(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -385,14 +415,14 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization": "org",
 					"project":      "proj",
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.adoGetPipelineLogs(ctx, args, nil)
+				_, err := m.AdoGetPipelineLogs(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode logs list",
@@ -407,13 +437,13 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization": "org",
 					"project":      "proj",
 					"build_id":     1,
 				}
-				_, err := m.adoGetBuildTimeline(ctx, args, nil)
+				_, err := m.AdoGetBuildTimeline(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -428,13 +458,13 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization": "org",
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.adoGetPipelineDefinition(ctx, args, nil)
+				_, err := m.AdoGetPipelineDefinition(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -449,14 +479,14 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization":  "org",
 					"project":       "proj",
 					"definition_id": 1,
 					"variables":     map[string]interface{}{"K": map[string]interface{}{"value": "V"}},
 				}
-				_, err := m.adoUpdateBuildDefinitionVariables(ctx, args, nil)
+				_, err := m.AdoUpdateBuildDefinitionVariables(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode definition",
@@ -471,9 +501,9 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 			}
 			client := &http.Client{Transport: rt}
 
-			m := newADOManager(sm,
-				withHTTPClient(client),
-				withToken("test-pat"),
+			m := ado.NewADOManager(sm,
+				ado.WithHTTPClient(client),
+				ado.WithToken("test-pat"),
 			)
 
 			err := tt.call(context.Background(), m)
@@ -490,7 +520,7 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupMock  func(m *mockRoundTripper)
-		call       func(ctx context.Context, m *adoManager) error
+		call       func(ctx context.Context, m *ado.AdoManager) error
 		wantErrMsg string
 	}{
 		{
@@ -503,14 +533,14 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization":    "org",
 					"project":         "proj",
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrStatuses(ctx, args, nil)
+				_, err := m.AdoGetPrStatuses(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -525,14 +555,14 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization":    "org",
 					"project":         "proj",
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrPolicyEvaluations(ctx, args, nil)
+				_, err := m.AdoGetPrPolicyEvaluations(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode PR metadata",
@@ -553,14 +583,14 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization":    "org",
 					"project":         "proj",
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrPolicyEvaluations(ctx, args, nil)
+				_, err := m.AdoGetPrPolicyEvaluations(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -575,9 +605,9 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 			}
 			client := &http.Client{Transport: rt}
 
-			m := newADOManager(sm,
-				withHTTPClient(client),
-				withToken("test-pat"),
+			m := ado.NewADOManager(sm,
+				ado.WithHTTPClient(client),
+				ado.WithToken("test-pat"),
 			)
 
 			err := tt.call(context.Background(), m)
@@ -594,7 +624,7 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupMock  func(m *mockRoundTripper)
-		call       func(ctx context.Context, m *adoManager) error
+		call       func(ctx context.Context, m *ado.AdoManager) error
 		wantErrMsg string
 	}{
 		{
@@ -607,13 +637,13 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization": "org",
 					"project":      "proj",
 					"repository":   "repo",
 				}
-				_, err := m.adoListPullRequests(ctx, args, nil)
+				_, err := m.AdoListPullRequests(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -628,14 +658,14 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 					}, nil
 				}
 			},
-			call: func(ctx context.Context, m *adoManager) error {
+			call: func(ctx context.Context, m *ado.AdoManager) error {
 				args := map[string]interface{}{
 					"organization":    "org",
 					"project":         "proj",
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrThreads(ctx, args, nil)
+				_, err := m.AdoGetPrThreads(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -650,9 +680,9 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 			}
 			client := &http.Client{Transport: rt}
 
-			m := newADOManager(sm,
-				withHTTPClient(client),
-				withToken("test-pat"),
+			m := ado.NewADOManager(sm,
+				ado.WithHTTPClient(client),
+				ado.WithToken("test-pat"),
 			)
 
 			err := tt.call(context.Background(), m)
@@ -665,20 +695,20 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 
 func TestAtlassianProvider_WaitTime(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
-	p, err := newAtlassianProvider()
+	p, err := atlassian.NewAtlassianProvider()
 	require.NoError(t, err)
-	p.baseDelay = 0 // Test baseDelay == 0 case
+	p.BaseDelay = 0 // Test baseDelay == 0 case
 
 	t.Run("Default baseDelay", func(t *testing.T) {
 		resp := &http.Response{Header: make(http.Header)}
-		wait := p.getWaitTime(resp, 0)
+		wait := p.GetWaitTime(resp, 0)
 		assert.Equal(t, 1*time.Second, wait)
 	})
 
 	t.Run("Invalid Retry-After", func(t *testing.T) {
-		p.baseDelay = 1 * time.Second
+		p.BaseDelay = 1 * time.Second
 		resp := &http.Response{Header: http.Header{"Retry-After": []string{"invalid"}}}
-		wait := p.getWaitTime(resp, 1)
+		wait := p.GetWaitTime(resp, 1)
 		assert.Equal(t, 2*time.Second, wait) // exponential backoff
 	})
 }

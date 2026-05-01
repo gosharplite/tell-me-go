@@ -99,6 +99,6 @@ func TestHTTPClient_NetworkFault_OnStatusError(t *testing.T) {
 		t.Errorf("Expected wrapped error to match target fault. Got: %v", err)
 	}
 
-	// Verify the error message contains the expected context from checkResponseError
+	// Verify the error message contains the expected context from CheckResponseError
 	assert.Contains(t, err.Error(), "additionally, failed to read response body")
 }

@@ -36,7 +36,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	t.Setenv("ATLASSIAN_TOKEN", "token")
 
 	t.Run("Success on first attempt", func(t *testing.T) {
-		p, err := newAtlassianProvider()
+		p, err := NewAtlassianProvider()
 		assert.NoError(t, err)
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
@@ -53,9 +53,9 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Retry on 429 then success", func(t *testing.T) {
-		p, err := newAtlassianProvider()
+		p, err := NewAtlassianProvider()
 		assert.NoError(t, err)
-		p.baseDelay = 1 * time.Microsecond
+		p.BaseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -83,9 +83,9 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Respect Retry-After header", func(t *testing.T) {
-		p, err := newAtlassianProvider()
+		p, err := NewAtlassianProvider()
 		assert.NoError(t, err)
-		p.baseDelay = 1 * time.Microsecond
+		p.BaseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -116,9 +116,9 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Max retries exceeded", func(t *testing.T) {
-		p, err := newAtlassianProvider()
+		p, err := NewAtlassianProvider()
 		assert.NoError(t, err)
-		p.baseDelay = 1 * time.Microsecond
+		p.BaseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -138,9 +138,9 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Context cancellation", func(t *testing.T) {
-		p, err := newAtlassianProvider()
+		p, err := NewAtlassianProvider()
 		assert.NoError(t, err)
-		p.baseDelay = 10 * time.Millisecond
+		p.BaseDelay = 10 * time.Millisecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -165,7 +165,7 @@ func TestAtlassianProvider_GetAuthHeader_Errors(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	t.Run("Missing Email", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "")
-		p, err := newAtlassianProvider()
+		p, err := NewAtlassianProvider()
 		assert.NoError(t, err)
 		_, err = p.getAuthHeader()
 		assert.Error(t, err)
@@ -175,7 +175,7 @@ func TestAtlassianProvider_GetAuthHeader_Errors(t *testing.T) {
 	t.Run("Missing Token", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "test")
 		t.Setenv("ATLASSIAN_TOKEN", "")
-		p, err := newAtlassianProvider()
+		p, err := NewAtlassianProvider()
 		assert.NoError(t, err)
 		_, err = p.getAuthHeader()
 		assert.Error(t, err)
@@ -188,9 +188,9 @@ func TestAtlassianProvider_Do_RetryWithBody(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 	t.Setenv("ATLASSIAN_TOKEN", "token")
 
-	p, err := newAtlassianProvider()
+	p, err := NewAtlassianProvider()
 	assert.NoError(t, err)
-	p.baseDelay = 1 * time.Microsecond
+	p.BaseDelay = 1 * time.Microsecond
 	mockClient := new(mockRetryClient)
 
 	bodyText := "hello world"
@@ -239,7 +239,7 @@ func TestAtlassianProvider_Constructor_FailsWhenMissingURL(t *testing.T) {
 	// Ensure the environment variable is explicitly unset for this test
 	t.Setenv("ATLASSIAN_BASE_URL", "")
 
-	p, err := newAtlassianProvider()
+	p, err := NewAtlassianProvider()
 
 	require.Error(t, err)
 	require.Nil(t, p)

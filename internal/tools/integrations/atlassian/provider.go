@@ -15,41 +15,41 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type atlassianProvider struct {
+type AtlassianProvider struct {
 	baseURL   string
-	email     string
-	token     string
-	baseDelay time.Duration
+	Email string
+	Token string
+	BaseDelay time.Duration
 }
 
-func newAtlassianProvider() (*atlassianProvider, error) {
+func NewAtlassianProvider() (*AtlassianProvider, error) {
 	baseURL := os.Getenv("ATLASSIAN_BASE_URL")
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing required environment variable: ATLASSIAN_BASE_URL")
 	}
 
-	return &atlassianProvider{
+	return &AtlassianProvider{
 		baseURL:   baseURL,
-		email:     os.Getenv("ATLASSIAN_EMAIL"),
-		token:     os.Getenv("ATLASSIAN_TOKEN"),
-		baseDelay: 1 * time.Second,
+		Email:     os.Getenv("ATLASSIAN_EMAIL"),
+		Token:     os.Getenv("ATLASSIAN_TOKEN"),
+		BaseDelay: 1 * time.Second,
 	}, nil
 }
 
-func (p *atlassianProvider) getAuthHeader() (string, error) {
-	if p.email == "" {
+func (p *AtlassianProvider) getAuthHeader() (string, error) {
+	if p.Email == "" {
 		return "", fmt.Errorf("missing ATLASSIAN_EMAIL environment variable")
 	}
-	if p.token == "" {
+	if p.Token == "" {
 		return "", fmt.Errorf("missing ATLASSIAN_TOKEN environment variable")
 	}
 
-	auth := fmt.Sprintf("%s:%s", p.email, p.token)
+	auth := fmt.Sprintf("%s:%s", p.Email, p.Token)
 	encoded := base64.StdEncoding.EncodeToString([]byte(auth))
 	return fmt.Sprintf("Basic %s", encoded), nil
 }
 
-func (p *atlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req *http.Request) (*http.Response, error) {
+func (p *AtlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req *http.Request) (*http.Response, error) {
 	authHeader, err := p.getAuthHeader()
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (p *atlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 			break
 		}
 
-		wait := p.getWaitTime(resp, i)
+		wait := p.GetWaitTime(resp, i)
 		_ = resp.Body.Close()
 
 		select {
@@ -92,13 +92,13 @@ func (p *atlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 	return lastResp, nil
 }
 
-func (p *atlassianProvider) getWaitTime(resp *http.Response, retryCount int) time.Duration {
-	baseDelay := p.baseDelay
-	if baseDelay == 0 {
-		baseDelay = 1 * time.Second
+func (p *AtlassianProvider) GetWaitTime(resp *http.Response, retryCount int) time.Duration {
+	BaseDelay := p.BaseDelay
+	if BaseDelay == 0 {
+		BaseDelay = 1 * time.Second
 	}
 
-	wait := baseDelay * (1 << uint(retryCount))
+	wait := BaseDelay * (1 << uint(retryCount))
 	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
 		if seconds, err := strconv.Atoi(retryAfter); err == nil {
 			wait = time.Duration(seconds) * time.Second
@@ -107,7 +107,7 @@ func (p *atlassianProvider) getWaitTime(resp *http.Response, retryCount int) tim
 	return wait
 }
 
-func (p *atlassianProvider) resetRequestBody(req *http.Request) error {
+func (p *AtlassianProvider) resetRequestBody(req *http.Request) error {
 	if req.GetBody != nil {
 		newBody, err := req.GetBody()
 		if err != nil {

@@ -18,7 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func (m *adoManager) AdoGetPullRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPullRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -35,9 +35,9 @@ func (m *adoManager) AdoGetPullRequest(ctx context.Context, args map[string]inte
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pull request request: %w", err)
 	}
@@ -68,7 +68,7 @@ type adoPullRequestDetail struct {
 	} `json:"repository"`
 }
 
-func (m *adoManager) formatPullRequestDetail(pullRequestId int, prData adoPullRequestDetail) string {
+func (m *AdoManager) formatPullRequestDetail(pullRequestId int, prData adoPullRequestDetail) string {
 	var resultText strings.Builder
 	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d: %s\n", pullRequestId, prData.Title)
 	_, _ = fmt.Fprintf(&resultText, "Status: %s\n", prData.Status)
@@ -82,7 +82,7 @@ func (m *adoManager) formatPullRequestDetail(pullRequestId int, prData adoPullRe
 	return resultText.String()
 }
 
-func (m *adoManager) AdoListPullRequests(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoListPullRequests(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -104,7 +104,7 @@ func (m *adoManager) AdoListPullRequests(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, fmt.Errorf("building list pull requests URL: %w", err)
 	}
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing list pull requests request: %w", err)
 	}
@@ -131,7 +131,7 @@ type adoPullRequestShort struct {
 	CreationDate string `json:"creationDate"`
 }
 
-func (m *adoManager) buildListPullRequestsURL(org, project, repo, status string, top int) (string, error) {
+func (m *AdoManager) buildListPullRequestsURL(org, project, repo, status string, top int) (string, error) {
 	if status == "" {
 		status = "active"
 	}
@@ -142,7 +142,7 @@ func (m *adoManager) buildListPullRequestsURL(org, project, repo, status string,
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -156,7 +156,7 @@ func (m *adoManager) buildListPullRequestsURL(org, project, repo, status string,
 	return u.String(), nil
 }
 
-func (m *adoManager) formatPullRequestsList(prs []adoPullRequestShort) string {
+func (m *AdoManager) formatPullRequestsList(prs []adoPullRequestShort) string {
 	if len(prs) == 0 {
 		return "No pull requests found."
 	}
@@ -171,7 +171,7 @@ func (m *adoManager) formatPullRequestsList(prs []adoPullRequestShort) string {
 	return resultText.String()
 }
 
-func (m *adoManager) AdoGetPrDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPrDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -188,9 +188,9 @@ func (m *adoManager) AdoGetPrDiff(ctx context.Context, args map[string]interface
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/iterations/1/changes?api-version=7.1",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pr diff request: %w", err)
 	}
@@ -239,7 +239,7 @@ type adoThreadResponse struct {
 	} `json:"value"`
 }
 
-func (m *adoManager) AdoGetPrThreads(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPrThreads(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -256,9 +256,9 @@ func (m *adoManager) AdoGetPrThreads(ctx context.Context, args map[string]interf
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/threads?api-version=7.1",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pr threads request: %w", err)
 	}
@@ -272,7 +272,7 @@ func (m *adoManager) AdoGetPrThreads(ctx context.Context, args map[string]interf
 	return tools.ToolResult{Text: m.formatPrThreads(params.PullRequestId, threadData)}, nil
 }
 
-func (m *adoManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
+func (m *AdoManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
 	var resultText strings.Builder
 	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Discussion Threads:\n\n", pullRequestId)
 

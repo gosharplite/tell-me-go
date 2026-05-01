@@ -186,7 +186,7 @@ func mapADOVariables(vars map[string]string) map[string]adoVariable {
 	return mapped
 }
 
-func (m *adoManager) AdoListPipelineRuns(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoListPipelineRuns(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing list pipeline runs args: %w", err)
@@ -205,7 +205,7 @@ func (m *adoManager) AdoListPipelineRuns(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, fmt.Errorf("building list pipeline runs URL: %w", err)
 	}
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing list pipeline runs request: %w", err)
 	}
@@ -236,7 +236,7 @@ type adoPipelineRun struct {
 	} `json:"repository"`
 }
 
-func (m *adoManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
+func (m *AdoManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
 	if top <= 0 {
 		top = 10
 	} else if top > 1000 {
@@ -244,7 +244,7 @@ func (m *adoManager) buildListPipelineRunsURL(org, project string, pipelineId, t
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project)))
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project)))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -258,7 +258,7 @@ func (m *adoManager) buildListPipelineRunsURL(org, project string, pipelineId, t
 	return u.String(), nil
 }
 
-func (m *adoManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {
+func (m *AdoManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {
 	if len(runs) == 0 {
 		return "No pipeline runs found."
 	}
@@ -273,7 +273,7 @@ func (m *adoManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRu
 	return resultText.String()
 }
 
-func (m *adoManager) AdoGetPipelineRun(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPipelineRun(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -290,9 +290,9 @@ func (m *adoManager) AdoGetPipelineRun(ctx context.Context, args map[string]inte
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d?api-version=7.1",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pipeline run request: %w", err)
 	}
@@ -322,7 +322,7 @@ func (m *adoManager) AdoGetPipelineRun(ctx context.Context, args map[string]inte
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) AdoGetPipelineLogs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPipelineLogs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -352,11 +352,11 @@ func (m *adoManager) AdoGetPipelineLogs(ctx context.Context, args map[string]int
 	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 }
 
-func (m *adoManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
+func (m *AdoManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing list pipeline logs request: %w", err)
 	}
@@ -386,11 +386,11 @@ func (m *adoManager) listPipelineLogs(ctx context.Context, org, project string, 
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int, hb chan<- struct{}) (tools.ToolResult, error) {
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
 	}
@@ -409,7 +409,7 @@ func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project s
 	return tools.ToolResult{Text: text}, nil
 }
 
-func (m *adoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -425,9 +425,9 @@ func (m *adoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]in
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/timeline?api-version=7.0",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get build timeline request: %w", err)
 	}
@@ -449,7 +449,7 @@ func (m *adoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: string(output)}, nil
 }
 
-func (m *adoManager) AdoGetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -472,9 +472,9 @@ func (m *adoManager) AdoGetTaskLog(ctx context.Context, args map[string]interfac
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get task log request: %w", err)
 	}
@@ -519,9 +519,9 @@ func parseGetBuildChangesArgs(args map[string]interface{}) (adoGetBuildChangesPa
 	return params, nil
 }
 
-func (m *adoManager) buildGetBuildChangesURL(params adoGetBuildChangesParams) (string, error) {
+func (m *AdoManager) buildGetBuildChangesURL(params adoGetBuildChangesParams) (string, error) {
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/changes",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -534,7 +534,7 @@ func (m *adoManager) buildGetBuildChangesURL(params adoGetBuildChangesParams) (s
 	return u.String(), nil
 }
 
-func (m *adoManager) parseBuildChangesResponse(body io.Reader) (string, error) {
+func (m *AdoManager) parseBuildChangesResponse(body io.Reader) (string, error) {
 	var responseData struct {
 		Value []interface{} `json:"value"`
 	}
@@ -551,7 +551,7 @@ func (m *adoManager) parseBuildChangesResponse(body io.Reader) (string, error) {
 	return string(output), nil
 }
 
-func (m *adoManager) AdoGetBuildChanges(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetBuildChanges(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseGetBuildChangesArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -562,7 +562,7 @@ func (m *adoManager) AdoGetBuildChanges(ctx context.Context, args map[string]int
 		return tools.ToolResult{}, err
 	}
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get build changes request: %w", err)
 	}
@@ -581,7 +581,7 @@ type adoPipeline struct {
 	Name string `json:"name"`
 }
 
-func (m *adoManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
+func (m *AdoManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
 	cacheKey := org + "/" + project
 
 	// 1. Check Cache (Fast Path)
@@ -597,9 +597,9 @@ func (m *adoManager) fetchPipelines(ctx context.Context, org, project string) ([
 		}
 
 		requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1",
-			m.baseURL, url.PathEscape(org), url.PathEscape(project))
+			m.BaseURL, url.PathEscape(org), url.PathEscape(project))
 
-		resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+		resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("executing fetch pipelines request: %w", err)
 		}
@@ -626,7 +626,7 @@ func (m *adoManager) fetchPipelines(ctx context.Context, org, project string) ([
 	return val.([]adoPipeline), nil
 }
 
-func (m *adoManager) AdoListPipelines(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoListPipelines(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -658,7 +658,7 @@ func (m *adoManager) AdoListPipelines(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) resolvePipelineID(ctx context.Context, org, project, pipelineName string) (int, error) {
+func (m *AdoManager) resolvePipelineID(ctx context.Context, org, project, pipelineName string) (int, error) {
 	pipelines, err := m.fetchPipelines(ctx, org, project)
 	if err != nil {
 		return 0, fmt.Errorf("failed to fetch pipelines for name resolution: %w", err)
@@ -693,7 +693,7 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 	return result
 }
 
-func (m *adoManager) AdoCreatePipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoCreatePipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing create pipeline args: %w", err)
@@ -729,7 +729,7 @@ func (m *adoManager) AdoCreatePipeline(ctx context.Context, args map[string]inte
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", params.Name, pipelineID)}, nil
 }
 
-func (m *adoManager) checkPipelineExists(ctx context.Context, org, project, name string) (int, error) {
+func (m *AdoManager) checkPipelineExists(ctx context.Context, org, project, name string) (int, error) {
 	pipelines, err := m.fetchPipelines(ctx, org, project)
 	if err != nil {
 		return 0, fmt.Errorf("failed to check existing pipelines: %w", err)
@@ -743,7 +743,7 @@ func (m *adoManager) checkPipelineExists(ctx context.Context, org, project, name
 	return 0, nil
 }
 
-func (m *adoManager) AdoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
@@ -768,7 +768,7 @@ func (m *adoManager) AdoRunPipeline(ctx context.Context, args map[string]interfa
 	}, nil
 }
 
-func (m *adoManager) executeCreatePipeline(ctx context.Context, org, project, name, repoID, yamlPath string, variables map[string]adoVariable, variableGroups []int) (int, error) {
+func (m *AdoManager) executeCreatePipeline(ctx context.Context, org, project, name, repoID, yamlPath string, variables map[string]adoVariable, variableGroups []int) (int, error) {
 	var groups []adoVariableGroup
 	for _, id := range variableGroups {
 		groups = append(groups, adoVariableGroup{ID: id})
@@ -805,9 +805,9 @@ func (m *adoManager) executeCreatePipeline(ctx context.Context, org, project, na
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1-preview.1",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project))
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project))
 
-	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
+	resp, err := m.ExecuteRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return 0, fmt.Errorf("executing create pipeline request: %w", err)
 	}
@@ -823,7 +823,7 @@ func (m *adoManager) executeCreatePipeline(ctx context.Context, org, project, na
 	return newPipeline.Id, nil
 }
 
-func (m *adoManager) executeRunPipeline(ctx context.Context, org, project string, pipelineID int, refName string, templateParams map[string]string, variables map[string]adoVariable) (int, string, error) {
+func (m *AdoManager) executeRunPipeline(ctx context.Context, org, project string, pipelineID int, refName string, templateParams map[string]string, variables map[string]adoVariable) (int, string, error) {
 	payload := adoRunPipelineRequest{
 		Resources: adoRunPipelineResources{
 			Repositories: adoRunPipelineResourcesRepos{
@@ -842,9 +842,9 @@ func (m *adoManager) executeRunPipeline(ctx context.Context, org, project string
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs?api-version=7.1-preview.1",
-		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineID)
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), pipelineID)
 
-	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
+	resp, err := m.ExecuteRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return 0, "", fmt.Errorf("executing run pipeline request: %w", err)
 	}
@@ -866,7 +866,7 @@ func (m *adoManager) executeRunPipeline(ctx context.Context, org, project string
 	return runResponse.Id, runResponse.Links.Web.Href, nil
 }
 
-func (m *adoManager) AdoGetPipelineDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoGetPipelineDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -882,9 +882,9 @@ func (m *adoManager) AdoGetPipelineDefinition(ctx context.Context, args map[stri
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d?api-version=7.1-preview.1",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pipeline definition request: %w", err)
 	}
@@ -944,7 +944,7 @@ func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars m
 	return json.Marshal(existingDef)
 }
 
-func (m *adoManager) AdoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) AdoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseUpdateBuildDefArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -952,9 +952,9 @@ func (m *adoManager) AdoUpdateBuildDefinitionVariables(ctx context.Context, args
 
 	// 1. GET current definition
 	u := fmt.Sprintf("%s/%s/%s/_apis/build/definitions/%d?api-version=7.1",
-		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.DefinitionId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.DefinitionId)
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("fetching build definition: %w", err)
 	}
@@ -981,7 +981,7 @@ func (m *adoManager) AdoUpdateBuildDefinitionVariables(ctx context.Context, args
 	}
 
 	// 4. PUT updated definition
-	putResp, err := m.executeRequest(ctx, http.MethodPut, u, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
+	putResp, err := m.ExecuteRequest(ctx, http.MethodPut, u, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing update build definition variables request: %w", err)
 	}

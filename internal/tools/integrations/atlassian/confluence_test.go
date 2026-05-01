@@ -1010,7 +1010,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 	t.Run("fetchSearchPage Error request creation", func(t *testing.T) {
 		m, err := NewConfluenceManager(nil, nil)
 		assert.NoError(t, err)
-		_, err = m.fetchSearchPage(context.Background(), " ://bad")
+		_, err = m.FetchSearchPage(context.Background(), " ://bad")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create request")
 	})
@@ -1020,7 +1020,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		m, err := NewConfluenceManager(nil, mockClient)
 		assert.NoError(t, err)
 		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("do error"))
-		_, err = m.fetchSearchPage(context.Background(), "https://test.com")
+		_, err = m.FetchSearchPage(context.Background(), "https://test.com")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
