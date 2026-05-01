@@ -48,7 +48,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -58,7 +58,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPullRequest(ctx, args, nil)
+		result, err := m.AdoGetPullRequest(ctx, args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Fix bug")
 		assert.Contains(t, result.Text, "active")
@@ -72,7 +72,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -81,7 +81,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		_, err := m.adoGetPullRequest(context.Background(), args, nil)
+		_, err := m.AdoGetPullRequest(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unauthorized")
 	})
@@ -92,7 +92,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -101,24 +101,24 @@ func TestAdoGetPullRequest(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		_, err := m.adoGetPullRequest(context.Background(), args, nil)
+		_, err := m.AdoGetPullRequest(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("Missing Parameters", func(t *testing.T) {
-		m := newADOManager(sm)
+		m := NewADOManager(sm)
 		args := map[string]interface{}{
 			"organization": "myorg",
 		}
 
-		_, err := m.adoGetPullRequest(context.Background(), args, nil)
+		_, err := m.AdoGetPullRequest(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
 
 	t.Run("Missing PAT", func(t *testing.T) {
-		m := newADOManager(sm)
+		m := NewADOManager(sm)
 		args := map[string]interface{}{
 			"organization":    "myorg",
 			"project":         "myproj",
@@ -126,7 +126,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		_, err := m.adoGetPullRequest(context.Background(), args, nil)
+		_, err := m.AdoGetPullRequest(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "AZURE_PAT_ALL token is required but not provided")
 	})
@@ -167,7 +167,7 @@ func TestAdoListPullRequests(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -176,7 +176,7 @@ func TestAdoListPullRequests(t *testing.T) {
 			"repository":   "myrepo",
 		}
 
-		result, err := m.adoListPullRequests(ctx, args, nil)
+		result, err := m.AdoListPullRequests(ctx, args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Found 2 pull requests")
 		assert.Contains(t, result.Text, "[#123] Fix bug")
@@ -190,7 +190,7 @@ func TestAdoListPullRequests(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -198,7 +198,7 @@ func TestAdoListPullRequests(t *testing.T) {
 			"repository":   "myrepo",
 		}
 
-		result, err := m.adoListPullRequests(context.Background(), args, nil)
+		result, err := m.AdoListPullRequests(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "No pull requests found.", result.Text)
 	})
@@ -214,7 +214,7 @@ func TestAdoListPullRequests(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -224,7 +224,7 @@ func TestAdoListPullRequests(t *testing.T) {
 			"top":          10,
 		}
 
-		_, err := m.adoListPullRequests(context.Background(), args, nil)
+		_, err := m.AdoListPullRequests(context.Background(), args, nil)
 		assert.NoError(t, err)
 	})
 }
@@ -255,7 +255,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -265,7 +265,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPrDiff(ctx, args, nil)
+		result, err := m.AdoGetPrDiff(ctx, args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Total files changed: 2")
 		assert.Contains(t, result.Text, "[Edit] /src/main.go")
@@ -279,7 +279,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -288,7 +288,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPrDiff(context.Background(), args, nil)
+		result, err := m.AdoGetPrDiff(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "No changes found in this pull request.", result.Text)
 	})
@@ -340,7 +340,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -350,7 +350,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPrThreads(ctx, args, nil)
+		result, err := m.AdoGetPrThreads(ctx, args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Thread 1")
 		assert.Contains(t, result.Text, "Please check this logic.")
@@ -365,7 +365,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -374,7 +374,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPrThreads(context.Background(), args, nil)
+		result, err := m.AdoGetPrThreads(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "No discussion threads found in this pull request.", result.Text)
 	})
@@ -400,7 +400,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -411,7 +411,7 @@ func TestAdoGetFileContent(t *testing.T) {
 			"version":      "develop",
 		}
 
-		result, err := m.adoGetFileContent(ctx, args, nil)
+		result, err := m.AdoGetFileContent(ctx, args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, fileContent, result.Text)
 	})
@@ -424,7 +424,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -433,7 +433,7 @@ func TestAdoGetFileContent(t *testing.T) {
 			"path":         "/src/main.go",
 		}
 
-		_, err := m.adoGetFileContent(context.Background(), args, nil)
+		_, err := m.AdoGetFileContent(context.Background(), args, nil)
 		assert.NoError(t, err)
 	})
 
@@ -443,7 +443,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -452,7 +452,7 @@ func TestAdoGetFileContent(t *testing.T) {
 			"path":         "/missing.go",
 		}
 
-		_, err := m.adoGetFileContent(context.Background(), args, nil)
+		_, err := m.AdoGetFileContent(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -484,7 +484,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -494,7 +494,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 			"recursion_level": "oneLevel",
 		}
 
-		result, err := m.adoListRepositoryItems(ctx, args, nil)
+		result, err := m.AdoListRepositoryItems(ctx, args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "[DIR]  /src")
 		assert.Contains(t, result.Text, "[FILE] /src/main.go")
@@ -508,7 +508,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -516,7 +516,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 			"repository":   "myrepo",
 		}
 
-		result, err := m.adoListRepositoryItems(context.Background(), args, nil)
+		result, err := m.AdoListRepositoryItems(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "No items found.", result.Text)
 	})
@@ -536,10 +536,10 @@ func TestAdoListPipelineRuns(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		result, err := m.adoListPipelineRuns(context.Background(), args, nil)
+		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Run ID: 101")
 		assert.Contains(t, result.Text, "Repo: myrepo")
@@ -559,10 +559,10 @@ func TestAdoGetPipelineRun(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		result, err := m.adoGetPipelineRun(context.Background(), args, nil)
+		result, err := m.AdoGetPipelineRun(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Pipeline Run #101 Details")
 	})
@@ -582,10 +582,10 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		result, err := m.adoGetPipelineLogs(context.Background(), args, nil)
+		result, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Log ID: 1")
 	})
@@ -599,10 +599,10 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
-		result, err := m.adoGetPipelineLogs(context.Background(), args, nil)
+		result, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, logContent, result.Text)
 	})
@@ -639,7 +639,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -648,7 +648,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPrStatuses(context.Background(), args, nil)
+		result, err := m.AdoGetPrStatuses(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Pull Request #123 Statuses")
 		assert.Contains(t, result.Text, "✅ **Build/CI**: succeeded")
@@ -662,7 +662,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -671,7 +671,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 			"pull_request_id": 999,
 		}
 
-		_, err := m.adoGetPrStatuses(context.Background(), args, nil)
+		_, err := m.AdoGetPrStatuses(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -720,7 +720,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -729,7 +729,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPrPolicyEvaluations(context.Background(), args, nil)
+		result, err := m.AdoGetPrPolicyEvaluations(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Pull Request #123 Policy Evaluations")
 		assert.Contains(t, result.Text, "❌ **Build Validation** [REQUIRED]: broken")
@@ -750,7 +750,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -759,7 +759,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		result, err := m.adoGetPrPolicyEvaluations(context.Background(), args, nil)
+		result, err := m.AdoGetPrPolicyEvaluations(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "No active policies found for this pull request.", result.Text)
 	})
@@ -778,7 +778,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -787,7 +787,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args, nil)
+		_, err := m.AdoGetPrPolicyEvaluations(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unauthorized")
 	})
@@ -828,7 +828,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -837,7 +837,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 			"branch_name":  "main",
 		}
 
-		result, err := m.adoListBranchPolicies(context.Background(), args, nil)
+		result, err := m.AdoListBranchPolicies(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Branch Policies for main in myrepo")
 		assert.Contains(t, result.Text, "- Type: Build [REQUIRED]")
@@ -860,7 +860,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -869,7 +869,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 			"branch_name":  "main",
 		}
 
-		result, err := m.adoListBranchPolicies(context.Background(), args, nil)
+		result, err := m.AdoListBranchPolicies(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "No active policies found")
 	})
@@ -898,10 +898,10 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
-		result, err := m.adoGetBuildTimeline(context.Background(), args, nil)
+		result, err := m.AdoGetBuildTimeline(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, `"name": "Task 1"`)
 		assert.Contains(t, result.Text, `"log": {`)
@@ -914,10 +914,10 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
-		_, err := m.adoGetBuildTimeline(context.Background(), args, nil)
+		_, err := m.AdoGetBuildTimeline(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -936,7 +936,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "o",
@@ -944,7 +944,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 			"build_id":     123,
 			"log_id":       10,
 		}
-		result, err := m.adoGetTaskLog(context.Background(), args, nil)
+		result, err := m.AdoGetTaskLog(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, logContent, result.Text)
 	})
@@ -955,7 +955,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "o",
@@ -963,7 +963,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 			"build_id":     123,
 			"log_id":       99,
 		}
-		_, err := m.adoGetTaskLog(context.Background(), args, nil)
+		_, err := m.AdoGetTaskLog(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -991,10 +991,10 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123, "top": 10}
-		result, err := m.adoGetBuildChanges(context.Background(), args, nil)
+		result, err := m.AdoGetBuildChanges(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, `"id": "abc123"`)
 		assert.Contains(t, result.Text, `"message": "feat: add something"`)
@@ -1006,10 +1006,10 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
-		_, err := m.adoGetBuildChanges(context.Background(), args, nil)
+		_, err := m.AdoGetBuildChanges(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1036,61 +1036,61 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		setupPAT       string
 	}{
 		{
-			name: "adoGetPrDiff - Unmarshal Error",
+			name: "AdoGetPrDiff - Unmarshal Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrDiff(ctx, args, nil)
+				return m.AdoGetPrDiff(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"pull_request_id": "invalid"}, // should be int
 			expectedErrMsg: "json: cannot unmarshal string into Go struct field",
 		},
 		{
-			name: "adoGetPrDiff - Missing Params",
+			name: "AdoGetPrDiff - Missing Params",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrDiff(ctx, args, nil)
+				return m.AdoGetPrDiff(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o"},
 			expectedErrMsg: "required",
 		},
 		{
-			name: "adoGetPrDiff - Request Failure",
+			name: "AdoGetPrDiff - Request Failure",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrDiff(ctx, args, nil)
+				return m.AdoGetPrDiff(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			doErr:          fmt.Errorf("network error"),
 			expectedErrMsg: "request failed",
 		},
 		{
-			name: "adoGetPrDiff - 401 Unauthorized",
+			name: "AdoGetPrDiff - 401 Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrDiff(ctx, args, nil)
+				return m.AdoGetPrDiff(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetPrDiff - 403 Forbidden",
+			name: "AdoGetPrDiff - 403 Forbidden",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrDiff(ctx, args, nil)
+				return m.AdoGetPrDiff(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusForbidden,
 			expectedErrMsg: "forbidden",
 		},
 		{
-			name: "adoGetPrDiff - 404 Not Found",
+			name: "AdoGetPrDiff - 404 Not Found",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrDiff(ctx, args, nil)
+				return m.AdoGetPrDiff(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "adoGetPrDiff - 500 Internal Error",
+			name: "AdoGetPrDiff - 500 Internal Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrDiff(ctx, args, nil)
+				return m.AdoGetPrDiff(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusInternalServerError,
@@ -1098,51 +1098,51 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "adoGetTaskLog - Unmarshal Error",
+			name: "AdoGetTaskLog - Unmarshal Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetTaskLog(ctx, args, nil)
+				return m.AdoGetTaskLog(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"build_id": "invalid"},
 			expectedErrMsg: "json: cannot unmarshal string into Go struct field",
 		},
 		{
-			name: "adoGetTaskLog - Missing Params",
+			name: "AdoGetTaskLog - Missing Params",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetTaskLog(ctx, args, nil)
+				return m.AdoGetTaskLog(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o"},
 			expectedErrMsg: "required",
 		},
 		{
-			name: "adoGetTaskLog - 404 Not Found",
+			name: "AdoGetTaskLog - 404 Not Found",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetTaskLog(ctx, args, nil)
+				return m.AdoGetTaskLog(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "log_id": 1},
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "not found",
 		},
 		{
-			name: "adoGetBuildTimeline - Missing Params",
+			name: "AdoGetBuildTimeline - Missing Params",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetBuildTimeline(ctx, args, nil)
+				return m.AdoGetBuildTimeline(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o"},
 			expectedErrMsg: "required",
 		},
 		{
-			name: "adoGetBuildTimeline - 401 Unauthorized",
+			name: "AdoGetBuildTimeline - 401 Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetBuildTimeline(ctx, args, nil)
+				return m.AdoGetBuildTimeline(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetPrPolicyEvaluations - PR Metadata Failure",
+			name: "AdoGetPrPolicyEvaluations - PR Metadata Failure",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrPolicyEvaluations(ctx, args, nil)
+				return m.AdoGetPrPolicyEvaluations(ctx, args, nil)
 			},
 			args: map[string]interface{}{
 				"organization":    "myorg",
@@ -1154,153 +1154,153 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "adoListPullRequests - Unauthorized",
+			name: "AdoListPullRequests - Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoListPullRequests(ctx, args, nil)
+				return m.AdoListPullRequests(ctx, args, nil)
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoListPullRequests - Forbidden",
+			name: "AdoListPullRequests - Forbidden",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoListPullRequests(ctx, args, nil)
+				return m.AdoListPullRequests(ctx, args, nil)
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusForbidden,
 			expectedErrMsg: "forbidden",
 		},
 		{
-			name: "adoListPullRequests - Not Found",
+			name: "AdoListPullRequests - Not Found",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoListPullRequests(ctx, args, nil)
+				return m.AdoListPullRequests(ctx, args, nil)
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "adoGetPrThreads - Unauthorized",
+			name: "AdoGetPrThreads - Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrThreads(ctx, args, nil)
+				return m.AdoGetPrThreads(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetPrThreads - Forbidden",
+			name: "AdoGetPrThreads - Forbidden",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrThreads(ctx, args, nil)
+				return m.AdoGetPrThreads(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusForbidden,
 			expectedErrMsg: "forbidden",
 		},
 		{
-			name: "adoGetPrThreads - Not Found",
+			name: "AdoGetPrThreads - Not Found",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrThreads(ctx, args, nil)
+				return m.AdoGetPrThreads(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "adoListRepositoryItems - Unauthorized",
+			name: "AdoListRepositoryItems - Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoListRepositoryItems(ctx, args, nil)
+				return m.AdoListRepositoryItems(ctx, args, nil)
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoListRepositoryItems - Forbidden",
+			name: "AdoListRepositoryItems - Forbidden",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoListRepositoryItems(ctx, args, nil)
+				return m.AdoListRepositoryItems(ctx, args, nil)
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusForbidden,
 			expectedErrMsg: "forbidden",
 		},
 		{
-			name: "adoListRepositoryItems - Not Found",
+			name: "AdoListRepositoryItems - Not Found",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoListRepositoryItems(ctx, args, nil)
+				return m.AdoListRepositoryItems(ctx, args, nil)
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "adoListPipelineRuns - 500 Error",
+			name: "AdoListPipelineRuns - 500 Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoListPipelineRuns(ctx, args, nil)
+				return m.AdoListPipelineRuns(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "status: 500",
 		},
 		{
-			name: "adoGetPipelineRun - 500 Error",
+			name: "AdoGetPipelineRun - 500 Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPipelineRun(ctx, args, nil)
+				return m.AdoGetPipelineRun(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "status: 500",
 		},
 		{
-			name: "adoGetBuildChanges - 500 Error",
+			name: "AdoGetBuildChanges - 500 Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetBuildChanges(ctx, args, nil)
+				return m.AdoGetBuildChanges(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "status: 500",
 		},
 		{
-			name: "adoGetBuildChanges - 401 Unauthorized",
+			name: "AdoGetBuildChanges - 401 Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetBuildChanges(ctx, args, nil)
+				return m.AdoGetBuildChanges(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetPrStatuses - 401 Unauthorized",
+			name: "AdoGetPrStatuses - 401 Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrStatuses(ctx, args, nil)
+				return m.AdoGetPrStatuses(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetPrStatuses - 403 Forbidden",
+			name: "AdoGetPrStatuses - 403 Forbidden",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrStatuses(ctx, args, nil)
+				return m.AdoGetPrStatuses(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
 			httpStatus:     http.StatusForbidden,
 			expectedErrMsg: "forbidden",
 		},
 		{
-			name: "adoGetPrPolicyEvaluations - 403 Forbidden",
+			name: "AdoGetPrPolicyEvaluations - 403 Forbidden",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrPolicyEvaluations(ctx, args, nil)
+				return m.AdoGetPrPolicyEvaluations(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
 			httpStatus:     http.StatusForbidden,
 			expectedErrMsg: "forbidden",
 		},
 		{
-			name: "adoGetPrPolicyEvaluations - PR Metadata Decode Failure",
+			name: "AdoGetPrPolicyEvaluations - PR Metadata Decode Failure",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPrPolicyEvaluations(ctx, args, nil)
+				return m.AdoGetPrPolicyEvaluations(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
 			httpStatus:     http.StatusOK,
@@ -1308,72 +1308,72 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "failed to decode PR metadata",
 		},
 		{
-			name: "adoGetFileContent - Unauthorized",
+			name: "AdoGetFileContent - Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetFileContent(ctx, args, nil)
+				return m.AdoGetFileContent(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetFileContent - Default Error",
+			name: "AdoGetFileContent - Default Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetFileContent(ctx, args, nil)
+				return m.AdoGetFileContent(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "adoGetPipelineLogs - Unauthorized",
+			name: "AdoGetPipelineLogs - Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetPipelineLogs(ctx, args, nil)
+				return m.AdoGetPipelineLogs(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetBuildTimeline - Unauthorized",
+			name: "AdoGetBuildTimeline - Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetBuildTimeline(ctx, args, nil)
+				return m.AdoGetBuildTimeline(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetTaskLog - Unauthorized",
+			name: "AdoGetTaskLog - Unauthorized",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetTaskLog(ctx, args, nil)
+				return m.AdoGetTaskLog(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "log_id": 1},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "adoGetBuildChanges - Not Found",
+			name: "AdoGetBuildChanges - Not Found",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoGetBuildChanges(ctx, args, nil)
+				return m.AdoGetBuildChanges(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "adoCreatePipeline - Missing Params",
+			name: "AdoCreatePipeline - Missing Params",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoCreatePipeline(ctx, args, nil)
+				return m.AdoCreatePipeline(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "name": "n", "repository_id": "r"}, // Missing yaml_path
 			expectedErrMsg: "required",
 		},
 		{
-			name: "adoCreatePipeline - 500 Error",
+			name: "AdoCreatePipeline - 500 Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 				// Approved by default in setup
-				return m.adoCreatePipeline(ctx, args, nil)
+				return m.AdoCreatePipeline(ctx, args, nil)
 			},
 			args: map[string]interface{}{
 				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
@@ -1382,9 +1382,9 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "adoCreatePipeline - Malformed JSON",
+			name: "AdoCreatePipeline - Malformed JSON",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoCreatePipeline(ctx, args, nil)
+				return m.AdoCreatePipeline(ctx, args, nil)
 			},
 			args: map[string]interface{}{
 				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
@@ -1394,26 +1394,26 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "failed to decode response",
 		},
 		{
-			name: "adoRunPipeline - Missing Params",
+			name: "AdoRunPipeline - Missing Params",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoRunPipeline(ctx, args, nil)
+				return m.AdoRunPipeline(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p"}, // Missing pipeline_id
 			expectedErrMsg: "required",
 		},
 		{
-			name: "adoRunPipeline - 500 Error",
+			name: "AdoRunPipeline - 500 Error",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoRunPipeline(ctx, args, nil)
+				return m.AdoRunPipeline(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "adoRunPipeline - Malformed JSON",
+			name: "AdoRunPipeline - Malformed JSON",
 			toolFunc: func(m *adoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.adoRunPipeline(ctx, args, nil)
+				return m.AdoRunPipeline(ctx, args, nil)
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusOK,
@@ -1441,7 +1441,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			m := newADOManager(sm, withBaseURL(server.URL), withToken(pat))
+			m := NewADOManager(sm, withBaseURL(server.URL), WithToken(pat))
 
 			if tt.doErr != nil {
 				// To simulate transport error, we can close the server immediately
@@ -1456,7 +1456,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		})
 	}
 
-	t.Run("adoGetPrPolicyEvaluations - Policy List Failure", func(t *testing.T) {
+	t.Run("AdoGetPrPolicyEvaluations - Policy List Failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/pullrequests/123") {
 				w.WriteHeader(http.StatusOK)
@@ -1469,7 +1469,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -1478,12 +1478,12 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			"pull_request_id": 123,
 		}
 
-		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args, nil)
+		_, err := m.AdoGetPrPolicyEvaluations(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "azure DevOps API returned status: 500")
 	})
 
-	t.Run("adoListBranchPolicies - Policy Config Fetch Failure", func(t *testing.T) {
+	t.Run("AdoListBranchPolicies - Policy Config Fetch Failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/_apis/git/repositories/myrepo") {
 				w.WriteHeader(http.StatusOK)
@@ -1496,7 +1496,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -1505,7 +1505,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			"branch_name":  "main",
 		}
 
-		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
+		_, err := m.AdoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to fetch policy configurations")
 	})
@@ -1513,7 +1513,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 
 func TestAdoTools_AuthError(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	m := newADOManager(sm)
+	m := NewADOManager(sm)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"organization": "o",
@@ -1521,7 +1521,7 @@ func TestAdoTools_AuthError(t *testing.T) {
 		"repository":   "r",
 	}
 
-	_, err := m.adoListPullRequests(ctx, args, nil)
+	_, err := m.AdoListPullRequests(ctx, args, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "AZURE_PAT_ALL token is required but not provided")
 }
@@ -1563,10 +1563,10 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 	t.Run("List Path - Request Failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 		server.Close() // Force failure
 
-		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
+		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
@@ -1577,9 +1577,9 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
+		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -1591,19 +1591,19 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		result, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
+		result, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "No logs found for this run.", result.Text)
 	})
 
 	t.Run("Content Path - Request Failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 		server.Close() // Force failure
 
-		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1}, nil)
+		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
@@ -1619,9 +1619,9 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1}, nil)
+		_, err := m.AdoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1632,9 +1632,9 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1}, nil)
+		_, err := m.AdoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -1650,9 +1650,9 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}, nil)
+		_, err := m.AdoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1664,9 +1664,9 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}, nil)
+		_, err := m.AdoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode repository metadata")
 	})
@@ -1682,7 +1682,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.performPolicyEvaluationRequest(context.Background(), server.URL)
 		assert.Error(t, err)
@@ -1695,7 +1695,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.performPolicyEvaluationRequest(context.Background(), server.URL)
 		assert.Error(t, err)
@@ -1711,9 +1711,9 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(&toolstest.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), withToken("test-pat"))
+	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), WithToken("test-pat"))
 
-	_, err := m.adoGetFileContent(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"}, nil)
+	_, err := m.AdoGetFileContent(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "returned status: 418")
 }
@@ -1726,9 +1726,9 @@ func TestAdoListPipelineRuns_Empty(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(&toolstest.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), withToken("test-pat"))
+	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), WithToken("test-pat"))
 
-	result, err := m.adoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
+	result, err := m.AdoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "No pipeline runs found.", result.Text)
 }
@@ -1743,9 +1743,9 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+		_, err := m.AdoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1756,9 +1756,9 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+		_, err := m.AdoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -1772,9 +1772,9 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(&toolstest.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), withToken("test-pat"))
+	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), WithToken("test-pat"))
 
-	result, err := m.adoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+	result, err := m.AdoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "[]", result.Text)
 }
@@ -1782,23 +1782,23 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 func TestAdoTools_MissingParams(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	m := newADOManager(sm)
+	m := NewADOManager(sm)
 	ctx := context.Background()
 
-	t.Run("adoGetFileContent", func(t *testing.T) {
-		_, err := m.adoGetFileContent(ctx, map[string]interface{}{}, nil)
+	t.Run("AdoGetFileContent", func(t *testing.T) {
+		_, err := m.AdoGetFileContent(ctx, map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
 
-	t.Run("adoGetBuildChanges", func(t *testing.T) {
-		_, err := m.adoGetBuildChanges(ctx, map[string]interface{}{}, nil)
+	t.Run("AdoGetBuildChanges", func(t *testing.T) {
+		_, err := m.AdoGetBuildChanges(ctx, map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
 
-	t.Run("adoGetPrStatuses", func(t *testing.T) {
-		_, err := m.adoGetPrStatuses(ctx, map[string]interface{}{}, nil)
+	t.Run("AdoGetPrStatuses", func(t *testing.T) {
+		_, err := m.AdoGetPrStatuses(ctx, map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -1806,8 +1806,8 @@ func TestAdoTools_MissingParams(t *testing.T) {
 
 func TestAdoGetPullRequest_UnmarshalError(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	m := newADOManager(nil)
-	_, err := m.adoGetPullRequest(context.Background(), map[string]interface{}{"pull_request_id": "invalid"}, nil)
+	m := NewADOManager(nil)
+	_, err := m.AdoGetPullRequest(context.Background(), map[string]interface{}{"pull_request_id": "invalid"}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unmarshal")
 }
@@ -1844,7 +1844,7 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+	m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 	ctx := context.Background()
 
 	// Define standard args that satisfy validation for most endpoints
@@ -1864,19 +1864,19 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 		name string
 		call func() (tools.ToolResult, error)
 	}{
-		{"adoListPullRequests", func() (tools.ToolResult, error) { return m.adoListPullRequests(ctx, args, nil) }},
-		{"adoGetPullRequest", func() (tools.ToolResult, error) { return m.adoGetPullRequest(ctx, args, nil) }},
-		{"adoGetPrDiff", func() (tools.ToolResult, error) { return m.adoGetPrDiff(ctx, args, nil) }},
-		{"adoGetPrThreads", func() (tools.ToolResult, error) { return m.adoGetPrThreads(ctx, args, nil) }},
-		{"adoListRepositoryItems", func() (tools.ToolResult, error) { return m.adoListRepositoryItems(ctx, args, nil) }},
-		{"adoListPipelineRuns", func() (tools.ToolResult, error) { return m.adoListPipelineRuns(ctx, args, nil) }},
-		{"adoGetPipelineRun", func() (tools.ToolResult, error) { return m.adoGetPipelineRun(ctx, args, nil) }},
-		{"adoGetPipelineLogs", func() (tools.ToolResult, error) { return m.adoGetPipelineLogs(ctx, args, nil) }},
-		{"adoGetPrStatuses", func() (tools.ToolResult, error) { return m.adoGetPrStatuses(ctx, args, nil) }},
-		{"adoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.adoGetPrPolicyEvaluations(ctx, args, nil) }},
-		{"adoListBranchPolicies", func() (tools.ToolResult, error) { return m.adoListBranchPolicies(ctx, args, nil) }},
-		{"adoGetBuildTimeline", func() (tools.ToolResult, error) { return m.adoGetBuildTimeline(ctx, args, nil) }},
-		{"adoGetBuildChanges", func() (tools.ToolResult, error) { return m.adoGetBuildChanges(ctx, args, nil) }},
+		{"AdoListPullRequests", func() (tools.ToolResult, error) { return m.AdoListPullRequests(ctx, args, nil) }},
+		{"AdoGetPullRequest", func() (tools.ToolResult, error) { return m.AdoGetPullRequest(ctx, args, nil) }},
+		{"AdoGetPrDiff", func() (tools.ToolResult, error) { return m.AdoGetPrDiff(ctx, args, nil) }},
+		{"AdoGetPrThreads", func() (tools.ToolResult, error) { return m.AdoGetPrThreads(ctx, args, nil) }},
+		{"AdoListRepositoryItems", func() (tools.ToolResult, error) { return m.AdoListRepositoryItems(ctx, args, nil) }},
+		{"AdoListPipelineRuns", func() (tools.ToolResult, error) { return m.AdoListPipelineRuns(ctx, args, nil) }},
+		{"AdoGetPipelineRun", func() (tools.ToolResult, error) { return m.AdoGetPipelineRun(ctx, args, nil) }},
+		{"AdoGetPipelineLogs", func() (tools.ToolResult, error) { return m.AdoGetPipelineLogs(ctx, args, nil) }},
+		{"AdoGetPrStatuses", func() (tools.ToolResult, error) { return m.AdoGetPrStatuses(ctx, args, nil) }},
+		{"AdoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.AdoGetPrPolicyEvaluations(ctx, args, nil) }},
+		{"AdoListBranchPolicies", func() (tools.ToolResult, error) { return m.AdoListBranchPolicies(ctx, args, nil) }},
+		{"AdoGetBuildTimeline", func() (tools.ToolResult, error) { return m.AdoGetBuildTimeline(ctx, args, nil) }},
+		{"AdoGetBuildChanges", func() (tools.ToolResult, error) { return m.AdoGetBuildChanges(ctx, args, nil) }},
 	}
 
 	for _, tt := range tests {
@@ -1911,7 +1911,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte(`{"title": "PR Title", "status": "active", "createdBy": {"displayName": "User"}, "creationDate": "2023-01-01", "repository": {"name": "repo"}}`))
 			},
 			call: func(m *adoManager) (tools.ToolResult, error) {
-				return m.adoGetPullRequest(ctx, map[string]interface{}{
+				return m.AdoGetPullRequest(ctx, map[string]interface{}{
 					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 				}, nil)
 			},
@@ -1924,7 +1924,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte(`{"value": [{"id": 1, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo"}}]}`))
 			},
 			call: func(m *adoManager) (tools.ToolResult, error) {
-				return m.adoListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
+				return m.AdoListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
 			},
 			expectedText: "Run ID: 1",
 		},
@@ -1935,7 +1935,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte("internal error"))
 			},
 			call: func(m *adoManager) (tools.ToolResult, error) {
-				return m.adoGetPullRequest(ctx, map[string]interface{}{
+				return m.AdoGetPullRequest(ctx, map[string]interface{}{
 					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 				}, nil)
 			},
@@ -1948,7 +1948,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte("service unavailable"))
 			},
 			call: func(m *adoManager) (tools.ToolResult, error) {
-				return m.adoGetPullRequest(ctx, map[string]interface{}{
+				return m.AdoGetPullRequest(ctx, map[string]interface{}{
 					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 				}, nil)
 			},
@@ -1961,7 +1961,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte("gateway timeout"))
 			},
 			call: func(m *adoManager) (tools.ToolResult, error) {
-				return m.adoGetPullRequest(ctx, map[string]interface{}{
+				return m.AdoGetPullRequest(ctx, map[string]interface{}{
 					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 				}, nil)
 			},
@@ -1979,7 +1979,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 			call: func(m *adoManager) (tools.ToolResult, error) {
 				childCtx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 				defer cancel()
-				return m.adoGetPullRequest(childCtx, map[string]interface{}{
+				return m.AdoGetPullRequest(childCtx, map[string]interface{}{
 					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 				}, nil)
 			},
@@ -1992,7 +1992,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte(`{ malformed`))
 			},
 			call: func(m *adoManager) (tools.ToolResult, error) {
-				return m.adoGetPullRequest(ctx, map[string]interface{}{
+				return m.AdoGetPullRequest(ctx, map[string]interface{}{
 					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 				}, nil)
 			},
@@ -2005,7 +2005,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(tt.handler))
 			t.Cleanup(server.Close)
 
-			m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+			m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 			result, err := tt.call(m)
 			if tt.expectedErr != "" {
@@ -2037,10 +2037,10 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_name": "cool"}
-		result, err := m.adoListPipelineRuns(context.Background(), args, nil)
+		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Recent runs for pipeline 42")
 	})
@@ -2055,10 +2055,10 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "repository": "repo-b"}
-		result, err := m.adoListPipelineRuns(context.Background(), args, nil)
+		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Run ID: 102")
 		assert.NotContains(t, result.Text, "Run ID: 101")
@@ -2074,10 +2074,10 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 2}
-		result, err := m.adoListPipelineRuns(context.Background(), args, nil)
+		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Run ID: 101")
 		assert.Contains(t, result.Text, "Run ID: 102")
@@ -2152,7 +2152,7 @@ func TestAdoCreatePipeline(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			sm := &mockSecurityManager{approved: tt.approved}
-			m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+			m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 			// Pre-populate cache to test invalidation
 			cacheKey := "myorg/myproj"
@@ -2166,7 +2166,7 @@ func TestAdoCreatePipeline(t *testing.T) {
 				"yaml_path":     "/azure-pipelines.yaml",
 			}
 
-			result, err := m.adoCreatePipeline(context.Background(), args, nil)
+			result, err := m.AdoCreatePipeline(context.Background(), args, nil)
 			assert.NoError(t, err)
 			assert.Contains(t, result.Text, tt.expectedText)
 			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
@@ -2221,7 +2221,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		t.Cleanup(server.Close)
 
 		sm := &mockSecurityManager{approved: true}
-		m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+		m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":        "myorg",
@@ -2232,7 +2232,7 @@ func TestAdoRunPipeline(t *testing.T) {
 			"template_parameters": map[string]string{"param1": "paramVal"},
 		}
 
-		result, err := m.adoRunPipeline(context.Background(), args, nil)
+		result, err := m.AdoRunPipeline(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Successfully triggered pipeline run ID: 101")
 		assert.Contains(t, result.Text, "Web URL: https://dev.azure.com/myorg/myproj/_build/results?buildId=101")
@@ -2240,7 +2240,7 @@ func TestAdoRunPipeline(t *testing.T) {
 
 	t.Run("Cancelled", func(t *testing.T) {
 		sm := &mockSecurityManager{approved: false}
-		m := newADOManager(sm)
+		m := NewADOManager(sm)
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -2248,7 +2248,7 @@ func TestAdoRunPipeline(t *testing.T) {
 			"pipeline_id":  1,
 		}
 
-		result, err := m.adoRunPipeline(context.Background(), args, nil)
+		result, err := m.AdoRunPipeline(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "Pipeline run cancelled by user.", result.Text)
 	})

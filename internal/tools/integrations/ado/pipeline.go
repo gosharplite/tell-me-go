@@ -186,7 +186,7 @@ func mapADOVariables(vars map[string]string) map[string]adoVariable {
 	return mapped
 }
 
-func (m *adoManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoListPipelineRuns(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing list pipeline runs args: %w", err)
@@ -273,7 +273,7 @@ func (m *adoManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRu
 	return resultText.String()
 }
 
-func (m *adoManager) adoGetPipelineRun(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoGetPipelineRun(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -322,7 +322,7 @@ func (m *adoManager) adoGetPipelineRun(ctx context.Context, args map[string]inte
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) adoGetPipelineLogs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoGetPipelineLogs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -409,7 +409,7 @@ func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project s
 	return tools.ToolResult{Text: text}, nil
 }
 
-func (m *adoManager) adoGetBuildTimeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -449,7 +449,7 @@ func (m *adoManager) adoGetBuildTimeline(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: string(output)}, nil
 }
 
-func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoGetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -551,7 +551,7 @@ func (m *adoManager) parseBuildChangesResponse(body io.Reader) (string, error) {
 	return string(output), nil
 }
 
-func (m *adoManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoGetBuildChanges(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseGetBuildChangesArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -626,7 +626,7 @@ func (m *adoManager) fetchPipelines(ctx context.Context, org, project string) ([
 	return val.([]adoPipeline), nil
 }
 
-func (m *adoManager) adoListPipelines(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoListPipelines(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -693,7 +693,7 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 	return result
 }
 
-func (m *adoManager) adoCreatePipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoCreatePipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing create pipeline args: %w", err)
@@ -743,7 +743,7 @@ func (m *adoManager) checkPipelineExists(ctx context.Context, org, project, name
 	return 0, nil
 }
 
-func (m *adoManager) adoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
@@ -866,7 +866,7 @@ func (m *adoManager) executeRunPipeline(ctx context.Context, org, project string
 	return runResponse.Id, runResponse.Links.Web.Href, nil
 }
 
-func (m *adoManager) adoGetPipelineDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoGetPipelineDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -944,7 +944,7 @@ func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars m
 	return json.Marshal(existingDef)
 }
 
-func (m *adoManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseUpdateBuildDefArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, err

@@ -38,7 +38,7 @@ func TestHTTPClient_NetworkFault_MidStream(t *testing.T) {
 
 	// 3. Initialize your client with the mock transport
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	m := newADOManager(sm, withHTTPClient(mockClient), withToken("test-pat"))
+	m := NewADOManager(sm, WithHTTPClient(mockClient), WithToken("test-pat"))
 
 	// 4. Execute the call
 	ctx := context.Background()
@@ -48,7 +48,7 @@ func TestHTTPClient_NetworkFault_MidStream(t *testing.T) {
 		"repository":   "myrepo",
 		"path":         "/src/main.go",
 	}
-	_, err := m.adoGetFileContent(ctx, args, nil)
+	_, err := m.AdoGetFileContent(ctx, args, nil)
 
 	// 5. Assert the error bubbles up safely and retains its identity via %w
 	if err == nil {
@@ -78,7 +78,7 @@ func TestHTTPClient_NetworkFault_OnStatusError(t *testing.T) {
 
 	// 3. Initialize your client with the mock transport
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	m := newADOManager(sm, withHTTPClient(mockClient), withToken("test-pat"))
+	m := NewADOManager(sm, WithHTTPClient(mockClient), WithToken("test-pat"))
 
 	// 4. Execute the call
 	ctx := context.Background()
@@ -88,7 +88,7 @@ func TestHTTPClient_NetworkFault_OnStatusError(t *testing.T) {
 		"repository":   "myrepo",
 		"path":         "/src/main.go",
 	}
-	_, err := m.adoGetFileContent(ctx, args, nil)
+	_, err := m.AdoGetFileContent(ctx, args, nil)
 
 	// 5. Assert the error bubbles up safely and retains its identity via %w
 	if err == nil {

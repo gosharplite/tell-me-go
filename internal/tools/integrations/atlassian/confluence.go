@@ -52,8 +52,8 @@ type confluenceManager struct {
 	provider *atlassianProvider
 }
 
-// newconfluenceManager creates a new instance of confluenceManager.
-func newconfluenceManager(sm confluenceSecurity, client tools.HTTPClient) (*confluenceManager, error) {
+// NewConfluenceManager creates a new instance of confluenceManager.
+func NewConfluenceManager(sm confluenceSecurity, client tools.HTTPClient) (*confluenceManager, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -203,7 +203,7 @@ func (m *confluenceManager) resolveNextURL(baseURL, nextPath string) string {
 	return parsedBase.ResolveReference(parsedNext).String()
 }
 
-func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *confluenceManager) ConfluenceSearch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Title   string `json:"title"`
 		SpaceID string `json:"space_id"`
@@ -376,7 +376,7 @@ func (m *confluenceManager) decodePageResponse(body []byte) (title, storageValue
 	return responseData.Title, responseData.Body.Storage.Value, nil
 }
 
-func (m *confluenceManager) confluenceRead(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *confluenceManager) ConfluenceRead(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		PageID string `json:"page_id"`
 	}
@@ -520,7 +520,7 @@ func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 	return nil
 }
 
-func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *confluenceManager) ConfluenceWrite(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		PageID          string `json:"page_id"`
 		Title           string `json:"title"`

@@ -34,25 +34,25 @@ type adoManager struct {
 	pipelineFetchGroup singleflight.Group
 }
 
-// adoOption is a functional option for configuring the adoManager.
-type adoOption func(*adoManager)
+// AdoOption is a functional option for configuring the adoManager.
+type AdoOption func(*adoManager)
 
 // withBaseURL sets the base URL for Azure DevOps API requests.
-func withBaseURL(url string) adoOption {
+func withBaseURL(url string) AdoOption {
 	return func(m *adoManager) {
 		m.baseURL = url
 	}
 }
 
-// withHTTPClient sets the HTTP client for Azure DevOps API requests.
-func withHTTPClient(client tools.HTTPClient) adoOption {
+// WithHTTPClient sets the HTTP client for Azure DevOps API requests.
+func WithHTTPClient(client tools.HTTPClient) AdoOption {
 	return func(m *adoManager) {
 		m.httpClient = client
 	}
 }
 
-// withToken sets the Azure DevOps Personal Access Token (PAT).
-func withToken(token string) adoOption {
+// WithToken sets the Azure DevOps Personal Access Token (PAT).
+func WithToken(token string) AdoOption {
 	return func(m *adoManager) {
 		m.token = token
 		if token != "" {
@@ -62,8 +62,8 @@ func withToken(token string) adoOption {
 	}
 }
 
-// newADOManager creates a new instance of adoManager.
-func newADOManager(sc securityConfirmer, opts ...adoOption) *adoManager {
+// NewADOManager creates a new instance of adoManager.
+func NewADOManager(sc securityConfirmer, opts ...AdoOption) *adoManager {
 	m := &adoManager{
 		sc:         sc,
 		baseURL:    "https://dev.azure.com",
@@ -143,7 +143,7 @@ func (m *adoManager) checkResponseError(resp *http.Response, requestURL string) 
 	}
 }
 
-func (m *adoManager) adoGetFileContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoGetFileContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -199,7 +199,7 @@ type adoRepositoryItemsResponse struct {
 	Count int `json:"count"`
 }
 
-func (m *adoManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *adoManager) AdoListRepositoryItems(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization   string `json:"organization"`
 		Project        string `json:"project"`

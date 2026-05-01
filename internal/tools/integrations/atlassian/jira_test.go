@@ -157,7 +157,7 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := new(mockJiraClient)
-			m, err := newjiraManager(nil, mockClient)
+			m, err := NewJiraManager(nil, mockClient)
 			assert.NoError(t, err)
 			m.provider.baseDelay = 1 * time.Microsecond
 
@@ -170,7 +170,7 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 				ctx = context.Background()
 			}
 
-			result, err := m.jiraSearchIssues(ctx, tt.args, nil)
+			result, err := m.JiraSearchIssues(ctx, tt.args, nil)
 
 			if tt.expectedError != "" {
 				assert.Error(t, err)
@@ -286,7 +286,7 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := new(mockJiraClient)
-			m, err := newjiraManager(nil, mockClient)
+			m, err := NewJiraManager(nil, mockClient)
 			assert.NoError(t, err)
 			m.provider.baseDelay = 1 * time.Microsecond
 
@@ -294,7 +294,7 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 				mockClient.On("Do", mock.Anything).Return(tt.mockResp, tt.mockErr)
 			}
 
-			result, err := m.jiraGetIssue(context.Background(), tt.args, nil)
+			result, err := m.JiraGetIssue(context.Background(), tt.args, nil)
 
 			if tt.expectedError != "" {
 				assert.Error(t, err)
@@ -309,7 +309,7 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 
 func TestJiraManager_ParseADF(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
-	m, err := newjiraManager(nil, nil)
+	m, err := NewJiraManager(nil, nil)
 	assert.NoError(t, err)
 
 	t.Run("Complex ADF", func(t *testing.T) {
@@ -440,7 +440,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 func TestJiraManager_Constructor(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	t.Run("Default Client", func(t *testing.T) {
-		m, err := newjiraManager(nil, nil)
+		m, err := NewJiraManager(nil, nil)
 		assert.NoError(t, err)
 		assert.NotNil(t, m.client)
 	})
@@ -449,11 +449,11 @@ func TestJiraManager_Constructor(t *testing.T) {
 func TestJiraManager_EdgeCases(t *testing.T) {
 	t.Run("Invalid Base URL Search", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_BASE_URL", " : invalid")
-		m, err := newjiraManager(nil, nil)
+		m, err := NewJiraManager(nil, nil)
 
 		// If constructor succeeds (URL parsing happens later), check the method
 		if err == nil {
-			_, err = m.jiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"}, nil)
+			_, err = m.JiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"}, nil)
 		}
 
 		require.Error(t, err)
@@ -462,10 +462,10 @@ func TestJiraManager_EdgeCases(t *testing.T) {
 
 	t.Run("Invalid Base URL Get", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_BASE_URL", " : invalid")
-		m, err := newjiraManager(nil, nil)
+		m, err := NewJiraManager(nil, nil)
 
 		if err == nil {
-			_, err = m.jiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
+			_, err = m.JiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
 		}
 
 		require.Error(t, err)

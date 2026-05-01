@@ -104,15 +104,15 @@ func TestAdoListPipelines(t *testing.T) {
 				t.Cleanup(server.Close)
 			}
 
-			var opts []adoOption
+			var opts []AdoOption
 			if server != nil {
 				opts = append(opts, withBaseURL(server.URL))
 			}
-			opts = append(opts, withToken("test-pat"))
-			m := newADOManager(sm, opts...)
+			opts = append(opts, WithToken("test-pat"))
+			m := NewADOManager(sm, opts...)
 
 			ctx := context.Background()
-			result, err := m.adoListPipelines(ctx, tt.args, nil)
+			result, err := m.AdoListPipelines(ctx, tt.args, nil)
 
 			if tt.wantError {
 				assert.Error(t, err)
@@ -190,7 +190,7 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.adoCreatePipeline(ctx, args, nil)
+	result, err := m.AdoCreatePipeline(ctx, args, nil)
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully created pipeline 'new-pipeline' with ID: 789")
 }
@@ -239,7 +239,7 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 		},
 	}
 
-	result, err := m.adoCreatePipeline(ctx, args, nil)
+	result, err := m.AdoCreatePipeline(ctx, args, nil)
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully created pipeline 'locked-pipeline' with ID: 888")
 }
@@ -264,7 +264,7 @@ func setupADOManager(t *testing.T, baseURL string, approved bool) (*adoManager, 
 	t.Helper()
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mc := &mockConfirmer{approved: approved}
-	m := newADOManager(mc, withBaseURL(baseURL), withToken("test-pat"))
+	m := NewADOManager(mc, withBaseURL(baseURL), WithToken("test-pat"))
 	return m, context.Background()
 }
 
@@ -309,7 +309,7 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(sm, withBaseURL(server.URL), withToken("test-pat"))
+	m := NewADOManager(sm, withBaseURL(server.URL), WithToken("test-pat"))
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -318,7 +318,7 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 		"pipeline_id":  123,
 	}
 
-	result, err := m.adoGetPipelineDefinition(ctx, args, nil)
+	result, err := m.AdoGetPipelineDefinition(ctx, args, nil)
 	require.NoError(t, err)
 
 	var def map[string]interface{}
@@ -389,7 +389,7 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(mc, withBaseURL(server.URL), withToken("test-pat"))
+	m := NewADOManager(mc, withBaseURL(server.URL), WithToken("test-pat"))
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -405,7 +405,7 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.adoUpdateBuildDefinitionVariables(ctx, args, nil)
+	result, err := m.AdoUpdateBuildDefinitionVariables(ctx, args, nil)
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully updated variables for build definition 123")
 	assert.True(t, getCalled)

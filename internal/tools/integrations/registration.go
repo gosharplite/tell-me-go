@@ -10,6 +10,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/ado"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/atlassian"
 )
 
 // RegisterAll registers all external integration tools.
@@ -178,7 +180,7 @@ func registerTeams(r tools.Registry, sm domain_security.Manager, client tools.HT
 }
 
 func registerConfluence(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
-	m, err := newconfluenceManager(sm, client)
+	m, err := atlassian.NewConfluenceManager(sm, client)
 	if err != nil {
 		// Skip registration gracefully if configuration is missing.
 		return nil
@@ -204,7 +206,7 @@ func registerConfluence(r tools.Registry, sm domain_security.Manager, client too
 				},
 			},
 		},
-	}, m.confluenceSearch); err != nil {
+	}, m.ConfluenceSearch); err != nil {
 		return err
 	}
 
@@ -221,7 +223,7 @@ func registerConfluence(r tools.Registry, sm domain_security.Manager, client too
 			},
 			Required: []string{"page_id"},
 		},
-	}, m.confluenceRead); err != nil {
+	}, m.ConfluenceRead); err != nil {
 		return err
 	}
 
@@ -251,14 +253,14 @@ func registerConfluence(r tools.Registry, sm domain_security.Manager, client too
 			},
 			Required: []string{"page_id", "markdown_content"},
 		},
-	}, m.confluenceWrite, tools.ToolOptions{Serial: true}); err != nil {
+	}, m.ConfluenceWrite, tools.ToolOptions{Serial: true}); err != nil {
 		return err
 	}
 	return nil
 }
 
 func registerJira(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
-	m, err := newjiraManager(sm, client)
+	m, err := atlassian.NewJiraManager(sm, client)
 	if err != nil {
 		// Skip registration gracefully if configuration is missing.
 		return nil
@@ -281,7 +283,7 @@ func registerJira(r tools.Registry, sm domain_security.Manager, client tools.HTT
 			},
 			Required: []string{"jql"},
 		},
-	}, m.jiraSearchIssues); err != nil {
+	}, m.JiraSearchIssues); err != nil {
 		return err
 	}
 
@@ -298,21 +300,21 @@ func registerJira(r tools.Registry, sm domain_security.Manager, client tools.HTT
 			},
 			Required: []string{"issue_key"},
 		},
-	}, m.jiraGetIssue); err != nil {
+	}, m.JiraGetIssue); err != nil {
 		return err
 	}
 	return nil
 }
 
 func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
-	var opts []adoOption
+	var opts []ado.AdoOption
 	if client != nil {
-		opts = append(opts, withHTTPClient(client))
+		opts = append(opts, ado.WithHTTPClient(client))
 	}
 	if token := os.Getenv("AZURE_PAT_ALL"); token != "" {
-		opts = append(opts, withToken(token))
+		opts = append(opts, ado.WithToken(token))
 	}
-	m := newADOManager(sm, opts...)
+	m := ado.NewADOManager(sm, opts...)
 
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration
@@ -336,7 +338,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository", "pull_request_id"},
 				},
 			},
-			handler: m.adoGetPullRequest,
+			handler: m.AdoGetPullRequest,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -354,7 +356,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository"},
 				},
 			},
-			handler: m.adoListPullRequests,
+			handler: m.AdoListPullRequests,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -371,7 +373,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository", "pull_request_id"},
 				},
 			},
-			handler: m.adoGetPrDiff,
+			handler: m.AdoGetPrDiff,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -388,7 +390,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository", "pull_request_id"},
 				},
 			},
-			handler: m.adoGetPrThreads,
+			handler: m.AdoGetPrThreads,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -406,7 +408,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository", "path"},
 				},
 			},
-			handler: m.adoGetFileContent,
+			handler: m.AdoGetFileContent,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -425,7 +427,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository"},
 				},
 			},
-			handler: m.adoListRepositoryItems,
+			handler: m.AdoListRepositoryItems,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -440,7 +442,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: m.adoListPipelines,
+			handler: m.AdoListPipelines,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -459,7 +461,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: m.adoListPipelineRuns,
+			handler: m.AdoListPipelineRuns,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -476,7 +478,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: m.adoGetPipelineRun,
+			handler: m.AdoGetPipelineRun,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -492,7 +494,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: m.adoGetPipelineDefinition,
+			handler: m.AdoGetPipelineDefinition,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -516,7 +518,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: m.adoGetPipelineLogs,
+			handler: m.AdoGetPipelineLogs,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -533,7 +535,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository", "pull_request_id"},
 				},
 			},
-			handler: m.adoGetPrStatuses,
+			handler: m.AdoGetPrStatuses,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -550,7 +552,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository", "pull_request_id"},
 				},
 			},
-			handler: m.adoGetPrPolicyEvaluations,
+			handler: m.AdoGetPrPolicyEvaluations,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -567,7 +569,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "repository", "branch_name"},
 				},
 			},
-			handler: m.adoListBranchPolicies,
+			handler: m.AdoListBranchPolicies,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -583,7 +585,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: m.adoGetBuildTimeline,
+			handler: m.AdoGetBuildTimeline,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -606,7 +608,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id", "log_id"},
 				},
 			},
-			handler: m.adoGetTaskLog,
+			handler: m.AdoGetTaskLog,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -623,7 +625,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: m.adoGetBuildChanges,
+			handler: m.AdoGetBuildChanges,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -640,7 +642,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "definition_id", "variables"},
 				},
 			},
-			handler: m.adoUpdateBuildDefinitionVariables,
+			handler: m.AdoUpdateBuildDefinitionVariables,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -660,7 +662,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
 				},
 			},
-			handler: m.adoCreatePipeline,
+			handler: m.AdoCreatePipeline,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -679,7 +681,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: m.adoRunPipeline,
+			handler: m.AdoRunPipeline,
 		},
 	}
 
