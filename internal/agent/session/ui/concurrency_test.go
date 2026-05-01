@@ -21,7 +21,7 @@ import (
 func TestUIBridge_StressConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
@@ -80,7 +80,7 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	testCtx := context.Background()
 
 	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)

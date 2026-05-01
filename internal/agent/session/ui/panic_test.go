@@ -76,7 +76,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := ui.NewUIBridge(mock, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
+	bridge := ui.NewBridge(mock, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -128,7 +128,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 		panic("intentional test panic")
 	}).Return(func() {})
 
-	bridge := ui.NewUIBridge(mockRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
+	bridge := ui.NewBridge(mockRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -156,7 +156,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	}
 
 	output := logBuffer.String()
-	assert.Contains(t, output, "UIBridge actor recovered from panic")
+	assert.Contains(t, output, "Bridge actor recovered from panic")
 	assert.Contains(t, output, "intentional test panic")
 	assert.Contains(t, output, "stack")
 }
@@ -175,7 +175,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := ui.NewUIBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
+	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	testCtx, testCancel := context.WithCancel(context.Background())
 	t.Cleanup(testCancel)
@@ -207,7 +207,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	_ = bridge.HandleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{Mode: "test"}})
 
-	// 4. Assert that the UIBridge survives and cancels successfully.
+	// 4. Assert that the Bridge survives and cancels successfully.
 	select {
 	case <-done:
 		// Success: Bridge cancelled gracefully despite double-panic
@@ -230,7 +230,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 		panic("first panic")
 	}).Once()
 
-	bridge := ui.NewUIBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
+	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
@@ -252,7 +252,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 	output := logBuffer.String()
 	// Should contain the first panic
-	assert.Contains(t, output, "UIBridge actor recovered from panic")
+	assert.Contains(t, output, "Bridge actor recovered from panic")
 	assert.Contains(t, output, "first panic")
 
 	// Verify that RenderResponse was NOT called (it was the second event in the queue)
@@ -264,7 +264,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	mRenderer := new(agenttest.MockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	bridge := ui.NewUIBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
+	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)

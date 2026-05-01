@@ -66,7 +66,7 @@ func (m *controllableUIRenderer) LogToolResult(ctx context.Context, name string,
 
 // uiBridgeFixture encapsulates the bridge under test and its lifecycle.
 type uiBridgeFixture struct {
-	bridge   *UIBridge
+	bridge   *Bridge
 	renderer *controllableUIRenderer
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -86,7 +86,7 @@ func newUIBridgeFixture(t *testing.T, opts ...bridgeOption) *uiBridgeFixture {
 	// Append logger to opts to ensure it captures output for assertions.
 	opts = append(opts, WithBridgeLogger(logger))
 
-	bridge := NewUIBridge(renderer, opts...)
+	bridge := NewBridge(renderer, opts...)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	f := &uiBridgeFixture{

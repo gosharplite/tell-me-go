@@ -19,7 +19,7 @@ import (
 func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewUIBridge(mRenderer,
+	bridge := NewBridge(mRenderer,
 		WithBridgeThoughts(true),
 		WithBridgeTools(true),
 		WithBridgeRawOutput(false),

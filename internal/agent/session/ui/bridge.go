@@ -18,51 +18,51 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-// bridgeOption configures a UIBridge instance.
-type bridgeOption func(*UIBridge)
+// bridgeOption configures a Bridge instance.
+type bridgeOption func(*Bridge)
 
 // WithBridgeThoughts enables or disables thought rendering.
 func WithBridgeThoughts(show bool) bridgeOption {
-	return func(b *UIBridge) { b.showThoughts = show }
+	return func(b *Bridge) { b.showThoughts = show }
 }
 
 // WithBridgeTools enables or disables tool call rendering.
 func WithBridgeTools(show bool) bridgeOption {
-	return func(b *UIBridge) { b.showTools = show }
+	return func(b *Bridge) { b.showTools = show }
 }
 
 // WithBridgeRawOutput enables or disables raw output mode.
 func WithBridgeRawOutput(raw bool) bridgeOption {
-	return func(b *UIBridge) { b.rawOutput = raw }
+	return func(b *Bridge) { b.rawOutput = raw }
 }
 
 // WithBridgeColor enables or disables ANSI color support.
 func WithBridgeColor(color bool) bridgeOption {
-	return func(b *UIBridge) { b.useColor = color }
+	return func(b *Bridge) { b.useColor = color }
 }
 
 // WithBridgeLogFile sets the file path for logging usage metrics.
 func WithBridgeLogFile(path string) bridgeOption {
-	return func(b *UIBridge) { b.logFile = path }
+	return func(b *Bridge) { b.logFile = path }
 }
 
 // WithBridgeLogger sets the structured logger.
 func WithBridgeLogger(l ports.Logger) bridgeOption {
-	return func(b *UIBridge) { b.logger = l }
+	return func(b *Bridge) { b.logger = l }
 }
 
 // withBridgeClock sets the clock for deterministic timestamps.
 func withBridgeClock(c clock.Clock) bridgeOption {
-	return func(b *UIBridge) { b.clock = c }
+	return func(b *Bridge) { b.clock = c }
 }
 
 // withBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
 func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
-	return func(b *UIBridge) { b.cleanupTimeout = d }
+	return func(b *Bridge) { b.cleanupTimeout = d }
 }
 
-// UIBridge translates domain events into UI updates.
-type UIBridge struct {
+// Bridge translates domain events into UI updates.
+type Bridge struct {
 	mu                 sync.RWMutex
 	loopCtx            context.Context
 	loopCancel         context.CancelFunc
@@ -87,10 +87,10 @@ type UIBridge struct {
 	startOnce          sync.Once
 }
 
-// NewUIBridge creates a new UIBridge.
-func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
+// NewBridge creates a new Bridge.
+func NewBridge(renderer ports.UIRenderer, opts ...bridgeOption) *Bridge {
 	loopCtx, loopCancel := context.WithCancel(context.Background())
-	b := &UIBridge{
+	b := &Bridge{
 		loopCtx:        loopCtx,
 		loopCancel:     loopCancel,
 		renderer:       renderer,
@@ -115,10 +115,10 @@ func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
 	b.wg.Add(1)
 	return b
 }
-func (b *UIBridge) CloseInput() {
+func (b *Bridge) CloseInput() {
 	b.queue.closeInput()
 }
-func (b *UIBridge) Cleanup() {
+func (b *Bridge) Cleanup() {
 	b.cleanupOnce.Do(func() {
 		atomic.AddInt32(&b.cleanupInvocations, 1)
 
@@ -165,7 +165,7 @@ func (b *UIBridge) Cleanup() {
 		}
 	})
 }
-func (b *UIBridge) Listen(ctx context.Context) (err error) {
+func (b *Bridge) Listen(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	b.mu.Lock()
 	b.cancel = cancel
@@ -176,7 +176,7 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 	defer b.loopCancel()
 	defer func() {
 		if r := recover(); r != nil {
-			b.logger.Error("panic in UIBridge loop", "error", r, "stack", string(debug.Stack()))
+			b.logger.Error("panic in Bridge loop", "error", r, "stack", string(debug.Stack()))
 			b.spinner.stopActiveSpinner()
 			err = fmt.Errorf("uibridge panicked: %v", r)
 		}
@@ -205,18 +205,18 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 	}
 }
 
-func (b *UIBridge) processRecoverable(ctx context.Context, e events.Event) {
+func (b *Bridge) processRecoverable(ctx context.Context, e events.Event) {
 	defer func() {
 		if r := recover(); r != nil {
-			b.logger.Error("UIBridge actor recovered from panic", "error", r)
-			b.logger.Debug("UIBridge recovery stack trace", "stack", string(debug.Stack()))
+			b.logger.Error("Bridge actor recovered from panic", "error", r)
+			b.logger.Debug("Bridge recovery stack trace", "stack", string(debug.Stack()))
 			b.spinner.stopActiveSpinner()
 			panic(r) // Re-panic to stop the Listen loop
 		}
 	}()
 	b.processEvent(ctx, e)
 }
-func (b *UIBridge) HandleEvent(ctx context.Context, e events.Event) error {
+func (b *Bridge) HandleEvent(ctx context.Context, e events.Event) error {
 	if b.queue.isInputClosed() {
 		b.logger.Debug("Shedding event: bridge is closed")
 		return nil
@@ -225,7 +225,7 @@ func (b *UIBridge) HandleEvent(ctx context.Context, e events.Event) error {
 	defer func() {
 		if r := recover(); r != nil {
 			// Log as Warn/Error since it's now unexpected (last-resort safety)
-			b.logger.Warn("Unexpected panic in UIBridge.HandleEvent", "panic", r, "stack", string(debug.Stack()))
+			b.logger.Warn("Unexpected panic in Bridge.HandleEvent", "panic", r, "stack", string(debug.Stack()))
 		}
 	}()
 
@@ -235,7 +235,7 @@ func (b *UIBridge) HandleEvent(ctx context.Context, e events.Event) error {
 
 	return b.queue.enqueueEvent(ctx, e)
 }
-func (b *UIBridge) processEvent(ctx context.Context, e events.Event) {
+func (b *Bridge) processEvent(ctx context.Context, e events.Event) {
 	b.dispatcher.dispatch(ctx, e)
 }
 
@@ -281,10 +281,10 @@ func getSpinnerInfo(e events.Event) (spinnerInfo, bool) {
 		return spinnerInfo{}, false
 	}
 }
-func (b *UIBridge) getLoopContext() context.Context {
+func (b *Bridge) getLoopContext() context.Context {
 	return b.loopCtx
 }
 
-func (b *UIBridge) WaitStarted() {
+func (b *Bridge) WaitStarted() {
 	<-b.started
 }
