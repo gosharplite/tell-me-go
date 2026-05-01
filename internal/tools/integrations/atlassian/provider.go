@@ -17,8 +17,8 @@ import (
 
 type AtlassianProvider struct {
 	baseURL   string
-	Email string
-	Token string
+	Email     string
+	Token     string
 	BaseDelay time.Duration
 }
 
