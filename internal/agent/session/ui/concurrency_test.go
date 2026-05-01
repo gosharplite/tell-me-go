@@ -46,13 +46,13 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	const numGoroutines = 100
-	var WG sync.WaitGroup
-	WG.Add(numGoroutines)
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
 
 	start := make(chan struct{})
 	for i := 0; i < numGoroutines; i++ {
 		go func(idx int) {
-			defer WG.Done()
+			defer wg.Done()
 			<-start
 			if idx%2 == 0 {
 				_ = bridge.HandleEvent(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"test_tool"}})
@@ -65,7 +65,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	}
 
 	close(start)
-	WG.Wait()
+	wg.Wait()
 
 	// Final cleanup must stop any remaining spinner
 	syncBridge(t, bridge, mRenderer)

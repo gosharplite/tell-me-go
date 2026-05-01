@@ -146,14 +146,14 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		bridge.Cleanup()
 	}()
 
-	var WG sync.WaitGroup
-	WG.Add(2)
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	consentActiveCh := make(chan struct{})
 	inferenceDoneCh := make(chan struct{})
 
 	go func() {
-		defer WG.Done()
+		defer wg.Done()
 		// 1. Simulation of consent cycle
 		_ = bridge.HandleEvent(testCtx, events.ConsentStartedEvent{})
 
@@ -178,7 +178,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	}()
 
 	go func() {
-		defer WG.Done()
+		defer wg.Done()
 		// 1. Wait for consent to become active
 		<-consentActiveCh
 
@@ -197,7 +197,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		close(inferenceDoneCh)
 	}()
 
-	WG.Wait()
+	wg.Wait()
 
 	mu.Lock()
 	if overlap {

@@ -388,14 +388,14 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	var WG sync.WaitGroup
+	var wg sync.WaitGroup
 	const iterations = 1000
 	start := make(chan struct{})
 
 	// Fire InferenceStartedEvent and ResponseEvent simultaneously
-	WG.Add(2)
+	wg.Add(2)
 	go func() {
-		defer WG.Done()
+		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
@@ -403,7 +403,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	go func() {
-		defer WG.Done()
+		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.ResponseEvent{
@@ -413,9 +413,9 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	// Fire other events to simulate real event bus behavior and increase noise
-	WG.Add(2)
+	wg.Add(2)
 	go func() {
-		defer WG.Done()
+		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.TurnStarted{})
@@ -424,7 +424,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	go func() {
-		defer WG.Done()
+		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
 			_ = bridge.HandleEvent(ctx, events.UsageMetricsEvent{
@@ -441,7 +441,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	}()
 
 	close(start)
-	WG.Wait()
+	wg.Wait()
 	// No explicit sync needed here, Cleanup will wait for the loop to finish
 }
 
@@ -686,11 +686,11 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 		atomic.AddInt32(&activeSpinners, -1)
 	})
 
-	var WG sync.WaitGroup
+	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
-		WG.Add(1)
+		wg.Add(1)
 		go func(idx int) {
-			defer WG.Done()
+			defer wg.Done()
 			if idx%2 == 0 {
 				_ = bridge.HandleEvent(context.Background(), events.SummarizationStartedEvent{})
 			} else {
@@ -698,7 +698,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 			}
 		}(i)
 	}
-	WG.Wait()
+	wg.Wait()
 
 	// Wait for all spinners to be stopped eventually
 	bridge.CloseInput()
