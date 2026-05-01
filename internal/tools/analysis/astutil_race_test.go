@@ -11,12 +11,12 @@ import (
 func TestASTCache_Concurrency_Race(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	cache := newASTCache()
+	cache := newASTCache(tmpDir)
 	numFiles := 10
 	files := make([]string, numFiles)
 	for i := 0; i < numFiles; i++ {
-		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
-		if err := os.WriteFile(path, []byte(fmt.Sprintf("package p%d\nfunc F%d() {}\n", i, i)), 0644); err != nil {
+		path := fmt.Sprintf("file%d.go", i)
+		if err := os.WriteFile(filepath.Join(tmpDir, path), []byte(fmt.Sprintf("package p%d\nfunc F%d() {}\n", i, i)), 0644); err != nil {
 			t.Fatal(err)
 		}
 		files[i] = path

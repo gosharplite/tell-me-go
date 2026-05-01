@@ -11,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ type cachedFile struct {
 }
 
 type astCache struct {
+	baseDir string // injected once; all paths resolved relative to this root
 	mu      sync.RWMutex
 	files   map[string]cachedFile
 	order   []string
@@ -35,12 +37,20 @@ type astCache struct {
 	maxSize int
 }
 
-func newASTCache() *astCache {
+func newASTCache(baseDir string) *astCache {
 	return &astCache{
+		baseDir: baseDir,
 		files:   make(map[string]cachedFile),
 		order:   make([]string, 0),
 		maxSize: 1000,
 	}
+}
+
+func (c *astCache) absPath(relPath string) string {
+	if c.baseDir == "" || filepath.IsAbs(relPath) {
+		return relPath
+	}
+	return filepath.Join(c.baseDir, relPath)
 }
 
 func (cf cachedFile) isValid(info os.FileInfo) bool {
@@ -48,10 +58,10 @@ func (cf cachedFile) isValid(info os.FileInfo) bool {
 }
 
 func (c *astCache) GetCachedLineCount(path string, info os.FileInfo) (int, bool) {
+	abs := c.absPath(path)
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	entry, ok := c.files[path]
+	entry, ok := c.files[abs]
 	if ok && entry.isValid(info) {
 		return entry.lineCount, true
 	}
@@ -59,28 +69,25 @@ func (c *astCache) GetCachedLineCount(path string, info os.FileInfo) (int, bool)
 }
 
 func (c *astCache) getValidEntry(path string) (cachedFile, bool) {
+	abs := c.absPath(path)
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	entry, ok := c.files[path]
+	entry, ok := c.files[abs]
 	if !ok {
 		return cachedFile{}, false
 	}
-
-	info, err := os.Stat(path)
+	info, err := os.Stat(abs)
 	if err != nil || !entry.modTime.Equal(info.ModTime()) {
 		return cachedFile{}, false
 	}
-
 	return entry, true
 }
 
 func (c *astCache) updateCache(path string, info os.FileInfo, f *ast.File, fset *token.FileSet) cachedFile {
+	abs := c.absPath(path)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	_, exists := c.files[path]
-
+	_, exists := c.files[abs]
 	// Eviction policy: FIFO
 	if !exists && len(c.files) >= c.maxSize {
 		if len(c.order) > 0 {
@@ -89,53 +96,45 @@ func (c *astCache) updateCache(path string, info os.FileInfo, f *ast.File, fset 
 			delete(c.files, victim)
 		}
 	}
-
 	newEntry := cachedFile{
 		file:    f,
 		fset:    fset,
 		modTime: info.ModTime(),
 	}
-
 	if fset != nil && f != nil {
 		if tf := fset.File(f.Pos()); tf != nil {
 			newEntry.lineCount = tf.LineCount()
 		}
 	}
-
-	c.files[path] = newEntry
+	c.files[abs] = newEntry
 	if !exists {
-		c.order = append(c.order, path)
+		c.order = append(c.order, abs)
 	}
 	return newEntry
 }
 
 func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
+	abs := c.absPath(path)
 	// 1. Fast path: Check cache
-	if entry, ok := c.getValidEntry(path); ok {
+	if entry, ok := c.getValidEntry(abs); ok {
 		return entry.file, entry.fset, nil
 	}
-
-	// 2. Slow path: Use singleflight to deduplicate concurrent requests for the same path
-	res, err, _ := c.sf.Do(path, func() (interface{}, error) {
-		info, err := os.Stat(path)
+	// 2. Slow path: singleflight with absolute key
+	res, err, _ := c.sf.Do(abs, func() (interface{}, error) {
+		info, err := os.Stat(abs)
 		if err != nil {
 			return nil, err
 		}
-
-		// Parse using a local FileSet to allow full concurrency across DIFFERENT files.
 		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		f, err := parser.ParseFile(fset, abs, nil, parser.ParseComments)
 		if err != nil {
 			return nil, err
 		}
-
-		return c.updateCache(path, info, f, fset), nil
+		return c.updateCache(abs, info, f, fset), nil
 	})
-
 	if err != nil {
 		return nil, nil, err
 	}
-
 	cf := res.(cachedFile)
 	return cf.file, cf.fset, nil
 }
@@ -351,8 +350,9 @@ func findTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
 }
 
 // GetFileSkeletonGo extracts exported types and function signatures from a Go file.
+// filePath must be relative to the cache's baseDir.
 func (c *astCache) GetFileSkeletonGo(filePath string) (string, error) {
-	f, fset, err := c.Get(filePath)
+	f, fset, err := c.Get(filePath) // Get is the single resolution point per ADR-022
 	if err != nil {
 		return "", err
 	}

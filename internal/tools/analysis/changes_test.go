@@ -9,18 +9,13 @@ import (
 )
 
 func TestChangeAnalyzer_SemanticDiff(t *testing.T) {
-	// NOTE: NOT parallel – this test calls os.Chdir(), which mutates
-	// process-global state and would race with any other test that
-	// depends on the current working directory (e.g., packages.Load).
+	t.Parallel()
 	tmpDir := t.TempDir()
 	relPath := "test.go"
 	setupSemanticDiffFile(t, tmpDir, relPath)
 
 	mockExec := setupSemanticDiffMock(relPath)
-	cache := newASTCache()
-
-	oldDir := changeToTempDir(t, tmpDir)
-	defer restoreDir(t, oldDir)
+	cache := newASTCache(tmpDir)
 
 	analyzer := newChangeAnalyzer(cache, mockExec)
 	res, err := analyzer.SemanticDiff(context.Background(), map[string]interface{}{"target": "HEAD~1"}, nil)
@@ -59,23 +54,6 @@ func setupSemanticDiffMock(relPath string) *mockExecutor {
 			}
 			return nil, nil
 		},
-	}
-}
-
-func changeToTempDir(t *testing.T, tmpDir string) string {
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	return oldDir
-}
-
-func restoreDir(t *testing.T, oldDir string) {
-	if err := os.Chdir(oldDir); err != nil {
-		t.Errorf("failed to restore working directory: %v", err)
 	}
 }
 
