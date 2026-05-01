@@ -130,7 +130,7 @@ func (a *AgentInternal) ApplyConfig(ctx context.Context) error {
 
 // Chat invokes the underlying agent's Chat method. Provided for
 // convenience so test code holding an *AgentInternal does not have to
-// call .Chatter().Chat(...) explicitly.
+// call .raw.AsChatter().Chat(...) explicitly.
 func (a *AgentInternal) Chat(ctx context.Context, sess *ports.Session, prompt string) error {
 	return a.raw.AsChatter().Chat(ctx, sess, prompt)
 }
