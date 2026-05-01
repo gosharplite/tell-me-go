@@ -307,7 +307,8 @@ type InternalAccessor interface {
 	ApplyConfig(ctx context.Context) error
 
 	// AsChatter returns the underlying agent typed as ports.Chatter.
-	// Used by agentinternal to expose a Chatter() method to test code.
+	// Used by agentinternal to pass the agent into production
+	// functions that accept the ports.Chatter interface.
 	AsChatter() ports.Chatter
 
 	// GetTracker is the one accessor with confirmed production callers

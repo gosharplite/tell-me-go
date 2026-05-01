@@ -9,7 +9,9 @@ import (
 )
 
 func TestChangeAnalyzer_SemanticDiff(t *testing.T) {
-	t.Parallel()
+	// NOTE: NOT parallel – this test calls os.Chdir(), which mutates
+	// process-global state and would race with any other test that
+	// depends on the current working directory (e.g., packages.Load).
 	tmpDir := t.TempDir()
 	relPath := "test.go"
 	setupSemanticDiffFile(t, tmpDir, relPath)
