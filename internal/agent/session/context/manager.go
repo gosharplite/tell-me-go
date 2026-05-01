@@ -25,11 +25,11 @@ type Manager struct {
 	cachedWindow   []*llm.Content
 	cachedMetadata *Metadata
 
-	Strategy        *ContextStrategy
+	Strategy        *Strategy
 	History         ports.HistoryManager
 	Events          events.EventBus
 	Pipeline        *contextPipeline
-	Factory         *PipelineFactory
+	Factory         *Factory
 	Summarizer      ports.Summarizer
 	SessionProvider ports.SessionProvider
 	logger          ports.Logger
@@ -46,7 +46,7 @@ func WithLogger(l ports.Logger) contextManagerOption {
 }
 
 // NewManager creates a new context manager.
-func NewManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory, opts ...contextManagerOption) *Manager {
+func NewManager(strategy *Strategy, history ports.HistoryManager, bus events.EventBus, factory *Factory, opts ...contextManagerOption) *Manager {
 	cm := &Manager{
 		Strategy: strategy,
 		History:  history,

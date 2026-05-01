@@ -53,7 +53,7 @@ func (f *Factory) BuildStandardPipeline(limits events.Limits, extras ...ports.Co
 		&emptyMessagePruner{},  // Explicitly drop messages with 0 parts
 		&contentCleaner{},
 		&thoughtSignaturePropagator{},
-	}
+	)
 
 	// Only add the HistoryPruner if turn limits are actually configured.
 	// If limits.MaxHistoryTurns <= 0, turn-based pruning is disabled entirely.

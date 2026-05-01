@@ -137,8 +137,8 @@ func (a *agent) initComponents() error {
 	}
 
 	a.ctxManager = sessctx.NewManager(strategy, a.hManager, a.events, factory,
-		session.WithLogger(a.logger),
-		session.WithSessionProvider(a.sessionProvider),
+		sessctx.WithLogger(a.logger),
+		sessctx.WithSessionProvider(a.sessionProvider),
 	)
 
 	// Initialize engine

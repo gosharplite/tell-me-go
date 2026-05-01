@@ -11,7 +11,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -96,7 +95,7 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 			HasToolCalls: hasTools,
 			RetryCount:   0,
 			LastError:    orchestrator.NewAgentError(llm.ErrTransient, "err", nil),
-			Metadata: &session.Metadata{
+			Metadata: &sessctx.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
