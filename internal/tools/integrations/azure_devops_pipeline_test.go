@@ -413,8 +413,6 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 }
 
 func TestStreamRegexFilter_Truncation(t *testing.T) {
-	m := &adoManager{}
-
 	tests := []struct {
 		name           string
 		inputLines     int
@@ -453,7 +451,7 @@ func TestStreamRegexFilter_Truncation(t *testing.T) {
 				input.WriteString("match line\n")
 			}
 
-			res, err := m.streamRegexFilter(context.Background(), strings.NewReader(input.String()), "match", logFilterOptions{MaxLines: tt.maxLines}, nil)
+			res, err := streamRegexFilter(context.Background(), strings.NewReader(input.String()), "match", logFilterOptions{MaxLines: tt.maxLines}, nil)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantTruncated, res.Truncated)
