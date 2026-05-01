@@ -65,12 +65,12 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 	}
 }
 
-func TestContextManager_FirstMessageRoleError(t *testing.T) {
+func TestManager_FirstMessageRoleError(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
 	hm := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(cs, hm, nil, nil)
+	cm := session.NewManager(cs, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "first"}}})
 	if err == nil || err.Error() != "first message must be 'user', got 'model'" {
@@ -92,7 +92,7 @@ func TestInternalTools_Errors(t *testing.T) {
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
 	hm := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(cs, hm, nil, nil)
+	cm := session.NewManager(cs, hm, nil, nil)
 
 	it := session.NewInternalTools(cm)
 

@@ -1306,7 +1306,7 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 	})
 }
 
-func TestContextManager_CloneContentSlice_NilSafety(t *testing.T) {
+func TestManager_CloneContentSlice_NilSafety(t *testing.T) {
 	require.Nil(t, cloneContentSlice(nil))
 }
 

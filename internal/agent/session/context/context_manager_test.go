@@ -22,12 +22,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestContextManager_PipelineMethods(t *testing.T) {
+func TestManager_PipelineMethods(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	history := &agenttest.MockHistoryManager{}
 	factory := &session.PipelineFactory{Estimator: strategy}
-	cm := session.NewContextManager(strategy, history, nil, factory)
+	cm := session.NewManager(strategy, history, nil, factory)
 
 	// Test SetPipeline
 	p := session.NewContextPipeline()
@@ -35,11 +35,11 @@ func TestContextManager_PipelineMethods(t *testing.T) {
 	assert.Equal(t, p, cm.Pipeline)
 }
 
-func TestContextManager_GetLimits(t *testing.T) {
+func TestManager_GetLimits(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	strategy.SetLimits(1000, 20, 30)
-	cm := session.NewContextManager(strategy, &agenttest.MockHistoryManager{}, nil, nil)
+	cm := session.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, nil)
 
 	limits := cm.GetLimits()
 	assert.Equal(t, 1000, limits.MaxHistoryTokens)
@@ -47,11 +47,11 @@ func TestContextManager_GetLimits(t *testing.T) {
 	assert.Equal(t, 30, limits.MaxHistoryTurns)
 }
 
-func TestContextManager_Summarize(t *testing.T) {
+func TestManager_Summarize(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	history := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(strategy, history, nil, nil)
+	cm := session.NewManager(strategy, history, nil, nil)
 
 	ctx := context.Background()
 	contents := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
@@ -75,7 +75,7 @@ func TestContextManager_Summarize(t *testing.T) {
 	assert.Equal(t, int32(10), metrics.PromptTokens)
 }
 
-func TestContextManager_SummarizeRange(t *testing.T) {
+func TestManager_SummarizeRange(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
 	history := &agenttest.MockHistoryManager{}
@@ -85,7 +85,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	})
-	cm := session.NewContextManager(strategy, history, nil, nil)
+	cm := session.NewManager(strategy, history, nil, nil)
 
 	ctx := context.Background()
 
@@ -231,7 +231,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	history.SetSetContentsErr(nil)
 }
 
-func TestContextManager_Prepare_ClonesContent(t *testing.T) {
+func TestManager_Prepare_ClonesContent(t *testing.T) {
 	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	originalContent := &llm.Content{
 		Role:  "user",
@@ -239,7 +239,7 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 	}
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{originalContent})
-	cm := session.NewContextManager(strategy, history, nil, nil)
+	cm := session.NewManager(strategy, history, nil, nil)
 
 	ctx := context.Background()
 	preparedHistory, _, err := cm.Prepare(ctx, 1)
@@ -252,13 +252,13 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 	assert.Equal(t, "original", preparedHistory[0].Parts[0].Text)
 }
 
-func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
+func TestManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	tc := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	factory := &session.PipelineFactory{Estimator: strategy}
-	cm := session.NewContextManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
+	cm := session.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
 
-	// Initially not nil because NewContextManager builds it with default limits immediately.
+	// Initially not nil because NewManager builds it with default limits immediately.
 	p0 := cm.Pipeline
 	assert.NotNil(t, p0)
 
@@ -290,7 +290,7 @@ func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	assert.Equal(t, 8888, strategy.GetMaxHistoryTokens())
 }
 
-func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
+func TestManager_WindowSize_BoundaryCondition(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
 	strategy.SetContextWindow(10000)
@@ -314,7 +314,7 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents(contents)
 
-	cm := session.NewContextManager(strategy, history, nil, nil)
+	cm := session.NewManager(strategy, history, nil, nil)
 	mockSum := &agenttest.MockSummarizer{}
 	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
@@ -335,8 +335,8 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	assert.Equal(t, 3, history.GetTotalEntries())
 }
 
-func TestContextManager_AddContent_ContextCancellation(t *testing.T) {
-	cm := session.NewContextManager(nil, nil, nil, nil)
+func TestManager_AddContent_ContextCancellation(t *testing.T) {
+	cm := session.NewManager(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -345,8 +345,8 @@ func TestContextManager_AddContent_ContextCancellation(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-func TestContextManager_SummarizeRange_ContextCancellation(t *testing.T) {
-	cm := session.NewContextManager(nil, nil, nil, nil)
+func TestManager_SummarizeRange_ContextCancellation(t *testing.T) {
+	cm := session.NewManager(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -355,11 +355,11 @@ func TestContextManager_SummarizeRange_ContextCancellation(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
+func TestManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
 	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(strategy, history, nil, nil)
+	cm := session.NewManager(strategy, history, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -370,8 +370,8 @@ func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	}
 }
 
-func TestContextManager_CheckContext_Cancellation(t *testing.T) {
-	_ = session.NewContextManager(nil, nil, nil, nil)
+func TestManager_CheckContext_Cancellation(t *testing.T) {
+	_ = session.NewManager(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -380,7 +380,7 @@ func TestContextManager_CheckContext_Cancellation(t *testing.T) {
 	_ = ctx
 }
 
-func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
+func TestManager_Prepare_BoundaryValidation(t *testing.T) {
 	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 
 	t.Run("fails on nil message in history", func(t *testing.T) {
@@ -389,7 +389,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 			nil, // malformed entry
 		})
-		cm := session.NewContextManager(strategy, history, nil, nil)
+		cm := session.NewManager(strategy, history, nil, nil)
 		_, _, err := cm.Prepare(context.Background(), 1)
 		require.Error(t, err)
 		require.ErrorIs(t, err, session.ErrInvalidPayload)
@@ -401,7 +401,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 		history.SetInternalContents([]*llm.Content{
 			{Role: "user", Parts: []*llm.Part{nil}}, // malformed entry
 		})
-		cm := session.NewContextManager(strategy, history, nil, nil)
+		cm := session.NewManager(strategy, history, nil, nil)
 		_, _, err := cm.Prepare(context.Background(), 1)
 		require.Error(t, err)
 		require.ErrorIs(t, err, session.ErrInvalidPayload)
@@ -409,7 +409,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 	})
 }
 
-func TestContextManager_WithLogger(t *testing.T) {
+func TestManager_WithLogger(t *testing.T) {
 	ctx := context.Background()
 	var buf testfixtures.SyncWriter
 	// Set level to DEBUG to capture the "skipping summarization event" log.
@@ -427,7 +427,7 @@ func TestContextManager_WithLogger(t *testing.T) {
 	})
 
 	// Use a nil bus to trigger a DEBUG log in emitSummarizationEvent.
-	cm := session.NewContextManager(strategy, history, nil, nil, session.WithLogger(testLogger))
+	cm := session.NewManager(strategy, history, nil, nil, session.WithLogger(testLogger))
 	ms := &agenttest.MockSummarizer{}
 	ms.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
@@ -463,7 +463,7 @@ func (m *countingHistoryManager) GetWindowCalls() int {
 	return m.getWindowCalls
 }
 
-func TestContextManager_Prepare_CacheHit(t *testing.T) {
+func TestManager_Prepare_CacheHit(t *testing.T) {
 	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	baseHistory := &agenttest.MockHistoryManager{}
 	baseHistory.SetInternalContents([]*llm.Content{
@@ -471,7 +471,7 @@ func TestContextManager_Prepare_CacheHit(t *testing.T) {
 	})
 	countingHM := &countingHistoryManager{MockHistoryManager: baseHistory}
 
-	cm := session.NewContextManager(strategy, countingHM, nil, nil)
+	cm := session.NewManager(strategy, countingHM, nil, nil)
 
 	ctx := context.Background()
 
@@ -496,10 +496,10 @@ func TestContextManager_Prepare_CacheHit(t *testing.T) {
 }
 
 // versionBumpingTransformer is a transient pipeline transformer that bumps the
-// ContextManager's internal version counter between loadHistory and commitToCache,
+// Manager's internal version counter between loadHistory and commitToCache,
 // causing commitToCache to detect a version mismatch and return ErrTransient.
 type versionBumpingTransformer struct {
-	cm *session.ContextManager
+	cm *session.Manager
 }
 
 func (t *versionBumpingTransformer) Priority() int { return 200 } // transient: runs after persistFn
@@ -509,14 +509,14 @@ func (t *versionBumpingTransformer) Transform(ctx context.Context, req *ports.Co
 	return nil
 }
 
-func TestContextManager_Prepare_CommitToCacheError(t *testing.T) {
+func TestManager_Prepare_CommitToCacheError(t *testing.T) {
 	strategy := session.NewContextStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 	})
 
-	cm := session.NewContextManager(strategy, history, nil, nil)
+	cm := session.NewManager(strategy, history, nil, nil)
 
 	// Install a pipeline whose transient transformer bumps the version after
 	// loadHistory snapshots it but before commitToCache checks it.

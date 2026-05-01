@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package context handles the preparation and optimization of history for LLM consumption.
-package session
+package context
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// ContextManager handles the preparation of context for the LLM.
-type ContextManager struct {
+// Manager handles the preparation of context for the LLM.
+type Manager struct {
 	mu      sync.RWMutex
 	version int
 
@@ -35,19 +35,19 @@ type ContextManager struct {
 	logger          ports.Logger
 }
 
-// contextManagerOption defines a functional option for configuring the ContextManager.
-type contextManagerOption func(*ContextManager)
+// contextManagerOption defines a functional option for configuring the Manager.
+type contextManagerOption func(*Manager)
 
-// WithLogger sets the logger for the ContextManager.
+// WithLogger sets the logger for the Manager.
 func WithLogger(l ports.Logger) contextManagerOption {
-	return func(cm *ContextManager) {
+	return func(cm *Manager) {
 		cm.logger = l
 	}
 }
 
-// NewContextManager creates a new context manager.
-func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory, opts ...contextManagerOption) *ContextManager {
-	cm := &ContextManager{
+// NewManager creates a new context manager.
+func NewManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory, opts ...contextManagerOption) *Manager {
+	cm := &Manager{
 		Strategy: strategy,
 		History:  history,
 		Events:   bus,
@@ -70,15 +70,15 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 	return cm
 }
 
-// WithSessionProvider sets the session provider for the ContextManager.
+// WithSessionProvider sets the session provider for the Manager.
 func WithSessionProvider(sp ports.SessionProvider) contextManagerOption {
-	return func(cm *ContextManager) {
+	return func(cm *Manager) {
 		cm.SessionProvider = sp
 	}
 }
 
 // Reconfigure updates the context manager's pipeline and strategy based on new limits.
-func (cm *ContextManager) Reconfigure(limits events.Limits) {
+func (cm *Manager) Reconfigure(limits events.Limits) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.version++
@@ -104,7 +104,7 @@ func cloneContentSlice(contents []*llm.Content) []*llm.Content {
 }
 
 // getCachedView checks if the current version matches the cached version. Must be called with lock held.
-func (cm *ContextManager) getCachedView(snapshotVersion int) ([]*llm.Content, *Metadata, bool) {
+func (cm *Manager) getCachedView(snapshotVersion int) ([]*llm.Content, *Metadata, bool) {
 	if cm.cachedWindow != nil && cm.cachedVersion == snapshotVersion {
 		cachedHistory := cloneContentSlice(cm.cachedWindow)
 		clonedMeta := cm.cachedMetadata.Clone()
@@ -114,7 +114,7 @@ func (cm *ContextManager) getCachedView(snapshotVersion int) ([]*llm.Content, *M
 }
 
 // updateCache stores the processed context window back into the cache.
-func (cm *ContextManager) updateCache(snapshotVersion int, req *request) error {
+func (cm *Manager) updateCache(snapshotVersion int, req *request) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	if cm.version != snapshotVersion {
@@ -128,7 +128,7 @@ func (cm *ContextManager) updateCache(snapshotVersion int, req *request) error {
 }
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
-func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
+func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
 	if history, meta, ok := cm.tryCache(); ok {
 		return history, meta, nil
 	}
@@ -156,13 +156,13 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	return req.History, &req.Metadata, nil
 }
 
-func (cm *ContextManager) tryCache() ([]*llm.Content, *Metadata, bool) {
+func (cm *Manager) tryCache() ([]*llm.Content, *Metadata, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return cm.getCachedView(cm.version)
 }
 
-func (cm *ContextManager) loadHistory(ctx context.Context) (int, []*llm.Content, *contextPipeline, error) {
+func (cm *Manager) loadHistory(ctx context.Context) (int, []*llm.Content, *contextPipeline, error) {
 	if err := cm.checkContext(ctx); err != nil {
 		return 0, nil, nil, err
 	}
@@ -183,14 +183,14 @@ func (cm *ContextManager) loadHistory(ctx context.Context) (int, []*llm.Content,
 	return snapshotVersion, history, cm.Pipeline, nil
 }
 
-func (cm *ContextManager) runPipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
+func (cm *Manager) runPipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
 	if pipeline == nil {
 		return false, nil
 	}
 	return cm.executePipeline(ctx, pipeline, req, snapshotVersion)
 }
 
-func (cm *ContextManager) commitToCache(snapshotVersion int, persisted bool, req *request) error {
+func (cm *Manager) commitToCache(snapshotVersion int, persisted bool, req *request) error {
 	expectedVersion := snapshotVersion
 	if persisted {
 		expectedVersion++
@@ -210,7 +210,7 @@ func validateHistoryBoundaries(history []*llm.Content) error {
 	return nil
 }
 
-func (cm *ContextManager) executePipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
+func (cm *Manager) executePipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
 	// We execute the pipeline to prepare the Read-Model (context window).
 	// We DO NOT persist the pruned/transformed history back to the store,
 	// preserving the user's full Event Sourced history safely on disk.
@@ -233,7 +233,7 @@ func (cm *ContextManager) executePipeline(ctx context.Context, pipeline *context
 }
 
 // AddContent appends content to the history in a thread-safe manner, validating role alternation.
-func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) error {
+func (cm *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	// SCALABLE: Immediate context check
 	select {
 	case <-ctx.Done():
@@ -268,14 +268,14 @@ func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) 
 }
 
 // SetPipeline sets the context transformation pipeline.
-func (cm *ContextManager) SetPipeline(p *contextPipeline) {
+func (cm *Manager) SetPipeline(p *contextPipeline) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.version++
 	cm.Pipeline = p
 }
 
-func (cm *ContextManager) GetLimits() events.Limits {
+func (cm *Manager) GetLimits() events.Limits {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -289,14 +289,14 @@ func (cm *ContextManager) GetLimits() events.Limits {
 }
 
 // Summarize performs an ad-hoc summarization of the given content.
-func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
+func (cm *Manager) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
 	if cm.Summarizer == nil {
 		return "", nil, nil
 	}
 	return cm.Summarizer.Summarize(ctx, contents, focus)
 }
 
-func (cm *ContextManager) checkContext(ctx context.Context) error {
+func (cm *Manager) checkContext(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -305,21 +305,21 @@ func (cm *ContextManager) checkContext(ctx context.Context) error {
 	}
 }
 
-func (cm *ContextManager) validateSummarizer() error {
+func (cm *Manager) validateSummarizer() error {
 	if cm.Summarizer == nil {
 		return fmt.Errorf("%w: summarizer not initialized", llm.ErrTerminal)
 	}
 	return nil
 }
 
-func (cm *ContextManager) handleSummarizationPrep(subset []*llm.Content, err error) (string, *llm.Metrics, error) {
+func (cm *Manager) handleSummarizationPrep(subset []*llm.Content, err error) (string, *llm.Metrics, error) {
 	if err != nil {
 		return "", nil, err
 	}
 	return "history is too short to summarize yet", nil, nil
 }
 
-func (cm *ContextManager) wrapSummarizationError(err error) error {
+func (cm *Manager) wrapSummarizationError(err error) error {
 	category := llm.ErrTerminal
 	if llm.IsTransient(err) {
 		category = llm.ErrTransient
@@ -327,7 +327,7 @@ func (cm *ContextManager) wrapSummarizationError(err error) error {
 	return fmt.Errorf("%w: summarization failed: %w", category, err)
 }
 
-func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
+func (cm *Manager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
 	err := events.SafePublish(ctx, cm.Events, events.SystemMessageEvent{
 		Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
 	})
@@ -343,7 +343,7 @@ func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tok
 }
 
 // SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
-func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
+func (cm *Manager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
 	if err := cm.checkContext(ctx); err != nil {
 		return "", nil, err
 	}
@@ -377,7 +377,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	return fmt.Sprintf("summarized the first %d turns of history", actualTurns), metrics, nil
 }
 
-func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
+func (cm *Manager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
 	cm.mu.RLock()
 	totalEntries := cm.History.GetTotalEntries()
 	strategy := cm.Strategy
@@ -402,7 +402,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numT
 	return subset, endIdx, tokens, nil
 }
 
-func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurns int, totalEntries int) (subset []*llm.Content, endIdx int, err error) {
+func (cm *Manager) findSummarizationBoundary(ctx context.Context, numTurns int, totalEntries int) (subset []*llm.Content, endIdx int, err error) {
 	// Determine endIdx using a windowed load to avoid cloning the entire history if it's large.
 	// We'll start by loading a chunk that is likely to contain the requested number of turns.
 	windowSize := numTurns * 4 // Conservative estimate: 4 messages per turn on average
@@ -431,7 +431,7 @@ func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurn
 	}
 }
 
-func (cm *ContextManager) checkWindowSize(ctx context.Context, windowSize int, numTurns int, totalEntries int) (found bool, subset []*llm.Content, endIdx int, err error) {
+func (cm *Manager) checkWindowSize(ctx context.Context, windowSize int, numTurns int, totalEntries int) (found bool, subset []*llm.Content, endIdx int, err error) {
 	contents, err := cm.History.GetWindow(ctx, 0, windowSize)
 	if err != nil {
 		return false, nil, 0, err
@@ -479,7 +479,7 @@ func calculateSummarizationEndIndex(turns [][]*llm.Content, requestedTurns int) 
 	return endIdx, requestedTurns
 }
 
-func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
+func (cm *Manager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -521,7 +521,7 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	return nil
 }
 
-func (cm *ContextManager) validateSummarizationSubset(ctx context.Context, currentContents, subset []*llm.Content) error {
+func (cm *Manager) validateSummarizationSubset(ctx context.Context, currentContents, subset []*llm.Content) error {
 	for i, expected := range subset {
 		if i%100 == 0 {
 			select {
@@ -538,6 +538,6 @@ func (cm *ContextManager) validateSummarizationSubset(ctx context.Context, curre
 	return nil
 }
 
-func (cm *ContextManager) SetLogger(l ports.Logger) {
+func (cm *Manager) SetLogger(l ports.Logger) {
 	cm.logger = l
 }
