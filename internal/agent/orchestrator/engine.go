@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -32,7 +33,7 @@ type Turn struct {
 	Index        int
 	StartTime    time.Time
 	State        *TurnState
-	CtxManager   *session.ContextManager
+	CtxManager   *sessctx.Manager
 	Gateway      llm.LLMGateway
 	Executor     ToolExecutor
 	Registry     tools.Registry
@@ -54,7 +55,7 @@ type Turn struct {
 type Engine struct {
 	mu           sync.RWMutex
 	config       atomic.Pointer[engineConfig]
-	ctxManager   *session.ContextManager
+	ctxManager   *sessctx.Manager
 	gateway      llm.LLMGateway
 	executor     ToolExecutor
 	registry     tools.Registry
@@ -132,7 +133,7 @@ func (e *Engine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.CostTrack
 }
 
 // NewEngine creates a new Engine with a default pipeline.
-func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *Engine {
+func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *Engine {
 	backoff := 2 * time.Second
 	rateLimitBackoff := 5 * time.Second
 
