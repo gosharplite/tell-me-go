@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"context"
@@ -47,7 +47,7 @@ func runFinalizeSummarizationErrorTest(t *testing.T, archiveErr, setContentsErr 
 	h.archiveErr = archiveErr
 	h.setContentsErr = setContentsErr
 
-	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
+	cm := NewManager(NewStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
 	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
@@ -127,7 +127,7 @@ func TestSummarizeRange_GetWindowErrorInCheckWindowSize(t *testing.T) {
 	h.failOnCallN = 1
 	h.getWindowErr = errors.New("db read error")
 
-	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
+	cm := NewManager(NewStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
 	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
@@ -156,7 +156,7 @@ func TestSummarizeRange_GetWindowErrorInFinalizeSummarization(t *testing.T) {
 	h.failOnCallN = 2
 	h.getWindowErr = errors.New("concurrent modification")
 
-	cm := NewContextManager(NewContextStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
+	cm := NewManager(NewStrategy(&agenttest.MockTokenCounter{}), h, nil, nil)
 	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")

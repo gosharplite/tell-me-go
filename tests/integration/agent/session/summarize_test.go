@@ -18,6 +18,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -166,15 +167,15 @@ func setupInternalTools(t *testing.T, client *gemini.Client, h ports.HistoryMana
 	eventstest.CleanupBus(t, bus)
 	reg := registry.New()
 	gw := llm.NewResilientClient(client)
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	factory := &session.PipelineFactory{
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
+	factory := &sessctx.Factory{
 		Registry:   reg,
 		History:    h,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := session.NewContextManager(strategy, h, bus, factory)
+	cm := sessctx.NewManager(strategy, h, bus, factory)
 	return session.NewInternalTools(cm)
 }
 
@@ -210,7 +211,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 
 	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(950000) // Above 90% of 1M
-	strategy := session.NewContextStrategy(mockCounter)
+	strategy := sessctx.NewStrategy(mockCounter)
 	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyFile, historyFile+".archive")
 
 	ctx := context.Background()
@@ -220,7 +221,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "3"}}})
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
-	cm := session.NewContextManager(strategy, hManager, nil, nil)
+	cm := sessctx.NewManager(strategy, hManager, nil, nil)
 	cm.Summarizer = &agenttest.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
@@ -251,7 +252,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	tokenCount := 1234
 	mockCounter := &agenttest.MockTokenCounter{}
 	mockCounter.SetTokens(tokenCount)
-	strategy := session.NewContextStrategy(mockCounter)
+	strategy := sessctx.NewStrategy(mockCounter)
 	bus := &eventstest.TestEventBus{}
 
 	// Use real summarizer but mock gateway
@@ -259,7 +260,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	mockG.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "summary"}}}, &domain_llm.Metrics{}, nil)
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 
-	cm := session.NewContextManager(strategy, hManager, bus, nil)
+	cm := sessctx.NewManager(strategy, hManager, bus, nil)
 	cm.Summarizer = summarizerImpl
 
 	turns := 1

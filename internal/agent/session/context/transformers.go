@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"bytes"
@@ -53,7 +53,7 @@ func (t *emptyTurnFilter) Priority() int { return 90 }
 
 // finalContextValidator ensures the context is within limits after all transformations.
 type finalContextValidator struct {
-	Strategy *ContextStrategy
+	Strategy *Strategy
 }
 
 func (t *finalContextValidator) Transform(ctx context.Context, req *ports.ContextRequest) error {

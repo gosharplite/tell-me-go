@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -38,9 +39,9 @@ type runtimeConfig struct {
 type agent struct {
 	gateway       domain_llm.LLMGateway
 	engine        *orchestrator.Engine
-	ctxManager    *session.ContextManager
+	ctxManager    *sessctx.Manager
 	configWatcher session.ConfigWatcher
-	strategy      *session.ContextStrategy
+	strategy      *sessctx.Strategy
 	executor      *executor.Dispatcher
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
@@ -100,7 +101,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, registry tools.
 }
 
 func (a *agent) initComponents() error {
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(a.registry))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(a.registry))
 	a.strategy = strategy
 
 	exec, err := executor.NewPipelineDispatcher(a.registry, a.sm, a.events, a.logger, &executor.TelemetryLogger{})
@@ -127,18 +128,18 @@ func (a *agent) initComponents() error {
 		},
 	})
 
-	factory := &session.PipelineFactory{
-		Registry:      a.registry,
-		History:       a.hManager,
-		Summarizer:    a.summarizer,
-		SkillSelector: a.skillSelector,
-		Estimator:     strategy,
-		Events:        a.events,
+	factory := &sessctx.Factory{
+		Registry:   a.registry,
+		History:    a.hManager,
+		Summarizer: a.summarizer,
+		Estimator:  strategy,
+		Events:     a.events,
+		Extras:     []ports.ContextTransformer{session.NewSkillInjector(a.skillSelector)},
 	}
 
-	a.ctxManager = session.NewContextManager(strategy, a.hManager, a.events, factory,
-		session.WithLogger(a.logger),
-		session.WithSessionProvider(a.sessionProvider),
+	a.ctxManager = sessctx.NewManager(strategy, a.hManager, a.events, factory,
+		sessctx.WithLogger(a.logger),
+		sessctx.WithSessionProvider(a.sessionProvider),
 	)
 
 	// Initialize engine
@@ -315,7 +316,7 @@ type InternalAccessor interface {
 	GetTracker() domain_pricing.CostTracker
 
 	// Bridge methods consumed by agentinternal. Not for production use.
-	GetCtxManagerForInternalUse() *session.ContextManager
+	GetCtxManagerForInternalUse() *sessctx.Manager
 	GetEventsForInternalUse() events.EventBus
 	GetConfigWatcherForInternalUse() session.ConfigWatcher
 	GetRuntimeSnapshotForInternalUse() struct {
@@ -327,7 +328,7 @@ type InternalAccessor interface {
 	}
 	SetEventsForInternalUse(bus events.EventBus)
 	SetConfigWatcherForInternalUse(cw session.ConfigWatcher)
-	SetCtxManagerForInternalUse(cm *session.ContextManager)
+	SetCtxManagerForInternalUse(cm *sessctx.Manager)
 	SetLoggerForInternalUse(l ports.Logger)
 	SetTrackerForInternalUse(t domain_pricing.CostTracker)
 	SetRuntimeConfigForInternalUse(

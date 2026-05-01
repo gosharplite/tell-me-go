@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -63,16 +63,16 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &session.PipelineFactory{
+	factory := &sessctx.Factory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := session.NewContextManager(strategy, hManager, bus, factory)
+	cm := sessctx.NewManager(strategy, hManager, bus, factory)
 
 	// Set a token limit to trigger auto-summarization.
 	// Use 100000. Safety limit = 99000. 90% = 90000.
@@ -151,7 +151,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	verifyAutoSummarizeLog(t, logReceived)
 }
 
-func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *session.ContextManager, events.EventBus, *httptest.Server) {
+func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *sessctx.Manager, events.EventBus, *httptest.Server) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
@@ -172,16 +172,16 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *session.Contex
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &session.PipelineFactory{
+	factory := &sessctx.Factory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := session.NewContextManager(strategy, hManager, bus, factory)
+	cm := sessctx.NewManager(strategy, hManager, bus, factory)
 
 	return hManager, cm, bus, server
 }
@@ -234,16 +234,16 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	// Set initial system instructions
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, gemini.WithSystemInstruction("Initial System Instruction"), gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &session.PipelineFactory{
+	factory := &sessctx.Factory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := session.NewContextManager(strategy, hManager, bus, factory)
+	cm := sessctx.NewManager(strategy, hManager, bus, factory)
 	cm.Reconfigure(events.Limits{MaxHistoryTokens: 3500, MaxToolTurns: 10, MaxHistoryTurns: 20}) // Limit to trigger summarization
 
 	// Add some turns (approx 3451 tokens with base overhead and tools)
@@ -319,16 +319,16 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &session.PipelineFactory{
+	factory := &sessctx.Factory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := session.NewContextManager(strategy, hManager, bus, factory)
+	cm := sessctx.NewManager(strategy, hManager, bus, factory)
 
 	// 3. Set a tight token limit.
 	// Base overhead ~300.

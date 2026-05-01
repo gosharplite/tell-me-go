@@ -11,7 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -41,7 +41,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 	// to return context.Canceled — the assertion below.
 	a := agentinternal.NewBareAgent()
 	a.SetEventsForTest(bus)
-	a.SetCtxManagerForTest(&session.ContextManager{
+	a.SetCtxManagerForTest(&sessctx.Manager{
 		History: hm,
 	})
 

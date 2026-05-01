@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -25,7 +25,7 @@ import (
 func TestEngine_ConfigurationOptions(t *testing.T) {
 	gw := &agenttest.MockGateway{}
 	ex := &agenttest.MockAgentExecutor{}
-	cm := &session.ContextManager{}
+	cm := &sessctx.Manager{}
 	reg := &agenttest.MockToolRegistry{}
 	counter := &agenttest.MockTokenCounter{}
 
@@ -198,7 +198,7 @@ func TestExecutionStep_Process(t *testing.T) {
 		}
 		counter := &agenttest.MockTokenCounter{}
 		hMock := &agenttest.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 		turn := &Turn{
 			Events:       bus,
@@ -273,7 +273,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 		counter.SetTokens(100)
 
 		hMock := &agenttest.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
 		turn := &Turn{
@@ -299,7 +299,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 		counter.SetTokens(600)
 
 		hMock := &agenttest.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
 		turn := &Turn{
@@ -331,7 +331,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 		counter.SetTokens(100)
 
 		hMock := &agenttest.MockHistoryManager{}
-		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
 		turn := &Turn{
@@ -390,7 +390,7 @@ func TestEngine_Run(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
 
 	hMock := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 	e := NewEngine(gw, ex, cm, reg, bus, counter)
 
@@ -444,7 +444,7 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			Events:     bus,
@@ -479,7 +479,7 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
-		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 		turn := &Turn{
 			Events:     bus,
@@ -558,9 +558,9 @@ func TestExecuteTurn_TraceEventBusError(t *testing.T) {
 	// Properly initialize ContextManager
 	reg := &agenttest.MockToolRegistry{}
 	counter := &agenttest.MockTokenCounter{}
-	strategy := session.NewContextStrategy(counter)
+	strategy := sessctx.NewStrategy(counter)
 	hMock := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(strategy, hMock, bus, nil)
+	cm := sessctx.NewManager(strategy, hMock, bus, nil)
 
 	e := NewEngine(gw, ex, cm, reg, bus, counter)
 	e.processors[PhaseGuard] = TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {

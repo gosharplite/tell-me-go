@@ -11,7 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -63,21 +63,21 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 
-	counter := &session.HeuristicTokenCounter{}
-	strategy := session.NewContextStrategy(counter)
+	counter := &sessctx.HeuristicTokenCounter{}
+	strategy := sessctx.NewStrategy(counter)
 	strategy.SetLimits(1000, 2, 10) // Limit to 2 tool turns
 
 	gw := &limitMockLLMGateway{}
 	exec := &limitMockExecutor{}
 
 	// Pipeline factory
-	factory := &session.PipelineFactory{
+	factory := &sessctx.Factory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
 
-	cm := session.NewContextManager(strategy, h, bus, factory)
+	cm := sessctx.NewManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
 
 	reg := &limitMockRegistry{}
@@ -167,10 +167,10 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			counter := &agenttest.MockTokenCounter{Tokens: tt.toolTokens}
-			strategy := session.NewContextStrategy(counter)
+			strategy := sessctx.NewStrategy(counter)
 			strategy.SetLimits(tt.maxTokens, 10, 10)
 
-			cm := session.NewContextManager(strategy, nil, nil, nil)
+			cm := sessctx.NewManager(strategy, nil, nil, nil)
 
 			toolResponse := &llm.Content{
 				Parts: []*llm.Part{

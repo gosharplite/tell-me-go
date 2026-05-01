@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -126,7 +126,7 @@ type TurnState struct {
 	Metrics              *llm.Metrics      `json:"metrics,omitempty"`
 	Tokens               int               `json:"tokens"`
 	CurrentTurns         int               `json:"current_turns"`
-	Metadata             *session.Metadata `json:"metadata,omitempty"`
+	Metadata             *sessctx.Metadata `json:"metadata,omitempty"`
 	Response             *llm.Content      `json:"response,omitempty"`
 	ToolResponse         *llm.Content      `json:"tool_response,omitempty"`
 	LastError            error             `json:"-"`

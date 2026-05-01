@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -75,7 +75,7 @@ func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
 
 	hMock := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 	engine := NewEngine(gw, ex, cm, reg, bus, counter)
 
@@ -128,7 +128,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 	t.Run("Terminal Error", func(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(errors.New("terminal history failure"))
-		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 
 		turn := &Turn{
 			CtxManager: cm,
@@ -147,7 +147,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 	t.Run("Transient Error", func(t *testing.T) {
 		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(llm.ErrTransient)
-		cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 
 		turn := &Turn{
 			CtxManager: cm,
@@ -223,7 +223,7 @@ func TestGuardStep_TDT(t *testing.T) {
 			}
 
 			hMock := &agenttest.MockHistoryManager{}
-			cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+			cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 			cm.Reconfigure(events.Limits{MaxToolTurns: tt.maxTurns})
 
 			turn := &Turn{
@@ -316,7 +316,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 			bus := &eventstest.MockEventBus{}
 
 			hMock := &agenttest.MockHistoryManager{}
-			cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+			cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 
 			turn := &Turn{
 				Gateway:    gw,
@@ -414,7 +414,7 @@ func TestPersistenceStep_TDT(t *testing.T) {
 				}
 			}
 
-			cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
+			cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 
 			turn := &Turn{
 				CtxManager: cm,
@@ -478,7 +478,7 @@ func TestEngineHooks_Coverage(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
 	hMock := &agenttest.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial message"}}}}
-	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 	hook1 := &spyHook{}
 	hook2 := &spyHook{}
@@ -520,7 +520,7 @@ func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 		return nil
 	}
 
-	cm := session.NewContextManager(session.NewContextStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
+	cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
 	turn := &Turn{
 		CtxManager: cm,
 		State: &TurnState{
@@ -618,7 +618,7 @@ func TestEngineRun_Error(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 	counter := &agenttest.MockTokenCounter{}
 	hMock := &agenttest.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
 
 	engine := NewEngine(gw, ex, cm, reg, bus, counter)
 

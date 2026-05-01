@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package context
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +24,7 @@ func TestContextManager_FindSummarizationBoundary_Cancelled(t *testing.T) {
 	hm := &agenttest.MockHistoryManager{Contents: []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 	}}
-	cm := NewContextManager(nil, hm, nil, nil)
+	cm := NewManager(nil, hm, nil, nil)
 
 	_, _, err := cm.findSummarizationBoundary(ctx, 1, 1)
 	require.ErrorIs(t, err, context.Canceled)
@@ -35,7 +34,7 @@ func TestContextManager_ValidateSubset_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cm := NewContextManager(nil, nil, nil, nil)
+	cm := NewManager(nil, nil, nil, nil)
 	subset := make([]*llm.Content, 200) // Need > 100 to trigger the check
 	for i := range subset {
 		subset[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
@@ -109,17 +108,9 @@ func TestHistoryPruner_EventPublishError(t *testing.T) {
 	require.Contains(t, err.Error(), "publish failed")
 }
 
-type mockFailingSkillSelector struct {
-	err error
-}
-
-func (m *mockFailingSkillSelector) SelectSkills(ctx context.Context, task string) ([]skills.Skill, error) {
-	return nil, m.err
-}
-
 func TestSkillInjector_SelectorError(t *testing.T) {
-	injector := &skillInjector{
-		Selector: &mockFailingSkillSelector{err: errors.New("selector failed")},
+	injector := &WarningInjector{
+		Strategy: NewStrategy(&agenttest.MockTokenCounter{}),
 	}
 
 	req := &ports.ContextRequest{
@@ -142,7 +133,7 @@ func TestContextManager_FinalizeSummarization_ArchiveError(t *testing.T) {
 	// Use a wrapper to inject Archive error since MockHistoryManager doesn't support it easily
 	failingHM := &archiveFailingHM{MockHistoryManager: hm, err: errors.New("archive failed")}
 
-	cm := NewContextManager(nil, failingHM, nil, nil)
+	cm := NewManager(nil, failingHM, nil, nil)
 
 	subset := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
@@ -172,7 +163,7 @@ func TestContextManager_FinalizeSummarization_SetContentsError(t *testing.T) {
 		SetContentsErr: errors.New("set contents failed"),
 	}
 
-	cm := NewContextManager(nil, hm, nil, nil)
+	cm := NewManager(nil, hm, nil, nil)
 
 	subset := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
@@ -191,7 +182,7 @@ func TestContextManager_FinalizeSummarization_PrunedError(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(nil, hm, nil, nil)
+	cm := NewManager(nil, hm, nil, nil)
 
 	subset := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
@@ -249,7 +240,7 @@ func TestContextManager_Prepare_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cm := NewContextManager(nil, nil, nil, nil)
+	cm := NewManager(nil, nil, nil, nil)
 	_, _, err := cm.Prepare(ctx, 1)
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -258,13 +249,13 @@ func TestContextManager_AddContent_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cm := NewContextManager(nil, nil, nil, nil)
+	cm := NewManager(nil, nil, nil, nil)
 	err := cm.AddContent(ctx, &llm.Content{})
 	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestContextManager_UpdateCache_VersionMismatch(t *testing.T) {
-	cm := NewContextManager(nil, nil, nil, nil)
+	cm := NewManager(nil, nil, nil, nil)
 	cm.version = 2
 
 	req := &request{
@@ -284,7 +275,7 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 		},
 	}
 
-	factory := &PipelineFactory{}
+	factory := &Factory{}
 	pipeline := NewContextPipeline(
 		&agenttest.MockTransformer{
 			TransformFunc: func(ctx context.Context, req *ports.ContextRequest) error {
@@ -293,8 +284,8 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 		},
 	)
 
-	strategy := NewContextStrategy(&agenttest.MockTokenCounter{})
-	cm := NewContextManager(strategy, hm, nil, nil)
+	strategy := NewStrategy(&agenttest.MockTokenCounter{})
+	cm := NewManager(strategy, hm, nil, nil)
 	cm.Factory = factory
 	cm.SetPipeline(pipeline)
 
@@ -311,7 +302,7 @@ func TestContextManager_AddContent_GetWindowError(t *testing.T) {
 		GetWindowErr: errors.New("get window error"),
 	}
 
-	cm := NewContextManager(nil, hm, nil, nil)
+	cm := NewManager(nil, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "user"})
 	require.Error(t, err)
@@ -323,7 +314,7 @@ func TestContextManager_Prepare_HistoryGetWindowError(t *testing.T) {
 		GetWindowErr: errors.New("get window error"),
 	}
 
-	cm := NewContextManager(nil, hm, nil, nil)
+	cm := NewManager(nil, hm, nil, nil)
 
 	_, _, err := cm.Prepare(context.Background(), 1)
 	require.Error(t, err)
@@ -333,7 +324,7 @@ func TestContextManager_Prepare_HistoryGetWindowError(t *testing.T) {
 func TestContextManager_EmitSummarizationEvent_Error(t *testing.T) {
 	// We want to hit the err != nil branch in emitSummarizationEvent
 	mockBus := &mockFailingEventBus{err: errors.New("event error")}
-	cm := NewContextManager(nil, nil, mockBus, nil)
+	cm := NewManager(nil, nil, mockBus, nil)
 	// This function doesn't return the error, so we just call it.
 	cm.emitSummarizationEvent(context.Background(), 1, 1)
 }
