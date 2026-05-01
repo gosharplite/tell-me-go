@@ -1,6 +1,6 @@
 //go:build integration
 
-package integrations
+package ado
 
 import (
 	"context"
