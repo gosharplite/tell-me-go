@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package ui
 
 // uiState represents the possible states of the UI bridge.
 type uiState int

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session_test
+package ui_test
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
@@ -75,7 +76,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := session.NewUIBridge(mock, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
+	bridge := ui.NewUIBridge(mock, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -127,7 +128,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 		panic("intentional test panic")
 	}).Return(func() {})
 
-	bridge := session.NewUIBridge(mockRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
+	bridge := ui.NewUIBridge(mockRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -174,7 +175,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
+	bridge := ui.NewUIBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	testCtx, testCancel := context.WithCancel(context.Background())
 	t.Cleanup(testCancel)
@@ -229,7 +230,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 		panic("first panic")
 	}).Once()
 
-	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
+	bridge := ui.NewUIBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
@@ -263,7 +264,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	mRenderer := new(agenttest.MockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
+	bridge := ui.NewUIBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
