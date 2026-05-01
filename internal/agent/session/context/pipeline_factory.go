@@ -7,7 +7,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -21,18 +20,19 @@ const (
 
 // Factory encapsulates the logic for creating context processing pipelines.
 type Factory struct {
-	Registry      tools.Registry
-	History       ports.HistoryManager
-	Summarizer    ports.Summarizer
-	Estimator     llm.TokenEstimator
-	SkillSelector skills.SkillSelector
-	Events        events.EventBus
-	Profile       optimizationProfile
-	Logger        ports.Logger
+	Registry   tools.Registry
+	History    ports.HistoryManager
+	Summarizer ports.Summarizer
+	Estimator  llm.TokenEstimator
+	Events     events.EventBus
+	Profile    optimizationProfile
+	Logger     ports.Logger
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
-func (f *Factory) BuildStandardPipeline(limits events.Limits) *contextPipeline {
+// extras allows the parent session/ package to inject additional transformers
+// (e.g., skillInjector) without creating a context → domain/skills import.
+func (f *Factory) BuildStandardPipeline(limits events.Limits, extras ...ports.ContextTransformer) *contextPipeline {
 	// 1. Calculate window size based on profile
 	windowTurns := limits.MaxHistoryTurns
 	if f.Profile == profilePrecise {
@@ -46,7 +46,9 @@ func (f *Factory) BuildStandardPipeline(limits events.Limits) *contextPipeline {
 
 	transformers := []ports.ContextTransformer{
 		&HistoryRepairer{},
-		&skillInjector{Selector: f.SkillSelector},
+	}
+	transformers = append(transformers, extras...)
+	transformers = append(transformers,
 		&toolResponseCleaner{}, // Remove tool responses with empty IDs
 		&emptyMessagePruner{},  // Explicitly drop messages with 0 parts
 		&contentCleaner{},
@@ -80,11 +82,11 @@ func (f *Factory) BuildStandardPipeline(limits events.Limits) *contextPipeline {
 		},
 		&emptyTurnFilter{},
 		&WarningInjector{
-			Strategy: f.Estimator.(*ContextStrategy),
+			Strategy: f.Estimator.(*Strategy),
 		},
 		&TransientMerger{},
 		&finalContextValidator{
-			Strategy: f.Estimator.(*ContextStrategy),
+			Strategy: f.Estimator.(*Strategy),
 		},
 	)
 
