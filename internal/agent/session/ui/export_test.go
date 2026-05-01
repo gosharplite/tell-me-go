@@ -19,5 +19,5 @@ func SyncBridge(t *testing.T, b *Bridge, m interface {
 
 // Wg returns a pointer to the internal wait group for test synchronization.
 func (b *Bridge) Wg() *sync.WaitGroup {
-	return &b.WG
+	return &b.wg
 }

@@ -230,7 +230,7 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	cancel()
 
 	// Wait for the consumer loop to exit to ensure it's truly dead and not reading
-	bridge.WG.Wait()
+	bridge.wg.Wait()
 
 	// Fill the bridge's event channel buffer to its capacity (100)
 	// This ensures that the enqueue blocks deterministically,

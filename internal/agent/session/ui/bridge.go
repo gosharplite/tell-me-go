@@ -81,7 +81,7 @@ type Bridge struct {
 	dispatcher         *eventDispatcher
 	cleanupOnce        sync.Once
 	cleanupInvocations int32
-	WG                 sync.WaitGroup
+	wg                 sync.WaitGroup
 	cleanupTimeout     time.Duration
 	started            chan struct{}
 	startOnce          sync.Once
@@ -112,9 +112,16 @@ func NewBridge(renderer ports.UIRenderer, opts ...bridgeOption) *Bridge {
 		b.renderer, b.logger, b.stateMachine, b.spinner,
 		b.showThoughts, b.showTools, b.rawOutput, b.logFile,
 	)
-	b.WG.Add(1)
+	b.wg.Add(1)
 	return b
 }
+
+// AbortStart decrements the internal WaitGroup when Listen() will not be called.
+// This is the safe alternative to manually calling wg.Done() from outside the package.
+func (b *Bridge) AbortStart() {
+	b.wg.Done()
+}
+
 func (b *Bridge) CloseInput() {
 	b.queue.closeInput()
 }
@@ -135,7 +142,7 @@ func (b *Bridge) Cleanup() {
 					close(done)
 				}
 			}()
-			b.WG.Wait()
+			b.wg.Wait()
 			close(done)
 		}()
 
@@ -172,7 +179,7 @@ func (b *Bridge) Listen(ctx context.Context) (err error) {
 	b.mu.Unlock()
 	defer cancel()
 
-	defer b.WG.Done()
+	defer b.wg.Done()
 	defer b.loopCancel()
 	defer func() {
 		if r := recover(); r != nil {

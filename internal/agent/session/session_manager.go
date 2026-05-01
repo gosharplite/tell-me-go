@@ -185,7 +185,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		// 2. Clean up Consumer (UI) second
 		if bridge != nil {
 			if !listenStarted {
-				bridge.WG.Done()
+				bridge.AbortStart()
 			}
 			bridge.CloseInput()
 			bridge.Cleanup()

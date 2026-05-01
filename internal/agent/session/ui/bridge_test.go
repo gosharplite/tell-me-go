@@ -750,8 +750,8 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 	bridgeCtx := bridge.getLoopContext() // Use the internal loop context for verification
 
 	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop
-	bridge.WG.Add(1)
-	defer bridge.WG.Done() // Ensure the hung WaitGroup is eventually released to prevent goroutine leaks in the test suite.
+	bridge.wg.Add(1)
+	defer bridge.wg.Done() // Ensure the hung WaitGroup is eventually released to prevent goroutine leaks in the test suite.
 
 	// Execute Cleanup. It should timeout after 10ms and return normally.
 	done := make(chan struct{})
@@ -778,7 +778,7 @@ func TestUIBridge_HandleEvent_ContextCancelled(t *testing.T) {
 	bridge := NewBridge(mRenderer)
 	// We don't start the bridge's background loop to specifically test load shedding logic
 	defer func() {
-		bridge.WG.Done()
+		bridge.wg.Done()
 		bridge.CloseInput()
 		bridge.Cleanup()
 	}()
