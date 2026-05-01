@@ -60,6 +60,8 @@ func (m *infoManager) recordGoStats(ctx context.Context, path string, info os.Fi
 	var loc int
 	var ok bool
 	if m.Cache != nil {
+		// path is from filepath.Walk, rooted at "." — matches cache.baseDir.
+		// absPath resolves it to absolute internally.
 		loc, ok = m.Cache.GetCachedLineCount(path, info)
 	}
 
@@ -268,6 +270,8 @@ func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]inter
 
 	var res tools.ToolResult
 	if filepath.Ext(path) == ".go" {
+		// path is absolute from IsPathSafe. absPath inside the cache
+		// detects absolute paths and passes them through unchanged.
 		skeleton, err := m.Cache.GetFileSkeletonGo(path)
 		if err == nil {
 			res = tools.ToolResult{Text: skeleton}
