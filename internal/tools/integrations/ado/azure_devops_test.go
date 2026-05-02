@@ -2284,12 +2284,13 @@ func TestAdoRunPipeline(t *testing.T) {
 		sm := &mockSecurityManager{approved: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
-		// Branch is pre-formatted (caller responsibility post-Phase 4).
+		// Branch is the raw user-facing name; _ref_name is the formatted ADO ref.
 		args := map[string]interface{}{
 			"organization":        "myorg",
 			"project":             "myproj",
 			"pipeline_id":         1,
-			"branch":              "refs/heads/feature",
+			"branch":              "feature",
+			"_ref_name":           "refs/heads/feature",
 			"variables":           map[string]string{"var1": "val1"},
 			"template_parameters": map[string]string{"param1": "paramVal"},
 		}
@@ -2299,6 +2300,9 @@ func TestAdoRunPipeline(t *testing.T) {
 		assert.False(t, result.Cancelled)
 		assert.Equal(t, 101, result.RunID)
 		assert.Equal(t, "https://dev.azure.com/myorg/myproj/_build/results?buildId=101", result.WebURL)
+		// Confirmation prompt should show the raw branch, not the formatted ref.
+		assert.Contains(t, sm.lastConfirmText, "branch: feature")
+		assert.NotContains(t, sm.lastConfirmText, "branch: refs/heads/feature")
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
@@ -2315,12 +2319,86 @@ func TestAdoRunPipeline(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, result.Cancelled)
 	})
+
+	t.Run("FallbackRefName", func(t *testing.T) {
+		jsonResponse := `{
+			"id": 202,
+			"_links": {
+				"web": {
+					"href": "https://dev.azure.com/myorg/myproj/_build/results?buildId=202"
+				}
+			}
+		}`
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var payload map[string]interface{}
+			err := json.NewDecoder(r.Body).Decode(&payload)
+			assert.NoError(t, err)
+
+			resources := payload["resources"].(map[string]interface{})
+			repos := resources["repositories"].(map[string]interface{})
+			self := repos["self"].(map[string]interface{})
+			// Fallback: RefName defaults to Branch when _ref_name is absent.
+			assert.Equal(t, "develop", self["refName"])
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		t.Cleanup(server.Close)
+
+		sm := &mockSecurityManager{approved: true}
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+
+		// No _ref_name: exercises the defensive fallback path.
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"pipeline_id":  1,
+			"branch":       "develop",
+		}
+
+		result, err := m.RunPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.False(t, result.Cancelled)
+		assert.Equal(t, 202, result.RunID)
+	})
+
+	t.Run("ConfirmationPromptShowsRawBranch", func(t *testing.T) {
+		// Regression test: the confirmation prompt must show the raw
+		// user-facing branch name, not the fully qualified ref.
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": 303, "_links": {"web": {"href": "https://dev.azure.com/x"}}}`))
+		}))
+		t.Cleanup(server.Close)
+
+		sm := &mockSecurityManager{approved: false} // decline so no HTTP body assertion needed
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+
+		args := map[string]interface{}{
+			"organization": "o",
+			"project":      "p",
+			"pipeline_id":  1,
+			"branch":       "main",
+			"_ref_name":    "refs/heads/main",
+		}
+
+		result, err := m.RunPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.True(t, result.Cancelled)
+
+		assert.Contains(t, sm.lastConfirmText, "branch: main",
+			"confirmation prompt should display the raw branch name")
+		assert.NotContains(t, sm.lastConfirmText, "branch: refs/heads/main",
+			"confirmation prompt must not display the fully qualified ref")
+	})
 }
 
 type mockSecurityManager struct {
-	approved      bool
-	err           error
-	confirmCalled bool
+	approved        bool
+	err             error
+	confirmCalled   bool
+	lastConfirmText string
 }
 
 func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
@@ -2337,6 +2415,7 @@ func (m *mockSecurityManager) Prompt(message string)               {}
 func (m *mockSecurityManager) Warn(message string)                 {}
 func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	m.confirmCalled = true
+	m.lastConfirmText = message
 	return m.approved, m.err
 }
 func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }

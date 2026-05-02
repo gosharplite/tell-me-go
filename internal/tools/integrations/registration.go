@@ -765,6 +765,9 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 				// Pre-format the branch into a fully qualified ADO ref. Presentation
 				// policy (vX.Y.Z -> refs/tags/, else refs/heads/) lives at the consumer.
+				// The raw branch name stays under args["branch"] so the confirmation
+				// prompt shown by RunPipeline displays the user-facing name; the formatted
+				// ref is injected under args["_ref_name"] for the ADO API request.
 				branchRaw, _ := args["branch"].(string)
 				refName := adoFormatter.FormatBranchRef(branchRaw)
 
@@ -773,7 +776,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 				for k, v := range args {
 					argsCopy[k] = v
 				}
-				argsCopy["branch"] = refName
+				argsCopy["_ref_name"] = refName
 
 				result, err := m.RunPipeline(ctx, argsCopy)
 				if err != nil {

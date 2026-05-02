@@ -115,9 +115,11 @@ func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interfa
 // operational contract (destructive operations require user assent); a
 // Cancelled result indicates the user declined.
 //
-// The caller MUST pre-format args["branch"] using PipelineFormatter.FormatBranchRef
-// before invoking this method. The presentation-layer convention
-// (refs/heads/ vs refs/tags/) is intentionally NOT applied here.
+// The caller SHOULD pre-format the branch into a fully qualified ADO ref via
+// PipelineFormatter.FormatBranchRef and supply it under args["_ref_name"];
+// args["branch"] remains the raw user-facing name shown in the confirmation
+// prompt. If args["_ref_name"] is absent, RunPipeline falls back to using
+// args["branch"] verbatim (intended for direct unit-test callers only).
 func (m *AdoManager) RunPipeline(ctx context.Context, args map[string]interface{}) (RunPipelineResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {

@@ -83,8 +83,9 @@ type adoRunPipelineParams struct {
 	TemplateParameters map[string]string `json:"template_parameters"`
 	Variables          map[string]string `json:"variables"`
 
-	// Computed
-	RefName         string
+	// RefName is supplied by the caller via "_ref_name"; MappedVariables is
+	// computed from Variables.
+	RefName         string `json:"_ref_name"`
 	MappedVariables map[string]adoVariable
 }
 
@@ -145,10 +146,16 @@ func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, er
 		return params, fmt.Errorf("organization, project, and pipeline_id are required")
 	}
 
-	// RefName is supplied by the caller via args["branch"], which the consumer
-	// (registration closure) is expected to have pre-formatted via
-	// PipelineFormatter.FormatBranchRef.
-	params.RefName = params.Branch
+	// RefName is supplied by the caller via the args["_ref_name"] key, which
+	// the consumer (registration closure) populates by running args["branch"]
+	// through PipelineFormatter.FormatBranchRef. Keeping Branch and RefName
+	// distinct lets the confirmation prompt show the user-facing branch name
+	// while the API request uses the fully qualified ref.
+	if params.RefName == "" {
+		// Defensive fallback: if no caller pre-formatted, treat Branch verbatim
+		// so direct unit tests of RunPipeline still produce a non-empty ref.
+		params.RefName = params.Branch
+	}
 	params.MappedVariables = mapADOVariables(params.Variables)
 
 	return params, nil
