@@ -110,29 +110,34 @@ func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interfa
 	return &runData, nil
 }
 
-func (m *AdoManager) AdoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// RunPipeline is the infrastructure-layer entry point for triggering a new
+// ADO pipeline run. The confirmation dialog is part of this adapter's
+// operational contract (destructive operations require user assent); a
+// Cancelled result indicates the user declined.
+//
+// The caller MUST pre-format args["branch"] using PipelineFormatter.FormatBranchRef
+// before invoking this method. The presentation-layer convention
+// (refs/heads/ vs refs/tags/) is intentionally NOT applied here.
+func (m *AdoManager) RunPipeline(ctx context.Context, args map[string]interface{}) (RunPipelineResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
+		return RunPipelineResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
 	}
 
-	// Confirm Action
 	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Trigger run for pipeline %d (branch: %s) in %s/%s?", params.PipelineId, params.Branch, params.Organization, params.Project))
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+		return RunPipelineResult{}, fmt.Errorf("confirmation error: %w", err)
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
+		return RunPipelineResult{Cancelled: true}, nil
 	}
 
 	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, params.RefName, params.TemplateParameters, params.MappedVariables)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing run pipeline: %w", err)
+		return RunPipelineResult{}, fmt.Errorf("executing run pipeline: %w", err)
 	}
 
-	return tools.ToolResult{
-		Text: fmt.Sprintf("Successfully triggered pipeline run ID: %d\nWeb URL: %s", runID, webURL),
-	}, nil
+	return RunPipelineResult{RunID: runID, WebURL: webURL}, nil
 }
 
 func (m *AdoManager) executeRunPipeline(ctx context.Context, org, project string, pipelineID int, refName string, templateParams map[string]string, variables map[string]adoVariable) (int, string, error) {

@@ -10,8 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-var defaultPipelineFormatter = NewPipelineFormatter()
-
 type adoListPipelineRunsParams struct {
 	Organization string `json:"organization"`
 	Project      string `json:"project"`
@@ -147,7 +145,10 @@ func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, er
 		return params, fmt.Errorf("organization, project, and pipeline_id are required")
 	}
 
-	params.RefName = defaultPipelineFormatter.FormatBranchRef(params.Branch)
+	// RefName is supplied by the caller via args["branch"], which the consumer
+	// (registration closure) is expected to have pre-formatted via
+	// PipelineFormatter.FormatBranchRef.
+	params.RefName = params.Branch
 	params.MappedVariables = mapADOVariables(params.Variables)
 
 	return params, nil
@@ -270,4 +271,13 @@ type LogContent struct {
 	Content    string
 	Truncated  bool
 	TotalLines int
+}
+
+// RunPipelineResult describes the outcome of an attempted pipeline trigger.
+// If Cancelled is true, the user declined the confirmation prompt and no run
+// was created. Otherwise, RunID and WebURL describe the new run.
+type RunPipelineResult struct {
+	Cancelled bool
+	RunID     int
+	WebURL    string
 }

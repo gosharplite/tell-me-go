@@ -762,7 +762,30 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: m.AdoRunPipeline,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				// Pre-format the branch into a fully qualified ADO ref. Presentation
+				// policy (vX.Y.Z -> refs/tags/, else refs/heads/) lives at the consumer.
+				branchRaw, _ := args["branch"].(string)
+				refName := adoFormatter.FormatBranchRef(branchRaw)
+
+				// Shallow-copy args to avoid mutating the caller's map.
+				argsCopy := make(map[string]interface{}, len(args)+1)
+				for k, v := range args {
+					argsCopy[k] = v
+				}
+				argsCopy["branch"] = refName
+
+				result, err := m.RunPipeline(ctx, argsCopy)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				if result.Cancelled {
+					return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
+				}
+				return tools.ToolResult{
+					Text: fmt.Sprintf("Successfully triggered pipeline run ID: %d\nWeb URL: %s", result.RunID, result.WebURL),
+				}, nil
+			},
 		},
 	}
 

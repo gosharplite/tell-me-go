@@ -1431,26 +1431,29 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "failed to decode response",
 		},
 		{
-			name: "AdoRunPipeline - Missing Params",
+			name: "RunPipeline - Missing Params",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoRunPipeline(ctx, args, nil)
+				_, err := m.RunPipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p"}, // Missing pipeline_id
 			expectedErrMsg: "required",
 		},
 		{
-			name: "AdoRunPipeline - 500 Error",
+			name: "RunPipeline - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoRunPipeline(ctx, args, nil)
+				_, err := m.RunPipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "AdoRunPipeline - Malformed JSON",
+			name: "RunPipeline - Malformed JSON",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoRunPipeline(ctx, args, nil)
+				_, err := m.RunPipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusOK,
@@ -2281,19 +2284,21 @@ func TestAdoRunPipeline(t *testing.T) {
 		sm := &mockSecurityManager{approved: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
+		// Branch is pre-formatted (caller responsibility post-Phase 4).
 		args := map[string]interface{}{
 			"organization":        "myorg",
 			"project":             "myproj",
 			"pipeline_id":         1,
-			"branch":              "feature",
+			"branch":              "refs/heads/feature",
 			"variables":           map[string]string{"var1": "val1"},
 			"template_parameters": map[string]string{"param1": "paramVal"},
 		}
 
-		result, err := m.AdoRunPipeline(context.Background(), args, nil)
+		result, err := m.RunPipeline(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Successfully triggered pipeline run ID: 101")
-		assert.Contains(t, result.Text, "Web URL: https://dev.azure.com/myorg/myproj/_build/results?buildId=101")
+		assert.False(t, result.Cancelled)
+		assert.Equal(t, 101, result.RunID)
+		assert.Equal(t, "https://dev.azure.com/myorg/myproj/_build/results?buildId=101", result.WebURL)
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
@@ -2306,9 +2311,9 @@ func TestAdoRunPipeline(t *testing.T) {
 			"pipeline_id":  1,
 		}
 
-		result, err := m.AdoRunPipeline(context.Background(), args, nil)
+		result, err := m.RunPipeline(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Equal(t, "Pipeline run cancelled by user.", result.Text)
+		assert.True(t, result.Cancelled)
 	})
 }
 
