@@ -4,6 +4,9 @@
 package integrations
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -315,6 +318,22 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 		opts = append(opts, ado.WithToken(token))
 	}
 	m := ado.NewADOManager(sm, opts...)
+	adoFormatter := ado.NewPipelineFormatter()
+
+	marshalIndentResult := func(v interface{}) (tools.ToolResult, error) {
+		output, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("marshaling response: %w", err)
+		}
+		return tools.ToolResult{Text: string(output)}, nil
+	}
+
+	appendTruncationNote := func(c ado.LogContent) string {
+		if !c.Truncated {
+			return c.Content
+		}
+		return c.Content + fmt.Sprintf("\n\n[NOTE to LLM: Log content was truncated after %d lines for safety. Suggest using a more specific filter_query or pagination if the relevant data is missing.]", c.TotalLines)
+	}
 
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration
@@ -442,7 +461,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: m.AdoListPipelines,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				pipelines, err := m.ListPipelines(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: adoFormatter.FormatPipelineList(pipelines)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -461,7 +486,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: m.AdoListPipelineRuns,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				pipelineID, runs, err := m.ListPipelineRuns(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: adoFormatter.FormatPipelineRunsList(pipelineID, runs)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -478,7 +509,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: m.AdoGetPipelineRun,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				run, err := m.GetPipelineRun(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: adoFormatter.FormatPipelineRunDetail(run)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -494,7 +531,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: m.AdoGetPipelineDefinition,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				def, err := m.GetPipelineDefinition(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return marshalIndentResult(def)
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -518,7 +561,27 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: m.AdoGetPipelineLogs,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				// Dispatch on whether log_id was supplied: list-mode vs fetch-mode.
+				var dispatch struct {
+					LogId int `json:"log_id"`
+				}
+				_ = tools.UnmarshalArgs(args, &dispatch)
+
+				if dispatch.LogId == 0 {
+					runID, logs, err := m.ListPipelineLogs(ctx, args)
+					if err != nil {
+						return tools.ToolResult{}, err
+					}
+					return tools.ToolResult{Text: adoFormatter.FormatPipelineLogList(runID, logs)}, nil
+				}
+
+				content, err := m.GetPipelineLogContent(ctx, args, hb)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: appendTruncationNote(content)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -585,7 +648,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: m.AdoGetBuildTimeline,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				records, err := m.GetBuildTimeline(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return marshalIndentResult(records)
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -608,7 +677,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id", "log_id"},
 				},
 			},
-			handler: m.AdoGetTaskLog,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				content, err := m.GetTaskLog(ctx, args, hb)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: appendTruncationNote(content)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -625,7 +700,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: m.AdoGetBuildChanges,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				changes, err := m.GetBuildChanges(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return marshalIndentResult(changes)
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -642,7 +723,16 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "definition_id", "variables"},
 				},
 			},
-			handler: m.AdoUpdateBuildDefinitionVariables,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				result, err := m.UpdateBuildDefinitionVariables(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				if result.Cancelled {
+					return tools.ToolResult{Text: "Update cancelled by user."}, nil
+				}
+				return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", result.DefinitionID)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -662,7 +752,20 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
 				},
 			},
-			handler: m.AdoCreatePipeline,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				result, err := m.CreatePipeline(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				switch {
+				case result.AlreadyExisted:
+					return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", result.Name, result.PipelineID)}, nil
+				case result.Cancelled:
+					return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
+				default:
+					return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", result.Name, result.PipelineID)}, nil
+				}
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -681,7 +784,33 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: m.AdoRunPipeline,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				// Pre-format the branch into a fully qualified ADO ref. Presentation
+				// policy (vX.Y.Z -> refs/tags/, else refs/heads/) lives at the consumer.
+				// The raw branch name stays under args["branch"] so the confirmation
+				// prompt shown by RunPipeline displays the user-facing name; the formatted
+				// ref is injected under args["_ref_name"] for the ADO API request.
+				branchRaw, _ := args["branch"].(string)
+				refName := adoFormatter.FormatBranchRef(branchRaw)
+
+				// Shallow-copy args to avoid mutating the caller's map.
+				argsCopy := make(map[string]interface{}, len(args)+1)
+				for k, v := range args {
+					argsCopy[k] = v
+				}
+				argsCopy["_ref_name"] = refName
+
+				result, err := m.RunPipeline(ctx, argsCopy)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				if result.Cancelled {
+					return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
+				}
+				return tools.ToolResult{
+					Text: fmt.Sprintf("Successfully triggered pipeline run ID: %d\nWeb URL: %s", result.RunID, result.WebURL),
+				}, nil
+			},
 		},
 	}
 

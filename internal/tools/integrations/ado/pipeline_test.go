@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAdoListPipelines(t *testing.T) {
+func TestListPipelines(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -26,7 +26,8 @@ func TestAdoListPipelines(t *testing.T) {
 		mockBody   string
 		args       map[string]interface{}
 		wantError  bool
-		wantText   string
+		wantPipes  int
+		wantNames  []string
 		errMsg     string
 	}{
 		{
@@ -38,7 +39,8 @@ func TestAdoListPipelines(t *testing.T) {
 				"project":      "myproj",
 			},
 			wantError: false,
-			wantText:  "Found 1 pipelines:\n- [1] my-pipeline\n",
+			wantPipes: 1,
+			wantNames: []string{"my-pipeline"},
 		},
 		{
 			name:       "Empty list",
@@ -49,7 +51,7 @@ func TestAdoListPipelines(t *testing.T) {
 				"project":      "myproj",
 			},
 			wantError: false,
-			wantText:  "No pipelines found.",
+			wantPipes: 0,
 		},
 		{
 			name:       "API returns 500 Error",
@@ -112,7 +114,7 @@ func TestAdoListPipelines(t *testing.T) {
 			m := NewADOManager(sm, opts...)
 
 			ctx := context.Background()
-			result, err := m.AdoListPipelines(ctx, tt.args, nil)
+			pipelines, err := m.ListPipelines(ctx, tt.args)
 
 			if tt.wantError {
 				assert.Error(t, err)
@@ -121,8 +123,48 @@ func TestAdoListPipelines(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.wantText, result.Text)
+				assert.Len(t, pipelines, tt.wantPipes)
+				for i, name := range tt.wantNames {
+					assert.Equal(t, name, pipelines[i].Name)
+				}
 			}
+		})
+	}
+}
+
+func TestFormatPipelineList(t *testing.T) {
+	tests := []struct {
+		name      string
+		pipelines []adoPipeline
+		want      string
+	}{
+		{
+			name:      "Empty list returns sentinel",
+			pipelines: nil,
+			want:      "No pipelines found.",
+		},
+		{
+			name:      "Single pipeline",
+			pipelines: []adoPipeline{{Id: 1, Name: "my-pipeline"}},
+			want:      "Found 1 pipelines:\n- [1] my-pipeline\n",
+		},
+		{
+			name: "Multiple pipelines",
+			pipelines: []adoPipeline{
+				{Id: 1, Name: "a"},
+				{Id: 2, Name: "b"},
+			},
+			want: "Found 2 pipelines:\n- [1] a\n- [2] b\n",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			formatter := NewPipelineFormatter()
+			got := formatter.FormatPipelineList(tt.pipelines)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -146,8 +188,9 @@ func TestFormatBranchRef(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := formatBranchRef(tt.input); got != tt.want {
-				t.Errorf("formatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
+			formatter := NewPipelineFormatter()
+			if got := formatter.FormatBranchRef(tt.input); got != tt.want {
+				t.Errorf("FormatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -190,9 +233,12 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.AdoCreatePipeline(ctx, args, nil)
+	result, err := m.CreatePipeline(ctx, args)
 	require.NoError(t, err)
-	assert.Contains(t, result.Text, "Successfully created pipeline 'new-pipeline' with ID: 789")
+	assert.False(t, result.AlreadyExisted)
+	assert.False(t, result.Cancelled)
+	assert.Equal(t, 789, result.PipelineID)
+	assert.Equal(t, "new-pipeline", result.Name)
 }
 
 type mockConfirmer struct {
@@ -239,9 +285,12 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 		},
 	}
 
-	result, err := m.AdoCreatePipeline(ctx, args, nil)
+	result, err := m.CreatePipeline(ctx, args)
 	require.NoError(t, err)
-	assert.Contains(t, result.Text, "Successfully created pipeline 'locked-pipeline' with ID: 888")
+	assert.False(t, result.AlreadyExisted)
+	assert.False(t, result.Cancelled)
+	assert.Equal(t, 888, result.PipelineID)
+	assert.Equal(t, "locked-pipeline", result.Name)
 }
 
 func setupMockPipelineServer(t *testing.T, postHandler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
@@ -281,7 +330,7 @@ func assertVariable(t *testing.T, vars map[string]adoVariable, name string, valu
 	}
 }
 
-func TestAdoGetPipelineDefinition(t *testing.T) {
+func TestGetPipelineDefinition(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -318,17 +367,17 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 		"pipeline_id":  123,
 	}
 
-	result, err := m.AdoGetPipelineDefinition(ctx, args, nil)
+	def, err := m.GetPipelineDefinition(ctx, args)
 	require.NoError(t, err)
 
-	var def map[string]interface{}
-	err = json.Unmarshal([]byte(result.Text), &def)
-	require.NoError(t, err)
+	// def is the decoded JSON, type-assert and index into tree
+	defMap, ok := def.(map[string]interface{})
+	require.True(t, ok)
 
-	assert.Equal(t, float64(123), def["id"])
-	assert.Equal(t, "test-pipeline", def["name"])
+	assert.Equal(t, float64(123), defMap["id"])
+	assert.Equal(t, "test-pipeline", defMap["name"])
 
-	config := def["configuration"].(map[string]interface{})
+	config := defMap["configuration"].(map[string]interface{})
 	vars := config["variables"].(map[string]interface{})
 	secretVar := vars["secret-var"].(map[string]interface{})
 
@@ -405,9 +454,10 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.AdoUpdateBuildDefinitionVariables(ctx, args, nil)
+	result, err := m.UpdateBuildDefinitionVariables(ctx, args)
 	require.NoError(t, err)
-	assert.Contains(t, result.Text, "Successfully updated variables for build definition 123")
+	assert.False(t, result.Cancelled)
+	assert.Equal(t, 123, result.DefinitionID)
 	assert.True(t, getCalled)
 	assert.True(t, putCalled)
 }

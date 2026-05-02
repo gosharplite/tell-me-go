@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdoGetPullRequest(t *testing.T) {
@@ -522,7 +523,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 	})
 }
 
-func TestAdoListPipelineRuns(t *testing.T) {
+func TestListPipelineRuns(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -539,14 +540,16 @@ func TestAdoListPipelineRuns(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		pipelineID, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Run ID: 101")
-		assert.Contains(t, result.Text, "Repo: myrepo")
+		assert.Equal(t, 1, pipelineID)
+		assert.Len(t, runs, 1)
+		assert.Equal(t, 101, runs[0].Id)
+		assert.Equal(t, "myrepo", runs[0].Repository.Name)
 	})
 }
 
-func TestAdoGetPipelineRun(t *testing.T) {
+func TestGetPipelineRun(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -562,17 +565,20 @@ func TestAdoGetPipelineRun(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		result, err := m.AdoGetPipelineRun(context.Background(), args, nil)
+		run, err := m.GetPipelineRun(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Pipeline Run #101 Details")
+		assert.Equal(t, 101, run.Id)
+		assert.Equal(t, "run1", run.Name)
+		assert.Equal(t, "completed", run.State)
+		assert.Equal(t, "succeeded", run.Result)
 	})
 }
 
-func TestAdoGetPipelineLogs(t *testing.T) {
+func TestListPipelineLogs(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
-	t.Run("List Logs", func(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{"value": [{"id": 1, "lineCount": 10}]}`
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/runs/101/logs")
@@ -585,12 +591,20 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		result, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		runID, logs, err := m.ListPipelineLogs(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Log ID: 1")
+		assert.Equal(t, 101, runID)
+		assert.Len(t, logs, 1)
+		assert.Equal(t, 1, logs[0].Id)
+		assert.Equal(t, 10, logs[0].Line)
 	})
+}
 
-	t.Run("Fetch Log Content", func(t *testing.T) {
+func TestGetPipelineLogContent(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	t.Run("Success", func(t *testing.T) {
 		logContent := "build output"
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/runs/101/logs/1")
@@ -602,9 +616,10 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
-		result, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		content, err := m.GetPipelineLogContent(context.Background(), args, nil)
 		assert.NoError(t, err)
-		assert.Equal(t, logContent, result.Text)
+		assert.Equal(t, logContent, content.Content)
+		assert.False(t, content.Truncated)
 	})
 }
 
@@ -875,7 +890,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 	})
 }
 
-func TestAdoGetBuildTimeline(t *testing.T) {
+func TestGetBuildTimeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -901,11 +916,16 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
-		result, err := m.AdoGetBuildTimeline(context.Background(), args, nil)
+		records, err := m.GetBuildTimeline(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, `"name": "Task 1"`)
-		assert.Contains(t, result.Text, `"log": {`)
-		assert.Contains(t, result.Text, `"id": 10`)
+		assert.Len(t, records, 1)
+		rec, ok := records[0].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "Task 1", rec["name"])
+
+		log, ok := rec["log"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, float64(10), log["id"])
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
@@ -917,13 +937,13 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
-		_, err := m.AdoGetBuildTimeline(context.Background(), args, nil)
+		_, err := m.GetBuildTimeline(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
-func TestAdoGetTaskLog(t *testing.T) {
+func TestGetTaskLog(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -944,9 +964,10 @@ func TestAdoGetTaskLog(t *testing.T) {
 			"build_id":     123,
 			"log_id":       10,
 		}
-		result, err := m.AdoGetTaskLog(context.Background(), args, nil)
+		content, err := m.GetTaskLog(context.Background(), args, nil)
 		assert.NoError(t, err)
-		assert.Equal(t, logContent, result.Text)
+		assert.Equal(t, logContent, content.Content)
+		assert.False(t, content.Truncated)
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
@@ -963,13 +984,13 @@ func TestAdoGetTaskLog(t *testing.T) {
 			"build_id":     123,
 			"log_id":       99,
 		}
-		_, err := m.AdoGetTaskLog(context.Background(), args, nil)
+		_, err := m.GetTaskLog(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
-func TestAdoGetBuildChanges(t *testing.T) {
+func TestGetBuildChanges(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -994,10 +1015,13 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123, "top": 10}
-		result, err := m.AdoGetBuildChanges(context.Background(), args, nil)
+		changes, err := m.GetBuildChanges(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, `"id": "abc123"`)
-		assert.Contains(t, result.Text, `"message": "feat: add something"`)
+		assert.Len(t, changes, 1)
+		ch, ok := changes[0].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "abc123", ch["id"])
+		assert.Equal(t, "feat: add something", ch["message"])
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
@@ -1009,7 +1033,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
-		_, err := m.AdoGetBuildChanges(context.Background(), args, nil)
+		_, err := m.GetBuildChanges(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1098,25 +1122,28 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "AdoGetTaskLog - Unmarshal Error",
+			name: "GetTaskLog - Unmarshal Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetTaskLog(ctx, args, nil)
+				_, err := m.GetTaskLog(ctx, args, hb)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"build_id": "invalid"},
 			expectedErrMsg: "json: cannot unmarshal string into Go struct field",
 		},
 		{
-			name: "AdoGetTaskLog - Missing Params",
+			name: "GetTaskLog - Missing Params",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetTaskLog(ctx, args, nil)
+				_, err := m.GetTaskLog(ctx, args, hb)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o"},
 			expectedErrMsg: "required",
 		},
 		{
-			name: "AdoGetTaskLog - 404 Not Found",
+			name: "GetTaskLog - 404 Not Found",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetTaskLog(ctx, args, nil)
+				_, err := m.GetTaskLog(ctx, args, hb)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "log_id": 1},
 			httpStatus:     http.StatusNotFound,
@@ -1125,7 +1152,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildTimeline - Missing Params",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o"},
 			expectedErrMsg: "required",
@@ -1133,7 +1161,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildTimeline - 401 Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
@@ -1235,18 +1264,20 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "AdoListPipelineRuns - 500 Error",
+			name: "ListPipelineRuns - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoListPipelineRuns(ctx, args, nil)
+				_, _, err := m.ListPipelineRuns(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "status: 500",
 		},
 		{
-			name: "AdoGetPipelineRun - 500 Error",
+			name: "GetPipelineRun - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetPipelineRun(ctx, args, nil)
+				_, err := m.GetPipelineRun(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
 			httpStatus:     http.StatusInternalServerError,
@@ -1255,7 +1286,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildChanges(ctx, args, nil)
+				_, err := m.GetBuildChanges(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusInternalServerError,
@@ -1264,7 +1296,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - 401 Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildChanges(ctx, args, nil)
+				_, err := m.GetBuildChanges(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
@@ -1326,9 +1359,10 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "AdoGetPipelineLogs - Unauthorized",
+			name: "ListPipelineLogs - Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetPipelineLogs(ctx, args, nil)
+				_, _, err := m.ListPipelineLogs(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
 			httpStatus:     http.StatusUnauthorized,
@@ -1337,16 +1371,18 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildTimeline - Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
 			expectedErrMsg: "unauthorized",
 		},
 		{
-			name: "AdoGetTaskLog - Unauthorized",
+			name: "GetTaskLog - Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetTaskLog(ctx, args, nil)
+				_, err := m.GetTaskLog(ctx, args, hb)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "log_id": 1},
 			httpStatus:     http.StatusUnauthorized,
@@ -1355,25 +1391,28 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - Not Found",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildChanges(ctx, args, nil)
+				_, err := m.GetBuildChanges(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "AdoCreatePipeline - Missing Params",
+			name: "CreatePipeline - Missing Params",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoCreatePipeline(ctx, args, nil)
+				_, err := m.CreatePipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "name": "n", "repository_id": "r"}, // Missing yaml_path
 			expectedErrMsg: "required",
 		},
 		{
-			name: "AdoCreatePipeline - 500 Error",
+			name: "CreatePipeline - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 				// Approved by default in setup
-				return m.AdoCreatePipeline(ctx, args, nil)
+				_, err := m.CreatePipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args: map[string]interface{}{
 				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
@@ -1382,9 +1421,10 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "AdoCreatePipeline - Malformed JSON",
+			name: "CreatePipeline - Malformed JSON",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoCreatePipeline(ctx, args, nil)
+				_, err := m.CreatePipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args: map[string]interface{}{
 				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
@@ -1394,26 +1434,29 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "failed to decode response",
 		},
 		{
-			name: "AdoRunPipeline - Missing Params",
+			name: "RunPipeline - Missing Params",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoRunPipeline(ctx, args, nil)
+				_, err := m.RunPipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p"}, // Missing pipeline_id
 			expectedErrMsg: "required",
 		},
 		{
-			name: "AdoRunPipeline - 500 Error",
+			name: "RunPipeline - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoRunPipeline(ctx, args, nil)
+				_, err := m.RunPipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "AdoRunPipeline - Malformed JSON",
+			name: "RunPipeline - Malformed JSON",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoRunPipeline(ctx, args, nil)
+				_, err := m.RunPipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusOK,
@@ -1557,7 +1600,7 @@ func TestPolicyMatchesBranch_MissingScope(t *testing.T) {
 	assert.False(t, m.policyMatchesBranch(config, "repo", "ref"))
 }
 
-func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
+func TestListPipelineLogs_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -1566,7 +1609,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 		server.Close() // Force failure
 
-		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
@@ -1579,7 +1622,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -1593,9 +1636,10 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
-		result, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1}, nil)
+		runID, logs, err := m.ListPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.NoError(t, err)
-		assert.Equal(t, "No logs found for this run.", result.Text)
+		assert.Equal(t, 1, runID)
+		assert.Empty(t, logs)
 	})
 
 	t.Run("Content Path - Request Failure", func(t *testing.T) {
@@ -1603,7 +1647,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 		server.Close() // Force failure
 
-		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1}, nil)
+		_, err := m.GetPipelineLogContent(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
@@ -1718,7 +1762,7 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "returned status: 418")
 }
 
-func TestAdoListPipelineRuns_Empty(t *testing.T) {
+func TestListPipelineRuns_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1728,12 +1772,12 @@ func TestAdoListPipelineRuns_Empty(t *testing.T) {
 
 	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 
-	result, err := m.AdoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
+	_, runs, err := m.ListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
 	assert.NoError(t, err)
-	assert.Equal(t, "No pipeline runs found.", result.Text)
+	assert.Empty(t, runs)
 }
 
-func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
+func TestGetBuildTimeline_Detailed(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -1745,7 +1789,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.AdoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+		_, err := m.GetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1758,13 +1802,13 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.AdoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+		_, err := m.GetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
 }
 
-func TestAdoGetBuildChanges_Empty(t *testing.T) {
+func TestGetBuildChanges_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1774,9 +1818,9 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 
 	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 
-	result, err := m.AdoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+	changes, err := m.GetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 	assert.NoError(t, err)
-	assert.Equal(t, "[]", result.Text)
+	assert.Empty(t, changes)
 }
 
 func TestAdoTools_MissingParams(t *testing.T) {
@@ -1792,7 +1836,7 @@ func TestAdoTools_MissingParams(t *testing.T) {
 	})
 
 	t.Run("AdoGetBuildChanges", func(t *testing.T) {
-		_, err := m.AdoGetBuildChanges(ctx, map[string]interface{}{}, nil)
+		_, err := m.GetBuildChanges(ctx, map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -1869,14 +1913,29 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 		{"AdoGetPrDiff", func() (tools.ToolResult, error) { return m.AdoGetPrDiff(ctx, args, nil) }},
 		{"AdoGetPrThreads", func() (tools.ToolResult, error) { return m.AdoGetPrThreads(ctx, args, nil) }},
 		{"AdoListRepositoryItems", func() (tools.ToolResult, error) { return m.AdoListRepositoryItems(ctx, args, nil) }},
-		{"AdoListPipelineRuns", func() (tools.ToolResult, error) { return m.AdoListPipelineRuns(ctx, args, nil) }},
-		{"AdoGetPipelineRun", func() (tools.ToolResult, error) { return m.AdoGetPipelineRun(ctx, args, nil) }},
-		{"AdoGetPipelineLogs", func() (tools.ToolResult, error) { return m.AdoGetPipelineLogs(ctx, args, nil) }},
+		{"ListPipelineRuns", func() (tools.ToolResult, error) {
+			_, _, err := m.ListPipelineRuns(ctx, args)
+			return tools.ToolResult{}, err
+		}},
+		{"GetPipelineRun", func() (tools.ToolResult, error) {
+			_, err := m.GetPipelineRun(ctx, args)
+			return tools.ToolResult{}, err
+		}},
+		{"ListPipelineLogs", func() (tools.ToolResult, error) {
+			_, _, err := m.ListPipelineLogs(ctx, args)
+			return tools.ToolResult{}, err
+		}},
 		{"AdoGetPrStatuses", func() (tools.ToolResult, error) { return m.AdoGetPrStatuses(ctx, args, nil) }},
 		{"AdoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.AdoGetPrPolicyEvaluations(ctx, args, nil) }},
 		{"AdoListBranchPolicies", func() (tools.ToolResult, error) { return m.AdoListBranchPolicies(ctx, args, nil) }},
-		{"AdoGetBuildTimeline", func() (tools.ToolResult, error) { return m.AdoGetBuildTimeline(ctx, args, nil) }},
-		{"AdoGetBuildChanges", func() (tools.ToolResult, error) { return m.AdoGetBuildChanges(ctx, args, nil) }},
+		{"AdoGetBuildTimeline", func() (tools.ToolResult, error) {
+			_, err := m.GetBuildTimeline(ctx, args)
+			return tools.ToolResult{}, err
+		}},
+		{"AdoGetBuildChanges", func() (tools.ToolResult, error) {
+			_, err := m.GetBuildChanges(ctx, args)
+			return tools.ToolResult{}, err
+		}},
 	}
 
 	for _, tt := range tests {
@@ -1924,7 +1983,11 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte(`{"value": [{"id": 1, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo"}}]}`))
 			},
 			call: func(m *AdoManager) (tools.ToolResult, error) {
-				return m.AdoListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
+				_, runs, err := m.ListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: fmt.Sprintf("Run ID: %d", runs[0].Id)}, nil
 			},
 			expectedText: "Run ID: 1",
 		},
@@ -2019,7 +2082,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 	}
 }
 
-func TestAdoListPipelineRuns_Features(t *testing.T) {
+func TestListPipelineRuns_Features(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -2040,9 +2103,10 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_name": "cool"}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		pipelineID, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Recent runs for pipeline 42")
+		assert.Equal(t, 42, pipelineID)
+		assert.Len(t, runs, 1)
 	})
 
 	t.Run("Repository Filtering", func(t *testing.T) {
@@ -2058,10 +2122,10 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "repository": "repo-b"}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Run ID: 102")
-		assert.NotContains(t, result.Text, "Run ID: 101")
+		assert.Len(t, runs, 1)
+		assert.Equal(t, 102, runs[0].Id)
 	})
 
 	t.Run("Limit Truncation", func(t *testing.T) {
@@ -2077,25 +2141,28 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 2}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Run ID: 101")
-		assert.Contains(t, result.Text, "Run ID: 102")
-		assert.NotContains(t, result.Text, "Run ID: 103")
+		assert.Len(t, runs, 2)
+		assert.Equal(t, 101, runs[0].Id)
+		assert.Equal(t, 102, runs[1].Id)
 	})
 }
 
-func TestAdoCreatePipeline(t *testing.T) {
+func TestCreatePipeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
 	tests := []struct {
-		name              string
-		approved          bool
-		existingPipelines []adoPipeline
-		createResponse    string
-		expectedText      string
-		expectPost        bool
-		expectConfirm     bool
+		name               string
+		approved           bool
+		existingPipelines  []adoPipeline
+		createResponse     string
+		expectPost         bool
+		expectConfirm      bool
+		wantAlreadyExisted bool
+		wantCancelled      bool
+		wantPipelineID     int
+		wantName           string
 	}{
 		{
 			name:     "Success",
@@ -2104,9 +2171,10 @@ func TestAdoCreatePipeline(t *testing.T) {
 				{Id: 1, Name: "Other"},
 			},
 			createResponse: `{"id": 123}`,
-			expectedText:   "Successfully created pipeline 'NewPipeline' with ID: 123",
 			expectPost:     true,
 			expectConfirm:  true,
+			wantPipelineID: 123,
+			wantName:       "NewPipeline",
 		},
 		{
 			name:     "Idempotency",
@@ -2114,9 +2182,11 @@ func TestAdoCreatePipeline(t *testing.T) {
 			existingPipelines: []adoPipeline{
 				{Id: 1, Name: "NewPipeline"},
 			},
-			expectedText:  "Pipeline 'NewPipeline' already exists with ID: 1",
-			expectPost:    false,
-			expectConfirm: false,
+			expectPost:         false,
+			expectConfirm:      false,
+			wantAlreadyExisted: true,
+			wantPipelineID:     1,
+			wantName:           "NewPipeline",
 		},
 		{
 			name:     "Cancellation",
@@ -2124,9 +2194,10 @@ func TestAdoCreatePipeline(t *testing.T) {
 			existingPipelines: []adoPipeline{
 				{Id: 1, Name: "Other"},
 			},
-			expectedText:  "Pipeline creation cancelled by user.",
 			expectPost:    false,
 			expectConfirm: true,
+			wantCancelled: true,
+			wantName:      "NewPipeline",
 		},
 	}
 
@@ -2166,9 +2237,12 @@ func TestAdoCreatePipeline(t *testing.T) {
 				"yaml_path":     "/azure-pipelines.yaml",
 			}
 
-			result, err := m.AdoCreatePipeline(context.Background(), args, nil)
+			result, err := m.CreatePipeline(context.Background(), args)
 			assert.NoError(t, err)
-			assert.Contains(t, result.Text, tt.expectedText)
+			assert.Equal(t, tt.wantAlreadyExisted, result.AlreadyExisted)
+			assert.Equal(t, tt.wantCancelled, result.Cancelled)
+			assert.Equal(t, tt.wantPipelineID, result.PipelineID)
+			assert.Equal(t, tt.wantName, result.Name)
 			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
 			assert.Equal(t, tt.expectConfirm, sm.confirmCalled, "Confirm call mismatch")
 
@@ -2223,19 +2297,25 @@ func TestAdoRunPipeline(t *testing.T) {
 		sm := &mockSecurityManager{approved: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
+		// Branch is the raw user-facing name; _ref_name is the formatted ADO ref.
 		args := map[string]interface{}{
 			"organization":        "myorg",
 			"project":             "myproj",
 			"pipeline_id":         1,
 			"branch":              "feature",
+			"_ref_name":           "refs/heads/feature",
 			"variables":           map[string]string{"var1": "val1"},
 			"template_parameters": map[string]string{"param1": "paramVal"},
 		}
 
-		result, err := m.AdoRunPipeline(context.Background(), args, nil)
+		result, err := m.RunPipeline(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Successfully triggered pipeline run ID: 101")
-		assert.Contains(t, result.Text, "Web URL: https://dev.azure.com/myorg/myproj/_build/results?buildId=101")
+		assert.False(t, result.Cancelled)
+		assert.Equal(t, 101, result.RunID)
+		assert.Equal(t, "https://dev.azure.com/myorg/myproj/_build/results?buildId=101", result.WebURL)
+		// Confirmation prompt should show the raw branch, not the formatted ref.
+		assert.Contains(t, sm.lastConfirmText, "branch: feature")
+		assert.NotContains(t, sm.lastConfirmText, "branch: refs/heads/feature")
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
@@ -2248,16 +2328,90 @@ func TestAdoRunPipeline(t *testing.T) {
 			"pipeline_id":  1,
 		}
 
-		result, err := m.AdoRunPipeline(context.Background(), args, nil)
+		result, err := m.RunPipeline(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Equal(t, "Pipeline run cancelled by user.", result.Text)
+		assert.True(t, result.Cancelled)
+	})
+
+	t.Run("FallbackRefName", func(t *testing.T) {
+		jsonResponse := `{
+			"id": 202,
+			"_links": {
+				"web": {
+					"href": "https://dev.azure.com/myorg/myproj/_build/results?buildId=202"
+				}
+			}
+		}`
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var payload map[string]interface{}
+			err := json.NewDecoder(r.Body).Decode(&payload)
+			assert.NoError(t, err)
+
+			resources := payload["resources"].(map[string]interface{})
+			repos := resources["repositories"].(map[string]interface{})
+			self := repos["self"].(map[string]interface{})
+			// Fallback: RefName defaults to Branch when _ref_name is absent.
+			assert.Equal(t, "develop", self["refName"])
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		t.Cleanup(server.Close)
+
+		sm := &mockSecurityManager{approved: true}
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+
+		// No _ref_name: exercises the defensive fallback path.
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"pipeline_id":  1,
+			"branch":       "develop",
+		}
+
+		result, err := m.RunPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.False(t, result.Cancelled)
+		assert.Equal(t, 202, result.RunID)
+	})
+
+	t.Run("ConfirmationPromptShowsRawBranch", func(t *testing.T) {
+		// Regression test: the confirmation prompt must show the raw
+		// user-facing branch name, not the fully qualified ref.
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": 303, "_links": {"web": {"href": "https://dev.azure.com/x"}}}`))
+		}))
+		t.Cleanup(server.Close)
+
+		sm := &mockSecurityManager{approved: false} // decline so no HTTP body assertion needed
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+
+		args := map[string]interface{}{
+			"organization": "o",
+			"project":      "p",
+			"pipeline_id":  1,
+			"branch":       "main",
+			"_ref_name":    "refs/heads/main",
+		}
+
+		result, err := m.RunPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.True(t, result.Cancelled)
+
+		assert.Contains(t, sm.lastConfirmText, "branch: main",
+			"confirmation prompt should display the raw branch name")
+		assert.NotContains(t, sm.lastConfirmText, "branch: refs/heads/main",
+			"confirmation prompt must not display the fully qualified ref")
 	})
 }
 
 type mockSecurityManager struct {
-	approved      bool
-	err           error
-	confirmCalled bool
+	approved        bool
+	err             error
+	confirmCalled   bool
+	lastConfirmText string
 }
 
 func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
@@ -2274,6 +2428,7 @@ func (m *mockSecurityManager) Prompt(message string)               {}
 func (m *mockSecurityManager) Warn(message string)                 {}
 func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	m.confirmCalled = true
+	m.lastConfirmText = message
 	return m.approved, m.err
 }
 func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
