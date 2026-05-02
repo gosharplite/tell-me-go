@@ -181,6 +181,16 @@ type adoPipeline struct {
 	Name string `json:"name"`
 }
 
+// adoPipelineRunDetail holds the decoded fields for a single pipeline run.
+type adoPipelineRunDetail struct {
+	Id      int    `json:"id"`
+	Name    string `json:"name"`
+	State   string `json:"state"`
+	Result  string `json:"result"`
+	Created string `json:"createdDate"`
+	Url     string `json:"url"`
+}
+
 type adoGetBuildChangesParams struct {
 	Organization string `json:"organization"`
 	Project      string `json:"project"`

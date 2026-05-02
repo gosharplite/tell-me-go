@@ -107,7 +107,7 @@ func TestAdoManager_ExecuteRequest_AuthMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "AZURE_PAT_ALL token is required but not provided")
 }
 
-func TestAdoManager_AdoGetPipelineRun_Errors(t *testing.T) {
+func TestAdoManager_GetPipelineRun_Errors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &mockSecurityManager{approved: true}
 
@@ -153,7 +153,7 @@ func TestAdoManager_AdoGetPipelineRun_Errors(t *testing.T) {
 				"pipeline_id":  1,
 				"run_id":       101,
 			}
-			_, err := m.AdoGetPipelineRun(context.Background(), args, nil)
+			_, err := m.GetPipelineRun(context.Background(), args)
 
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
@@ -257,12 +257,12 @@ func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 	})
 }
 
-func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
+func TestAdoManager_ListPipelineRuns_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoListPipelineRuns(context.Background(), map[string]interface{}{}, nil)
+		_, _, err := m.ListPipelineRuns(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -275,7 +275,7 @@ func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, _, err := m.ListPipelineRuns(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -289,7 +289,7 @@ func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, _, err := m.ListPipelineRuns(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})

@@ -4,6 +4,7 @@
 package integrations
 
 import (
+	"context"
 	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -315,6 +316,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 		opts = append(opts, ado.WithToken(token))
 	}
 	m := ado.NewADOManager(sm, opts...)
+	adoFormatter := ado.NewPipelineFormatter()
 
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration
@@ -461,7 +463,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: m.AdoListPipelineRuns,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				pipelineID, runs, err := m.ListPipelineRuns(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: adoFormatter.FormatPipelineRunsList(pipelineID, runs)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -478,7 +486,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: m.AdoGetPipelineRun,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				run, err := m.GetPipelineRun(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: adoFormatter.FormatPipelineRunDetail(run)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{

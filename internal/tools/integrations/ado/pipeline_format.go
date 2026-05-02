@@ -10,16 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// adoPipelineRunDetail holds the decoded fields for a single pipeline run.
-type adoPipelineRunDetail struct {
-	Id      int    `json:"id"`
-	Name    string `json:"name"`
-	State   string `json:"state"`
-	Result  string `json:"result"`
-	Created string `json:"createdDate"`
-	Url     string `json:"url"`
-}
-
 // FormatBranchRef normalizes a branch/tag string to a fully qualified ADO ref.
 // Heuristic: a leading "v" followed by a digit is treated as a version tag.
 func (f *pipelineFormatter) FormatBranchRef(branch string) string {

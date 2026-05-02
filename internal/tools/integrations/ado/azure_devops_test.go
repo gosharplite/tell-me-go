@@ -522,7 +522,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 	})
 }
 
-func TestAdoListPipelineRuns(t *testing.T) {
+func TestListPipelineRuns(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -539,14 +539,16 @@ func TestAdoListPipelineRuns(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		pipelineID, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Run ID: 101")
-		assert.Contains(t, result.Text, "Repo: myrepo")
+		assert.Equal(t, 1, pipelineID)
+		assert.Len(t, runs, 1)
+		assert.Equal(t, 101, runs[0].Id)
+		assert.Equal(t, "myrepo", runs[0].Repository.Name)
 	})
 }
 
-func TestAdoGetPipelineRun(t *testing.T) {
+func TestGetPipelineRun(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -562,9 +564,12 @@ func TestAdoGetPipelineRun(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		result, err := m.AdoGetPipelineRun(context.Background(), args, nil)
+		run, err := m.GetPipelineRun(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Pipeline Run #101 Details")
+		assert.Equal(t, 101, run.Id)
+		assert.Equal(t, "run1", run.Name)
+		assert.Equal(t, "completed", run.State)
+		assert.Equal(t, "succeeded", run.Result)
 	})
 }
 
@@ -1235,18 +1240,20 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "AdoListPipelineRuns - 500 Error",
+			name: "ListPipelineRuns - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoListPipelineRuns(ctx, args, nil)
+				_, _, err := m.ListPipelineRuns(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
 			httpStatus:     http.StatusInternalServerError,
 			expectedErrMsg: "status: 500",
 		},
 		{
-			name: "AdoGetPipelineRun - 500 Error",
+			name: "GetPipelineRun - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetPipelineRun(ctx, args, nil)
+				_, err := m.GetPipelineRun(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
 			httpStatus:     http.StatusInternalServerError,
@@ -1718,7 +1725,7 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "returned status: 418")
 }
 
-func TestAdoListPipelineRuns_Empty(t *testing.T) {
+func TestListPipelineRuns_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1728,9 +1735,9 @@ func TestAdoListPipelineRuns_Empty(t *testing.T) {
 
 	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 
-	result, err := m.AdoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
+	_, runs, err := m.ListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
 	assert.NoError(t, err)
-	assert.Equal(t, "No pipeline runs found.", result.Text)
+	assert.Empty(t, runs)
 }
 
 func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
@@ -1869,8 +1876,14 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 		{"AdoGetPrDiff", func() (tools.ToolResult, error) { return m.AdoGetPrDiff(ctx, args, nil) }},
 		{"AdoGetPrThreads", func() (tools.ToolResult, error) { return m.AdoGetPrThreads(ctx, args, nil) }},
 		{"AdoListRepositoryItems", func() (tools.ToolResult, error) { return m.AdoListRepositoryItems(ctx, args, nil) }},
-		{"AdoListPipelineRuns", func() (tools.ToolResult, error) { return m.AdoListPipelineRuns(ctx, args, nil) }},
-		{"AdoGetPipelineRun", func() (tools.ToolResult, error) { return m.AdoGetPipelineRun(ctx, args, nil) }},
+		{"ListPipelineRuns", func() (tools.ToolResult, error) {
+			_, _, err := m.ListPipelineRuns(ctx, args)
+			return tools.ToolResult{}, err
+		}},
+		{"GetPipelineRun", func() (tools.ToolResult, error) {
+			_, err := m.GetPipelineRun(ctx, args)
+			return tools.ToolResult{}, err
+		}},
 		{"AdoGetPipelineLogs", func() (tools.ToolResult, error) { return m.AdoGetPipelineLogs(ctx, args, nil) }},
 		{"AdoGetPrStatuses", func() (tools.ToolResult, error) { return m.AdoGetPrStatuses(ctx, args, nil) }},
 		{"AdoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.AdoGetPrPolicyEvaluations(ctx, args, nil) }},
@@ -1924,7 +1937,11 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 				_, _ = w.Write([]byte(`{"value": [{"id": 1, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo"}}]}`))
 			},
 			call: func(m *AdoManager) (tools.ToolResult, error) {
-				return m.AdoListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
+				_, runs, err := m.ListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: fmt.Sprintf("Run ID: %d", runs[0].Id)}, nil
 			},
 			expectedText: "Run ID: 1",
 		},
@@ -2019,7 +2036,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 	}
 }
 
-func TestAdoListPipelineRuns_Features(t *testing.T) {
+func TestListPipelineRuns_Features(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -2040,9 +2057,10 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_name": "cool"}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		pipelineID, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Recent runs for pipeline 42")
+		assert.Equal(t, 42, pipelineID)
+		assert.Len(t, runs, 1)
 	})
 
 	t.Run("Repository Filtering", func(t *testing.T) {
@@ -2058,10 +2076,10 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "repository": "repo-b"}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Run ID: 102")
-		assert.NotContains(t, result.Text, "Run ID: 101")
+		assert.Len(t, runs, 1)
+		assert.Equal(t, 102, runs[0].Id)
 	})
 
 	t.Run("Limit Truncation", func(t *testing.T) {
@@ -2077,11 +2095,11 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 2}
-		result, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, runs, err := m.ListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Run ID: 101")
-		assert.Contains(t, result.Text, "Run ID: 102")
-		assert.NotContains(t, result.Text, "Run ID: 103")
+		assert.Len(t, runs, 2)
+		assert.Equal(t, 101, runs[0].Id)
+		assert.Equal(t, 102, runs[1].Id)
 	})
 }
 

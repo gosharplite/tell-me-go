@@ -123,7 +123,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 			wantErrMsg: "context canceled",
 		},
 		{
-			name: "Unmarshal Failure in adoGetPipelineRun",
+			name: "Unmarshal Failure in GetPipelineRun",
 			setupMock: func(m *mockRoundTripper) {
 				m.roundTrip = func(req *http.Request) (*http.Response, error) {
 					return &http.Response{
@@ -139,7 +139,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.AdoGetPipelineRun(ctx, args, nil)
+				_, err := m.GetPipelineRun(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -385,7 +385,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 		wantErrMsg string
 	}{
 		{
-			name: "Unmarshal Failure in adoListPipelineRuns",
+			name: "Unmarshal Failure in ListPipelineRuns",
 			setupMock: func(m *mockRoundTripper) {
 				m.roundTrip = func(req *http.Request) (*http.Response, error) {
 					return &http.Response{
@@ -400,7 +400,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.AdoListPipelineRuns(ctx, args, nil)
+				_, _, err := m.ListPipelineRuns(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",

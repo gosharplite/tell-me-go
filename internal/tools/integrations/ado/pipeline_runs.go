@@ -16,42 +16,42 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func (m *AdoManager) AdoListPipelineRuns(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// ListPipelineRuns is the infrastructure-layer entry point for fetching pipeline
+// runs. It returns raw domain structs together with the resolved pipeline ID
+// (which the formatter needs to caption the output). Presentation is the
+// caller's responsibility.
+func (m *AdoManager) ListPipelineRuns(ctx context.Context, args map[string]interface{}) (pipelineID int, runs []adoPipelineRun, err error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing list pipeline runs args: %w", err)
+		return 0, nil, fmt.Errorf("parsing list pipeline runs args: %w", err)
 	}
 
 	if params.PipelineId == 0 && params.PipelineName != "" {
-		var err error
 		params.PipelineId, err = m.resolvePipelineID(ctx, params.Organization, params.Project, params.PipelineName)
 		if err != nil {
-			return tools.ToolResult{}, fmt.Errorf("resolving pipeline ID: %w", err)
+			return 0, nil, fmt.Errorf("resolving pipeline ID: %w", err)
 		}
 	}
 
 	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, params.FetchTop)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("building list pipeline runs URL: %w", err)
+		return 0, nil, fmt.Errorf("building list pipeline runs URL: %w", err)
 	}
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing list pipeline runs request: %w", err)
+		return 0, nil, fmt.Errorf("executing list pipeline runs request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var responseData struct {
 		Value []adoPipelineRun `json:"value"`
 	}
-
 	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return 0, nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	runs := filterAndLimitRuns(responseData.Value, params.Repository, params.OriginalTop)
-
-	return tools.ToolResult{Text: defaultPipelineFormatter.FormatPipelineRunsList(params.PipelineId, runs)}, nil
+	return params.PipelineId, filterAndLimitRuns(responseData.Value, params.Repository, params.OriginalTop), nil
 }
 
 func (m *AdoManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
@@ -76,7 +76,9 @@ func (m *AdoManager) buildListPipelineRunsURL(org, project string, pipelineId, t
 	return u.String(), nil
 }
 
-func (m *AdoManager) AdoGetPipelineRun(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// GetPipelineRun is the infrastructure-layer entry point for fetching the
+// detail of a single pipeline run. Returns the raw domain struct.
+func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interface{}) (*adoPipelineRunDetail, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -85,11 +87,11 @@ func (m *AdoManager) AdoGetPipelineRun(ctx context.Context, args map[string]inte
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline run args: %w", err)
+		return nil, fmt.Errorf("parsing get pipeline run args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, pipeline_id, and run_id are required")
+		return nil, fmt.Errorf("organization, project, pipeline_id, and run_id are required")
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d?api-version=7.1",
@@ -97,16 +99,16 @@ func (m *AdoManager) AdoGetPipelineRun(ctx context.Context, args map[string]inte
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get pipeline run request: %w", err)
+		return nil, fmt.Errorf("executing get pipeline run request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var runData adoPipelineRunDetail
 	if err := json.NewDecoder(resp.Body).Decode(&runData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return tools.ToolResult{Text: defaultPipelineFormatter.FormatPipelineRunDetail(&runData)}, nil
+	return &runData, nil
 }
 
 func (m *AdoManager) AdoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
