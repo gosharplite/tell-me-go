@@ -51,7 +51,7 @@ func (m *AdoManager) AdoListPipelineRuns(ctx context.Context, args map[string]in
 
 	runs := filterAndLimitRuns(responseData.Value, params.Repository, params.OriginalTop)
 
-	return tools.ToolResult{Text: formatPipelineRunsList(params.PipelineId, runs)}, nil
+	return tools.ToolResult{Text: defaultPipelineFormatter.FormatPipelineRunsList(params.PipelineId, runs)}, nil
 }
 
 func (m *AdoManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
@@ -106,7 +106,7 @@ func (m *AdoManager) AdoGetPipelineRun(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return tools.ToolResult{Text: formatPipelineRunDetail(&runData)}, nil
+	return tools.ToolResult{Text: defaultPipelineFormatter.FormatPipelineRunDetail(&runData)}, nil
 }
 
 func (m *AdoManager) AdoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

@@ -38,25 +38,15 @@ func (f *pipelineFormatter) FormatBranchRef(branch string) string {
 	return "refs/heads/" + branch
 }
 
-// FormatPipelineRunsList delegates to the package-level formatter.
-// Body will be migrated to this method in Task 2.
+// FormatPipelineRunsList renders a slice of pipeline runs as a bulleted summary.
+// Returns a fixed "No pipeline runs found." sentinel when the slice is empty.
 func (f *pipelineFormatter) FormatPipelineRunsList(pipelineID int, runs []adoPipelineRun) string {
-	return formatPipelineRunsList(pipelineID, runs)
-}
-
-// FormatPipelineRunDetail delegates to the package-level formatter.
-// Body will be migrated to this method in Task 2.
-func (f *pipelineFormatter) FormatPipelineRunDetail(run *adoPipelineRunDetail) string {
-	return formatPipelineRunDetail(run)
-}
-
-func formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {
 	if len(runs) == 0 {
 		return "No pipeline runs found."
 	}
 
 	var resultText strings.Builder
-	_, _ = fmt.Fprintf(&resultText, "Recent runs for pipeline %d:\n\n", pipelineId)
+	_, _ = fmt.Fprintf(&resultText, "Recent runs for pipeline %d:\n\n", pipelineID)
 	for _, run := range runs {
 		_, _ = fmt.Fprintf(&resultText, "- Run ID: %d, Name: %s, Status: %s, Result: %s, Created: %s, Repo: %s\n",
 			run.Id, run.Name, run.State, run.Result, run.Created, run.Repository.Name)
@@ -65,7 +55,8 @@ func formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {
 	return resultText.String()
 }
 
-func formatPipelineRunDetail(run *adoPipelineRunDetail) string {
+// FormatPipelineRunDetail renders a single pipeline run as a multi-line summary.
+func (f *pipelineFormatter) FormatPipelineRunDetail(run *adoPipelineRunDetail) string {
 	var resultText strings.Builder
 	_, _ = fmt.Fprintf(&resultText, "Pipeline Run #%d Details:\n", run.Id)
 	_, _ = fmt.Fprintf(&resultText, "- Name: %s\n", run.Name)
