@@ -57,6 +57,21 @@ func (f *pipelineFormatter) FormatPipelineRunDetail(run *adoPipelineRunDetail) s
 	return resultText.String()
 }
 
+// FormatPipelineList renders a slice of pipeline definitions as a bulleted summary.
+// Returns a fixed "No pipelines found." sentinel when the slice is empty.
+func (f *pipelineFormatter) FormatPipelineList(pipelines []adoPipeline) string {
+	if len(pipelines) == 0 {
+		return "No pipelines found."
+	}
+
+	var resultText strings.Builder
+	_, _ = fmt.Fprintf(&resultText, "Found %d pipelines:\n", len(pipelines))
+	for _, p := range pipelines {
+		_, _ = fmt.Fprintf(&resultText, "- [%d] %s\n", p.Id, p.Name)
+	}
+	return resultText.String()
+}
+
 // FormatRepositoryItems formats repository items for display.
 func FormatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
 	if len(responseData.Value) == 0 {

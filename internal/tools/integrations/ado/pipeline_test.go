@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAdoListPipelines(t *testing.T) {
+func TestListPipelines(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -26,7 +26,8 @@ func TestAdoListPipelines(t *testing.T) {
 		mockBody   string
 		args       map[string]interface{}
 		wantError  bool
-		wantText   string
+		wantPipes  int
+		wantNames  []string
 		errMsg     string
 	}{
 		{
@@ -38,7 +39,8 @@ func TestAdoListPipelines(t *testing.T) {
 				"project":      "myproj",
 			},
 			wantError: false,
-			wantText:  "Found 1 pipelines:\n- [1] my-pipeline\n",
+			wantPipes: 1,
+			wantNames: []string{"my-pipeline"},
 		},
 		{
 			name:       "Empty list",
@@ -49,7 +51,7 @@ func TestAdoListPipelines(t *testing.T) {
 				"project":      "myproj",
 			},
 			wantError: false,
-			wantText:  "No pipelines found.",
+			wantPipes: 0,
 		},
 		{
 			name:       "API returns 500 Error",
@@ -112,7 +114,7 @@ func TestAdoListPipelines(t *testing.T) {
 			m := NewADOManager(sm, opts...)
 
 			ctx := context.Background()
-			result, err := m.AdoListPipelines(ctx, tt.args, nil)
+			pipelines, err := m.ListPipelines(ctx, tt.args)
 
 			if tt.wantError {
 				assert.Error(t, err)
@@ -121,8 +123,48 @@ func TestAdoListPipelines(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.wantText, result.Text)
+				assert.Len(t, pipelines, tt.wantPipes)
+				for i, name := range tt.wantNames {
+					assert.Equal(t, name, pipelines[i].Name)
+				}
 			}
+		})
+	}
+}
+
+func TestFormatPipelineList(t *testing.T) {
+	tests := []struct {
+		name      string
+		pipelines []adoPipeline
+		want      string
+	}{
+		{
+			name:      "Empty list returns sentinel",
+			pipelines: nil,
+			want:      "No pipelines found.",
+		},
+		{
+			name:      "Single pipeline",
+			pipelines: []adoPipeline{{Id: 1, Name: "my-pipeline"}},
+			want:      "Found 1 pipelines:\n- [1] my-pipeline\n",
+		},
+		{
+			name: "Multiple pipelines",
+			pipelines: []adoPipeline{
+				{Id: 1, Name: "a"},
+				{Id: 2, Name: "b"},
+			},
+			want: "Found 2 pipelines:\n- [1] a\n- [2] b\n",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			formatter := NewPipelineFormatter()
+			got := formatter.FormatPipelineList(tt.pipelines)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

@@ -62,36 +62,28 @@ func (m *AdoManager) fetchPipelines(ctx context.Context, org, project string) ([
 	return val.([]adoPipeline), nil
 }
 
-func (m *AdoManager) AdoListPipelines(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// ListPipelines is the infrastructure-layer entry point for fetching pipeline
+// definitions for a given org/project. Returns raw domain structs.
+func (m *AdoManager) ListPipelines(ctx context.Context, args map[string]interface{}) ([]adoPipeline, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing list pipelines args: %w", err)
+		return nil, fmt.Errorf("parsing list pipelines args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" {
-		return tools.ToolResult{}, fmt.Errorf("organization and project are required")
+		return nil, fmt.Errorf("organization and project are required")
 	}
 
 	pipelines, err := m.fetchPipelines(ctx, params.Organization, params.Project)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("fetching pipelines: %w", err)
+		return nil, fmt.Errorf("fetching pipelines: %w", err)
 	}
 
-	if len(pipelines) == 0 {
-		return tools.ToolResult{Text: "No pipelines found."}, nil
-	}
-
-	var resultText strings.Builder
-	_, _ = fmt.Fprintf(&resultText, "Found %d pipelines:\n", len(pipelines))
-	for _, p := range pipelines {
-		_, _ = fmt.Fprintf(&resultText, "- [%d] %s\n", p.Id, p.Name)
-	}
-
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return pipelines, nil
 }
 
 func (m *AdoManager) resolvePipelineID(ctx context.Context, org, project, pipelineName string) (int, error) {

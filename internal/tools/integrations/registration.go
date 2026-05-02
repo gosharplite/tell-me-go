@@ -444,7 +444,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: m.AdoListPipelines,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				pipelines, err := m.ListPipelines(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: adoFormatter.FormatPipelineList(pipelines)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{

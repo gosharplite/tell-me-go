@@ -18,6 +18,7 @@ type PipelineFormatter interface {
 	FormatBranchRef(branch string) string
 	FormatPipelineRunsList(pipelineID int, runs []adoPipelineRun) string
 	FormatPipelineRunDetail(run *adoPipelineRunDetail) string
+	FormatPipelineList(pipelines []adoPipeline) string
 }
 
 // pipelineFormatter is the default PipelineFormatter implementation.
