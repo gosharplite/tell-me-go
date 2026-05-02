@@ -20,7 +20,9 @@ type adoPipelineRunDetail struct {
 	Url     string `json:"url"`
 }
 
-func formatBranchRef(branch string) string {
+// FormatBranchRef normalizes a branch/tag string to a fully qualified ADO ref.
+// Heuristic: a leading "v" followed by a digit is treated as a version tag.
+func (f *pipelineFormatter) FormatBranchRef(branch string) string {
 	if branch == "" {
 		branch = "main"
 	}
@@ -29,12 +31,23 @@ func formatBranchRef(branch string) string {
 		return branch
 	}
 
-	// Heuristic: if it looks like a version tag (vX.Y.Z), assume refs/tags/
 	if strings.HasPrefix(branch, "v") && len(branch) > 1 && branch[1] >= '0' && branch[1] <= '9' {
 		return "refs/tags/" + branch
 	}
 
 	return "refs/heads/" + branch
+}
+
+// FormatPipelineRunsList delegates to the package-level formatter.
+// Body will be migrated to this method in Task 2.
+func (f *pipelineFormatter) FormatPipelineRunsList(pipelineID int, runs []adoPipelineRun) string {
+	return formatPipelineRunsList(pipelineID, runs)
+}
+
+// FormatPipelineRunDetail delegates to the package-level formatter.
+// Body will be migrated to this method in Task 2.
+func (f *pipelineFormatter) FormatPipelineRunDetail(run *adoPipelineRunDetail) string {
+	return formatPipelineRunDetail(run)
 }
 
 func formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {

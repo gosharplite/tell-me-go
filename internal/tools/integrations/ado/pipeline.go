@@ -10,6 +10,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+var defaultPipelineFormatter = NewPipelineFormatter()
+
 type adoListPipelineRunsParams struct {
 	Organization string `json:"organization"`
 	Project      string `json:"project"`
@@ -145,7 +147,7 @@ func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, er
 		return params, fmt.Errorf("organization, project, and pipeline_id are required")
 	}
 
-	params.RefName = formatBranchRef(params.Branch)
+	params.RefName = defaultPipelineFormatter.FormatBranchRef(params.Branch)
 	params.MappedVariables = mapADOVariables(params.Variables)
 
 	return params, nil

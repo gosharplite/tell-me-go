@@ -146,8 +146,9 @@ func TestFormatBranchRef(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := formatBranchRef(tt.input); got != tt.want {
-				t.Errorf("formatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
+			formatter := NewPipelineFormatter()
+			if got := formatter.FormatBranchRef(tt.input); got != tt.want {
+				t.Errorf("FormatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
