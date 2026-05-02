@@ -328,6 +328,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 		return tools.ToolResult{Text: string(output)}, nil
 	}
 
+	appendTruncationNote := func(c ado.LogContent) string {
+		if !c.Truncated {
+			return c.Content
+		}
+		return c.Content + fmt.Sprintf("\n\n[NOTE to LLM: Log content was truncated after %d lines for safety. Suggest using a more specific filter_query or pagination if the relevant data is missing.]", c.TotalLines)
+	}
+
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration
 		handler tools.ToolFunc
@@ -554,7 +561,27 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: m.AdoGetPipelineLogs,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				// Dispatch on whether log_id was supplied: list-mode vs fetch-mode.
+				var dispatch struct {
+					LogId int `json:"log_id"`
+				}
+				_ = tools.UnmarshalArgs(args, &dispatch)
+
+				if dispatch.LogId == 0 {
+					runID, logs, err := m.ListPipelineLogs(ctx, args)
+					if err != nil {
+						return tools.ToolResult{}, err
+					}
+					return tools.ToolResult{Text: adoFormatter.FormatPipelineLogList(runID, logs)}, nil
+				}
+
+				content, err := m.GetPipelineLogContent(ctx, args, hb)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: appendTruncationNote(content)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -650,7 +677,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id", "log_id"},
 				},
 			},
-			handler: m.AdoGetTaskLog,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				content, err := m.GetTaskLog(ctx, args, hb)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return tools.ToolResult{Text: appendTruncationNote(content)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{

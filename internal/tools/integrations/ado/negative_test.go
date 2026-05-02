@@ -295,12 +295,12 @@ func TestAdoManager_ListPipelineRuns_Errors(t *testing.T) {
 	})
 }
 
-func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
+func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{}, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -313,7 +313,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		_, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -327,7 +327,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		_, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode logs list")
 	})
@@ -340,7 +340,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
-		_, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		_, err := m.GetPipelineLogContent(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})

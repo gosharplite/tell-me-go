@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -217,7 +216,48 @@ func (m *AdoManager) GetBuildTimeline(ctx context.Context, args map[string]inter
 	return timelineData.Records, nil
 }
 
-func (m *AdoManager) AdoGetPipelineLogs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// ListPipelineLogs is the infrastructure-layer entry point for fetching the
+// log-file index of a pipeline run. Returns the raw log entries together with
+// the run ID (which the formatter needs for captioning).
+func (m *AdoManager) ListPipelineLogs(ctx context.Context, args map[string]interface{}) (runID int, logs []adoLogEntry, err error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		PipelineId   int    `json:"pipeline_id"`
+		RunId        int    `json:"run_id"`
+	}
+
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return 0, nil, fmt.Errorf("parsing list pipeline logs args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 {
+		return 0, nil, fmt.Errorf("organization, project, pipeline_id, and run_id are required")
+	}
+
+	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
+
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
+	if err != nil {
+		return 0, nil, fmt.Errorf("executing list pipeline logs request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var logsData struct {
+		Value []adoLogEntry `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&logsData); err != nil {
+		return 0, nil, fmt.Errorf("failed to decode logs list: %w", err)
+	}
+
+	return params.RunId, logsData.Value, nil
+}
+
+// GetPipelineLogContent is the infrastructure-layer entry point for fetching the
+// content of a single pipeline log. Returns LogContent describing the body and
+// whether it was truncated.
+func (m *AdoManager) GetPipelineLogContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (LogContent, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -233,78 +273,37 @@ func (m *AdoManager) AdoGetPipelineLogs(ctx context.Context, args map[string]int
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline logs args: %w", err)
+		return LogContent{}, fmt.Errorf("parsing get pipeline log content args: %w", err)
 	}
 
-	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, pipeline_id, and run_id are required")
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 || params.LogId == 0 {
+		return LogContent{}, fmt.Errorf("organization, project, pipeline_id, run_id, and log_id are required")
 	}
 
-	if params.LogId == 0 {
-		return m.listPipelineLogs(ctx, params.Organization, params.Project, params.PipelineId, params.RunId)
-	}
-
-	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
-}
-
-func (m *AdoManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
-	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
-		m.BaseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
-
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing list pipeline logs request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var logsData struct {
-		Value []struct {
-			Id   int    `json:"id"`
-			Url  string `json:"url"`
-			Line int    `json:"lineCount"`
-		} `json:"value"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&logsData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode logs list: %w", err)
-	}
-
-	if len(logsData.Value) == 0 {
-		return tools.ToolResult{Text: "No logs found for this run."}, nil
-	}
-
-	var resultText strings.Builder
-	_, _ = fmt.Fprintf(&resultText, "Logs for Pipeline Run #%d:\n\n", runId)
-	for _, log := range logsData.Value {
-		_, _ = fmt.Fprintf(&resultText, "- Log ID: %d (%d lines)\n", log.Id, log.Line)
-	}
-	resultText.WriteString("\nPlease provide a log_id to fetch specific log content.")
-	return tools.ToolResult{Text: resultText.String()}, nil
-}
-
-func (m *AdoManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int, hb chan<- struct{}) (tools.ToolResult, error) {
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
-		m.BaseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
+		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId, params.LogId)
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
+		return LogContent{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	res, err := processLogContent(ctx, resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines, hb)
+	res, err := processLogContent(ctx, resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
+		return LogContent{}, fmt.Errorf("failed to process log content: %w", err)
 	}
 
-	text := res.Content
-	if res.Truncated {
-		text += fmt.Sprintf("\n\n[NOTE to LLM: Log content was truncated after %d lines for safety. Suggest using a more specific filter_query or pagination if the relevant data is missing.]", res.TotalLines)
-	}
-
-	return tools.ToolResult{Text: text}, nil
+	return LogContent{
+		Content:    res.Content,
+		Truncated:  res.Truncated,
+		TotalLines: res.TotalLines,
+	}, nil
 }
 
-func (m *AdoManager) AdoGetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// GetTaskLog is the infrastructure-layer entry point for fetching a build task
+// log. Returns LogContent describing the body and whether it was truncated.
+func (m *AdoManager) GetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (LogContent, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -319,11 +318,11 @@ func (m *AdoManager) AdoGetTaskLog(ctx context.Context, args map[string]interfac
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing get task log args: %w", err)
+		return LogContent{}, fmt.Errorf("parsing get task log args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 || params.LogId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, build_id, and log_id are required")
+		return LogContent{}, fmt.Errorf("organization, project, build_id, and log_id are required")
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
@@ -331,19 +330,18 @@ func (m *AdoManager) AdoGetTaskLog(ctx context.Context, args map[string]interfac
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get task log request: %w", err)
+		return LogContent{}, fmt.Errorf("executing get task log request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	res, err := processLogContent(ctx, resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
+		return LogContent{}, fmt.Errorf("failed to process log content: %w", err)
 	}
 
-	text := res.Content
-	if res.Truncated {
-		text += fmt.Sprintf("\n\n[NOTE to LLM: Log content was truncated after %d lines for safety. Suggest using a more specific filter_query or pagination if the relevant data is missing.]", res.TotalLines)
-	}
-
-	return tools.ToolResult{Text: text}, nil
+	return LogContent{
+		Content:    res.Content,
+		Truncated:  res.Truncated,
+		TotalLines: res.TotalLines,
+	}, nil
 }

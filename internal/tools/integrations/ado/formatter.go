@@ -19,6 +19,7 @@ type PipelineFormatter interface {
 	FormatPipelineRunsList(pipelineID int, runs []adoPipelineRun) string
 	FormatPipelineRunDetail(run *adoPipelineRunDetail) string
 	FormatPipelineList(pipelines []adoPipeline) string
+	FormatPipelineLogList(runID int, logs []adoLogEntry) string
 }
 
 // pipelineFormatter is the default PipelineFormatter implementation.

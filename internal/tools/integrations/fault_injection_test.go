@@ -406,7 +406,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 			wantErrMsg: "failed to decode response",
 		},
 		{
-			name: "Unmarshal Failure in listPipelineLogs",
+			name: "Unmarshal Failure in ListPipelineLogs",
 			setupMock: func(m *mockRoundTripper) {
 				m.roundTrip = func(req *http.Request) (*http.Response, error) {
 					return &http.Response{
@@ -422,7 +422,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.AdoGetPipelineLogs(ctx, args, nil)
+				_, _, err := m.ListPipelineLogs(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode logs list",

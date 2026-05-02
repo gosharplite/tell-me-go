@@ -256,3 +256,18 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 	}
 	return result
 }
+
+// adoLogEntry is the metadata for a single log file in a pipeline run.
+type adoLogEntry struct {
+	Id   int    `json:"id"`
+	Url  string `json:"url"`
+	Line int    `json:"lineCount"`
+}
+
+// LogContent is the result of fetching log text. If Truncated is true, Content
+// has been clipped after TotalLines lines.
+type LogContent struct {
+	Content    string
+	Truncated  bool
+	TotalLines int
+}

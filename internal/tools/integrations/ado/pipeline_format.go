@@ -72,6 +72,22 @@ func (f *pipelineFormatter) FormatPipelineList(pipelines []adoPipeline) string {
 	return resultText.String()
 }
 
+// FormatPipelineLogList renders a list of available log files for a pipeline run.
+// Returns a fixed "No logs found for this run." sentinel when the slice is empty.
+func (f *pipelineFormatter) FormatPipelineLogList(runID int, logs []adoLogEntry) string {
+	if len(logs) == 0 {
+		return "No logs found for this run."
+	}
+
+	var resultText strings.Builder
+	_, _ = fmt.Fprintf(&resultText, "Logs for Pipeline Run #%d:\n\n", runID)
+	for _, log := range logs {
+		_, _ = fmt.Fprintf(&resultText, "- Log ID: %d (%d lines)\n", log.Id, log.Line)
+	}
+	resultText.WriteString("\nPlease provide a log_id to fetch specific log content.")
+	return resultText.String()
+}
+
 // FormatRepositoryItems formats repository items for display.
 func FormatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
 	if len(responseData.Value) == 0 {
