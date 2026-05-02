@@ -401,3 +401,65 @@ func (m *AdoManager) policyMatchesBranch(config adoPolicyConfig, targetRepoId, f
 	}
 	return false
 }
+
+// registerPolicy registers the Policy category tools (branch policies, build definition variable updates).
+func registerPolicy(r tools.Registry, m *AdoManager, _ PipelineFormatter) error {
+	type toolSpec struct {
+		decl    *tools.ToolDeclaration
+		handler tools.ToolFunc
+	}
+
+	specs := []toolSpec{
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_list_branch_policies",
+				Description: "Lists all branch policies (build gates, reviewer requirements, etc.) configured for a specific branch in an Azure DevOps repository.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization": {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":      {Type: "STRING", Description: "The project name or ID."},
+						"repository":   {Type: "STRING", Description: "The repository name or ID."},
+						"branch_name":  {Type: "STRING", Description: "The branch name (e.g., 'main', 'dev/1.54')."},
+					},
+					Required: []string{"organization", "project", "repository", "branch_name"},
+				},
+			},
+			handler: m.AdoListBranchPolicies,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_update_build_definition_variables",
+				Description: "Modifies variables for an existing pipeline (build) definition using a Read-Modify-Write cycle. Useful for locking down variable overrides.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization":  {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":       {Type: "STRING", Description: "The project name or ID."},
+						"definition_id": {Type: "INTEGER", Description: "The numeric ID of the build definition to update."},
+						"variables":     {Type: "OBJECT", Description: "A map of variable names to objects with 'value', 'isSecret', and 'allowOverride' (CRITICAL for lockdown)."},
+					},
+					Required: []string{"organization", "project", "definition_id", "variables"},
+				},
+			},
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				result, err := m.UpdateBuildDefinitionVariables(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				if result.Cancelled {
+					return tools.ToolResult{Text: "Update cancelled by user."}, nil
+				}
+				return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", result.DefinitionID)}, nil
+			},
+		},
+	}
+
+	for _, spec := range specs {
+		if err := r.RegisterToToolkit("ado", spec.decl, spec.handler); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
