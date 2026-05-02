@@ -101,3 +101,33 @@ func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byt
 type teamsSecurity interface {
 	security.ActionConfirmer
 }
+
+func registerTeams(r tools.Registry, sm security.Manager, client tools.HTTPClient) error {
+	m := newteamsManager(sm, client)
+	if err := r.RegisterToToolkitWithOptions("teams", &tools.ToolDeclaration{
+		Name:            "send_teams_message",
+		Description:     "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
+		RequiresConsent: true,
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"webhook_url": {
+					Type:        "STRING",
+					Description: "The Power Automate workflow URL (must start with https://).",
+				},
+				"message": {
+					Type:        "STRING",
+					Description: "The message to send to the channel.",
+				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for sending this message.",
+				},
+			},
+			Required: []string{"webhook_url", "message", "reason"},
+		},
+	}, m.sendTeamsMessage, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+	return nil
+}
