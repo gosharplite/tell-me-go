@@ -312,3 +312,127 @@ func (m *AdoManager) formatPrThreads(pullRequestId int, threadData adoThreadResp
 
 	return resultText.String()
 }
+
+// registerPullRequests registers the Pull Request category tools.
+// Note: AdoGetPrStatuses and AdoGetPrPolicyEvaluations handlers live in policy.go
+// but are registered here because they are PR-scoped tools.
+func registerPullRequests(r tools.Registry, m *AdoManager, _ PipelineFormatter) error {
+	type toolSpec struct {
+		decl    *tools.ToolDeclaration
+		handler tools.ToolFunc
+	}
+
+	specs := []toolSpec{
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_get_pull_request",
+				Description: "Retrieves full metadata for a specific Azure DevOps Pull Request, including status, reviewers, and branch details.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization":    {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":         {Type: "STRING", Description: "The project name or ID."},
+						"repository":      {Type: "STRING", Description: "The repository name or ID."},
+						"pull_request_id": {Type: "INTEGER", Description: "The numeric ID of the pull request."},
+					},
+					Required: []string{"organization", "project", "repository", "pull_request_id"},
+				},
+			},
+			handler: m.AdoGetPullRequest,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_list_pull_requests",
+				Description: "Lists pull requests in a specific Azure DevOps repository, with optional status filtering.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization": {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":      {Type: "STRING", Description: "The project name or ID."},
+						"repository":   {Type: "STRING", Description: "The repository name or ID."},
+						"status":       {Type: "STRING", Description: "Filter by status (active, completed, abandoned, all). Default is active."},
+						"top":          {Type: "INTEGER", Description: "Maximum number of PRs to return (default 50)."},
+					},
+					Required: []string{"organization", "project", "repository"},
+				},
+			},
+			handler: m.AdoListPullRequests,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_get_pr_diff",
+				Description: "Retrieves the file changes (diffs) for a specific Azure DevOps Pull Request.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization":    {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":         {Type: "STRING", Description: "The project name or ID."},
+						"repository":      {Type: "STRING", Description: "The repository name or ID."},
+						"pull_request_id": {Type: "INTEGER", Description: "The numeric ID of the pull request."},
+					},
+					Required: []string{"organization", "project", "repository", "pull_request_id"},
+				},
+			},
+			handler: m.AdoGetPrDiff,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_get_pr_threads",
+				Description: "Retrieves discussion threads and comments for a specific Azure DevOps Pull Request.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization":    {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":         {Type: "STRING", Description: "The project name or ID."},
+						"repository":      {Type: "STRING", Description: "The repository name or ID."},
+						"pull_request_id": {Type: "INTEGER", Description: "The numeric ID of the pull request."},
+					},
+					Required: []string{"organization", "project", "repository", "pull_request_id"},
+				},
+			},
+			handler: m.AdoGetPrThreads,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_get_pr_statuses",
+				Description: "Retrieves the real-time status of all automated checks (builds, tests, quality gates) for a specific Azure DevOps Pull Request.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization":    {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":         {Type: "STRING", Description: "The project name or ID."},
+						"repository":      {Type: "STRING", Description: "The repository name or ID."},
+						"pull_request_id": {Type: "INTEGER", Description: "The numeric ID of the pull request."},
+					},
+					Required: []string{"organization", "project", "repository", "pull_request_id"},
+				},
+			},
+			handler: m.AdoGetPrStatuses,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "ado_get_pr_policy_evaluations",
+				Description: "Retrieves the real-time status of all automated policy evaluations (build gates, reviewer requirements) for a specific Azure DevOps Pull Request.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"organization":    {Type: "STRING", Description: "The Azure DevOps organization name."},
+						"project":         {Type: "STRING", Description: "The project name or ID."},
+						"repository":      {Type: "STRING", Description: "The repository name or ID."},
+						"pull_request_id": {Type: "INTEGER", Description: "The numeric ID of the pull request."},
+					},
+					Required: []string{"organization", "project", "repository", "pull_request_id"},
+				},
+			},
+			handler: m.AdoGetPrPolicyEvaluations,
+		},
+	}
+
+	for _, spec := range specs {
+		if err := r.RegisterToToolkit("ado", spec.decl, spec.handler); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
