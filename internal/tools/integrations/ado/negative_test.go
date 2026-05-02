@@ -107,7 +107,7 @@ func TestAdoManager_ExecuteRequest_AuthMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "AZURE_PAT_ALL token is required but not provided")
 }
 
-func TestAdoManager_AdoGetPipelineRun_Errors(t *testing.T) {
+func TestAdoManager_GetPipelineRun_Errors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &mockSecurityManager{approved: true}
 
@@ -153,7 +153,7 @@ func TestAdoManager_AdoGetPipelineRun_Errors(t *testing.T) {
 				"pipeline_id":  1,
 				"run_id":       101,
 			}
-			_, err := m.AdoGetPipelineRun(context.Background(), args, nil)
+			_, err := m.GetPipelineRun(context.Background(), args)
 
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
@@ -257,12 +257,12 @@ func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 	})
 }
 
-func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
+func TestAdoManager_ListPipelineRuns_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoListPipelineRuns(context.Background(), map[string]interface{}{}, nil)
+		_, _, err := m.ListPipelineRuns(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -275,7 +275,7 @@ func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, _, err := m.ListPipelineRuns(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -289,18 +289,18 @@ func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoListPipelineRuns(context.Background(), args, nil)
+		_, _, err := m.ListPipelineRuns(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})
 }
 
-func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
+func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoGetPipelineLogs(context.Background(), map[string]interface{}{}, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -313,7 +313,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		_, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -327,7 +327,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		_, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		_, _, err := m.ListPipelineLogs(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode logs list")
 	})
@@ -340,7 +340,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
-		_, err := m.AdoGetPipelineLogs(context.Background(), args, nil)
+		_, err := m.GetPipelineLogContent(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -487,12 +487,12 @@ func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 	})
 }
 
-func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
+func TestAdoManager_GetPipelineDefinition_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoGetPipelineDefinition(context.Background(), map[string]interface{}{}, nil)
+		_, err := m.GetPipelineDefinition(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -505,7 +505,7 @@ func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoGetPipelineDefinition(context.Background(), args, nil)
+		_, err := m.GetPipelineDefinition(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -519,18 +519,18 @@ func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoGetPipelineDefinition(context.Background(), args, nil)
+		_, err := m.GetPipelineDefinition(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})
 }
 
-func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
+func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), map[string]interface{}{}, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -550,7 +550,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -571,7 +571,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode definition")
 	})
@@ -596,7 +596,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 400")
 	})
@@ -618,8 +618,9 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		res, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		res, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, res.Text, "cancelled by user")
+		assert.True(t, res.Cancelled)
+		assert.Equal(t, 1, res.DefinitionID)
 	})
 }

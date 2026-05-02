@@ -123,7 +123,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 			wantErrMsg: "context canceled",
 		},
 		{
-			name: "Unmarshal Failure in adoGetPipelineRun",
+			name: "Unmarshal Failure in GetPipelineRun",
 			setupMock: func(m *mockRoundTripper) {
 				m.roundTrip = func(req *http.Request) (*http.Response, error) {
 					return &http.Response{
@@ -139,7 +139,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.AdoGetPipelineRun(ctx, args, nil)
+				_, err := m.GetPipelineRun(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -385,7 +385,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 		wantErrMsg string
 	}{
 		{
-			name: "Unmarshal Failure in adoListPipelineRuns",
+			name: "Unmarshal Failure in ListPipelineRuns",
 			setupMock: func(m *mockRoundTripper) {
 				m.roundTrip = func(req *http.Request) (*http.Response, error) {
 					return &http.Response{
@@ -400,13 +400,13 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.AdoListPipelineRuns(ctx, args, nil)
+				_, _, err := m.ListPipelineRuns(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
 		},
 		{
-			name: "Unmarshal Failure in listPipelineLogs",
+			name: "Unmarshal Failure in ListPipelineLogs",
 			setupMock: func(m *mockRoundTripper) {
 				m.roundTrip = func(req *http.Request) (*http.Response, error) {
 					return &http.Response{
@@ -422,7 +422,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.AdoGetPipelineLogs(ctx, args, nil)
+				_, _, err := m.ListPipelineLogs(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode logs list",
@@ -443,7 +443,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"build_id":     1,
 				}
-				_, err := m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -464,7 +464,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.AdoGetPipelineDefinition(ctx, args, nil)
+				_, err := m.GetPipelineDefinition(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -486,7 +486,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"definition_id": 1,
 					"variables":     map[string]interface{}{"K": map[string]interface{}{"value": "V"}},
 				}
-				_, err := m.AdoUpdateBuildDefinitionVariables(ctx, args, nil)
+				_, err := m.UpdateBuildDefinitionVariables(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode definition",

@@ -233,7 +233,7 @@ func (m *AdoManager) AdoListRepositoryItems(ctx context.Context, args map[string
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return m.formatRepositoryItems(params.ScopePath, params.Version, responseData), nil
+	return FormatRepositoryItems(params.ScopePath, params.Version, responseData), nil
 }
 
 func (m *AdoManager) buildListRepositoryItemsURL(org, project, repo, scopePath, version, recursionLevel string) (string, error) {
@@ -261,73 +261,4 @@ func (m *AdoManager) buildListRepositoryItemsURL(org, project, repo, scopePath, 
 	u.RawQuery = q.Encode()
 
 	return u.String(), nil
-}
-
-func (m *AdoManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
-	if len(responseData.Value) == 0 {
-		return tools.ToolResult{Text: "No items found."}
-	}
-
-	var resultText strings.Builder
-	_, _ = fmt.Fprintf(&resultText, "Items in %s (%s):\n\n", scopePath, version)
-	for _, item := range responseData.Value {
-		// Skip the scope path itself if it's the first element
-		if item.Path == scopePath && len(responseData.Value) > 1 {
-			continue
-		}
-		prefix := "[FILE]"
-		if item.IsFolder {
-			prefix = "[DIR] "
-		}
-		_, _ = fmt.Fprintf(&resultText, "- %s %s\n", prefix, item.Path)
-	}
-
-	return tools.ToolResult{Text: resultText.String()}
-}
-
-// Helper functions to reduce complexity in formatKey
-func isLower(r rune) bool {
-	return r >= 'a' && r <= 'z'
-}
-
-func isUpper(r rune) bool {
-	return r >= 'A' && r <= 'Z'
-}
-
-func toUpper(r rune) rune {
-	if isLower(r) {
-		return r - 'a' + 'A'
-	}
-	return r
-}
-
-func formatKey(s string) string {
-	if s == "" {
-		return ""
-	}
-	runes := []rune(s)
-	var res strings.Builder
-
-	for i, r := range runes {
-		if i == 0 {
-			res.WriteRune(toUpper(r))
-			continue
-		}
-
-		if isUpper(r) {
-			// Add space if preceded by lowercase OR followed by lowercase (e.g., HTMLReader -> HTML Reader)
-			prevLower := isLower(runes[i-1])
-			nextLower := i+1 < len(runes) && isLower(runes[i+1])
-			if prevLower || nextLower {
-				res.WriteRune(' ')
-			}
-		}
-		res.WriteRune(r)
-	}
-
-	result := res.String()
-	if strings.HasSuffix(result, " Id") {
-		result = result[:len(result)-2] + "ID"
-	}
-	return result
 }
