@@ -88,8 +88,8 @@ func (f *pipelineFormatter) FormatPipelineLogList(runID int, logs []adoLogEntry)
 	return resultText.String()
 }
 
-// FormatRepositoryItems formats repository items for display.
-func FormatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
+// formatRepositoryItems formats repository items for display.
+func formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
 	if len(responseData.Value) == 0 {
 		return tools.ToolResult{Text: "No items found."}
 	}

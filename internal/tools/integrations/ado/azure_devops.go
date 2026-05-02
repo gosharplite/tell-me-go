@@ -233,7 +233,7 @@ func (m *AdoManager) AdoListRepositoryItems(ctx context.Context, args map[string
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return FormatRepositoryItems(params.ScopePath, params.Version, responseData), nil
+	return formatRepositoryItems(params.ScopePath, params.Version, responseData), nil
 }
 
 func (m *AdoManager) buildListRepositoryItemsURL(org, project, repo, scopePath, version, recursionLevel string) (string, error) {

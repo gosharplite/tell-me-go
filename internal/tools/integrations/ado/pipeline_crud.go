@@ -104,23 +104,23 @@ func (m *AdoManager) resolvePipelineID(ctx context.Context, org, project, pipeli
 // CreatePipeline is the infrastructure-layer entry point for creating a new
 // ADO pipeline. The method performs an idempotency pre-check and a user
 // confirmation dialog; both belong to this adapter's operational contract.
-// See CreatePipelineResult for the three possible terminal states.
+// See createPipelineResult for the three possible terminal states.
 //
 // On successful creation, the per-project pipeline cache is invalidated so
 // subsequent ListPipelines calls observe the new entry.
-func (m *AdoManager) CreatePipeline(ctx context.Context, args map[string]interface{}) (CreatePipelineResult, error) {
+func (m *AdoManager) CreatePipeline(ctx context.Context, args map[string]interface{}) (createPipelineResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
-		return CreatePipelineResult{}, err
+		return createPipelineResult{}, err
 	}
 
 	// 1. Idempotency check: short-circuit if the pipeline already exists.
 	existingID, err := m.checkPipelineExists(ctx, params.Organization, params.Project, params.Name)
 	if err != nil {
-		return CreatePipelineResult{}, fmt.Errorf("checking pipeline existence: %w", err)
+		return createPipelineResult{}, fmt.Errorf("checking pipeline existence: %w", err)
 	}
 	if existingID != 0 {
-		return CreatePipelineResult{
+		return createPipelineResult{
 			AlreadyExisted: true,
 			PipelineID:     existingID,
 			Name:           params.Name,
@@ -130,22 +130,22 @@ func (m *AdoManager) CreatePipeline(ctx context.Context, args map[string]interfa
 	// 2. Confirm.
 	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Create pipeline '%s' in %s/%s?", params.Name, params.Organization, params.Project))
 	if err != nil {
-		return CreatePipelineResult{}, fmt.Errorf("confirmation error: %w", err)
+		return createPipelineResult{}, fmt.Errorf("confirmation error: %w", err)
 	}
 	if !approved {
-		return CreatePipelineResult{Cancelled: true, Name: params.Name}, nil
+		return createPipelineResult{Cancelled: true, Name: params.Name}, nil
 	}
 
 	// 3. Create.
 	pipelineID, err := m.executeCreatePipeline(ctx, params.Organization, params.Project, params.Name, params.RepositoryId, params.YamlPath, params.Variables, params.VariableGroups)
 	if err != nil {
-		return CreatePipelineResult{}, fmt.Errorf("executing create pipeline: %w", err)
+		return createPipelineResult{}, fmt.Errorf("executing create pipeline: %w", err)
 	}
 
 	// Invalidate cache so subsequent ListPipelines observes the new pipeline.
 	m.pipelineCache.Delete(params.Organization + "/" + params.Project)
 
-	return CreatePipelineResult{
+	return createPipelineResult{
 		PipelineID: pipelineID,
 		Name:       params.Name,
 	}, nil

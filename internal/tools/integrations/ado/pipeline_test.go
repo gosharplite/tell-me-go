@@ -162,7 +162,7 @@ func TestFormatPipelineList(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			formatter := NewPipelineFormatter()
+			formatter := newPipelineFormatter()
 			got := formatter.FormatPipelineList(tt.pipelines)
 			assert.Equal(t, tt.want, got)
 		})
@@ -188,7 +188,7 @@ func TestFormatBranchRef(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			formatter := NewPipelineFormatter()
+			formatter := newPipelineFormatter()
 			if got := formatter.FormatBranchRef(tt.input); got != tt.want {
 				t.Errorf("FormatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
 			}

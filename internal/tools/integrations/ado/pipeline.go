@@ -273,24 +273,24 @@ type adoLogEntry struct {
 	Line int    `json:"lineCount"`
 }
 
-// LogContent is the result of fetching log text. If Truncated is true, Content
+// logContent is the result of fetching log text. If Truncated is true, Content
 // has been clipped after TotalLines lines.
-type LogContent struct {
+type logContent struct {
 	Content    string
 	Truncated  bool
 	TotalLines int
 }
 
-// RunPipelineResult describes the outcome of an attempted pipeline trigger.
+// runPipelineResult describes the outcome of an attempted pipeline trigger.
 // If Cancelled is true, the user declined the confirmation prompt and no run
 // was created. Otherwise, RunID and WebURL describe the new run.
-type RunPipelineResult struct {
+type runPipelineResult struct {
 	Cancelled bool
 	RunID     int
 	WebURL    string
 }
 
-// CreatePipelineResult describes the outcome of an attempted pipeline creation.
+// createPipelineResult describes the outcome of an attempted pipeline creation.
 // Exactly one of the following states is signalled:
 //   - AlreadyExisted=true, PipelineID set:  idempotency hit; no creation occurred.
 //   - Cancelled=true,      PipelineID==0:   user declined the confirmation prompt.
@@ -298,7 +298,7 @@ type RunPipelineResult struct {
 //
 // Name is always echoed so the consumer can render either the "already exists"
 // or "successfully created" message without re-reading args.
-type CreatePipelineResult struct {
+type createPipelineResult struct {
 	AlreadyExisted bool
 	Cancelled      bool
 	PipelineID     int
