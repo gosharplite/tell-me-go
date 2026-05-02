@@ -288,3 +288,26 @@ type RunPipelineResult struct {
 	RunID     int
 	WebURL    string
 }
+
+// CreatePipelineResult describes the outcome of an attempted pipeline creation.
+// Exactly one of the following states is signalled:
+//   - AlreadyExisted=true, PipelineID set:  idempotency hit; no creation occurred.
+//   - Cancelled=true,      PipelineID==0:   user declined the confirmation prompt.
+//   - both false,          PipelineID set:  pipeline was newly created.
+//
+// Name is always echoed so the consumer can render either the "already exists"
+// or "successfully created" message without re-reading args.
+type CreatePipelineResult struct {
+	AlreadyExisted bool
+	Cancelled      bool
+	PipelineID     int
+	Name           string
+}
+
+// UpdateVariablesResult describes the outcome of an attempted build-definition
+// variables update. If Cancelled is true, the user declined the confirmation
+// prompt and no PUT request was sent.
+type UpdateVariablesResult struct {
+	Cancelled    bool
+	DefinitionID int
+}

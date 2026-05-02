@@ -101,40 +101,54 @@ func (m *AdoManager) resolvePipelineID(ctx context.Context, org, project, pipeli
 	return 0, fmt.Errorf("pipeline with name '%s' not found", pipelineName)
 }
 
-func (m *AdoManager) AdoCreatePipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// CreatePipeline is the infrastructure-layer entry point for creating a new
+// ADO pipeline. The method performs an idempotency pre-check and a user
+// confirmation dialog; both belong to this adapter's operational contract.
+// See CreatePipelineResult for the three possible terminal states.
+//
+// On successful creation, the per-project pipeline cache is invalidated so
+// subsequent ListPipelines calls observe the new entry.
+func (m *AdoManager) CreatePipeline(ctx context.Context, args map[string]interface{}) (CreatePipelineResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing create pipeline args: %w", err)
+		return CreatePipelineResult{}, err
 	}
 
-	// 1. Idempotency Check
+	// 1. Idempotency check: short-circuit if the pipeline already exists.
 	existingID, err := m.checkPipelineExists(ctx, params.Organization, params.Project, params.Name)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("checking pipeline existence: %w", err)
+		return CreatePipelineResult{}, fmt.Errorf("checking pipeline existence: %w", err)
 	}
 	if existingID != 0 {
-		return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, existingID)}, nil
+		return CreatePipelineResult{
+			AlreadyExisted: true,
+			PipelineID:     existingID,
+			Name:           params.Name,
+		}, nil
 	}
 
-	// 2. Confirm Action
+	// 2. Confirm.
 	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Create pipeline '%s' in %s/%s?", params.Name, params.Organization, params.Project))
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+		return CreatePipelineResult{}, fmt.Errorf("confirmation error: %w", err)
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
+		return CreatePipelineResult{Cancelled: true, Name: params.Name}, nil
 	}
 
-	// 3. Create Pipeline
+	// 3. Create.
 	pipelineID, err := m.executeCreatePipeline(ctx, params.Organization, params.Project, params.Name, params.RepositoryId, params.YamlPath, params.Variables, params.VariableGroups)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing create pipeline: %w", err)
+		return CreatePipelineResult{}, fmt.Errorf("executing create pipeline: %w", err)
 	}
 
-	// Invalidate cache for this project since we created a new pipeline
+	// Invalidate cache so subsequent ListPipelines observes the new pipeline.
 	m.pipelineCache.Delete(params.Organization + "/" + params.Project)
 
-	return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", params.Name, pipelineID)}, nil
+	return CreatePipelineResult{
+		PipelineID: pipelineID,
+		Name:       params.Name,
+	}, nil
 }
 
 func (m *AdoManager) checkPipelineExists(ctx context.Context, org, project, name string) (int, error) {
@@ -262,50 +276,57 @@ func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars m
 	return json.Marshal(existingDef)
 }
 
-func (m *AdoManager) AdoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// UpdateBuildDefinitionVariables is the infrastructure-layer entry point for
+// patching the variables block of an ADO build definition. The flow is:
+// (1) GET the existing definition, (2) merge the requested variable changes,
+// (3) prompt for confirmation, (4) PUT the updated definition.
+//
+// Returns Cancelled=true when the user declines, otherwise DefinitionID
+// echoes the affected build-definition ID for the consumer's success text.
+func (m *AdoManager) UpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}) (UpdateVariablesResult, error) {
 	params, err := parseUpdateBuildDefArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return UpdateVariablesResult{}, err
 	}
 
-	// 1. GET current definition
+	// 1. GET current definition.
 	u := fmt.Sprintf("%s/%s/%s/_apis/build/definitions/%d?api-version=7.1",
 		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.DefinitionId)
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("fetching build definition: %w", err)
+		return UpdateVariablesResult{}, fmt.Errorf("fetching build definition: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var definition map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode definition: %w", err)
+		return UpdateVariablesResult{}, fmt.Errorf("failed to decode definition: %w", err)
 	}
 
-	// 2. BUILD updated payload
+	// 2. Build updated payload.
 	body, err := buildVariablesUpdatePayload(definition, params.Variables)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to build updated payload: %w", err)
+		return UpdateVariablesResult{}, fmt.Errorf("failed to build updated payload: %w", err)
 	}
 
-	// 3. Confirm Action
+	// 3. Confirm.
 	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Update variables for build definition %d in %s/%s?", params.DefinitionId, params.Organization, params.Project))
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+		return UpdateVariablesResult{}, fmt.Errorf("confirmation error: %w", err)
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Update cancelled by user."}, nil
+		return UpdateVariablesResult{Cancelled: true, DefinitionID: params.DefinitionId}, nil
 	}
 
-	// 4. PUT updated definition
+	// 4. PUT updated definition.
 	putResp, err := m.ExecuteRequest(ctx, http.MethodPut, u, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing update build definition variables request: %w", err)
+		return UpdateVariablesResult{}, fmt.Errorf("executing update build definition variables request: %w", err)
 	}
 	defer func() { _ = putResp.Body.Close() }()
 
-	return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", params.DefinitionId)}, nil
+	return UpdateVariablesResult{DefinitionID: params.DefinitionId}, nil
 }
 
 func (m *AdoManager) buildGetBuildChangesURL(params adoGetBuildChangesParams) (string, error) {

@@ -723,7 +723,16 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "definition_id", "variables"},
 				},
 			},
-			handler: m.AdoUpdateBuildDefinitionVariables,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				result, err := m.UpdateBuildDefinitionVariables(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				if result.Cancelled {
+					return tools.ToolResult{Text: "Update cancelled by user."}, nil
+				}
+				return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", result.DefinitionID)}, nil
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -743,7 +752,20 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
 				},
 			},
-			handler: m.AdoCreatePipeline,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				result, err := m.CreatePipeline(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				switch {
+				case result.AlreadyExisted:
+					return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", result.Name, result.PipelineID)}, nil
+				case result.Cancelled:
+					return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
+				default:
+					return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", result.Name, result.PipelineID)}, nil
+				}
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{

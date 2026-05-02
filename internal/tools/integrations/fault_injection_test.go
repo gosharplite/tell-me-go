@@ -486,7 +486,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"definition_id": 1,
 					"variables":     map[string]interface{}{"K": map[string]interface{}{"value": "V"}},
 				}
-				_, err := m.AdoUpdateBuildDefinitionVariables(ctx, args, nil)
+				_, err := m.UpdateBuildDefinitionVariables(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode definition",

@@ -233,9 +233,12 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.AdoCreatePipeline(ctx, args, nil)
+	result, err := m.CreatePipeline(ctx, args)
 	require.NoError(t, err)
-	assert.Contains(t, result.Text, "Successfully created pipeline 'new-pipeline' with ID: 789")
+	assert.False(t, result.AlreadyExisted)
+	assert.False(t, result.Cancelled)
+	assert.Equal(t, 789, result.PipelineID)
+	assert.Equal(t, "new-pipeline", result.Name)
 }
 
 type mockConfirmer struct {
@@ -282,9 +285,12 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 		},
 	}
 
-	result, err := m.AdoCreatePipeline(ctx, args, nil)
+	result, err := m.CreatePipeline(ctx, args)
 	require.NoError(t, err)
-	assert.Contains(t, result.Text, "Successfully created pipeline 'locked-pipeline' with ID: 888")
+	assert.False(t, result.AlreadyExisted)
+	assert.False(t, result.Cancelled)
+	assert.Equal(t, 888, result.PipelineID)
+	assert.Equal(t, "locked-pipeline", result.Name)
 }
 
 func setupMockPipelineServer(t *testing.T, postHandler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
@@ -448,9 +454,10 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.AdoUpdateBuildDefinitionVariables(ctx, args, nil)
+	result, err := m.UpdateBuildDefinitionVariables(ctx, args)
 	require.NoError(t, err)
-	assert.Contains(t, result.Text, "Successfully updated variables for build definition 123")
+	assert.False(t, result.Cancelled)
+	assert.Equal(t, 123, result.DefinitionID)
 	assert.True(t, getCalled)
 	assert.True(t, putCalled)
 }

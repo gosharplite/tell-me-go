@@ -525,12 +525,12 @@ func TestAdoManager_GetPipelineDefinition_Errors(t *testing.T) {
 	})
 }
 
-func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
+func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), map[string]interface{}{}, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -550,7 +550,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -571,7 +571,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode definition")
 	})
@@ -596,7 +596,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 400")
 	})
@@ -618,8 +618,9 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		res, err := m.AdoUpdateBuildDefinitionVariables(context.Background(), args, nil)
+		res, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, res.Text, "cancelled by user")
+		assert.True(t, res.Cancelled)
+		assert.Equal(t, 1, res.DefinitionID)
 	})
 }

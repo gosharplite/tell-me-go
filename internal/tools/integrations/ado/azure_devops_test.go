@@ -1399,18 +1399,20 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "resource not found",
 		},
 		{
-			name: "AdoCreatePipeline - Missing Params",
+			name: "CreatePipeline - Missing Params",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoCreatePipeline(ctx, args, nil)
+				_, err := m.CreatePipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "name": "n", "repository_id": "r"}, // Missing yaml_path
 			expectedErrMsg: "required",
 		},
 		{
-			name: "AdoCreatePipeline - 500 Error",
+			name: "CreatePipeline - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 				// Approved by default in setup
-				return m.AdoCreatePipeline(ctx, args, nil)
+				_, err := m.CreatePipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args: map[string]interface{}{
 				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
@@ -1419,9 +1421,10 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			expectedErrMsg: "returned status: 500",
 		},
 		{
-			name: "AdoCreatePipeline - Malformed JSON",
+			name: "CreatePipeline - Malformed JSON",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoCreatePipeline(ctx, args, nil)
+				_, err := m.CreatePipeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args: map[string]interface{}{
 				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
@@ -2146,17 +2149,20 @@ func TestListPipelineRuns_Features(t *testing.T) {
 	})
 }
 
-func TestAdoCreatePipeline(t *testing.T) {
+func TestCreatePipeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
 	tests := []struct {
-		name              string
-		approved          bool
-		existingPipelines []adoPipeline
-		createResponse    string
-		expectedText      string
-		expectPost        bool
-		expectConfirm     bool
+		name               string
+		approved           bool
+		existingPipelines  []adoPipeline
+		createResponse     string
+		expectPost         bool
+		expectConfirm      bool
+		wantAlreadyExisted bool
+		wantCancelled      bool
+		wantPipelineID     int
+		wantName           string
 	}{
 		{
 			name:     "Success",
@@ -2165,9 +2171,10 @@ func TestAdoCreatePipeline(t *testing.T) {
 				{Id: 1, Name: "Other"},
 			},
 			createResponse: `{"id": 123}`,
-			expectedText:   "Successfully created pipeline 'NewPipeline' with ID: 123",
 			expectPost:     true,
 			expectConfirm:  true,
+			wantPipelineID: 123,
+			wantName:       "NewPipeline",
 		},
 		{
 			name:     "Idempotency",
@@ -2175,9 +2182,11 @@ func TestAdoCreatePipeline(t *testing.T) {
 			existingPipelines: []adoPipeline{
 				{Id: 1, Name: "NewPipeline"},
 			},
-			expectedText:  "Pipeline 'NewPipeline' already exists with ID: 1",
-			expectPost:    false,
-			expectConfirm: false,
+			expectPost:         false,
+			expectConfirm:      false,
+			wantAlreadyExisted: true,
+			wantPipelineID:     1,
+			wantName:           "NewPipeline",
 		},
 		{
 			name:     "Cancellation",
@@ -2185,9 +2194,10 @@ func TestAdoCreatePipeline(t *testing.T) {
 			existingPipelines: []adoPipeline{
 				{Id: 1, Name: "Other"},
 			},
-			expectedText:  "Pipeline creation cancelled by user.",
 			expectPost:    false,
 			expectConfirm: true,
+			wantCancelled: true,
+			wantName:      "NewPipeline",
 		},
 	}
 
@@ -2227,9 +2237,12 @@ func TestAdoCreatePipeline(t *testing.T) {
 				"yaml_path":     "/azure-pipelines.yaml",
 			}
 
-			result, err := m.AdoCreatePipeline(context.Background(), args, nil)
+			result, err := m.CreatePipeline(context.Background(), args)
 			assert.NoError(t, err)
-			assert.Contains(t, result.Text, tt.expectedText)
+			assert.Equal(t, tt.wantAlreadyExisted, result.AlreadyExisted)
+			assert.Equal(t, tt.wantCancelled, result.Cancelled)
+			assert.Equal(t, tt.wantPipelineID, result.PipelineID)
+			assert.Equal(t, tt.wantName, result.Name)
 			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
 			assert.Equal(t, tt.expectConfirm, sm.confirmCalled, "Confirm call mismatch")
 
