@@ -301,11 +301,7 @@ func (m *AdoManager) GetPipelineLogContent(ctx context.Context, args map[string]
 		return LogContent{}, fmt.Errorf("failed to process log content: %w", err)
 	}
 
-	return LogContent{
-		Content:    res.Content,
-		Truncated:  res.Truncated,
-		TotalLines: res.TotalLines,
-	}, nil
+	return LogContent(res), nil
 }
 
 // GetTaskLog is the infrastructure-layer entry point for fetching a build task
@@ -346,9 +342,5 @@ func (m *AdoManager) GetTaskLog(ctx context.Context, args map[string]interface{}
 		return LogContent{}, fmt.Errorf("failed to process log content: %w", err)
 	}
 
-	return LogContent{
-		Content:    res.Content,
-		Truncated:  res.Truncated,
-		TotalLines: res.TotalLines,
-	}, nil
+	return LogContent(res), nil
 }
