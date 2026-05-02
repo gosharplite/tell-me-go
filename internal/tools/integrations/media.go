@@ -165,3 +165,50 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 		},
 	}, nil
 }
+
+func registerMedia(r tools.Registry, fs persistence.FileSystem, sm security.Manager, client llm.LLMClient, assetsDir string) error {
+	m := newMediaManager(fs, sm, client, assetsDir)
+
+	if err := r.RegisterToToolkitWithOptions("media", &tools.ToolDeclaration{
+		Name:        "create_image",
+		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"prompt": {
+					Type:        "STRING",
+					Description: "Detailed description of the image to generate.",
+				},
+				"aspect_ratio": {
+					Type:        "STRING",
+					Description: "Aspect ratio (e.g., '1:1', '4:3', '16:9'). Default '1:1'.",
+				},
+				"model": {
+					Type:        "STRING",
+					Description: "The model to use for generation (e.g., 'imagen-3.0-generate-001', 'imagen-3.0-fast-001').",
+				},
+			},
+			Required: []string{"prompt"},
+		},
+	}, m.createImage, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
+
+	if err := r.RegisterToToolkit("media", &tools.ToolDeclaration{
+		Name:        "read_image",
+		Description: "Reads a local image file for vision analysis.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the image file (e.g., './assets/screenshot.png').",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, m.readImage); err != nil {
+		return err
+	}
+	return nil
+}
