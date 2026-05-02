@@ -206,7 +206,10 @@ func (m *AdoManager) executeCreatePipeline(ctx context.Context, org, project, na
 	return newPipeline.Id, nil
 }
 
-func (m *AdoManager) AdoGetPipelineDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// GetPipelineDefinition is the infrastructure-layer entry point for fetching
+// the raw ADO pipeline configuration. Returns the decoded JSON payload as an
+// untyped value; the caller is responsible for serialization.
+func (m *AdoManager) GetPipelineDefinition(ctx context.Context, args map[string]interface{}) (interface{}, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -214,11 +217,11 @@ func (m *AdoManager) AdoGetPipelineDefinition(ctx context.Context, args map[stri
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline definition args: %w", err)
+		return nil, fmt.Errorf("parsing get pipeline definition args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, and pipeline_id are required")
+		return nil, fmt.Errorf("organization, project, and pipeline_id are required")
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d?api-version=7.1-preview.1",
@@ -226,21 +229,16 @@ func (m *AdoManager) AdoGetPipelineDefinition(ctx context.Context, args map[stri
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get pipeline definition request: %w", err)
+		return nil, fmt.Errorf("executing get pipeline definition request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var definition interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	output, err := json.MarshalIndent(definition, "", "  ")
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to marshal definition: %w", err)
-	}
-
-	return tools.ToolResult{Text: string(output)}, nil
+	return definition, nil
 }
 
 func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars map[string]adoVariable) ([]byte, error) {
@@ -325,44 +323,37 @@ func (m *AdoManager) buildGetBuildChangesURL(params adoGetBuildChangesParams) (s
 	return u.String(), nil
 }
 
-func (m *AdoManager) parseBuildChangesResponse(body io.Reader) (string, error) {
+func (m *AdoManager) decodeBuildChangesResponse(body io.Reader) ([]interface{}, error) {
 	var responseData struct {
 		Value []interface{} `json:"value"`
 	}
 
 	if err := json.NewDecoder(body).Decode(&responseData); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	output, err := json.MarshalIndent(responseData.Value, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal build changes: %w", err)
-	}
-
-	return string(output), nil
+	return responseData.Value, nil
 }
 
-func (m *AdoManager) AdoGetBuildChanges(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// GetBuildChanges is the infrastructure-layer entry point for fetching the
+// changeset associated with an ADO build. Returns the decoded values slice; the
+// caller is responsible for serialization.
+func (m *AdoManager) GetBuildChanges(ctx context.Context, args map[string]interface{}) ([]interface{}, error) {
 	params, err := parseGetBuildChangesArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return nil, err
 	}
 
 	u, err := m.buildGetBuildChangesURL(params)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return nil, err
 	}
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get build changes request: %w", err)
+		return nil, fmt.Errorf("executing get build changes request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	result, err := m.parseBuildChangesResponse(resp.Body)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	return tools.ToolResult{Text: result}, nil
+	return m.decodeBuildChangesResponse(resp.Body)
 }

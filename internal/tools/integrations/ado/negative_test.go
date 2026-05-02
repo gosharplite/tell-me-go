@@ -487,12 +487,12 @@ func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 	})
 }
 
-func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
+func TestAdoManager_GetPipelineDefinition_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoGetPipelineDefinition(context.Background(), map[string]interface{}{}, nil)
+		_, err := m.GetPipelineDefinition(context.Background(), map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -505,7 +505,7 @@ func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoGetPipelineDefinition(context.Background(), args, nil)
+		_, err := m.GetPipelineDefinition(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -519,7 +519,7 @@ func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.AdoGetPipelineDefinition(context.Background(), args, nil)
+		_, err := m.GetPipelineDefinition(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})

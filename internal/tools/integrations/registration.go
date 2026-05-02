@@ -5,6 +5,8 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -318,6 +320,14 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 	m := ado.NewADOManager(sm, opts...)
 	adoFormatter := ado.NewPipelineFormatter()
 
+	marshalIndentResult := func(v interface{}) (tools.ToolResult, error) {
+		output, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("marshaling response: %w", err)
+		}
+		return tools.ToolResult{Text: string(output)}, nil
+	}
+
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration
 		handler tools.ToolFunc
@@ -514,7 +524,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: m.AdoGetPipelineDefinition,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				def, err := m.GetPipelineDefinition(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return marshalIndentResult(def)
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -605,7 +621,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: m.AdoGetBuildTimeline,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				records, err := m.GetBuildTimeline(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return marshalIndentResult(records)
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -645,7 +667,13 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: m.AdoGetBuildChanges,
+			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+				changes, err := m.GetBuildChanges(ctx, args)
+				if err != nil {
+					return tools.ToolResult{}, err
+				}
+				return marshalIndentResult(changes)
+			},
 		},
 		{
 			decl: &tools.ToolDeclaration{

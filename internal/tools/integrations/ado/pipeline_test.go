@@ -324,7 +324,7 @@ func assertVariable(t *testing.T, vars map[string]adoVariable, name string, valu
 	}
 }
 
-func TestAdoGetPipelineDefinition(t *testing.T) {
+func TestGetPipelineDefinition(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -361,17 +361,17 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 		"pipeline_id":  123,
 	}
 
-	result, err := m.AdoGetPipelineDefinition(ctx, args, nil)
+	def, err := m.GetPipelineDefinition(ctx, args)
 	require.NoError(t, err)
 
-	var def map[string]interface{}
-	err = json.Unmarshal([]byte(result.Text), &def)
-	require.NoError(t, err)
+	// def is the decoded JSON, type-assert and index into tree
+	defMap, ok := def.(map[string]interface{})
+	require.True(t, ok)
 
-	assert.Equal(t, float64(123), def["id"])
-	assert.Equal(t, "test-pipeline", def["name"])
+	assert.Equal(t, float64(123), defMap["id"])
+	assert.Equal(t, "test-pipeline", defMap["name"])
 
-	config := def["configuration"].(map[string]interface{})
+	config := defMap["configuration"].(map[string]interface{})
 	vars := config["variables"].(map[string]interface{})
 	secretVar := vars["secret-var"].(map[string]interface{})
 

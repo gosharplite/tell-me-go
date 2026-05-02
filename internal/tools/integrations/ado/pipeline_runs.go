@@ -179,7 +179,10 @@ func (m *AdoManager) executeRunPipeline(ctx context.Context, org, project string
 	return runResponse.Id, runResponse.Links.Web.Href, nil
 }
 
-func (m *AdoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// GetBuildTimeline is the infrastructure-layer entry point for fetching the
+// timeline records of an ADO build. Returns the decoded records slice; the
+// caller is responsible for serialization.
+func (m *AdoManager) GetBuildTimeline(ctx context.Context, args map[string]interface{}) ([]interface{}, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -187,11 +190,11 @@ func (m *AdoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]in
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing get build timeline args: %w", err)
+		return nil, fmt.Errorf("parsing get build timeline args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, and build_id are required")
+		return nil, fmt.Errorf("organization, project, and build_id are required")
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/timeline?api-version=7.0",
@@ -199,7 +202,7 @@ func (m *AdoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]in
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get build timeline request: %w", err)
+		return nil, fmt.Errorf("executing get build timeline request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -208,15 +211,10 @@ func (m *AdoManager) AdoGetBuildTimeline(ctx context.Context, args map[string]in
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&timelineData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	output, err := json.MarshalIndent(timelineData.Records, "", "  ")
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to marshal timeline records: %w", err)
-	}
-
-	return tools.ToolResult{Text: string(output)}, nil
+	return timelineData.Records, nil
 }
 
 func (m *AdoManager) AdoGetPipelineLogs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

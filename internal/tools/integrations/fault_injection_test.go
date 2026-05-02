@@ -443,7 +443,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"build_id":     1,
 				}
-				_, err := m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -464,7 +464,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.AdoGetPipelineDefinition(ctx, args, nil)
+				_, err := m.GetPipelineDefinition(ctx, args)
 				return err
 			},
 			wantErrMsg: "failed to decode response",

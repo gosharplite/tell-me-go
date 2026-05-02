@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdoGetPullRequest(t *testing.T) {
@@ -880,7 +881,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 	})
 }
 
-func TestAdoGetBuildTimeline(t *testing.T) {
+func TestGetBuildTimeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -906,11 +907,16 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
-		result, err := m.AdoGetBuildTimeline(context.Background(), args, nil)
+		records, err := m.GetBuildTimeline(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, `"name": "Task 1"`)
-		assert.Contains(t, result.Text, `"log": {`)
-		assert.Contains(t, result.Text, `"id": 10`)
+		assert.Len(t, records, 1)
+		rec, ok := records[0].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "Task 1", rec["name"])
+
+		log, ok := rec["log"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, float64(10), log["id"])
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
@@ -922,7 +928,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
-		_, err := m.AdoGetBuildTimeline(context.Background(), args, nil)
+		_, err := m.GetBuildTimeline(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -974,7 +980,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 	})
 }
 
-func TestAdoGetBuildChanges(t *testing.T) {
+func TestGetBuildChanges(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -999,10 +1005,13 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123, "top": 10}
-		result, err := m.AdoGetBuildChanges(context.Background(), args, nil)
+		changes, err := m.GetBuildChanges(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, `"id": "abc123"`)
-		assert.Contains(t, result.Text, `"message": "feat: add something"`)
+		assert.Len(t, changes, 1)
+		ch, ok := changes[0].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "abc123", ch["id"])
+		assert.Equal(t, "feat: add something", ch["message"])
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
@@ -1014,7 +1023,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
-		_, err := m.AdoGetBuildChanges(context.Background(), args, nil)
+		_, err := m.GetBuildChanges(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1130,7 +1139,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildTimeline - Missing Params",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o"},
 			expectedErrMsg: "required",
@@ -1138,7 +1148,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildTimeline - 401 Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
@@ -1262,7 +1273,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildChanges(ctx, args, nil)
+				_, err := m.GetBuildChanges(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusInternalServerError,
@@ -1271,7 +1283,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - 401 Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildChanges(ctx, args, nil)
+				_, err := m.GetBuildChanges(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
@@ -1344,7 +1357,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildTimeline - Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildTimeline(ctx, args, nil)
+				_, err := m.GetBuildTimeline(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusUnauthorized,
@@ -1362,7 +1376,8 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - Not Found",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				return m.AdoGetBuildChanges(ctx, args, nil)
+				_, err := m.GetBuildChanges(ctx, args)
+				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusNotFound,
@@ -1740,7 +1755,7 @@ func TestListPipelineRuns_Empty(t *testing.T) {
 	assert.Empty(t, runs)
 }
 
-func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
+func TestGetBuildTimeline_Detailed(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
@@ -1752,7 +1767,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.AdoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+		_, err := m.GetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1765,13 +1780,13 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
-		_, err := m.AdoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+		_, err := m.GetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
 }
 
-func TestAdoGetBuildChanges_Empty(t *testing.T) {
+func TestGetBuildChanges_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1781,9 +1796,9 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 
 	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 
-	result, err := m.AdoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
+	changes, err := m.GetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 	assert.NoError(t, err)
-	assert.Equal(t, "[]", result.Text)
+	assert.Empty(t, changes)
 }
 
 func TestAdoTools_MissingParams(t *testing.T) {
@@ -1799,7 +1814,7 @@ func TestAdoTools_MissingParams(t *testing.T) {
 	})
 
 	t.Run("AdoGetBuildChanges", func(t *testing.T) {
-		_, err := m.AdoGetBuildChanges(ctx, map[string]interface{}{}, nil)
+		_, err := m.GetBuildChanges(ctx, map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -1888,8 +1903,14 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 		{"AdoGetPrStatuses", func() (tools.ToolResult, error) { return m.AdoGetPrStatuses(ctx, args, nil) }},
 		{"AdoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.AdoGetPrPolicyEvaluations(ctx, args, nil) }},
 		{"AdoListBranchPolicies", func() (tools.ToolResult, error) { return m.AdoListBranchPolicies(ctx, args, nil) }},
-		{"AdoGetBuildTimeline", func() (tools.ToolResult, error) { return m.AdoGetBuildTimeline(ctx, args, nil) }},
-		{"AdoGetBuildChanges", func() (tools.ToolResult, error) { return m.AdoGetBuildChanges(ctx, args, nil) }},
+		{"AdoGetBuildTimeline", func() (tools.ToolResult, error) {
+			_, err := m.GetBuildTimeline(ctx, args)
+			return tools.ToolResult{}, err
+		}},
+		{"AdoGetBuildChanges", func() (tools.ToolResult, error) {
+			_, err := m.GetBuildChanges(ctx, args)
+			return tools.ToolResult{}, err
+		}},
 	}
 
 	for _, tt := range tests {
