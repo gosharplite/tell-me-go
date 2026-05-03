@@ -145,6 +145,19 @@ func (m *releaseManager) startHeartbeat(hb chan<- struct{}, done <-chan struct{}
 	}
 }
 
+// scanAccumulator collects findings during secret scanning.
+type scanAccumulator struct {
+	findings     []string
+	secretsFound bool
+}
+
+func (a *scanAccumulator) addFindings(matches []string) {
+	a.findings = append(a.findings, matches...)
+	if len(matches) > 0 {
+		a.secretsFound = true
+	}
+}
+
 // secretScanner implementation
 type secretScanner struct {
 	root string
@@ -152,6 +165,23 @@ type secretScanner struct {
 }
 
 func (s *secretScanner) Name() string { return "Security Scan" }
+
+func (s *secretScanner) scanFile(ctx context.Context, path string, info os.FileInfo, err error, patterns []*regexp.Regexp, acc *scanAccumulator) error {
+	if err != nil || info.IsDir() || s.isIgnored(path) {
+		return nil
+	}
+	content, err := s.fs.ReadFile(ctx, path)
+	if err != nil {
+		return nil
+	}
+	if persistence.IsBinary(content) {
+		return nil
+	}
+	matches := s.scanContent(content, path, patterns)
+	acc.addFindings(matches)
+	return nil
+}
+
 func (s *secretScanner) Run(ctx context.Context) checkResult {
 	secretPatterns := []string{
 		`sk-[a-zA-Z0-9]{32,}`,                                      // OpenAI/Generic
@@ -167,34 +197,17 @@ func (s *secretScanner) Run(ctx context.Context) checkResult {
 		compiledPatterns[i] = regexp.MustCompile(p)
 	}
 
-	secretsFound := false
-	var findings []string
-
+	acc := &scanAccumulator{}
 	err := s.fs.Walk(ctx, s.root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || s.isIgnored(path) {
-			return nil
-		}
-		content, err := s.fs.ReadFile(ctx, path)
-		if err != nil {
-			return nil
-		}
-		if persistence.IsBinary(content) {
-			return nil
-		}
-		matches := s.scanContent(content, path, compiledPatterns)
-		findings = append(findings, matches...)
-		if len(matches) > 0 {
-			secretsFound = true
-		}
-		return nil
+		return s.scanFile(ctx, path, info, err, compiledPatterns, acc)
 	})
 
 	if err != nil {
 		return checkResult{OK: false, Message: fmt.Sprintf("Scan interrupted: %v", err)}
 	}
 
-	if secretsFound {
-		return checkResult{OK: false, Message: strings.Join(findings, "\n- [FAIL] ")}
+	if acc.secretsFound {
+		return checkResult{OK: false, Message: strings.Join(acc.findings, "\n- [FAIL] ")}
 	}
 	return checkResult{OK: true, Message: "No common secrets detected."}
 }

@@ -107,6 +107,17 @@ func (m *JiraManager) prepareSearchURL(jql string, limit int) (*url.URL, error) 
 	return u, nil
 }
 
+func (m *JiraManager) buildGetIssueURL(issueKey string) (string, error) {
+	if issueKey == "" {
+		return "", fmt.Errorf("issue_key argument is required")
+	}
+	u, err := url.Parse(m.provider.baseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid base url: %w", err)
+	}
+	return u.JoinPath("/rest/api/3/issue", issueKey).String(), nil
+}
+
 func (m *JiraManager) formatSearchResponse(body io.ReadCloser) (string, error) {
 	var responseData struct {
 		Issues []struct {
@@ -158,17 +169,12 @@ func (m *JiraManager) JiraGetIssue(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, err
 	}
 
-	if params.IssueKey == "" {
-		return tools.ToolResult{}, fmt.Errorf("issue_key argument is required")
-	}
-
-	u, err := url.Parse(m.provider.baseURL)
+	requestURL, err := m.buildGetIssueURL(params.IssueKey)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("invalid base url: %w", err)
+		return tools.ToolResult{}, err
 	}
-	u = u.JoinPath("/rest/api/3/issue", params.IssueKey)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -180,15 +186,8 @@ func (m *JiraManager) JiraGetIssue(ctx context.Context, args map[string]interfac
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return tools.ToolResult{}, fmt.Errorf("jira issue not found: %s", params.IssueKey)
-	}
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return tools.ToolResult{}, fmt.Errorf("jira API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
-		}
-		return tools.ToolResult{}, fmt.Errorf("jira API returned status: %s, body: %s", resp.Status, string(body))
+	if err := m.checkIssueResponse(resp, params.IssueKey); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	resultText, err := m.formatGetIssueResponse(resp.Body)
@@ -197,6 +196,20 @@ func (m *JiraManager) JiraGetIssue(ctx context.Context, args map[string]interfac
 	}
 
 	return tools.ToolResult{Text: resultText}, nil
+}
+
+func (m *JiraManager) checkIssueResponse(resp *http.Response, issueKey string) error {
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("jira issue not found: %s", issueKey)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("jira API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
+		}
+		return fmt.Errorf("jira API returned status: %s, body: %s", resp.Status, string(body))
+	}
+	return nil
 }
 
 func (m *JiraManager) formatGetIssueResponse(body io.ReadCloser) (string, error) {

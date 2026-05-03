@@ -156,28 +156,20 @@ func (m *AdoManager) adoGetFileContent(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("parsing get file content args: %w", err)
 	}
 
-	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.Path == "" {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and path are required")
+	if err := validateGetFileContentParams(params.Organization, params.Project, params.Repository, params.Path); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	if params.Version == "" {
 		params.Version = "main"
 	}
 
-	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/items",
-		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
+	requestURL, err := m.buildGetFileContentURL(params.Organization, params.Project, params.Repository, params.Path, params.Version)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
+		return tools.ToolResult{}, err
 	}
 
-	q := u.Query()
-	q.Set("path", params.Path)
-	q.Set("versionDescriptor.version", params.Version)
-	q.Set("$format", "text")
-	q.Set("api-version", "7.1")
-	u.RawQuery = q.Encode()
-
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u.String(), nil, map[string]string{"Accept": "*/*"})
+	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get file content request: %w", err)
 	}
@@ -189,6 +181,28 @@ func (m *AdoManager) adoGetFileContent(ctx context.Context, args map[string]inte
 	}
 
 	return tools.ToolResult{Text: string(content)}, nil
+}
+
+func validateGetFileContentParams(org, project, repo, path string) error {
+	if org == "" || project == "" || repo == "" || path == "" {
+		return fmt.Errorf("organization, project, repository, and path are required")
+	}
+	return nil
+}
+
+func (m *AdoManager) buildGetFileContentURL(org, project, repo, path, version string) (string, error) {
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/items",
+		m.BaseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse base URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("path", path)
+	q.Set("versionDescriptor.version", version)
+	q.Set("$format", "text")
+	q.Set("api-version", "7.1")
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 type adoRepositoryItemsResponse struct {
