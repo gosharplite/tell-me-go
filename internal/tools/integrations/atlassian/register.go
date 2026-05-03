@@ -36,7 +36,7 @@ func RegisterConfluence(r tools.Registry, sm security.Manager, client tools.HTTP
 				},
 			},
 		},
-	}, m.ConfluenceSearch); err != nil {
+	}, m.confluenceSearch); err != nil {
 		return err
 	}
 
@@ -83,7 +83,7 @@ func RegisterConfluence(r tools.Registry, sm security.Manager, client tools.HTTP
 			},
 			Required: []string{"page_id", "markdown_content"},
 		},
-	}, m.ConfluenceWrite, tools.ToolOptions{Serial: true}); err != nil {
+	}, m.confluenceWrite, tools.ToolOptions{Serial: true}); err != nil {
 		return err
 	}
 	return nil
