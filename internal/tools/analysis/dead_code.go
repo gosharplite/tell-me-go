@@ -68,6 +68,14 @@ func newDeadCodeAnalyzer(sp security.PathValidator, idx symbolIndex) *defaultDea
 	return &defaultDeadCodeAnalyzer{SP: sp, idx: idx}
 }
 
+// NewDeadCodeAnalyzerForCLI creates a DeadCodeAnalyzer wired for CLI use.
+// It loads packages from the current working directory and is intended
+// for Makefile/CI integration, not the agent tool registry.
+func NewDeadCodeAnalyzerForCLI(sp security.PathValidator) *defaultDeadCodeAnalyzer {
+	idx, _ := newIndexer(".")
+	return newDeadCodeAnalyzer(sp, idx)
+}
+
 // FindOrphanedSymbols identifies exported symbols with zero inbound references within the module.
 func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {

@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand lint dead-code check check-full
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -34,6 +34,10 @@ help:
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
+	@echo "  make lint       - Run golangci-lint static analysis"
+	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
+	@echo "  make check      - Run full quality pipeline: fmt tidy build lint test dead-code test-coverage"
+	@echo "  make check-full - Run full quality pipeline including race detection"
 
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
@@ -242,6 +246,42 @@ tidy:
 
 fmt:
 	go fmt ./...
+
+lint:
+	golangci-lint run ./...
+
+dead-code:
+	go run ./cmd/deadcode
+
+# check runs the full quality pipeline in sequence, stopping on first failure.
+# Fast/cheap checks run first so problems surface quickly.
+check: fmt tidy build
+	@echo "=== lint ==="
+	@$(MAKE) lint
+	@echo "=== test ==="
+	@$(MAKE) test
+	@echo "=== dead-code ==="
+	@$(MAKE) dead-code
+	@echo "=== test-coverage ==="
+	@$(MAKE) test-coverage
+	@echo ""
+	@echo "All checks passed."
+
+# check-full runs the full quality pipeline including race detection.
+# Use this before pushing or merging.
+check-full: fmt tidy build
+	@echo "=== lint ==="
+	@$(MAKE) lint
+	@echo "=== test ==="
+	@$(MAKE) test
+	@echo "=== dead-code ==="
+	@$(MAKE) dead-code
+	@echo "=== test-race ==="
+	@$(MAKE) test-race
+	@echo "=== test-coverage ==="
+	@$(MAKE) test-coverage
+	@echo ""
+	@echo "All checks passed (including race detection)."
 
 # Generate coverage report excluding mocks and generated files
 .PHONY: test-coverage
