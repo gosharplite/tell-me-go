@@ -107,7 +107,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			"space_id": "SPACE1",
 		}
 
-		result, err := m.ConfluenceSearch(context.Background(), args, nil)
+		result, err := m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Found pages:")
 		assert.Contains(t, result.Text, "Test Page 1 (ID: 1)")
@@ -147,7 +147,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			"space_id": "SPACE1",
 		}
 
-		result, err := m.ConfluenceSearch(context.Background(), args, nil)
+		result, err := m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Space Page (ID: 3)")
 		mockClient.AssertExpectations(t)
@@ -170,7 +170,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			"title":    "missing",
 			"space_id": "123", // Numeric, skips resolution
 		}
-		result, err := m.ConfluenceSearch(context.Background(), args, nil)
+		result, err := m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Searched the 1 most recently modified pages")
 		assert.Contains(t, result.Text, "found no pages containing 'missing'")
@@ -224,7 +224,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			"space_id": spaceID,
 		}
 
-		result, err := m.ConfluenceSearch(context.Background(), args, nil)
+		result, err := m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "[cicd] Azure DevOps (ID: 3)")
 		mockClient.AssertExpectations(t)
@@ -234,7 +234,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		m, err := NewConfluenceManager(nil, nil)
 		assert.NoError(t, err)
 		args := map[string]interface{}{"title": "keyword"}
-		_, err = m.ConfluenceSearch(context.Background(), args, nil)
+		_, err = m.confluenceSearch(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "space_id is required")
 	})
@@ -254,7 +254,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			"title":    "error",
 			"space_id": "123",
 		}
-		_, err = m.ConfluenceSearch(context.Background(), args, nil)
+		_, err = m.confluenceSearch(context.Background(), args, nil)
 		if assert.Error(t, err) {
 			assert.Contains(t, err.Error(), "confluence API returned status: 403 Forbidden")
 		}
@@ -286,7 +286,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			"limit":    100,
 		}
 
-		_, err = m.ConfluenceSearch(context.Background(), args, nil)
+		_, err = m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		mockClient.AssertNumberOfCalls(t, "Do", 2)
 	})
@@ -310,7 +310,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			"limit":    5000,
 		}
 
-		result, err := m.ConfluenceSearch(context.Background(), args, nil)
+		result, err := m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "capped at 1000 pages")
 		mockClient.AssertNumberOfCalls(t, "Do", 20)
@@ -511,7 +511,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 			"update_message":   "testing update",
 		}
 
-		result, err := m.ConfluenceWrite(context.Background(), args, nil)
+		result, err := m.confluenceWrite(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Successfully updated Confluence page 123 to version 6")
 		mockClient.AssertExpectations(t)
@@ -545,7 +545,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 			"markdown_content": "some content",
 		}
 
-		result, err := m.ConfluenceWrite(context.Background(), args, nil)
+		result, err := m.confluenceWrite(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "conflict: page version changed")
 	})
@@ -634,7 +634,7 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 			"title":    "nothing",
 			"space_id": "123",
 		}
-		result, err := m.ConfluenceSearch(context.Background(), args, nil)
+		result, err := m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "found no pages containing 'nothing'")
 	})
@@ -655,7 +655,7 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 			"title":    "nothing",
 			"space_id": "123",
 		}
-		result, err := m.ConfluenceSearch(context.Background(), args, nil)
+		result, err := m.confluenceSearch(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "found no pages containing 'nothing'")
 	})
@@ -815,7 +815,7 @@ func TestConfluenceManager_ConfluenceSearch_ResolveError(t *testing.T) {
 		"space_id": "BADSPACE",
 	}
 
-	_, err = m.ConfluenceSearch(context.Background(), args, nil)
+	_, err = m.confluenceSearch(context.Background(), args, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to resolve space ID for 'BADSPACE'")
 }
@@ -920,7 +920,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 	t.Run("UnmarshalArgs Error Search", func(t *testing.T) {
 		m, err := NewConfluenceManager(nil, nil)
 		assert.NoError(t, err)
-		_, err = m.ConfluenceSearch(context.Background(), map[string]interface{}{"limit": "invalid"}, nil)
+		_, err = m.confluenceSearch(context.Background(), map[string]interface{}{"limit": "invalid"}, nil)
 		assert.Error(t, err)
 	})
 
@@ -934,7 +934,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 	t.Run("UnmarshalArgs Error Write", func(t *testing.T) {
 		m, err := NewConfluenceManager(nil, nil)
 		assert.NoError(t, err)
-		_, err = m.ConfluenceWrite(context.Background(), map[string]interface{}{"page_id": 123}, nil)
+		_, err = m.confluenceWrite(context.Background(), map[string]interface{}{"page_id": 123}, nil)
 		assert.Error(t, err)
 	})
 
@@ -942,7 +942,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		t.Setenv("ATLASSIAN_BASE_URL", "http://bad\x7furl")
 		m, err := NewConfluenceManager(nil, nil)
 		if err == nil {
-			_, err = m.ConfluenceSearch(context.Background(), map[string]interface{}{"space_id": "123"}, nil)
+			_, err = m.confluenceSearch(context.Background(), map[string]interface{}{"space_id": "123"}, nil)
 		}
 		require.Error(t, err)
 		// Error could be from constructor or method
@@ -993,7 +993,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "")
 		m, err := NewConfluenceManager(nil, nil)
 		assert.NoError(t, err)
-		_, err = m.ConfluenceWrite(context.Background(), map[string]interface{}{"page_id": "123", "markdown_content": "test"}, nil)
+		_, err = m.confluenceWrite(context.Background(), map[string]interface{}{"page_id": "123", "markdown_content": "test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "missing ATLASSIAN_EMAIL")
 	})

@@ -114,7 +114,7 @@ func TestListPipelines(t *testing.T) {
 			m := NewADOManager(sm, opts...)
 
 			ctx := context.Background()
-			pipelines, err := m.ListPipelines(ctx, tt.args)
+			pipelines, err := m.listPipelines(ctx, tt.args)
 
 			if tt.wantError {
 				assert.Error(t, err)
@@ -162,7 +162,7 @@ func TestFormatPipelineList(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			formatter := NewPipelineFormatter()
+			formatter := newPipelineFormatter()
 			got := formatter.FormatPipelineList(tt.pipelines)
 			assert.Equal(t, tt.want, got)
 		})
@@ -188,7 +188,7 @@ func TestFormatBranchRef(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			formatter := NewPipelineFormatter()
+			formatter := newPipelineFormatter()
 			if got := formatter.FormatBranchRef(tt.input); got != tt.want {
 				t.Errorf("FormatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
 			}
@@ -233,7 +233,7 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.CreatePipeline(ctx, args)
+	result, err := m.createPipeline(ctx, args)
 	require.NoError(t, err)
 	assert.False(t, result.AlreadyExisted)
 	assert.False(t, result.Cancelled)
@@ -285,7 +285,7 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 		},
 	}
 
-	result, err := m.CreatePipeline(ctx, args)
+	result, err := m.createPipeline(ctx, args)
 	require.NoError(t, err)
 	assert.False(t, result.AlreadyExisted)
 	assert.False(t, result.Cancelled)

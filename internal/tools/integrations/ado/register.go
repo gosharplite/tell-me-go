@@ -25,7 +25,7 @@ func marshalIndentResult(v interface{}) (tools.ToolResult, error) {
 // appendTruncationNote appends a truncation advisory if the log content was
 // clipped after TotalLines lines, helping the LLM understand the data may be
 // incomplete.
-func appendTruncationNote(c LogContent) string {
+func appendTruncationNote(c logContent) string {
 	if !c.Truncated {
 		return c.Content
 	}
@@ -42,7 +42,7 @@ func Register(r tools.Registry, sm security.Manager, client tools.HTTPClient) er
 		opts = append(opts, WithToken(token))
 	}
 	m := NewADOManager(sm, opts...)
-	f := NewPipelineFormatter()
+	f := newPipelineFormatter()
 
 	for _, fn := range []func(tools.Registry, *AdoManager, PipelineFormatter) error{
 		registerPullRequests,

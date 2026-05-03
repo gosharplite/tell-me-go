@@ -10,7 +10,7 @@ import (
 )
 
 // registerBuilds registers the Build-category ADO tools (timeline, task log, build changes).
-// Handlers: m.GetBuildTimeline, m.GetTaskLog, m.GetBuildChanges (defined in pipeline_runs.go / pipeline_crud.go).
+// Handlers: m.GetBuildTimeline, m.getTaskLog, m.getBuildChanges (defined in pipeline_runs.go / pipeline_crud.go).
 func registerBuilds(r tools.Registry, m *AdoManager, f PipelineFormatter) error {
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration
@@ -62,7 +62,7 @@ func registerBuilds(r tools.Registry, m *AdoManager, f PipelineFormatter) error 
 				},
 			},
 			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				content, err := m.GetTaskLog(ctx, args, hb)
+				content, err := m.getTaskLog(ctx, args, hb)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}
@@ -85,7 +85,7 @@ func registerBuilds(r tools.Registry, m *AdoManager, f PipelineFormatter) error 
 				},
 			},
 			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				changes, err := m.GetBuildChanges(ctx, args)
+				changes, err := m.getBuildChanges(ctx, args)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}

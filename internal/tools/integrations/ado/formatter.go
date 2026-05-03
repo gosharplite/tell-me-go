@@ -27,8 +27,8 @@ type PipelineFormatter interface {
 // concrete type.
 type pipelineFormatter struct{}
 
-// NewPipelineFormatter returns the default PipelineFormatter implementation.
+// newPipelineFormatter returns the default PipelineFormatter implementation.
 // Exported so the registration layer (and tests) can construct one.
-func NewPipelineFormatter() PipelineFormatter {
+func newPipelineFormatter() PipelineFormatter {
 	return &pipelineFormatter{}
 }
