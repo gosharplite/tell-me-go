@@ -4,6 +4,7 @@
 package anthropic
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -12,7 +13,10 @@ import (
 )
 
 func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
-	content := c.extractContent(resp)
+	content, err := c.extractContent(resp)
+	if err != nil {
+		return nil, nil, err
+	}
 	metrics := c.buildMetrics(resp, duration)
 
 	// Detect output-budget truncation. Anthropic returns
@@ -81,7 +85,7 @@ func checkTruncation(resp *messagesResponse) error {
 }
 
 // extractContent deserializes response content blocks into domain llm.Part objects.
-func (c *client) extractContent(resp *messagesResponse) *llm.Content {
+func (c *client) extractContent(resp *messagesResponse) (*llm.Content, error) {
 	content := &llm.Content{
 		Role:  "model",
 		Parts: make([]*llm.Part, 0, len(resp.Content)),
@@ -100,9 +104,9 @@ func (c *client) extractContent(resp *messagesResponse) *llm.Content {
 				ThoughtSignature: []byte(block.Signature),
 			})
 		case "tool_use":
-			var args map[string]interface{}
-			if m, ok := block.Input.(map[string]interface{}); ok {
-				args = m
+			args, err := parseToolUseArgs(block)
+			if err != nil {
+				return nil, err
 			}
 			content.Parts = append(content.Parts, &llm.Part{
 				FunctionCall: &llm.FunctionCall{
@@ -115,7 +119,36 @@ func (c *client) extractContent(resp *messagesResponse) *llm.Content {
 	}
 
 	content.Validate() // Final boundary sanitization
-	return content
+	return content, nil
+}
+
+// parseToolUseArgs extracts a map from a contentBlock's Input field.
+// When the Input is already a map (standard JSON decoder path), it is
+// returned directly. When it arrives as a raw JSON string (e.g., from
+// certain streaming transports or proxy layers), the string is
+// unmarshalled. Malformed JSON is wrapped as llm.ErrTransient because
+// it is a provider-side quality issue that often resolves on retry.
+func parseToolUseArgs(block contentBlock) (map[string]interface{}, error) {
+	if m, ok := block.Input.(map[string]interface{}); ok {
+		return m, nil
+	}
+
+	s, ok := block.Input.(string)
+	if !ok {
+		// Not a map and not a string — return nil args without error
+		// (e.g., null input from a tool_use block with no arguments).
+		return nil, nil
+	}
+
+	if s == "" || s == "{}" {
+		return nil, nil
+	}
+
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(s), &args); err != nil {
+		return nil, fmt.Errorf("%w: failed to unmarshal tool input %q: %w", llm.ErrTransient, truncate(s, 200), err)
+	}
+	return args, nil
 }
 
 // buildMetrics assembles llm.Metrics with Vertex AI-specific token accounting and traffic type resolution.
@@ -181,4 +214,12 @@ func (c *client) resolveTrafficType(resp *messagesResponse) string {
 	}
 
 	return ""
+}
+
+// truncate returns a string truncated to n characters with "..." appended.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

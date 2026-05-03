@@ -483,7 +483,7 @@ func (c *client) appendToolCall(content *llm.Content, id, name, argsStr string) 
 	var args map[string]interface{}
 	if argsStr != "" && argsStr != "{}" {
 		if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
-			return fmt.Errorf("failed to unmarshal tool arguments: %w", err)
+			return fmt.Errorf("%w: failed to unmarshal tool arguments %q: %w", llm.ErrTransient, truncate(argsStr, 200), err)
 		}
 	}
 	if name == "" && args == nil {
@@ -528,6 +528,14 @@ func (c *client) ResetConnections() {
 	if closer, ok := c.transport.(idleConnectionCloser); ok {
 		closer.CloseIdleConnections()
 	}
+}
+
+// truncate returns a string truncated to n characters with "..." appended.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // marshalArgs converts tool arguments map to a JSON string.
