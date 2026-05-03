@@ -172,6 +172,18 @@ func (c *Config) ResolveContextWindow() int {
 	return maxTokens
 }
 
+// updateBestMatch checks whether candidate key k is a valid match for target
+// and, if so, replaces bestV/maxLen with it when it's longer than the current best.
+func updateBestMatch[T any](k, target string, v T, isValid func(T) bool, bestV *T, found *bool, maxLen *int) {
+	if k != "default" && strings.Contains(target, k) && isValid(v) {
+		if !*found || len(k) > *maxLen {
+			*maxLen = len(k)
+			*bestV = v
+			*found = true
+		}
+	}
+}
+
 // findBestMatch encapsulates the priority matching logic: exact match first, then substring match.
 func findBestMatch[T any](m map[string]T, key string, isValid func(T) bool) (T, bool) {
 	if val, ok := m[key]; ok && isValid(val) {
@@ -183,13 +195,7 @@ func findBestMatch[T any](m map[string]T, key string, isValid func(T) bool) (T, 
 	var maxLen int
 
 	for k, v := range m {
-		if k != "default" && strings.Contains(key, k) && isValid(v) {
-			if !found || len(k) > maxLen {
-				maxLen = len(k)
-				bestV = v
-				found = true
-			}
-		}
+		updateBestMatch(k, key, v, isValid, &bestV, &found, &maxLen)
 	}
 
 	if found {

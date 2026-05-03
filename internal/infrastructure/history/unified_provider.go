@@ -130,6 +130,33 @@ func (p *unifiedProvider) processHistoryItem(dto ports.HistoryViewDTO, skipSumma
 	return append(results, dto)
 }
 
+// collectToolCalls appends function call/response names from a part to the toolCalls slice.
+func collectToolCalls(part *llm.Part, toolCalls *[]string) {
+	if part.FunctionCall != nil {
+		*toolCalls = append(*toolCalls, part.FunctionCall.Name)
+	}
+	if part.FunctionResponse != nil {
+		*toolCalls = append(*toolCalls, part.FunctionResponse.Name)
+	}
+}
+
+// writePartPreview appends text, inline-data markers, and asset markers from a part
+// to the preview builder.
+func writePartPreview(part *llm.Part, preview *strings.Builder) {
+	if part.Text != "" {
+		preview.WriteString(part.Text)
+	}
+
+	// Mask large binary data
+	if part.InlineData != nil && len(part.InlineData.Data) > 0 {
+		preview.WriteString(" [Image Attached] ")
+	}
+
+	if part.AssetID != "" {
+		fmt.Fprintf(preview, " [Attached Asset: %s] ", part.AssetID)
+	}
+}
+
 func (p *unifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryViewDTO {
 	dto := ports.HistoryViewDTO{
 		Role:       c.Role,
@@ -151,25 +178,8 @@ func (p *unifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryView
 			continue
 		}
 
-		if part.FunctionCall != nil {
-			toolCalls = append(toolCalls, part.FunctionCall.Name)
-		}
-		if part.FunctionResponse != nil {
-			toolCalls = append(toolCalls, part.FunctionResponse.Name)
-		}
-
-		if part.Text != "" {
-			preview.WriteString(part.Text)
-		}
-
-		// Mask large binary data
-		if part.InlineData != nil && len(part.InlineData.Data) > 0 {
-			preview.WriteString(" [Image Attached] ")
-		}
-
-		if part.AssetID != "" {
-			fmt.Fprintf(&preview, " [Attached Asset: %s] ", part.AssetID)
-		}
+		collectToolCalls(part, &toolCalls)
+		writePartPreview(part, &preview)
 	}
 
 	dto.ContentPreview = strings.TrimSpace(preview.String())

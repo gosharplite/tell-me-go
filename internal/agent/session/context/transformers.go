@@ -441,29 +441,25 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 	return nil
 }
 
-func propagateSignatureToMessage(content *llm.Content) (bool, error) {
-	if content == nil {
-		return false, fmt.Errorf("propagateSignatureToMessage: %w", ErrInvalidPayload)
-	}
-	var signature []byte
-	// First pass: find the signature
-	for i, p := range content.Parts {
+// findThoughtSignature scans parts for the first non-empty ThoughtSignature.
+// Returns nil if none found.
+func findThoughtSignature(parts []*llm.Part) ([]byte, error) {
+	for i, p := range parts {
 		if p == nil {
-			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", ErrInvalidPayload, i)
+			return nil, fmt.Errorf("propagateSignatureToMessage: %w at index %d", ErrInvalidPayload, i)
 		}
 		if len(p.ThoughtSignature) > 0 {
-			signature = p.ThoughtSignature
-			break
+			return p.ThoughtSignature, nil
 		}
 	}
+	return nil, nil
+}
 
-	if len(signature) == 0 {
-		return false, nil
-	}
-
+// propagateSignatureToCalls attaches the given signature to any FunctionCall
+// parts that don't already have one. Returns true if any part was modified.
+func propagateSignatureToCalls(parts []*llm.Part, signature []byte) (bool, error) {
 	modified := false
-	// Second pass: attach it to function calls if missing
-	for i, p := range content.Parts {
+	for i, p := range parts {
 		if p == nil {
 			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", ErrInvalidPayload, i)
 		}
@@ -475,6 +471,21 @@ func propagateSignatureToMessage(content *llm.Content) (bool, error) {
 		}
 	}
 	return modified, nil
+}
+
+func propagateSignatureToMessage(content *llm.Content) (bool, error) {
+	if content == nil {
+		return false, fmt.Errorf("propagateSignatureToMessage: %w", ErrInvalidPayload)
+	}
+
+	signature, err := findThoughtSignature(content.Parts)
+	if err != nil {
+		return false, err
+	}
+	if len(signature) == 0 {
+		return false, nil
+	}
+	return propagateSignatureToCalls(content.Parts, signature)
 }
 
 func (t *thoughtSignaturePropagator) Priority() int { return 6 } // Run after contentCleaner (5)

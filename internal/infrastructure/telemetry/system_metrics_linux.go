@@ -62,6 +62,24 @@ func (p *linuxMetricsProvider) GetCPUStats() (int64, int64) {
 	return getRuntimeCPUStats()
 }
 
+// parseMeminfoLine extracts memory values from a single /proc/meminfo line.
+// Returns true when both MemTotal and MemAvailable have been found.
+func parseMeminfoLine(line string, memTotal, memAvailable *int64) bool {
+	if strings.HasPrefix(line, "MemTotal:") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			*memTotal, _ = strconv.ParseInt(fields[1], 10, 64)
+		}
+	} else if strings.HasPrefix(line, "MemAvailable:") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			*memAvailable, _ = strconv.ParseInt(fields[1], 10, 64)
+		}
+	}
+
+	return *memTotal > 0 && *memAvailable > 0
+}
+
 func (p *linuxMetricsProvider) GetMemoryPercent() float64 {
 	f, err := os.Open(filepath.Join(p.getRoot(), "proc", "meminfo"))
 	if err != nil {
@@ -72,19 +90,7 @@ func (p *linuxMetricsProvider) GetMemoryPercent() float64 {
 	var memTotal, memAvailable int64
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "MemTotal:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				memTotal, _ = strconv.ParseInt(fields[1], 10, 64)
-			}
-		} else if strings.HasPrefix(line, "MemAvailable:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				memAvailable, _ = strconv.ParseInt(fields[1], 10, 64)
-			}
-		}
-		if memTotal > 0 && memAvailable > 0 {
+		if parseMeminfoLine(scanner.Text(), &memTotal, &memAvailable) {
 			break
 		}
 	}

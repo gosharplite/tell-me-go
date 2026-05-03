@@ -366,14 +366,18 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 	}
 
 	// SECURE EXECUTION: Use the executor for portability and redirection handling
-	res, err := r.executor.RunCommand(ctx, []string{"diff", "-u", "--", resolved1, resolved2}, executionConfig{})
+	res, runErr := r.executor.RunCommand(ctx, []string{"diff", "-u", "--", resolved1, resolved2}, executionConfig{})
+	return r.interpretDiffResult(res, runErr)
+}
 
-	if len(res.Output) == 0 && err == nil {
+// interpretDiffResult converts a raw diff execution result into a ToolResult.
+func (r *fileReader) interpretDiffResult(res executionResult, runErr error) (tools.ToolResult, error) {
+	if len(res.Output) == 0 && runErr == nil {
 		return tools.ToolResult{Text: "Files are identical."}, nil
 	}
 
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("diff failed: %w", err)
+	if runErr != nil {
+		return tools.ToolResult{}, fmt.Errorf("diff failed: %w", runErr)
 	}
 
 	if res.ExitCode != 0 && res.ExitCode != 1 { // 1 is normal for diff finding differences

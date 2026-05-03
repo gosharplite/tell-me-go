@@ -23,6 +23,31 @@ func (r *stdUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status stri
 	return r.startSpinnerInternal(ctx, status, true)
 }
 
+// initCPUTracking initializes CPU and memory tracking at spinner start.
+func (r *stdUIRenderer) initCPUTracking(showMetrics bool, startTime time.Time) {
+	if !showMetrics {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lastCPUTime, r.lastIdleTime = r.metricsProvider.GetCPUStats()
+	r.lastSampleTime = startTime
+	r.lastCPUPercent = 0.0
+	r.lastMemPercent = r.metricsProvider.GetMemoryPercent()
+}
+
+// cleanupOnStop clears the loading indicator if the spinner hasn't already been stopped.
+func (r *stdUIRenderer) cleanupOnStop(ui uiState, stopped *atomic.Bool) {
+	if stopped.CompareAndSwap(false, true) {
+		r.clearLoadingIndicator(ui, false)
+	}
+}
+func (r *stdUIRenderer) handleSpinnerTick(ui uiState, frames []string, idx *int, startTime time.Time, status string, showMetrics bool, stopped *atomic.Bool) {
+	if !stopped.Load() {
+		r.updateIndicatorFrame(ui, frames, idx, startTime, status, showMetrics, stopped)
+	}
+}
+
 func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string, showMetrics bool) func() {
 	ui := r.getUIState()
 	r.mu.RLock()
@@ -40,14 +65,7 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	waitDone := make(chan struct{})
 
 	// Initialize CPU tracking on start
-	if showMetrics {
-		r.mu.Lock()
-		r.lastCPUTime, r.lastIdleTime = r.metricsProvider.GetCPUStats()
-		r.lastSampleTime = startTime
-		r.lastCPUPercent = 0.0
-		r.lastMemPercent = r.metricsProvider.GetMemoryPercent()
-		r.mu.Unlock()
-	}
+	r.initCPUTracking(showMetrics, startTime)
 
 	// Draw the first frame synchronously to avoid 200ms delay.
 	r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics, nil)
@@ -66,11 +84,7 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	go func() {
 		defer close(waitDone)
 		// Cleanup on context cancellation if stopFunc wasn't called
-		defer func() {
-			if stopped.CompareAndSwap(false, true) {
-				r.clearLoadingIndicator(ui, false)
-			}
-		}()
+		defer r.cleanupOnStop(ui, &stopped)
 
 		ticker := ui.clock.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
@@ -82,9 +96,7 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 			case <-done:
 				return
 			case <-ticker.C():
-				if !stopped.Load() {
-					r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics, &stopped)
-				}
+				r.handleSpinnerTick(ui, frames, &idx, startTime, status, showMetrics, &stopped)
 			}
 		}
 	}()

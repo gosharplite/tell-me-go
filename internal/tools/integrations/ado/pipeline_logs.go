@@ -301,6 +301,16 @@ func streamTail(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}
 // Foundation
 // ---------------------------------------------------------------------------
 
+// sendScannerHeartbeat sends a heartbeat every 1000 lines scanned.
+func sendScannerHeartbeat(hb chan<- struct{}, count int) {
+	if count%1000 == 0 && hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
+}
+
 func scanLog(ctx context.Context, reader io.Reader, hb chan<- struct{}, processFn func(line string) (bool, error)) (int, error) {
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
@@ -314,12 +324,7 @@ func scanLog(ctx context.Context, reader io.Reader, hb chan<- struct{}, processF
 		}
 
 		count++
-		if count%1000 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
+		sendScannerHeartbeat(hb, count)
 
 		continueScan, err := processFn(scanner.Text())
 		if err != nil {

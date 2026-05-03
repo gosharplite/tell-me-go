@@ -37,6 +37,34 @@ func newTaskRepository(fs persistence.FileSystem, filePath string, logger *slog.
 	}
 }
 
+// parseJSONLTasks parses tasks from JSONL format (one JSON object per line).
+// Corrupted lines are skipped; debug logging is emitted when TELL_ME_DEBUG=migration.
+func parseJSONLTasks(trimmed string, filePath string, logger *slog.Logger) []ports.Task {
+	var loaded []ports.Task
+	scanner := bufio.NewScanner(strings.NewReader(trimmed))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var t ports.Task
+		if err := json.Unmarshal([]byte(line), &t); err != nil {
+			// Skip corrupted lines in legacy tasks to ensure boot continues.
+			// This handles cases where log lines or other non-JSON data may have leaked into the file.
+			// [DEBUG] Log corrupted lines to help identify the source of leakage on Windows.
+			if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "migration") {
+				logger.Debug("corrupted task line during migration",
+					slog.String("path", filePath),
+					slog.String("line", line),
+					slog.Any("error", err))
+			}
+			continue
+		}
+		loaded = append(loaded, t)
+	}
+	return loaded
+}
+
 func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, error) {
 	if _, err := r.fs.Stat(ctx, r.filePath); os.IsNotExist(err) {
 		return nil, nil
@@ -62,29 +90,7 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, err
 	}
 
 	// Fallback to JSONL format
-	var loaded []ports.Task
-	scanner := bufio.NewScanner(strings.NewReader(trimmed))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var t ports.Task
-		if err := json.Unmarshal([]byte(line), &t); err != nil {
-			// Skip corrupted lines in legacy tasks to ensure boot continues.
-			// This handles cases where log lines or other non-JSON data may have leaked into the file.
-			// [DEBUG] Log corrupted lines to help identify the source of leakage on Windows.
-			if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "migration") {
-				r.logger.Debug("corrupted task line during migration",
-					slog.String("path", r.filePath),
-					slog.String("line", line),
-					slog.Any("error", err))
-			}
-			continue
-		}
-		loaded = append(loaded, t)
-	}
-
+	loaded := parseJSONLTasks(trimmed, r.filePath, r.logger)
 	return loaded, nil
 }
 

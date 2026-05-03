@@ -531,6 +531,28 @@ func (p *pipeline) captureStderrAsync(wg *sync.WaitGroup, sp *streamProcessor, i
 	sp.appendErr(sp.stderrStr, scanner.Err())
 }
 
+// resolveAndValidateOutputPath converts a cleaned relative path to an absolute path,
+// validating that it does not escape the current working directory.
+// originalPath is used only for the error message.
+func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, error) {
+	if filepath.IsAbs(cleanedPath) {
+		return cleanedPath, nil
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	absPath := filepath.Join(cwd, cleanedPath)
+
+	rel, err := filepath.Rel(cwd, absPath)
+	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return "", fmt.Errorf("output file path cannot escape current directory: %q", originalPath)
+	}
+	return absPath, nil
+}
+
 func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, error) {
 	if config.OutputFile == "" {
 		return nil, nil
@@ -545,20 +567,10 @@ func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, erro
 	}
 	path = filepath.Clean(path)
 
-	// Robust security check: prevent escaping the current directory via relative paths.
-	if !filepath.IsAbs(path) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current directory: %w", err)
-		}
-
-		absPath := filepath.Join(cwd, path)
-
-		rel, err := filepath.Rel(cwd, absPath)
-		if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-			return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
-		}
-		path = absPath
+	var resolveErr error
+	path, resolveErr = resolveAndValidateOutputPath(path, config.OutputFile)
+	if resolveErr != nil {
+		return nil, resolveErr
 	}
 
 	flags := os.O_CREATE | os.O_WRONLY
