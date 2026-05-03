@@ -59,10 +59,8 @@ func (p *AtlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 	var lastResp *http.Response
 
 	for i := 0; i <= 3; i++ { // 0 is initial attempt, 1-3 are retries
-		if i > 0 {
-			if err := p.resetRequestBody(req); err != nil {
-				return nil, err
-			}
+		if err := p.maybeResetBody(req, i); err != nil {
+			return nil, err
 		}
 
 		resp, err := client.Do(req)
@@ -75,21 +73,33 @@ func (p *AtlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 		}
 
 		lastResp = resp
-		if i == 3 {
-			break
-		}
-
-		wait := p.GetWaitTime(resp, i)
 		_ = resp.Body.Close()
-
-		select {
-		case <-time.After(wait):
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		if err := p.waitForRetry(ctx, resp, i); err != nil {
+			return nil, err
 		}
 	}
 
 	return lastResp, nil
+}
+
+func (p *AtlassianProvider) maybeResetBody(req *http.Request, attempt int) error {
+	if attempt == 0 {
+		return nil
+	}
+	return p.resetRequestBody(req)
+}
+
+func (p *AtlassianProvider) waitForRetry(ctx context.Context, resp *http.Response, retryCount int) error {
+	if retryCount == 3 {
+		return nil // Last attempt exhausted, no wait needed
+	}
+	wait := p.GetWaitTime(resp, retryCount)
+	select {
+	case <-time.After(wait):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *AtlassianProvider) GetWaitTime(resp *http.Response, retryCount int) time.Duration {

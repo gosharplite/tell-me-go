@@ -68,6 +68,13 @@ type adoPullRequestDetail struct {
 	} `json:"repository"`
 }
 
+type prChangeEntry struct {
+	Item struct {
+		Path string `json:"path"`
+	} `json:"item"`
+	ChangeType string `json:"changeType"`
+}
+
 func (m *AdoManager) formatPullRequestDetail(pullRequestId int, prData adoPullRequestDetail) string {
 	var resultText strings.Builder
 	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d: %s\n", pullRequestId, prData.Title)
@@ -183,8 +190,8 @@ func (m *AdoManager) adoGetPrDiff(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, fmt.Errorf("parsing get pr diff args: %w", err)
 	}
 
-	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
+	if err := validateGetPrDiffParams(params.Organization, params.Project, params.Repository, params.PullRequestId); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/iterations/1/changes?api-version=7.1",
@@ -197,32 +204,35 @@ func (m *AdoManager) adoGetPrDiff(ctx context.Context, args map[string]interface
 	defer func() { _ = resp.Body.Close() }()
 
 	var changeData struct {
-		ChangeEntries []struct {
-			Item struct {
-				Path string `json:"path"`
-			} `json:"item"`
-			ChangeType string `json:"changeType"`
-		} `json:"changeEntries"`
+		ChangeEntries []prChangeEntry `json:"changeEntries"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&changeData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if len(changeData.ChangeEntries) == 0 {
-		return tools.ToolResult{Text: "No changes found in this pull request."}, nil
+	return tools.ToolResult{Text: formatPrDiffChanges(params.PullRequestId, changeData.ChangeEntries)}, nil
+}
+
+func validateGetPrDiffParams(org, project, repo string, prID int) error {
+	if org == "" || project == "" || repo == "" || prID == 0 {
+		return fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
+	return nil
+}
 
+func formatPrDiffChanges(pullRequestID int, changeEntries []prChangeEntry) string {
+	if len(changeEntries) == 0 {
+		return "No changes found in this pull request."
+	}
 	var resultText strings.Builder
-	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Changes Summary:\n", params.PullRequestId)
-	_, _ = fmt.Fprintf(&resultText, "Total files changed: %d\n\n", len(changeData.ChangeEntries))
-
-	for _, entry := range changeData.ChangeEntries {
+	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Changes Summary:\n", pullRequestID)
+	_, _ = fmt.Fprintf(&resultText, "Total files changed: %d\n\n", len(changeEntries))
+	for _, entry := range changeEntries {
 		changeType := cases.Title(language.English).String(entry.ChangeType)
 		_, _ = fmt.Fprintf(&resultText, "- [%s] %s\n", changeType, entry.Item.Path)
 	}
-
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String()
 }
 
 type adoThreadResponse struct {

@@ -296,33 +296,12 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if len(params.Commands) < 2 {
-		return tools.ToolResult{Error: fmt.Errorf("at least two commands are required for piping"), Text: "at least two commands are required for piping"}, nil
-	}
-
-	outputFile, err := t.resolveOutputFile(params.OutputFile)
-	if err != nil {
-		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
-	}
-
-	// 1. Authorize
-	safe := t.isPipelineSafe(params.Commands)
-	pipelineStr := strings.Join(params.Commands, " | ")
-	approved, err := t.authorize(ctx, "Pipeline", pipelineStr, params.Reason, safe, outputFile, params.Append)
+	outputFile, approved, err := t.authorizeAndAuditPipeline(ctx, params.Commands, params.Reason, params.OutputFile, params.Append)
 	if err != nil || !approved {
 		return t.handleAuthResult(approved, err, "pipeline")
 	}
 
-	argsAudit := []any{
-		"PIPELINE", pipelineStr,
-		"REASON", params.Reason,
-	}
-	if params.OutputFile != "" {
-		argsAudit = append(argsAudit, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
-	}
-	t.sm.LogAudit("PIPE_COMMANDS", argsAudit...)
-
-	// 2. Execute
+	// Execute
 	pipedParts, err := t.splitPipeline(params.Commands)
 	if err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
@@ -356,6 +335,35 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	}
 
 	return tools.ToolResult{Text: t.formatResult(res, true)}, nil
+}
+
+func (t *shellTool) authorizeAndAuditPipeline(ctx context.Context, commands []string, reason, outputFile string, isAppend bool) (string, bool, error) {
+	if len(commands) < 2 {
+		return "", false, fmt.Errorf("at least two commands are required for piping")
+	}
+
+	resolvedFile, err := t.resolveOutputFile(outputFile)
+	if err != nil {
+		return "", false, err
+	}
+
+	safe := t.isPipelineSafe(commands)
+	pipelineStr := strings.Join(commands, " | ")
+	approved, err := t.authorize(ctx, "Pipeline", pipelineStr, reason, safe, resolvedFile, isAppend)
+	if err != nil || !approved {
+		return resolvedFile, approved, err
+	}
+
+	argsAudit := []any{
+		"PIPELINE", pipelineStr,
+		"REASON", reason,
+	}
+	if outputFile != "" {
+		argsAudit = append(argsAudit, "OUTPUT_FILE", outputFile, "APPEND", isAppend)
+	}
+	t.sm.LogAudit("PIPE_COMMANDS", argsAudit...)
+
+	return resolvedFile, true, nil
 }
 
 func (t *shellTool) isPipelineSafe(commands []string) bool {
