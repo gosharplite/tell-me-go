@@ -442,16 +442,7 @@ func registerPolicy(r tools.Registry, m *AdoManager, _ PipelineFormatter) error 
 					Required: []string{"organization", "project", "definition_id", "variables"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				result, err := m.UpdateBuildDefinitionVariables(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				if result.Cancelled {
-					return tools.ToolResult{Text: "Update cancelled by user."}, nil
-				}
-				return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", result.DefinitionID)}, nil
-			},
+			handler: newUpdateBuildDefinitionVariablesHandler(m),
 		},
 	}
 
@@ -462,4 +453,19 @@ func registerPolicy(r tools.Registry, m *AdoManager, _ PipelineFormatter) error 
 	}
 
 	return nil
+}
+
+// newUpdateBuildDefinitionVariablesHandler returns a ToolFunc that updates build definition variables.
+// It handles cancellation by the user and reports the updated definition ID on success.
+func newUpdateBuildDefinitionVariablesHandler(m *AdoManager) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		result, err := m.UpdateBuildDefinitionVariables(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		if result.Cancelled {
+			return tools.ToolResult{Text: "Update cancelled by user."}, nil
+		}
+		return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", result.DefinitionID)}, nil
+	}
 }

@@ -32,13 +32,7 @@ func registerBuilds(r tools.Registry, m *AdoManager, f PipelineFormatter) error 
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				records, err := m.GetBuildTimeline(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return marshalIndentResult(records)
-			},
+			handler: newGetBuildTimelineHandler(m),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -61,13 +55,7 @@ func registerBuilds(r tools.Registry, m *AdoManager, f PipelineFormatter) error 
 					Required: []string{"organization", "project", "build_id", "log_id"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				content, err := m.getTaskLog(ctx, args, hb)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return tools.ToolResult{Text: appendTruncationNote(content)}, nil
-			},
+			handler: newGetTaskLogHandler(m),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -84,13 +72,7 @@ func registerBuilds(r tools.Registry, m *AdoManager, f PipelineFormatter) error 
 					Required: []string{"organization", "project", "build_id"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				changes, err := m.getBuildChanges(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return marshalIndentResult(changes)
-			},
+			handler: newGetBuildChangesHandler(m),
 		},
 	}
 
@@ -101,4 +83,37 @@ func registerBuilds(r tools.Registry, m *AdoManager, f PipelineFormatter) error 
 	}
 
 	return nil
+}
+
+// newGetBuildTimelineHandler returns a ToolFunc that retrieves the build timeline.
+func newGetBuildTimelineHandler(m *AdoManager) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		records, err := m.GetBuildTimeline(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return marshalIndentResult(records)
+	}
+}
+
+// newGetTaskLogHandler returns a ToolFunc that retrieves the log content for a build task.
+func newGetTaskLogHandler(m *AdoManager) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		content, err := m.getTaskLog(ctx, args, hb)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return tools.ToolResult{Text: appendTruncationNote(content)}, nil
+	}
+}
+
+// newGetBuildChangesHandler returns a ToolFunc that retrieves the commits/changes for a build.
+func newGetBuildChangesHandler(m *AdoManager) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		changes, err := m.getBuildChanges(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return marshalIndentResult(changes)
+	}
 }
