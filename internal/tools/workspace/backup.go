@@ -90,25 +90,11 @@ func (b *backupManager) undo(ctx context.Context, n int) (string, error) {
 	var results []string
 	count := 0
 	for i := len(b.backups) - 1; i >= 0 && count < n; i-- {
-		snap := b.backups[i]
-
-		if _, err := b.sm.IsPathWritable(snap.Path); err != nil {
-			return "", fmt.Errorf("permission denied for %s: %w", snap.Path, err)
+		msg, err := b.undoOne(ctx, b.backups[i])
+		if err != nil {
+			return "", err
 		}
-
-		if snap.Content == nil {
-			// Original state was "not exists"
-			if err := b.fs.Remove(ctx, snap.Path); err != nil && !os.IsNotExist(err) {
-				return "", fmt.Errorf("failed to remove new file %s: %w", snap.Path, err)
-			}
-			results = append(results, fmt.Sprintf("Removed %s (was new file)", snap.Path))
-		} else {
-			if err := b.fs.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
-				return "", fmt.Errorf("failed to restore %s: %w", snap.Path, err)
-			}
-			results = append(results, fmt.Sprintf("Restored %s", snap.Path))
-		}
-
+		results = append(results, msg)
 		count++
 	}
 
@@ -116,4 +102,24 @@ func (b *backupManager) undo(ctx context.Context, n int) (string, error) {
 	b.backups = b.backups[:len(b.backups)-count]
 
 	return fmt.Sprintf("Undo successful:\n%s", strings.Join(results, "\n")), nil
+}
+
+// undoOne restores or removes the file described by a single snapshot.
+func (b *backupManager) undoOne(ctx context.Context, snap fileSnapshot) (string, error) {
+	if _, err := b.sm.IsPathWritable(snap.Path); err != nil {
+		return "", fmt.Errorf("permission denied for %s: %w", snap.Path, err)
+	}
+
+	if snap.Content == nil {
+		// Original state was "not exists"
+		if err := b.fs.Remove(ctx, snap.Path); err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to remove new file %s: %w", snap.Path, err)
+		}
+		return fmt.Sprintf("Removed %s (was new file)", snap.Path), nil
+	}
+
+	if err := b.fs.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
+		return "", fmt.Errorf("failed to restore %s: %w", snap.Path, err)
+	}
+	return fmt.Sprintf("Restored %s", snap.Path), nil
 }

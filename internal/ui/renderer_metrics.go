@@ -23,6 +23,41 @@ func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime 
 	r.renderMetricsLineLocked(ui, m, startTime, turns)
 }
 
+// formatModelDisplay builds the bracketed model display string, appending
+// "-priority" for ON_DEMAND_PRIORITY traffic.
+func formatModelDisplay(m *llm.Metrics) string {
+	displayName := m.Provider
+	if displayName == "" {
+		displayName = m.Model
+	}
+	if strings.EqualFold(m.TrafficType, "ON_DEMAND_PRIORITY") {
+		displayName = fmt.Sprintf("%s-priority", displayName)
+	}
+	if displayName != "" {
+		return fmt.Sprintf(" [%s]", displayName)
+	}
+	return ""
+}
+
+// formatTimingStr builds the timing segment including total turn latency,
+// cumulative tool duration, and optional session duration.
+func formatTimingStr(ui uiState, totalTurnLatency, cumulativeToolDuration float64, startTime time.Time, turns int) string {
+	timingStr := fmt.Sprintf("%s%.2fs %s(ΣT: %.2fs)%s",
+		ui.c(colorReset), totalTurnLatency,
+		ui.c(colorGray), cumulativeToolDuration,
+		ui.c(colorGray))
+
+	if !startTime.IsZero() {
+		totalSessionDuration := ui.clock.Now().Sub(startTime).Seconds()
+		if turns > 0 {
+			timingStr = fmt.Sprintf("%s / %.2fs (%.2f)%s", timingStr, totalSessionDuration, totalSessionDuration/float64(turns), ui.c(colorGray))
+		} else {
+			timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
+		}
+	}
+	return timingStr
+}
+
 func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, startTime time.Time, turns int) {
 	if m == nil {
 		return
@@ -37,32 +72,10 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 		hColor = colorReset
 	}
 
-	modelStr := ""
-	displayName := m.Provider
-	if displayName == "" {
-		displayName = m.Model
-	}
-	if strings.EqualFold(m.TrafficType, "ON_DEMAND_PRIORITY") {
-		displayName = fmt.Sprintf("%s-priority", displayName)
-	}
-	if displayName != "" {
-		modelStr = fmt.Sprintf(" [%s]", displayName)
-	}
+	modelStr := formatModelDisplay(m)
 
 	totalTurnLatency := m.Duration + m.ToolDuration
-	timingStr := fmt.Sprintf("%s%.2fs %s(ΣT: %.2fs)%s",
-		ui.c(colorReset), totalTurnLatency,
-		ui.c(colorGray), m.CumulativeToolDuration,
-		ui.c(colorGray))
-
-	if !startTime.IsZero() {
-		totalSessionDuration := ui.clock.Now().Sub(startTime).Seconds()
-		if turns > 0 {
-			timingStr = fmt.Sprintf("%s / %.2fs (%.2f)%s", timingStr, totalSessionDuration, totalSessionDuration/float64(turns), ui.c(colorGray))
-		} else {
-			timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
-		}
-	}
+	timingStr := formatTimingStr(ui, totalTurnLatency, m.CumulativeToolDuration, startTime, turns)
 
 	// Prepare cost string
 	costStr := ""

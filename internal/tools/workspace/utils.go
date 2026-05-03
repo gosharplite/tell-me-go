@@ -36,6 +36,33 @@ func sendHeartbeat(ctx context.Context, hb chan<- struct{}) {
 	}
 }
 
+// walkHeartbeat emits a heartbeat every 50 files walked, respecting context cancellation.
+// Returns an error if the context is done.
+func walkHeartbeat(ctx context.Context, count int, hb chan<- struct{}) error {
+	if count%50 == 0 && hb != nil {
+		sendHeartbeat(ctx, hb)
+		return ctx.Err()
+	}
+	return nil
+}
+
+// shouldSkipEntry checks whether a walk entry should be skipped (inaccessible, cancelled, or directory).
+func shouldSkipEntry(ctx context.Context, info os.FileInfo, err error) (bool, error) {
+	if err != nil {
+		return true, nil
+	}
+	if ctx.Err() != nil {
+		return true, ctx.Err()
+	}
+	if info.IsDir() {
+		if isIgnoredDir(info.Name()) {
+			return true, filepath.SkipDir
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 // walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
 func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs persistence.FileSystem, path string, hb chan<- struct{}, fn fileProcessor) error {
 	if path == "" {
@@ -49,26 +76,13 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 
 	count := 0
 	return fs.Walk(ctx, path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip items we can't access
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if info.IsDir() {
-			if isIgnoredDir(info.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
+		if skip, retErr := shouldSkipEntry(ctx, info, err); skip {
+			return retErr
 		}
 
 		count++
-		if count%50 == 0 && hb != nil {
-			sendHeartbeat(ctx, hb)
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
+		if err := walkHeartbeat(ctx, count, hb); err != nil {
+			return err
 		}
 
 		return fn(filePath)
@@ -169,20 +183,26 @@ func (p *searchPipeline) walkFunc(path string, info os.FileInfo, err error) erro
 		return nil
 	}
 
-	// Heartbeat while walking
+	// Heartbeat while walking, then send path to workers
+	return p.heartbeatAndSendPath(p.ctx, path)
+}
+
+// heartbeatAndSendPath sends a heartbeat (if configured) and then sends the path
+// to the paths channel, respecting context cancellation.
+func (p *searchPipeline) heartbeatAndSendPath(ctx context.Context, path string) error {
 	if p.hb != nil {
-		sendHeartbeat(p.ctx, p.hb)
-		if p.ctx.Err() != nil {
-			return p.ctx.Err()
+		sendHeartbeat(ctx, p.hb)
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 	}
 
 	select {
 	case p.pathsChan <- path:
-	case <-p.ctx.Done():
-		return p.ctx.Err()
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	return nil
 }
 
 func (p *searchPipeline) startWorkers(wg *sync.WaitGroup) {

@@ -20,6 +20,31 @@ type fileSkillRepository struct {
 	cache []domain.Skill
 }
 
+// isSkillFile returns true if the file entry is a skill Markdown file
+// (not a directory, has .md extension, and is not NOTICE.md).
+func isSkillFile(info os.FileInfo) bool {
+	return !info.IsDir() && filepath.Ext(info.Name()) == ".md" && info.Name() != "NOTICE.md"
+}
+
+// loadSkillFile reads and parses a single skill file, appending the result to cache.
+func loadSkillFile(path string, cache *[]domain.Skill) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read skill file %s: %w", path, err)
+	}
+
+	skill, err := parseSkill(data)
+	if err != nil {
+		return fmt.Errorf("parse skill file %s: %w", path, err)
+	}
+
+	if skill != nil {
+		*cache = append(*cache, *skill)
+	}
+
+	return nil
+}
+
 // NewFileSkillRepository creates a new fileSkillRepository and immediately
 // populates its cache by walking the provided directory.
 func NewFileSkillRepository(docsDir string) (domain.SkillRepository, error) {
@@ -36,30 +61,11 @@ func NewFileSkillRepository(docsDir string) (domain.SkillRepository, error) {
 			return err
 		}
 
-		if info.IsDir() || filepath.Ext(path) != ".md" {
+		if !isSkillFile(info) {
 			return nil
 		}
 
-		// Skip NOTICE.md or other non-skill files
-		if info.Name() == "NOTICE.md" {
-			return nil
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read skill file %s: %w", path, err)
-		}
-
-		skill, err := parseSkill(data)
-		if err != nil {
-			return fmt.Errorf("parse skill file %s: %w", path, err)
-		}
-
-		if skill != nil {
-			cache = append(cache, *skill)
-		}
-
-		return nil
+		return loadSkillFile(path, &cache)
 	})
 
 	if err != nil {

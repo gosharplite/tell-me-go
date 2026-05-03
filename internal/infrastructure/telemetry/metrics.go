@@ -165,6 +165,27 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tra
 	return usage, totalCost, nil
 }
 
+// openLogFileForAppend opens a log file for appending, creating parent directories
+// if they don't exist.
+func openLogFileForAppend(logPath string) (*os.File, error) {
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		// Ensure directory exists if we are meant to create it
+		if os.IsNotExist(err) {
+			if mkdirErr := os.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
+				return nil, fmt.Errorf("failed to open log file %q for summary append (also failed to create dir: %v): %w", logPath, mkdirErr, err)
+			}
+			f, err = os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open log file %q for summary append after mkdir: %w", logPath, err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
+		}
+	}
+	return f, nil
+}
+
 func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCost float64, model string) error {
 	if usage.PromptTokens == 0 && usage.ResponseTokens == 0 && usage.SearchQueries == 0 {
 		return nil
@@ -187,20 +208,9 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 		return fmt.Errorf("failed to marshal cost summary: %w", err)
 	}
 
-	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	fAppend, err := openLogFileForAppend(logPath)
 	if err != nil {
-		// Ensure directory exists if we are meant to create it
-		if os.IsNotExist(err) {
-			if mkdirErr := os.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
-				return fmt.Errorf("failed to open log file %q for summary append (also failed to create dir: %v): %w", logPath, mkdirErr, err)
-			}
-			fAppend, err = os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-			if err != nil {
-				return fmt.Errorf("failed to open log file %q for summary append after mkdir: %w", logPath, err)
-			}
-		} else {
-			return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
-		}
+		return err
 	}
 	defer func() {
 		_ = fAppend.Close()
