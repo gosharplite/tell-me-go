@@ -334,13 +334,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				pipelines, err := m.listPipelines(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return tools.ToolResult{Text: f.FormatPipelineList(pipelines)}, nil
-			},
+			handler: newListPipelinesHandler(m, f),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -359,13 +353,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					Required: []string{"organization", "project"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				pipelineID, runs, err := m.ListPipelineRuns(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return tools.ToolResult{Text: f.FormatPipelineRunsList(pipelineID, runs)}, nil
-			},
+			handler: newListPipelineRunsHandler(m, f),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -382,13 +370,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				run, err := m.GetPipelineRun(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return tools.ToolResult{Text: f.FormatPipelineRunDetail(run)}, nil
-			},
+			handler: newGetPipelineRunHandler(m, f),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -404,13 +386,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				def, err := m.GetPipelineDefinition(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return marshalIndentResult(def)
-			},
+			handler: newGetPipelineDefinitionHandler(m),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -434,26 +410,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					Required: []string{"organization", "project", "pipeline_id", "run_id"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				var dispatch struct {
-					LogId int `json:"log_id"`
-				}
-				_ = tools.UnmarshalArgs(args, &dispatch)
-
-				if dispatch.LogId == 0 {
-					runID, logs, err := m.ListPipelineLogs(ctx, args)
-					if err != nil {
-						return tools.ToolResult{}, err
-					}
-					return tools.ToolResult{Text: f.FormatPipelineLogList(runID, logs)}, nil
-				}
-
-				content, err := m.getPipelineLogContent(ctx, args, hb)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				return tools.ToolResult{Text: appendTruncationNote(content)}, nil
-			},
+			handler: newGetPipelineLogsHandler(m, f),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -473,20 +430,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				result, err := m.createPipeline(ctx, args)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				switch {
-				case result.AlreadyExisted:
-					return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", result.Name, result.PipelineID)}, nil
-				case result.Cancelled:
-					return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
-				default:
-					return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", result.Name, result.PipelineID)}, nil
-				}
-			},
+			handler: newCreatePipelineHandler(m),
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -505,27 +449,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					Required: []string{"organization", "project", "pipeline_id"},
 				},
 			},
-			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				branchRaw, _ := args["branch"].(string)
-				refName := f.FormatBranchRef(branchRaw)
-
-				argsCopy := make(map[string]interface{}, len(args)+1)
-				for k, v := range args {
-					argsCopy[k] = v
-				}
-				argsCopy["_ref_name"] = refName
-
-				result, err := m.runPipeline(ctx, argsCopy)
-				if err != nil {
-					return tools.ToolResult{}, err
-				}
-				if result.Cancelled {
-					return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
-				}
-				return tools.ToolResult{
-					Text: fmt.Sprintf("Successfully triggered pipeline run ID: %d\nWeb URL: %s", result.RunID, result.WebURL),
-				}, nil
-			},
+			handler: newRunPipelineHandler(m, f),
 		},
 	}
 
@@ -536,4 +460,119 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 	}
 
 	return nil
+}
+
+// newListPipelinesHandler returns a ToolFunc that lists pipeline names and IDs.
+func newListPipelinesHandler(m *AdoManager, f PipelineFormatter) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		pipelines, err := m.listPipelines(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return tools.ToolResult{Text: f.FormatPipelineList(pipelines)}, nil
+	}
+}
+
+// newGetPipelineRunHandler returns a ToolFunc that retrieves a pipeline run detail.
+func newGetPipelineRunHandler(m *AdoManager, f PipelineFormatter) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		run, err := m.GetPipelineRun(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return tools.ToolResult{Text: f.FormatPipelineRunDetail(run)}, nil
+	}
+}
+
+// newGetPipelineDefinitionHandler returns a ToolFunc that retrieves pipeline definition metadata.
+func newGetPipelineDefinitionHandler(m *AdoManager) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		def, err := m.GetPipelineDefinition(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return marshalIndentResult(def)
+	}
+}
+
+// newListPipelineRunsHandler returns a ToolFunc that lists recent pipeline runs.
+func newListPipelineRunsHandler(m *AdoManager, f PipelineFormatter) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		pipelineID, runs, err := m.ListPipelineRuns(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return tools.ToolResult{Text: f.FormatPipelineRunsList(pipelineID, runs)}, nil
+	}
+}
+
+// newGetPipelineLogsHandler returns a ToolFunc that fetches pipeline run logs.
+// When log_id is omitted, it lists available logs. When log_id is specified,
+// it fetches and returns the log content.
+func newGetPipelineLogsHandler(m *AdoManager, f PipelineFormatter) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		var dispatch struct {
+			LogId int `json:"log_id"`
+		}
+		_ = tools.UnmarshalArgs(args, &dispatch)
+
+		if dispatch.LogId == 0 {
+			runID, logs, err := m.ListPipelineLogs(ctx, args)
+			if err != nil {
+				return tools.ToolResult{}, err
+			}
+			return tools.ToolResult{Text: f.FormatPipelineLogList(runID, logs)}, nil
+		}
+
+		content, err := m.getPipelineLogContent(ctx, args, hb)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		return tools.ToolResult{Text: appendTruncationNote(content)}, nil
+	}
+}
+
+// newCreatePipelineHandler returns a ToolFunc that creates an Azure DevOps pipeline.
+// It handles three result states: already existed, cancelled by user, and successfully created.
+func newCreatePipelineHandler(m *AdoManager) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		result, err := m.createPipeline(ctx, args)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		switch {
+		case result.AlreadyExisted:
+			return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", result.Name, result.PipelineID)}, nil
+		case result.Cancelled:
+			return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
+		default:
+			return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", result.Name, result.PipelineID)}, nil
+		}
+	}
+}
+
+// newRunPipelineHandler returns a ToolFunc that triggers a pipeline run.
+// It pre-formats the branch ref via the PipelineFormatter and handles cancellation.
+func newRunPipelineHandler(m *AdoManager, f PipelineFormatter) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		branchRaw, _ := args["branch"].(string)
+		refName := f.FormatBranchRef(branchRaw)
+
+		argsCopy := make(map[string]interface{}, len(args)+1)
+		for k, v := range args {
+			argsCopy[k] = v
+		}
+		argsCopy["_ref_name"] = refName
+
+		result, err := m.runPipeline(ctx, argsCopy)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
+		if result.Cancelled {
+			return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
+		}
+		return tools.ToolResult{
+			Text: fmt.Sprintf("Successfully triggered pipeline run ID: %d\nWeb URL: %s", result.RunID, result.WebURL),
+		}, nil
+	}
 }
