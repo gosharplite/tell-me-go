@@ -335,7 +335,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 				},
 			},
 			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				pipelines, err := m.ListPipelines(ctx, args)
+				pipelines, err := m.listPipelines(ctx, args)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}

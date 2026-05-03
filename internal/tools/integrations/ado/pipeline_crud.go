@@ -62,9 +62,9 @@ func (m *AdoManager) fetchPipelines(ctx context.Context, org, project string) ([
 	return val.([]adoPipeline), nil
 }
 
-// ListPipelines is the infrastructure-layer entry point for fetching pipeline
+// listPipelines is the infrastructure-layer entry point for fetching pipeline
 // definitions for a given org/project. Returns raw domain structs.
-func (m *AdoManager) ListPipelines(ctx context.Context, args map[string]interface{}) ([]adoPipeline, error) {
+func (m *AdoManager) listPipelines(ctx context.Context, args map[string]interface{}) ([]adoPipeline, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -107,7 +107,7 @@ func (m *AdoManager) resolvePipelineID(ctx context.Context, org, project, pipeli
 // See createPipelineResult for the three possible terminal states.
 //
 // On successful creation, the per-project pipeline cache is invalidated so
-// subsequent ListPipelines calls observe the new entry.
+// subsequent listPipelines calls observe the new entry.
 func (m *AdoManager) createPipeline(ctx context.Context, args map[string]interface{}) (createPipelineResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
@@ -356,10 +356,10 @@ func (m *AdoManager) decodeBuildChangesResponse(body io.Reader) ([]interface{}, 
 	return responseData.Value, nil
 }
 
-// GetBuildChanges is the infrastructure-layer entry point for fetching the
+// getBuildChanges is the infrastructure-layer entry point for fetching the
 // changeset associated with an ADO build. Returns the decoded values slice; the
 // caller is responsible for serialization.
-func (m *AdoManager) GetBuildChanges(ctx context.Context, args map[string]interface{}) ([]interface{}, error) {
+func (m *AdoManager) getBuildChanges(ctx context.Context, args map[string]interface{}) ([]interface{}, error) {
 	params, err := parseGetBuildChangesArgs(args)
 	if err != nil {
 		return nil, err

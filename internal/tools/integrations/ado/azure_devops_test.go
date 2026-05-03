@@ -1015,7 +1015,7 @@ func TestGetBuildChanges(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123, "top": 10}
-		changes, err := m.GetBuildChanges(context.Background(), args)
+		changes, err := m.getBuildChanges(context.Background(), args)
 		assert.NoError(t, err)
 		assert.Len(t, changes, 1)
 		ch, ok := changes[0].(map[string]interface{})
@@ -1033,7 +1033,7 @@ func TestGetBuildChanges(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
-		_, err := m.GetBuildChanges(context.Background(), args)
+		_, err := m.getBuildChanges(context.Background(), args)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1286,7 +1286,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - 500 Error",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				_, err := m.GetBuildChanges(ctx, args)
+				_, err := m.getBuildChanges(ctx, args)
 				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
@@ -1296,7 +1296,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - 401 Unauthorized",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				_, err := m.GetBuildChanges(ctx, args)
+				_, err := m.getBuildChanges(ctx, args)
 				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
@@ -1391,7 +1391,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		{
 			name: "AdoGetBuildChanges - Not Found",
 			toolFunc: func(m *AdoManager, ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				_, err := m.GetBuildChanges(ctx, args)
+				_, err := m.getBuildChanges(ctx, args)
 				return tools.ToolResult{}, err
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
@@ -1818,7 +1818,7 @@ func TestGetBuildChanges_Empty(t *testing.T) {
 
 	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 
-	changes, err := m.GetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
+	changes, err := m.getBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 	assert.NoError(t, err)
 	assert.Empty(t, changes)
 }
@@ -1836,7 +1836,7 @@ func TestAdoTools_MissingParams(t *testing.T) {
 	})
 
 	t.Run("AdoGetBuildChanges", func(t *testing.T) {
-		_, err := m.GetBuildChanges(ctx, map[string]interface{}{})
+		_, err := m.getBuildChanges(ctx, map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -1933,7 +1933,7 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 			return tools.ToolResult{}, err
 		}},
 		{"AdoGetBuildChanges", func() (tools.ToolResult, error) {
-			_, err := m.GetBuildChanges(ctx, args)
+			_, err := m.getBuildChanges(ctx, args)
 			return tools.ToolResult{}, err
 		}},
 	}

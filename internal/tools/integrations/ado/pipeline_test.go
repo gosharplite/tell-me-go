@@ -114,7 +114,7 @@ func TestListPipelines(t *testing.T) {
 			m := NewADOManager(sm, opts...)
 
 			ctx := context.Background()
-			pipelines, err := m.ListPipelines(ctx, tt.args)
+			pipelines, err := m.listPipelines(ctx, tt.args)
 
 			if tt.wantError {
 				assert.Error(t, err)
