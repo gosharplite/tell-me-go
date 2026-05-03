@@ -43,3 +43,5 @@ Thumbs.db
 
 # Workspace temporary test artifacts
 internal/tools/workspace/*.txt
+coverage.raw
+coverage.out
