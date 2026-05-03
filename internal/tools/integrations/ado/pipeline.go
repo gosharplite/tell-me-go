@@ -154,7 +154,7 @@ func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, er
 	// while the API request uses the fully qualified ref.
 	if params.RefName == "" {
 		// Defensive fallback: if no caller pre-formatted, treat Branch verbatim
-		// so direct unit tests of RunPipeline still produce a non-empty ref.
+		// so direct unit tests of runPipeline still produce a non-empty ref.
 		params.RefName = params.Branch
 	}
 	params.MappedVariables = mapADOVariables(params.Variables)
@@ -448,7 +448,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					return tools.ToolResult{Text: f.FormatPipelineLogList(runID, logs)}, nil
 				}
 
-				content, err := m.GetPipelineLogContent(ctx, args, hb)
+				content, err := m.getPipelineLogContent(ctx, args, hb)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}
@@ -474,7 +474,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 				},
 			},
 			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				result, err := m.CreatePipeline(ctx, args)
+				result, err := m.createPipeline(ctx, args)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}
@@ -515,7 +515,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 				}
 				argsCopy["_ref_name"] = refName
 
-				result, err := m.RunPipeline(ctx, argsCopy)
+				result, err := m.runPipeline(ctx, argsCopy)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}

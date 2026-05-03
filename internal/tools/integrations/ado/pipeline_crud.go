@@ -101,14 +101,14 @@ func (m *AdoManager) resolvePipelineID(ctx context.Context, org, project, pipeli
 	return 0, fmt.Errorf("pipeline with name '%s' not found", pipelineName)
 }
 
-// CreatePipeline is the infrastructure-layer entry point for creating a new
+// createPipeline is the infrastructure-layer entry point for creating a new
 // ADO pipeline. The method performs an idempotency pre-check and a user
 // confirmation dialog; both belong to this adapter's operational contract.
 // See createPipelineResult for the three possible terminal states.
 //
 // On successful creation, the per-project pipeline cache is invalidated so
 // subsequent ListPipelines calls observe the new entry.
-func (m *AdoManager) CreatePipeline(ctx context.Context, args map[string]interface{}) (createPipelineResult, error) {
+func (m *AdoManager) createPipeline(ctx context.Context, args map[string]interface{}) (createPipelineResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
 		return createPipelineResult{}, err

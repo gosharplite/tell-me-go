@@ -110,7 +110,7 @@ func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interfa
 	return &runData, nil
 }
 
-// RunPipeline is the infrastructure-layer entry point for triggering a new
+// runPipeline is the infrastructure-layer entry point for triggering a new
 // ADO pipeline run. The confirmation dialog is part of this adapter's
 // operational contract (destructive operations require user assent); a
 // Cancelled result indicates the user declined.
@@ -118,9 +118,9 @@ func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interfa
 // The caller SHOULD pre-format the branch into a fully qualified ADO ref via
 // PipelineFormatter.FormatBranchRef and supply it under args["_ref_name"];
 // args["branch"] remains the raw user-facing name shown in the confirmation
-// prompt. If args["_ref_name"] is absent, RunPipeline falls back to using
+// prompt. If args["_ref_name"] is absent, runPipeline falls back to using
 // args["branch"] verbatim (intended for direct unit-test callers only).
-func (m *AdoManager) RunPipeline(ctx context.Context, args map[string]interface{}) (runPipelineResult, error) {
+func (m *AdoManager) runPipeline(ctx context.Context, args map[string]interface{}) (runPipelineResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {
 		return runPipelineResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
@@ -261,10 +261,10 @@ func (m *AdoManager) ListPipelineLogs(ctx context.Context, args map[string]inter
 	return params.RunId, logsData.Value, nil
 }
 
-// GetPipelineLogContent is the infrastructure-layer entry point for fetching the
+// getPipelineLogContent is the infrastructure-layer entry point for fetching the
 // content of a single pipeline log. Returns logContent describing the body and
 // whether it was truncated.
-func (m *AdoManager) GetPipelineLogContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (logContent, error) {
+func (m *AdoManager) getPipelineLogContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (logContent, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -304,9 +304,9 @@ func (m *AdoManager) GetPipelineLogContent(ctx context.Context, args map[string]
 	return logContent(res), nil
 }
 
-// GetTaskLog is the infrastructure-layer entry point for fetching a build task
+// getTaskLog is the infrastructure-layer entry point for fetching a build task
 // log. Returns logContent describing the body and whether it was truncated.
-func (m *AdoManager) GetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (logContent, error) {
+func (m *AdoManager) getTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (logContent, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`

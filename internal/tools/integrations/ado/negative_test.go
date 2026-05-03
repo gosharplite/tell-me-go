@@ -340,7 +340,7 @@ func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
-		_, err := m.GetPipelineLogContent(context.Background(), args, nil)
+		_, err := m.getPipelineLogContent(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})

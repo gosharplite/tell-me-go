@@ -233,7 +233,7 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.CreatePipeline(ctx, args)
+	result, err := m.createPipeline(ctx, args)
 	require.NoError(t, err)
 	assert.False(t, result.AlreadyExisted)
 	assert.False(t, result.Cancelled)
@@ -285,7 +285,7 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 		},
 	}
 
-	result, err := m.CreatePipeline(ctx, args)
+	result, err := m.createPipeline(ctx, args)
 	require.NoError(t, err)
 	assert.False(t, result.AlreadyExisted)
 	assert.False(t, result.Cancelled)
