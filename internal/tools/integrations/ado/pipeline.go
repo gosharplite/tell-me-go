@@ -154,7 +154,7 @@ func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, er
 	// while the API request uses the fully qualified ref.
 	if params.RefName == "" {
 		// Defensive fallback: if no caller pre-formatted, treat Branch verbatim
-		// so direct unit tests of RunPipeline still produce a non-empty ref.
+		// so direct unit tests of runPipeline still produce a non-empty ref.
 		params.RefName = params.Branch
 	}
 	params.MappedVariables = mapADOVariables(params.Variables)
@@ -273,24 +273,24 @@ type adoLogEntry struct {
 	Line int    `json:"lineCount"`
 }
 
-// LogContent is the result of fetching log text. If Truncated is true, Content
+// logContent is the result of fetching log text. If Truncated is true, Content
 // has been clipped after TotalLines lines.
-type LogContent struct {
+type logContent struct {
 	Content    string
 	Truncated  bool
 	TotalLines int
 }
 
-// RunPipelineResult describes the outcome of an attempted pipeline trigger.
+// runPipelineResult describes the outcome of an attempted pipeline trigger.
 // If Cancelled is true, the user declined the confirmation prompt and no run
 // was created. Otherwise, RunID and WebURL describe the new run.
-type RunPipelineResult struct {
+type runPipelineResult struct {
 	Cancelled bool
 	RunID     int
 	WebURL    string
 }
 
-// CreatePipelineResult describes the outcome of an attempted pipeline creation.
+// createPipelineResult describes the outcome of an attempted pipeline creation.
 // Exactly one of the following states is signalled:
 //   - AlreadyExisted=true, PipelineID set:  idempotency hit; no creation occurred.
 //   - Cancelled=true,      PipelineID==0:   user declined the confirmation prompt.
@@ -298,7 +298,7 @@ type RunPipelineResult struct {
 //
 // Name is always echoed so the consumer can render either the "already exists"
 // or "successfully created" message without re-reading args.
-type CreatePipelineResult struct {
+type createPipelineResult struct {
 	AlreadyExisted bool
 	Cancelled      bool
 	PipelineID     int
@@ -335,7 +335,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 				},
 			},
 			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				pipelines, err := m.ListPipelines(ctx, args)
+				pipelines, err := m.listPipelines(ctx, args)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}
@@ -448,7 +448,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 					return tools.ToolResult{Text: f.FormatPipelineLogList(runID, logs)}, nil
 				}
 
-				content, err := m.GetPipelineLogContent(ctx, args, hb)
+				content, err := m.getPipelineLogContent(ctx, args, hb)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}
@@ -474,7 +474,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 				},
 			},
 			handler: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-				result, err := m.CreatePipeline(ctx, args)
+				result, err := m.createPipeline(ctx, args)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}
@@ -515,7 +515,7 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 				}
 				argsCopy["_ref_name"] = refName
 
-				result, err := m.RunPipeline(ctx, argsCopy)
+				result, err := m.runPipeline(ctx, argsCopy)
 				if err != nil {
 					return tools.ToolResult{}, err
 				}

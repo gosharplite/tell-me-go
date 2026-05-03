@@ -18,7 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func (m *AdoManager) AdoGetPullRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -171,7 +171,7 @@ func (m *AdoManager) formatPullRequestsList(prs []adoPullRequestShort) string {
 	return resultText.String()
 }
 
-func (m *AdoManager) AdoGetPrDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) adoGetPrDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -338,7 +338,7 @@ func registerPullRequests(r tools.Registry, m *AdoManager, _ PipelineFormatter) 
 					Required: []string{"organization", "project", "repository", "pull_request_id"},
 				},
 			},
-			handler: m.AdoGetPullRequest,
+			handler: m.adoGetPullRequest,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -373,7 +373,7 @@ func registerPullRequests(r tools.Registry, m *AdoManager, _ PipelineFormatter) 
 					Required: []string{"organization", "project", "repository", "pull_request_id"},
 				},
 			},
-			handler: m.AdoGetPrDiff,
+			handler: m.adoGetPrDiff,
 		},
 		{
 			decl: &tools.ToolDeclaration{

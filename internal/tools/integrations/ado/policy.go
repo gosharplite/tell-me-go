@@ -269,7 +269,7 @@ func (m *AdoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPo
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *AdoManager) AdoListBranchPolicies(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) adoListBranchPolicies(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -425,7 +425,7 @@ func registerPolicy(r tools.Registry, m *AdoManager, _ PipelineFormatter) error 
 					Required: []string{"organization", "project", "repository", "branch_name"},
 				},
 			},
-			handler: m.AdoListBranchPolicies,
+			handler: m.adoListBranchPolicies,
 		},
 		{
 			decl: &tools.ToolDeclaration{

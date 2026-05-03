@@ -203,7 +203,7 @@ func (m *ConfluenceManager) resolveNextURL(baseURL, nextPath string) string {
 	return parsedBase.ResolveReference(parsedNext).String()
 }
 
-func (m *ConfluenceManager) ConfluenceSearch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *ConfluenceManager) confluenceSearch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Title   string `json:"title"`
 		SpaceID string `json:"space_id"`
@@ -520,7 +520,7 @@ func (m *ConfluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 	return nil
 }
 
-func (m *ConfluenceManager) ConfluenceWrite(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *ConfluenceManager) confluenceWrite(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		PageID          string `json:"page_id"`
 		Title           string `json:"title"`

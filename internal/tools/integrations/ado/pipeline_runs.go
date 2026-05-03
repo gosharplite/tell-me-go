@@ -110,7 +110,7 @@ func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interfa
 	return &runData, nil
 }
 
-// RunPipeline is the infrastructure-layer entry point for triggering a new
+// runPipeline is the infrastructure-layer entry point for triggering a new
 // ADO pipeline run. The confirmation dialog is part of this adapter's
 // operational contract (destructive operations require user assent); a
 // Cancelled result indicates the user declined.
@@ -118,28 +118,28 @@ func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interfa
 // The caller SHOULD pre-format the branch into a fully qualified ADO ref via
 // PipelineFormatter.FormatBranchRef and supply it under args["_ref_name"];
 // args["branch"] remains the raw user-facing name shown in the confirmation
-// prompt. If args["_ref_name"] is absent, RunPipeline falls back to using
+// prompt. If args["_ref_name"] is absent, runPipeline falls back to using
 // args["branch"] verbatim (intended for direct unit-test callers only).
-func (m *AdoManager) RunPipeline(ctx context.Context, args map[string]interface{}) (RunPipelineResult, error) {
+func (m *AdoManager) runPipeline(ctx context.Context, args map[string]interface{}) (runPipelineResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {
-		return RunPipelineResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
+		return runPipelineResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
 	}
 
 	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Trigger run for pipeline %d (branch: %s) in %s/%s?", params.PipelineId, params.Branch, params.Organization, params.Project))
 	if err != nil {
-		return RunPipelineResult{}, fmt.Errorf("confirmation error: %w", err)
+		return runPipelineResult{}, fmt.Errorf("confirmation error: %w", err)
 	}
 	if !approved {
-		return RunPipelineResult{Cancelled: true}, nil
+		return runPipelineResult{Cancelled: true}, nil
 	}
 
 	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, params.RefName, params.TemplateParameters, params.MappedVariables)
 	if err != nil {
-		return RunPipelineResult{}, fmt.Errorf("executing run pipeline: %w", err)
+		return runPipelineResult{}, fmt.Errorf("executing run pipeline: %w", err)
 	}
 
-	return RunPipelineResult{RunID: runID, WebURL: webURL}, nil
+	return runPipelineResult{RunID: runID, WebURL: webURL}, nil
 }
 
 func (m *AdoManager) executeRunPipeline(ctx context.Context, org, project string, pipelineID int, refName string, templateParams map[string]string, variables map[string]adoVariable) (int, string, error) {
@@ -261,10 +261,10 @@ func (m *AdoManager) ListPipelineLogs(ctx context.Context, args map[string]inter
 	return params.RunId, logsData.Value, nil
 }
 
-// GetPipelineLogContent is the infrastructure-layer entry point for fetching the
-// content of a single pipeline log. Returns LogContent describing the body and
+// getPipelineLogContent is the infrastructure-layer entry point for fetching the
+// content of a single pipeline log. Returns logContent describing the body and
 // whether it was truncated.
-func (m *AdoManager) GetPipelineLogContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (LogContent, error) {
+func (m *AdoManager) getPipelineLogContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (logContent, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -280,11 +280,11 @@ func (m *AdoManager) GetPipelineLogContent(ctx context.Context, args map[string]
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return LogContent{}, fmt.Errorf("parsing get pipeline log content args: %w", err)
+		return logContent{}, fmt.Errorf("parsing get pipeline log content args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 || params.LogId == 0 {
-		return LogContent{}, fmt.Errorf("organization, project, pipeline_id, run_id, and log_id are required")
+		return logContent{}, fmt.Errorf("organization, project, pipeline_id, run_id, and log_id are required")
 	}
 
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
@@ -292,21 +292,21 @@ func (m *AdoManager) GetPipelineLogContent(ctx context.Context, args map[string]
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return LogContent{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
+		return logContent{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	res, err := processLogContent(ctx, resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 	if err != nil {
-		return LogContent{}, fmt.Errorf("failed to process log content: %w", err)
+		return logContent{}, fmt.Errorf("failed to process log content: %w", err)
 	}
 
-	return LogContent(res), nil
+	return logContent(res), nil
 }
 
-// GetTaskLog is the infrastructure-layer entry point for fetching a build task
-// log. Returns LogContent describing the body and whether it was truncated.
-func (m *AdoManager) GetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (LogContent, error) {
+// getTaskLog is the infrastructure-layer entry point for fetching a build task
+// log. Returns logContent describing the body and whether it was truncated.
+func (m *AdoManager) getTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (logContent, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -321,11 +321,11 @@ func (m *AdoManager) GetTaskLog(ctx context.Context, args map[string]interface{}
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return LogContent{}, fmt.Errorf("parsing get task log args: %w", err)
+		return logContent{}, fmt.Errorf("parsing get task log args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 || params.LogId == 0 {
-		return LogContent{}, fmt.Errorf("organization, project, build_id, and log_id are required")
+		return logContent{}, fmt.Errorf("organization, project, build_id, and log_id are required")
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
@@ -333,14 +333,14 @@ func (m *AdoManager) GetTaskLog(ctx context.Context, args map[string]interface{}
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return LogContent{}, fmt.Errorf("executing get task log request: %w", err)
+		return logContent{}, fmt.Errorf("executing get task log request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	res, err := processLogContent(ctx, resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 	if err != nil {
-		return LogContent{}, fmt.Errorf("failed to process log content: %w", err)
+		return logContent{}, fmt.Errorf("failed to process log content: %w", err)
 	}
 
-	return LogContent(res), nil
+	return logContent(res), nil
 }
