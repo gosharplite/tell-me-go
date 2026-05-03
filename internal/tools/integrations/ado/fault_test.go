@@ -48,7 +48,7 @@ func TestHTTPClient_NetworkFault_MidStream(t *testing.T) {
 		"repository":   "myrepo",
 		"path":         "/src/main.go",
 	}
-	_, err := m.AdoGetFileContent(ctx, args, nil)
+	_, err := m.adoGetFileContent(ctx, args, nil)
 
 	// 5. Assert the error bubbles up safely and retains its identity via %w
 	if err == nil {
@@ -88,7 +88,7 @@ func TestHTTPClient_NetworkFault_OnStatusError(t *testing.T) {
 		"repository":   "myrepo",
 		"path":         "/src/main.go",
 	}
-	_, err := m.AdoGetFileContent(ctx, args, nil)
+	_, err := m.adoGetFileContent(ctx, args, nil)
 
 	// 5. Assert the error bubbles up safely and retains its identity via %w
 	if err == nil {

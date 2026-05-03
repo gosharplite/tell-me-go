@@ -351,7 +351,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
-		_, err := m.AdoListBranchPolicies(context.Background(), map[string]interface{}{}, nil)
+		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -364,7 +364,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
-		_, err := m.AdoListBranchPolicies(context.Background(), args, nil)
+		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -382,7 +382,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
-		_, err := m.AdoListBranchPolicies(context.Background(), args, nil)
+		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to fetch policy configurations")
 	})
@@ -401,7 +401,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
-		_, err := m.AdoListBranchPolicies(context.Background(), args, nil)
+		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode policy configurations")
 	})

@@ -8,7 +8,7 @@ import (
 )
 
 // registerRepository registers the Repository-category ADO tools (file content, list items).
-// Handlers: m.AdoGetFileContent, m.AdoListRepositoryItems (defined in azure_devops.go).
+// Handlers: m.adoGetFileContent, m.AdoListRepositoryItems (defined in azure_devops.go).
 func registerRepository(r tools.Registry, m *AdoManager, _ PipelineFormatter) error {
 	type toolSpec struct {
 		decl    *tools.ToolDeclaration
@@ -32,7 +32,7 @@ func registerRepository(r tools.Registry, m *AdoManager, _ PipelineFormatter) er
 					Required: []string{"organization", "project", "repository", "path"},
 				},
 			},
-			handler: m.AdoGetFileContent,
+			handler: m.adoGetFileContent,
 		},
 		{
 			decl: &tools.ToolDeclaration{

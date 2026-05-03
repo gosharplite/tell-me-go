@@ -143,7 +143,7 @@ func (m *AdoManager) CheckResponseError(resp *http.Response, requestURL string) 
 	}
 }
 
-func (m *AdoManager) AdoGetFileContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *AdoManager) adoGetFileContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
