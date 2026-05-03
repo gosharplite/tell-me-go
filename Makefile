@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand lint dead-code
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -34,6 +34,8 @@ help:
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
+	@echo "  make lint       - Run golangci-lint static analysis"
+	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
 
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
@@ -242,6 +244,12 @@ tidy:
 
 fmt:
 	go fmt ./...
+
+lint:
+	golangci-lint run ./...
+
+dead-code:
+	go run ./cmd/deadcode
 
 # Generate coverage report excluding mocks and generated files
 .PHONY: test-coverage
