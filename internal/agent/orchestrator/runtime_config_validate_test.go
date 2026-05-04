@@ -10,7 +10,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
-func TestRuntimeConfig_Validate(t *testing.T) {
+func TestRuntimeConfig_validate(t *testing.T) {
 	tests := []struct {
 		name      string
 		cfg       RuntimeConfig
@@ -76,7 +76,7 @@ func TestRuntimeConfig_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.cfg.Validate()
+			err := tt.cfg.validate()
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.errSubstr)

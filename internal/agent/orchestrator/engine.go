@@ -118,7 +118,7 @@ func (e *Engine) ApplyOptions(opts ...engineOption) {
 
 // Reconfigure propagates configuration changes to the engine.
 //
-// Per ADR-029, this method is fallible: cfg.Validate() is invoked before
+// Per ADR-029, this method is fallible: cfg.validate() is invoked before
 // any state mutation. If validation fails, the engine retains its previous
 // configuration — no rollback is necessary because no fields are written
 // on the failure path. The error is returned so the caller (typically
@@ -127,7 +127,7 @@ func (e *Engine) ApplyOptions(opts ...engineOption) {
 // The cost tracker is not validated here; nil trackers are tolerated by
 // downstream consumers and represent "no cost accounting" mode.
 func (e *Engine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.CostTracker) error {
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.validate(); err != nil {
 		return fmt.Errorf("engine reconfigure: %w", err)
 	}
 
