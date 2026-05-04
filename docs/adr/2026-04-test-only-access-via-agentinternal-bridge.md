@@ -261,6 +261,25 @@ and the follow-up issue. The `*ForTest` wrapper adds
     a non-`_test.go` file? Reject; route through a `*test` sibling
     package or `agentinternal`.
 
+## Unit Coverage Exclusion (post-issue #138)
+
+The `agentinternal` package is intentionally excluded from unit test
+coverage metrics. Every exported function is a one-line delegation to
+`agent.InternalAccessor`. All 18 symbols are exercised by real tests in
+`internal/agent/` (package `agent_test`) and `tests/integration/agent/`,
+but coverage tooling reports 0% because no `*_test.go` files live inside
+the `agentinternal/` directory.
+
+Writing dedicated unit tests for this bridge would mean mocking
+`InternalAccessor` and asserting method dispatch — a tautology that
+tests Go's runtime, not project logic. The bridge's correctness is
+already verified by integration and white-box tests that assert on
+observable agent behavior (e.g., `TestAgent_Reconfiguration` proves
+`SetTrackerForTest` + `GetTracker` round-trips through a real agent).
+
+The `test-coverage` Makefile target filters `agentinternal/` from
+the coverage profile. The package's `doc.go` documents the rationale.
+
 ## References
 
 - ADR-004 (`2026-01-chatterparams-elimination.md`) — same anti-pattern,
