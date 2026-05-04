@@ -23,92 +23,85 @@ func (m *mockChecker) Check(ctx context.Context) (*ports.ComponentReport, error)
 func TestDefaultHealthCheckManager_CheckAll(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("OverallHealthy", func(t *testing.T) {
-		checkers := map[ports.Component]ports.HealthChecker{
-			ports.CompPersistence: &mockChecker{
-				report: &ports.ComponentReport{Status: ports.StatusHealthy},
+	tests := []struct {
+		name        string
+		checkers    map[ports.Component]ports.HealthChecker
+		wantOverall ports.HealthStatus
+	}{
+		{
+			name: "OverallHealthy",
+			checkers: map[ports.Component]ports.HealthChecker{
+				ports.CompPersistence: &mockChecker{
+					report: &ports.ComponentReport{Status: ports.StatusHealthy},
+				},
+				ports.CompLLMProvider: &mockChecker{
+					report: &ports.ComponentReport{Status: ports.StatusHealthy},
+				},
 			},
-			ports.CompLLMProvider: &mockChecker{
-				report: &ports.ComponentReport{Status: ports.StatusHealthy},
+			wantOverall: ports.StatusHealthy,
+		},
+		{
+			name: "OverallDegraded",
+			checkers: map[ports.Component]ports.HealthChecker{
+				ports.CompPersistence: &mockChecker{
+					report: &ports.ComponentReport{Status: ports.StatusHealthy},
+				},
+				ports.CompLLMProvider: &mockChecker{
+					report: &ports.ComponentReport{Status: ports.StatusDegraded},
+				},
 			},
-		}
-
-		m := NewHealthCheckManager(checkers)
-		report, err := m.CheckAll(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if report.OverallStatus != ports.StatusHealthy {
-			t.Errorf("expected StatusHealthy, got %s", report.OverallStatus)
-		}
-		if len(report.Components) != 2 {
-			t.Errorf("expected 2 components, got %d", len(report.Components))
-		}
-	})
-
-	t.Run("OverallDegraded", func(t *testing.T) {
-		checkers := map[ports.Component]ports.HealthChecker{
-			ports.CompPersistence: &mockChecker{
-				report: &ports.ComponentReport{Status: ports.StatusHealthy},
+			wantOverall: ports.StatusDegraded,
+		},
+		{
+			name: "OverallUnhealthy",
+			checkers: map[ports.Component]ports.HealthChecker{
+				ports.CompPersistence: &mockChecker{
+					report: &ports.ComponentReport{Status: ports.StatusHealthy},
+				},
+				ports.CompLLMProvider: &mockChecker{
+					report: &ports.ComponentReport{Status: ports.StatusUnhealthy},
+				},
 			},
-			ports.CompLLMProvider: &mockChecker{
-				report: &ports.ComponentReport{Status: ports.StatusDegraded},
+			wantOverall: ports.StatusUnhealthy,
+		},
+		{
+			name: "CheckerErrorHandling",
+			checkers: map[ports.Component]ports.HealthChecker{
+				ports.CompPersistence: &mockChecker{
+					err: errors.New("fatal"),
+				},
 			},
-		}
+			wantOverall: ports.StatusUnhealthy,
+		},
+	}
 
-		m := NewHealthCheckManager(checkers)
-		report, err := m.CheckAll(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewHealthCheckManager(tt.checkers)
+			report, err := m.CheckAll(ctx)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-		if report.OverallStatus != ports.StatusDegraded {
-			t.Errorf("expected StatusDegraded, got %s", report.OverallStatus)
-		}
-	})
+			if report.OverallStatus != tt.wantOverall {
+				t.Errorf("expected %s, got %s", tt.wantOverall, report.OverallStatus)
+			}
 
-	t.Run("OverallUnhealthy", func(t *testing.T) {
-		checkers := map[ports.Component]ports.HealthChecker{
-			ports.CompPersistence: &mockChecker{
-				report: &ports.ComponentReport{Status: ports.StatusHealthy},
-			},
-			ports.CompLLMProvider: &mockChecker{
-				report: &ports.ComponentReport{Status: ports.StatusUnhealthy},
-			},
-		}
+			// Component count assertion: report must include every registered checker.
+			if len(report.Components) != len(tt.checkers) {
+				t.Errorf("expected %d components, got %d", len(tt.checkers), len(report.Components))
+			}
 
-		m := NewHealthCheckManager(checkers)
-		report, err := m.CheckAll(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if report.OverallStatus != ports.StatusUnhealthy {
-			t.Errorf("expected StatusUnhealthy, got %s", report.OverallStatus)
-		}
-	})
-
-	t.Run("CheckerErrorHandling", func(t *testing.T) {
-		checkers := map[ports.Component]ports.HealthChecker{
-			ports.CompPersistence: &mockChecker{
-				err: errors.New("fatal"),
-			},
-		}
-
-		m := NewHealthCheckManager(checkers)
-		report, err := m.CheckAll(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if report.OverallStatus != ports.StatusUnhealthy {
-			t.Errorf("expected StatusUnhealthy, got %s", report.OverallStatus)
-		}
-		if report.Components[ports.CompPersistence].Status != ports.StatusUnhealthy {
-			t.Errorf("expected component StatusUnhealthy, got %s", report.Components[ports.CompPersistence].Status)
-		}
-	})
+			// For error-handling case, verify the failing component
+			// is individually marked Unhealthy.
+			if tt.name == "CheckerErrorHandling" {
+				comp := report.Components[ports.CompPersistence]
+				if comp.Status != ports.StatusUnhealthy {
+					t.Errorf("expected component %s StatusUnhealthy, got %s", ports.CompPersistence, comp.Status)
+				}
+			}
+		})
+	}
 }
 
 func TestDefaultHealthCheckManager_CheckComponent(t *testing.T) {
