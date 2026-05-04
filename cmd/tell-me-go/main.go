@@ -25,6 +25,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/env"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 // Compile-time assertion to ensure DI Bootstrapper implements the CLI requirement.
@@ -124,7 +126,14 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	homeDir := env.ResolveHomeDir(os.Getenv, os.UserHomeDir)
 
 	// 2. Initialize Core Infrastructure
-	sm := security.NewSecurityManager(nil)
+	var interactor domain_security.UserInteractor
+	interactorProvider := func() domain_security.UserInteractor {
+		if interactor != nil {
+			return interactor
+		}
+		return security.NoOpInteractor()
+	}
+	sm := security.NewSecurityManager(interactorProvider)
 
 	// 3. Setup Logger
 	isDebug := os.Getenv("TELL_ME_DEBUG") == "1"
@@ -155,6 +164,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 		Bootstrapper: bootstrapper,
 		ConfigLoader: configLoader,
 		ChatService:  chatService,
+		Interactor:   &interactor,
 	}, os.Getenv)
 
 	if err != nil {
