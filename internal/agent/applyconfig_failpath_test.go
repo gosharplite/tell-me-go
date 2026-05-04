@@ -48,8 +48,8 @@ func (s *stubConfigWatcher) SyncToStrategy(_ *sessctx.Strategy) {}
 // documented in (*agent).applyConfig and ADR-029 §3.
 //
 // Approach: Option A — real delegate failure via input validation
-// (T2's Validate() rules). For Engine failure we SetRuntimeConfigForInternalUse
-// with an empty ProviderName, which RuntimeConfig.Validate() rejects.
+// (T2's validation rules). For Engine failure we SetRuntimeConfigForInternalUse
+// with an empty ProviderName, which runtime config validation rejects.
 // For Manager failure we replace the configWatcher with a stub returning
 // negative MaxToolTurns, which Limits.Validate() rejects.
 //
@@ -94,7 +94,7 @@ func TestApplyConfig_FailFastChain(t *testing.T) {
 			setup: func(t *testing.T) (ports.Chatter, InternalAccessor) {
 				chatter, accessor := newTestAgent(t)
 
-				// Empty ProviderName → RuntimeConfig.Validate() rejects →
+				// Empty ProviderName → runtime config validation rejects →
 				// Engine.Reconfigure returns error → Manager.Reconfigure
 				// structurally skipped (the fail-fast contract).
 				accessor.SetRuntimeConfigForInternalUse(

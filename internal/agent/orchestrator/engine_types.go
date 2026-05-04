@@ -24,7 +24,7 @@ type RuntimeConfig struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 }
 
-// Validate checks that the RuntimeConfig contains the minimum viable
+// validate checks that the RuntimeConfig contains the minimum viable
 // fields required by the orchestrator Engine. It is called by
 // Engine.Reconfigure to fail fast on malformed runtime configuration.
 // See ADR-029.
@@ -37,7 +37,7 @@ type RuntimeConfig struct {
 //
 // Additional validation rules will be added in separate, individually-tracked issues
 // per ADR-029 negative-consequence mitigation. Do not extend this method ad-hoc.
-func (c RuntimeConfig) Validate() error {
+func (c RuntimeConfig) validate() error {
 	if c.ProviderName == "" {
 		return fmt.Errorf("runtime config: provider name must not be empty")
 	}
