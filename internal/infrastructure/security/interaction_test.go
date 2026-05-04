@@ -38,8 +38,7 @@ func (m *mockAuditor) getArgValue(callIdx int, key string) any {
 	return nil
 }
 
-func (m *mockAuditor) SetLogFile(path string)                         {}
-func (m *mockAuditor) SetInteractor(interactor domain.UserInteractor) {}
+func (m *mockAuditor) SetLogFile(path string) {}
 func (m *mockAuditor) Close() error                                   { return nil }
 
 // spyInteractor captures calls to UserInteractor methods.
@@ -170,7 +169,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 				tt.mockSetup(&spy.mockInteractor)
 			}
 			auditor := &mockAuditor{}
-			handler := newInteractionHandler(spy, auditor)
+			handler := newInteractionHandler(func() domain.UserInteractor { return spy }, auditor)
 
 			got, err := handler.ConfirmAction(ctx, tt.action, tt.target, tt.detail, tt.bypass)
 
@@ -195,7 +194,7 @@ func TestInteractionHandler_ReadMethods(t *testing.T) {
 	t.Parallel()
 	spy := &spyInteractor{}
 	spy.Answer = "hello"
-	handler := newInteractionHandler(spy, nil)
+	handler := newInteractionHandler(func() domain.UserInteractor { return spy }, nil)
 
 	ctx := context.Background()
 	key, err := handler.ReadSingleKey(ctx)
@@ -212,21 +211,6 @@ func TestInteractionHandler_ReadMethods(t *testing.T) {
 	}
 	if line != "hello" {
 		t.Errorf("ReadLine returned %q, expect 'hello'", line)
-	}
-}
-
-func TestInteractionHandler_SetInteractor(t *testing.T) {
-	t.Parallel()
-	spy1 := &spyInteractor{}
-	handler := newInteractionHandler(spy1, nil)
-	if handler.interactor != spy1 {
-		t.Error("Initial interactor mismatch")
-	}
-
-	spy2 := &spyInteractor{}
-	handler.SetInteractor(spy2)
-	if handler.interactor != spy2 {
-		t.Error("SetInteractor failed")
 	}
 }
 
@@ -288,7 +272,7 @@ func TestMockInteractor_EdgeCases(t *testing.T) {
 
 func TestInteractionHandler_TerminalLocking(t *testing.T) {
 	t.Parallel()
-	handler := newInteractionHandler(&noOpInteractor{}, nil)
+	handler := newInteractionHandler(NoOpInteractor, nil)
 	// Just verify they don't panic and can be called
 	handler.TerminalLock()
 	handler.TerminalUnlock()
