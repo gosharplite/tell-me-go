@@ -698,29 +698,35 @@ func TestNewClient_Options(t *testing.T) {
 	}
 }
 
-func TestVertexAI_Support(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 1. Verify URL structure: baseURL + "/" + model + ":rawPredict"
+// vertexAIHandler returns an http.Handler that asserts Vertex AI wire-format
+// invariants and returns a fixed success response. Each invariant failure is
+// reported via t.Errorf without short-circuiting so the test collects all
+// failures in a single run.
+func vertexAIHandler(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		// URL must end with /<model>:rawPredict
 		if !strings.HasSuffix(r.URL.Path, "/claude-3-5-sonnet-v1:rawPredict") {
 			t.Errorf("expected path to end with /claude-3-5-sonnet-v1:rawPredict, got %s", r.URL.Path)
 		}
 
-		// 2. Verify Headers: NO anthropic-version, NO anthropic-beta
-		if r.Header.Get("anthropic-version") != "" {
-			t.Errorf("expected NO anthropic-version header for Vertex, got %s", r.Header.Get("anthropic-version"))
-		}
-		if r.Header.Get("anthropic-beta") != "" {
-			t.Errorf("expected NO anthropic-beta header for Vertex, got %s", r.Header.Get("anthropic-beta"))
+		// Vertex MUST NOT send anthropic-version header
+		if v := r.Header.Get("anthropic-version"); v != "" {
+			t.Errorf("expected NO anthropic-version header for Vertex, got %s", v)
 		}
 
-		// 3. Verify Body
+		// Vertex MUST NOT send anthropic-beta header
+		if v := r.Header.Get("anthropic-beta"); v != "" {
+			t.Errorf("expected NO anthropic-beta header for Vertex, got %s", v)
+		}
+
 		var req messagesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("failed to decode request body: %v", err)
 			return
 		}
 
-		// Vertex now supports cache_control in the body, but NOT in headers
+		// cache_control must be present in system block body (ephemeral)
 		if sys, ok := req.System.([]interface{}); ok && len(sys) > 0 {
 			block := sys[0].(map[string]interface{})
 			cache, ok := block["cache_control"].(map[string]interface{})
@@ -729,12 +735,12 @@ func TestVertexAI_Support(t *testing.T) {
 			}
 		}
 
-		// Vertex requires model to be omitted from body
+		// Model field must be omitted from JSON body
 		if req.Model != "" {
 			t.Errorf("expected model to be omitted from JSON body for Vertex, got %s", req.Model)
 		}
 
-		// Vertex requires anthropic_version in body
+		// anthropic_version must be "vertex-2023-10-16" inside JSON body
 		if req.AnthropicVersion != "vertex-2023-10-16" {
 			t.Errorf("expected anthropic_version vertex-2023-10-16 in JSON body, got %s", req.AnthropicVersion)
 		}
@@ -743,26 +749,56 @@ func TestVertexAI_Support(t *testing.T) {
 			ID:   "msg_vertex_123",
 			Role: "assistant",
 			Content: []contentBlock{
-				{
-					Type: "text",
-					Text: "Hello from Vertex Claude",
-				},
+				{Type: "text", Text: "Hello from Vertex Claude"},
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
+	}
+}
 
-	vertexBaseURL := server.URL + "/aiplatform.googleapis.com/v1"
-	client := NewClient(vertexBaseURL, "claude-3-5-sonnet-v1", &auth.AnthropicAuth{APIKey: "test-key"})
+func TestVertexAI_Support(t *testing.T) {
+	vertexBaseURL := "/aiplatform.googleapis.com/v1"
+	model := "claude-3-5-sonnet-v1"
 
-	resp, _, err := client.SendChat(context.Background(), nil, nil, nil)
-	if err != nil {
-		t.Fatalf("SendChat failed: %v", err)
+	tests := []struct {
+		name     string
+		system   []*llm.Content // system instructions to inject cache_control
+		wantText string
+	}{
+		{
+			name:     "basic Vertex call",
+			system:   nil,
+			wantText: "Hello from Vertex Claude",
+		},
+		{
+			name: "Vertex with system (cache_control)",
+			system: []*llm.Content{
+				{Role: "system", Parts: []*llm.Part{{Text: "You are helpful"}}},
+			},
+			wantText: "Hello from Vertex Claude",
+		},
 	}
 
-	if resp.Parts[0].Text != "Hello from Vertex Claude" {
-		t.Errorf("unexpected response content: %s", resp.Parts[0].Text)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(vertexAIHandler(t))
+			defer server.Close()
+
+			client := NewClient(
+				server.URL+vertexBaseURL,
+				model,
+				&auth.AnthropicAuth{APIKey: "test-key"},
+			)
+
+			resp, _, err := client.SendChat(context.Background(), tt.system, nil, nil)
+			if err != nil {
+				t.Fatalf("SendChat failed: %v", err)
+			}
+
+			if len(resp.Parts) == 0 || resp.Parts[0].Text != tt.wantText {
+				t.Errorf("unexpected response content: got %+v, want text %q", resp.Parts, tt.wantText)
+			}
+		})
 	}
 }
 
