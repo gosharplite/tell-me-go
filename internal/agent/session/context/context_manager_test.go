@@ -625,18 +625,18 @@ func TestManager_Prepare_ExecutePipeline_SetContentsError(t *testing.T) {
 
 func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 	tests := []struct {
-		name            string
-		pipeline        []ports.ContextTransformer
-		setContentsErr  error
-		wantErr         error
-		verifyPersist bool // if true, assert SetContents was called before the error
+		name           string
+		pipeline       []ports.ContextTransformer
+		setContentsErr error
+		wantErr        error
+		verifyPersist  bool // if true, assert SetContents was called before the error
 	}{
 		{
 			name: "happy path: version matches, SetContents succeeds, commitToCache succeeds",
 			pipeline: []ports.ContextTransformer{
 				&forcePersistTransformer{},
 			},
-			wantErr:     nil,
+			wantErr: nil,
 		},
 		{
 			name: "transient transformer fails after successful persist",
@@ -644,7 +644,7 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 				&forcePersistTransformer{},
 				&failingTransientTransformer{},
 			},
-			wantErr:     errTransientFail,
+			wantErr:       errTransientFail,
 			verifyPersist: true, // SetContents should have been called before transient fail
 		},
 	}
