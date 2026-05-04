@@ -155,6 +155,20 @@ func (a *agent) initComponents() error {
 	return nil
 }
 
+// applyConfig is the hot-reload entrypoint for runtime configuration changes
+// (provider switch, context-window resize, tool toggle, history-limit changes).
+// It is invoked from three call sites: NewAgent (initial application),
+// SetLimits (runtime updates), and Chat (pre-flight refresh per turn).
+//
+// Per ADR-029, applyConfig implements a fail-fast delegate chain in fixed
+// order: SafePublish(ConfigUpdated) → Engine.Reconfigure → Manager.Reconfigure.
+// Any delegate returning an error short-circuits the chain via `return err`,
+// leaving downstream delegates uncalled. There is no rollback: each delegate
+// validates its input before mutating internal state, so a failure leaves
+// the corresponding component on its previous configuration (ADR-029 §4).
+//
+// The order is contractual, not stylistic. See the inline comment above the
+// delegate sequence below for the rationale. Do not reorder these calls.
 func (a *agent) applyConfig(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -178,6 +192,22 @@ func (a *agent) applyConfig(ctx context.Context) error {
 
 	tracker := a.tracker
 
+	// ADR-029 fail-fast delegate chain. The three calls below MUST execute
+	// in this exact order:
+	//
+	//   1. events.SafePublish(ConfigUpdated)  — broadcast new limits to subscribers
+	//   2. Engine.Reconfigure                 — apply runtime config to orchestrator
+	//   3. Manager.Reconfigure                — apply limits to context manager
+	//
+	// Each call returns error and short-circuits the chain on failure. The
+	// ordering reflects dependency direction: subscribers receive the new
+	// configuration before the engine acts on it; the engine's runtime state
+	// is consistent before the context manager rebuilds its pipeline. Reordering
+	// would cause subscribers to react to engine state that does not yet exist,
+	// or cause the context manager to rebuild against stale engine config.
+	//
+	// Do not reorder, parallelize, or wrap in errgroup. Do not "tidy" by
+	// collapsing the if-blocks. The structural sequence IS the contract.
 	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: newCfg.Limits}); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			a.getLogger().Error("event_publish_failed",
