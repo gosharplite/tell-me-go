@@ -61,7 +61,7 @@ func TestReadFile(t *testing.T) {
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path, "reason": "testing"}, nil)
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}, "reason": "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestReadFile_Truncation(t *testing.T) {
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path, "reason": "testing"}, nil)
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}, "reason": "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +231,11 @@ func TestReadFile_Binary(t *testing.T) {
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path, "reason": "testing"}, nil)
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}, "reason": "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(res.Text, "binary") {
+	if !strings.Contains(res.Text, "Binary") {
 		t.Errorf("expected 'binary' message, got %q", res.Text)
 	}
 }
@@ -368,7 +368,7 @@ func TestReadFile_UTF8Truncation(t *testing.T) {
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path, "reason": "testing"}, nil)
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}, "reason": "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,9 @@ func TestReadFile_UTF8Truncation(t *testing.T) {
 		t.Fatal("expected truncation message")
 	}
 
-	finalContent := truncatedPart[:truncIdx]
+	// Skip the "--- File: ... ---\n" header
+	headerEnd := strings.Index(truncatedPart, "\n") + 1
+	finalContent := truncatedPart[headerEnd:truncIdx]
 
 	// Check if the last character is valid UTF-8
 	if !utf8.ValidString(finalContent) {
@@ -437,11 +439,12 @@ func TestReadFile_Directory(t *testing.T) {
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
-	_, err := r.readFile(ctx, map[string]interface{}{"filepath": subDir, "reason": "testing"}, nil)
-	if err == nil {
-		t.Error("expected error when reading a directory")
-	} else if !strings.Contains(err.Error(), "path is a directory") {
-		t.Errorf("expected error message to contain 'path is a directory', got %q", err.Error())
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{subDir}, "reason": "testing"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "ERROR: path is a directory, use list_files instead") {
+		t.Errorf("expected directory error message, got %q", res.Text)
 	}
 }
 

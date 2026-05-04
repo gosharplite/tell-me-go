@@ -301,7 +301,7 @@ func TestStopReasonToolUse_NoError(t *testing.T) {
 				{
 					Type:  "tool_use",
 					ID:    "toolu_ok",
-					Name:  "read_file",
+					Name:  "read_files",
 					Input: map[string]interface{}{"filepath": "x.txt", "reason": "see contents"},
 				},
 			},

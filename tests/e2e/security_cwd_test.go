@@ -96,9 +96,9 @@ func TestSecurity_DetailedErrorMessage(t *testing.T) {
 	}
 
 	// Try to read a sensitive path which should definitely be blocked
-	server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
-		"filepath": targetPath,
-		"reason":   "E2E verification of detailed security error message",
+	server, receivedResponse := setupProviderMockServer(t, provider, "read_files", map[string]interface{}{
+		"filepaths": []interface{}{targetPath},
+		"reason":    "E2E verification of detailed security error message",
 	}, nil)
 	defer server.Close()
 

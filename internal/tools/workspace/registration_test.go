@@ -65,7 +65,6 @@ func TestRegister(t *testing.T) {
 
 	toolNames := []string{
 		"list_files",
-		"read_file",
 		"write_file",
 		"search_files",
 		"execute_command",
