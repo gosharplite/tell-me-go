@@ -26,10 +26,43 @@ func (s realFileStat) Stat(name string) (os.FileInfo, error) { return os.Stat(na
 // ConfigWatcher defines the interface for monitoring configuration.
 type ConfigWatcher interface {
 	SetPaths(main, session string)
+
+	// Refresh re-reads configuration from the underlying source (file, env,
+	// or in-memory store) using modelHint to disambiguate model-specific
+	// overrides. It is invoked by (*agent).applyConfig before the fallible
+	// delegate chain runs.
+	//
+	// Refresh is intentionally void per ADR-029 §5: it implements best-effort
+	// reload semantics. A failed refresh leaves the watcher's prior state
+	// intact, which is acceptable because the next chat turn will retry
+	// (idempotent reload). Promoting Refresh to fallible would force every
+	// caller to decide between "abort the chat" and "log and continue" —
+	// a policy choice the ADR explicitly defers.
+	//
+	// Do NOT change this signature to return error without first amending
+	// ADR-029. The fail-fast delegate chain in (*agent).applyConfig is
+	// scoped to SafePublish, Engine.Reconfigure, and Manager.Reconfigure
+	// only; expanding the chain is a non-trivial architectural decision.
 	Refresh(model string)
 	SetLimits(tokens, toolTurns, historyTurns int)
 	GetLimits() (tokens, toolTurns, historyTurns int)
 	ApplyLimits(l events.Limits)
+
+	// SyncToStrategy pushes the watcher's current limits into a *sessctx.Strategy
+	// so that token-budget calculations downstream see the latest configuration.
+	// It is invoked by (*agent).applyConfig after Refresh and before the fallible
+	// delegate chain runs.
+	//
+	// SyncToStrategy is intentionally void per ADR-029 §5: it performs only
+	// in-memory field assignments on a Strategy that the caller already owns.
+	// There is no I/O, no validation, and no observable failure mode. Promoting
+	// it to fallible would add a return-value-checking burden at every call
+	// site for a contract that cannot fail.
+	//
+	// Do NOT change this signature to return error without first amending
+	// ADR-029. The fail-fast delegate chain in (*agent).applyConfig is
+	// scoped to SafePublish, Engine.Reconfigure, and Manager.Reconfigure
+	// only; expanding the chain is a non-trivial architectural decision.
 	SyncToStrategy(cs *sessctx.Strategy)
 }
 

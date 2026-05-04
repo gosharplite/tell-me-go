@@ -105,6 +105,7 @@ func TestAgent_Chat(t *testing.T) {
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -190,6 +191,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithClock(mockClock),
 	)
@@ -286,6 +288,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -391,6 +394,7 @@ func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, co
 	a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithInternalTools(),
 	)
@@ -446,6 +450,7 @@ func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, contex
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithInternalTools(),
 	)

@@ -77,8 +77,18 @@ func WithSessionProvider(sp ports.SessionProvider) contextManagerOption {
 	}
 }
 
-// Reconfigure updates the context manager's pipeline and strategy based on new limits.
-func (cm *Manager) Reconfigure(limits events.Limits) {
+// Reconfigure updates the manager's runtime limits.
+//
+// Per ADR-029, this method is fallible: limits.Validate() is invoked before
+// any state mutation. If validation fails, the manager retains its previous
+// configuration — no rollback is necessary because no fields are written
+// on the failure path. The error is returned so the caller (typically
+// (*agent).applyConfig) can fail fast and surface the misconfiguration.
+func (cm *Manager) Reconfigure(limits events.Limits) error {
+	if err := limits.Validate(); err != nil {
+		return fmt.Errorf("context manager reconfigure: %w", err)
+	}
+
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.version++
@@ -89,6 +99,8 @@ func (cm *Manager) Reconfigure(limits events.Limits) {
 	if cm.Factory != nil {
 		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits, cm.Factory.Extras...)
 	}
+
+	return nil
 }
 
 // cloneContentSlice creates a deep clone of a slice of Content.

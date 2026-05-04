@@ -76,7 +76,9 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 
 	// Set a token limit to trigger auto-summarization.
 	// Use 100000. Safety limit = 99000. 90% = 90000.
-	cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20})
+	if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20}); err != nil {
+		t.Fatalf("Reconfigure setup failed: %v", err)
+	}
 
 	// Add 95k tokens of history.
 	longText := strings.Repeat("A", 32000) // approx 10k tokens
@@ -126,7 +128,9 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	defer server.Close()
 
 	// Set a limit to trigger auto-summarization (90% threshold = 90k tokens)
-	cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20})
+	if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20}); err != nil {
+		t.Fatalf("Reconfigure setup failed: %v", err)
+	}
 
 	// Add enough turns to exceed 90k tokens
 	addHeavyHistory(t, hManager, 9)
@@ -244,7 +248,9 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 		Events:     bus,
 	}
 	cm := sessctx.NewManager(strategy, hManager, bus, factory)
-	cm.Reconfigure(events.Limits{MaxHistoryTokens: 3500, MaxToolTurns: 10, MaxHistoryTurns: 20}) // Limit to trigger summarization
+	if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 3500, MaxToolTurns: 10, MaxHistoryTurns: 20}); err != nil {
+		t.Fatalf("Reconfigure setup failed: %v", err)
+	} // Limit to trigger summarization
 
 	// Add some turns (approx 3451 tokens with base overhead and tools)
 	longText := strings.Repeat("A", 1600) // approx 500 tokens
@@ -335,7 +341,9 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	// Tools ~2000.
 	// Total overhead ~2300.
 	// Set limit to 3000.
-	cm.Reconfigure(events.Limits{MaxHistoryTokens: 3000, MaxToolTurns: 10, MaxHistoryTurns: 20})
+	if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 3000, MaxToolTurns: 10, MaxHistoryTurns: 20}); err != nil {
+		t.Fatalf("Reconfigure setup failed: %v", err)
+	}
 
 	// 4. Add history (600 tokens)
 	// Total = 2300 (overhead) + 600 (history) = 2900.

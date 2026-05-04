@@ -37,7 +37,9 @@ func TestGuardStep_Process(t *testing.T) {
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
 		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
-		cm.Reconfigure(events.Limits{MaxToolTurns: 3})
+		if err := cm.Reconfigure(events.Limits{MaxToolTurns: 3}); err != nil {
+			t.Fatalf("Reconfigure setup failed: %v", err)
+		}
 
 		turn := &Turn{
 			Index:        5,
@@ -64,7 +66,9 @@ func TestGuardStep_Process(t *testing.T) {
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
 		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, nil, nil)
-		cm.Reconfigure(events.Limits{MaxToolTurns: 10})
+		if err := cm.Reconfigure(events.Limits{MaxToolTurns: 10}); err != nil {
+			t.Fatalf("Reconfigure setup failed: %v", err)
+		}
 
 		turn := &Turn{
 			Index:        1,
@@ -92,7 +96,9 @@ func TestGuardStep_Process(t *testing.T) {
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		counter := &agenttest.MockTokenCounter{}
 		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
-		cm.Reconfigure(events.Limits{MaxToolTurns: 10})
+		if err := cm.Reconfigure(events.Limits{MaxToolTurns: 10}); err != nil {
+			t.Fatalf("Reconfigure setup failed: %v", err)
+		}
 
 		turn := &Turn{
 			Index:        1,

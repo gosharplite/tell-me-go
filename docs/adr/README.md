@@ -30,6 +30,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-022** | Tool-Result Error Convention | 2026-04 | Accepted | [2026-04-tool-result-error-convention.md](2026-04-tool-result-error-convention.md) |
 | **ADR-023** | Reasoning-Token Accounting for OpenAI-Compatible Providers | 2026-04 | Accepted | [2026-04-reasoning-token-accounting.md](2026-04-reasoning-token-accounting.md) |
 | **ADR-028** | Delegate Registration Logic to Integration Sub-Packages | 2026-05 | Accepted | [2026-05-subpackage-registration-pattern.md](2026-05-subpackage-registration-pattern.md) |
+| **ADR-029** | Fallible `Reconfigure` Delegate Chain in Agent Hot-Reload | 2026-05 | Accepted | [2026-05-fallible-reconfigure-delegate-chain.md](2026-05-fallible-reconfigure-delegate-chain.md) |
 
 ## How to Create a New ADR
 

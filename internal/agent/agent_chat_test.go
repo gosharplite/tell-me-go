@@ -38,7 +38,8 @@ func TestAgent_Chat_Success(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
-	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
+	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -85,7 +86,8 @@ func TestAgent_Chat_EngineFailure(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
-	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
+	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -110,7 +112,8 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
-	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
+	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -194,7 +197,8 @@ func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
-	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
+	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
