@@ -198,7 +198,9 @@ func (a *agent) applyConfig(ctx context.Context) error {
 		}
 	}
 	if a.ctxManager != nil {
-		a.ctxManager.Reconfigure(newCfg.Limits)
+		if err := a.ctxManager.Reconfigure(newCfg.Limits); err != nil {
+			return err
+		}
 	}
 	return nil
 }

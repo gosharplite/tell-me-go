@@ -224,7 +224,9 @@ func TestGuardStep_TDT(t *testing.T) {
 
 			hMock := &agenttest.MockHistoryManager{}
 			cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
-			cm.Reconfigure(events.Limits{MaxToolTurns: tt.maxTurns})
+			if err := cm.Reconfigure(events.Limits{MaxToolTurns: tt.maxTurns}); err != nil {
+				t.Fatalf("Reconfigure setup failed: %v", err)
+			}
 
 			turn := &Turn{
 				Index:      tt.index,
