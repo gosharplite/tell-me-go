@@ -85,7 +85,9 @@ func TestEngine_Reconfigure(t *testing.T) {
 		},
 	}
 
-	e.Reconfigure(runtimeCfg, tracker)
+	if err := e.Reconfigure(runtimeCfg, tracker); err != nil {
+		t.Fatalf("expected nil error on valid reconfigure, got %v", err)
+	}
 
 	cfg := e.config.Load()
 	assert.Equal(t, "new-provider", cfg.ProviderName)

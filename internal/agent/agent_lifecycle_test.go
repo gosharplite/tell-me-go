@@ -66,7 +66,8 @@ func TestAgent_InternalState_MutationAndReadback(t *testing.T) {
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	require.NoError(t, err)
 
 	a := asAgent(t, chatter)
@@ -118,7 +119,8 @@ func TestAgent_SetLimits(t *testing.T) {
 		}
 	})
 
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	require.NoError(t, err)
 
 	err = chatter.SetLimits(ctx, 5, 1000, 10)
