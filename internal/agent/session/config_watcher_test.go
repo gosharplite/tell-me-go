@@ -15,7 +15,9 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 )
@@ -298,10 +300,6 @@ MAX_TURNS: 5
 	}
 }
 
-func TestConfigWatcher_ManualLimits(t *testing.T) {
-	// Not implemented
-}
-
 // stubFileInfo implements os.FileInfo for testing.
 type stubFileInfo struct{ modTime time.Time }
 
@@ -545,6 +543,134 @@ func TestConfigWatcher_LoadSessionConfig_AllFields(t *testing.T) {
 	}
 	if historyTurns != 40 {
 		t.Errorf("MaxHistoryTurns = %d, want 40", historyTurns)
+	}
+}
+
+func TestFileConfigWatcher_SetLimits(t *testing.T) {
+	tests := []struct {
+		name                       string
+		tokens, toolTurns, histTurns int
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", 200, 5, 10, 200, 5, 10},
+		{"zero tokens no-op", 0, 5, 10, 100, 5, 10},
+		{"negative tokens no-op", -1, 5, 10, 100, 5, 10},
+		{"mixed zero/positive", 200, 0, 10, 200, 10, 10},
+		{"all zero no-op", 0, 0, 0, 100, 10, 20},
+		{"partial update", 0, 0, 50, 100, 10, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+			fcw := cw.(*session.FileConfigWatcher)
+
+			fcw.SetLimits(tt.tokens, tt.toolTurns, tt.histTurns)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestFileConfigWatcher_ApplyLimits(t *testing.T) {
+	tests := []struct {
+		name                       string
+		limits                     events.Limits
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
+		{"zero tokens no-op", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"negative tokens no-op", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"zero-value Limits", events.Limits{}, 100, 10, 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+			fcw := cw.(*session.FileConfigWatcher)
+
+			fcw.ApplyLimits(tt.limits)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestFileConfigWatcher_SyncToStrategy(t *testing.T) {
+	t.Run("pushes limits", func(t *testing.T) {
+		cw := session.NewFileConfigWatcher(nil, nil, 500, 10, 20, nil)
+		fcw := cw.(*session.FileConfigWatcher)
+
+		fcw.SetLimits(500, 10, 20)
+		strategy := sessctx.NewStrategy(nil)
+		fcw.SyncToStrategy(strategy)
+
+		if strategy.GetMaxHistoryTokens() != 500 {
+			t.Errorf("expected 500, got %d", strategy.GetMaxHistoryTokens())
+		}
+		if strategy.GetMaxToolTurns() != 10 {
+			t.Errorf("expected 10, got %d", strategy.GetMaxToolTurns())
+		}
+	})
+
+	t.Run("pushes context window", func(t *testing.T) {
+		cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+		fcw := cw.(*session.FileConfigWatcher)
+
+		strategy := sessctx.NewStrategy(nil)
+		fcw.SyncToStrategy(strategy)
+
+		if strategy.GetContextWindow() != 1000000 {
+			t.Errorf("expected 1000000, got %d", strategy.GetContextWindow())
+		}
+	})
+
+	t.Run("nil strategy no-op", func(t *testing.T) {
+		cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+		fcw := cw.(*session.FileConfigWatcher)
+
+		// Must not panic
+		fcw.SyncToStrategy(nil)
+	})
+}
+
+func TestFileConfigWatcher_SyncToStrategy_Divergence(t *testing.T) {
+	cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	strategy := sessctx.NewStrategy(nil)
+
+	// Sync initial values
+	fcw.SyncToStrategy(strategy)
+	if strategy.GetMaxHistoryTokens() != 100 {
+		t.Fatalf("initial sync: expected 100, got %d", strategy.GetMaxHistoryTokens())
+	}
+
+	// Change watcher WITHOUT syncing
+	fcw.SetLimits(999, 50, 60)
+
+	// Strategy must still reflect OLD values — proof of divergence
+	if strategy.GetMaxHistoryTokens() != 100 {
+		t.Errorf("strategy should retain old value 100 before re-sync, got %d", strategy.GetMaxHistoryTokens())
+	}
+
+	// Re-sync — strategy must now reflect NEW values
+	fcw.SyncToStrategy(strategy)
+	if strategy.GetMaxHistoryTokens() != 999 {
+		t.Errorf("after re-sync: expected 999, got %d", strategy.GetMaxHistoryTokens())
+	}
+	if strategy.GetMaxToolTurns() != 50 {
+		t.Errorf("after re-sync: expected 50, got %d", strategy.GetMaxToolTurns())
 	}
 }
 
