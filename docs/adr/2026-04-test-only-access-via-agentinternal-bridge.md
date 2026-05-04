@@ -1,5 +1,16 @@
 # ADR-022: Test-Only Access via `agentinternal` Bridge & `*ForInternalUse` Branding
 
+> **Update (post-merge of issue #136):** The `GetTracker` exception
+> documented below was resolved. `InternalAccessor.GetTracker()` was
+> renamed to `GetTrackerForInternalUse()` to bring it under the
+> uniform `*ForInternalUse` brand. Production code obtains the
+> tracker via `ports.SessionDependencies.GetTracker()` (a different
+> interface). The "Compliance & Enforcement" section's reference to
+> `scripts/check_no_test_imports.sh` is also stale: the actual CI
+> guard is the `verify-internal-bridge-brand` target in the
+> top-level `Makefile`. The original ADR text below is preserved
+> verbatim for historical context.
+
 **Status:** Accepted
 **Date:** 2026-04
 **Deciders:** Architect, Coder
@@ -234,8 +245,8 @@ and the follow-up issue. The `*ForTest` wrapper adds
 
 ## Compliance & Enforcement
 
-- **Grep CI check** (added in this commit, see
-  `scripts/check_no_test_imports.sh`):
+- **Grep CI check** (see the `verify-internal-bridge-brand` target in
+  the top-level `Makefile`):
   - No `_test.go`-excluded file may match `"testing"` outside
     `eventstest/` and `agentinternal/`.
   - No `_test.go`-excluded file outside the `agent` package's bridge

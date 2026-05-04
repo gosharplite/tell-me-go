@@ -298,8 +298,9 @@ func (a *agent) getLogger() ports.Logger {
 // InternalAccessor provides access to internal agent components for the
 // internal/agent/agentinternal sibling package, which wraps it with
 // typed accessors and clearly-suffixed *ForTest mutators. Production
-// code must not call any "*ForInternalUse" method except GetTracker,
-// which is grandfathered in until issue #87 closes (see ADR-022).
+// code must not call any "*ForInternalUse" method. Production access
+// to agent internals goes through ports.SessionDependencies or
+// ports.Chatter. See ADR-022.
 //
 // The interface is satisfied only by the unexported *agent type.
 // Callers obtain it via agent.AsInternal or agent.NewBareForInternalUse.
@@ -311,12 +312,8 @@ type InternalAccessor interface {
 	// functions that accept the ports.Chatter interface.
 	AsChatter() ports.Chatter
 
-	// GetTracker is the one accessor with confirmed production callers
-	// (infrastructure/factory/chatter.go, infrastructure/di/container.go).
-	// Removal is tracked by issue #87. See ADR-022.
-	GetTracker() domain_pricing.CostTracker
-
 	// Bridge methods consumed by agentinternal. Not for production use.
+	GetTrackerForInternalUse() domain_pricing.CostTracker
 	GetCtxManagerForInternalUse() *sessctx.Manager
 	GetEventsForInternalUse() events.EventBus
 	GetConfigWatcherForInternalUse() session.ConfigWatcher

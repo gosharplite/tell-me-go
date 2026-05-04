@@ -698,6 +698,67 @@ func TestNewClient_Options(t *testing.T) {
 	}
 }
 
+// assertVertexURLPath checks that the Vertex AI URL path ends with
+// the rawPredict suffix for the correct model.
+func assertVertexURLPath(t *testing.T, r *http.Request) {
+	t.Helper()
+	if !strings.HasSuffix(r.URL.Path, "/claude-3-5-sonnet-v1:rawPredict") {
+		t.Errorf("expected path to end with /claude-3-5-sonnet-v1:rawPredict, got %s", r.URL.Path)
+	}
+}
+
+// assertVertexNoAnthropicVersionHeader checks that Vertex does NOT send
+// an anthropic-version header (that header is Anthropic-direct only).
+func assertVertexNoAnthropicVersionHeader(t *testing.T, r *http.Request) {
+	t.Helper()
+	if v := r.Header.Get("anthropic-version"); v != "" {
+		t.Errorf("expected NO anthropic-version header for Vertex, got %s", v)
+	}
+}
+
+// assertVertexNoAnthropicBetaHeader checks that Vertex does NOT send
+// an anthropic-beta header (that header is Anthropic-direct only).
+func assertVertexNoAnthropicBetaHeader(t *testing.T, r *http.Request) {
+	t.Helper()
+	if v := r.Header.Get("anthropic-beta"); v != "" {
+		t.Errorf("expected NO anthropic-beta header for Vertex, got %s", v)
+	}
+}
+
+// assertVertexModelOmittedFromBody checks that the model field is omitted
+// from the JSON body (Vertex infers the model from the URL path).
+func assertVertexModelOmittedFromBody(t *testing.T, req messagesRequest) {
+	t.Helper()
+	if req.Model != "" {
+		t.Errorf("expected model to be omitted from JSON body for Vertex, got %s", req.Model)
+	}
+}
+
+// assertVertexAnthropicVersionInBody checks that anthropic_version is
+// set to the Vertex-specific value inside the JSON body.
+func assertVertexAnthropicVersionInBody(t *testing.T, req messagesRequest) {
+	t.Helper()
+	if req.AnthropicVersion != "vertex-2023-10-16" {
+		t.Errorf("expected anthropic_version vertex-2023-10-16 in JSON body, got %s", req.AnthropicVersion)
+	}
+}
+
+// assertVertexCacheControlInSystemBlock checks that ephemeral cache_control
+// is present in the first system block. When there are no system blocks
+// the check is a no-op.
+func assertVertexCacheControlInSystemBlock(t *testing.T, req messagesRequest) {
+	t.Helper()
+	sys, ok := req.System.([]interface{})
+	if !ok || len(sys) == 0 {
+		return // no system blocks; nothing to check
+	}
+	block := sys[0].(map[string]interface{})
+	cache, ok := block["cache_control"].(map[string]interface{})
+	if !ok || cache["type"] != "ephemeral" {
+		t.Errorf("expected ephemeral cache_control in system block for Vertex, got %v", block["cache_control"])
+	}
+}
+
 // vertexAIHandler returns an http.Handler that asserts Vertex AI wire-format
 // invariants and returns a fixed success response. Each invariant failure is
 // reported via t.Errorf without short-circuiting so the test collects all
@@ -705,20 +766,9 @@ func TestNewClient_Options(t *testing.T) {
 func vertexAIHandler(t *testing.T) http.HandlerFunc {
 	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
-		// URL must end with /<model>:rawPredict
-		if !strings.HasSuffix(r.URL.Path, "/claude-3-5-sonnet-v1:rawPredict") {
-			t.Errorf("expected path to end with /claude-3-5-sonnet-v1:rawPredict, got %s", r.URL.Path)
-		}
-
-		// Vertex MUST NOT send anthropic-version header
-		if v := r.Header.Get("anthropic-version"); v != "" {
-			t.Errorf("expected NO anthropic-version header for Vertex, got %s", v)
-		}
-
-		// Vertex MUST NOT send anthropic-beta header
-		if v := r.Header.Get("anthropic-beta"); v != "" {
-			t.Errorf("expected NO anthropic-beta header for Vertex, got %s", v)
-		}
+		assertVertexURLPath(t, r)
+		assertVertexNoAnthropicVersionHeader(t, r)
+		assertVertexNoAnthropicBetaHeader(t, r)
 
 		var req messagesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -726,24 +776,9 @@ func vertexAIHandler(t *testing.T) http.HandlerFunc {
 			return
 		}
 
-		// cache_control must be present in system block body (ephemeral)
-		if sys, ok := req.System.([]interface{}); ok && len(sys) > 0 {
-			block := sys[0].(map[string]interface{})
-			cache, ok := block["cache_control"].(map[string]interface{})
-			if !ok || cache["type"] != "ephemeral" {
-				t.Errorf("expected ephemeral cache_control in system block for Vertex, got %v", block["cache_control"])
-			}
-		}
-
-		// Model field must be omitted from JSON body
-		if req.Model != "" {
-			t.Errorf("expected model to be omitted from JSON body for Vertex, got %s", req.Model)
-		}
-
-		// anthropic_version must be "vertex-2023-10-16" inside JSON body
-		if req.AnthropicVersion != "vertex-2023-10-16" {
-			t.Errorf("expected anthropic_version vertex-2023-10-16 in JSON body, got %s", req.AnthropicVersion)
-		}
+		assertVertexCacheControlInSystemBlock(t, req)
+		assertVertexModelOmittedFromBody(t, req)
+		assertVertexAnthropicVersionInBody(t, req)
 
 		resp := messagesResponse{
 			ID:   "msg_vertex_123",
