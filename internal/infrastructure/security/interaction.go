@@ -14,22 +14,17 @@ import (
 
 // interactionHandler manages terminal locking and user prompts via a UserInteractor.
 type interactionHandler struct {
-	terminalMu sync.Mutex
-	auditor    auditLogger
-	interactor domain.UserInteractor
+	terminalMu         sync.Mutex
+	auditor            auditLogger
+	interactorProvider func() domain.UserInteractor
 }
 
 // newInteractionHandler creates a new interactionHandler.
-func newInteractionHandler(interactor domain.UserInteractor, auditor auditLogger) *interactionHandler {
+func newInteractionHandler(interactorProvider func() domain.UserInteractor, auditor auditLogger) *interactionHandler {
 	return &interactionHandler{
-		auditor:    auditor,
-		interactor: interactor,
+		auditor:            auditor,
+		interactorProvider: interactorProvider,
 	}
-}
-
-// SetInteractor updates the user interactor.
-func (h *interactionHandler) SetInteractor(interactor domain.UserInteractor) {
-	h.interactor = interactor
 }
 
 // TerminalLock locks the terminal for exclusive access.
@@ -47,13 +42,15 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 	h.TerminalLock()
 	defer h.TerminalUnlock()
 
+	ui := h.interactorProvider()
+
 	detailLog := detail
 	if len(detailLog) > 500 {
 		detailLog = detailLog[:500] + "... (truncated)"
 	}
 
 	if bypass {
-		h.interactor.Warn(fmt.Sprintf("[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).", action, target))
+		ui.Warn(fmt.Sprintf("[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).", action, target))
 		if h.auditor != nil {
 			h.auditor.LogAudit("CONFIRM_ACTION",
 				"ACTION", action+" on "+target,
@@ -73,7 +70,7 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 	}
 	sb.WriteString("Proceed? (y/N) ")
 
-	confirmed, err := h.interactor.Confirm(ctx, sb.String())
+	confirmed, err := ui.Confirm(ctx, sb.String())
 	if err != nil {
 		return false, err
 	}
@@ -92,16 +89,23 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 
 // ReadSingleKey waits for a single key press.
 func (h *interactionHandler) ReadSingleKey(ctx context.Context) (string, error) {
-	return h.interactor.ReadSingleKey(ctx)
+	ui := h.interactorProvider()
+	return ui.ReadSingleKey(ctx)
 }
 
 // ReadLine reads a line of input.
 func (h *interactionHandler) ReadLine(ctx context.Context) (string, error) {
-	return h.interactor.ReadLine(ctx)
+	ui := h.interactorProvider()
+	return ui.ReadLine(ctx)
 }
 
 // noOpInteractor is a dummy interactor that does nothing and denies all confirmations.
 type noOpInteractor struct{}
+
+// NoOpInteractor returns a UserInteractor that does nothing and denies all confirmations.
+func NoOpInteractor() domain.UserInteractor {
+	return &noOpInteractor{}
+}
 
 // Confirm always returns false.
 func (i *noOpInteractor) Confirm(ctx context.Context, message string) (bool, error) {

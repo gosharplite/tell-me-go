@@ -24,16 +24,15 @@ type SecurityManager struct {
 }
 
 // NewSecurityManager creates a new SecurityManager.
-func NewSecurityManager(interactor domain.UserInteractor) *SecurityManager {
-	if interactor == nil {
-		interactor = &noOpInteractor{}
+func NewSecurityManager(interactorProvider func() domain.UserInteractor) *SecurityManager {
+	if interactorProvider == nil {
+		interactorProvider = NoOpInteractor
 	}
-	auditor := newAuditor()
-	auditor.SetInteractor(interactor)
+	auditor := newAuditor(interactorProvider)
 	policy := domain.DefaultPolicy()
 	return &SecurityManager{
 		policy:       newPathPolicy(nil),
-		interaction:  newInteractionHandler(interactor, auditor),
+		interaction:  newInteractionHandler(interactorProvider, auditor),
 		auditor:      auditor,
 		domainPolicy: policy,
 		safety:       domain.NewSafetyService(policy),
@@ -84,12 +83,12 @@ func (sm *SecurityManager) LogAudit(action string, args ...any) {
 
 // Warn prints a security warning.
 func (sm *SecurityManager) Warn(message string) {
-	sm.interaction.interactor.Warn(message)
+	sm.interaction.interactorProvider().Warn(message)
 }
 
 // Prompt prints an inline prompt.
 func (sm *SecurityManager) Prompt(message string) {
-	sm.interaction.interactor.Prompt(message)
+	sm.interaction.interactorProvider().Prompt(message)
 }
 
 // Confirm prompts the user for confirmation.
@@ -97,16 +96,10 @@ func (sm *SecurityManager) Confirm(ctx context.Context, message string) (bool, e
 	if domain.IsCurrentToolApproved(ctx) || sm.IsBypassActive() {
 		sm.interaction.TerminalLock()
 		defer sm.interaction.TerminalUnlock()
-		sm.interaction.interactor.Warn(fmt.Sprintf("[Auto-Approved] %s", message))
+		sm.interaction.interactorProvider().Warn(fmt.Sprintf("[Auto-Approved] %s", message))
 		return true, nil
 	}
-	return sm.interaction.interactor.Confirm(ctx, message)
-}
-
-// SetInteractor updates the user interactor.
-func (sm *SecurityManager) SetInteractor(interactor domain.UserInteractor) {
-	sm.interaction.SetInteractor(interactor)
-	sm.auditor.SetInteractor(interactor)
+	return sm.interaction.interactorProvider().Confirm(ctx, message)
 }
 
 // IsBypassActive returns the current state of bypass_confirmation.
@@ -190,7 +183,7 @@ func (sm *SecurityManager) getSafetyService() *domain.SafetyService {
 
 // getInteractor returns the user interactor.
 func (sm *SecurityManager) getInteractor() domain.UserInteractor {
-	return sm.interaction.interactor
+	return sm.interaction.interactorProvider()
 }
 
 // internalSecurityProvider extends domain.Manager with methods used only within the security package.

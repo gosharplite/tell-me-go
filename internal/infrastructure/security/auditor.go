@@ -16,7 +16,6 @@ import (
 type auditLogger interface {
 	LogAudit(action string, args ...any)
 	SetLogFile(path string)
-	SetInteractor(interactor domain.UserInteractor)
 	Close() error
 }
 
@@ -25,19 +24,14 @@ type auditor struct {
 	mu         sync.Mutex
 	file       *os.File
 	logger     *slog.Logger
-	interactor domain.UserInteractor
+	interactor func() domain.UserInteractor
 }
 
 // newAuditor creates a new auditor.
-func newAuditor() *auditor {
-	return &auditor{}
-}
-
-// SetInteractor sets the user interactor for warnings.
-func (a *auditor) SetInteractor(interactor domain.UserInteractor) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.interactor = interactor
+func newAuditor(interactorProvider func() domain.UserInteractor) *auditor {
+	return &auditor{
+		interactor: interactorProvider,
+	}
 }
 
 // SetLogFile sets the path for logging executed commands.
@@ -57,8 +51,8 @@ func (a *auditor) SetLogFile(path string) {
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		if a.interactor != nil {
-			a.interactor.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
+		if ui := a.interactor(); ui != nil {
+			ui.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
 		}
 		return
 	}

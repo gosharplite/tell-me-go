@@ -38,4 +38,5 @@ type context struct {
 	Loader       domain_config.ConfigLoader
 	MockPrompt   string
 	MockAnswer   string
+	Interactor   *domain_security.UserInteractor
 }

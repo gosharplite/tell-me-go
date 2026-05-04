@@ -93,8 +93,4 @@ func (m *MockSecurityManager) SetBypassActive(active bool) {
 	m.BypassActive = active
 }
 
-func (m *MockSecurityManager) SetInteractor(i security.UserInteractor) {
-	m.Interactor = i
-}
-
 func (m *MockSecurityManager) RegisterSafePath(path string) {}
