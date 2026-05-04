@@ -515,6 +515,47 @@ func (t *versionBumpingTransformer) Transform(ctx context.Context, req *ports.Co
 	return nil
 }
 
+// canonicalVersionBumper bumps the Manager's version during the canonical phase
+// (Priority < 100), triggering the concurrent modification guard inside
+// executePipeline's persistFn closure.
+type canonicalVersionBumper struct {
+	cm *sessctx.Manager
+}
+
+func (t *canonicalVersionBumper) Priority() int { return 50 } // canonical: runs before persistFn
+
+func (t *canonicalVersionBumper) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	// Force persistence so persistFn is called.
+	req.PersistHistory = true
+	if err := t.cm.Reconfigure(events.Limits{}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// forcePersistTransformer sets PersistHistory=true so persistFn is invoked.
+type forcePersistTransformer struct{}
+
+func (t *forcePersistTransformer) Priority() int { return 10 }
+
+func (t *forcePersistTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	req.PersistHistory = true
+	return nil
+}
+
+var errTransientFail = errors.New("transient transformer failure")
+
+// failingTransientTransformer returns an error during the transient phase.
+// It runs AFTER persistFn (Priority >= 100), testing that a pipeline error
+// after successful persistence propagates correctly.
+type failingTransientTransformer struct{}
+
+func (t *failingTransientTransformer) Priority() int { return 150 }
+
+func (t *failingTransientTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	return errTransientFail
+}
+
 func TestManager_Prepare_CommitToCacheError(t *testing.T) {
 	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
 	history := &agenttest.MockHistoryManager{}
@@ -534,4 +575,118 @@ func TestManager_Prepare_CommitToCacheError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, llm.ErrTransient)
 	require.Contains(t, err.Error(), "concurrent history modification detected")
+}
+
+func TestManager_Prepare_ExecutePipeline_VersionMismatch(t *testing.T) {
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	})
+
+	cm := sessctx.NewManager(strategy, history, nil, nil)
+
+	// Create a versionBumpingTransformer at canonical tier (Priority < 100)
+	// so it executes BEFORE persistFn, triggering the version guard
+	// inside executePipeline's closure (manager.go:236-237).
+	bumper := &canonicalVersionBumper{cm: cm}
+	cm.Pipeline = sessctx.NewContextPipeline(bumper)
+
+	ctx := context.Background()
+	_, _, err := cm.Prepare(ctx, 1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, llm.ErrTransient)
+	require.Contains(t, err.Error(), "concurrent history modification detected during context preparation")
+}
+
+func TestManager_Prepare_ExecutePipeline_SetContentsError(t *testing.T) {
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	})
+
+	// Inject the I/O failure
+	persistErr := fmt.Errorf("%w: disk full during SetContents", llm.ErrTerminal)
+	history.SetSetContentsErr(persistErr)
+
+	cm := sessctx.NewManager(strategy, history, nil, nil)
+
+	// Install a canonical transformer that forces persistence
+	// (so persistFn is actually called).
+	cm.Pipeline = sessctx.NewContextPipeline(&forcePersistTransformer{})
+
+	ctx := context.Background()
+	_, _, err := cm.Prepare(ctx, 1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, llm.ErrTerminal)
+	require.ErrorIs(t, err, persistErr)
+}
+
+func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
+	tests := []struct {
+		name           string
+		pipeline       []ports.ContextTransformer
+		setContentsErr error
+		wantErr        error
+		verifyPersist  bool // if true, assert SetContents was called before the error
+	}{
+		{
+			name: "happy path: version matches, SetContents succeeds, commitToCache succeeds",
+			pipeline: []ports.ContextTransformer{
+				&forcePersistTransformer{},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "transient transformer fails after successful persist",
+			pipeline: []ports.ContextTransformer{
+				&forcePersistTransformer{},
+				&failingTransientTransformer{},
+			},
+			wantErr:       errTransientFail,
+			verifyPersist: true, // SetContents should have been called before transient fail
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+			history := &agenttest.MockHistoryManager{}
+			history.SetInternalContents([]*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+			})
+			if tt.setContentsErr != nil {
+				history.SetSetContentsErr(tt.setContentsErr)
+			}
+
+			// Track whether SetContents was called inside executePipeline's persistFn.
+			var setContentsCalled bool
+			if tt.verifyPersist {
+				history.SetContentsFunc = func(ctx context.Context, contents []*llm.Content) error {
+					setContentsCalled = true
+					return nil
+				}
+			}
+
+			cm := sessctx.NewManager(strategy, history, nil, nil)
+			cm.Pipeline = sessctx.NewContextPipeline(tt.pipeline...)
+
+			ctx := context.Background()
+			h, _, err := cm.Prepare(ctx, 1)
+
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				require.ErrorIs(t, err, tt.wantErr)
+				if tt.verifyPersist {
+					require.True(t, setContentsCalled,
+						"SetContents should have been called before transient transformer failed")
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, h)
+			require.Len(t, h, 1)
+		})
+	}
 }
