@@ -102,9 +102,17 @@ func (h *interactionHandler) ReadLine(ctx context.Context) (string, error) {
 // noOpInteractor is a dummy interactor that does nothing and denies all confirmations.
 type noOpInteractor struct{}
 
+// defaultNoOp is the singleton no-op interactor returned by NoOpInteractor.
+// noOpInteractor holds no state, so a single shared instance avoids per-call
+// allocation on the hot path (every SecurityManager interaction calls the
+// provider).
+var defaultNoOp domain.UserInteractor = &noOpInteractor{}
+
 // NoOpInteractor returns a UserInteractor that does nothing and denies all confirmations.
+// The returned value is a process-wide singleton; callers must not assume identity
+// across calls is meaningful, but may rely on it being non-nil.
 func NoOpInteractor() domain.UserInteractor {
-	return &noOpInteractor{}
+	return defaultNoOp
 }
 
 // Confirm always returns false.

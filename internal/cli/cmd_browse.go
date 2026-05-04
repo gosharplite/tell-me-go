@@ -68,9 +68,7 @@ func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 
 func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
 	capturer := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false).(agent.CapturerInteractor)
-	if c.ctx.Interactor != nil {
-		*c.ctx.Interactor = capturer
-	}
+	c.ctx.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		return capturer.Close(ctx)
 	}

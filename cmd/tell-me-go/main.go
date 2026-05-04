@@ -126,10 +126,15 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	homeDir := env.ResolveHomeDir(os.Getenv, os.UserHomeDir)
 
 	// 2. Initialize Core Infrastructure
-	var interactor domain_security.UserInteractor
+	//
+	// The InteractorRef is the wiring cell that breaks the bootstrap cycle:
+	// SecurityManager is built here (early), but the real UserInteractor
+	// (Capturer) is constructed later inside the CLI command. The provider
+	// closure reads the cell atomically on each interaction.
+	interactorRef := cli.NewInteractorRef()
 	interactorProvider := func() domain_security.UserInteractor {
-		if interactor != nil {
-			return interactor
+		if i := interactorRef.Get(); i != nil {
+			return i
 		}
 		return security.NoOpInteractor()
 	}
@@ -164,7 +169,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 		Bootstrapper: bootstrapper,
 		ConfigLoader: configLoader,
 		ChatService:  chatService,
-		Interactor:   &interactor,
+		Interactor:   interactorRef,
 	}, os.Getenv)
 
 	if err != nil {

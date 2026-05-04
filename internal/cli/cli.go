@@ -36,7 +36,7 @@ type AppDependencies struct {
 	Bootstrapper Bootstrapper
 	ConfigLoader domain_config.ConfigLoader
 	ChatService  agent.ChatService
-	Interactor   *domain_security.UserInteractor
+	Interactor   *InteractorRef
 }
 
 // App represents the tell-me-go application.
@@ -50,7 +50,7 @@ type App struct {
 	bootstrapper Bootstrapper
 	configLoader domain_config.ConfigLoader
 	chatService  agent.ChatService
-	interactor   *domain_security.UserInteractor
+	interactor   *InteractorRef
 	mockPrompt   string
 	mockAnswer   string
 }
