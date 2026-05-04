@@ -283,13 +283,14 @@ check-full: fmt tidy build
 	@echo ""
 	@echo "All checks passed (including race detection)."
 
-# Generate coverage report excluding mocks and generated files
+# Generate coverage report excluding mocks, generated files, and the
+# agentinternal delegation bridge (ADR-022 / issue #138).
 .PHONY: test-coverage
 test-coverage:
 	go test -coverprofile=coverage.raw ./...
 ifeq ($(IS_POSIX),true)
-	@grep -v -E "mock\.go|generated" coverage.raw > coverage.out
+	@grep -v -E "mock\.go|generated|agentinternal/" coverage.raw > coverage.out
 else
-	@findstr /V /R "mock\.go generated" coverage.raw > coverage.out
+	@findstr /V /R "mock\.go generated agentinternal/" coverage.raw > coverage.out
 endif
 	go tool cover -func=coverage.out
