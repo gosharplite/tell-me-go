@@ -444,7 +444,7 @@ func TestDispatcher_ExecutionControl(t *testing.T) {
 
 func TestDispatcher_SuggestTool(t *testing.T) {
 	t.Parallel()
-	validTools := []string{"list_files", "read_file", "write_file", "git_status", "ls", "patch"}
+	validTools := []string{"list_files", "read_files", "write_file", "git_status", "ls", "patch"}
 
 	tests := []struct {
 		hallucinated string
@@ -452,7 +452,7 @@ func TestDispatcher_SuggestTool(t *testing.T) {
 	}{
 		{"list_file", "list_files"},
 		{"LIST_FILE", "list_files"},
-		{"read_fil", "read_file"},
+		{"read_fil", "read_files"},
 		{"rit_file", "write_file"},
 		{"git_stat", "git_status"},
 		{"lx", "ls"},

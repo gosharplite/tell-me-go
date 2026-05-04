@@ -886,11 +886,11 @@ func TestGetToolNames(t *testing.T) {
 		{
 			name: "multiple tools",
 			declarations: []*tools.ToolDeclaration{
-				{Name: "read_file"},
+				{Name: "read_files"},
 				{Name: "write_file"},
 				{Name: "execute_command"},
 			},
-			wantNames: []string{"read_file", "write_file", "execute_command"},
+			wantNames: []string{"read_files", "write_file", "execute_command"},
 		},
 		{
 			name:         "empty registry",

@@ -12,7 +12,7 @@ func TestDefaultPolicy(t *testing.T) {
 		t.Fatal("DefaultPolicy() returned nil")
 	}
 
-	expectedCommands := []string{"ls", "git", "go", "read_file", "execute_command"}
+	expectedCommands := []string{"ls", "git", "go", "read_files", "execute_command"}
 	for _, cmd := range expectedCommands {
 		if !p.AllowedCommands[cmd] {
 			t.Errorf("expected command %s to be allowed", cmd)

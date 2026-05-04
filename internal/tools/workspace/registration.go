@@ -88,21 +88,6 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "read_file",
-				Description: "[DEPRECATED] Reads the content of a single file. You MUST use 'read_files' instead (even for single files) to maintain consistent batching patterns and minimize LLM roundtrips.",
-				Parameters: &tools.Schema{
-					Type: "OBJECT",
-					Properties: map[string]*tools.Schema{
-						"filepath": {Type: "STRING", Description: "The path to the file to read."},
-						"reason":   {Type: "STRING", Description: "Reason for reading this file."},
-					},
-					Required: []string{"filepath", "reason"},
-				},
-			},
-			handler: m.reader.readFile,
-		},
-		{
-			decl: &tools.ToolDeclaration{
 				Name:        "read_files",
 				Description: "Reads the full content of multiple files. CRITICAL: Use this tool whenever you need to read more than one file to minimize LLM roundtrips.",
 				Parameters: &tools.Schema{

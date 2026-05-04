@@ -106,7 +106,7 @@ func TestFinishReasonToolCalls_NoError(t *testing.T) {
 								ID:   "call_ok",
 								Type: "function",
 								Function: functionCall{
-									Name:      "read_file",
+									Name:      "read_files",
 									Arguments: `{"filepath":"x.txt","reason":"see contents"}`,
 								},
 							},

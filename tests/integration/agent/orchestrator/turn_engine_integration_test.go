@@ -127,11 +127,11 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "read large file"}}})
 
 		// 2. Action: Model returns tool call
-		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "read_file", Args: map[string]interface{}{"path": "huge.txt"}}}}}
+		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "read_files", Args: map[string]interface{}{"path": "huge.txt"}}}}}
 		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{PromptTokens: 100}, nil)
 
 		// 3. Action: Tool returns massive payload
-		toolResp := &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "read_file", Response: map[string]any{"content": "massive string..."}}}}}
+		toolResp := &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "read_files", Response: map[string]any{"content": "massive string..."}}}}}
 		exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(toolResp, nil)
 
 		// Set counter to return 6000 when it sees toolResp

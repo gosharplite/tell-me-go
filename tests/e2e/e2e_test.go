@@ -480,9 +480,9 @@ func TestSecurityGate(t *testing.T) {
 			homeDir := t.TempDir()
 
 			// Use helper to encapsulate mock server logic
-			server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
-				"filepath": "/etc/passwd",
-				"reason":   "E2E verification of security gate for sensitive system files",
+			server, receivedResponse := setupProviderMockServer(t, provider, "read_files", map[string]interface{}{
+				"filepaths": []interface{}{"/etc/passwd"},
+				"reason":    "E2E verification of security gate for sensitive system files",
 			}, nil)
 			defer server.Close()
 
@@ -517,9 +517,9 @@ func TestSymlinkAttack(t *testing.T) {
 
 	provider := "google"
 	// Use helper to encapsulate mock server logic
-	server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
-		"filepath": "evil_link",
-		"reason":   "E2E verification of symlink attack mitigation",
+	server, receivedResponse := setupProviderMockServer(t, provider, "read_files", map[string]interface{}{
+		"filepaths": []interface{}{"evil_link"},
+		"reason":    "E2E verification of symlink attack mitigation",
 	}, nil)
 	defer server.Close()
 

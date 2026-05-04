@@ -37,7 +37,7 @@ func TestMultiTurnToolOrchestration(t *testing.T) {
 			if !strings.Contains(string(reqBody), "test.txt") {
 				t.Errorf("Expected request to contain 'test.txt' from list_files result, got: %s", string(reqBody))
 			}
-			return createToolCallResponse(provider, "read_file", map[string]interface{}{"filepath": "test.txt", "reason": "E2E multi-turn step 2: read discovered file"})
+			return createToolCallResponse(provider, "read_files", map[string]interface{}{"filepaths": []interface{}{"test.txt"}, "reason": "E2E multi-turn step 2: read discovered file"})
 		},
 		func(reqBody []byte) string {
 			// Verify read_file result was sent back
@@ -107,8 +107,8 @@ func TestMultiTurnToolOrchestration(t *testing.T) {
 	if !strings.Contains(errOut, "[Tool Action] list_files") {
 		t.Errorf("Expected list_files tool action log")
 	}
-	if !strings.Contains(errOut, "[Tool Action] read_file") {
-		t.Errorf("Expected read_file tool action log")
+	if !strings.Contains(errOut, "[Tool Action] read_files") {
+		t.Errorf("Expected read_files tool action log")
 	}
 }
 

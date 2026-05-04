@@ -165,50 +165,6 @@ func (r *fileReader) readBoundedContent(ctx context.Context, path string) ([]byt
 	return content, false, nil
 }
 
-func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	var params struct {
-		FilePath string `json:"filepath"`
-		Reason   string `json:"reason"`
-	}
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	path := params.FilePath
-	if path == "" {
-		return tools.ToolResult{}, fmt.Errorf("filepath argument is required")
-	}
-
-	resolvedPath, err := r.sm.IsPathSafe(path)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	info, err := r.fs.Stat(ctx, resolvedPath)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
-	}
-	if info.IsDir() {
-		return tools.ToolResult{}, fmt.Errorf("path is a directory, use list_files instead")
-	}
-
-	content, truncated, err := r.readBoundedContent(ctx, resolvedPath)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
-	}
-
-	if persistence.IsBinary(content) {
-		return tools.ToolResult{Text: fmt.Sprintf("File %s appears to be a binary file and cannot be displayed as text.", resolvedPath)}, nil
-	}
-
-	if truncated {
-		truncatedStr := string(content)
-		return tools.ToolResult{Text: strings.ToValidUTF8(truncatedStr, "") + "\n... (truncated)"}, nil
-	}
-
-	return tools.ToolResult{Text: string(content)}, nil
-}
-
 func (r *fileReader) processSingleFile(ctx context.Context, path string, sb *strings.Builder) error {
 	fmt.Fprintf(sb, "--- File: %s ---\n", path)
 
