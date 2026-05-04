@@ -276,7 +276,9 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 
 		hMock := &agenttest.MockHistoryManager{}
 		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
-		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
+		if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000}); err != nil {
+			t.Fatalf("Reconfigure setup failed: %v", err)
+		}
 
 		turn := &Turn{
 			Events:       bus,
@@ -302,7 +304,9 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 
 		hMock := &agenttest.MockHistoryManager{}
 		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
-		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
+		if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000}); err != nil {
+			t.Fatalf("Reconfigure setup failed: %v", err)
+		}
 
 		turn := &Turn{
 			Events:       bus,
@@ -334,7 +338,9 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 
 		hMock := &agenttest.MockHistoryManager{}
 		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
-		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
+		if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000}); err != nil {
+			t.Fatalf("Reconfigure setup failed: %v", err)
+		}
 
 		turn := &Turn{
 			Events:       bus,

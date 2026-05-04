@@ -269,7 +269,9 @@ func TestManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 		ContextWindow:    2000,
 	}
 
-	cm.Reconfigure(newLimits)
+	if err := cm.Reconfigure(newLimits); err != nil {
+		t.Fatalf("expected nil error on valid reconfigure, got %v", err)
+	}
 
 	p1 := cm.Pipeline
 	assert.NotNil(t, p1, "Pipeline should be built after Reconfigure")
@@ -281,7 +283,9 @@ func TestManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 
 	// Reconfigure again to ensure it updates again (rebuilds pipeline)
 	newLimits.MaxHistoryTokens = 8888
-	cm.Reconfigure(newLimits)
+	if err := cm.Reconfigure(newLimits); err != nil {
+		t.Fatalf("expected nil error on second reconfigure, got %v", err)
+	}
 
 	p2 := cm.Pipeline
 	assert.NotNil(t, p2)
@@ -505,7 +509,9 @@ type versionBumpingTransformer struct {
 func (t *versionBumpingTransformer) Priority() int { return 200 } // transient: runs after persistFn
 
 func (t *versionBumpingTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
-	t.cm.Reconfigure(events.Limits{})
+	if err := t.cm.Reconfigure(events.Limits{}); err != nil {
+		return err
+	}
 	return nil
 }
 
