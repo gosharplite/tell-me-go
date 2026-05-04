@@ -620,7 +620,7 @@ func TestManager_Prepare_ExecutePipeline_SetContentsError(t *testing.T) {
 	_, _, err := cm.Prepare(ctx, 1)
 	require.Error(t, err)
 	require.ErrorIs(t, err, llm.ErrTerminal)
-	require.Contains(t, err.Error(), "disk full during SetContents")
+	require.ErrorIs(t, err, persistErr)
 }
 
 func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
@@ -629,7 +629,7 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 		pipeline        []ports.ContextTransformer
 		setContentsErr  error
 		wantErr         error
-		wantPersist     bool
+		verifyPersist bool // if true, assert SetContents was called before the error
 	}{
 		{
 			name: "happy path: version matches, SetContents succeeds, commitToCache succeeds",
@@ -637,7 +637,6 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 				&forcePersistTransformer{},
 			},
 			wantErr:     nil,
-			wantPersist: true,
 		},
 		{
 			name: "transient transformer fails after successful persist",
@@ -646,7 +645,7 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 				&failingTransientTransformer{},
 			},
 			wantErr:     errTransientFail,
-			wantPersist: true, // persisted=true even though error returned
+			verifyPersist: true, // SetContents should have been called before transient fail
 		},
 	}
 
@@ -661,6 +660,15 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 				history.SetSetContentsErr(tt.setContentsErr)
 			}
 
+			// Track whether SetContents was called inside executePipeline's persistFn.
+			var setContentsCalled bool
+			if tt.verifyPersist {
+				history.SetContentsFunc = func(ctx context.Context, contents []*llm.Content) error {
+					setContentsCalled = true
+					return nil
+				}
+			}
+
 			cm := sessctx.NewManager(strategy, history, nil, nil)
 			cm.Pipeline = sessctx.NewContextPipeline(tt.pipeline...)
 
@@ -670,6 +678,10 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 			if tt.wantErr != nil {
 				require.Error(t, err)
 				require.ErrorIs(t, err, tt.wantErr)
+				if tt.verifyPersist {
+					require.True(t, setContentsCalled,
+						"SetContents should have been called before transient transformer failed")
+				}
 				return
 			}
 			require.NoError(t, err)
