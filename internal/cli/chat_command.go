@@ -34,7 +34,7 @@ type chatCommand struct {
 	HomeDir      string
 	MockPrompt   string
 	MockAnswer   string
-	Interactor   *domain_security.UserInteractor
+	Interactor   *InteractorRef
 }
 
 type cliOptions struct {
@@ -244,9 +244,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 			}
 		}
 
-		if c.Interactor != nil {
-			*c.Interactor = capturer
-		}
+		c.Interactor.Set(capturer)
 		return capturer, cleanup
 	}
 	return c.setupCapturer()
@@ -258,9 +256,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	if !ok {
 		return nil, func(stdctx.Context) error { return nil }
 	}
-	if c.Interactor != nil {
-		*c.Interactor = capturerInterface
-	}
+	c.Interactor.Set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		return capturer.Close(ctx)
 	}
