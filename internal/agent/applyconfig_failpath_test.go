@@ -25,17 +25,17 @@ import (
 // ---------------------------------------------------------------------------
 
 type stubConfigWatcher struct {
-	tokens      int
-	toolTurns   int
+	tokens       int
+	toolTurns    int
 	historyTurns int
 }
 
-func (s *stubConfigWatcher) SetPaths(_, _ string)                        {}
-func (s *stubConfigWatcher) Refresh(_ string)                            {}
-func (s *stubConfigWatcher) SetLimits(_, _, _ int)                       {}
-func (s *stubConfigWatcher) GetLimits() (int, int, int)                  { return s.tokens, s.toolTurns, s.historyTurns }
-func (s *stubConfigWatcher) ApplyLimits(_ events.Limits)                 {}
-func (s *stubConfigWatcher) SyncToStrategy(_ *sessctx.Strategy)          {}
+func (s *stubConfigWatcher) SetPaths(_, _ string)               {}
+func (s *stubConfigWatcher) Refresh(_ string)                   {}
+func (s *stubConfigWatcher) SetLimits(_, _, _ int)              {}
+func (s *stubConfigWatcher) GetLimits() (int, int, int)         { return s.tokens, s.toolTurns, s.historyTurns }
+func (s *stubConfigWatcher) ApplyLimits(_ events.Limits)        {}
+func (s *stubConfigWatcher) SyncToStrategy(_ *sessctx.Strategy) {}
 
 // ---------------------------------------------------------------------------
 // TestApplyConfig_FailFastChain
@@ -98,10 +98,10 @@ func TestApplyConfig_FailFastChain(t *testing.T) {
 				// Engine.Reconfigure returns error → Manager.Reconfigure
 				// structurally skipped (the fail-fast contract).
 				accessor.SetRuntimeConfigForInternalUse(
-					"",              // empty ProviderName
+					"", // empty ProviderName
 					"test-model",
 					"test-mode",
-					nil,             // pricing overrides
+					nil, // pricing overrides
 					events.Limits{
 						MaxHistoryTokens: 120000,
 						MaxToolTurns:     200,
