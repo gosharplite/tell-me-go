@@ -90,14 +90,10 @@ func (a *AgentInternal) GetConfigWatcher() session.ConfigWatcher {
 }
 
 // GetTracker returns the agent's domain_pricing.CostTracker.
-//
-// NOTE: GetTracker is the one accessor that also exists on the public
-// agent.InternalAccessor interface, because production callers in
-// infrastructure/factory/chatter.go and infrastructure/di/container.go
-// rely on it. See ADR-022 for the recorded exception and #87 for the
-// follow-up to remove the production callers.
+// This wrapper is the only legitimate consumer of the underlying
+// GetTrackerForInternalUse bridge method. See ADR-022.
 func (a *AgentInternal) GetTracker() domain_pricing.CostTracker {
-	return a.raw.GetTracker()
+	return a.raw.GetTrackerForInternalUse()
 }
 
 // RuntimeSnapshot is a stable, value-typed view of the agent's

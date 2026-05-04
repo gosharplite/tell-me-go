@@ -17,8 +17,8 @@ import (
 // InternalAccessor interface methods consumed by agentinternal.
 //
 // CI guard: outside of this file and internal/agent/agentinternal/,
-// no other file may reference any "ForInternalUse" symbol. See
-// scripts/check_no_test_imports.sh and ADR-022.
+// no other file may reference any "ForInternalUse" symbol. See the
+// `verify-internal-bridge-brand` target in the Makefile and ADR-022.
 
 // NewBareForInternalUse constructs an uninitialized *agent for the
 // agentinternal sibling package. Tests that need to exercise narrow
@@ -35,14 +35,10 @@ func (a *agent) AsChatter() ports.Chatter {
 	return a
 }
 
-// GetTracker returns the agent's domain_pricing.CostTracker.
-//
-// Unlike the other accessors below, GetTracker has confirmed production
-// callers in infrastructure/factory/chatter.go and
-// infrastructure/di/container.go. It is therefore deliberately NOT
-// suffixed "ForInternalUse". Removal is tracked by issue #87. See
-// ADR-022.
-func (a *agent) GetTracker() domain_pricing.CostTracker {
+// GetTrackerForInternalUse returns the agent's domain_pricing.CostTracker.
+// Consumed exclusively by the agentinternal bridge. Production code
+// obtains the tracker via ports.SessionDependencies.GetTracker(). See ADR-022.
+func (a *agent) GetTrackerForInternalUse() domain_pricing.CostTracker {
 	return a.tracker
 }
 
