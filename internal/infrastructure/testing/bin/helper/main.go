@@ -209,29 +209,37 @@ func handleDiff(args []string) {
 	}
 	// Print a dummy diff that satisfies strings.Contains checks in tests
 	fmt.Printf("--- %s\n+++ %s\n", args[len(args)-2], args[len(args)-1])
-	printUnifiedDiff(os.Stdout, strings.Split(string(f1), "\n"), strings.Split(string(f2), "\n"))
+	if err := printUnifiedDiff(os.Stdout, strings.Split(string(f1), "\n"), strings.Split(string(f2), "\n")); err != nil {
+		fmt.Fprintf(os.Stderr, "diff: %v\n", err)
+		os.Exit(2)
+	}
 	os.Exit(1)
 }
 
 // printUnifiedDiff writes a simple line-by-line unified diff of two string slices to w.
-func printUnifiedDiff(w io.Writer, a, b []string) {
+func printUnifiedDiff(w io.Writer, a, b []string) error {
 	max := len(a)
 	if len(b) > max {
 		max = len(b)
 	}
 	for i := 0; i < max; i++ {
+		var err error
 		if i < len(a) && i < len(b) {
 			if a[i] != b[i] {
-				fmt.Fprintf(w, "-%s\n+%s\n", a[i], b[i])
+				_, err = fmt.Fprintf(w, "-%s\n+%s\n", a[i], b[i])
 			} else {
-				fmt.Fprintf(w, " %s\n", a[i])
+				_, err = fmt.Fprintf(w, " %s\n", a[i])
 			}
 		} else if i < len(a) {
-			fmt.Fprintf(w, "-%s\n", a[i])
+			_, err = fmt.Fprintf(w, "-%s\n", a[i])
 		} else if i < len(b) {
-			fmt.Fprintf(w, "+%s\n", b[i])
+			_, err = fmt.Fprintf(w, "+%s\n", b[i])
+		}
+		if err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
 func handlePrintenv(args []string) {
