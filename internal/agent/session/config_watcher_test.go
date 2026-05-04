@@ -416,6 +416,138 @@ func TestConfigWatcher_LoadSessionConfig_ReadError(t *testing.T) {
 	assert.Equal(t, 100, tokens)
 }
 
+func TestConfigWatcher_LoadSessionConfig_NilLogger(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Create a readable file — Stat will succeed.
+	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// logger=nil intentionally — this is the branch under test.
+	cw := session.NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	// Ensure Stat returns a future mod time so updateFromSession triggers loadSessionConfig.
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	// Must not panic.
+	fcw.Refresh("default")
+
+	// Limits must remain at constructor defaults.
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed unexpectedly: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_NilSessionLoader(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// sessionLoader=nil
+	cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	// Must not panic.
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed unexpectedly: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_NilSessionConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// nilSessionLoader returns (nil, nil) — session config is absent
+	cw := session.NewFileConfigWatcher(nil, &nilSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed unexpectedly: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_MissingFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Valid JSON but no recognized limit keys — all fields will be nil.
+	if err := os.WriteFile(sessionPath, []byte(`{"unrelated": "value"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 {
+		t.Errorf("MaxHistoryTokens should remain at default 100, got %d", tokens)
+	}
+	if toolTurns != 10 {
+		t.Errorf("MaxToolTurns should remain at default 10, got %d", toolTurns)
+	}
+	if historyTurns != 20 {
+		t.Errorf("MaxHistoryTurns should remain at default 20, got %d", historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_AllFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Session config with all three limit keys set.
+	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 30, "MAX_HISTORY_TURNS": 40}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 500 {
+		t.Errorf("MaxHistoryTokens = %d, want 500", tokens)
+	}
+	if toolTurns != 30 {
+		t.Errorf("MaxToolTurns = %d, want 30", toolTurns)
+	}
+	if historyTurns != 40 {
+		t.Errorf("MaxHistoryTurns = %d, want 40", historyTurns)
+	}
+}
+
 // errorSessionLoader returns a fixed error from LoadSession.
 type errorSessionLoader struct {
 	err error
@@ -423,4 +555,11 @@ type errorSessionLoader struct {
 
 func (l *errorSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
 	return nil, l.err
+}
+
+// nilSessionLoader returns (nil, nil) to simulate a missing session config.
+type nilSessionLoader struct{}
+
+func (l *nilSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
+	return nil, nil
 }
