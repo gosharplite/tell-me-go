@@ -188,12 +188,14 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	}
 
 	if a.engine != nil {
-		a.engine.Reconfigure(orchestrator.RuntimeConfig{
+		if err := a.engine.Reconfigure(orchestrator.RuntimeConfig{
 			ProviderName:     newCfg.ProviderName,
 			Model:            newCfg.Model,
 			Mode:             newCfg.Mode,
 			PricingOverrides: newCfg.PricingOverrides,
-		}, tracker)
+		}, tracker); err != nil {
+			return err
+		}
 	}
 	if a.ctxManager != nil {
 		a.ctxManager.Reconfigure(newCfg.Limits)

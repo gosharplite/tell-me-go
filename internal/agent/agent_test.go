@@ -38,7 +38,8 @@ func TestAgent_ApplyConfig_ExportedWrapper(t *testing.T) {
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	require.NoError(t, err)
 
 	// AsInternal returns the agent typed as InternalAccessor — the same
