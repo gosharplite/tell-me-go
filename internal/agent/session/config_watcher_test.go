@@ -674,6 +674,146 @@ func TestFileConfigWatcher_SyncToStrategy_Divergence(t *testing.T) {
 	}
 }
 
+func TestNoOpConfigWatcher_ConstructorAndGetLimits(t *testing.T) {
+	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 {
+		t.Errorf("tokens = %d, want 100", tokens)
+	}
+	if toolTurns != 10 {
+		t.Errorf("toolTurns = %d, want 10", toolTurns)
+	}
+	if historyTurns != 20 {
+		t.Errorf("historyTurns = %d, want 20", historyTurns)
+	}
+}
+
+func TestNoOpConfigWatcher_SetPathsAndRefresh(t *testing.T) {
+	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+	// SetPaths should not panic
+	cw.SetPaths("/some/main.yaml", "/some/session.json")
+
+	// Refresh should not panic
+	cw.Refresh("gpt-5")
+
+	// Limits must be unchanged
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed after no-ops: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestNoOpConfigWatcher_SetLimits(t *testing.T) {
+	tests := []struct {
+		name                                 string
+		tokens, toolTurns, histTurns         int
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", 200, 5, 10, 200, 5, 10},
+		{"zero tokens no-op", 0, 5, 10, 100, 5, 10},
+		{"negative tokens no-op", -1, 5, 10, 100, 5, 10},
+		{"mixed zero/positive", 200, 0, 10, 200, 10, 10},
+		{"all zero no-op", 0, 0, 0, 100, 10, 20},
+		{"partial update", 0, 0, 50, 100, 10, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+			cw.SetLimits(tt.tokens, tt.toolTurns, tt.histTurns)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestNoOpConfigWatcher_ApplyLimits(t *testing.T) {
+	tests := []struct {
+		name                                 string
+		limits                               events.Limits
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
+		{"zero tokens no-op", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"negative tokens no-op", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"zero-value Limits", events.Limits{}, 100, 10, 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+			cw.ApplyLimits(tt.limits)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestNoOpConfigWatcher_SyncToStrategy(t *testing.T) {
+	t.Run("pushes limits", func(t *testing.T) {
+		cw := session.NewNoOpConfigWatcher(500, 10, 20)
+		cw.SetLimits(500, 10, 20)
+		strategy := sessctx.NewStrategy(nil)
+		cw.SyncToStrategy(strategy)
+
+		if strategy.GetMaxHistoryTokens() != 500 {
+			t.Errorf("expected 500, got %d", strategy.GetMaxHistoryTokens())
+		}
+		if strategy.GetMaxToolTurns() != 10 {
+			t.Errorf("expected 10, got %d", strategy.GetMaxToolTurns())
+		}
+	})
+
+	t.Run("pushes context window", func(t *testing.T) {
+		cw := session.NewNoOpConfigWatcher(100, 10, 20)
+		strategy := sessctx.NewStrategy(nil)
+		cw.SyncToStrategy(strategy)
+
+		if strategy.GetContextWindow() != 1000000 {
+			t.Errorf("expected 1000000, got %d", strategy.GetContextWindow())
+		}
+	})
+
+	t.Run("nil strategy no-op", func(t *testing.T) {
+		cw := session.NewNoOpConfigWatcher(100, 10, 20)
+		// Must not panic
+		cw.SyncToStrategy(nil)
+	})
+}
+
+func TestNoOpConfigWatcher_RaceDetector(t *testing.T) {
+	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func(v int) {
+			for j := 0; j < 100; j++ {
+				cw.SetLimits(v, v, v)
+				_, _, _ = cw.GetLimits()
+			}
+			done <- struct{}{}
+		}(i)
+	}
+
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
 // errorSessionLoader returns a fixed error from LoadSession.
 type errorSessionLoader struct {
 	err error
