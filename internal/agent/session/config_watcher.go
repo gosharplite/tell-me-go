@@ -23,6 +23,20 @@ type realFileStat struct{}
 
 func (s realFileStat) Stat(name string) (os.FileInfo, error) { return os.Stat(name) }
 
+// setLimitsLocked applies non-zero limit values to the target fields.
+// It is a pure function; the caller must hold the appropriate mutex.
+func setLimitsLocked(tokens, toolTurns, historyTurns int, maxHistoryTokens, maxToolTurns, maxHistoryTurns *int) {
+	if tokens > 0 {
+		*maxHistoryTokens = tokens
+	}
+	if toolTurns > 0 {
+		*maxToolTurns = toolTurns
+	}
+	if historyTurns > 0 {
+		*maxHistoryTurns = historyTurns
+	}
+}
+
 // ConfigWatcher defines the interface for monitoring configuration.
 type ConfigWatcher interface {
 	SetPaths(main, session string)
@@ -209,15 +223,7 @@ func (cw *FileConfigWatcher) loadSessionConfig() {
 func (cw *FileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
-	if tokens > 0 {
-		cw.maxHistoryTokens = tokens
-	}
-	if toolTurns > 0 {
-		cw.maxToolTurns = toolTurns
-	}
-	if historyTurns > 0 {
-		cw.maxHistoryTurns = historyTurns
-	}
+	setLimitsLocked(tokens, toolTurns, historyTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
 // GetLimits returns the current cached limits.
@@ -231,15 +237,7 @@ func (cw *FileConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns int) {
 func (cw *FileConfigWatcher) ApplyLimits(l events.Limits) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
-	if l.MaxHistoryTokens > 0 {
-		cw.maxHistoryTokens = l.MaxHistoryTokens
-	}
-	if l.MaxToolTurns > 0 {
-		cw.maxToolTurns = l.MaxToolTurns
-	}
-	if l.MaxHistoryTurns > 0 {
-		cw.maxHistoryTurns = l.MaxHistoryTurns
-	}
+	setLimitsLocked(l.MaxHistoryTokens, l.MaxToolTurns, l.MaxHistoryTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
 // SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
@@ -281,15 +279,7 @@ func (cw *noOpConfigWatcher) Refresh(model string) {}
 func (cw *noOpConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
-	if tokens > 0 {
-		cw.maxHistoryTokens = tokens
-	}
-	if toolTurns > 0 {
-		cw.maxToolTurns = toolTurns
-	}
-	if historyTurns > 0 {
-		cw.maxHistoryTurns = historyTurns
-	}
+	setLimitsLocked(tokens, toolTurns, historyTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
 // GetLimits returns the current cached limits.
@@ -303,15 +293,7 @@ func (cw *noOpConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns int) {
 func (cw *noOpConfigWatcher) ApplyLimits(l events.Limits) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
-	if l.MaxHistoryTokens > 0 {
-		cw.maxHistoryTokens = l.MaxHistoryTokens
-	}
-	if l.MaxToolTurns > 0 {
-		cw.maxToolTurns = l.MaxToolTurns
-	}
-	if l.MaxHistoryTurns > 0 {
-		cw.maxHistoryTurns = l.MaxHistoryTurns
-	}
+	setLimitsLocked(l.MaxHistoryTokens, l.MaxToolTurns, l.MaxHistoryTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
 // SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
