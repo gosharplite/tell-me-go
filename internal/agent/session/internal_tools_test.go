@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -153,4 +154,69 @@ func TestRegisterInternal_RegisterError(t *testing.T) {
 	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "register failed")
+}
+
+func TestManageHistory_NegativeIndex(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"action": "pin",
+		"index":  float64(-1),
+	}
+
+	result, err := it.ManageHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must be >= 0")
+	require.Empty(t, result.Text)
+}
+
+func TestEmitHeartbeats(t *testing.T) {
+	t.Run("returns when done is closed before first tick", func(t *testing.T) {
+		done := make(chan struct{})
+		close(done)
+		hb := make(chan struct{})
+
+		returned := make(chan struct{})
+		go func() {
+			emitHeartbeats(done, hb)
+			close(returned)
+		}()
+
+		select {
+		case <-returned:
+		case <-time.After(time.Second):
+			t.Fatal("emitHeartbeats did not return within 1s")
+		}
+	})
+
+	t.Run("does not panic with nil heartbeat channel", func(t *testing.T) {
+		done := make(chan struct{})
+		close(done)
+
+		// Should return cleanly without panic
+		emitHeartbeats(done, nil)
+	})
+
+	t.Run("does not block when heartbeat channel is full", func(t *testing.T) {
+		done := make(chan struct{})
+		hb := make(chan struct{}) // unbuffered, no consumer
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			close(done)
+		}()
+
+		returned := make(chan struct{})
+		go func() {
+			emitHeartbeats(done, hb)
+			close(returned)
+		}()
+
+		select {
+		case <-returned:
+		case <-time.After(time.Second):
+			t.Fatal("emitHeartbeats blocked on full channel")
+		}
+	})
 }

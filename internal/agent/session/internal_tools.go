@@ -89,6 +89,9 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 	}
 
 	index := int(params.Index)
+	if index < 0 {
+		return tools.ToolResult{}, fmt.Errorf("invalid 'index' parameter: must be >= 0")
+	}
 	var pinned bool
 
 	switch params.Action {
