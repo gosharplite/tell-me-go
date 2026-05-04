@@ -5,6 +5,7 @@ package orchestrator
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
@@ -21,6 +22,37 @@ type RuntimeConfig struct {
 	Model            string
 	Mode             string
 	PricingOverrides map[string]domain_pricing.ModelPricing
+}
+
+// Validate checks that the RuntimeConfig contains the minimum viable
+// fields required by the orchestrator Engine. It is called by
+// Engine.Reconfigure to fail fast on malformed runtime configuration.
+// See ADR-029.
+//
+// Rules (minimum viable set per ADR-029 §6):
+//   - ProviderName must be non-empty.
+//   - Model must be non-empty.
+//   - Mode must be non-empty.
+//   - PricingOverrides may be nil or empty; if non-empty, no key may be the empty string.
+//
+// Additional validation rules will be added in separate, individually-tracked issues
+// per ADR-029 negative-consequence mitigation. Do not extend this method ad-hoc.
+func (c RuntimeConfig) Validate() error {
+	if c.ProviderName == "" {
+		return fmt.Errorf("runtime config: provider name must not be empty")
+	}
+	if c.Model == "" {
+		return fmt.Errorf("runtime config: model must not be empty")
+	}
+	if c.Mode == "" {
+		return fmt.Errorf("runtime config: mode must not be empty")
+	}
+	for k := range c.PricingOverrides {
+		if k == "" {
+			return fmt.Errorf("runtime config: pricing overrides contain empty key")
+		}
+	}
+	return nil
 }
 
 // engineConfig defines the lock-free runtime state for the Engine.

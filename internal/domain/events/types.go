@@ -5,6 +5,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -18,6 +19,35 @@ type Limits struct {
 	MaxToolTurns     int
 	MaxHistoryTurns  int
 	ContextWindow    int
+}
+
+// Validate checks that the Limits contain non-negative values required by the
+// session context Manager. It is called by Manager.Reconfigure to fail fast on
+// malformed limits. See ADR-029.
+//
+// Rules (minimum viable set per ADR-029 §6):
+//   - MaxHistoryTokens must be >= 0.
+//   - MaxToolTurns must be >= 0.
+//   - MaxHistoryTurns must be >= 0.
+//
+// A value of zero is treated as "use default / unlimited" by downstream
+// consumers and is therefore valid here. Negative values are nonsensical and
+// indicate misconfiguration.
+//
+// Additional validation rules will be added in separate, individually-tracked
+// issues per ADR-029 negative-consequence mitigation. Do not extend this method
+// ad-hoc.
+func (l Limits) Validate() error {
+	if l.MaxHistoryTokens < 0 {
+		return fmt.Errorf("limits: max history tokens must be >= 0, got %d", l.MaxHistoryTokens)
+	}
+	if l.MaxToolTurns < 0 {
+		return fmt.Errorf("limits: max tool turns must be >= 0, got %d", l.MaxToolTurns)
+	}
+	if l.MaxHistoryTurns < 0 {
+		return fmt.Errorf("limits: max history turns must be >= 0, got %d", l.MaxHistoryTurns)
+	}
+	return nil
 }
 
 // ConfigUpdated signals that the agent's configuration has changed.
