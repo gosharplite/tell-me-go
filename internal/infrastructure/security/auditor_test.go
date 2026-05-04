@@ -8,13 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 func TestAuditor_LogAudit(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "audit.log")
-	a := newAuditor()
+	a := newAuditor(nil)
 	a.SetLogFile(logFile)
 
 	a.LogAudit("TEST_ACTION", "Action", "Test", "Detail", "Something")
@@ -41,7 +43,7 @@ func TestAuditor_LogAudit(t *testing.T) {
 
 func TestAuditor_NoLogFile(t *testing.T) {
 	t.Parallel()
-	a := newAuditor()
+	a := newAuditor(nil)
 	// Should not panic or fail when logFile is empty
 	a.LogAudit("TEST", "Action", "Test")
 }
@@ -49,8 +51,7 @@ func TestAuditor_NoLogFile(t *testing.T) {
 func TestAuditor_SetLogFileError(t *testing.T) {
 	t.Parallel()
 	mock := &mockInteractor{}
-	a := newAuditor()
-	a.SetInteractor(mock)
+	a := newAuditor(func() domain.UserInteractor { return mock })
 
 	// Try to open a path that shouldn't be writable or is a directory
 	tmpDir := t.TempDir()
@@ -69,7 +70,7 @@ func TestAuditor_SetLogFileError(t *testing.T) {
 
 func TestAuditor_Close(t *testing.T) {
 	t.Run("closes open file successfully", func(t *testing.T) {
-		a := newAuditor()
+		a := newAuditor(nil)
 
 		// Use t.TempDir() for guaranteed isolated cleanup
 		logFile := filepath.Join(t.TempDir(), "audit.log")
@@ -86,7 +87,7 @@ func TestAuditor_Close(t *testing.T) {
 	})
 
 	t.Run("safe to call on uninitialized file", func(t *testing.T) {
-		a := newAuditor()
+		a := newAuditor(nil)
 		if err := a.Close(); err != nil {
 			t.Fatalf("expected nil error when closing uninitialized auditor, got %v", err)
 		}

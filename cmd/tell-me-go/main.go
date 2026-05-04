@@ -25,6 +25,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/env"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 // Compile-time assertion to ensure DI Bootstrapper implements the CLI requirement.
@@ -124,7 +126,19 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	homeDir := env.ResolveHomeDir(os.Getenv, os.UserHomeDir)
 
 	// 2. Initialize Core Infrastructure
-	sm := security.NewSecurityManager(nil)
+	//
+	// The InteractorRef is the wiring cell that breaks the bootstrap cycle:
+	// SecurityManager is built here (early), but the real UserInteractor
+	// (Capturer) is constructed later inside the CLI command. The provider
+	// closure reads the cell atomically on each interaction.
+	interactorRef := cli.NewInteractorRef()
+	interactorProvider := func() domain_security.UserInteractor {
+		if i := interactorRef.Get(); i != nil {
+			return i
+		}
+		return security.NoOpInteractor()
+	}
+	sm := security.NewSecurityManager(interactorProvider)
 
 	// 3. Setup Logger
 	isDebug := os.Getenv("TELL_ME_DEBUG") == "1"
@@ -155,6 +169,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 		Bootstrapper: bootstrapper,
 		ConfigLoader: configLoader,
 		ChatService:  chatService,
+		Interactor:   interactorRef,
 	}, os.Getenv)
 
 	if err != nil {

@@ -36,6 +36,7 @@ type AppDependencies struct {
 	Bootstrapper Bootstrapper
 	ConfigLoader domain_config.ConfigLoader
 	ChatService  agent.ChatService
+	Interactor   *InteractorRef
 }
 
 // App represents the tell-me-go application.
@@ -49,6 +50,7 @@ type App struct {
 	bootstrapper Bootstrapper
 	configLoader domain_config.ConfigLoader
 	chatService  agent.ChatService
+	interactor   *InteractorRef
 	mockPrompt   string
 	mockAnswer   string
 }
@@ -91,6 +93,7 @@ func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 		bootstrapper: deps.Bootstrapper,
 		configLoader: deps.ConfigLoader,
 		chatService:  deps.ChatService,
+		interactor:   deps.Interactor,
 		mockPrompt:   getenv("TELL_ME_MOCK_PROMPT"),
 		mockAnswer:   getenv("TELL_ME_MOCK_ANSWER"),
 	}, nil
@@ -120,6 +123,7 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		Loader:       a.configLoader,
 		MockPrompt:   a.mockPrompt,
 		MockAnswer:   a.mockAnswer,
+		Interactor:   a.interactor,
 	}
 
 	chatCmd := newChatCommand(cmdCtx, nil)

@@ -356,13 +356,13 @@ func (t *policyTool) confirmAction(ctx context.Context, title, path, reason stri
 	}
 
 	sb.WriteString(t.getPrompt(lowerTitle))
-	confirmed, err := t.sm.interaction.interactor.Confirm(ctx, sb.String())
+	confirmed, err := t.sm.interaction.interactorProvider().Confirm(ctx, sb.String())
 	if err != nil || !confirmed {
 		return false, err
 	}
 
 	if doubleConfirm {
-		confirmed, err = t.sm.interaction.interactor.Confirm(ctx, fmt.Sprintf("[DOUBLE CONFIRM] %s (y/N) ", t.getDoubleMsg(lowerTitle)))
+		confirmed, err = t.sm.interaction.interactorProvider().Confirm(ctx, fmt.Sprintf("[DOUBLE CONFIRM] %s (y/N) ", t.getDoubleMsg(lowerTitle)))
 		if err != nil || !confirmed {
 			return false, err
 		}

@@ -34,6 +34,7 @@ type chatCommand struct {
 	HomeDir      string
 	MockPrompt   string
 	MockAnswer   string
+	Interactor   *InteractorRef
 }
 
 type cliOptions struct {
@@ -77,6 +78,7 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 		HomeDir:      ctx.HomeDir,
 		MockPrompt:   ctx.MockPrompt,
 		MockAnswer:   ctx.MockAnswer,
+		Interactor:   ctx.Interactor,
 	}
 
 	if opts == nil {
@@ -242,12 +244,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 			}
 		}
 
-		if sm, ok := c.SM.(interface {
-			SetInteractor(domain_security.UserInteractor)
-		}); ok {
-			// capturer already implements UserInteractor via CapturerInteractor
-			sm.SetInteractor(capturer)
-		}
+		c.Interactor.set(capturer)
 		return capturer, cleanup
 	}
 	return c.setupCapturer()
@@ -259,11 +256,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	if !ok {
 		return nil, func(stdctx.Context) error { return nil }
 	}
-	if sm, ok := c.SM.(interface {
-		SetInteractor(domain_security.UserInteractor)
-	}); ok {
-		sm.SetInteractor(capturerInterface)
-	}
+	c.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		return capturer.Close(ctx)
 	}

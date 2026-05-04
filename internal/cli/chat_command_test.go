@@ -154,10 +154,9 @@ type mockSM struct {
 	domain_security.Manager
 }
 
-func (m *mockSM) SetInteractor(interactor domain_security.UserInteractor) {}
-func (m *mockSM) TerminalLock()                                           {}
-func (m *mockSM) TerminalUnlock()                                         {}
-func (m *mockSM) Close() error                                            { return nil }
+func (m *mockSM) TerminalLock()   {}
+func (m *mockSM) TerminalUnlock() {}
+func (m *mockSM) Close() error    { return nil }
 
 func setupMocks() (*mockBootstrapper, *chatMockLoader, *mockChatService) {
 	mb := &mockBootstrapper{}
@@ -336,54 +335,6 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 
 	if !mService.lastParams.Retry {
 		t.Error("expected Retry to be true")
-	}
-}
-
-func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
-	t.Parallel()
-
-	var stdout, stderr strings.Builder
-	var setInteractorCalled bool
-
-	sm := &mockSM{}
-	// Override SetInteractor locally using a mock struct that tracks calls
-	trackingSM := &trackingMockSM{
-		mockSM:          sm,
-		setInteractorCb: func() { setInteractorCalled = true },
-	}
-
-	mb, ml, mService := setupMocks()
-
-	cmdCtx := &context{
-		Version:      "1.0.0",
-		Stdin:        strings.NewReader("hello\n"),
-		Stdout:       &stdout,
-		Stderr:       &stderr,
-		SM:           trackingSM,
-		ChatService:  mService,
-		Bootstrapper: mb,
-		Loader:       ml,
-		HomeDir:      t.TempDir(),
-	}
-
-	err := executeChatCommand(cmdCtx, []string{"--interactive"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !setInteractorCalled {
-		t.Error("expected SetInteractor to be called when TUI prompt is enabled")
-	}
-}
-
-type trackingMockSM struct {
-	*mockSM
-	setInteractorCb func()
-}
-
-func (m *trackingMockSM) SetInteractor(interactor domain_security.UserInteractor) {
-	if m.setInteractorCb != nil {
-		m.setInteractorCb()
 	}
 }
 
@@ -682,4 +633,98 @@ func TestChatCommand_Execute_Diagnostic_JSON(t *testing.T) {
 	err := executeChatCommand(cmdCtx, []string{"--diagnostic", "--json"})
 	require.NoError(t, err, "Execute should not fail")
 	mService.AssertExpectations(t)
+}
+
+func TestChatCommand_Execute_TUIPrompt_PopulatesInteractorRef(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	ref := NewInteractorRef()
+	if got := ref.Get(); got != nil {
+		t.Fatalf("expected empty InteractorRef before run, got %T", got)
+	}
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader("hello\n"),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		HomeDir:      t.TempDir(),
+		Interactor:   ref,
+	}
+
+	if err := executeChatCommand(cmdCtx, []string{"--interactive"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := ref.Get()
+	if got == nil {
+		t.Fatal("expected InteractorRef to be populated after --interactive run, got nil")
+	}
+}
+
+func TestChatCommand_Execute_NonTUI_PopulatesInteractorRef(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	ref := NewInteractorRef()
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		MockPrompt:   "hello",
+		Interactor:   ref,
+	}
+
+	if err := executeChatCommand(cmdCtx, []string{"hello"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ref.Get() == nil {
+		t.Fatal("expected InteractorRef to be populated after non-TUI run, got nil")
+	}
+}
+
+func TestChatCommand_NilInteractorRef_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	// Passing a nil *InteractorRef must be safe — the InteractorRef.Set
+	// method nil-guards internally so commands run without a wiring cell
+	// (e.g., in narrowly-scoped tests).
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		MockPrompt:   "hello",
+		Interactor:   nil, // explicit
+	}
+
+	if err := executeChatCommand(cmdCtx, []string{"hello"}); err != nil {
+		t.Fatalf("unexpected error with nil InteractorRef: %v", err)
+	}
 }

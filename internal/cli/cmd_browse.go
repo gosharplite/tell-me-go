@@ -10,7 +10,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/spf13/cobra"
@@ -69,11 +68,7 @@ func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 
 func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
 	capturer := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false).(agent.CapturerInteractor)
-	if sm, ok := c.ctx.SM.(interface {
-		SetInteractor(domain_security.UserInteractor)
-	}); ok {
-		sm.SetInteractor(capturer)
-	}
+	c.ctx.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		return capturer.Close(ctx)
 	}
