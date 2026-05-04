@@ -6,7 +6,10 @@ SPDX-License-Identifier: MIT
 # ADR-029: Fallible `Reconfigure` Delegate Chain in Agent Hot-Reload
 
 ## Status
-Proposed
+Accepted
+
+## Decision Date
+2026-05-04
 
 ## Context
 
