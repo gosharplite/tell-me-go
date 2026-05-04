@@ -244,7 +244,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 			}
 		}
 
-		c.Interactor.Set(capturer)
+		c.Interactor.set(capturer)
 		return capturer, cleanup
 	}
 	return c.setupCapturer()
@@ -256,7 +256,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	if !ok {
 		return nil, func(stdctx.Context) error { return nil }
 	}
-	c.Interactor.Set(capturer)
+	c.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		return capturer.Close(ctx)
 	}

@@ -39,11 +39,11 @@ func TestInteractorRef_SetThenGet(t *testing.T) {
 	t.Parallel()
 	ref := NewInteractorRef()
 	want := &stubInteractor{id: 42}
-	ref.Set(want)
+	ref.set(want)
 
 	got := ref.Get()
 	if got == nil {
-		t.Fatal("expected non-nil interactor after Set")
+		t.Fatal("expected non-nil interactor after set")
 	}
 	stub, ok := got.(*stubInteractor)
 	if !ok {
@@ -57,15 +57,15 @@ func TestInteractorRef_SetThenGet(t *testing.T) {
 func TestInteractorRef_OverwriteWins(t *testing.T) {
 	t.Parallel()
 	ref := NewInteractorRef()
-	ref.Set(&stubInteractor{id: 1})
-	ref.Set(&stubInteractor{id: 2})
+	ref.set(&stubInteractor{id: 1})
+	ref.set(&stubInteractor{id: 2})
 
 	stub, ok := ref.Get().(*stubInteractor)
 	if !ok {
 		t.Fatalf("expected *stubInteractor, got %T", ref.Get())
 	}
 	if stub.id != 2 {
-		t.Errorf("expected latest Set to win (id=2), got id=%d", stub.id)
+		t.Errorf("expected latest set to win (id=2), got id=%d", stub.id)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestInteractorRef_NilReceiverIsSafe(t *testing.T) {
 	var ref *InteractorRef // intentionally nil
 
 	// Must not panic.
-	ref.Set(&stubInteractor{id: 99})
+	ref.set(&stubInteractor{id: 99})
 	if got := ref.Get(); got != nil {
 		t.Errorf("expected nil from nil receiver, got %T", got)
 	}
@@ -86,7 +86,7 @@ func TestInteractorRef_NilReceiverIsSafe(t *testing.T) {
 func TestInteractorRef_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 	ref := NewInteractorRef()
-	ref.Set(&stubInteractor{id: 0})
+	ref.set(&stubInteractor{id: 0})
 
 	const writers, readers, iters = 4, 8, 1000
 
@@ -98,7 +98,7 @@ func TestInteractorRef_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < iters; i++ {
-				ref.Set(&stubInteractor{id: w*iters + i})
+				ref.set(&stubInteractor{id: w*iters + i})
 			}
 		}()
 	}
