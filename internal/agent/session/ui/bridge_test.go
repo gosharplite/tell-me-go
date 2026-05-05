@@ -833,7 +833,7 @@ func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
 func TestUIBridge_HandleEvent_ActorDead(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewBridge(mRenderer, WithBridgeQueueCapacity(1))
+	bridge := NewBridge(mRenderer, withBridgeQueueCapacity(1))
 	bridge.AbortStart()
 	defer bridge.Cleanup()
 

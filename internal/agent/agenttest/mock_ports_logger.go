@@ -9,9 +9,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// WarnEntry records a single Warn invocation, capturing the message and
+// warnEntry records a single Warn invocation, capturing the message and
 // associated key-value argument pairs.
-type WarnEntry struct {
+type warnEntry struct {
 	Msg  string
 	Args []any
 }
@@ -21,7 +21,7 @@ type WarnEntry struct {
 type MockPortsLogger struct {
 	mu     sync.Mutex
 	Errors []string    // Each entry is the "msg" argument from an Error() call
-	Warns  []WarnEntry // Each entry captures the "msg" and args from a Warn() call
+	Warns  []warnEntry // Each entry captures the "msg" and args from a Warn() call
 }
 
 // Compile-time interface check
@@ -49,7 +49,7 @@ func (m *MockPortsLogger) WarnCalledWith(msg string) bool {
 func (m *MockPortsLogger) Warn(msg string, args ...any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Warns = append(m.Warns, WarnEntry{Msg: msg, Args: args})
+	m.Warns = append(m.Warns, warnEntry{Msg: msg, Args: args})
 }
 func (m *MockPortsLogger) Info(msg string, args ...any)  {}
 func (m *MockPortsLogger) Debug(msg string, args ...any) {}

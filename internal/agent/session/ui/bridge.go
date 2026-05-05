@@ -61,10 +61,10 @@ func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *Bridge) { b.cleanupTimeout = d }
 }
 
-// WithBridgeQueueCapacity sets the event channel buffer size.
+// withBridgeQueueCapacity sets the event channel buffer size.
 // Defaults to 100 when unset. Primarily intended for tests that need a
 // deterministic full-queue state.
-func WithBridgeQueueCapacity(n int) bridgeOption {
+func withBridgeQueueCapacity(n int) bridgeOption {
 	return func(b *Bridge) { b.queueCapacity = n }
 }
 
