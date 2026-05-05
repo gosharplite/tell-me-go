@@ -31,6 +31,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-023** | Reasoning-Token Accounting for OpenAI-Compatible Providers | 2026-04 | Accepted | [2026-04-reasoning-token-accounting.md](2026-04-reasoning-token-accounting.md) |
 | **ADR-028** | Delegate Registration Logic to Integration Sub-Packages | 2026-05 | Accepted | [2026-05-subpackage-registration-pattern.md](2026-05-subpackage-registration-pattern.md) |
 | **ADR-029** | Fallible `Reconfigure` Delegate Chain in Agent Hot-Reload | 2026-05 | Accepted | [2026-05-fallible-reconfigure-delegate-chain.md](2026-05-fallible-reconfigure-delegate-chain.md) |
+| **ADR-030** | Release Branch Synchronization Policy | 2026-05 | Accepted | [2026-05-release-branch-synchronization-policy.md](2026-05-release-branch-synchronization-policy.md) |
 
 ## How to Create a New ADR
 

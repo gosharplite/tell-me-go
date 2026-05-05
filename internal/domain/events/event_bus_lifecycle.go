@@ -62,19 +62,7 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 
 	// Wait for active workers to finish
 	done := make(chan struct{})
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// Don't swallow the panic. Log it.
-				if b.log != nil {
-					b.log.Error("panic in event bus shutdown wait", "error", r, "stack", string(debug.Stack()))
-				}
-				close(done)
-			}
-		}()
-		b.workerWG.Wait()
-		close(done)
-	}()
+	go b.waitWorkers(done)
 
 	select {
 	case <-done:
@@ -82,6 +70,21 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// waitWorkers blocks until all worker goroutines have drained, then closes done.
+// Uses the bus's wait func so tests can inject a panic.
+func (b *SimpleEventBus) waitWorkers(done chan<- struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			if b.log != nil {
+				b.log.Error("panic in event bus shutdown wait", "error", r, "stack", string(debug.Stack()))
+			}
+			close(done)
+		}
+	}()
+	b.wgWait(&b.workerWG)
+	close(done)
 }
 
 // Flush waits for all currently queued events to be processed or context timeout.

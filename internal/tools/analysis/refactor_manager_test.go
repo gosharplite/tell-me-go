@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -192,24 +191,114 @@ func TestRenameSymbol(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	t.Run("Successful Orchestration", func(t *testing.T) {
+	t.Run("renames a type and all references", func(t *testing.T) {
 		t.Parallel()
-		sp := &refactorMockSecurityProvider{}
-		mgr := newRefactorManager(sp)
+		mgr, tmpDir := setupMoveWorkspace(t, map[string]string{
+			"main.go": "package test\n\ntype OldName struct {\n\tValue int\n}\n\nfunc NewThing() OldName {\n\treturn OldName{Value: 1}\n}\n",
+		})
 
 		args := map[string]interface{}{
-			"old_name": "Old",
-			"new_name": "New",
-			"path":     ".",
+			"old_name": "OldName",
+			"new_name": "NewName",
+			"path":     tmpDir,
 			"reason":   "testing",
 		}
 
 		res, err := mgr.RenameSymbol(ctx, args, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		require.NoError(t, err)
+		assert.Contains(t, res.Text, "OldName → NewName")
+		assert.Contains(t, res.Text, "main.go")
+
+		// Verify the file was actually renamed.
+		content, err := os.ReadFile(filepath.Join(tmpDir, "main.go"))
+		require.NoError(t, err)
+		s := string(content)
+		assert.NotContains(t, s, "OldName")
+		assert.Contains(t, s, "type NewName struct")
+		assert.Contains(t, s, "func NewThing() NewName")
+		assert.Contains(t, s, "return NewName{Value: 1}")
+	})
+
+	t.Run("renames a function", func(t *testing.T) {
+		t.Parallel()
+		mgr, tmpDir := setupMoveWorkspace(t, map[string]string{
+			"main.go": "package test\n\nfunc OldFunc() string { return OldFunc() }\n",
+		})
+
+		args := map[string]interface{}{
+			"old_name": "OldFunc",
+			"new_name": "NewFunc",
+			"path":     tmpDir,
+			"reason":   "testing",
 		}
-		if !strings.Contains(res.Text, "RenameSymbol migrated") {
-			t.Errorf("expected migration message, got %q", res.Text)
+
+		_, err := mgr.RenameSymbol(ctx, args, nil)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "main.go"))
+		require.NoError(t, err)
+		s := string(content)
+		assert.NotContains(t, s, "OldFunc")
+		assert.Contains(t, s, "func NewFunc() string { return NewFunc() }")
+	})
+
+	t.Run("renames a constant", func(t *testing.T) {
+		t.Parallel()
+		mgr, tmpDir := setupMoveWorkspace(t, map[string]string{
+			"main.go": "package test\n\nconst OldConst = 42\n\nvar x = OldConst\n",
+		})
+
+		args := map[string]interface{}{
+			"old_name": "OldConst",
+			"new_name": "NewConst",
+			"path":     tmpDir,
+			"reason":   "testing",
 		}
+
+		_, err := mgr.RenameSymbol(ctx, args, nil)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "main.go"))
+		require.NoError(t, err)
+		s := string(content)
+		assert.NotContains(t, s, "OldConst")
+		assert.Contains(t, s, "const NewConst = 42")
+		assert.Contains(t, s, "var x = NewConst")
+	})
+
+	t.Run("errors when symbol not found", func(t *testing.T) {
+		t.Parallel()
+		mgr, tmpDir := setupMoveWorkspace(t, map[string]string{
+			"main.go": "package test\n",
+		})
+
+		args := map[string]interface{}{
+			"old_name": "NonExistent",
+			"new_name": "Whatever",
+			"path":     tmpDir,
+			"reason":   "testing",
+		}
+
+		_, err := mgr.RenameSymbol(ctx, args, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("errors when old and new names are identical", func(t *testing.T) {
+		t.Parallel()
+		mgr, tmpDir := setupMoveWorkspace(t, map[string]string{
+			"main.go": "package test\n\ntype Foo struct{}\n",
+		})
+
+		args := map[string]interface{}{
+			"old_name": "Foo",
+			"new_name": "Foo",
+			"path":     tmpDir,
+			"reason":   "testing",
+		}
+
+		_, err := mgr.RenameSymbol(ctx, args, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "identical")
 	})
 }

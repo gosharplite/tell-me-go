@@ -61,13 +61,13 @@ func (cs *Strategy) getContextWindow() int {
 func (cs *Strategy) SetLimits(historyTokens, toolTurns, historyTurns int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	if historyTokens > 0 {
+	if historyTokens >= 0 {
 		cs.maxHistoryTokens = historyTokens
 	}
-	if toolTurns > 0 {
+	if toolTurns >= 0 {
 		cs.maxToolTurns = toolTurns
 	}
-	if historyTurns > 0 {
+	if historyTurns >= 0 {
 		cs.maxHistoryTurns = historyTurns
 	}
 }

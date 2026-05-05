@@ -294,6 +294,35 @@ func TestManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	assert.Equal(t, 8888, strategy.GetMaxHistoryTokens())
 }
 
+func TestManager_Reconfigure_InvalidLimits_RetainsPreviousState(t *testing.T) {
+	tc := &agenttest.MockTokenCounter{}
+	strategy := sessctx.NewStrategy(tc)
+	strategy.SetLimits(2000, 10, 20) // pre-existing limits
+	factory := &sessctx.Factory{Estimator: strategy}
+	cm := sessctx.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
+
+	prevPipeline := cm.Pipeline
+	require.NotNil(t, prevPipeline)
+
+	invalidLimits := events.Limits{
+		MaxHistoryTokens: -1, // invalid: negative
+		MaxToolTurns:     50,
+		MaxHistoryTurns:  100,
+		ContextWindow:    2000,
+	}
+
+	err := cm.Reconfigure(invalidLimits)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "context manager reconfigure")
+	assert.Contains(t, err.Error(), "max history tokens")
+
+	// State must be retained — no mutation on validation failure
+	assert.Equal(t, prevPipeline, cm.Pipeline, "Pipeline must not be rebuilt on invalid limits")
+	assert.Equal(t, 2000, strategy.GetMaxHistoryTokens())
+	assert.Equal(t, 10, strategy.GetMaxToolTurns())
+}
+
 func TestManager_WindowSize_BoundaryCondition(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
@@ -621,6 +650,131 @@ func TestManager_Prepare_ExecutePipeline_SetContentsError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, llm.ErrTerminal)
 	require.ErrorIs(t, err, persistErr)
+}
+
+func TestManager_AddContent_SameRole_FastPath(t *testing.T) {
+	tc := &agenttest.MockTokenCounter{}
+	strategy := sessctx.NewStrategy(tc)
+
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+	})
+
+	cm := sessctx.NewManager(strategy, history, nil, nil)
+
+	newContent := &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "World"}}}
+
+	err := cm.AddContent(context.Background(), newContent)
+	require.NoError(t, err)
+
+	contents := history.GetContents()
+	require.Len(t, contents, 1)
+	assert.Len(t, contents[0].Parts, 2)
+	assert.Equal(t, "Hello", contents[0].Parts[0].Text)
+	assert.Equal(t, "World", contents[0].Parts[1].Text)
+	assert.Equal(t, 1, history.GetTotalEntries())
+}
+
+func TestManager_AddContent_FirstMessageMustBeUser(t *testing.T) {
+	tests := []struct {
+		name    string
+		role    string
+		wantErr bool
+	}{
+		{name: "model as first message", role: "model", wantErr: true},
+		{name: "system as first message", role: "system", wantErr: true},
+		{name: "user as first message", role: "user", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+			history := &agenttest.MockHistoryManager{}
+			// Intentionally empty — GetTotalEntries() returns 0
+			cm := sessctx.NewManager(strategy, history, nil, nil)
+
+			err := cm.AddContent(context.Background(), &llm.Content{
+				Role:  tt.role,
+				Parts: []*llm.Part{{Text: "msg"}},
+			})
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "first message must be 'user'")
+				assert.Contains(t, err.Error(), tt.role)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, 1, history.GetTotalEntries())
+			}
+		})
+	}
+}
+
+// appendPartsErrorHM wraps MockHistoryManager and overrides AppendParts
+// to return a configurable error for testing the AppendParts error path
+// in AddContent's fast path.
+type appendPartsErrorHM struct {
+	*agenttest.MockHistoryManager
+	appendPartsErr error
+}
+
+func (m *appendPartsErrorHM) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	return m.appendPartsErr
+}
+
+// emptyWindowHM wraps MockHistoryManager and overrides GetWindow to return
+// an empty slice, triggering the len(lastWindow) == 0 fallthrough path in
+// AddContent.
+type emptyWindowHM struct {
+	*agenttest.MockHistoryManager
+}
+
+func (m *emptyWindowHM) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	return []*llm.Content{}, nil
+}
+
+func TestManager_AddContent_SameRole_AppendPartsError(t *testing.T) {
+	base := &agenttest.MockHistoryManager{}
+	base.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+	})
+
+	sentinelErr := errors.New("append parts failed")
+	hm := &appendPartsErrorHM{MockHistoryManager: base, appendPartsErr: sentinelErr}
+
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+	cm := sessctx.NewManager(strategy, hm, nil, nil)
+
+	err := cm.AddContent(context.Background(), &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "World"}},
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, sentinelErr)
+}
+
+func TestManager_AddContent_EmptyWindow_FallsThroughToAddContent(t *testing.T) {
+	base := &agenttest.MockHistoryManager{}
+	base.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+	})
+
+	hm := &emptyWindowHM{MockHistoryManager: base}
+
+	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
+	cm := sessctx.NewManager(strategy, hm, nil, nil)
+
+	err := cm.AddContent(context.Background(), &llm.Content{
+		Role:  "model",
+		Parts: []*llm.Part{{Text: "World"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, base.GetTotalEntries())
+
+	contents := base.GetContents()
+	require.Len(t, contents, 2)
+	assert.Equal(t, "model", contents[1].Role)
 }
 
 func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {

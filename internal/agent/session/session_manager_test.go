@@ -4,6 +4,7 @@
 package session_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -457,13 +458,16 @@ func TestSessionDependencies_Accessors(t *testing.T) {
 	t.Parallel()
 	paths := &persistence.Paths{}
 	sessionProvider := new(agenttest.MockSessionProvider)
+	healthManager := new(agenttest.MockHealthCheckManager)
 	deps := &session.SessionDependenciesInternal{
 		Paths:           paths,
 		SessionProvider: sessionProvider,
+		Health:          healthManager,
 	}
 
 	require.Equal(t, paths, deps.GetPaths())
 	require.Equal(t, sessionProvider, deps.GetSessionProvider())
+	require.Equal(t, healthManager, deps.GetHealthManager())
 	require.Nil(t, deps.GetPricingOverrides())
 	require.Nil(t, deps.GetGateway())
 	regGot, regErr := deps.GetRegistry()
@@ -684,6 +688,11 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			expectedError: context.DeadlineExceeded.Error(),
 		},
 		{
+			name:          "Context Canceled",
+			chatErr:       context.Canceled,
+			expectedError: context.Canceled.Error(),
+		},
+		{
 			name:          "Unauthorized (API token error)",
 			chatErr:       fmt.Errorf("unauthorized: invalid API key"),
 			expectedError: "unauthorized: invalid API key",
@@ -765,6 +774,87 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			mCapturer.AssertExpectations(t)
 		})
 	}
+}
+
+func TestSessionManager_Run_ShutdownError(t *testing.T) {
+	t.Parallel()
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, mEventBus)
+
+	var stderrBuf bytes.Buffer
+
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return mChatter, nil
+	}
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, &stderrBuf, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+
+	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
+
+	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
+	mChatter.On("Subscribe", mock.Anything).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)        // Chat succeeds
+	mChatter.On("Shutdown", mock.Anything).Return(fmt.Errorf("shutdown timeout")) // Shutdown fails
+
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent shutdown failed")
+	require.Contains(t, err.Error(), "shutdown timeout")
+	require.Contains(t, stderrBuf.String(), "Warning: Agent shutdown failed: shutdown timeout")
+
+	mChatter.AssertExpectations(t)
+}
+
+func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
+	t.Parallel()
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, mEventBus)
+
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return mChatter, nil
+	}
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+
+	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
+
+	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
+	mChatter.On("Subscribe", mock.Anything).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
+	mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to apply configuration")
+	require.Contains(t, err.Error(), "limits error")
+
+	// Chat must never be called — Run returns early before the agent loop
+	mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
+	// Shutdown must still be called — the defer always runs
+	mChatter.AssertCalled(t, "Shutdown", mock.Anything)
 }
 
 func TestSessionManager_SessionID_Fallback(t *testing.T) {
@@ -924,4 +1014,70 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	mClock.AssertExpectations(t)
 	mChatter.AssertExpectations(t)
+}
+
+func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
+	t.Parallel()
+
+	mockLogger := new(agenttest.MockPortsLogger)
+
+	mChatter := new(agenttest.MockChatter)
+	var uiSub func(context.Context, events.Event)
+	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
+		uiSub = args.Get(0).(func(context.Context, events.Event))
+	}).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	mUIRenderer.On("SetUseColor", mock.Anything).Return()
+
+	mCapturer := new(agenttest.MockCapturer)
+	mCapturer.On("IsTTY", mock.Anything).Return(true)
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil,
+		io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer,
+		clock.RealClock{}, rand.Reader)
+
+	sCfg := &session.SessionConfigInternal{
+		Config: &config.Config{},
+	}
+	deps := session.NewSessionDependencies(
+		&persistence.Paths{}, nil, nil, nil, nil, nil, nil,
+		domain_pricing.PricingData{}, nil, nil,
+		mockLogger,
+		&ports.NoOpTurnsLogger{},
+		new(agenttest.MockSessionProvider),
+		nil,
+	)
+
+	bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(
+		context.Background(), mChatter, sCfg, deps, mCapturer)
+	require.NoError(t, err)
+	require.NotNil(t, uiSub, "Subscribe callback must be captured")
+
+	// Saturate the event queue (default capacity = 100) so the next critical
+	// event is forced into the backpressure path where loopCtx.Done() fires.
+	for i := 0; i < 100; i++ {
+		_ = bridge.HandleEvent(context.Background(), events.TurnStatusEvent{
+			Status: events.TurnStatus{SessionTurns: i},
+		})
+	}
+
+	// Kill the bridge's actor loop so HandleEvent returns an error.
+	bridge.KillActor()
+
+	// Fire a critical event through the captured subscription callback.
+	// Queue is full and actor is dead → enqueueEvent returns "uibridge actor is dead".
+	uiSub(context.Background(), events.TurnStatusEvent{
+		Status: events.TurnStatus{SessionTurns: 1},
+	})
+
+	require.True(t, mockLogger.WarnCalledWith("Failed to handle bridge event"),
+		"expected logger.Warn to be called with 'Failed to handle bridge event'")
+
+	// Cleanup bridge — Listen() was never started, so AbortStart is needed.
+	bridge.AbortStart()
+	bridge.CloseInput()
+	bridge.Cleanup()
 }

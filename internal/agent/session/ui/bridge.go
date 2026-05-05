@@ -61,6 +61,13 @@ func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *Bridge) { b.cleanupTimeout = d }
 }
 
+// withBridgeQueueCapacity sets the event channel buffer size.
+// Defaults to 100 when unset. Primarily intended for tests that need a
+// deterministic full-queue state.
+func withBridgeQueueCapacity(n int) bridgeOption {
+	return func(b *Bridge) { b.queueCapacity = n }
+}
+
 // Bridge translates domain events into UI updates.
 type Bridge struct {
 	mu                 sync.RWMutex
@@ -83,6 +90,7 @@ type Bridge struct {
 	cleanupInvocations int32
 	wg                 sync.WaitGroup
 	cleanupTimeout     time.Duration
+	queueCapacity      int
 	started            chan struct{}
 	startOnce          sync.Once
 }
@@ -105,7 +113,10 @@ func NewBridge(renderer ports.UIRenderer, opts ...bridgeOption) *Bridge {
 	if b.logger == nil {
 		b.logger = slog.Default()
 	}
-	b.queue = newEventQueue(b.logger, loopCtx, 100)
+	if b.queueCapacity == 0 {
+		b.queueCapacity = 100
+	}
+	b.queue = newEventQueue(b.logger, loopCtx, b.queueCapacity)
 	b.spinner = newSpinnerCoord(b.renderer, b.logger)
 	b.stateMachine = newUIStateMachine(b.spinner)
 	b.dispatcher = newEventDispatcher(
@@ -120,6 +131,13 @@ func NewBridge(renderer ports.UIRenderer, opts ...bridgeOption) *Bridge {
 // This is the safe alternative to manually calling wg.Done() from outside the package.
 func (b *Bridge) AbortStart() {
 	b.wg.Done()
+}
+
+// KillActor cancels the bridge's internal loop context, simulating a dead
+// consumer. Subsequent HandleEvent calls with critical events will return
+// a "uibridge actor is dead" error. Only for use in tests.
+func (b *Bridge) KillActor() {
+	b.loopCancel()
 }
 
 func (b *Bridge) CloseInput() {

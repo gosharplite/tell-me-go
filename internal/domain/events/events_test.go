@@ -979,3 +979,124 @@ func TestSimpleEventBus_NilAndClosedSubscriptions(t *testing.T) {
 		}
 	})
 }
+
+// TestSimpleEventBus_Shutdown_FlushTimeout exercises the ctx.Done() path in
+// Shutdown where the worker goroutines do not drain before the context expires.
+func TestSimpleEventBus_Shutdown_FlushTimeout(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+	eventstest.CleanupBus(t, bus)
+
+	// A subscriber that blocks forever — keeps workerWG from draining.
+	foreverBlock := make(chan struct{})
+	bus.SubscribeGlobal(&uncooperativeSubscriber{block: foreverBlock})
+
+	// Start the listener with a cancellable context so workers can drain.
+	listenCtx, listenCancel := context.WithCancel(ctx)
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		if err := bus.Listen(listenCtx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("Listen returned: %v", err)
+		}
+	}()
+
+	// Publish an event so a worker goroutine enters the blocking Handle.
+	if err := bus.Publish(ctx, testEvent{typeName: "keep_worker_busy"}); err != nil {
+		close(foreverBlock)
+		listenCancel()
+		t.Fatalf("Publish failed: %v", err)
+	}
+
+	// Give the worker time to pick up the event and block.
+	time.Sleep(100 * time.Millisecond)
+
+	// Shutdown with an already-cancelled context — forces the ctx.Done() branch.
+	cancelCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	err := bus.Shutdown(cancelCtx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled from Shutdown timeout, got %v", err)
+	}
+
+	// Cleanup: unblock the subscriber and cancel the listen context so
+	// workers drain and the test does not leak goroutines.
+	close(foreverBlock)
+	listenCancel()
+	<-listenDone
+}
+
+// TestSimpleEventBus_Shutdown_ActiveWorkers exercises the <-done path in
+// Shutdown where the worker goroutines drain successfully before the context
+// expires, and close(done) fires from the normal path (not recover).
+func TestSimpleEventBus_Shutdown_ActiveWorkers(t *testing.T) {
+	// Not parallel — uses goleak-sensitive lifecycle.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true), events.WithQueueSize(10))
+	eventstest.CleanupBus(t, bus)
+
+	// Subscribe BEFORE starting Listen so the subscriber is registered when
+	// Listen collects wrappers and starts workers.
+	var processedCount int
+	var mu sync.Mutex
+	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		time.Sleep(10 * time.Millisecond)
+		mu.Lock()
+		processedCount++
+		mu.Unlock()
+		return nil
+	}})
+
+	// Use a cancellable listen context so we can cleanly stop the listener.
+	listenCtx, listenCancel := context.WithCancel(ctx)
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		if err := bus.Listen(listenCtx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("Listen returned: %v", err)
+		}
+	}()
+
+	// Wait for Listen to fully initialize.
+	bus.WaitStarted()
+
+	// Publish several events so workers are busy.
+	numEvents := 5
+	for i := 0; i < numEvents; i++ {
+		if err := bus.Publish(ctx, testEvent{val: i}); err != nil {
+			t.Fatalf("Publish %d failed: %v", i, err)
+		}
+	}
+
+	// Flush ensures all events are processed before we stop the listener.
+	flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer flushCancel()
+	if err := bus.Flush(flushCtx); err != nil {
+		t.Fatalf("Flush failed: %v", err)
+	}
+
+	// Verify all events were processed before shutdown.
+	mu.Lock()
+	if processedCount != numEvents {
+		mu.Unlock()
+		t.Fatalf("expected %d events processed after Flush, got %d", numEvents, processedCount)
+	}
+	mu.Unlock()
+
+	// Stop the listener so workers begin draining.
+	listenCancel()
+
+	// Shutdown with ample timeout — workers should drain, <-done fires.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer shutdownCancel()
+	if err := bus.Shutdown(shutdownCtx); err != nil {
+		t.Errorf("Shutdown failed: %v", err)
+	}
+
+	// Ensure Listen goroutine has fully exited.
+	<-listenDone
+}

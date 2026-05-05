@@ -23,16 +23,16 @@ type realFileStat struct{}
 
 func (s realFileStat) Stat(name string) (os.FileInfo, error) { return os.Stat(name) }
 
-// setLimitsLocked applies non-zero limit values to the target fields.
+// setLimitsLocked applies non-negative limit values to the target fields.
 // It is a stateless helper; the caller must hold the appropriate mutex.
 func setLimitsLocked(tokens, toolTurns, historyTurns int, maxHistoryTokens, maxToolTurns, maxHistoryTurns *int) {
-	if tokens > 0 {
+	if tokens >= 0 {
 		*maxHistoryTokens = tokens
 	}
-	if toolTurns > 0 {
+	if toolTurns >= 0 {
 		*maxToolTurns = toolTurns
 	}
-	if historyTurns > 0 {
+	if historyTurns >= 0 {
 		*maxHistoryTurns = historyTurns
 	}
 }

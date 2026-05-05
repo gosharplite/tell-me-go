@@ -538,6 +538,40 @@ func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to persist tool results")
 }
 
+func TestPersistenceStep_ToolTransientError(t *testing.T) {
+	ctx := context.Background()
+	hMock := &agenttest.MockHistoryManager{}
+	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
+
+	callCount := 0
+	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
+		callCount++
+		if callCount == 1 {
+			return nil // response persists OK
+		}
+		return llm.ErrTransient // tool response fails transient
+	}
+
+	cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, nil, nil)
+	turn := &Turn{
+		CtxManager: cm,
+		State: &TurnState{
+			Response:     &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}},
+			ToolResponse: &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "tool"}}},
+		},
+	}
+
+	step := &PersistenceStep{}
+	_, err := step.Process(ctx, turn)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to persist tool results")
+	var agentErr *agentError
+	if assert.True(t, errors.As(err, &agentErr)) {
+		assert.Equal(t, llm.ErrTransient, agentErr.Category)
+	}
+}
+
 func TestRecoveryStep_MaxRetriesReached(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 1}
 	step := &RecoveryStep{Policy: policy}
@@ -683,4 +717,124 @@ func TestRecoveryStep_AttemptRetry_ContextCancelledAfterPublish(t *testing.T) {
 	res, err := step.Process(ctx, turn)
 	assert.Equal(t, ProcessResult{}, res)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRecoveryStep_Process_RateLimitError(t *testing.T) {
+	t.Run("rate limit error sets HasSeenRateLimit", func(t *testing.T) {
+		// Use a generous retry policy so ShouldRetry returns (delay, true)
+		policy := &DefaultRetryPolicy{MaxRetries: 5, Backoff: 100 * time.Millisecond}
+		step := &RecoveryStep{Policy: policy}
+
+		bus := &eventstest.MockEventBus{}
+		turn := &Turn{
+			Clock:  &agenttest.MockClock{},
+			Events: bus,
+			State: &TurnState{
+				LastError:  llm.ErrRateLimit,
+				RetryCount: 0,
+			},
+		}
+
+		_, _ = step.Process(context.Background(), turn)
+		assert.True(t, turn.State.HasSeenRateLimit,
+			"HasSeenRateLimit must be true after processing a rate-limit error")
+	})
+}
+
+func TestRunPhaseLoop_ContextRefinerError_TransitionsToRecovery(t *testing.T) {
+	t.Run("terminal error from ContextRefiner routes to Recovery and fails", func(t *testing.T) {
+		// Spy to track which phases were executed and in what order
+		var phasesVisited []TurnPhase
+		var mu sync.Mutex
+
+		recordPhase := func(phase TurnPhase) {
+			mu.Lock()
+			defer mu.Unlock()
+			phasesVisited = append(phasesVisited, phase)
+		}
+
+		engine := &Engine{
+			processors: map[TurnPhase]TurnProcessor{
+				PhaseRefining: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+					recordPhase(PhaseRefining)
+					return ProcessResult{}, NewAgentError(llm.ErrTerminal,
+						"context preparation failed", llm.ErrTerminal)
+				}),
+				PhaseRecovering: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+					recordPhase(PhaseRecovering)
+					// Non-transient error: RecoveryStep.handleFailure returns (PhaseComplete, err)
+					return ProcessResult{NextPhase: PhaseComplete}, turn.State.LastError
+				}),
+			},
+		}
+
+		turn := &Turn{
+			State: &TurnState{
+				Phase:     PhaseRefining,
+				LastError: nil,
+			},
+		}
+
+		err := engine.runPhaseLoop(context.Background(), turn)
+
+		assert.Error(t, err)
+		mu.Lock()
+		assert.Equal(t, []TurnPhase{PhaseRefining, PhaseRecovering}, phasesVisited,
+			"should visit Refining then Recovery")
+		mu.Unlock()
+	})
+
+	t.Run("transient error from ContextRefiner triggers retry back to Refining", func(t *testing.T) {
+		var phasesVisited []TurnPhase
+		var mu sync.Mutex
+		refiningCalls := 0
+
+		recordPhase := func(phase TurnPhase) {
+			mu.Lock()
+			defer mu.Unlock()
+			phasesVisited = append(phasesVisited, phase)
+		}
+
+		engine := &Engine{
+			processors: map[TurnPhase]TurnProcessor{
+				PhaseRefining: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+					recordPhase(PhaseRefining)
+					refiningCalls++
+					if refiningCalls == 1 {
+						return ProcessResult{}, NewAgentError(llm.ErrTransient,
+							"context preparation failed", llm.ErrTransient)
+					}
+					return ProcessResult{NextPhase: PhaseInference}, nil
+				}),
+				PhaseRecovering: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+					recordPhase(PhaseRecovering)
+					// Simulate RecoveryStep.attemptRetry returning PhaseRefining
+					return ProcessResult{NextPhase: PhaseRefining}, nil
+				}),
+				PhaseInference: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+					recordPhase(PhaseInference)
+					return ProcessResult{NextPhase: PhaseComplete}, nil
+				}),
+			},
+		}
+
+		turn := &Turn{
+			State: &TurnState{
+				Phase:     PhaseRefining,
+				LastError: nil,
+			},
+		}
+
+		err := engine.runPhaseLoop(context.Background(), turn)
+
+		assert.NoError(t, err)
+		mu.Lock()
+		assert.Equal(t, []TurnPhase{
+			PhaseRefining,   // first attempt → transient error
+			PhaseRecovering, // recovery decides to retry
+			PhaseRefining,   // retry → success
+			PhaseInference,  // normal progression
+		}, phasesVisited, "should show retry loop: Refining→Recovering→Refining→Inference")
+		mu.Unlock()
+	})
 }

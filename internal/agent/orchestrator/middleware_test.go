@@ -450,3 +450,97 @@ func TestPublishTurnStatus_ErrBusNotInitialized(t *testing.T) {
 	// This should not panic and should NOT log the error
 	engine.publishTurnStatus(context.Background(), turn, false, false)
 }
+
+func TestPublishTurnStatus_ContextCancelled(t *testing.T) {
+	bus := &eventstest.MockEventBus{}
+	engine := &Engine{events: bus}
+
+	hMock := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+	turn := &Turn{
+		State:      &TurnState{},
+		CtxManager: cm,
+		Clock:      &agenttest.MockClock{},
+	}
+
+	// Create a pre-cancelled context to trigger the timeout/short-circuit
+	// inside SafePublish. This exercises the path where bus.Publish is never
+	// called because context check fails first.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Must not panic. SafePublish will return a wrapped context.Canceled error,
+	// which is NOT ErrBusNotInitialized, so the error-logging branch fires.
+	assert.NotPanics(t, func() {
+		engine.publishTurnStatus(ctx, turn, false, false)
+	})
+
+	// Verify no event was published (context was cancelled before Publish ran)
+	assert.Empty(t, bus.GetEvents(), "no events should be published with cancelled context")
+}
+func TestPublishTurnStatus_ContextDeadlineExceeded(t *testing.T) {
+	bus := &eventstest.MockEventBus{}
+	engine := &Engine{events: bus}
+
+	hMock := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+	turn := &Turn{
+		State:      &TurnState{},
+		CtxManager: cm,
+		Clock:      &agenttest.MockClock{},
+	}
+
+	// Use a deadline so short (1 nanosecond) that it expires before SafePublish
+	// can even call bus.Publish. SafePublish wraps this in its own WithTimeout(2s),
+	// but the parent context deadline takes precedence.
+	ctx, cancel := context.WithTimeout(context.Background(), 1)
+	defer cancel()
+	time.Sleep(time.Microsecond) // ensure the deadline has passed
+
+	// Must not panic. The deadline triggers a context.DeadlineExceeded error
+	// wrapped by SafePublish, which is NOT ErrBusNotInitialized, so the
+	// error-logging branch fires.
+	assert.NotPanics(t, func() {
+		engine.publishTurnStatus(ctx, turn, false, false)
+	})
+
+	// Verify no event was published (deadline expired before Publish ran)
+	assert.Empty(t, bus.GetEvents(), "no events should be published with expired deadline")
+}
+func TestPublishTurnStatus_WithCostTracker(t *testing.T) {
+	bus := &eventstest.MockEventBus{}
+	engine := &Engine{events: bus}
+
+	hMock := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+	tracker := &agenttest.MockCostTracker{}
+	turn := &Turn{
+		State:       &TurnState{},
+		CtxManager:  cm,
+		Clock:       &agenttest.MockClock{},
+		CostTracker: tracker, // ← triggers the CostTracker != nil branch
+	}
+
+	// Must not panic. The CostTracker branch will execute, calling
+	// GetTotalCost, GetDailyCost, and GetStats on the mock.
+	assert.NotPanics(t, func() {
+		engine.publishTurnStatus(context.Background(), turn, false, false)
+	})
+
+	// Verify the event was published successfully (happy path)
+	found := false
+	for _, e := range bus.GetEvents() {
+		if evt, ok := e.(events.TurnStatusEvent); ok {
+			// MockCostTracker returns GetTotalCost → 0.05, GetDailyCost → 0.05,
+			// GetStats → (UsageStats{}, 0.05) — UsageStats fields are all zero.
+			assert.Equal(t, 0.05, evt.Status.SessionCost)
+			assert.Equal(t, 0.05, evt.Status.DailyCost)
+			assert.Equal(t, int64(0), evt.Status.TotalM)
+			assert.Equal(t, int64(0), evt.Status.TotalH)
+			assert.Equal(t, int64(0), evt.Status.TotalO)
+			found = true
+		}
+	}
+	assert.True(t, found, "TurnStatusEvent should be published")
+}

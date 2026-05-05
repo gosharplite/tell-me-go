@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -218,5 +219,163 @@ func TestEmitHeartbeats(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("emitHeartbeats blocked on full channel")
 		}
+	})
+}
+
+func TestSummarizeHistory_UnmarshalArgsError(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"turns": "not-a-number",
+	}
+
+	result, err := it.SummarizeHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Empty(t, result.Text)
+}
+
+func TestSummarizeHistory_InvalidTurns(t *testing.T) {
+	tests := []struct {
+		name  string
+		turns float64
+	}{
+		{"zero turns", 0},
+		{"negative turns", -5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := &sessctx.Manager{History: &failingHMBase{}}
+			it := NewInternalTools(cm)
+
+			args := map[string]interface{}{
+				"turns": tt.turns,
+			}
+
+			result, err := it.SummarizeHistory(context.Background(), args, nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "must be > 0")
+			require.Empty(t, result.Text)
+		})
+	}
+}
+
+func TestSummarizeHistory_LargeTurns(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"turns": float64(1e20),
+	}
+
+	result, err := it.SummarizeHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Empty(t, result.Text)
+}
+
+func TestSummarizeHistory_Success(t *testing.T) {
+	counter := &agenttest.MockTokenCounter{}
+	strategy := sessctx.NewStrategy(counter)
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+	})
+
+	cm := sessctx.NewManager(strategy, history, nil, nil)
+	mockSum := &agenttest.MockSummarizer{}
+	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "range summary", &llm.Metrics{PromptTokens: 5}, nil
+	})
+	cm.Summarizer = mockSum
+
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"turns": float64(1),
+		"focus": "test focus",
+	}
+
+	result, err := it.SummarizeHistory(context.Background(), args, nil)
+	require.NoError(t, err)
+	require.Contains(t, result.Text, "summarized the first 1 turns")
+	require.NotNil(t, result.Metadata)
+	require.Contains(t, result.Metadata, "metrics")
+}
+
+func TestManageHistory_UnsupportedAction(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"action": "delete",
+		"index":  float64(0),
+	}
+
+	result, err := it.ManageHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported action")
+	require.Empty(t, result.Text)
+}
+
+func TestManageHistory_OutOfBoundsIndex(t *testing.T) {
+	failingHM := &setPinnedFailingHM{
+		HistoryManager: &failingHMBase{},
+		err:            errors.New("index out of range"),
+	}
+	cm := &sessctx.Manager{History: failingHM}
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"action": "pin",
+		"index":  float64(99999),
+	}
+
+	result, err := it.ManageHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "index out of range")
+	require.Empty(t, result.Text)
+}
+
+func TestManageHistory_UnmarshalArgsError(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	// Type mismatch: "action" is a number, but params.Action expects a string
+	args := map[string]interface{}{
+		"action": 123,
+		"index":  float64(0),
+	}
+
+	result, err := it.ManageHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Empty(t, result.Text)
+}
+
+func TestManageHistory_Success(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	t.Run("pin", func(t *testing.T) {
+		args := map[string]interface{}{
+			"action": "pin",
+			"index":  float64(2),
+		}
+		result, err := it.ManageHistory(context.Background(), args, nil)
+		require.NoError(t, err)
+		require.Contains(t, result.Text, "turn 2 has been successfully pinned")
+	})
+
+	t.Run("unpin", func(t *testing.T) {
+		args := map[string]interface{}{
+			"action": "unpin",
+			"index":  float64(3),
+		}
+		result, err := it.ManageHistory(context.Background(), args, nil)
+		require.NoError(t, err)
+		require.Contains(t, result.Text, "turn 3 has been successfully unpinned")
 	})
 }

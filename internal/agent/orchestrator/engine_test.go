@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,8 +19,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEngine_ConfigurationOptions(t *testing.T) {
@@ -95,6 +98,75 @@ func TestEngine_Reconfigure(t *testing.T) {
 	assert.Equal(t, "new-mode", cfg.Mode)
 	assert.Equal(t, runtimeCfg.PricingOverrides, cfg.PricingOverrides)
 	assert.Equal(t, tracker, cfg.CostTracker)
+}
+
+func TestEngine_Reconfigure_ValidationFailure(t *testing.T) {
+	tests := []struct {
+		name       string
+		runtimeCfg RuntimeConfig
+		errSubstr  string
+	}{
+		{
+			name:       "empty provider name",
+			runtimeCfg: RuntimeConfig{Model: "gpt-4", Mode: "chat"},
+			errSubstr:  "engine reconfigure: runtime config: provider name",
+		},
+		{
+			name:       "empty model",
+			runtimeCfg: RuntimeConfig{ProviderName: "openai", Mode: "chat"},
+			errSubstr:  "engine reconfigure: runtime config: model",
+		},
+		{
+			name:       "empty mode",
+			runtimeCfg: RuntimeConfig{ProviderName: "openai", Model: "gpt-4"},
+			errSubstr:  "engine reconfigure: runtime config: mode",
+		},
+		{
+			name: "empty pricing override key",
+			runtimeCfg: RuntimeConfig{
+				ProviderName:     "openai",
+				Model:            "gpt-4",
+				Mode:             "chat",
+				PricingOverrides: map[string]domain_pricing.ModelPricing{"": {}},
+			},
+			errSubstr: "engine reconfigure: runtime config: pricing overrides contain empty key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up engine with known initial configuration
+			e := &Engine{}
+			initialCfg := &engineConfig{
+				ProviderName: "original-provider",
+				Model:        "original-model",
+				Mode:         "original-mode",
+			}
+			e.config.Store(initialCfg)
+
+			// Call Reconfigure with invalid config — must fail
+			err := e.Reconfigure(tt.runtimeCfg, nil)
+
+			// Assert error wrapping and message
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.errSubstr)
+			}
+			if !strings.Contains(err.Error(), tt.errSubstr) {
+				t.Errorf("error = %q; want substring %q", err.Error(), tt.errSubstr)
+			}
+
+			// ADR-029: engine must retain previous config (no partial mutation)
+			currentCfg := e.config.Load()
+			if currentCfg != initialCfg {
+				t.Error("engine config pointer changed after validation failure — ADR-029 violation")
+			}
+			if currentCfg.ProviderName != "original-provider" ||
+				currentCfg.Model != "original-model" ||
+				currentCfg.Mode != "original-mode" {
+				t.Errorf("engine config mutated after validation failure: %+v", currentCfg)
+			}
+		})
+	}
 }
 
 func TestEngine_DetermineNextPhase(t *testing.T) {
@@ -222,6 +294,49 @@ func TestExecutionStep_Process(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, PhasePersisting, res.NextPhase)
 		assert.NotNil(t, turn.State.ToolResponse)
+	})
+
+	t.Run("CumulativeToolDuration from trace", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+		ex := &agenttest.MockAgentExecutor{
+			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+				return &llm.Content{Role: "tool"}, nil
+			},
+		}
+		counter := &agenttest.MockTokenCounter{}
+		hMock := &agenttest.MockHistoryManager{}
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+		turn := &Turn{
+			Events:       bus,
+			Executor:     ex,
+			TokenCounter: counter,
+			CtxManager:   cm,
+			Clock:        &agenttest.MockClock{},
+			State: &TurnState{
+				HasToolCalls: true,
+				Response: &llm.Content{
+					Role:  "model",
+					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
+				},
+				Metrics: &llm.Metrics{},
+			},
+		}
+
+		trace := telemetry.NewTurnTrace()
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName: "search", Duration: 1500 * time.Millisecond, Status: "success",
+		})
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName: "read", Duration: 500 * time.Millisecond, Status: "success",
+		})
+		ctxWithTrace := telemetry.ContextWithTrace(context.Background(), trace)
+
+		res, err := step.Process(ctxWithTrace, turn)
+		assert.NoError(t, err)
+		assert.Equal(t, PhasePersisting, res.NextPhase)
+		assert.NotNil(t, turn.State.ToolResponse)
+		assert.Equal(t, 2.0, turn.State.Metrics.CumulativeToolDuration)
 	})
 
 	t.Run("Execution error", func(t *testing.T) {
@@ -638,3 +753,140 @@ func (*noopSecurityManager) Confirm(context.Context, string) (bool, error) { ret
 func (*noopSecurityManager) ReadLine(context.Context) (string, error)      { return "", nil }
 func (*noopSecurityManager) IsCommandAllowed(string) bool                  { return true }
 func (*noopSecurityManager) IsBypassActive() bool                          { return false }
+
+// spyLogger records calls to Error for assertion in tests.
+type spyLogger struct {
+	errorCalls []spyLogCall
+}
+
+type spyLogCall struct {
+	msg  string
+	args []any
+}
+
+func (s *spyLogger) Error(msg string, args ...any) {
+	s.errorCalls = append(s.errorCalls, spyLogCall{msg, args})
+}
+func (s *spyLogger) Warn(msg string, args ...any)  {}
+func (s *spyLogger) Info(msg string, args ...any)  {}
+func (s *spyLogger) Debug(msg string, args ...any) {}
+
+func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {
+	step := &ExecutionStep{}
+	ctx := context.Background()
+
+	t.Run("nil ToolResponse returns early", func(t *testing.T) {
+		counter := &agenttest.MockTokenCounter{}
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), nil, nil, nil)
+		turn := &Turn{
+			CtxManager:   cm,
+			TokenCounter: counter,
+			State:        &TurnState{}, // ToolResponse is nil (zero value)
+		}
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+	})
+
+	t.Run("nil CtxManager returns early", func(t *testing.T) {
+		turn := &Turn{
+			State: &TurnState{
+				ToolResponse: &llm.Content{Role: "tool"},
+			},
+		}
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+	})
+
+	t.Run("nil Strategy returns early", func(t *testing.T) {
+		cm := &sessctx.Manager{} // Strategy is nil
+		turn := &Turn{
+			CtxManager: cm,
+			State: &TurnState{
+				ToolResponse: &llm.Content{Role: "tool"},
+			},
+		}
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+	})
+
+	t.Run("zero MaxHistoryTokens returns early", func(t *testing.T) {
+		counter := &agenttest.MockTokenCounter{}
+		counter.SetTokens(100)
+
+		// Strategy zero value has maxHistoryTokens = 0 (defensive guard covers
+		// the case where defaults haven't been applied yet).
+		strategy := &sessctx.Strategy{}
+		cm := sessctx.NewManager(strategy, nil, nil, nil)
+
+		turn := &Turn{
+			TokenCounter: counter,
+			CtxManager:   cm,
+			State: &TurnState{
+				Tokens: 100,
+				ToolResponse: &llm.Content{
+					Role: "tool",
+					Parts: []*llm.Part{{
+						FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]any{"data": "ok"}},
+					}},
+				},
+			},
+		}
+
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+
+		// Verify no truncation occurred — handleOversizedPayload was never reached
+		resp := turn.State.ToolResponse.Parts[0].FunctionResponse.Response
+		assert.Equal(t, "ok", resp["data"])
+		_, hasError := resp["error"]
+		assert.False(t, hasError, "response should not be truncated when MaxHistoryTokens is 0")
+	})
+
+	t.Run("handleOversizedPayload logs on publish error", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		bus.SetPublishErr(errors.New("runtime publish failure"))
+
+		counter := &agenttest.MockTokenCounter{}
+		counter.SetTokens(600)
+
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), nil, bus, nil)
+		require.NoError(t, cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000}))
+
+		sl := &spyLogger{}
+
+		turn := &Turn{
+			Events:       bus,
+			TokenCounter: counter,
+			CtxManager:   cm,
+			Logger:       sl,
+			State: &TurnState{
+				Tokens: 100,
+				ToolResponse: &llm.Content{
+					Role: "tool",
+					Parts: []*llm.Part{{
+						FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]any{"data": "massive"}},
+					}},
+				},
+			},
+		}
+
+		step.validatePayloadLimits(ctx, turn)
+
+		// Assert truncation occurred
+		resp := turn.State.ToolResponse.Parts[0].FunctionResponse.Response
+		errVal, ok := resp["error"].(string)
+		assert.True(t, ok, "response should contain error key after truncation")
+		assert.Contains(t, errVal, "individual tool output is too massive")
+
+		// Assert event was NOT published on the bus (since publish errored)
+		assert.Empty(t, bus.GetEvents())
+
+		// Assert spy logger recorded exactly one Error call
+		require.Len(t, sl.errorCalls, 1)
+		assert.Equal(t, "event_publish_failed", sl.errorCalls[0].msg)
+	})
+}
