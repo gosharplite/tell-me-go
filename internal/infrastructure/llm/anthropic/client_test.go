@@ -1097,3 +1097,141 @@ func TestThinkingTokens_AlwaysZero_PerWireContract(t *testing.T) {
 		t.Error("expected at least one IsThought Part with non-empty Text")
 	}
 }
+
+func TestPartToContentBlock(t *testing.T) {
+	c := &client{logger: &ports.NoOpLogger{}}
+
+	tests := []struct {
+		name        string
+		part        *llm.Part
+		role        string
+		wantType    string
+		wantOk      bool
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "FunctionCall - valid",
+			part: &llm.Part{
+				FunctionCall: &llm.FunctionCall{
+					ID:   "call_1",
+					Name: "my_tool",
+					Args: map[string]interface{}{"foo": "bar"},
+				},
+			},
+			role:     "assistant",
+			wantType: "tool_use",
+			wantOk:   true,
+			wantErr:  false,
+		},
+		{
+			name: "FunctionCall - missing ID",
+			part: &llm.Part{
+				FunctionCall: &llm.FunctionCall{
+					Name: "my_tool",
+				},
+			},
+			role:        "assistant",
+			wantOk:      false,
+			wantErr:     true,
+			errContains: "missing ID for tool call",
+		},
+		{
+			name: "FunctionCall - nil Args",
+			part: &llm.Part{
+				FunctionCall: &llm.FunctionCall{
+					ID:   "call_1",
+					Name: "my_tool",
+				},
+			},
+			role:     "assistant",
+			wantType: "tool_use",
+			wantOk:   true,
+			wantErr:  false,
+		},
+		{
+			name: "FunctionResponse - valid",
+			part: &llm.Part{
+				FunctionResponse: &llm.FunctionResponse{
+					ID:       "call_1",
+					Name:     "my_tool",
+					Response: map[string]interface{}{"result": "success"},
+				},
+			},
+			role:     "user",
+			wantType: "tool_result",
+			wantOk:   true,
+			wantErr:  false,
+		},
+		{
+			name: "FunctionResponse - missing ID",
+			part: &llm.Part{
+				FunctionResponse: &llm.FunctionResponse{
+					Name:     "my_tool",
+					Response: map[string]interface{}{"result": "success"},
+				},
+			},
+			role:        "user",
+			wantOk:      false,
+			wantErr:     true,
+			errContains: "missing ID for tool response",
+		},
+		{
+			name: "Thinking - assistant role",
+			part: &llm.Part{
+				IsThought:        true,
+				Text:             "thinking...",
+				ThoughtSignature: []byte("sig"),
+			},
+			role:     "assistant",
+			wantType: "thinking",
+			wantOk:   true,
+			wantErr:  false,
+		},
+		{
+			name: "Text block",
+			part: &llm.Part{
+				Text: "hello",
+			},
+			role:     "user",
+			wantType: "text",
+			wantOk:   true,
+			wantErr:  false,
+		},
+		{
+			name:    "Empty part",
+			part:    &llm.Part{},
+			role:    "user",
+			wantOk:  false,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok, err := c.partToContentBlock(tt.part, tt.role)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error %q should contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if ok != tt.wantOk {
+				t.Errorf("expected ok=%v, got ok=%v", tt.wantOk, ok)
+			}
+
+			if tt.wantOk && got.Type != tt.wantType {
+				t.Errorf("expected type %q, got %q", tt.wantType, got.Type)
+			}
+		})
+	}
+}
