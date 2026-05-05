@@ -458,13 +458,16 @@ func TestSessionDependencies_Accessors(t *testing.T) {
 	t.Parallel()
 	paths := &persistence.Paths{}
 	sessionProvider := new(agenttest.MockSessionProvider)
+	healthManager := new(agenttest.MockHealthCheckManager)
 	deps := &session.SessionDependenciesInternal{
 		Paths:           paths,
 		SessionProvider: sessionProvider,
+		Health:          healthManager,
 	}
 
 	require.Equal(t, paths, deps.GetPaths())
 	require.Equal(t, sessionProvider, deps.GetSessionProvider())
+	require.Equal(t, healthManager, deps.GetHealthManager())
 	require.Nil(t, deps.GetPricingOverrides())
 	require.Nil(t, deps.GetGateway())
 	regGot, regErr := deps.GetRegistry()
