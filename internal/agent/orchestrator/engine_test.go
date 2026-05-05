@@ -21,6 +21,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEngine_ConfigurationOptions(t *testing.T) {
@@ -708,3 +709,140 @@ func (*noopSecurityManager) Confirm(context.Context, string) (bool, error) { ret
 func (*noopSecurityManager) ReadLine(context.Context) (string, error)      { return "", nil }
 func (*noopSecurityManager) IsCommandAllowed(string) bool                  { return true }
 func (*noopSecurityManager) IsBypassActive() bool                          { return false }
+
+// spyLogger records calls to Error for assertion in tests.
+type spyLogger struct {
+	errorCalls []spyLogCall
+}
+
+type spyLogCall struct {
+	msg  string
+	args []any
+}
+
+func (s *spyLogger) Error(msg string, args ...any) {
+	s.errorCalls = append(s.errorCalls, spyLogCall{msg, args})
+}
+func (s *spyLogger) Warn(msg string, args ...any)  {}
+func (s *spyLogger) Info(msg string, args ...any)  {}
+func (s *spyLogger) Debug(msg string, args ...any) {}
+
+func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {
+	step := &ExecutionStep{}
+	ctx := context.Background()
+
+	t.Run("nil ToolResponse returns early", func(t *testing.T) {
+		counter := &agenttest.MockTokenCounter{}
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), nil, nil, nil)
+		turn := &Turn{
+			CtxManager:   cm,
+			TokenCounter: counter,
+			State:        &TurnState{}, // ToolResponse is nil (zero value)
+		}
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+	})
+
+	t.Run("nil CtxManager returns early", func(t *testing.T) {
+		turn := &Turn{
+			State: &TurnState{
+				ToolResponse: &llm.Content{Role: "tool"},
+			},
+		}
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+	})
+
+	t.Run("nil Strategy returns early", func(t *testing.T) {
+		cm := &sessctx.Manager{} // Strategy is nil
+		turn := &Turn{
+			CtxManager: cm,
+			State: &TurnState{
+				ToolResponse: &llm.Content{Role: "tool"},
+			},
+		}
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+	})
+
+	t.Run("zero MaxHistoryTokens returns early", func(t *testing.T) {
+		counter := &agenttest.MockTokenCounter{}
+		counter.SetTokens(100)
+
+		// Strategy zero value has maxHistoryTokens = 0 (defensive guard covers
+		// the case where defaults haven't been applied yet).
+		strategy := &sessctx.Strategy{}
+		cm := sessctx.NewManager(strategy, nil, nil, nil)
+
+		turn := &Turn{
+			TokenCounter: counter,
+			CtxManager:   cm,
+			State: &TurnState{
+				Tokens: 100,
+				ToolResponse: &llm.Content{
+					Role: "tool",
+					Parts: []*llm.Part{{
+						FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]any{"data": "ok"}},
+					}},
+				},
+			},
+		}
+
+		assert.NotPanics(t, func() {
+			step.validatePayloadLimits(ctx, turn)
+		})
+
+		// Verify no truncation occurred — handleOversizedPayload was never reached
+		resp := turn.State.ToolResponse.Parts[0].FunctionResponse.Response
+		assert.Equal(t, "ok", resp["data"])
+		_, hasError := resp["error"]
+		assert.False(t, hasError, "response should not be truncated when MaxHistoryTokens is 0")
+	})
+
+	t.Run("handleOversizedPayload logs on publish error", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		bus.SetPublishErr(errors.New("runtime publish failure"))
+
+		counter := &agenttest.MockTokenCounter{}
+		counter.SetTokens(600)
+
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), nil, bus, nil)
+		require.NoError(t, cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000}))
+
+		sl := &spyLogger{}
+
+		turn := &Turn{
+			Events:       bus,
+			TokenCounter: counter,
+			CtxManager:   cm,
+			Logger:       sl,
+			State: &TurnState{
+				Tokens: 100,
+				ToolResponse: &llm.Content{
+					Role: "tool",
+					Parts: []*llm.Part{{
+						FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]any{"data": "massive"}},
+					}},
+				},
+			},
+		}
+
+		step.validatePayloadLimits(ctx, turn)
+
+		// Assert truncation occurred
+		resp := turn.State.ToolResponse.Parts[0].FunctionResponse.Response
+		errVal, ok := resp["error"].(string)
+		assert.True(t, ok, "response should contain error key after truncation")
+		assert.Contains(t, errVal, "individual tool output is too massive")
+
+		// Assert event was NOT published on the bus (since publish errored)
+		assert.Empty(t, bus.GetEvents())
+
+		// Assert spy logger recorded exactly one Error call
+		require.Len(t, sl.errorCalls, 1)
+		assert.Equal(t, "event_publish_failed", sl.errorCalls[0].msg)
+	})
+}
