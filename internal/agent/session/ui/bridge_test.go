@@ -789,3 +789,62 @@ func TestUIBridge_HandleEvent_ContextCancelled(t *testing.T) {
 	err := bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
 	assert.ErrorIs(t, err, context.Canceled)
 }
+
+func TestUIBridge_HandleEvent_BridgeClosed(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(agenttest.MockUIRenderer)
+	bridge := NewBridge(mRenderer)
+	bridge.wg.Done()
+	defer bridge.Cleanup()
+
+	bridge.CloseInput()
+	err := bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
+	assert.NoError(t, err)
+}
+
+func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(agenttest.MockUIRenderer)
+	bridge := NewBridge(mRenderer)
+	bridge.wg.Done()
+	defer bridge.Cleanup()
+
+	// Force a panic inside enqueueEvent after the defer/recover in HandleEvent
+	// is registered. Setting ch=nil makes the select fall through to default;
+	// setting logger=nil causes the panic in the default branch.
+	bridge.queue.ch = nil
+	bridge.queue.logger = nil
+
+	// Restore fields so Cleanup's CloseInput (close(nil) panics) works safely.
+	// This defer runs BEFORE bridge.Cleanup() due to LIFO ordering.
+	defer func() {
+		bridge.queue.ch = make(chan events.Event, 1)
+		bridge.queue.logger = slog.Default()
+	}()
+
+	err := bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
+	assert.NoError(t, err)
+}
+
+func TestUIBridge_HandleEvent_ActorDead(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(agenttest.MockUIRenderer)
+	bridge := NewBridge(mRenderer)
+	bridge.wg.Done()
+	defer bridge.Cleanup()
+
+	// Fill the event channel to capacity (100) with critical events.
+	// Critical events use the backpressure path (no default case).
+	for i := 0; i < 100; i++ {
+		_ = bridge.HandleEvent(context.Background(), events.TurnStatusEvent{})
+	}
+
+	// Kill the actor's loop context. The 101st critical event cannot
+	// send because the channel is full, so the select falls through
+	// to eq.loopCtx.Done().
+	bridge.loopCancel()
+
+	err := bridge.HandleEvent(context.Background(), events.TurnStatusEvent{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "uibridge actor is dead")
+}
