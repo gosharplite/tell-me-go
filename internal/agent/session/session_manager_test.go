@@ -804,8 +804,8 @@ func TestSessionManager_Run_ShutdownError(t *testing.T) {
 	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)                 // Chat succeeds
-	mChatter.On("Shutdown", mock.Anything).Return(fmt.Errorf("shutdown timeout"))           // Shutdown fails
+	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)        // Chat succeeds
+	mChatter.On("Shutdown", mock.Anything).Return(fmt.Errorf("shutdown timeout")) // Shutdown fails
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 

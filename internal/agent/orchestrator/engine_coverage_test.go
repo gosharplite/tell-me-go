@@ -830,10 +830,10 @@ func TestRunPhaseLoop_ContextRefinerError_TransitionsToRecovery(t *testing.T) {
 		assert.NoError(t, err)
 		mu.Lock()
 		assert.Equal(t, []TurnPhase{
-			PhaseRefining,  // first attempt → transient error
-			PhaseRecovering,  // recovery decides to retry
-			PhaseRefining,  // retry → success
-			PhaseInference, // normal progression
+			PhaseRefining,   // first attempt → transient error
+			PhaseRecovering, // recovery decides to retry
+			PhaseRefining,   // retry → success
+			PhaseInference,  // normal progression
 		}, phasesVisited, "should show retry loop: Refining→Recovering→Refining→Inference")
 		mu.Unlock()
 	})
