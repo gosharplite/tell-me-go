@@ -294,6 +294,35 @@ func TestManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	assert.Equal(t, 8888, strategy.GetMaxHistoryTokens())
 }
 
+func TestManager_Reconfigure_InvalidLimits_RetainsPreviousState(t *testing.T) {
+	tc := &agenttest.MockTokenCounter{}
+	strategy := sessctx.NewStrategy(tc)
+	strategy.SetLimits(2000, 10, 20) // pre-existing limits
+	factory := &sessctx.Factory{Estimator: strategy}
+	cm := sessctx.NewManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
+
+	prevPipeline := cm.Pipeline
+	require.NotNil(t, prevPipeline)
+
+	invalidLimits := events.Limits{
+		MaxHistoryTokens: -1, // invalid: negative
+		MaxToolTurns:     50,
+		MaxHistoryTurns:  100,
+		ContextWindow:    2000,
+	}
+
+	err := cm.Reconfigure(invalidLimits)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "context manager reconfigure")
+	assert.Contains(t, err.Error(), "max history tokens")
+
+	// State must be retained — no mutation on validation failure
+	assert.Equal(t, prevPipeline, cm.Pipeline, "Pipeline must not be rebuilt on invalid limits")
+	assert.Equal(t, 2000, strategy.GetMaxHistoryTokens())
+	assert.Equal(t, 10, strategy.GetMaxToolTurns())
+}
+
 func TestManager_WindowSize_BoundaryCondition(t *testing.T) {
 	counter := &agenttest.MockTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
