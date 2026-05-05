@@ -1056,11 +1056,19 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, uiSub, "Subscribe callback must be captured")
 
+	// Saturate the event queue (default capacity = 100) so the next critical
+	// event is forced into the backpressure path where loopCtx.Done() fires.
+	for i := 0; i < 100; i++ {
+		_ = bridge.HandleEvent(context.Background(), events.TurnStatusEvent{
+			Status: events.TurnStatus{SessionTurns: i},
+		})
+	}
+
 	// Kill the bridge's actor loop so HandleEvent returns an error.
 	bridge.KillActor()
 
 	// Fire a critical event through the captured subscription callback.
-	// A critical event + dead actor → HandleEvent returns "uibridge actor is dead".
+	// Queue is full and actor is dead → enqueueEvent returns "uibridge actor is dead".
 	uiSub(context.Background(), events.TurnStatusEvent{
 		Status: events.TurnStatus{SessionTurns: 1},
 	})
