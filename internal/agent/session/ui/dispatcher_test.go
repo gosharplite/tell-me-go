@@ -151,21 +151,20 @@ func TestHandleToolEvents_EmptyNameGuard(t *testing.T) {
 	assert.Contains(t, logger.debugs, "handleToolEvents: ToolResultEvent missing Name")
 }
 
-func TestHandleToolEvents_NilContextGuard(t *testing.T) {
+func TestHandleToolEvents_ContextTODO(t *testing.T) {
 	t.Parallel()
 
-	d, renderer, logger := newTestDispatcher(t)
+	d, renderer, _ := newTestDispatcher(t)
 	calls := []*llm.FunctionCall{{Name: "search"}}
 
-	// dispatch with nil context — must not panic
-	d.dispatch(nil, events.ToolCallEvent{
+	// dispatch with context.TODO() — must not panic (SA1012-compliant)
+	d.dispatch(context.TODO(), events.ToolCallEvent{
 		Calls:    calls,
 		Turn:     1,
 		MaxTurns: 3,
 	})
 
-	assert.Len(t, renderer.logToolCallCalls, 1, "LogToolCall should still be called with fallback context")
-	assert.Contains(t, logger.debugs, "handleToolEvents missing context")
+	assert.Len(t, renderer.logToolCallCalls, 1, "LogToolCall should still be called with context.TODO()")
 }
 
 func TestHandleToolEvents_UnexpectedType(t *testing.T) {
@@ -201,4 +200,37 @@ func TestHandleToolEvents_ResumesActiveSpinner(t *testing.T) {
 	assert.Len(t, renderer.logToolCallCalls, 1)
 	// Verify stateMachine was set to stateThinking (line 143 reached).
 	assert.Equal(t, stateThinking, d.stateMachine.current())
+}
+
+func TestEnsureContext(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newTestDispatcher(t)
+
+	t.Run("nil context falls back to Background", func(t *testing.T) {
+		//nolint:staticcheck // intentional nil: exercising ensureContext's nil-context guard
+		ctx := d.ensureContext(nil, "testOp")
+		if ctx == nil {
+			t.Error("expected non-nil context from ensureContext(nil)")
+		}
+		if ctx != context.Background() {
+			t.Error("expected context.Background() from ensureContext(nil)")
+		}
+	})
+
+	t.Run("non-nil context passed through", func(t *testing.T) {
+		type ctxKey struct{}
+		incoming := context.WithValue(context.Background(), ctxKey{}, "value")
+		ctx := d.ensureContext(incoming, "testOp")
+		if ctx != incoming {
+			t.Error("expected same context to be returned for non-nil input")
+		}
+	})
+
+	t.Run("context.TODO passes through unchanged", func(t *testing.T) {
+		ctx := d.ensureContext(context.TODO(), "testOp")
+		if ctx != context.TODO() {
+			t.Error("expected context.TODO() to pass through unchanged")
+		}
+	})
 }
