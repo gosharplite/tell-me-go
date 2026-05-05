@@ -804,6 +804,10 @@ func TestUIBridge_HandleEvent_BridgeClosed(t *testing.T) {
 
 func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
 	t.Parallel()
+	// TODO(arch): This test couples to private eventQueue fields (queue.ch,
+	// queue.logger) to force a panic that production code cannot produce.
+	// Replace with an injected eventEnqueuer fake once that seam is extracted.
+	// See architect review of commit 89ac54ee.
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer)
 	bridge.AbortStart()
