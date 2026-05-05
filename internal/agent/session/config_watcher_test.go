@@ -674,6 +674,62 @@ func TestFileConfigWatcher_SyncToStrategy_Divergence(t *testing.T) {
 	}
 }
 
+func TestFileConfigWatcher_ForceUpdateSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	mainPath := filepath.Join(tmpDir, "main.yaml")
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Create a session file with initial limits.
+	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 500}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	// FS returns a fixed PAST modTime for both main and session files.
+	pastTime := time.Now().Add(-1 * time.Hour)
+	fcw.FS = stubFileStat{modTime: pastTime}
+	fcw.Loader = stubConfigLoader{} // returns default config — triggers changed=true on first call
+	fcw.SetPaths(mainPath, sessionPath)
+
+	// --- First Refresh ---
+	// updateFromMain: pastTime > zero-value → true → changed=true
+	// updateFromSession(true): forceUpdate=true bypasses mtime check → loads session config
+	fcw.Refresh("gpt-5")
+
+	tokens, _, _ := fcw.GetLimits()
+	if tokens != 500 {
+		t.Fatalf("first refresh (forceUpdate): expected tokens=500 from session config, got %d", tokens)
+	}
+
+	// --- Modify session file WITHOUT advancing mtime ---
+	// FS still returns the same pastTime. The mtime check: pastTime.After(pastTime) = false.
+	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 999}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Second Refresh ---
+	// updateFromMain: pastTime.After(pastTime)=false AND model=="gpt-5"==lastModel → changed=false
+	// updateFromSession(false): pastTime.After(pastTime)=false, forceUpdate=false → does NOT reload
+	fcw.Refresh("gpt-5")
+
+	tokens, _, _ = fcw.GetLimits()
+	if tokens != 500 {
+		t.Errorf("second refresh (no forceUpdate): expected tokens=500 (old value preserved by mtime gate), got %d", tokens)
+	}
+
+	// --- Third Refresh with different model ---
+	// updateFromMain: model changed → changed=true
+	// updateFromSession(true): forceUpdate=true bypasses mtime check → loads updated session config
+	fcw.Refresh("gpt-4")
+
+	tokens, _, _ = fcw.GetLimits()
+	if tokens != 999 {
+		t.Errorf("third refresh (forceUpdate via model switch): expected tokens=999 from updated session config, got %d", tokens)
+	}
+}
+
 func TestNoOpConfigWatcher_ConstructorAndGetLimits(t *testing.T) {
 	cw := session.NewNoOpConfigWatcher(100, 10, 20)
 
