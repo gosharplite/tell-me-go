@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -293,6 +294,49 @@ func TestExecutionStep_Process(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, PhasePersisting, res.NextPhase)
 		assert.NotNil(t, turn.State.ToolResponse)
+	})
+
+	t.Run("CumulativeToolDuration from trace", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+		ex := &agenttest.MockAgentExecutor{
+			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+				return &llm.Content{Role: "tool"}, nil
+			},
+		}
+		counter := &agenttest.MockTokenCounter{}
+		hMock := &agenttest.MockHistoryManager{}
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+		turn := &Turn{
+			Events:       bus,
+			Executor:     ex,
+			TokenCounter: counter,
+			CtxManager:   cm,
+			Clock:        &agenttest.MockClock{},
+			State: &TurnState{
+				HasToolCalls: true,
+				Response: &llm.Content{
+					Role:  "model",
+					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
+				},
+				Metrics: &llm.Metrics{},
+			},
+		}
+
+		trace := telemetry.NewTurnTrace()
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName: "search", Duration: 1500 * time.Millisecond, Status: "success",
+		})
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName: "read", Duration: 500 * time.Millisecond, Status: "success",
+		})
+		ctxWithTrace := telemetry.ContextWithTrace(context.Background(), trace)
+
+		res, err := step.Process(ctxWithTrace, turn)
+		assert.NoError(t, err)
+		assert.Equal(t, PhasePersisting, res.NextPhase)
+		assert.NotNil(t, turn.State.ToolResponse)
+		assert.Equal(t, 2.0, turn.State.Metrics.CumulativeToolDuration)
 	})
 
 	t.Run("Execution error", func(t *testing.T) {
