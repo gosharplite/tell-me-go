@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -219,4 +220,88 @@ func TestEmitHeartbeats(t *testing.T) {
 			t.Fatal("emitHeartbeats blocked on full channel")
 		}
 	})
+}
+
+func TestSummarizeHistory_UnmarshalArgsError(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"turns": "not-a-number",
+	}
+
+	result, err := it.SummarizeHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Empty(t, result.Text)
+}
+
+func TestSummarizeHistory_InvalidTurns(t *testing.T) {
+	tests := []struct {
+		name  string
+		turns float64
+	}{
+		{"zero turns", 0},
+		{"negative turns", -5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := &sessctx.Manager{History: &failingHMBase{}}
+			it := NewInternalTools(cm)
+
+			args := map[string]interface{}{
+				"turns": tt.turns,
+			}
+
+			result, err := it.SummarizeHistory(context.Background(), args, nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "must be > 0")
+			require.Empty(t, result.Text)
+		})
+	}
+}
+
+func TestSummarizeHistory_LargeTurns(t *testing.T) {
+	cm := &sessctx.Manager{History: &failingHMBase{}}
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"turns": float64(1e20),
+	}
+
+	result, err := it.SummarizeHistory(context.Background(), args, nil)
+	require.Error(t, err)
+	require.Empty(t, result.Text)
+}
+
+func TestSummarizeHistory_Success(t *testing.T) {
+	counter := &agenttest.MockTokenCounter{}
+	strategy := sessctx.NewStrategy(counter)
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+	})
+
+	cm := sessctx.NewManager(strategy, history, nil, nil)
+	mockSum := &agenttest.MockSummarizer{}
+	mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "range summary", &llm.Metrics{PromptTokens: 5}, nil
+	})
+	cm.Summarizer = mockSum
+
+	it := NewInternalTools(cm)
+
+	args := map[string]interface{}{
+		"turns": float64(1),
+		"focus": "test focus",
+	}
+
+	result, err := it.SummarizeHistory(context.Background(), args, nil)
+	require.NoError(t, err)
+	require.Contains(t, result.Text, "summarized the first 1 turns")
+	require.NotNil(t, result.Metadata)
+	require.Contains(t, result.Metadata, "metrics")
 }
