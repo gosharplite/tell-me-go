@@ -548,8 +548,8 @@ func TestConfigWatcher_LoadSessionConfig_AllFields(t *testing.T) {
 
 func TestFileConfigWatcher_SetLimits(t *testing.T) {
 	tests := []struct {
-		name                       string
-		tokens, toolTurns, histTurns int
+		name                                     string
+		tokens, toolTurns, histTurns             int
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", 200, 5, 10, 200, 5, 10},
@@ -579,8 +579,8 @@ func TestFileConfigWatcher_SetLimits(t *testing.T) {
 
 func TestFileConfigWatcher_ApplyLimits(t *testing.T) {
 	tests := []struct {
-		name                       string
-		limits                     events.Limits
+		name                                     string
+		limits                                   events.Limits
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
@@ -763,8 +763,8 @@ func TestNoOpConfigWatcher_SetPathsAndRefresh(t *testing.T) {
 
 func TestNoOpConfigWatcher_SetLimits(t *testing.T) {
 	tests := []struct {
-		name                                 string
-		tokens, toolTurns, histTurns         int
+		name                                     string
+		tokens, toolTurns, histTurns             int
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", 200, 5, 10, 200, 5, 10},
@@ -793,8 +793,8 @@ func TestNoOpConfigWatcher_SetLimits(t *testing.T) {
 
 func TestNoOpConfigWatcher_ApplyLimits(t *testing.T) {
 	tests := []struct {
-		name                                 string
-		limits                               events.Limits
+		name                                     string
+		limits                                   events.Limits
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
