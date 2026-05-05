@@ -794,7 +794,7 @@ func TestUIBridge_HandleEvent_BridgeClosed(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer)
-	bridge.wg.Done()
+	bridge.AbortStart()
 	defer bridge.Cleanup()
 
 	bridge.CloseInput()
@@ -806,7 +806,7 @@ func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer)
-	bridge.wg.Done()
+	bridge.AbortStart()
 	defer bridge.Cleanup()
 
 	// Force a panic inside enqueueEvent after the defer/recover in HandleEvent
@@ -830,7 +830,7 @@ func TestUIBridge_HandleEvent_ActorDead(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer)
-	bridge.wg.Done()
+	bridge.AbortStart()
 	defer bridge.Cleanup()
 
 	// Fill the event channel to capacity (100) with critical events.
