@@ -31,6 +31,7 @@ type SimpleEventBus struct {
 	queueSize     int
 	asyncDispatch bool           // If false, runs synchronously
 	workerWG      sync.WaitGroup // Tracks active worker goroutines for subscribers
+	wgWait        func(*sync.WaitGroup)
 	pendingMu     sync.Mutex
 	cond          *sync.Cond
 	pendingCount  int
@@ -78,6 +79,7 @@ func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 		asyncDispatch:     defaultAsyncDispatch,
 		queueSize:         defaultQueueSize,
 		started:           make(chan struct{}),
+		wgWait:            (*sync.WaitGroup).Wait,
 	}
 	b.cond = sync.NewCond(&b.pendingMu)
 

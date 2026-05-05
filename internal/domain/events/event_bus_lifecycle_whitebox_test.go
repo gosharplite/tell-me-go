@@ -73,9 +73,7 @@ func TestWaitWorkers_PanicRecovery(t *testing.T) {
 	bus := NewSimpleEventBus(context.Background(), WithLogger(log))
 
 	// Replace the wait function with one that panics.
-	origWait := waitGroupWait
-	waitGroupWait = func(wg *sync.WaitGroup) { panic("injected worker wait panic") }
-	defer func() { waitGroupWait = origWait }()
+	bus.wgWait = func(wg *sync.WaitGroup) { panic("injected worker wait panic") }
 
 	done := make(chan struct{})
 	go bus.waitWorkers(done)

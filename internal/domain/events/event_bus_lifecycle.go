@@ -7,15 +7,9 @@ import (
 	"context"
 	"log/slog"
 	"runtime/debug"
-	"sync"
 
 	"golang.org/x/sync/errgroup"
 )
-
-// waitGroupWait is the function used to wait on worker goroutine completion.
-// Defaults to (*sync.WaitGroup).Wait. Overridden in tests to exercise panic
-// recovery paths.
-var waitGroupWait = (*sync.WaitGroup).Wait
 
 func (b *SimpleEventBus) WaitStarted() {
 	if b == nil {
@@ -79,7 +73,7 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 }
 
 // waitWorkers blocks until all worker goroutines have drained, then closes done.
-// Uses the package-level waitGroupWait function so tests can inject a panic.
+// Uses the bus's wait func so tests can inject a panic.
 func (b *SimpleEventBus) waitWorkers(done chan<- struct{}) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -89,7 +83,7 @@ func (b *SimpleEventBus) waitWorkers(done chan<- struct{}) {
 			close(done)
 		}
 	}()
-	waitGroupWait(&b.workerWG)
+	b.wgWait(&b.workerWG)
 	close(done)
 }
 
