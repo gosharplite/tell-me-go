@@ -429,3 +429,42 @@ func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
 	require.ErrorIs(t, err, ErrInvalidPayload)
 }
+
+// TestTokenGatekeeper_PublishSystemEvent_NilEventBus verifies the defensive
+// nil-guard in publishSystemEvent: when Events is nil, the function must
+// return immediately without panicking (covers the untested branch at
+// gatekeeper.go:172).
+func TestTokenGatekeeper_PublishSystemEvent_NilEventBus(t *testing.T) {
+	tg := &TokenGatekeeper{Events: nil}
+	// Must not panic
+	tg.publishSystemEvent(context.Background(), "test message", "info")
+}
+
+// TestTokenGatekeeper_PublishSystemEvent_SafePublishError verifies that when
+// SafePublish returns a non-ErrBusNotInitialized error, the failure is logged
+// via getLogger().Error (covers the error-logging branch at gatekeeper.go:180-183).
+func TestTokenGatekeeper_PublishSystemEvent_SafePublishError(t *testing.T) {
+	logger := &agenttest.MockPortsLogger{}
+	tg := &TokenGatekeeper{
+		Events: &mockFailingEventBus{err: errors.New("publish boom")},
+		Logger: logger,
+	}
+	tg.publishSystemEvent(context.Background(), "test message", "info")
+
+	require.GreaterOrEqual(t, len(logger.Errors), 1)
+	require.Contains(t, logger.Errors, "event_publish_failed")
+}
+
+// TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized verifies that
+// when SafePublish returns ErrBusNotInitialized, the error is silently swallowed
+// and NOT logged (covers the resilience branch at gatekeeper.go:179-180).
+func TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized(t *testing.T) {
+	logger := &agenttest.MockPortsLogger{}
+	tg := &TokenGatekeeper{
+		Events: &mockFailingEventBus{err: events.ErrBusNotInitialized},
+		Logger: logger,
+	}
+	tg.publishSystemEvent(context.Background(), "test message", "info")
+
+	require.Empty(t, logger.Errors, "ErrBusNotInitialized should be silently swallowed, not logged")
+}
