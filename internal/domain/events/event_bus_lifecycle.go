@@ -7,9 +7,15 @@ import (
 	"context"
 	"log/slog"
 	"runtime/debug"
+	"sync"
 
 	"golang.org/x/sync/errgroup"
 )
+
+// waitGroupWait is the function used to wait on worker goroutine completion.
+// Defaults to (*sync.WaitGroup).Wait. Overridden in tests to exercise panic
+// recovery paths.
+var waitGroupWait = (*sync.WaitGroup).Wait
 
 func (b *SimpleEventBus) WaitStarted() {
 	if b == nil {
@@ -62,19 +68,7 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 
 	// Wait for active workers to finish
 	done := make(chan struct{})
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// Don't swallow the panic. Log it.
-				if b.log != nil {
-					b.log.Error("panic in event bus shutdown wait", "error", r, "stack", string(debug.Stack()))
-				}
-				close(done)
-			}
-		}()
-		b.workerWG.Wait()
-		close(done)
-	}()
+	go b.waitWorkers(done)
 
 	select {
 	case <-done:
@@ -82,6 +76,21 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// waitWorkers blocks until all worker goroutines have drained, then closes done.
+// Uses the package-level waitGroupWait function so tests can inject a panic.
+func (b *SimpleEventBus) waitWorkers(done chan<- struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			if b.log != nil {
+				b.log.Error("panic in event bus shutdown wait", "error", r, "stack", string(debug.Stack()))
+			}
+			close(done)
+		}
+	}()
+	waitGroupWait(&b.workerWG)
+	close(done)
 }
 
 // Flush waits for all currently queued events to be processed or context timeout.
