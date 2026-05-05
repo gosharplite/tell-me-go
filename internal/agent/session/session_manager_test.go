@@ -4,6 +4,7 @@
 package session_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -684,6 +685,11 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			expectedError: context.DeadlineExceeded.Error(),
 		},
 		{
+			name:          "Context Canceled",
+			chatErr:       context.Canceled,
+			expectedError: context.Canceled.Error(),
+		},
+		{
 			name:          "Unauthorized (API token error)",
 			chatErr:       fmt.Errorf("unauthorized: invalid API key"),
 			expectedError: "unauthorized: invalid API key",
@@ -765,6 +771,87 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			mCapturer.AssertExpectations(t)
 		})
 	}
+}
+
+func TestSessionManager_Run_ShutdownError(t *testing.T) {
+	t.Parallel()
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, mEventBus)
+
+	var stderrBuf bytes.Buffer
+
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return mChatter, nil
+	}
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, &stderrBuf, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+
+	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
+
+	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
+	mChatter.On("Subscribe", mock.Anything).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)                 // Chat succeeds
+	mChatter.On("Shutdown", mock.Anything).Return(fmt.Errorf("shutdown timeout"))           // Shutdown fails
+
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent shutdown failed")
+	require.Contains(t, err.Error(), "shutdown timeout")
+	require.Contains(t, stderrBuf.String(), "Warning: Agent shutdown failed: shutdown timeout")
+
+	mChatter.AssertExpectations(t)
+}
+
+func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
+	t.Parallel()
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, mEventBus)
+
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return mChatter, nil
+	}
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+
+	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
+
+	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
+	mChatter.On("Subscribe", mock.Anything).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
+	mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to apply configuration")
+	require.Contains(t, err.Error(), "limits error")
+
+	// Chat must never be called — Run returns early before the agent loop
+	mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
+	// Shutdown must still be called — the defer always runs
+	mChatter.AssertCalled(t, "Shutdown", mock.Anything)
 }
 
 func TestSessionManager_SessionID_Fallback(t *testing.T) {
