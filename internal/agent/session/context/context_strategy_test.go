@@ -172,8 +172,9 @@ func TestStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
 		h, tool, hTurns := cs.getLimits()
-		if h <= 0 || tool <= 0 || hTurns < 0 {
-			t.Errorf("expected limits to remain positive/zero defaults, got %d, %d, %d", h, tool, hTurns)
+		// ADR-029: zero is a valid limit value meaning "use default / unlimited"
+		if h != 0 || tool != 0 || hTurns != 0 {
+			t.Errorf("expected zero limits to be accepted, got %d, %d, %d", h, tool, hTurns)
 		}
 	})
 }

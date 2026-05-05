@@ -553,11 +553,11 @@ func TestFileConfigWatcher_SetLimits(t *testing.T) {
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", 200, 5, 10, 200, 5, 10},
-		{"zero tokens no-op", 0, 5, 10, 100, 5, 10},
-		{"negative tokens no-op", -1, 5, 10, 100, 5, 10},
-		{"mixed zero/positive", 200, 0, 10, 200, 10, 10},
-		{"all zero no-op", 0, 0, 0, 100, 10, 20},
-		{"partial update", 0, 0, 50, 100, 10, 50},
+		{"zero tokens accepted", 0, 5, 10, 0, 5, 10},
+		{"negative tokens ignored", -1, 5, 10, 100, 5, 10},
+		{"mixed zero/positive", 200, 0, 10, 200, 0, 10},
+		{"all zero accepted", 0, 0, 0, 0, 0, 0},
+		{"partial update", 0, 0, 50, 0, 0, 50},
 	}
 
 	for _, tt := range tests {
@@ -584,9 +584,9 @@ func TestFileConfigWatcher_ApplyLimits(t *testing.T) {
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
-		{"zero tokens no-op", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
-		{"negative tokens no-op", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
-		{"zero-value Limits", events.Limits{}, 100, 10, 20},
+		{"zero tokens accepted", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 0, 5, 10},
+		{"negative tokens ignored", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"zero-value Limits accepted", events.Limits{}, 0, 0, 0},
 	}
 
 	for _, tt := range tests {
@@ -768,11 +768,11 @@ func TestNoOpConfigWatcher_SetLimits(t *testing.T) {
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", 200, 5, 10, 200, 5, 10},
-		{"zero tokens no-op", 0, 5, 10, 100, 5, 10},
-		{"negative tokens no-op", -1, 5, 10, 100, 5, 10},
-		{"mixed zero/positive", 200, 0, 10, 200, 10, 10},
-		{"all zero no-op", 0, 0, 0, 100, 10, 20},
-		{"partial update", 0, 0, 50, 100, 10, 50},
+		{"zero tokens accepted", 0, 5, 10, 0, 5, 10},
+		{"negative tokens ignored", -1, 5, 10, 100, 5, 10},
+		{"mixed zero/positive", 200, 0, 10, 200, 0, 10},
+		{"all zero accepted", 0, 0, 0, 0, 0, 0},
+		{"partial update", 0, 0, 50, 0, 0, 50},
 	}
 
 	for _, tt := range tests {
@@ -798,9 +798,9 @@ func TestNoOpConfigWatcher_ApplyLimits(t *testing.T) {
 		wantTokens, wantToolTurns, wantHistTurns int
 	}{
 		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
-		{"zero tokens no-op", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
-		{"negative tokens no-op", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
-		{"zero-value Limits", events.Limits{}, 100, 10, 20},
+		{"zero tokens accepted", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 0, 5, 10},
+		{"negative tokens ignored", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"zero-value Limits accepted", events.Limits{}, 0, 0, 0},
 	}
 
 	for _, tt := range tests {
