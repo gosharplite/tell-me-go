@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +96,75 @@ func TestEngine_Reconfigure(t *testing.T) {
 	assert.Equal(t, "new-mode", cfg.Mode)
 	assert.Equal(t, runtimeCfg.PricingOverrides, cfg.PricingOverrides)
 	assert.Equal(t, tracker, cfg.CostTracker)
+}
+
+func TestEngine_Reconfigure_ValidationFailure(t *testing.T) {
+	tests := []struct {
+		name       string
+		runtimeCfg RuntimeConfig
+		errSubstr  string
+	}{
+		{
+			name:       "empty provider name",
+			runtimeCfg: RuntimeConfig{Model: "gpt-4", Mode: "chat"},
+			errSubstr:  "engine reconfigure: runtime config: provider name",
+		},
+		{
+			name:       "empty model",
+			runtimeCfg: RuntimeConfig{ProviderName: "openai", Mode: "chat"},
+			errSubstr:  "engine reconfigure: runtime config: model",
+		},
+		{
+			name:       "empty mode",
+			runtimeCfg: RuntimeConfig{ProviderName: "openai", Model: "gpt-4"},
+			errSubstr:  "engine reconfigure: runtime config: mode",
+		},
+		{
+			name: "empty pricing override key",
+			runtimeCfg: RuntimeConfig{
+				ProviderName:     "openai",
+				Model:            "gpt-4",
+				Mode:             "chat",
+				PricingOverrides: map[string]domain_pricing.ModelPricing{"": {}},
+			},
+			errSubstr: "engine reconfigure: runtime config: pricing overrides contain empty key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up engine with known initial configuration
+			e := &Engine{}
+			initialCfg := &engineConfig{
+				ProviderName: "original-provider",
+				Model:        "original-model",
+				Mode:         "original-mode",
+			}
+			e.config.Store(initialCfg)
+
+			// Call Reconfigure with invalid config — must fail
+			err := e.Reconfigure(tt.runtimeCfg, nil)
+
+			// Assert error wrapping and message
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.errSubstr)
+			}
+			if !strings.Contains(err.Error(), tt.errSubstr) {
+				t.Errorf("error = %q; want substring %q", err.Error(), tt.errSubstr)
+			}
+
+			// ADR-029: engine must retain previous config (no partial mutation)
+			currentCfg := e.config.Load()
+			if currentCfg != initialCfg {
+				t.Error("engine config pointer changed after validation failure — ADR-029 violation")
+			}
+			if currentCfg.ProviderName != "original-provider" ||
+				currentCfg.Model != "original-model" ||
+				currentCfg.Mode != "original-mode" {
+				t.Errorf("engine config mutated after validation failure: %+v", currentCfg)
+			}
+		})
+	}
 }
 
 func TestEngine_DetermineNextPhase(t *testing.T) {
