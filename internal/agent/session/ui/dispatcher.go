@@ -129,19 +129,31 @@ func (d *eventDispatcher) handleUsageMetrics(_ context.Context, e events.Event) 
 }
 
 func (d *eventDispatcher) handleToolEvents(ctx context.Context, e events.Event) {
+	ctx = d.ensureContext(ctx, "handleToolEvents")
+
 	switch ev := e.(type) {
 	case events.ToolCallEvent:
+		if ev.Calls == nil {
+			d.logger.Debug("handleToolEvents: ToolCallEvent missing Calls")
+			return
+		}
 		d.spinner.stopActiveSpinner()
 		d.renderer.LogToolCall(ctx, ev.Calls, ev.Turn, ev.MaxTurns, d.showTools)
 		if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
 			d.stateMachine.setState(stateThinking)
 		}
 	case events.ToolResultEvent:
+		if ev.Name == "" {
+			d.logger.Debug("handleToolEvents: ToolResultEvent missing Name")
+			return
+		}
 		d.spinner.stopActiveSpinner()
 		d.renderer.LogToolResult(ctx, ev.Name, ev.Result, d.showTools)
 		if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
 			d.stateMachine.setState(stateThinking)
 		}
+	default:
+		d.logger.Debug("handleToolEvents: unexpected event type", "type", reflect.TypeOf(e))
 	}
 }
 
