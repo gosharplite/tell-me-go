@@ -1015,3 +1015,61 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mClock.AssertExpectations(t)
 	mChatter.AssertExpectations(t)
 }
+
+func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
+	t.Parallel()
+
+	mockLogger := new(agenttest.MockPortsLogger)
+
+	mChatter := new(agenttest.MockChatter)
+	var uiSub func(context.Context, events.Event)
+	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
+		uiSub = args.Get(0).(func(context.Context, events.Event))
+	}).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	mUIRenderer.On("SetUseColor", mock.Anything).Return()
+
+	mCapturer := new(agenttest.MockCapturer)
+	mCapturer.On("IsTTY", mock.Anything).Return(true)
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil,
+		io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer,
+		clock.RealClock{}, rand.Reader)
+
+	sCfg := &session.SessionConfigInternal{
+		Config: &config.Config{},
+	}
+	deps := session.NewSessionDependencies(
+		&persistence.Paths{}, nil, nil, nil, nil, nil, nil,
+		domain_pricing.PricingData{}, nil, nil,
+		mockLogger,
+		&ports.NoOpTurnsLogger{},
+		new(agenttest.MockSessionProvider),
+		nil,
+	)
+
+	bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(
+		context.Background(), mChatter, sCfg, deps, mCapturer)
+	require.NoError(t, err)
+	require.NotNil(t, uiSub, "Subscribe callback must be captured")
+
+	// Kill the bridge's actor loop so HandleEvent returns an error.
+	bridge.KillActor()
+
+	// Fire a critical event through the captured subscription callback.
+	// A critical event + dead actor → HandleEvent returns "uibridge actor is dead".
+	uiSub(context.Background(), events.TurnStatusEvent{
+		Status: events.TurnStatus{SessionTurns: 1},
+	})
+
+	require.True(t, mockLogger.WarnCalledWith("Failed to handle bridge event"),
+		"expected logger.Warn to be called with 'Failed to handle bridge event'")
+
+	// Cleanup bridge — Listen() was never started, so AbortStart is needed.
+	bridge.AbortStart()
+	bridge.CloseInput()
+	bridge.Cleanup()
+}

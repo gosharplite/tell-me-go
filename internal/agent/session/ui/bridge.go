@@ -133,6 +133,13 @@ func (b *Bridge) AbortStart() {
 	b.wg.Done()
 }
 
+// KillActor cancels the bridge's internal loop context, simulating a dead
+// consumer. Subsequent HandleEvent calls with critical events will return
+// a "uibridge actor is dead" error. Only for use in tests.
+func (b *Bridge) KillActor() {
+	b.loopCancel()
+}
+
 func (b *Bridge) CloseInput() {
 	b.queue.closeInput()
 }
