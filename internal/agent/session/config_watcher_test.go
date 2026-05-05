@@ -15,7 +15,9 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 )
@@ -298,10 +300,6 @@ MAX_TURNS: 5
 	}
 }
 
-func TestConfigWatcher_ManualLimits(t *testing.T) {
-	// Not implemented
-}
-
 // stubFileInfo implements os.FileInfo for testing.
 type stubFileInfo struct{ modTime time.Time }
 
@@ -416,6 +414,462 @@ func TestConfigWatcher_LoadSessionConfig_ReadError(t *testing.T) {
 	assert.Equal(t, 100, tokens)
 }
 
+func TestConfigWatcher_LoadSessionConfig_NilLogger(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Create a readable file — Stat will succeed.
+	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// logger=nil intentionally — this is the branch under test.
+	cw := session.NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	// Ensure Stat returns a future mod time so updateFromSession triggers loadSessionConfig.
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	// Must not panic.
+	fcw.Refresh("default")
+
+	// Limits must remain at constructor defaults.
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed unexpectedly: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_NilSessionLoader(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// sessionLoader=nil
+	cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	// Must not panic.
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed unexpectedly: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_NilSessionConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// nilSessionLoader returns (nil, nil) — session config is absent
+	cw := session.NewFileConfigWatcher(nil, &nilSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed unexpectedly: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_MissingFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Valid JSON but no recognized limit keys — all fields will be nil.
+	if err := os.WriteFile(sessionPath, []byte(`{"unrelated": "value"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 {
+		t.Errorf("MaxHistoryTokens should remain at default 100, got %d", tokens)
+	}
+	if toolTurns != 10 {
+		t.Errorf("MaxToolTurns should remain at default 10, got %d", toolTurns)
+	}
+	if historyTurns != 20 {
+		t.Errorf("MaxHistoryTurns should remain at default 20, got %d", historyTurns)
+	}
+}
+
+func TestConfigWatcher_LoadSessionConfig_AllFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Session config with all three limit keys set.
+	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 30, "MAX_HISTORY_TURNS": 40}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
+	fcw.SetPaths("", sessionPath)
+
+	fcw.Refresh("default")
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 500 {
+		t.Errorf("MaxHistoryTokens = %d, want 500", tokens)
+	}
+	if toolTurns != 30 {
+		t.Errorf("MaxToolTurns = %d, want 30", toolTurns)
+	}
+	if historyTurns != 40 {
+		t.Errorf("MaxHistoryTurns = %d, want 40", historyTurns)
+	}
+}
+
+func TestFileConfigWatcher_SetLimits(t *testing.T) {
+	tests := []struct {
+		name                                     string
+		tokens, toolTurns, histTurns             int
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", 200, 5, 10, 200, 5, 10},
+		{"zero tokens no-op", 0, 5, 10, 100, 5, 10},
+		{"negative tokens no-op", -1, 5, 10, 100, 5, 10},
+		{"mixed zero/positive", 200, 0, 10, 200, 10, 10},
+		{"all zero no-op", 0, 0, 0, 100, 10, 20},
+		{"partial update", 0, 0, 50, 100, 10, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+			fcw := cw.(*session.FileConfigWatcher)
+
+			fcw.SetLimits(tt.tokens, tt.toolTurns, tt.histTurns)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestFileConfigWatcher_ApplyLimits(t *testing.T) {
+	tests := []struct {
+		name                                     string
+		limits                                   events.Limits
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
+		{"zero tokens no-op", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"negative tokens no-op", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"zero-value Limits", events.Limits{}, 100, 10, 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+			fcw := cw.(*session.FileConfigWatcher)
+
+			fcw.ApplyLimits(tt.limits)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestFileConfigWatcher_SyncToStrategy(t *testing.T) {
+	t.Run("pushes limits", func(t *testing.T) {
+		cw := session.NewFileConfigWatcher(nil, nil, 500, 10, 20, nil)
+		fcw := cw.(*session.FileConfigWatcher)
+
+		fcw.SetLimits(500, 10, 20)
+		strategy := sessctx.NewStrategy(nil)
+		fcw.SyncToStrategy(strategy)
+
+		if strategy.GetMaxHistoryTokens() != 500 {
+			t.Errorf("expected 500, got %d", strategy.GetMaxHistoryTokens())
+		}
+		if strategy.GetMaxToolTurns() != 10 {
+			t.Errorf("expected 10, got %d", strategy.GetMaxToolTurns())
+		}
+	})
+
+	t.Run("pushes context window", func(t *testing.T) {
+		cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+		fcw := cw.(*session.FileConfigWatcher)
+
+		strategy := sessctx.NewStrategy(nil)
+		fcw.SyncToStrategy(strategy)
+
+		if strategy.GetContextWindow() != 1000000 {
+			t.Errorf("expected 1000000, got %d", strategy.GetContextWindow())
+		}
+	})
+
+	t.Run("nil strategy no-op", func(t *testing.T) {
+		cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+		fcw := cw.(*session.FileConfigWatcher)
+
+		// Must not panic
+		fcw.SyncToStrategy(nil)
+	})
+}
+
+func TestFileConfigWatcher_SyncToStrategy_Divergence(t *testing.T) {
+	cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	strategy := sessctx.NewStrategy(nil)
+
+	// Sync initial values
+	fcw.SyncToStrategy(strategy)
+	if strategy.GetMaxHistoryTokens() != 100 {
+		t.Fatalf("initial sync: expected 100, got %d", strategy.GetMaxHistoryTokens())
+	}
+
+	// Change watcher WITHOUT syncing
+	fcw.SetLimits(999, 50, 60)
+
+	// Strategy must still reflect OLD values — proof of divergence
+	if strategy.GetMaxHistoryTokens() != 100 {
+		t.Errorf("strategy should retain old value 100 before re-sync, got %d", strategy.GetMaxHistoryTokens())
+	}
+
+	// Re-sync — strategy must now reflect NEW values
+	fcw.SyncToStrategy(strategy)
+	if strategy.GetMaxHistoryTokens() != 999 {
+		t.Errorf("after re-sync: expected 999, got %d", strategy.GetMaxHistoryTokens())
+	}
+	if strategy.GetMaxToolTurns() != 50 {
+		t.Errorf("after re-sync: expected 50, got %d", strategy.GetMaxToolTurns())
+	}
+}
+
+func TestFileConfigWatcher_ForceUpdateSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	mainPath := filepath.Join(tmpDir, "main.yaml")
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	// Create a session file with initial limits.
+	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 500}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*session.FileConfigWatcher)
+
+	// FS returns a fixed PAST modTime for both main and session files.
+	pastTime := time.Now().Add(-1 * time.Hour)
+	fcw.FS = stubFileStat{modTime: pastTime}
+	fcw.Loader = stubConfigLoader{} // returns default config — triggers changed=true on first call
+	fcw.SetPaths(mainPath, sessionPath)
+
+	// --- First Refresh ---
+	// updateFromMain: pastTime > zero-value → true → changed=true
+	// updateFromSession(true): forceUpdate=true bypasses mtime check → loads session config
+	fcw.Refresh("gpt-5")
+
+	tokens, _, _ := fcw.GetLimits()
+	if tokens != 500 {
+		t.Fatalf("first refresh (forceUpdate): expected tokens=500 from session config, got %d", tokens)
+	}
+
+	// --- Modify session file WITHOUT advancing mtime ---
+	// FS still returns the same pastTime. The mtime check: pastTime.After(pastTime) = false.
+	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 999}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Second Refresh ---
+	// updateFromMain: pastTime.After(pastTime)=false AND model=="gpt-5"==lastModel → changed=false
+	// updateFromSession(false): pastTime.After(pastTime)=false, forceUpdate=false → does NOT reload
+	fcw.Refresh("gpt-5")
+
+	tokens, _, _ = fcw.GetLimits()
+	if tokens != 500 {
+		t.Errorf("second refresh (no forceUpdate): expected tokens=500 (old value preserved by mtime gate), got %d", tokens)
+	}
+
+	// --- Third Refresh with different model ---
+	// updateFromMain: model changed → changed=true
+	// updateFromSession(true): forceUpdate=true bypasses mtime check → loads updated session config
+	fcw.Refresh("gpt-4")
+
+	tokens, _, _ = fcw.GetLimits()
+	if tokens != 999 {
+		t.Errorf("third refresh (forceUpdate via model switch): expected tokens=999 from updated session config, got %d", tokens)
+	}
+}
+
+func TestNoOpConfigWatcher_ConstructorAndGetLimits(t *testing.T) {
+	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 {
+		t.Errorf("tokens = %d, want 100", tokens)
+	}
+	if toolTurns != 10 {
+		t.Errorf("toolTurns = %d, want 10", toolTurns)
+	}
+	if historyTurns != 20 {
+		t.Errorf("historyTurns = %d, want 20", historyTurns)
+	}
+}
+
+func TestNoOpConfigWatcher_SetPathsAndRefresh(t *testing.T) {
+	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+	// SetPaths should not panic
+	cw.SetPaths("/some/main.yaml", "/some/session.json")
+
+	// Refresh should not panic
+	cw.Refresh("gpt-5")
+
+	// Limits must be unchanged
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+	if tokens != 100 || toolTurns != 10 || historyTurns != 20 {
+		t.Errorf("limits changed after no-ops: got (%d, %d, %d), want (100, 10, 20)", tokens, toolTurns, historyTurns)
+	}
+}
+
+func TestNoOpConfigWatcher_SetLimits(t *testing.T) {
+	tests := []struct {
+		name                                     string
+		tokens, toolTurns, histTurns             int
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", 200, 5, 10, 200, 5, 10},
+		{"zero tokens no-op", 0, 5, 10, 100, 5, 10},
+		{"negative tokens no-op", -1, 5, 10, 100, 5, 10},
+		{"mixed zero/positive", 200, 0, 10, 200, 10, 10},
+		{"all zero no-op", 0, 0, 0, 100, 10, 20},
+		{"partial update", 0, 0, 50, 100, 10, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+			cw.SetLimits(tt.tokens, tt.toolTurns, tt.histTurns)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestNoOpConfigWatcher_ApplyLimits(t *testing.T) {
+	tests := []struct {
+		name                                     string
+		limits                                   events.Limits
+		wantTokens, wantToolTurns, wantHistTurns int
+	}{
+		{"all positive", events.Limits{MaxHistoryTokens: 200, MaxToolTurns: 5, MaxHistoryTurns: 10}, 200, 5, 10},
+		{"zero tokens no-op", events.Limits{MaxHistoryTokens: 0, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"negative tokens no-op", events.Limits{MaxHistoryTokens: -1, MaxToolTurns: 5, MaxHistoryTurns: 10}, 100, 5, 10},
+		{"zero-value Limits", events.Limits{}, 100, 10, 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+			cw.ApplyLimits(tt.limits)
+			tokens, toolTurns, histTurns := cw.GetLimits()
+
+			if tokens != tt.wantTokens || toolTurns != tt.wantToolTurns || histTurns != tt.wantHistTurns {
+				t.Errorf("got (%d, %d, %d), want (%d, %d, %d)",
+					tokens, toolTurns, histTurns,
+					tt.wantTokens, tt.wantToolTurns, tt.wantHistTurns)
+			}
+		})
+	}
+}
+
+func TestNoOpConfigWatcher_SyncToStrategy(t *testing.T) {
+	t.Run("pushes limits", func(t *testing.T) {
+		cw := session.NewNoOpConfigWatcher(500, 10, 20)
+		cw.SetLimits(500, 10, 20)
+		strategy := sessctx.NewStrategy(nil)
+		cw.SyncToStrategy(strategy)
+
+		if strategy.GetMaxHistoryTokens() != 500 {
+			t.Errorf("expected 500, got %d", strategy.GetMaxHistoryTokens())
+		}
+		if strategy.GetMaxToolTurns() != 10 {
+			t.Errorf("expected 10, got %d", strategy.GetMaxToolTurns())
+		}
+	})
+
+	t.Run("pushes context window", func(t *testing.T) {
+		cw := session.NewNoOpConfigWatcher(100, 10, 20)
+		strategy := sessctx.NewStrategy(nil)
+		cw.SyncToStrategy(strategy)
+
+		if strategy.GetContextWindow() != 1000000 {
+			t.Errorf("expected 1000000, got %d", strategy.GetContextWindow())
+		}
+	})
+
+	t.Run("nil strategy no-op", func(t *testing.T) {
+		cw := session.NewNoOpConfigWatcher(100, 10, 20)
+		// Must not panic
+		cw.SyncToStrategy(nil)
+	})
+}
+
+func TestNoOpConfigWatcher_RaceDetector(t *testing.T) {
+	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func(v int) {
+			for j := 0; j < 100; j++ {
+				cw.SetLimits(v, v, v)
+				_, _, _ = cw.GetLimits()
+			}
+			done <- struct{}{}
+		}(i)
+	}
+
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
 // errorSessionLoader returns a fixed error from LoadSession.
 type errorSessionLoader struct {
 	err error
@@ -423,4 +877,11 @@ type errorSessionLoader struct {
 
 func (l *errorSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
 	return nil, l.err
+}
+
+// nilSessionLoader returns (nil, nil) to simulate a missing session config.
+type nilSessionLoader struct{}
+
+func (l *nilSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
+	return nil, nil
 }
