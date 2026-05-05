@@ -829,19 +829,17 @@ func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
 func TestUIBridge_HandleEvent_ActorDead(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewBridge(mRenderer)
+	bridge := NewBridge(mRenderer, WithBridgeQueueCapacity(1))
 	bridge.AbortStart()
 	defer bridge.Cleanup()
 
-	// Fill the event channel to capacity (100) with critical events.
-	// Critical events use the backpressure path (no default case).
-	for i := 0; i < 100; i++ {
-		_ = bridge.HandleEvent(context.Background(), events.TurnStatusEvent{})
+	// Fill the single-slot channel with a critical event.
+	if err := bridge.HandleEvent(context.Background(), events.TurnStatusEvent{}); err != nil {
+		t.Fatalf("first enqueue should succeed: %v", err)
 	}
 
-	// Kill the actor's loop context. The 101st critical event cannot
-	// send because the channel is full, so the select falls through
-	// to eq.loopCtx.Done().
+	// Kill the actor's loop context. The next critical event cannot send
+	// (channel full) and falls through to eq.loopCtx.Done().
 	bridge.loopCancel()
 
 	err := bridge.HandleEvent(context.Background(), events.TurnStatusEvent{})

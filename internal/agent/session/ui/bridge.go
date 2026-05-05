@@ -61,6 +61,13 @@ func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *Bridge) { b.cleanupTimeout = d }
 }
 
+// WithBridgeQueueCapacity sets the event channel buffer size.
+// Defaults to 100 when unset. Primarily intended for tests that need a
+// deterministic full-queue state.
+func WithBridgeQueueCapacity(n int) bridgeOption {
+	return func(b *Bridge) { b.queueCapacity = n }
+}
+
 // Bridge translates domain events into UI updates.
 type Bridge struct {
 	mu                 sync.RWMutex
@@ -83,6 +90,7 @@ type Bridge struct {
 	cleanupInvocations int32
 	wg                 sync.WaitGroup
 	cleanupTimeout     time.Duration
+	queueCapacity      int
 	started            chan struct{}
 	startOnce          sync.Once
 }
@@ -105,7 +113,10 @@ func NewBridge(renderer ports.UIRenderer, opts ...bridgeOption) *Bridge {
 	if b.logger == nil {
 		b.logger = slog.Default()
 	}
-	b.queue = newEventQueue(b.logger, loopCtx, 100)
+	if b.queueCapacity == 0 {
+		b.queueCapacity = 100
+	}
+	b.queue = newEventQueue(b.logger, loopCtx, b.queueCapacity)
 	b.spinner = newSpinnerCoord(b.renderer, b.logger)
 	b.stateMachine = newUIStateMachine(b.spinner)
 	b.dispatcher = newEventDispatcher(
