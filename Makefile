@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand lint dead-code check check-full
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand lint vulncheck dead-code check check-full
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -36,8 +36,9 @@ help:
 	@echo "  make fmt        - Format code"
 	@echo "  make lint       - Run golangci-lint static analysis"
 	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
-	@echo "  make check      - Run full quality pipeline: fmt tidy build lint test dead-code test-coverage"
-	@echo "  make check-full - Run full quality pipeline including race detection"
+	@echo "  make check      - Run full quality pipeline: fmt tidy build lint vulncheck test dead-code test-coverage"
+	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint vulncheck test dead-code test-race test-coverage"
+	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
@@ -250,6 +251,11 @@ fmt:
 lint:
 	golangci-lint run ./...
 
+# vulncheck scans dependencies for known vulnerabilities (CVEs).
+# Requires govulncheck: go install golang.org/x/vuln/cmd/govulncheck@latest
+vulncheck:
+	govulncheck ./...
+
 dead-code:
 	go run ./cmd/deadcode
 
@@ -258,6 +264,8 @@ dead-code:
 check: fmt tidy build
 	@echo "=== lint ==="
 	@$(MAKE) lint
+	@echo "=== vulncheck ==="
+	@$(MAKE) vulncheck
 	@echo "=== test ==="
 	@$(MAKE) test
 	@echo "=== dead-code ==="
@@ -272,6 +280,8 @@ check: fmt tidy build
 check-full: fmt tidy build
 	@echo "=== lint ==="
 	@$(MAKE) lint
+	@echo "=== vulncheck ==="
+	@$(MAKE) vulncheck
 	@echo "=== test ==="
 	@$(MAKE) test
 	@echo "=== dead-code ==="
