@@ -107,18 +107,18 @@ func TestFileConfigWatcher_ConcurrentRefreshAndRead(t *testing.T) {
 		cw.Refresh("gpt-5")
 	}()
 
-	// Wait for Refresh to be mid-I/O, then measure GetLimits latency.
+	// Let Refresh enter Phase 2 I/O, then measure GetLimits latency.
 	close(start)
-	time.Sleep(50 * time.Millisecond) // Let Refresh enter Phase 2 I/O.
+	time.Sleep(50 * time.Millisecond) // Refresh is now mid-I/O.
 
-	// Measure GetLimits: must return quickly (not blocked behind Refresh's I/O).
-	deadline := time.Now().Add(50 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		cw.GetLimits()
+	// Measure: GetLimits must NOT block behind Refresh's disk I/O.
+	before := time.Now()
+	cw.GetLimits()
+	elapsed := time.Since(before)
+
+	if elapsed >= 100*time.Millisecond {
+		t.Fatalf("GetLimits blocked for %v, expected < 100ms (Refresh I/O takes 300ms)", elapsed)
 	}
-
-	// If we reach here, GetLimits wasn't blocked for 300ms.
-	// The test passes trivially — the absence of timeout is the assertion.
 }
 
 func TestConfigWatcher_Refresh(t *testing.T) {

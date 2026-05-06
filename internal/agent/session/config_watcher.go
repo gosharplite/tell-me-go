@@ -181,12 +181,15 @@ func (cw *FileConfigWatcher) Refresh(model string) {
 	newSessCfg, sessInfo, sessChanged := cw.loadSessionOutsideLock(snap, mainChanged)
 
 	// Phase 3: Apply mutations to in-memory cache only. No I/O.
+	// Guard each mutation with a ModTime comparison to prevent
+	// stale overwrites: if a concurrent Refresh already applied
+	// a newer version, we must not overwrite it with older data.
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
-	if mainChanged {
+	if mainChanged && !mainInfo.ModTime().Before(cw.lastMainMod) {
 		cw.applyMainConfig(newMainCfg, mainInfo, model)
 	}
-	if sessChanged {
+	if sessChanged && !sessInfo.ModTime().Before(cw.lastSessionMod) {
 		cw.applySessionLimits(newSessCfg)
 		cw.lastSessionMod = sessInfo.ModTime()
 	}
