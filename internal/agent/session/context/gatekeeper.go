@@ -22,11 +22,12 @@ type TokenEstimator interface {
 
 // TokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type TokenGatekeeper struct {
-	MaxTokens  int
-	Estimator  TokenEstimator
-	Summarizer ports.Summarizer
-	Events     events.EventBus
-	Logger     ports.Logger
+	MaxTokens         int
+	Estimator         TokenEstimator
+	Summarizer        ports.Summarizer
+	Events            events.EventBus
+	Logger            ports.Logger
+	CandidateSelector CandidateSelector
 }
 
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -235,16 +236,21 @@ func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 		return 0, 0, 0, err
 	}
 
-	// We want to summarize about 50% of the history, but at least 2 turns.
+	if t.CandidateSelector == nil {
+		t.CandidateSelector = &ContiguousUnpinnedSelector{}
+	}
+	minViable := t.CandidateSelector.MinViableBlock()
+
+	// We want to summarize about 50% of the history, but at least minViable turns.
 	targetTurns := len(turns) / 2
-	if targetTurns < 2 {
-		targetTurns = 2
+	if targetTurns < minViable {
+		targetTurns = minViable
 	}
 
 	startTurn, numTurns := t.locateCandidateBlock(ctx, turns, targetTurns)
 
-	if startTurn == -1 || numTurns < 2 {
-		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
+	if startTurn == -1 || numTurns < minViable {
+		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least %d turns to summarize", minViable)
 	}
 
 	// Calculate message offsets
@@ -255,34 +261,30 @@ func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 }
 
 func (t *TokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int) (int, int) {
+	minViable := t.CandidateSelector.MinViableBlock()
 	startTurn := -1
 	numTurns := 0
 
 	for i := 0; i < len(turns); i++ {
-		// SCALABLE: Periodic context check in potentially long loops
-		if i%100 == 0 {
-			select {
-			case <-ctx.Done():
-				return -1, 0
-			default:
-			}
+		if ctx.Err() != nil {
+			return -1, 0
 		}
 
-		if !t.isTurnPinned(turns[i]) {
-			if startTurn == -1 {
-				startTurn = i
-			}
-			numTurns++
-			if numTurns >= target {
-				return startTurn, numTurns
-			}
-		} else {
-			// If we found a pinned turn and we haven't reached target, but have a viable block, use it.
-			if numTurns >= 2 {
+		if !t.CandidateSelector.IsCandidate(turns[i]) {
+			if numTurns >= minViable {
 				return startTurn, numTurns
 			}
 			startTurn = -1
 			numTurns = 0
+			continue
+		}
+
+		if startTurn == -1 {
+			startTurn = i
+		}
+		numTurns++
+		if numTurns >= target {
+			return startTurn, numTurns
 		}
 	}
 
@@ -297,7 +299,7 @@ func (t *TokenGatekeeper) countMessages(turns [][]*llm.Content) int {
 	return count
 }
 
-func (t *TokenGatekeeper) isTurnPinned(turn []*llm.Content) bool {
+func isTurnPinned(turn []*llm.Content) bool {
 	for _, msg := range turn {
 		if msg.Pinned {
 			return true

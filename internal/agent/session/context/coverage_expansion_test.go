@@ -146,7 +146,9 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
-	tg := &TokenGatekeeper{}
+	tg := &TokenGatekeeper{
+		CandidateSelector: &ContiguousUnpinnedSelector{},
+	}
 
 	pinnedTurn := []*llm.Content{{Pinned: true}}
 	unpinnedTurn := []*llm.Content{{Pinned: false}}
@@ -240,4 +242,42 @@ func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 
 func req() *request {
 	return &request{}
+}
+
+func TestTokenGatekeeper_LocateCandidateBlock_CustomSelector(t *testing.T) {
+	// A custom selector that marks every turn as a candidate and requires a
+	// minimum block size of 1 — different from ContiguousUnpinnedSelector.
+	custom := &customCandidateSelector{
+		candidate:      true,
+		minViableBlock: 1,
+	}
+
+	tg := &TokenGatekeeper{
+		CandidateSelector: custom,
+	}
+
+	turns := [][]*llm.Content{
+		{{Pinned: false}},
+		{{Pinned: false}},
+		{{Pinned: false}},
+	}
+
+	start, count := tg.locateCandidateBlock(context.Background(), turns, 2)
+	assert.Equal(t, 0, start)
+	assert.Equal(t, 2, count)
+}
+
+// customCandidateSelector is a test-only CandidateSelector that returns
+// constant values for IsCandidate and MinViableBlock.
+type customCandidateSelector struct {
+	candidate      bool
+	minViableBlock int
+}
+
+func (s *customCandidateSelector) IsCandidate(turn []*llm.Content) bool {
+	return s.candidate
+}
+
+func (s *customCandidateSelector) MinViableBlock() int {
+	return s.minViableBlock
 }

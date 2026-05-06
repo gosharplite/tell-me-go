@@ -333,7 +333,9 @@ func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tg := &TokenGatekeeper{}
+	tg := &TokenGatekeeper{
+		CandidateSelector: &ContiguousUnpinnedSelector{},
+	}
 	turns := make([][]*llm.Content, 200)
 	for i := range turns {
 		turns[i] = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "u"}}}}
