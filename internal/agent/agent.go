@@ -174,22 +174,7 @@ func (a *agent) applyConfig(ctx context.Context) error {
 		return err
 	}
 
-	oldCfg := a.config.Load()
-	a.configWatcher.Refresh(oldCfg.Model)
-
-	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
-
-	newCfg := *oldCfg // shallow copy
-	newCfg.Limits.MaxHistoryTokens = tokens
-	newCfg.Limits.MaxToolTurns = toolTurns
-	newCfg.Limits.MaxHistoryTurns = histTurns
-
-	if a.strategy != nil {
-		a.configWatcher.SyncToStrategy(a.strategy)
-	}
-
-	a.config.Store(&newCfg)
-
+	newCfg := a.prepareRuntimeConfig()
 	tracker := a.tracker
 
 	// ADR-029 fail-fast delegate chain. The three calls below MUST execute
@@ -208,7 +193,51 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	//
 	// Do not reorder, parallelize, or wrap in errgroup. Do not "tidy" by
 	// collapsing the if-blocks. The structural sequence IS the contract.
-	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: newCfg.Limits}); err != nil {
+	if err := a.publishConfigUpdate(ctx, newCfg); err != nil {
+		return err
+	}
+
+	if err := a.reconfigureEngine(newCfg, tracker); err != nil {
+		return err
+	}
+	if err := a.reconfigureContextManager(newCfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+// prepareRuntimeConfig assembles the next runtime configuration by
+// refreshing the config watcher, reading new limits, syncing to the
+// strategy, and atomically storing the result. It returns a pointer
+// to the newly stored config for use by the delegate chain.
+func (a *agent) prepareRuntimeConfig() *runtimeConfig {
+	oldCfg := a.config.Load()
+	a.configWatcher.Refresh(oldCfg.Model)
+
+	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
+
+	newCfg := *oldCfg // shallow copy
+	newCfg.Limits.MaxHistoryTokens = tokens
+	newCfg.Limits.MaxToolTurns = toolTurns
+	newCfg.Limits.MaxHistoryTurns = histTurns
+
+	if a.strategy != nil {
+		a.configWatcher.SyncToStrategy(a.strategy)
+	}
+
+	a.config.Store(&newCfg)
+	return &newCfg
+}
+
+// publishConfigUpdate broadcasts the new runtime configuration to
+// event subscribers via SafePublish. Per ADR-029 §3, this is the
+// first step of the fail-fast delegate chain.
+//
+// ErrBusNotInitialized is tolerated: if the event bus was never
+// initialized (e.g. bare agent construction), the publish is
+// silently skipped. All other errors are logged and returned.
+func (a *agent) publishConfigUpdate(ctx context.Context, cfg *runtimeConfig) error {
+	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			a.getLogger().Error("event_publish_failed",
 				"event_type", "ConfigUpdated",
@@ -216,23 +245,38 @@ func (a *agent) applyConfig(ctx context.Context) error {
 			return err
 		}
 	}
-
-	if a.engine != nil {
-		if err := a.engine.Reconfigure(orchestrator.RuntimeConfig{
-			ProviderName:     newCfg.ProviderName,
-			Model:            newCfg.Model,
-			Mode:             newCfg.Mode,
-			PricingOverrides: newCfg.PricingOverrides,
-		}, tracker); err != nil {
-			return err
-		}
-	}
-	if a.ctxManager != nil {
-		if err := a.ctxManager.Reconfigure(newCfg.Limits); err != nil {
-			return err
-		}
-	}
 	return nil
+}
+
+// reconfigureEngine applies the runtime configuration to the
+// orchestrator engine. Per ADR-029 §3, this is the second step of
+// the fail-fast delegate chain.
+//
+// A nil engine (e.g. bare agent before full initialization) is not
+// an error — the call is silently skipped.
+func (a *agent) reconfigureEngine(cfg *runtimeConfig, tracker domain_pricing.CostTracker) error {
+	if a.engine == nil {
+		return nil
+	}
+	return a.engine.Reconfigure(orchestrator.RuntimeConfig{
+		ProviderName:     cfg.ProviderName,
+		Model:            cfg.Model,
+		Mode:             cfg.Mode,
+		PricingOverrides: cfg.PricingOverrides,
+	}, tracker)
+}
+
+// reconfigureContextManager applies the new limits to the session
+// context manager. Per ADR-029 §3, this is the third and final
+// step of the fail-fast delegate chain.
+//
+// A nil context manager (e.g. bare agent before full initialization)
+// is not an error — the call is silently skipped.
+func (a *agent) reconfigureContextManager(cfg *runtimeConfig) error {
+	if a.ctxManager == nil {
+		return nil
+	}
+	return a.ctxManager.Reconfigure(cfg.Limits)
 }
 
 func (a *agent) Subscribe(sub func(context.Context, events.Event)) {
