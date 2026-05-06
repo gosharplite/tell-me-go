@@ -309,14 +309,6 @@ func (cw *FileConfigWatcher) logSessionLoadErrorNoLock(err error, sessionPath st
 	}
 }
 
-// logSessionLoadError logs a non-IsNotExist load error if a logger is configured.
-// IsNotExist errors are silently ignored — a missing session config file is not a fault.
-func (cw *FileConfigWatcher) logSessionLoadError(err error) {
-	if !os.IsNotExist(err) && cw.logger != nil {
-		cw.logger.Warn("Failed to load session config", "path", cw.sessionPath, "error", err)
-	}
-}
-
 // SetLimits updates the cached limits manually.
 func (cw *FileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	cw.mu.Lock()
