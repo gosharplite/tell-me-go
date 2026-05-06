@@ -39,19 +39,28 @@ func newEventQueue(logger ports.Logger, loopCtx context.Context, capacity int) *
 // events are shed if the queue is full.
 func (eq *eventQueue) enqueueEvent(ctx context.Context, e events.Event) error {
 	if isCriticalEvent(e) {
-		// Critical events: ensure delivery and enforce true backpressure.
-		select {
-		case eq.ch <- e:
-			return nil
-		case <-ctx.Done():
-			eq.logger.Debug("Caller context cancelled while waiting to queue critical event")
-			return ctx.Err()
-		case <-eq.loopCtx.Done():
-			return fmt.Errorf("uibridge actor is dead: %w", eq.loopCtx.Err())
-		}
+		return eq.enqueueCritical(ctx, e)
 	}
+	return eq.enqueueNonCritical(ctx, e)
+}
 
-	// Safe to shed visual/transient events if queue is full
+// enqueueCritical delivers a critical event with backpressure. It blocks until
+// the event is sent, the caller context is cancelled, or the actor dies.
+func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error {
+	select {
+	case eq.ch <- e:
+		return nil
+	case <-ctx.Done():
+		eq.logger.Debug("Caller context cancelled while waiting to queue critical event")
+		return ctx.Err()
+	case <-eq.loopCtx.Done():
+		return fmt.Errorf("uibridge actor is dead: %w", eq.loopCtx.Err())
+	}
+}
+
+// enqueueNonCritical delivers a non-critical event with load-shedding.
+// If the queue is full, the event is silently dropped (best-effort delivery).
+func (eq *eventQueue) enqueueNonCritical(ctx context.Context, e events.Event) error {
 	select {
 	case eq.ch <- e:
 		return nil
