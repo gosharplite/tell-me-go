@@ -123,9 +123,10 @@ func TestShouldReloadMain(t *testing.T) {
 				fcw.Refresh("gpt-5")
 			}
 
-			ok, info := fcw.shouldReloadMain(tt.model)
+			snap := fcw.snapshotReloadState()
+			ok, info := fcw.shouldReloadMain(snap, tt.model)
 			if ok != tt.wantOK {
-				t.Errorf("shouldReloadMain(%q) = (%v, %v); want ok=%v", tt.model, ok, info, tt.wantOK)
+				t.Errorf("shouldReloadMain(snap, %q) = (%v, %v); want ok=%v", tt.model, ok, info, tt.wantOK)
 			}
 		})
 	}

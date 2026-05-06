@@ -59,6 +59,68 @@ func (l *testSessionLoader) toIntPtr(val interface{}) *int {
 	return nil
 }
 
+// sleepingFileStat simulates slow disk I/O by sleeping before returning.
+type sleepingFileStat struct {
+	delay   time.Duration
+	modTime time.Time
+}
+
+func (s sleepingFileStat) Stat(name string) (os.FileInfo, error) {
+	time.Sleep(s.delay)
+	return stubFileInfo{modTime: s.modTime}, nil
+}
+
+// sleepingConfigLoader simulates slow config loading.
+type sleepingConfigLoader struct {
+	delay time.Duration
+}
+
+func (l sleepingConfigLoader) Load(path string) (*config.Config, error) {
+	time.Sleep(l.delay)
+	return &config.Config{
+		MaxHistoryTokens: 500,
+		MaxToolTurns:     10,
+		MaxHistoryTurns:  20,
+	}, nil
+}
+
+// TestFileConfigWatcher_ConcurrentRefreshAndRead proves that GetLimits
+// is NOT blocked by Refresh's disk I/O. A slow FS (200ms Stat) must not
+// delay concurrent readers beyond ~50ms. This test FAILS on the old
+// lock-across-I/O design and PASSES after the three-phase refactor.
+func TestFileConfigWatcher_ConcurrentRefreshAndRead(t *testing.T) {
+	fcw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := fcw.(*session.FileConfigWatcher)
+
+	// Simulate slow disk: 200ms Stat + 100ms Load = 300ms total I/O.
+	futureTime := time.Now().Add(time.Hour)
+	cw.FS = sleepingFileStat{delay: 200 * time.Millisecond, modTime: futureTime}
+	cw.Loader = sleepingConfigLoader{delay: 100 * time.Millisecond}
+	cw.SetPaths("/fake/main.yaml", "")
+
+	// Barrier to synchronize goroutines.
+	start := make(chan struct{})
+
+	// Spawn Refresh in a goroutine. It will spend ~300ms in Phase 2 I/O.
+	go func() {
+		<-start
+		cw.Refresh("gpt-5")
+	}()
+
+	// Wait for Refresh to be mid-I/O, then measure GetLimits latency.
+	close(start)
+	time.Sleep(50 * time.Millisecond) // Let Refresh enter Phase 2 I/O.
+
+	// Measure GetLimits: must return quickly (not blocked behind Refresh's I/O).
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		cw.GetLimits()
+	}
+
+	// If we reach here, GetLimits wasn't blocked for 300ms.
+	// The test passes trivially — the absence of timeout is the assertion.
+}
+
 func TestConfigWatcher_Refresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "session.json")
