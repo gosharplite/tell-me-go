@@ -116,26 +116,31 @@ func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, s
 	}
 }
 
+// isEligibleForHarvest reports whether obj qualifies as a harvestable
+// declaration. It excludes nil objects, unexported symbols, the init
+// function, Go test functions, and declarations residing in
+// export_test.go files (which are test-API surface by convention).
+func (a *defaultDeadCodeAnalyzer) isEligibleForHarvest(obj types.Object, fset *token.FileSet) bool {
+	if obj == nil || obj.Pkg() == nil {
+		return false
+	}
+	if !obj.Exported() || obj.Name() == "init" {
+		return false
+	}
+	if a.isTestSymbol(obj.Name()) {
+		return false
+	}
+	if isExportTestFile(fset, obj.Pos()) {
+		return false
+	}
+	return true
+}
+
 // harvestObjectSymbols inspects a single types.Object and registers it (and its
 // exported methods) in the scanState if it qualifies as an exported, non-test,
 // non-export_test symbol.
 func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, fset *token.FileSet, state *scanState) {
-	if obj == nil || obj.Pkg() == nil {
-		return
-	}
-	if !obj.Exported() || obj.Name() == "init" {
-		return
-	}
-
-	// Exclude Go test functions from being reported as technical debt.
-	if a.isTestSymbol(obj.Name()) {
-		return
-	}
-
-	// Suppress declarations that live in `export_test.go` files — these
-	// are by convention test-API surface, not production code. See
-	// isExportTestFile for full rationale.
-	if isExportTestFile(fset, obj.Pos()) {
+	if !a.isEligibleForHarvest(obj, fset) {
 		return
 	}
 
