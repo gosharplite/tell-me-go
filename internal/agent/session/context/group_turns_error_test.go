@@ -50,15 +50,15 @@ func TestHistoryPruner_GroupTurnsErrorPropagation(t *testing.T) {
 
 func TestTokenGatekeeper_GroupTurnsErrorPropagation(t *testing.T) {
 	ctx := context.Background()
-	tg := &TokenGatekeeper{
-		MaxTokens: 1000,
-		Estimator: &agenttest.MockTokenCounter{Tokens: 1100}, // Trigger autoSummarize
-		Summarizer: &agenttest.MockSummarizer{
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{Tokens: 1100},
+		&agenttest.MockSummarizer{
 			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				return "summary", &llm.Metrics{}, nil
 			},
 		},
-	}
+		withMaxTokens(1000),
+	)
 
 	// 10 messages to allow autoSummarize to proceed to findSummarizableRange
 	history := make([]*llm.Content, 10)

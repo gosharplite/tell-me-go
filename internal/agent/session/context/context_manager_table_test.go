@@ -23,10 +23,11 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tg := &TokenGatekeeper{
-				MaxTokens: tt.maxTokens,
-				Estimator: &agenttest.MockTokenCounter{Tokens: tt.tokens},
-			}
+			tg := newTokenGatekeeper(
+				&agenttest.MockTokenCounter{Tokens: tt.tokens},
+				nil,
+				withMaxTokens(tt.maxTokens),
+			)
 			req := &request{
 				History: []*llm.Content{{Role: "user"}},
 			}

@@ -210,10 +210,11 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Under limit", func(t *testing.T) {
-		tg := &TokenGatekeeper{
-			MaxTokens: 1000,
-			Estimator: &agenttest.MockTokenCounter{Tokens: 500},
-		}
+		tg := newTokenGatekeeper(
+			&agenttest.MockTokenCounter{Tokens: 500},
+			nil,
+			withMaxTokens(1000),
+		)
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.NoError(t, err)
@@ -221,15 +222,15 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	})
 
 	t.Run("Exceeds limit after summarization", func(t *testing.T) {
-		tg := &TokenGatekeeper{
-			MaxTokens: 1000,
-			Estimator: &agenttest.MockTokenCounter{Tokens: 1100}, // Always returns 1100
-			Summarizer: &agenttest.MockSummarizer{
+		tg := newTokenGatekeeper(
+			&agenttest.MockTokenCounter{Tokens: 1100},
+			&agenttest.MockSummarizer{
 				SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 					return "summary", &llm.Metrics{}, nil
 				},
 			},
-		}
+			withMaxTokens(1000),
+		)
 		// 10 messages to allow summarization trigger (>= 10)
 		h := make([]*llm.Content, 10)
 		for i := range h {
@@ -241,15 +242,15 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	})
 
 	t.Run("Summarization failure", func(t *testing.T) {
-		tg := &TokenGatekeeper{
-			MaxTokens: 2000,
-			Estimator: &agenttest.MockTokenCounter{Tokens: 950},
-			Summarizer: &agenttest.MockSummarizer{
+		tg := newTokenGatekeeper(
+			&agenttest.MockTokenCounter{Tokens: 950},
+			&agenttest.MockSummarizer{
 				SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 					return "", nil, errors.New("summarize error")
 				},
 			},
-		}
+			withMaxTokens(2000),
+		)
 		h := make([]*llm.Content, 10)
 		for i := range h {
 			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
@@ -313,16 +314,16 @@ func (m *dynamicMockEstimator) EstimateTokens(contents []*llm.Content) int {
 func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	ctx := context.Background()
 	summarizerCalled := false
-	tg := &TokenGatekeeper{
-		MaxTokens: 10000,
-		Estimator: &dynamicMockEstimator{tokens: 9500},
-		Summarizer: &agenttest.MockSummarizer{
+	tg := newTokenGatekeeper(
+		&dynamicMockEstimator{tokens: 9500},
+		&agenttest.MockSummarizer{
 			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				summarizerCalled = true
 				return "summary", &llm.Metrics{}, nil
 			},
 		},
-	}
+		withMaxTokens(10000),
+	)
 
 	h := generateMessageHistory(20)
 	// Pin turns 0 and 1 (indices 0-3)
@@ -375,15 +376,15 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 
 func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	ctx := context.Background()
-	tg := &TokenGatekeeper{
-		MaxTokens: 10000,
-		Estimator: &dynamicMockEstimator{tokens: 9500},
-		Summarizer: &agenttest.MockSummarizer{
+	tg := newTokenGatekeeper(
+		&dynamicMockEstimator{tokens: 9500},
+		&agenttest.MockSummarizer{
 			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				return "summary", &llm.Metrics{}, nil
 			},
 		},
-	}
+		withMaxTokens(10000),
+	)
 	h := make([]*llm.Content, 10)
 	for i := range h {
 		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
@@ -396,10 +397,11 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 
 func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 	ctx := context.Background()
-	tg := &TokenGatekeeper{
-		MaxTokens: 2000,
-		Estimator: &agenttest.MockTokenCounter{Tokens: 1900}, // > 90%
-	}
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{Tokens: 1900},
+		nil,
+		withMaxTokens(2000),
+	)
 
 	// Create history where all messages are pinned
 	h := make([]*llm.Content, 20)
@@ -468,10 +470,11 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tg := &TokenGatekeeper{
-				MaxTokens: tt.maxTokens,
-				Estimator: &agenttest.MockTokenCounter{Tokens: tt.tokens},
-			}
+			tg := newTokenGatekeeper(
+				&agenttest.MockTokenCounter{Tokens: tt.tokens},
+				nil,
+				withMaxTokens(tt.maxTokens),
+			)
 			req := &request{History: []*llm.Content{{Role: "user"}}}
 			err := tg.Transform(ctx, req)
 			if tt.wantErr {
@@ -520,10 +523,11 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("10 percent cap", func(t *testing.T) {
-		tg := &TokenGatekeeper{
-			MaxTokens: 1000,
-			Estimator: &agenttest.MockTokenCounter{Tokens: 901},
-		}
+		tg := newTokenGatekeeper(
+			&agenttest.MockTokenCounter{Tokens: 901},
+			nil,
+			withMaxTokens(1000),
+		)
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 901 tokens (limit 900)")
@@ -534,10 +538,11 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	})
 
 	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
-		tg := &TokenGatekeeper{
-			MaxTokens: 10000,
-			Estimator: &agenttest.MockTokenCounter{Tokens: 9001},
-		}
+		tg := newTokenGatekeeper(
+			&agenttest.MockTokenCounter{Tokens: 9001},
+			nil,
+			withMaxTokens(10000),
+		)
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 9001 tokens (limit 9000)")
@@ -797,7 +802,7 @@ func TestIsToolCall_Helper(t *testing.T) {
 }
 
 func TestFindSummarizableRange_Helper(t *testing.T) {
-	tg := &TokenGatekeeper{}
+	tg := newTokenGatekeeper(nil, nil)
 
 	t.Run("No pins", func(t *testing.T) {
 		history := generateMessageHistory(20)
@@ -952,10 +957,11 @@ func setupTestPipeline(maxTokens int) (*contextPipeline, *Strategy) {
 
 	pipeline := NewContextPipeline(
 		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}},
-		&TokenGatekeeper{
-			MaxTokens: maxTokens,
-			Estimator: strategy,
-		},
+		newTokenGatekeeper(
+			strategy,
+			nil,
+			withMaxTokens(maxTokens),
+		),
 		&WarningInjector{Strategy: strategy},
 		&TransientMerger{},
 	)

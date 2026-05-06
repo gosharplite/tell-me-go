@@ -5,10 +5,10 @@ package context
 
 import "github.com/gosharplite/tell-me-go/internal/domain/llm"
 
-// CandidateSelector defines a strategy for identifying which history turns
+// candidateSelector defines a strategy for identifying which history turns
 // are eligible for summarization. Implementations are stateless — the caller
 // handles context cancellation and iteration.
-type CandidateSelector interface {
+type candidateSelector interface {
 	// IsCandidate reports whether the given turn is eligible for inclusion
 	// in a summarization block.
 	IsCandidate(turn []*llm.Content) bool
@@ -18,7 +18,7 @@ type CandidateSelector interface {
 	MinViableBlock() int
 }
 
-// contiguousUnpinnedSelector implements CandidateSelector by selecting
+// contiguousUnpinnedSelector implements candidateSelector by selecting
 // turns whose messages are all unpinned. The minimum viable block size is 2.
 type contiguousUnpinnedSelector struct{}
 
