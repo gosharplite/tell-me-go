@@ -355,31 +355,44 @@ func cleanToolParts(content *llm.Content) (bool, error) {
 	if content == nil {
 		return false, fmt.Errorf("cleanToolParts: %w", ErrInvalidPayload)
 	}
-	cleanParts := make([]*llm.Part, 0, len(content.Parts))
-	changed := false
+	cleanParts, changed, err := filterToolParts(content.Parts)
+	if err != nil {
+		return false, err
+	}
+	if changed {
+		content.Parts = cleanParts
+	}
+	return changed, nil
+}
 
-	for i, p := range content.Parts {
-		// Skip nil parts
+// isInvalidToolPart returns true if a part is a tool call or tool response with an empty ID.
+// These parts cause API errors and must be stripped.
+func isInvalidToolPart(p *llm.Part) bool {
+	if p.FunctionCall != nil && p.FunctionCall.ID == "" {
+		return true
+	}
+	if p.FunctionResponse != nil && p.FunctionResponse.ID == "" {
+		return true
+	}
+	return false
+}
+
+// filterToolParts removes invalid tool parts from the slice while preserving
+// the nil-part error semantics of cleanToolParts.
+func filterToolParts(parts []*llm.Part) ([]*llm.Part, bool, error) {
+	changed := false
+	cleanParts := make([]*llm.Part, 0, len(parts))
+	for i, p := range parts {
 		if p == nil {
-			return false, fmt.Errorf("cleanToolParts: %w at index %d", ErrInvalidPayload, i)
+			return nil, false, fmt.Errorf("cleanToolParts: %w at index %d", ErrInvalidPayload, i)
 		}
-		// Skip tool calls with empty IDs - they cause API errors
-		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
-			changed = true
-			continue
-		}
-		// Skip tool responses with empty IDs - they cause API errors
-		if p.FunctionResponse != nil && p.FunctionResponse.ID == "" {
+		if isInvalidToolPart(p) {
 			changed = true
 			continue
 		}
 		cleanParts = append(cleanParts, p)
 	}
-
-	if changed {
-		content.Parts = cleanParts
-	}
-	return changed, nil
+	return cleanParts, changed, nil
 }
 
 func (t *toolResponseCleaner) Priority() int { return 3 } // Run after HistoryRepairer (0) but before contentCleaner (5)

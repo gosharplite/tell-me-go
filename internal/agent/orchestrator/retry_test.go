@@ -136,3 +136,91 @@ func TestDefaultRetryPolicy_OverflowSafety(t *testing.T) {
 		})
 	}
 }
+
+func TestCalculateBackoff(t *testing.T) {
+	const maxDelay = 2 * time.Minute
+
+	tests := []struct {
+		name      string
+		base      time.Duration
+		attempt   int
+		wantDelay time.Duration
+	}{
+		{
+			name:      "zero attempt returns base",
+			base:      2 * time.Second,
+			attempt:   0,
+			wantDelay: 2 * time.Second,
+		},
+		{
+			name:      "single doubling",
+			base:      2 * time.Second,
+			attempt:   1,
+			wantDelay: 4 * time.Second,
+		},
+		{
+			name:      "double doubling",
+			base:      2 * time.Second,
+			attempt:   2,
+			wantDelay: 8 * time.Second,
+		},
+		{
+			name:      "triple doubling",
+			base:      2 * time.Second,
+			attempt:   3,
+			wantDelay: 16 * time.Second,
+		},
+		{
+			name:      "max delay ceiling hit via large attempt",
+			base:      2 * time.Second,
+			attempt:   10, // 2^10 * 2s = 2048s > 2m
+			wantDelay: maxDelay,
+		},
+		{
+			name:      "base exceeds maxDelay from start",
+			base:      5 * time.Minute,
+			attempt:   0,
+			wantDelay: maxDelay,
+		},
+		{
+			name:      "base exceeds maxDelay with attempt > 0",
+			base:      5 * time.Minute,
+			attempt:   3,
+			wantDelay: maxDelay,
+		},
+		{
+			name:      "overflow safety — extreme attempt 63",
+			base:      2 * time.Second,
+			attempt:   63,
+			wantDelay: maxDelay,
+		},
+		{
+			name:      "rate-limit base single doubling",
+			base:      10 * time.Second,
+			attempt:   1,
+			wantDelay: 20 * time.Second,
+		},
+		{
+			name:      "rate-limit base hits ceiling",
+			base:      10 * time.Second,
+			attempt:   10, // 10s * 2^10 = 10240s > 2m
+			wantDelay: maxDelay,
+		},
+		{
+			name:      "zero base duration",
+			base:      0,
+			attempt:   5,
+			wantDelay: 0, // 0 doubled stays 0, never hits maxDelay cap
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := calculateBackoff(tt.base, tt.attempt)
+			if got != tt.wantDelay {
+				t.Errorf("calculateBackoff(%v, %d) = %v; want %v",
+					tt.base, tt.attempt, got, tt.wantDelay)
+			}
+		})
+	}
+}

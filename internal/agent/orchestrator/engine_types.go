@@ -98,6 +98,26 @@ type DefaultRetryPolicy struct {
 	RateLimitBackoff time.Duration
 }
 
+// calculateBackoff computes the exponential backoff delay, doubling per attempt
+// and capping at maxDelay. It is a pure function with no side effects, designed
+// for exhaustive table-driven testing independent of error classification or Clock.
+func calculateBackoff(base time.Duration, attempt int) time.Duration {
+	const maxDelay = 2 * time.Minute
+
+	if base >= maxDelay {
+		return maxDelay
+	}
+
+	delay := base
+	for i := 0; i < attempt; i++ {
+		if delay >= maxDelay/2 {
+			return maxDelay
+		}
+		delay *= 2
+	}
+	return delay
+}
+
 func (p *DefaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int, hasSeenRateLimit bool) (time.Duration, bool) {
 	if attempt >= p.MaxRetries {
 		return 0, false
@@ -114,29 +134,9 @@ func (p *DefaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int, 
 			base = p.RateLimitBackoff
 		}
 
-		const maxDelay = 2 * time.Minute // Enforce an architectural ceiling
+		delay := calculateBackoff(base, attempt)
 
-		delay := base
-
-		// 1. Initial cap in case base > maxDelay
-		if delay >= maxDelay {
-			delay = maxDelay
-		} else {
-			// 2. Safely double the delay, breaking early to prevent int64 overflow
-			for i := 0; i < attempt; i++ {
-				if delay >= maxDelay/2 {
-					delay = maxDelay
-					break
-				}
-				delay *= 2
-				if delay >= maxDelay {
-					delay = maxDelay
-					break
-				}
-			}
-		}
-
-		// 3. Apply Jitter
+		// Apply Jitter
 		finalDelay := time.Duration(c.Jitter(float64(delay)))
 
 		return finalDelay, true
