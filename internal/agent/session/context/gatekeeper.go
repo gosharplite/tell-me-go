@@ -33,10 +33,6 @@ type TokenGatekeeper struct {
 // gatekeeperOption configures an optional setting on TokenGatekeeper.
 type gatekeeperOption func(*TokenGatekeeper)
 
-// GatekeeperOption is the public alias for gatekeeperOption, allowing
-// external packages to configure a TokenGatekeeper via NewTokenGatekeeper.
-type GatekeeperOption = gatekeeperOption
-
 // withCandidateSelector sets a custom candidate selection strategy.
 func withCandidateSelector(sel candidateSelector) gatekeeperOption {
 	return func(tg *TokenGatekeeper) {
@@ -66,12 +62,12 @@ func withLogger(l ports.Logger) gatekeeperOption {
 }
 
 // WithMaxTokens is the public wrapper for withMaxTokens.
-func WithMaxTokens(n int) GatekeeperOption {
+func WithMaxTokens(n int) gatekeeperOption {
 	return withMaxTokens(n)
 }
 
 // WithEvents is the public wrapper for withEvents.
-func WithEvents(bus events.EventBus) GatekeeperOption {
+func WithEvents(bus events.EventBus) gatekeeperOption {
 	return withEvents(bus)
 }
 
@@ -92,8 +88,8 @@ func newTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, o
 
 // NewTokenGatekeeper creates a TokenGatekeeper with sensible defaults.
 // Required dependencies (estimator, summarizer) are explicit parameters;
-// optional settings are configured via GatekeeperOption functions.
-func NewTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, opts ...GatekeeperOption) *TokenGatekeeper {
+// optional settings are configured via gatekeeperOption functions.
+func NewTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, opts ...gatekeeperOption) *TokenGatekeeper {
 	return newTokenGatekeeper(estimator, summarizer, opts...)
 }
 
