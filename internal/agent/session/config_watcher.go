@@ -37,6 +37,16 @@ func setLimitsLocked(tokens, toolTurns, historyTurns int, maxHistoryTokens, maxT
 	}
 }
 
+// resolveContextWindow determines the context window for the given model.
+// It returns the model-specific override if one exists with a positive value;
+// otherwise it returns the provided default window.
+func resolveContextWindow(cfg *config.Config, model string, defaultWindow int) int {
+	if mCfg, ok := cfg.Models[model]; ok && mCfg.ContextWindow > 0 {
+		return mCfg.ContextWindow
+	}
+	return defaultWindow
+}
+
 // ConfigWatcher defines the interface for monitoring configuration.
 type ConfigWatcher interface {
 	SetPaths(main, session string)
@@ -139,21 +149,48 @@ func (cw *FileConfigWatcher) Refresh(model string) {
 	cw.updateFromSession(changed)
 }
 
-func (cw *FileConfigWatcher) updateFromMain(model string) bool {
+// shouldReloadMain checks whether the main configuration file needs to be
+// re-read. It returns (false, nil) when the reload can be skipped because
+// the path is empty, the file cannot be stat'd, neither the modification
+// time nor the model have changed, or the Loader is nil.
+// Otherwise it returns (true, info) where info is the os.FileInfo from Stat.
+func (cw *FileConfigWatcher) shouldReloadMain(model string) (bool, os.FileInfo) {
 	if cw.mainPath == "" {
-		return false
+		return false, nil
 	}
 
 	info, err := cw.FS.Stat(cw.mainPath)
 	if err != nil {
-		return false
+		return false, nil
 	}
 
 	if !info.ModTime().After(cw.lastMainMod) && model == cw.lastModel {
-		return false
+		return false, nil
 	}
 
 	if cw.Loader == nil {
+		return false, nil
+	}
+
+	return true, info
+}
+
+// applyMainConfig updates the watcher's cached state from a successfully
+// loaded main configuration. The caller must hold cw.mu (write lock).
+func (cw *FileConfigWatcher) applyMainConfig(cfg *config.Config, info os.FileInfo, model string) {
+	cw.lastMainMod = info.ModTime()
+	cw.lastModel = model
+
+	cw.maxHistoryTokens = cfg.MaxHistoryTokens
+	cw.maxToolTurns = cfg.MaxToolTurns
+	cw.maxHistoryTurns = cfg.MaxHistoryTurns
+
+	cw.contextWindow = resolveContextWindow(cfg, model, cw.defaultWindow)
+}
+
+func (cw *FileConfigWatcher) updateFromMain(model string) bool {
+	ok, info := cw.shouldReloadMain(model)
+	if !ok {
 		return false
 	}
 
@@ -162,19 +199,7 @@ func (cw *FileConfigWatcher) updateFromMain(model string) bool {
 		return false
 	}
 
-	cw.lastMainMod = info.ModTime()
-	cw.lastModel = model
-
-	cw.maxHistoryTokens = cfg.MaxHistoryTokens
-	cw.maxToolTurns = cfg.MaxToolTurns
-	cw.maxHistoryTurns = cfg.MaxHistoryTurns
-
-	// Update context window from model config if available, otherwise reset to default
-	cw.contextWindow = cw.defaultWindow
-	if mCfg, ok := cfg.Models[model]; ok && mCfg.ContextWindow > 0 {
-		cw.contextWindow = mCfg.ContextWindow
-	}
-
+	cw.applyMainConfig(cfg, info, model)
 	return true
 }
 
