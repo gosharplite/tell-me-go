@@ -174,7 +174,8 @@ func (a *agent) applyConfig(ctx context.Context) error {
 		return err
 	}
 
-	newCfg := a.prepareRuntimeConfig()
+	cfg := a.prepareRuntimeConfig()
+	newCfg := &cfg
 	tracker := a.tracker
 
 	// ADR-029 fail-fast delegate chain. The three calls below MUST execute
@@ -208,9 +209,10 @@ func (a *agent) applyConfig(ctx context.Context) error {
 
 // prepareRuntimeConfig assembles the next runtime configuration by
 // refreshing the config watcher, reading new limits, syncing to the
-// strategy, and atomically storing the result. It returns a pointer
-// to the newly stored config for use by the delegate chain.
-func (a *agent) prepareRuntimeConfig() *runtimeConfig {
+// strategy, and atomically storing the result. It returns a value
+// copy of the stored config so that delegates receive a stack-local
+// pointer — never the atomic store's address.
+func (a *agent) prepareRuntimeConfig() runtimeConfig {
 	oldCfg := a.config.Load()
 	a.configWatcher.Refresh(oldCfg.Model)
 
@@ -226,7 +228,7 @@ func (a *agent) prepareRuntimeConfig() *runtimeConfig {
 	}
 
 	a.config.Store(&newCfg)
-	return &newCfg
+	return newCfg
 }
 
 // publishConfigUpdate broadcasts the new runtime configuration to
