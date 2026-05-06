@@ -200,22 +200,34 @@ func (cw *FileConfigWatcher) loadSessionConfig() {
 	}
 	sessCfg, err := cw.SessionLoader.LoadSession(cw.sessionPath)
 	if err != nil {
-		if !os.IsNotExist(err) && cw.logger != nil {
-			cw.logger.Warn("Failed to load session config", "path", cw.sessionPath, "error", err)
-		}
+		cw.logSessionLoadError(err)
 		return
 	}
 	if sessCfg == nil {
 		return
 	}
-	if sessCfg.MaxHistoryTokens != nil {
-		cw.maxHistoryTokens = *sessCfg.MaxHistoryTokens
+	cw.applySessionLimits(sessCfg)
+}
+
+// applySessionLimits applies non-nil session config overrides to the watcher's
+// cached limits. The caller must hold cw.mu (write lock).
+func (cw *FileConfigWatcher) applySessionLimits(cfg *config.SessionConfig) {
+	if cfg.MaxHistoryTokens != nil {
+		cw.maxHistoryTokens = *cfg.MaxHistoryTokens
 	}
-	if sessCfg.MaxToolTurns != nil {
-		cw.maxToolTurns = *sessCfg.MaxToolTurns
+	if cfg.MaxToolTurns != nil {
+		cw.maxToolTurns = *cfg.MaxToolTurns
 	}
-	if sessCfg.MaxHistoryTurns != nil {
-		cw.maxHistoryTurns = *sessCfg.MaxHistoryTurns
+	if cfg.MaxHistoryTurns != nil {
+		cw.maxHistoryTurns = *cfg.MaxHistoryTurns
+	}
+}
+
+// logSessionLoadError logs a non-IsNotExist load error if a logger is configured.
+// IsNotExist errors are silently ignored — a missing session config file is not a fault.
+func (cw *FileConfigWatcher) logSessionLoadError(err error) {
+	if !os.IsNotExist(err) && cw.logger != nil {
+		cw.logger.Warn("Failed to load session config", "path", cw.sessionPath, "error", err)
 	}
 }
 
