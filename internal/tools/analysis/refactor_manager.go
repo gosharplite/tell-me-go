@@ -69,6 +69,27 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully moved %s from %s to %s", plan.Symbol, plan.SrcFile, plan.DstFile)}, nil
 }
 
+// loadGoFilesForRename discovers all Go source files in resolvedDir, loads
+// them into a new transaction, and returns the file list and transaction.
+// Callers own the responsibility of adding transforms and committing.
+func (m *refactorManager) loadGoFilesForRename(resolvedDir string) ([]string, *transaction, error) {
+	goFiles, err := filepath.Glob(filepath.Join(resolvedDir, "*.go"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("glob %s: %w", resolvedDir, err)
+	}
+	if len(goFiles) == 0 {
+		return nil, nil, fmt.Errorf("no .go files found in %s", resolvedDir)
+	}
+
+	tx := newTransaction()
+	for _, f := range goFiles {
+		if _, err := tx.LoadFile(f); err != nil {
+			return nil, nil, fmt.Errorf("load %s: %w", filepath.Base(f), err)
+		}
+	}
+	return goFiles, tx, nil
+}
+
 func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		OldName string `json:"old_name"`
@@ -89,21 +110,10 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, err
 	}
 
-	// Find all Go source files in the target directory.
-	goFiles, err := filepath.Glob(filepath.Join(resolvedDir, "*.go"))
+	// Discover and load all Go source files into a transaction.
+	goFiles, tx, err := m.loadGoFilesForRename(resolvedDir)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("glob %s: %w", resolvedDir, err)
-	}
-	if len(goFiles) == 0 {
-		return tools.ToolResult{}, fmt.Errorf("no .go files found in %s", resolvedDir)
-	}
-
-	// Load all files into a transaction and apply the rename.
-	tx := newTransaction()
-	for _, f := range goFiles {
-		if _, err := tx.LoadFile(f); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("load %s: %w", filepath.Base(f), err)
-		}
+		return tools.ToolResult{}, err
 	}
 
 	plan := &renamePlan{OldName: params.OldName, NewName: params.NewName}
