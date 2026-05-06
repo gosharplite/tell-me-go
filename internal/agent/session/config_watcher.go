@@ -90,6 +90,17 @@ type ConfigWatcher interface {
 	SyncToStrategy(cs *sessctx.Strategy)
 }
 
+// reloadSnapshot captures the mutable comparison state needed to decide
+// whether to reload files. It is populated under RLock (Phase 1) so that
+// all blocking I/O (Phase 2) can run without holding any mutex.
+type reloadSnapshot struct {
+	mainPath       string
+	sessionPath    string
+	lastMainMod    time.Time
+	lastSessionMod time.Time
+	lastModel      string
+}
+
 // fileConfigWatcher monitors configuration files for changes and caches values.
 type FileConfigWatcher struct {
 	mu                   sync.RWMutex
@@ -140,31 +151,85 @@ func (cw *FileConfigWatcher) SetPaths(main, session string) {
 	cw.sessionPath = session
 }
 
+// snapshotReloadState returns a stack-local copy of the watcher's mutable
+// comparison fields. Caller must NOT hold any lock; this method acquires
+// and releases RLock internally.
+func (cw *FileConfigWatcher) snapshotReloadState() reloadSnapshot {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return reloadSnapshot{
+		mainPath:       cw.mainPath,
+		sessionPath:    cw.sessionPath,
+		lastMainMod:    cw.lastMainMod,
+		lastSessionMod: cw.lastSessionMod,
+		lastModel:      cw.lastModel,
+	}
+}
+
 // Refresh checks for file changes and updates cached values if necessary.
+// It uses three phases to avoid holding the write lock across disk I/O:
+//  1. RLock snapshot of comparison state
+//  2. All blocking I/O without any lock
+//  3. Write lock only for in-memory mutations
 func (cw *FileConfigWatcher) Refresh(model string) {
+	// Phase 1: Snapshot mutable comparison state under RLock.
+	snap := cw.snapshotReloadState()
+
+	// Phase 2: All blocking I/O. No lock held.
+	// Safe because Loader/SessionLoader/FS are immutable after construction.
+	newMainCfg, mainInfo, mainChanged := cw.loadMainOutsideLock(snap, model)
+	newSessCfg, sessInfo, sessChanged := cw.loadSessionOutsideLock(snap, mainChanged)
+
+	// Phase 3: Apply mutations to in-memory cache only. No I/O.
+	// Guard each mutation with a ModTime comparison to prevent
+	// stale overwrites: if a concurrent Refresh already applied
+	// a newer version, we must not overwrite it with older data.
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
+	if mainChanged && !mainInfo.ModTime().Before(cw.lastMainMod) {
+		cw.applyMainConfig(newMainCfg, mainInfo, model)
+	}
+	if sessChanged && !sessInfo.ModTime().Before(cw.lastSessionMod) {
+		cw.applySessionLimits(newSessCfg)
+		cw.lastSessionMod = sessInfo.ModTime()
+	}
+}
 
-	changed := cw.updateFromMain(model)
-	cw.updateFromSession(changed)
+// loadMainOutsideLock performs all blocking I/O needed to reload the main
+// configuration file. It must NOT hold any mutex. It returns the parsed
+// config, the os.FileInfo from Stat, and whether the file was actually
+// reloaded. If no reload is needed, it returns (nil, nil, false).
+func (cw *FileConfigWatcher) loadMainOutsideLock(snap reloadSnapshot, model string) (*config.Config, os.FileInfo, bool) {
+	ok, info := cw.shouldReloadMain(snap, model)
+	if !ok {
+		return nil, nil, false
+	}
+
+	cfg, err := cw.Loader.Load(snap.mainPath)
+	if err != nil {
+		return nil, nil, false
+	}
+
+	return cfg, info, true
 }
 
 // shouldReloadMain checks whether the main configuration file needs to be
-// re-read. It returns (false, nil) when the reload can be skipped because
-// the path is empty, the file cannot be stat'd, neither the modification
-// time nor the model have changed, or the Loader is nil.
-// Otherwise it returns (true, info) where info is the os.FileInfo from Stat.
-func (cw *FileConfigWatcher) shouldReloadMain(model string) (bool, os.FileInfo) {
-	if cw.mainPath == "" {
+// re-read using a snapshot captured under RLock. It returns (false, nil) when
+// the reload can be skipped because the path is empty, the file cannot be
+// stat'd, neither the modification time nor the model have changed, or the
+// Loader is nil. Otherwise it returns (true, info) where info is the
+// os.FileInfo from Stat.
+func (cw *FileConfigWatcher) shouldReloadMain(snap reloadSnapshot, model string) (bool, os.FileInfo) {
+	if snap.mainPath == "" {
 		return false, nil
 	}
 
-	info, err := cw.FS.Stat(cw.mainPath)
+	info, err := cw.FS.Stat(snap.mainPath)
 	if err != nil {
 		return false, nil
 	}
 
-	if !info.ModTime().After(cw.lastMainMod) && model == cw.lastModel {
+	if !info.ModTime().After(snap.lastMainMod) && model == snap.lastModel {
 		return false, nil
 	}
 
@@ -173,6 +238,40 @@ func (cw *FileConfigWatcher) shouldReloadMain(model string) (bool, os.FileInfo) 
 	}
 
 	return true, info
+}
+
+// loadSessionOutsideLock performs all blocking I/O needed to reload the
+// session configuration file. It must NOT hold any mutex. It returns the
+// parsed session config, the os.FileInfo from Stat, and whether the file
+// was actually reloaded. If no reload is needed, it returns (nil, nil, false).
+func (cw *FileConfigWatcher) loadSessionOutsideLock(snap reloadSnapshot, forceUpdate bool) (*config.SessionConfig, os.FileInfo, bool) {
+	if snap.sessionPath == "" {
+		return nil, nil, false
+	}
+
+	info, err := cw.FS.Stat(snap.sessionPath)
+	if err != nil {
+		return nil, nil, false
+	}
+
+	if !info.ModTime().After(snap.lastSessionMod) && !forceUpdate {
+		return nil, nil, false
+	}
+
+	if cw.SessionLoader == nil {
+		return nil, nil, false
+	}
+
+	sessCfg, err := cw.SessionLoader.LoadSession(snap.sessionPath)
+	if err != nil {
+		cw.logSessionLoadErrorNoLock(err, snap.sessionPath)
+		return nil, nil, false
+	}
+	if sessCfg == nil {
+		return nil, nil, false
+	}
+
+	return sessCfg, info, true
 }
 
 // applyMainConfig updates the watcher's cached state from a successfully
@@ -188,52 +287,6 @@ func (cw *FileConfigWatcher) applyMainConfig(cfg *config.Config, info os.FileInf
 	cw.contextWindow = resolveContextWindow(cfg, model, cw.defaultWindow)
 }
 
-func (cw *FileConfigWatcher) updateFromMain(model string) bool {
-	ok, info := cw.shouldReloadMain(model)
-	if !ok {
-		return false
-	}
-
-	cfg, err := cw.Loader.Load(cw.mainPath)
-	if err != nil {
-		return false
-	}
-
-	cw.applyMainConfig(cfg, info, model)
-	return true
-}
-
-func (cw *FileConfigWatcher) updateFromSession(forceUpdate bool) {
-	if cw.sessionPath == "" {
-		return
-	}
-
-	info, err := cw.FS.Stat(cw.sessionPath)
-	if err != nil {
-		return
-	}
-
-	if info.ModTime().After(cw.lastSessionMod) || forceUpdate {
-		cw.lastSessionMod = info.ModTime()
-		cw.loadSessionConfig()
-	}
-}
-
-func (cw *FileConfigWatcher) loadSessionConfig() {
-	if cw.SessionLoader == nil {
-		return
-	}
-	sessCfg, err := cw.SessionLoader.LoadSession(cw.sessionPath)
-	if err != nil {
-		cw.logSessionLoadError(err)
-		return
-	}
-	if sessCfg == nil {
-		return
-	}
-	cw.applySessionLimits(sessCfg)
-}
-
 // applySessionLimits applies non-nil session config overrides to the watcher's
 // cached limits. The caller must hold cw.mu (write lock).
 func (cw *FileConfigWatcher) applySessionLimits(cfg *config.SessionConfig) {
@@ -245,6 +298,14 @@ func (cw *FileConfigWatcher) applySessionLimits(cfg *config.SessionConfig) {
 	}
 	if cfg.MaxHistoryTurns != nil {
 		cw.maxHistoryTurns = *cfg.MaxHistoryTurns
+	}
+}
+
+// logSessionLoadErrorNoLock logs a session load error without reading
+// cw.sessionPath from the watcher. It is safe to call outside the mutex.
+func (cw *FileConfigWatcher) logSessionLoadErrorNoLock(err error, sessionPath string) {
+	if !os.IsNotExist(err) && cw.logger != nil {
+		cw.logger.Warn("Failed to load session config", "path", sessionPath, "error", err)
 	}
 }
 
