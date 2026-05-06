@@ -29,6 +29,30 @@ type TokenGatekeeper struct {
 	Logger     ports.Logger
 }
 
+// HardLimitPolicy encapsulates the context-window buffer reservation
+// logic, keeping it separate from event publishing and error signaling.
+// It is a pure value type with no dependencies beyond config constants.
+type HardLimitPolicy struct {
+	MaxTokens           int
+	SystemContextBuffer int
+}
+
+// EffectiveLimit returns the usable token budget after reserving system
+// buffer space. The reservation is capped at min(10% of MaxTokens,
+// SystemContextBuffer). Returns 0 when MaxTokens ≤ 0, which
+// signals that no hard-limit enforcement should be performed.
+func (p HardLimitPolicy) EffectiveLimit() int {
+	if p.MaxTokens <= 0 {
+		return 0
+	}
+	reserved := p.SystemContextBuffer
+	maxReserved := int(float64(p.MaxTokens) * 0.1)
+	if reserved > maxReserved {
+		reserved = maxReserved
+	}
+	return p.MaxTokens - reserved
+}
+
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	// 0. Domain Boundary Validation: Ensure history is structurally sound before processing
 	if _, err := groupTurns(ctx, req.History); err != nil {
@@ -80,50 +104,49 @@ func (t *TokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 	return t.applySummarizationResult(req, n), nil
 }
 
+// publishHardLimitEvents emits the two events that signal a hard-limit
+// violation: TokenLimitReachedEvent and SystemMessageEvent.
+func (t *TokenGatekeeper) publishHardLimitEvents(ctx context.Context, tokens, effectiveLimit int) {
+	if t.Events == nil {
+		return
+	}
+	e1 := events.TokenLimitReachedEvent{
+		Tokens:   tokens,
+		MaxLimit: t.MaxTokens,
+	}
+	if err := events.SafePublish(ctx, t.Events, e1); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.getLogger().Error("event_publish_failed",
+				"event_type", string(e1.Type()),
+				"error", err)
+		}
+	}
+
+	e2 := events.SystemMessageEvent{
+		Message: fmt.Sprintf("payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer", tokens, effectiveLimit),
+		Level:   "error",
+	}
+	if err := events.SafePublish(ctx, t.Events, e2); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.getLogger().Error("event_publish_failed",
+				"event_type", string(e2.Type()),
+				"error", err)
+		}
+	}
+}
+
 func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
-	if t.MaxTokens <= 0 {
+	effectiveLimit := HardLimitPolicy{
+		MaxTokens:           t.MaxTokens,
+		SystemContextBuffer: config.SystemContextBuffer,
+	}.EffectiveLimit()
+	if effectiveLimit <= 0 {
 		return nil
 	}
-
-	limit := t.MaxTokens
-	reserved := config.SystemContextBuffer
-	// Ensure we don't reserve so much space that the agent becomes unusable in small contexts.
-	// We reserve up to 10% of the context for system overhead, capped at the SystemContextBuffer.
-	maxReserved := int(float64(t.MaxTokens) * 0.1)
-	if reserved > maxReserved {
-		reserved = maxReserved
-	}
-	limit -= reserved
-
-	if tokens > limit {
-		if t.Events != nil {
-			e1 := events.TokenLimitReachedEvent{
-				Tokens:   tokens,
-				MaxLimit: t.MaxTokens,
-			}
-			if err := events.SafePublish(ctx, t.Events, e1); err != nil {
-				if !errors.Is(err, events.ErrBusNotInitialized) {
-					t.getLogger().Error("event_publish_failed",
-						"event_type", string(e1.Type()),
-						"error", err)
-				}
-			}
-
-			e2 := events.SystemMessageEvent{
-				Message: fmt.Sprintf("payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer", tokens, limit),
-				Level:   "error",
-			}
-			if err := events.SafePublish(ctx, t.Events, e2); err != nil {
-				if !errors.Is(err, events.ErrBusNotInitialized) {
-					t.getLogger().Error("event_publish_failed",
-						"event_type", string(e2.Type()),
-						"error", err)
-				}
-			}
-		}
+	if tokens > effectiveLimit {
+		t.publishHardLimitEvents(ctx, tokens, effectiveLimit)
 		return llm.ErrContextLimitExceeded
 	}
-
 	return nil
 }
 
