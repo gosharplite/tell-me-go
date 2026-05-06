@@ -114,9 +114,6 @@ func calculateBackoff(base time.Duration, attempt int) time.Duration {
 			return maxDelay
 		}
 		delay *= 2
-		if delay >= maxDelay {
-			return maxDelay
-		}
 	}
 	return delay
 }
