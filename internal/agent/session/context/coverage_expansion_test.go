@@ -146,7 +146,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
-	tg := NewTokenGatekeeper(nil, nil)
+	tg := newTokenGatekeeper(nil, nil)
 
 	pinnedTurn := []*llm.Content{{Pinned: true}}
 	unpinnedTurn := []*llm.Content{{Pinned: false}}
@@ -244,13 +244,13 @@ func req() *request {
 
 func TestTokenGatekeeper_LocateCandidateBlock_CustomSelector(t *testing.T) {
 	// A custom selector that marks every turn as a candidate and requires a
-	// minimum block size of 1 — different from ContiguousUnpinnedSelector.
+	// minimum block size of 1 — different from contiguousUnpinnedSelector.
 	custom := &customCandidateSelector{
 		candidate:      true,
 		minViableBlock: 1,
 	}
 
-	tg := NewTokenGatekeeper(nil, nil, WithCandidateSelector(custom))
+	tg := newTokenGatekeeper(nil, nil, withCandidateSelector(custom))
 
 	turns := [][]*llm.Content{
 		{{Pinned: false}},

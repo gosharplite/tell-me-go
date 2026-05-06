@@ -18,14 +18,14 @@ type CandidateSelector interface {
 	MinViableBlock() int
 }
 
-// ContiguousUnpinnedSelector implements CandidateSelector by selecting
+// contiguousUnpinnedSelector implements CandidateSelector by selecting
 // turns whose messages are all unpinned. The minimum viable block size is 2.
-type ContiguousUnpinnedSelector struct{}
+type contiguousUnpinnedSelector struct{}
 
-func (s *ContiguousUnpinnedSelector) IsCandidate(turn []*llm.Content) bool {
+func (s *contiguousUnpinnedSelector) IsCandidate(turn []*llm.Content) bool {
 	return !isTurnPinned(turn)
 }
 
-func (s *ContiguousUnpinnedSelector) MinViableBlock() int {
+func (s *contiguousUnpinnedSelector) MinViableBlock() int {
 	return 2
 }

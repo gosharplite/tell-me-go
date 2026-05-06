@@ -30,45 +30,24 @@ type TokenGatekeeper struct {
 	CandidateSelector CandidateSelector
 }
 
-// GatekeeperOption configures an optional setting on TokenGatekeeper.
-type GatekeeperOption func(*TokenGatekeeper)
+// gatekeeperOption configures an optional setting on TokenGatekeeper.
+type gatekeeperOption func(*TokenGatekeeper)
 
-// WithMaxTokens sets the maximum token limit for context management.
-func WithMaxTokens(n int) GatekeeperOption {
-	return func(tg *TokenGatekeeper) {
-		tg.MaxTokens = n
-	}
-}
-
-// WithEventBus sets the event bus for publishing lifecycle events.
-func WithEventBus(bus events.EventBus) GatekeeperOption {
-	return func(tg *TokenGatekeeper) {
-		tg.Events = bus
-	}
-}
-
-// WithGatekeeperLogger sets the structured logger.
-func WithGatekeeperLogger(logger ports.Logger) GatekeeperOption {
-	return func(tg *TokenGatekeeper) {
-		tg.Logger = logger
-	}
-}
-
-// WithCandidateSelector sets a custom candidate selection strategy.
-func WithCandidateSelector(sel CandidateSelector) GatekeeperOption {
+// withCandidateSelector sets a custom candidate selection strategy.
+func withCandidateSelector(sel CandidateSelector) gatekeeperOption {
 	return func(tg *TokenGatekeeper) {
 		tg.CandidateSelector = sel
 	}
 }
 
-// NewTokenGatekeeper creates a TokenGatekeeper with sensible defaults.
+// newTokenGatekeeper creates a TokenGatekeeper with sensible defaults.
 // Required dependencies (estimator, summarizer) are explicit parameters;
-// optional settings are configured via GatekeeperOption functions.
-func NewTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, opts ...GatekeeperOption) *TokenGatekeeper {
+// optional settings are configured via gatekeeperOption functions.
+func newTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, opts ...gatekeeperOption) *TokenGatekeeper {
 	tg := &TokenGatekeeper{
 		Estimator:         estimator,
 		Summarizer:        summarizer,
-		CandidateSelector: &ContiguousUnpinnedSelector{},
+		CandidateSelector: &contiguousUnpinnedSelector{},
 	}
 	for _, opt := range opts {
 		opt(tg)
@@ -76,19 +55,19 @@ func NewTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, o
 	return tg
 }
 
-// HardLimitPolicy encapsulates the context-window buffer reservation
+// hardLimitPolicy encapsulates the context-window buffer reservation
 // logic, keeping it separate from event publishing and error signaling.
 // It is a pure value type with no dependencies beyond config constants.
-type HardLimitPolicy struct {
+type hardLimitPolicy struct {
 	MaxTokens           int
 	SystemContextBuffer int
 }
 
-// EffectiveLimit returns the usable token budget after reserving system
+// effectiveLimit returns the usable token budget after reserving system
 // buffer space. The reservation is capped at min(10% of MaxTokens,
 // SystemContextBuffer). Returns 0 when MaxTokens ≤ 0, which
 // signals that no hard-limit enforcement should be performed.
-func (p HardLimitPolicy) EffectiveLimit() int {
+func (p hardLimitPolicy) effectiveLimit() int {
 	if p.MaxTokens <= 0 {
 		return 0
 	}
@@ -183,10 +162,10 @@ func (t *TokenGatekeeper) publishHardLimitEvents(ctx context.Context, tokens, ef
 }
 
 func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
-	effectiveLimit := HardLimitPolicy{
+	effectiveLimit := hardLimitPolicy{
 		MaxTokens:           t.MaxTokens,
 		SystemContextBuffer: config.SystemContextBuffer,
-	}.EffectiveLimit()
+	}.effectiveLimit()
 	if effectiveLimit <= 0 {
 		return nil
 	}
@@ -307,7 +286,7 @@ func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 
 	selector := t.CandidateSelector
 	if selector == nil {
-		selector = &ContiguousUnpinnedSelector{}
+		selector = &contiguousUnpinnedSelector{}
 	}
 	minViable := selector.MinViableBlock()
 

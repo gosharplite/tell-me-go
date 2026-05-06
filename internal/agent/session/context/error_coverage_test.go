@@ -333,7 +333,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tg := NewTokenGatekeeper(nil, nil)
+	tg := newTokenGatekeeper(nil, nil)
 	turns := make([][]*llm.Content, 200)
 	for i := range turns {
 		turns[i] = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "u"}}}}
