@@ -380,6 +380,184 @@ func TestFileConfigWatcher_Refresh_StatError(t *testing.T) {
 	assert.Equal(t, 20, historyTurns, "historyTurns should remain at default")
 }
 
+func TestFileConfigWatcher_ShouldReloadMain(t *testing.T) {
+	pastTime := time.Now().Add(-1 * time.Hour)
+	futureTime := time.Now().Add(1 * time.Hour)
+
+	tests := []struct {
+		name   string
+		setup  func(cw *session.FileConfigWatcher)
+		model  string
+		wantOK bool
+	}{
+		{
+			name: "empty path returns false",
+			setup: func(cw *session.FileConfigWatcher) {
+				cw.SetPaths("", "")
+			},
+			model:  "gpt-5",
+			wantOK: false,
+		},
+		{
+			name: "stat error returns false",
+			setup: func(cw *session.FileConfigWatcher) {
+				cw.SetPaths("/fake/main.yaml", "")
+				cw.FS = stubFileStat{statErr: os.ErrNotExist}
+			},
+			model:  "gpt-5",
+			wantOK: false,
+		},
+		{
+			name: "unchanged mod time and same model returns false",
+			setup: func(cw *session.FileConfigWatcher) {
+				cw.SetPaths("/fake/main.yaml", "")
+				cw.FS = stubFileStat{modTime: pastTime}
+			},
+			model:  "gpt-5",
+			wantOK: false,
+		},
+		{
+			name: "newer mod time returns true",
+			setup: func(cw *session.FileConfigWatcher) {
+				cw.SetPaths("/fake/main.yaml", "")
+				cw.FS = stubFileStat{modTime: futureTime}
+			},
+			model:  "gpt-5",
+			wantOK: true,
+		},
+		{
+			name: "same mod time but different model returns true",
+			setup: func(cw *session.FileConfigWatcher) {
+				cw.SetPaths("/fake/main.yaml", "")
+				cw.FS = stubFileStat{modTime: pastTime}
+			},
+			model:  "gpt-4",
+			wantOK: true,
+		},
+		{
+			name: "nil Loader returns false",
+			setup: func(cw *session.FileConfigWatcher) {
+				cw.SetPaths("/fake/main.yaml", "")
+				cw.FS = stubFileStat{modTime: futureTime}
+				cw.Loader = nil
+			},
+			model:  "gpt-5",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fcw := session.NewFileConfigWatcher(
+				stubConfigLoader{},
+				nil,
+				100, 10, 20,
+				nil,
+			).(*session.FileConfigWatcher)
+
+			tt.setup(fcw)
+
+			// Seed state for tests that depend on a previous refresh
+			if tt.name == "unchanged mod time and same model returns false" ||
+				tt.name == "same mod time but different model returns true" {
+				fcw.Refresh("gpt-5")
+			}
+
+			ok, info := fcw.ShouldReloadMain(tt.model)
+			if ok != tt.wantOK {
+				t.Errorf("ShouldReloadMain(%q) = (%v, %v); want ok=%v", tt.model, ok, info, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestFileConfigWatcher_ResolveContextWindow(t *testing.T) {
+	const defaultWindow = 1000000
+
+	tests := []struct {
+		name          string
+		cfg           *config.Config
+		model         string
+		defaultWindow int
+		want          int
+	}{
+		{
+			name: "model present with positive window returns override",
+			cfg: &config.Config{
+				Models: map[string]config.ModelConfig{
+					"gpt-5": {ContextWindow: 128000},
+				},
+			},
+			model:         "gpt-5",
+			defaultWindow: defaultWindow,
+			want:          128000,
+		},
+		{
+			name: "model present with zero window falls back to default",
+			cfg: &config.Config{
+				Models: map[string]config.ModelConfig{
+					"gpt-5": {ContextWindow: 0},
+				},
+			},
+			model:         "gpt-5",
+			defaultWindow: defaultWindow,
+			want:          defaultWindow,
+		},
+		{
+			name: "model present with negative window falls back to default",
+			cfg: &config.Config{
+				Models: map[string]config.ModelConfig{
+					"gpt-5": {ContextWindow: -1},
+				},
+			},
+			model:         "gpt-5",
+			defaultWindow: defaultWindow,
+			want:          defaultWindow,
+		},
+		{
+			name: "model not found returns default",
+			cfg: &config.Config{
+				Models: map[string]config.ModelConfig{
+					"other-model": {ContextWindow: 64000},
+				},
+			},
+			model:         "gpt-5",
+			defaultWindow: defaultWindow,
+			want:          defaultWindow,
+		},
+		{
+			name:          "nil Models map returns default",
+			cfg:           &config.Config{},
+			model:         "gpt-5",
+			defaultWindow: defaultWindow,
+			want:          defaultWindow,
+		},
+		{
+			name: "custom default window is used when model absent",
+			cfg: &config.Config{
+				Models: map[string]config.ModelConfig{},
+			},
+			model:         "gpt-5",
+			defaultWindow: 500000,
+			want:          500000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fcw := session.NewFileConfigWatcher(
+				nil, nil, 100, 10, 20, nil,
+			).(*session.FileConfigWatcher)
+
+			got := fcw.ResolveContextWindow(tt.cfg, tt.model, tt.defaultWindow)
+			if got != tt.want {
+				t.Errorf("ResolveContextWindow(model=%q, default=%d) = %d; want %d",
+					tt.model, tt.defaultWindow, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfigWatcher_LoadSessionConfig_ReadError(t *testing.T) {
 	// Tests the Warn log path in loadSessionConfig when LoadSession returns
 	// a non-IsNotExist error AND the logger is non-nil.
