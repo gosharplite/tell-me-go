@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -16,21 +17,28 @@ import (
 // ExecutionStep executes tools if any.
 type ExecutionStep struct{}
 
+// publishPreExecution extracts tool names from the LLM response and publishes
+// a ToolExecutionStartedEvent. Errors from publishing are non-fatal and discarded
+// (consistent with the existing pattern for pre-execution eventing).
+func (p *ExecutionStep) publishPreExecution(ctx context.Context, Turn *Turn) {
+	if Turn.State.Response == nil {
+		return
+	}
+	names := make([]string, 0, len(Turn.State.Response.Parts))
+	for _, part := range Turn.State.Response.Parts {
+		if part.FunctionCall != nil {
+			names = append(names, part.FunctionCall.Name)
+		}
+	}
+	_ = events.SafePublish(ctx, Turn.Events, events.ToolExecutionStartedEvent{ToolNames: names})
+}
+
 func (p *ExecutionStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 	if !Turn.State.HasToolCalls {
 		return ProcessResult{NextPhase: PhasePersisting}, nil
 	}
 
-	var names []string
-	if Turn.State.Response != nil {
-		names = make([]string, 0, len(Turn.State.Response.Parts))
-		for _, part := range Turn.State.Response.Parts {
-			if part.FunctionCall != nil {
-				names = append(names, part.FunctionCall.Name)
-			}
-		}
-	}
-	_ = events.SafePublish(ctx, Turn.Events, events.ToolExecutionStartedEvent{ToolNames: names})
+	p.publishPreExecution(ctx, Turn)
 
 	toolStart := Turn.Clock.Now()
 
@@ -45,12 +53,7 @@ func (p *ExecutionStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 		return ProcessResult{}, p.handleToolExecutionError(err)
 	}
 
-	if Turn.State.Metrics != nil {
-		Turn.State.Metrics.ToolDuration = Turn.Clock.Now().Sub(toolStart).Seconds()
-		if trace := telemetry.TraceFromContext(ctx); trace != nil {
-			Turn.State.Metrics.CumulativeToolDuration = trace.CumulativeToolDuration().Seconds()
-		}
-	}
+	p.recordToolMetrics(ctx, Turn, toolStart)
 	return ProcessResult{NextPhase: PhasePersisting}, nil
 }
 
@@ -60,6 +63,18 @@ func (p *ExecutionStep) handleToolExecutionError(err error) error {
 		category = llm.ErrTransient
 	}
 	return NewAgentError(category, "tool execution failed", err)
+}
+
+// recordToolMetrics captures tool execution wall-clock duration and updates
+// the cumulative trace duration when an OpenTelemetry trace is present.
+func (p *ExecutionStep) recordToolMetrics(ctx context.Context, Turn *Turn, toolStart time.Time) {
+	if Turn.State.Metrics == nil {
+		return
+	}
+	Turn.State.Metrics.ToolDuration = Turn.Clock.Since(toolStart).Seconds()
+	if trace := telemetry.TraceFromContext(ctx); trace != nil {
+		Turn.State.Metrics.CumulativeToolDuration = trace.CumulativeToolDuration().Seconds()
+	}
 }
 
 func (p *ExecutionStep) validatePayloadLimits(ctx context.Context, Turn *Turn) {
