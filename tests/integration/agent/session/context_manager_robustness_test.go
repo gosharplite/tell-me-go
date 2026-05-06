@@ -48,12 +48,12 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 		&sessctx.HistoryPruner{
 			Policy: &sessctx.SlidingWindowPolicy{MaxTurns: 20},
 		},
-		&sessctx.TokenGatekeeper{
-			MaxTokens:  1000,
-			Estimator:  strategy,
-			Summarizer: cm.Summarizer,
-			Events:     cm.Events,
-		},
+		sessctx.NewTokenGatekeeper(
+			strategy,
+			cm.Summarizer,
+			sessctx.WithMaxTokens(1000),
+			sessctx.WithEvents(cm.Events),
+		),
 		&sessctx.WarningInjector{
 			Strategy: strategy,
 		},

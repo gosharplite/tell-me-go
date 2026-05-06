@@ -74,13 +74,13 @@ func (f *Factory) BuildStandardPipeline(limits events.Limits, extras ...ports.Co
 	}
 
 	transformers = append(transformers,
-		&TokenGatekeeper{
-			MaxTokens:  limits.MaxHistoryTokens,
-			Estimator:  f.Estimator.(TokenEstimator),
-			Summarizer: f.Summarizer,
-			Events:     f.Events,
-			Logger:     f.Logger,
-		},
+		newTokenGatekeeper(
+			f.Estimator.(TokenEstimator),
+			f.Summarizer,
+			withMaxTokens(limits.MaxHistoryTokens),
+			withEvents(f.Events),
+			withLogger(f.Logger),
+		),
 		&emptyTurnFilter{},
 		&WarningInjector{
 			Strategy: f.Estimator.(*Strategy),

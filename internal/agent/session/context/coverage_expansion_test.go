@@ -109,10 +109,12 @@ func (m *mockExpEventBus) WaitStarted()                                      {}
 
 func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	bus := &mockExpEventBus{}
-	tg := &TokenGatekeeper{
-		MaxTokens: 5000, // Buffer will be 500 (10% of 5000)
-		Events:    bus,
-	}
+	tg := newTokenGatekeeper(
+		nil,
+		nil,
+		withMaxTokens(5000),
+		withEvents(bus),
+	)
 	// limit = 5000 - 500 = 4500
 
 	tests := []struct {
@@ -187,7 +189,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start, count := tg.locateCandidateBlock(context.Background(), tt.turns, tt.target, tg.CandidateSelector)
+			start, count := tg.locateCandidateBlock(context.Background(), tt.turns, tt.target, tg.candidateSelector)
 			assert.Equal(t, tt.expectedStart, start)
 			assert.Equal(t, tt.expectedCount, count)
 		})
@@ -200,7 +202,7 @@ func TestCompositePruningPolicy_Name_Coverage(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
-	tg := &TokenGatekeeper{}
+	tg := newTokenGatekeeper(nil, nil)
 	// History with no summarizable blocks (all pinned)
 	history := []*llm.Content{
 		{Role: "user", Pinned: true},
@@ -212,10 +214,12 @@ func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
 
 func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 	bus := &mockExpEventBus{}
-	tg := &TokenGatekeeper{
-		MaxTokens: 1000,
-		Events:    bus,
-	}
+	tg := newTokenGatekeeper(
+		nil,
+		nil,
+		withMaxTokens(1000),
+		withEvents(bus),
+	)
 
 	// Case 1: MaxTokens <= 0
 	tg.MaxTokens = 0

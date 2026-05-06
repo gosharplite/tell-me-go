@@ -49,10 +49,10 @@ func TestContextManager_ValidateSubset_Cancelled(t *testing.T) {
 }
 
 func TestTokenGatekeeper_AutoSummarize_GroupTurnsError(t *testing.T) {
-	tg := &TokenGatekeeper{
-		Estimator:  &agenttest.MockTokenCounter{},
-		Summarizer: &agenttest.MockSummarizer{},
-	}
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{},
+		&agenttest.MockSummarizer{},
+	)
 
 	// Trigger invalid payload via groupTurns failing
 	history := []*llm.Content{
@@ -197,10 +197,11 @@ func TestContextManager_FinalizeSummarization_PrunedError(t *testing.T) {
 
 func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 	mockBus := &mockFailingEventBus{err: errors.New("event error")}
-	tg := &TokenGatekeeper{
-		Events:    mockBus,
-		Estimator: &agenttest.MockTokenCounter{},
-	}
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{},
+		nil,
+		withEvents(mockBus),
+	)
 
 	req := &ports.ContextRequest{
 		Metadata: ports.ContextMetadata{},
@@ -212,10 +213,10 @@ func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_MaintenanceBlocked(t *testing.T) {
-	tg := &TokenGatekeeper{
-		Estimator:  &agenttest.MockTokenCounter{},
-		Summarizer: &agenttest.MockSummarizer{},
-	}
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{},
+		&agenttest.MockSummarizer{},
+	)
 	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "", nil, errors.New("summarize error")
 	})
@@ -339,13 +340,13 @@ func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 		turns[i] = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "u"}}}}
 	}
 
-	start, num := tg.locateCandidateBlock(ctx, turns, 10, tg.CandidateSelector)
+	start, num := tg.locateCandidateBlock(ctx, turns, 10, tg.candidateSelector)
 	require.Equal(t, -1, start)
 	require.Equal(t, 0, num)
 }
 
 func TestTokenGatekeeper_TriggerSummarization_AlreadyAttempted(t *testing.T) {
-	tg := &TokenGatekeeper{}
+	tg := newTokenGatekeeper(nil, nil)
 	req := &ports.ContextRequest{
 		Metadata: ports.ContextMetadata{SummarizationAttempted: true},
 	}
@@ -355,10 +356,10 @@ func TestTokenGatekeeper_TriggerSummarization_AlreadyAttempted(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_OtherError(t *testing.T) {
-	tg := &TokenGatekeeper{
-		Estimator:  &agenttest.MockTokenCounter{},
-		Summarizer: &agenttest.MockSummarizer{},
-	}
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{},
+		&agenttest.MockSummarizer{},
+	)
 	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "", nil, errors.New("other error")
 	})
@@ -384,10 +385,10 @@ func TestTokenGatekeeper_TriggerSummarization_OtherError(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_NilEvents(t *testing.T) {
-	tg := &TokenGatekeeper{
-		Estimator:  &agenttest.MockTokenCounter{},
-		Summarizer: &agenttest.MockSummarizer{},
-	}
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{},
+		&agenttest.MockSummarizer{},
+	)
 	tg.Summarizer.(*agenttest.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
 	})
@@ -411,9 +412,10 @@ func TestTokenGatekeeper_TriggerSummarization_NilEvents(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
-	tg := &TokenGatekeeper{
-		Estimator: &agenttest.MockTokenCounter{},
-	}
+	tg := newTokenGatekeeper(
+		&agenttest.MockTokenCounter{},
+		nil,
+	)
 
 	history := make([]*llm.Content, 12)
 	for i := range history {
@@ -435,7 +437,7 @@ func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
 // return immediately without panicking (covers the untested branch at
 // gatekeeper.go:172).
 func TestTokenGatekeeper_PublishSystemEvent_NilEventBus(t *testing.T) {
-	tg := &TokenGatekeeper{Events: nil}
+	tg := newTokenGatekeeper(nil, nil)
 	// Must not panic
 	tg.publishSystemEvent(context.Background(), "test message", "info")
 }
@@ -445,10 +447,12 @@ func TestTokenGatekeeper_PublishSystemEvent_NilEventBus(t *testing.T) {
 // via getLogger().Error (covers the error-logging branch at gatekeeper.go:180-183).
 func TestTokenGatekeeper_PublishSystemEvent_SafePublishError(t *testing.T) {
 	logger := &agenttest.MockPortsLogger{}
-	tg := &TokenGatekeeper{
-		Events: &mockFailingEventBus{err: errors.New("publish boom")},
-		Logger: logger,
-	}
+	tg := newTokenGatekeeper(
+		nil,
+		nil,
+		withEvents(&mockFailingEventBus{err: errors.New("publish boom")}),
+		withLogger(logger),
+	)
 	tg.publishSystemEvent(context.Background(), "test message", "info")
 
 	require.GreaterOrEqual(t, len(logger.Errors), 1)
@@ -460,10 +464,12 @@ func TestTokenGatekeeper_PublishSystemEvent_SafePublishError(t *testing.T) {
 // and NOT logged (covers the resilience branch at gatekeeper.go:179-180).
 func TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized(t *testing.T) {
 	logger := &agenttest.MockPortsLogger{}
-	tg := &TokenGatekeeper{
-		Events: &mockFailingEventBus{err: events.ErrBusNotInitialized},
-		Logger: logger,
-	}
+	tg := newTokenGatekeeper(
+		nil,
+		nil,
+		withEvents(&mockFailingEventBus{err: events.ErrBusNotInitialized}),
+		withLogger(logger),
+	)
 	tg.publishSystemEvent(context.Background(), "test message", "info")
 
 	require.Empty(t, logger.Errors, "ErrBusNotInitialized should be silently swallowed, not logged")

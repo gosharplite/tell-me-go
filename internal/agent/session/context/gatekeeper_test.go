@@ -106,11 +106,13 @@ func TestTokenGatekeeper_ValidateHardLimits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tg := &TokenGatekeeper{
-				MaxTokens: tt.maxTokens,
-				Events:    tt.bus,
-				Logger:    tt.logger,
-			}
+			tg := newTokenGatekeeper(
+				nil,
+				nil,
+				withMaxTokens(tt.maxTokens),
+				withEvents(tt.bus),
+				withLogger(tt.logger),
+			)
 
 			ctx := context.Background()
 			err := tg.validateHardLimits(ctx, nil, tt.tokens)

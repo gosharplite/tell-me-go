@@ -49,9 +49,10 @@ func TestTokenGatekeeper_DomainBoundaryValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			gatekeeper := &TokenGatekeeper{
-				Estimator: &agenttest.MockTokenCounter{Tokens: 10},
-			}
+			gatekeeper := newTokenGatekeeper(
+				&agenttest.MockTokenCounter{Tokens: 10},
+				nil,
+			)
 
 			req := &ports.ContextRequest{
 				History:  tt.history,

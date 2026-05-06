@@ -53,11 +53,11 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	gatekeeper := &sessctx.TokenGatekeeper{
-		MaxTokens:  100,
-		Estimator:  &agenttest.MockEstimator{},
-		Summarizer: &mockFailingSummarizer{},
-	}
+	gatekeeper := sessctx.NewTokenGatekeeper(
+		&agenttest.MockEstimator{},
+		&mockFailingSummarizer{},
+		sessctx.WithMaxTokens(100),
+	)
 	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95)
 
 	err := gatekeeper.Transform(ctx, req)
@@ -214,11 +214,12 @@ func TestTokenGatekeeper_NilSummarizer(t *testing.T) {
 		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	gatekeeper := &sessctx.TokenGatekeeper{
-		MaxTokens: 100000,
-		Estimator: &agenttest.MockEstimator{},
-		// Summarizer intentionally nil — tests the nil-guard path
-	}
+	gatekeeper := sessctx.NewTokenGatekeeper(
+		&agenttest.MockEstimator{},
+		nil,
+		sessctx.WithMaxTokens(100000),
+	)
+	// Summarizer intentionally nil — tests the nil-guard path
 	// 95% tokens triggers safety pressure (90% threshold) but stays under
 	// the hard limit (MaxTokens - reserved = 100000 - min(1000, 10000) = 99000)
 	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95000)
@@ -239,11 +240,12 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	counter.SetTokens(950)
 	strategy := sessctx.NewStrategy(counter)
 
-	gatekeeper := &sessctx.TokenGatekeeper{
-		MaxTokens: 1000,
-		Estimator: strategy,
-		Events:    mockBus,
-	}
+	gatekeeper := sessctx.NewTokenGatekeeper(
+		strategy,
+		nil,
+		sessctx.WithMaxTokens(1000),
+		sessctx.WithEvents(mockBus),
+	)
 
 	// We need a large payload to trigger the token limit warning
 	largeText := ""
@@ -267,10 +269,11 @@ func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T)
 	tc := &agenttest.MockTokenCounter{}
 	strategy := sessctx.NewStrategy(tc)
 
-	gatekeeper := &sessctx.TokenGatekeeper{
-		MaxTokens: 10,
-		Estimator: strategy,
-	}
+	gatekeeper := sessctx.NewTokenGatekeeper(
+		strategy,
+		nil,
+		sessctx.WithMaxTokens(10),
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
