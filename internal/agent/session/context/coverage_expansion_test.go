@@ -146,9 +146,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
-	tg := &TokenGatekeeper{
-		CandidateSelector: &ContiguousUnpinnedSelector{},
-	}
+	tg := NewTokenGatekeeper(nil, nil)
 
 	pinnedTurn := []*llm.Content{{Pinned: true}}
 	unpinnedTurn := []*llm.Content{{Pinned: false}}
@@ -189,7 +187,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start, count := tg.locateCandidateBlock(context.Background(), tt.turns, tt.target)
+			start, count := tg.locateCandidateBlock(context.Background(), tt.turns, tt.target, tg.CandidateSelector)
 			assert.Equal(t, tt.expectedStart, start)
 			assert.Equal(t, tt.expectedCount, count)
 		})
@@ -252,9 +250,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_CustomSelector(t *testing.T) {
 		minViableBlock: 1,
 	}
 
-	tg := &TokenGatekeeper{
-		CandidateSelector: custom,
-	}
+	tg := NewTokenGatekeeper(nil, nil, WithCandidateSelector(custom))
 
 	turns := [][]*llm.Content{
 		{{Pinned: false}},
@@ -262,7 +258,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_CustomSelector(t *testing.T) {
 		{{Pinned: false}},
 	}
 
-	start, count := tg.locateCandidateBlock(context.Background(), turns, 2)
+	start, count := tg.locateCandidateBlock(context.Background(), turns, 2, custom)
 	assert.Equal(t, 0, start)
 	assert.Equal(t, 2, count)
 }

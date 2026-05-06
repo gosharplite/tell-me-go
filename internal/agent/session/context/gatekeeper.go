@@ -30,6 +30,52 @@ type TokenGatekeeper struct {
 	CandidateSelector CandidateSelector
 }
 
+// GatekeeperOption configures an optional setting on TokenGatekeeper.
+type GatekeeperOption func(*TokenGatekeeper)
+
+// WithMaxTokens sets the maximum token limit for context management.
+func WithMaxTokens(n int) GatekeeperOption {
+	return func(tg *TokenGatekeeper) {
+		tg.MaxTokens = n
+	}
+}
+
+// WithEventBus sets the event bus for publishing lifecycle events.
+func WithEventBus(bus events.EventBus) GatekeeperOption {
+	return func(tg *TokenGatekeeper) {
+		tg.Events = bus
+	}
+}
+
+// WithGatekeeperLogger sets the structured logger.
+func WithGatekeeperLogger(logger ports.Logger) GatekeeperOption {
+	return func(tg *TokenGatekeeper) {
+		tg.Logger = logger
+	}
+}
+
+// WithCandidateSelector sets a custom candidate selection strategy.
+func WithCandidateSelector(sel CandidateSelector) GatekeeperOption {
+	return func(tg *TokenGatekeeper) {
+		tg.CandidateSelector = sel
+	}
+}
+
+// NewTokenGatekeeper creates a TokenGatekeeper with sensible defaults.
+// Required dependencies (estimator, summarizer) are explicit parameters;
+// optional settings are configured via GatekeeperOption functions.
+func NewTokenGatekeeper(estimator TokenEstimator, summarizer ports.Summarizer, opts ...GatekeeperOption) *TokenGatekeeper {
+	tg := &TokenGatekeeper{
+		Estimator:         estimator,
+		Summarizer:        summarizer,
+		CandidateSelector: &ContiguousUnpinnedSelector{},
+	}
+	for _, opt := range opts {
+		opt(tg)
+	}
+	return tg
+}
+
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	// 0. Domain Boundary Validation: Ensure history is structurally sound before processing
 	if _, err := groupTurns(ctx, req.History); err != nil {
@@ -236,10 +282,11 @@ func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 		return 0, 0, 0, err
 	}
 
-	if t.CandidateSelector == nil {
-		t.CandidateSelector = &ContiguousUnpinnedSelector{}
+	selector := t.CandidateSelector
+	if selector == nil {
+		selector = &ContiguousUnpinnedSelector{}
 	}
-	minViable := t.CandidateSelector.MinViableBlock()
+	minViable := selector.MinViableBlock()
 
 	// We want to summarize about 50% of the history, but at least minViable turns.
 	targetTurns := len(turns) / 2
@@ -247,7 +294,7 @@ func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 		targetTurns = minViable
 	}
 
-	startTurn, numTurns := t.locateCandidateBlock(ctx, turns, targetTurns)
+	startTurn, numTurns := t.locateCandidateBlock(ctx, turns, targetTurns, selector)
 
 	if startTurn == -1 || numTurns < minViable {
 		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least %d turns to summarize", minViable)
@@ -260,8 +307,8 @@ func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 	return startIdx, endIdx, numTurns, nil
 }
 
-func (t *TokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int) (int, int) {
-	minViable := t.CandidateSelector.MinViableBlock()
+func (t *TokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int, selector CandidateSelector) (int, int) {
+	minViable := selector.MinViableBlock()
 	startTurn := -1
 	numTurns := 0
 
@@ -270,7 +317,7 @@ func (t *TokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*l
 			return -1, 0
 		}
 
-		if !t.CandidateSelector.IsCandidate(turns[i]) {
+		if !selector.IsCandidate(turns[i]) {
 			if numTurns >= minViable {
 				return startTurn, numTurns
 			}
