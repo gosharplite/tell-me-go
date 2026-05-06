@@ -267,7 +267,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_CustomSelector(t *testing.T) {
 	assert.Equal(t, 2, count)
 }
 
-// customCandidateSelector is a test-only CandidateSelector that returns
+// customCandidateSelector is a test-only candidateSelector that returns
 // constant values for IsCandidate and MinViableBlock.
 type customCandidateSelector struct {
 	candidate      bool

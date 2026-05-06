@@ -27,7 +27,7 @@ type TokenGatekeeper struct {
 	Summarizer        ports.Summarizer
 	Events            events.EventBus
 	Logger            ports.Logger
-	candidateSelector CandidateSelector
+	candidateSelector candidateSelector
 }
 
 // gatekeeperOption configures an optional setting on TokenGatekeeper.
@@ -38,7 +38,7 @@ type gatekeeperOption func(*TokenGatekeeper)
 type GatekeeperOption = gatekeeperOption
 
 // withCandidateSelector sets a custom candidate selection strategy.
-func withCandidateSelector(sel CandidateSelector) gatekeeperOption {
+func withCandidateSelector(sel candidateSelector) gatekeeperOption {
 	return func(tg *TokenGatekeeper) {
 		tg.candidateSelector = sel
 	}
@@ -65,11 +65,6 @@ func withLogger(l ports.Logger) gatekeeperOption {
 	}
 }
 
-// WithCandidateSelector is the public wrapper for withCandidateSelector.
-func WithCandidateSelector(sel CandidateSelector) GatekeeperOption {
-	return withCandidateSelector(sel)
-}
-
 // WithMaxTokens is the public wrapper for withMaxTokens.
 func WithMaxTokens(n int) GatekeeperOption {
 	return withMaxTokens(n)
@@ -78,11 +73,6 @@ func WithMaxTokens(n int) GatekeeperOption {
 // WithEvents is the public wrapper for withEvents.
 func WithEvents(bus events.EventBus) GatekeeperOption {
 	return withEvents(bus)
-}
-
-// WithGatekeeperLogger is the public wrapper for withLogger.
-func WithGatekeeperLogger(l ports.Logger) GatekeeperOption {
-	return withLogger(l)
 }
 
 // newTokenGatekeeper creates a TokenGatekeeper with sensible defaults.
@@ -358,7 +348,7 @@ func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 	return startIdx, endIdx, numTurns, nil
 }
 
-func (t *TokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int, selector CandidateSelector) (int, int) {
+func (t *TokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int, selector candidateSelector) (int, int) {
 	minViable := selector.MinViableBlock()
 	startTurn := -1
 	numTurns := 0
