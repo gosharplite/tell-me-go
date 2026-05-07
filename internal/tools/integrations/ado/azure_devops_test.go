@@ -2406,4 +2406,3 @@ func TestAdoRunPipeline(t *testing.T) {
 			"confirmation prompt must not display the fully qualified ref")
 	})
 }
-
