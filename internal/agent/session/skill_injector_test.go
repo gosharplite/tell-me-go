@@ -45,7 +45,10 @@ func (m *mockLogger) Debug(msg string, args ...any) {}
 func TestSkillInjector_Transform(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-
+	// errLogger is intentionally shared via closure capture by exactly ONE test case
+	// ("SelectSkillsErrorIsLoggedAndSwallowed"). No other case sets logger to a non-nil
+	// value, so no data race exists. Do not reuse errLogger in additional cases without
+	// scoping it per-test or making mockLogger thread-safe.
 	errLogger := &mockLogger{}
 
 	tests := []struct {
