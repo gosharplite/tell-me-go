@@ -217,3 +217,40 @@ func newTestAgent(t *testing.T) (ports.Chatter, InternalAccessor) {
 
 // Ensure stubConfigWatcher satisfies the interface at compile time.
 var _ session.ConfigWatcher = (*stubConfigWatcher)(nil)
+
+// TestApplyConfig_NilEngineAndCtxManager verifies that applyConfig does not
+// panic or error when the agent's engine and context manager are nil. This
+// covers the nil-guard branches in reconfigureEngine (agent.go:260-262) and
+// reconfigureContextManager (agent.go:278-280).
+//
+// A bare agent constructed via NewBareForInternalUse has nil engine and
+// nil ctxManager. We seed just enough state (configWatcher + runtimeConfig)
+// so that prepareRuntimeConfig succeeds, then call ApplyConfig to exercise
+// both nil-guard branches in a single pass.
+//
+// See GitHub issue #218.
+func TestApplyConfig_NilEngineAndCtxManager(t *testing.T) {
+	accessor := NewBareForInternalUse()
+	require.NotNil(t, accessor, "NewBareForInternalUse must return a non-nil accessor")
+
+	// Seed the minimum state needed to reach the nil-guard branches.
+	accessor.SetConfigWatcherForInternalUse(&stubConfigWatcher{
+		tokens:       120000,
+		toolTurns:    200,
+		historyTurns: 0,
+	})
+	accessor.SetRuntimeConfigForInternalUse(
+		"test-provider",
+		"test-model",
+		"test-mode",
+		nil,
+		events.Limits{
+			MaxHistoryTokens: 120000,
+			MaxToolTurns:     200,
+			MaxHistoryTurns:  0,
+		},
+	)
+
+	err := accessor.ApplyConfig(context.Background())
+	require.NoError(t, err, "applyConfig must succeed when engine and ctxManager are nil")
+}
