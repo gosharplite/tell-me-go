@@ -1073,8 +1073,8 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 		Status: events.TurnStatus{SessionTurns: 1},
 	})
 
-	require.True(t, mockLogger.WarnCalledWith("Failed to handle bridge event"),
-		"expected logger.Warn to be called with 'Failed to handle bridge event'")
+	require.True(t, mockLogger.WarnCalledWith("Bridge event failed: actor is dead"),
+		"expected logger.Warn to be called with 'Bridge event failed: actor is dead'")
 
 	// Cleanup bridge — Listen() was never started, so AbortStart is needed.
 	bridge.AbortStart()

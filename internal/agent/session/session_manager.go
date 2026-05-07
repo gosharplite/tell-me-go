@@ -293,7 +293,13 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 	)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
 		if err := bridge.HandleEvent(ctx, e); err != nil {
-			logger.Warn("Failed to handle bridge event", "error", err, "event", fmt.Sprintf("%T", e))
+			if errors.Is(err, ui.ErrActorDead) {
+				logger.Warn("Bridge event failed: actor is dead", "error", err, "event", fmt.Sprintf("%T", e))
+			} else if errors.Is(err, context.Canceled) {
+				logger.Debug("Bridge event skipped: context cancelled", "event", fmt.Sprintf("%T", e))
+			} else {
+				logger.Warn("Failed to handle bridge event", "error", err, "event", fmt.Sprintf("%T", e))
+			}
 		}
 	})
 	return bridge
