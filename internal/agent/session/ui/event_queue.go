@@ -46,7 +46,19 @@ func (eq *eventQueue) enqueueEvent(ctx context.Context, e events.Event) error {
 
 // enqueueCritical delivers a critical event with backpressure. It blocks until
 // the event is sent, the caller context is cancelled, or the actor dies.
+// Context cancellation and actor death are checked with strict priority before
+// the blocking send, so an already-cancelled caller is never allowed to enqueue.
 func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error {
+	// 1. Strict priority: caller cancellation
+	if err := ctx.Err(); err != nil {
+		eq.logger.Debug("Caller context cancelled while waiting to queue critical event")
+		return err
+	}
+	// 2. Strict priority: actor death
+	if err := eq.loopCtx.Err(); err != nil {
+		return fmt.Errorf("uibridge actor is dead: %w", err)
+	}
+	// 3. Blocking send — mid-flight cancellation still caught by these select cases
 	select {
 	case eq.ch <- e:
 		return nil
