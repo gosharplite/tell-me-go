@@ -25,22 +25,28 @@ func noopHeartbeat() chan<- struct{} {
 	return ch
 }
 
+// setupADOServer creates an httptest server, registers cleanup, and returns
+// an AdoManager pointed at it with an already-approved or rejected security confirmer.
+func setupADOServer(t *testing.T, handler http.HandlerFunc, approved bool) *AdoManager {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return NewADOManager(&mockSecurityManager{approved: approved}, WithBaseURL(server.URL), WithToken("test-pat"))
+}
+
 // ============================================================================
 // Build handlers (build.go)
 // ============================================================================
 
 func TestNewGetBuildTimelineHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/build/builds/1/timeline")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"records":[{"id":"1","name":"Task 1"}]}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetBuildTimelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "build_id": 1,
@@ -51,12 +57,11 @@ func TestNewGetBuildTimelineHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetBuildTimelineHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "build_id": 1,
@@ -68,17 +73,14 @@ func TestNewGetBuildTimelineHandler(t *testing.T) {
 }
 
 func TestNewGetTaskLogHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/build/builds/1/logs/5")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("build output\n"))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetTaskLogHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "build_id": 1, "log_id": 5,
@@ -89,12 +91,11 @@ func TestNewGetTaskLogHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetTaskLogHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "build_id": 1, "log_id": 5,
@@ -106,17 +107,14 @@ func TestNewGetTaskLogHandler(t *testing.T) {
 }
 
 func TestNewGetBuildChangesHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/build/builds/1/changes")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":"abc","message":"feat: add"}]}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetBuildChangesHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "build_id": 1,
@@ -127,12 +125,11 @@ func TestNewGetBuildChangesHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetBuildChangesHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "build_id": 1,
@@ -148,17 +145,14 @@ func TestNewGetBuildChangesHandler(t *testing.T) {
 // ============================================================================
 
 func TestNewListPipelinesHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"my-pipeline"}]}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newListPipelinesHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -171,12 +165,11 @@ func TestNewListPipelinesHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newListPipelinesHandler(m, f)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -189,17 +182,14 @@ func TestNewListPipelinesHandler(t *testing.T) {
 }
 
 func TestNewGetPipelineRunHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/runs/101")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":101,"name":"run1","state":"completed","result":"succeeded","createdDate":"d","url":"u"}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newGetPipelineRunHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -212,12 +202,11 @@ func TestNewGetPipelineRunHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newGetPipelineRunHandler(m, f)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -230,17 +219,14 @@ func TestNewGetPipelineRunHandler(t *testing.T) {
 }
 
 func TestNewGetPipelineDefinitionHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines/123")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":123,"name":"test-pipeline"}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetPipelineDefinitionHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "pipeline_id": 123,
@@ -251,12 +237,11 @@ func TestNewGetPipelineDefinitionHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetPipelineDefinitionHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "pipeline_id": 123,
@@ -268,17 +253,14 @@ func TestNewGetPipelineDefinitionHandler(t *testing.T) {
 }
 
 func TestNewListPipelineRunsHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/_apis/build/builds")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":101,"buildNumber":"r1","status":"completed","result":"succeeded","queueTime":"t","repository":{"name":"repo"}}]}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newListPipelineRunsHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -291,12 +273,11 @@ func TestNewListPipelineRunsHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newListPipelineRunsHandler(m, f)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -309,18 +290,15 @@ func TestNewListPipelineRunsHandler(t *testing.T) {
 }
 
 func TestNewGetPipelineLogsHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Log listing (no log_id)", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/logs")
 			assert.NotContains(t, r.URL.Path, "/logs/")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":1,"lineCount":10}]}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -334,15 +312,13 @@ func TestNewGetPipelineLogsHandler(t *testing.T) {
 	})
 
 	t.Run("Log content (with log_id)", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// This endpoint includes log_id in path: .../logs/5
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/logs/5")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("log content here"))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -354,12 +330,11 @@ func TestNewGetPipelineLogsHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -372,17 +347,14 @@ func TestNewGetPipelineLogsHandler(t *testing.T) {
 }
 
 func TestNewCreatePipelineHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Already existed", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":99,"name":"my-pipe"}]}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newCreatePipelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "name": "my-pipe", "repository_id": "r", "yaml_path": "y",
@@ -393,13 +365,12 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"other"}]}`))
-		}))
-		t.Cleanup(server.Close)
+		}, false)
 
-		m := NewADOManager(&mockSecurityManager{approved: false}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newCreatePipelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "name": "my-pipe", "repository_id": "r", "yaml_path": "y",
@@ -410,9 +381,9 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 	})
 
 	t.Run("Created", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet {
-				// Idempotency check: return non-matching pipeline
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"other"}]}`))
 				return
@@ -422,10 +393,8 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 				_, _ = w.Write([]byte(`{"id":200}`))
 				return
 			}
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newCreatePipelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "name": "new-pipe", "repository_id": "r", "yaml_path": "y",
@@ -438,18 +407,15 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 }
 
 func TestNewRunPipelineHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, http.MethodPost, r.Method)
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines/1/runs")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":303,"_links":{"web":{"href":"https://dev.azure.com/x"}}}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newRunPipelineHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -462,6 +428,7 @@ func TestNewRunPipelineHandler(t *testing.T) {
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
+		t.Parallel()
 		m := NewADOManager(&mockSecurityManager{approved: false}, WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newRunPipelineHandler(m, f)
@@ -474,7 +441,8 @@ func TestNewRunPipelineHandler(t *testing.T) {
 	})
 
 	t.Run("Branch formatting", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			var payload map[string]interface{}
 			err := json.NewDecoder(r.Body).Decode(&payload)
 			require.NoError(t, err)
@@ -486,10 +454,8 @@ func TestNewRunPipelineHandler(t *testing.T) {
 
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":404,"_links":{"web":{"href":"https://dev.azure.com/x"}}}`))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newRunPipelineHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -506,11 +472,10 @@ func TestNewRunPipelineHandler(t *testing.T) {
 // ============================================================================
 
 func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
 	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
 		var getCalled, putCalled bool
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/_apis/build/definitions/123")
 			if r.Method == http.MethodGet {
 				getCalled = true
@@ -524,10 +489,8 @@ func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
 				_, _ = w.Write([]byte(`{}`))
 				return
 			}
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newUpdateBuildDefinitionVariablesHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "definition_id": 123,
@@ -545,13 +508,12 @@ func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":123,"variables":{}}`))
-		}))
-		t.Cleanup(server.Close)
+		}, false)
 
-		m := NewADOManager(&mockSecurityManager{approved: false}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newUpdateBuildDefinitionVariablesHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "definition_id": 123,
@@ -567,12 +529,11 @@ func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
 	})
 
 	t.Run("Error propagates", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newUpdateBuildDefinitionVariablesHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "definition_id": 123,
@@ -593,17 +554,13 @@ func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
 // ============================================================================
 
 func TestHandlerNilHeartbeat(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-
-	// getTaskLog accepts an hb channel; passing nil shouldn't panic.
 	t.Run("getTaskLog with nil hb", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("output"))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		handler := newGetTaskLogHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
 			"organization": "o", "project": "p", "build_id": 1, "log_id": 1,
@@ -613,15 +570,13 @@ func TestHandlerNilHeartbeat(t *testing.T) {
 		assert.Equal(t, "output", strings.TrimSpace(result.Text))
 	})
 
-	// getPipelineLogContent (content path) accepts an hb channel
 	t.Run("getPipelineLogs content with nil hb", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("log data"))
-		}))
-		t.Cleanup(server.Close)
+		}, true)
 
-		m := NewADOManager(&mockSecurityManager{approved: true}, WithBaseURL(server.URL), WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
