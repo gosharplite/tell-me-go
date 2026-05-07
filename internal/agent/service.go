@@ -204,7 +204,11 @@ func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]s
 // StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
 func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Config, out io.Writer) (err error) {
 	paths := persistence.ResolvePaths(s.HomeDir, cfg.Mode)
-	// Coverage: defensive guard — ResolvePaths always produces a non-empty TurnsLogPath for all valid modes.
+	// Coverage: defensive guard — ResolvePaths always produces a non-empty TurnsLogPath
+	// for all valid modes (empty/invalid modes fall back to "default"). This guard is
+	// unreachable through the public API but serves as a safety net against future
+	// regressions in path resolution. See TestChatService_StreamTurnsLog_EmptyPath
+	// for verification of the empty-mode fallback behavior.
 	if paths.TurnsLogPath == "" {
 		return errors.New("turns log path not available")
 	}
