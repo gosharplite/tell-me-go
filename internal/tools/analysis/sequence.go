@@ -391,7 +391,12 @@ func (a *defaultSequenceAnalyzer) exprToString(expr ast.Expr) string {
 	}
 }
 
-func (a *defaultSequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
+// findByPrefix attempts to locate a package by matching the symbol against
+// each package's full import path as a prefix (e.g., "github.com/foo/bar.Baz"
+// matches package "github.com/foo/bar"). When multiple packages match, the
+// one with the longest import path wins. Returns the matched package and the
+// remaining portion of the symbol after the package path, or nil if no match.
+func (a *defaultSequenceAnalyzer) findByPrefix(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
 	var startPkg *packages.Package
 	var remaining string
 	for _, p := range allPkgs {
@@ -402,21 +407,38 @@ func (a *defaultSequenceAnalyzer) findStartPackage(symbol string, allPkgs []*pac
 			}
 		}
 	}
+	return startPkg, remaining
+}
 
-	if startPkg == nil {
-		lastDot := strings.LastIndex(symbol, ".")
-		if lastDot != -1 {
-			pkgPath := symbol[:lastDot]
-			remaining = symbol[lastDot+1:]
-			for _, p := range allPkgs {
-				if strings.HasSuffix(p.PkgPath, pkgPath) || p.PkgPath == pkgPath {
-					startPkg = p
-					break
-				}
-			}
+// findBySuffix is the fallback when findByPrefix fails. It takes the portion
+// of the symbol before the last dot as a candidate package path, then searches
+// for a package whose import path either equals that candidate or has it as a
+// suffix. Returns the matched package and the symbol portion after the last dot,
+// or nil if no match.
+func (a *defaultSequenceAnalyzer) findBySuffix(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
+	lastDot := strings.LastIndex(symbol, ".")
+	if lastDot == -1 {
+		return nil, ""
+	}
+	pkgPath := symbol[:lastDot]
+	remaining := symbol[lastDot+1:]
+	for _, p := range allPkgs {
+		if strings.HasSuffix(p.PkgPath, pkgPath) || p.PkgPath == pkgPath {
+			return p, remaining
 		}
 	}
-	return startPkg, remaining
+	return nil, ""
+}
+
+// findStartPackage resolves a symbol string to its containing package using
+// a two-phase strategy: first a prefix match against full import paths, then
+// a suffix/equality fallback. Returns the package and the remaining symbol
+// portion (function name with optional receiver), or nil if unresolved.
+func (a *defaultSequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
+	if pkg, rem := a.findByPrefix(symbol, allPkgs); pkg != nil {
+		return pkg, rem
+	}
+	return a.findBySuffix(symbol, allPkgs)
 }
 
 func (a *defaultSequenceAnalyzer) resolveStartFunc(pkg *packages.Package, remaining string) (*ast.FuncDecl, error) {

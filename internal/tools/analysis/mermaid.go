@@ -127,42 +127,54 @@ func renderStyles(sb *strings.Builder, pkgs []string, cycleEdgeIndices []string)
 	}
 }
 
-func findCycles(graph map[string][]string) [][]string {
-	var cycles [][]string
-	visited := make(map[string]bool)
-	onStack := make(map[string]bool)
-	var path []string
+type cycleDetector struct {
+	graph   map[string][]string
+	visited map[string]bool
+	onStack map[string]bool
+	path    []string
+	cycles  [][]string
+}
 
-	var dfs func(string)
-	dfs = func(u string) {
-		visited[u] = true
-		onStack[u] = true
-		path = append(path, u)
+func (d *cycleDetector) dfs(u string) {
+	d.visited[u] = true
+	d.onStack[u] = true
+	d.path = append(d.path, u)
 
-		deps := graph[u]
-		// Sort deps for deterministic cycle detection if multiple exist
-		sort.Strings(deps)
-		for _, v := range deps {
-			if !visited[v] {
-				dfs(v)
-			} else if onStack[v] {
-				cycleStart := -1
-				for i, node := range path {
-					if node == v {
-						cycleStart = i
-						break
-					}
-				}
-				if cycleStart != -1 {
-					cycle := append([]string{}, path[cycleStart:]...)
-					cycle = append(cycle, v)
-					cycles = append(cycles, cycle)
-				}
+	deps := d.graph[u]
+	// Sort deps for deterministic cycle detection if multiple exist
+	sort.Strings(deps)
+	for _, v := range deps {
+		if !d.visited[v] {
+			d.dfs(v)
+		} else if d.onStack[v] {
+			cycle := d.buildCycle(v)
+			if cycle != nil {
+				d.cycles = append(d.cycles, cycle)
 			}
 		}
+	}
 
-		onStack[u] = false
-		path = path[:len(path)-1]
+	d.onStack[u] = false
+	d.path = d.path[:len(d.path)-1]
+}
+
+func (d *cycleDetector) buildCycle(v string) []string {
+	for i, node := range d.path {
+		if node == v {
+			cycle := make([]string, len(d.path)-i+1)
+			copy(cycle, d.path[i:])
+			cycle[len(cycle)-1] = v
+			return cycle
+		}
+	}
+	return nil
+}
+
+func findCycles(graph map[string][]string) [][]string {
+	d := &cycleDetector{
+		graph:   graph,
+		visited: make(map[string]bool),
+		onStack: make(map[string]bool),
 	}
 
 	nodes := make([]string, 0, len(graph))
@@ -172,9 +184,9 @@ func findCycles(graph map[string][]string) [][]string {
 	sort.Strings(nodes)
 
 	for _, n := range nodes {
-		if !visited[n] {
-			dfs(n)
+		if !d.visited[n] {
+			d.dfs(n)
 		}
 	}
-	return cycles
+	return d.cycles
 }
