@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,7 +101,8 @@ func TestEventQueue_EnqueueCritical_MidFlightCallerCancel(t *testing.T) {
 	f.FillQueue(events.TurnStatusEvent{})
 
 	inSelect := make(chan struct{})
-	f.bridge.SetBeforeBlockingSendHook(func() { close(inSelect) })
+	var once sync.Once
+	f.bridge.SetBeforeBlockingSendHook(func() { once.Do(func() { close(inSelect) }) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -132,7 +134,8 @@ func TestEventQueue_EnqueueCritical_MidFlightActorDeath(t *testing.T) {
 	f.FillQueue(events.TurnStatusEvent{})
 
 	inSelect := make(chan struct{})
-	f.bridge.SetBeforeBlockingSendHook(func() { close(inSelect) })
+	var once sync.Once
+	f.bridge.SetBeforeBlockingSendHook(func() { once.Do(func() { close(inSelect) }) })
 
 	done := make(chan struct{})
 	go func() {
