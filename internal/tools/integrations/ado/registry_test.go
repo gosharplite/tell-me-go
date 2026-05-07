@@ -53,16 +53,18 @@ func (m *mockRegistry) Execute(ctx context.Context, name string, args map[string
 	return tools.ToolResult{}, nil
 }
 
-func (m *mockRegistry) IsSerial(name string) bool      { return false }
-func (m *mockRegistry) IsLongRunning(name string) bool  { return false }
+func (m *mockRegistry) IsSerial(name string) bool                { return false }
+func (m *mockRegistry) IsLongRunning(name string) bool           { return false }
 func (m *mockRegistry) GetOptions(name string) tools.ToolOptions { return tools.ToolOptions{} }
 
 // --- tools.ToolMetadataProvider ---
 
-func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration                 { return nil }
-func (m *mockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration             { return nil }
-func (m *mockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration { return nil }
-func (m *mockRegistry) ListAvailableToolkits() []string                           { return nil }
+func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration     { return nil }
+func (m *mockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration { return nil }
+func (m *mockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return nil
+}
+func (m *mockRegistry) ListAvailableToolkits() []string { return nil }
 
 // --- Helpers ---
 
