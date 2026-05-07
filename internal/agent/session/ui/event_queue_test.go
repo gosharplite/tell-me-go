@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -99,21 +100,20 @@ func TestEventQueue_EnqueueCritical_MidFlightCallerCancel(t *testing.T) {
 	f.BlockLoop(t)
 	f.FillQueue(events.TurnStatusEvent{})
 
+	inSelect := make(chan struct{})
+	var once sync.Once
+	f.bridge.SetBeforeBlockingSendHook(func() { once.Do(func() { close(inSelect) }) })
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan struct{})
-	started := make(chan struct{})
 	go func() {
-		close(started)
 		_ = f.bridge.HandleEvent(ctx, events.TurnStatusEvent{})
 		close(done)
 	}()
 
-	<-started
-	// Give the goroutine time to pass HandleEvent's guard and the pre-guards
-	time.Sleep(10 * time.Millisecond)
-
-	cancel() // mid-flight caller cancellation
+	<-inSelect // deterministic: goroutine has passed both pre-guards, now in select
+	cancel()   // mid-flight caller cancellation — guaranteed to hit <-ctx.Done()
 
 	select {
 	case <-done:
@@ -133,19 +133,18 @@ func TestEventQueue_EnqueueCritical_MidFlightActorDeath(t *testing.T) {
 	f.BlockLoop(t)
 	f.FillQueue(events.TurnStatusEvent{})
 
+	inSelect := make(chan struct{})
+	var once sync.Once
+	f.bridge.SetBeforeBlockingSendHook(func() { once.Do(func() { close(inSelect) }) })
+
 	done := make(chan struct{})
-	started := make(chan struct{})
 	go func() {
-		close(started)
 		_ = f.bridge.HandleEvent(context.Background(), events.TurnStatusEvent{})
 		close(done)
 	}()
 
-	<-started
-	// Give the goroutine time to pass HandleEvent's guard and the pre-guards
-	time.Sleep(10 * time.Millisecond)
-
-	f.bridge.KillActor() // mid-flight actor death
+	<-inSelect   // deterministic: goroutine has passed both pre-guards, now in select
+	f.bridge.KillActor() // mid-flight actor death — guaranteed to hit <-eq.loopCtx.Done()
 
 	select {
 	case <-done:
