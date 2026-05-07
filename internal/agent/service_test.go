@@ -685,6 +685,37 @@ func TestRunDiagnostics(t *testing.T) {
 			},
 		},
 		{
+			name:       "JSON marshal error",
+			jsonOutput: true,
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetHealthManager").Return(hcm)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				// Construct a report with an un-marshalable Details field.
+				// json.MarshalIndent cannot serialize a channel, so the defensive
+				// guard at service.go:258-260 is exercised.
+				unmarshalableReport := &ports.HealthReport{
+					OverallStatus: ports.StatusHealthy,
+					Components: map[ports.Component]ports.ComponentReport{
+						ports.CompPersistence: {
+							Component: ports.CompPersistence,
+							Status:    ports.StatusHealthy,
+							Message:   "OK",
+							Details:   make(chan int),
+						},
+					},
+				}
+				hcm.On("CheckAll", mock.Anything).Return(unmarshalableReport, nil)
+			},
+			wantErr: true,
+			errMsg:  "failed to serialize health report",
+		},
+		{
 			name: "build deps error",
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
