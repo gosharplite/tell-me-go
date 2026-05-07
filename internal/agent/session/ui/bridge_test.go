@@ -850,3 +850,59 @@ func TestUIBridge_HandleEvent_ActorDead(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "uibridge actor is dead")
 }
+
+// TestUIBridge_EnqueueCritical_CallerContextCancelled verifies that
+// enqueueCritical returns context.Canceled when the caller's context
+// is cancelled while the queue is full (backpressure path).
+func TestUIBridge_EnqueueCritical_CallerContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	mRenderer := new(agenttest.MockUIRenderer)
+
+	// Block the renderer so the Listen loop gets stuck processing the
+	// first event. This keeps the channel buffer available for us to fill.
+	blockRender := make(chan struct{})
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).
+		Run(func(_ mock.Arguments) { <-blockRender }).
+		Return().
+		Twice()
+
+	bridge := NewBridge(mRenderer, withBridgeQueueCapacity(1))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
+	defer func() {
+		close(blockRender) // unblock renderer so cleanup can proceed
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
+
+	// Step 1: Send a critical event. The Listen loop consumes it from the
+	// channel and blocks inside LogTurnStatus (mock is blocked on blockRender).
+	_ = bridge.HandleEvent(context.Background(), events.TurnStatusEvent{})
+
+	// Step 2: Now the channel buffer is empty but the loop is stuck.
+	// Fill the single-slot buffer via sendDirect (bypasses classification).
+	bridge.queue.sendDirect(events.TurnStatusEvent{})
+
+	// Step 3: Queue is full (capacity=1). Call HandleEvent with a cancelled
+	// context. The select in enqueueCritical sees:
+	//   - eq.ch <- e  → blocks (channel full)
+	//   - ctx.Done()  → ready (cancelled)
+	//   - loopCtx.Done() → not ready (actor alive)
+	// ctx.Done() wins deterministically because it's the only ready branch.
+	cancelledCtx, cancel2 := context.WithCancel(context.Background())
+	cancel2()
+	err := bridge.HandleEvent(cancelledCtx, events.TurnStatusEvent{})
+
+	assert.ErrorIs(t, err, context.Canceled,
+		"enqueueCritical should return context.Canceled when caller context is cancelled with full queue")
+}
