@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
+
+// ErrActorDead is returned when an event cannot be enqueued because the bridge
+// actor's internal loop context has been cancelled. Callers can use errors.Is
+// to distinguish this terminal condition from transient caller cancellations.
+var ErrActorDead = errors.New("uibridge actor is dead")
 
 // eventQueue manages the event channel lifecycle: creation, backpressure-aware
 // enqueue, drain, and close. It owns the channel and the isClosed flag.
@@ -56,7 +62,7 @@ func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error
 	}
 	// 2. Strict priority: actor death
 	if err := eq.loopCtx.Err(); err != nil {
-		return fmt.Errorf("uibridge actor is dead: %w", err)
+		return fmt.Errorf("%w: %v", ErrActorDead, err)
 	}
 	// 3. Blocking send — mid-flight cancellation still caught by these select cases
 	select {
@@ -66,7 +72,7 @@ func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error
 		eq.logger.Debug("Caller context cancelled while waiting to queue critical event")
 		return ctx.Err()
 	case <-eq.loopCtx.Done():
-		return fmt.Errorf("uibridge actor is dead: %w", eq.loopCtx.Err())
+		return fmt.Errorf("%w: %v", ErrActorDead, eq.loopCtx.Err())
 	}
 }
 
@@ -81,7 +87,7 @@ func (eq *eventQueue) enqueueNonCritical(ctx context.Context, e events.Event) er
 	}
 	// 2. Strict priority: actor death
 	if err := eq.loopCtx.Err(); err != nil {
-		return fmt.Errorf("uibridge actor is dead: %w", err)
+		return fmt.Errorf("%w: %v", ErrActorDead, err)
 	}
 	// 3. Non-blocking send with load-shedding
 	select {
