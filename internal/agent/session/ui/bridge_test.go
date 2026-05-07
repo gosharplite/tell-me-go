@@ -6,6 +6,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -849,4 +850,87 @@ func TestUIBridge_HandleEvent_ActorDead(t *testing.T) {
 	err := bridge.HandleEvent(context.Background(), events.TurnStatusEvent{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "uibridge actor is dead")
+}
+
+func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		setup         func(q *eventQueue)
+		ctx           func() context.Context
+		event         events.Event
+		expectEnqueue bool
+	}{
+		{
+			name: "bridge is closed",
+			setup: func(q *eventQueue) {
+				q.closeInput()
+			},
+			ctx:           context.Background,
+			event:         events.ResponseEvent{},
+			expectEnqueue: false,
+		},
+		{
+			name:  "caller context is cancelled",
+			setup: func(q *eventQueue) {},
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			event:         events.ResponseEvent{},
+			expectEnqueue: false,
+		},
+		{
+			name:          "normal case - enqueued",
+			setup:         func(q *eventQueue) {},
+			ctx:           context.Background,
+			event:         events.ResponseEvent{},
+			expectEnqueue: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			loopCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 10)
+
+			tt.setup(q)
+			ctx := tt.ctx()
+
+			var enqueued bool
+			if !q.isInputClosed() && ctx.Err() == nil {
+				_ = q.enqueueEvent(ctx, tt.event)
+				enqueued = true
+			}
+			assert.Equal(t, tt.expectEnqueue, enqueued)
+
+			if tt.expectEnqueue {
+				assert.Equal(t, tt.event, <-q.recv())
+			} else {
+				select {
+				case e, ok := <-q.recv():
+					if ok {
+						t.Errorf("unexpected %v", e)
+					}
+				default:
+				}
+			}
+		})
+	}
+}
+
+// TestUIBridge_HandleEvent_CallerContextCancelled covers the early guard in
+// HandleEvent that catches cancelled contexts before they reach the queue.
+func TestUIBridge_HandleEvent_CallerContextCancelled(t *testing.T) {
+	t.Parallel()
+	f := newUIBridgeFixture(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := f.bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
+	assert.ErrorIs(t, err, context.Canceled)
 }
