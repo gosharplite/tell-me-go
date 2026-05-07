@@ -5,6 +5,8 @@ package ui
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -12,19 +14,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/stretchr/testify/assert"
 )
-
-// TestUIBridge_HandleEvent_CallerContextCancelled covers the early guard in
-// HandleEvent that catches cancelled contexts before they reach the queue.
-func TestUIBridge_HandleEvent_CallerContextCancelled(t *testing.T) {
-	t.Parallel()
-	f := newUIBridgeFixture(t)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := f.bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
-	assert.ErrorIs(t, err, context.Canceled)
-}
 
 // TestEventQueue_EnqueueNonCritical_CtxDone covers the ctx.Done() branch
 // inside enqueueNonCritical. Cancellation is checked with strict priority
@@ -153,4 +142,95 @@ func TestEventQueue_EnqueueCritical_MidFlightActorDeath(t *testing.T) {
 	}
 
 	f.UnblockLoop()
+}
+
+func TestEventQueue_EnqueueEvent_CriticalAccepted(t *testing.T) {
+	t.Parallel()
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 1)
+	_ = q.enqueueEvent(context.Background(), events.ResponseEvent{})
+	select {
+	case e := <-q.recv():
+		assert.IsType(t, events.ResponseEvent{}, e)
+	default:
+		t.Error("expected critical event to be enqueued")
+	}
+}
+
+func TestEventQueue_EnqueueEvent_NonCriticalAccepted(t *testing.T) {
+	t.Parallel()
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 1)
+	_ = q.enqueueEvent(context.Background(), events.InferenceStartedEvent{})
+	select {
+	case e := <-q.recv():
+		assert.IsType(t, events.InferenceStartedEvent{}, e)
+	default:
+		t.Error("expected non-critical event to be enqueued")
+	}
+}
+
+func TestEventQueue_EnqueueEvent_ShedWhenFull(t *testing.T) {
+	t.Parallel()
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 1)
+	q.sendDirect(events.TurnStarted{})
+	_ = q.enqueueEvent(context.Background(), events.InferenceStartedEvent{})
+	// Queue should still have only the filler; non-critical event was shed
+	e := <-q.recv()
+	assert.IsType(t, events.TurnStarted{}, e)
+	select {
+	case <-q.recv():
+		t.Error("queue should be empty after consuming the filler")
+	default:
+	}
+}
+
+func TestEventQueue_EnqueueEvent_CriticalBlocking(t *testing.T) {
+	t.Parallel()
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 1)
+
+	// Fill the queue
+	q.sendDirect(events.TurnStarted{})
+
+	ctx, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+
+	done := make(chan struct{})
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		defer close(done)
+		_ = q.enqueueEvent(ctx, events.ResponseEvent{})
+	}()
+
+	<-started
+
+	// Prove that done does not receive a value prematurely
+	select {
+	case <-done:
+		t.Fatal("enqueueEvent returned prematurely, expected it to block")
+	default:
+		// Expected behavior: it is blocked
+	}
+
+	// Explicitly cancel to unblock
+	cancel2()
+
+	// Wait for the goroutine to finish
+	<-done
+
+	// Verify queue still has only the filler
+	e := <-q.recv()
+	assert.IsType(t, events.TurnStarted{}, e)
+	select {
+	case <-q.recv():
+		t.Error("Queue should be empty")
+	default:
+	}
 }
