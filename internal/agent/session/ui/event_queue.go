@@ -59,15 +59,22 @@ func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error
 }
 
 // enqueueNonCritical delivers a non-critical event with load-shedding.
-// If the queue is full, the event is silently dropped (best-effort delivery).
+// Context cancellation and actor death are checked with strict priority
+// before the send attempt, so a cancelled caller always gets an error
+// rather than having their event silently shed.
 func (eq *eventQueue) enqueueNonCritical(ctx context.Context, e events.Event) error {
+	// 1. Strict priority: caller cancellation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// 2. Strict priority: actor death
+	if err := eq.loopCtx.Err(); err != nil {
+		return fmt.Errorf("uibridge actor is dead: %w", err)
+	}
+	// 3. Non-blocking send with load-shedding
 	select {
 	case eq.ch <- e:
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-eq.loopCtx.Done():
-		return fmt.Errorf("uibridge actor is dead: %w", eq.loopCtx.Err())
 	default:
 		eq.logger.Debug("UI Bridge queue full, shedding load/visual event")
 		return nil
