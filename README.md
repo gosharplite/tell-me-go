@@ -14,7 +14,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
 `tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance, provides a rich TUI for history exploration, and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
-*   **Multi-Provider Reasoning**: Native support for Gemini 1.5/2.0/3.0/3.1, GPT-4o/o1/o3/5/5.5, DeepSeek R1/V4, and Claude 3.5/3.7/4/4.7.
+*   **Multi-Provider Reasoning**: Native support for Gemini 3.0/3.1, GPT-5.4/5.5, DeepSeek V3.2/V4, and Claude 4.7 — across Google Vertex AI, OpenAI, DeepSeek, and Anthropic APIs.
 *   **Intelligence & Context**:
     *   **Dynamic Skill Injection**: Automatically injects idiomatic Go patterns (`golang-patterns`) and TDD best practices (`golang-testing`) into the context based on task relevance.
     *   **Unified Domain Model**: Optimized for a provider-agnostic `Thought` architecture, ensuring consistent reasoning across models.
@@ -122,17 +122,49 @@ MODE: "assistant"
 PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
 
 # --- Active Provider ---
-SELECTED_PROVIDER: "google"
+SELECTED_PROVIDER: "deepseek-flash"
 
 # --- Provider Registry ---
 PROVIDERS:
-  google:
+  deepseek-flash:
+    TYPE: "deepseek"
+    MODEL: "deepseek-v4-flash"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
+  deepseek-pro:
+    TYPE: "deepseek"
+    MODEL: "deepseek-v4-pro"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
+  vertex-deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-ai/deepseek-v3.2-maas"
+    URL: "https://aiplatform.googleapis.com/v1beta1/projects/${GOOGLE_PROJECT_ID}/locations/global/endpoints/openapi"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
+  vertex-flash:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
     URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
     API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+  vertex-pro:
+    TYPE: "gemini"
+    MODEL: "gemini-3.1-pro-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+  vertex-claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-7"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/anthropic/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
+    THINKING_BUDGET: 32768
   openai:
     TYPE: "openai"
     MODEL: "gpt-5.5"
@@ -160,6 +192,8 @@ MAX_CONCURRENT_TOOLS: 5
 TOOL_TIMEOUT: 300
 
 # --- Safety & History ---
+# Set to true to disable all interactive security prompts (ideal for automated workflows)
+# BYPASS_CONFIRMATION: false
 MAX_TURNS: 1000
 MAX_HISTORY_TOKENS: 1000000
 
@@ -168,15 +202,39 @@ MODELS:
   "deepseek-v4-flash":
     CONTEXT_WINDOW: 1000000
     PRICING:
-      HIT:      0.028
-      MISS:     0.28
-      COMP:     0.42
+      HIT:      0.0028
+      MISS:     0.14
+      COMP:     0.28
   "deepseek-v4-pro":
     CONTEXT_WINDOW: 1000000
     PRICING:
-      HIT:      0.145
-      MISS:     1.74
-      COMP:     3.84
+      HIT:      0.003625
+      MISS:     0.435
+      COMP:     0.87
+  "deepseek-ai/deepseek-v3.2-maas":
+    CONTEXT_WINDOW: 163840
+    PRICING:
+      HIT:      0.056
+      MISS:     0.56
+      COMP:     1.68
+  "gemini-3-flash-preview":
+    CONTEXT_WINDOW: 200000
+    PRICING:
+      HIT: 0.09
+      MISS: 0.90
+      COMP: 5.40
+  "gemini-3.1-pro-preview":
+    CONTEXT_WINDOW: 200000
+    PRICING:
+      HIT: 0.36
+      MISS: 3.60
+      COMP: 21.60
+  "gpt-5.4":
+    CONTEXT_WINDOW: 200000
+    PRICING:
+      HIT: 0.25
+      MISS: 2.50
+      COMP: 15.00
   "gpt-5.5":
     CONTEXT_WINDOW: 200000
     PRICING:
@@ -189,10 +247,6 @@ MODELS:
       HIT: 0.50
       MISS: 6.25
       COMP: 25.00
-  "gemini-3-flash-preview":
-    CONTEXT_WINDOW: 200000
-  "gemini-3.1-pro-preview":
-    CONTEXT_WINDOW: 200000
 ```
 
 ## ⌨️ Shell Integration (Recommended)
