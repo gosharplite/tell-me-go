@@ -50,21 +50,53 @@ func (eq *eventQueue) enqueueEvent(ctx context.Context, e events.Event) error {
 	return eq.enqueueNonCritical(ctx, e)
 }
 
+// checkPreconditionsCritical enforces the strict-priority cancellation
+// contract (ADR-031): caller cancellation > actor death > delivery.
+// It returns the appropriate error if either context is already cancelled,
+// or nil if the send may proceed. Caller cancellation emits a debug log
+// to aid backpressure debugging on the critical path.
+func (eq *eventQueue) checkPreconditionsCritical(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		eq.logger.Debug("Caller context cancelled while waiting to queue critical event")
+		return err
+	}
+	if err := eq.loopCtx.Err(); err != nil {
+		return eq.wrapActorDead(err)
+	}
+	return nil
+}
+
+// checkPreconditionsNonCritical enforces the strict-priority cancellation
+// contract (ADR-031) for non-critical events: caller cancellation > actor
+// death > delivery. It differs from checkPreconditionsCritical only in
+// that caller cancellation does NOT log — the non-critical hot path
+// avoids log spam during normal load-shed scenarios.
+func (eq *eventQueue) checkPreconditionsNonCritical(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := eq.loopCtx.Err(); err != nil {
+		return eq.wrapActorDead(err)
+	}
+	return nil
+}
+
+// wrapActorDead wraps an actor-death error with the canonical ErrActorDead
+// sentinel, ensuring callers can consistently use errors.Is to detect this
+// terminal condition regardless of whether the actor died before or during
+// the blocking send.
+func (eq *eventQueue) wrapActorDead(err error) error {
+	return fmt.Errorf("%w: %v", ErrActorDead, err)
+}
+
 // enqueueCritical delivers a critical event with backpressure. It blocks until
 // the event is sent, the caller context is cancelled, or the actor dies.
 // Context cancellation and actor death are checked with strict priority before
 // the blocking send, so an already-cancelled caller is never allowed to enqueue.
 func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error {
-	// 1. Strict priority: caller cancellation
-	if err := ctx.Err(); err != nil {
-		eq.logger.Debug("Caller context cancelled while waiting to queue critical event")
+	if err := eq.checkPreconditionsCritical(ctx); err != nil {
 		return err
 	}
-	// 2. Strict priority: actor death
-	if err := eq.loopCtx.Err(); err != nil {
-		return fmt.Errorf("%w: %v", ErrActorDead, err)
-	}
-	// 3. Blocking send — mid-flight cancellation still caught by these select cases
 	select {
 	case eq.ch <- e:
 		return nil
@@ -72,7 +104,7 @@ func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error
 		eq.logger.Debug("Caller context cancelled while waiting to queue critical event")
 		return ctx.Err()
 	case <-eq.loopCtx.Done():
-		return fmt.Errorf("%w: %v", ErrActorDead, eq.loopCtx.Err())
+		return eq.wrapActorDead(eq.loopCtx.Err())
 	}
 }
 
@@ -81,15 +113,9 @@ func (eq *eventQueue) enqueueCritical(ctx context.Context, e events.Event) error
 // before the send attempt, so a cancelled caller always gets an error
 // rather than having their event silently shed.
 func (eq *eventQueue) enqueueNonCritical(ctx context.Context, e events.Event) error {
-	// 1. Strict priority: caller cancellation
-	if err := ctx.Err(); err != nil {
+	if err := eq.checkPreconditionsNonCritical(ctx); err != nil {
 		return err
 	}
-	// 2. Strict priority: actor death
-	if err := eq.loopCtx.Err(); err != nil {
-		return fmt.Errorf("%w: %v", ErrActorDead, err)
-	}
-	// 3. Non-blocking send with load-shedding
 	select {
 	case eq.ch <- e:
 		return nil
