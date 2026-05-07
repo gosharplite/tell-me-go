@@ -23,14 +23,39 @@ func (m *mockSkillSelector) SelectSkills(ctx context.Context, taskDescription st
 	return m.selected, m.err
 }
 
+// mockLogger records Warn calls for assertion in tests.
+type mockLogger struct {
+	warns []struct {
+		msg  string
+		args []any
+	}
+}
+
+func (m *mockLogger) Warn(msg string, args ...any) {
+	m.warns = append(m.warns, struct {
+		msg  string
+		args []any
+	}{msg, args})
+}
+
+func (m *mockLogger) Error(msg string, args ...any) {}
+func (m *mockLogger) Info(msg string, args ...any)  {}
+func (m *mockLogger) Debug(msg string, args ...any) {}
+
 func TestSkillInjector_Transform(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	// errLogger is intentionally shared via closure capture by exactly ONE test case
+	// ("SelectSkillsErrorIsLoggedAndSwallowed"). No other case sets logger to a non-nil
+	// value, so no data race exists. Do not reuse errLogger in additional cases without
+	// scoping it per-test or making mockLogger thread-safe.
+	errLogger := &mockLogger{}
 
 	tests := []struct {
 		name     string
 		selector skills.SkillSelector
 		req      *ports.ContextRequest
+		logger   ports.Logger
 		validate func(t *testing.T, req *ports.ContextRequest)
 	}{
 		{
@@ -118,6 +143,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 					{Role: "user", Parts: []*llm.Part{{Text: "how do I test in Go?"}}},
 				},
 			},
+			logger: errLogger,
 			validate: func(t *testing.T, req *ports.ContextRequest) {
 				// Transform must NOT return an error — the failure is logged, not propagated.
 				// History must remain unchanged (no injection, no mutation).
@@ -127,6 +153,13 @@ func TestSkillInjector_Transform(t *testing.T) {
 				if req.PersistHistory {
 					t.Error("expected PersistHistory to remain false when skill selection fails")
 				}
+				// Verify the warning was logged.
+				if len(errLogger.warns) != 1 {
+					t.Fatalf("expected 1 warning call, got %d", len(errLogger.warns))
+				}
+				if errLogger.warns[0].msg != "skill selection failed; proceeding without injected skills" {
+					t.Errorf("unexpected warning message: %q", errLogger.warns[0].msg)
+				}
 			},
 		},
 	}
@@ -135,7 +168,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			injector := &skillInjector{Selector: tt.selector}
+			injector := &skillInjector{Selector: tt.selector, Logger: tt.logger}
 			err := injector.Transform(ctx, tt.req)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
