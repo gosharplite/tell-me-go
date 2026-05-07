@@ -408,7 +408,7 @@ func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.Function
 		return errors.Join(planErrors...)
 	}
 
-	return ctx.Err()
+	return nil
 }
 
 func (e *Dispatcher) checkPreconditions(ctx context.Context, batchIdx int, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) error {
