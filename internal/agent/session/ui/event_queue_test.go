@@ -143,7 +143,7 @@ func TestEventQueue_EnqueueCritical_MidFlightActorDeath(t *testing.T) {
 		close(done)
 	}()
 
-	<-inSelect   // deterministic: goroutine has passed both pre-guards, now in select
+	<-inSelect           // deterministic: goroutine has passed both pre-guards, now in select
 	f.bridge.KillActor() // mid-flight actor death — guaranteed to hit <-eq.loopCtx.Done()
 
 	select {
