@@ -22,6 +22,9 @@ type MockSecurityManager struct {
 	AuthorizeFunc   func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
 	IsSafeFunc      func(path string) (string, error)
 	IsWritableFunc  func(path string) (string, error)
+	ConfirmFunc     func(ctx context.Context, message string) (bool, error)
+	ConfirmCalled   bool
+	LastConfirmText string
 	Interactor      security.UserInteractor
 }
 
@@ -62,6 +65,11 @@ func (m *MockSecurityManager) Prompt(message string)               {}
 func (m *MockSecurityManager) Warn(message string)                 {}
 
 func (m *MockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	m.ConfirmCalled = true
+	m.LastConfirmText = message
+	if m.ConfirmFunc != nil {
+		return m.ConfirmFunc(ctx, message)
+	}
 	if m.Interactor != nil {
 		return m.Interactor.Confirm(ctx, message)
 	}

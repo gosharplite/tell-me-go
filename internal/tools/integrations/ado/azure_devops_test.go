@@ -1041,7 +1041,7 @@ func TestGetBuildChanges(t *testing.T) {
 
 func TestAdoTools_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	commonArgs := map[string]interface{}{
 		"organization": "myorg",
@@ -2222,7 +2222,7 @@ func TestCreatePipeline(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			sm := &mockSecurityManager{approved: tt.approved}
+			sm := &toolstest.MockSecurityManager{AllowAll: tt.approved, ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return tt.approved, nil }}
 			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 			// Pre-populate cache to test invalidation
@@ -2244,7 +2244,7 @@ func TestCreatePipeline(t *testing.T) {
 			assert.Equal(t, tt.wantPipelineID, result.PipelineID)
 			assert.Equal(t, tt.wantName, result.Name)
 			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
-			assert.Equal(t, tt.expectConfirm, sm.confirmCalled, "Confirm call mismatch")
+			assert.Equal(t, tt.expectConfirm, sm.ConfirmCalled, "Confirm call mismatch")
 
 			if tt.name == "Success" {
 				_, exists := m.pipelineCache.Load(cacheKey)
@@ -2294,7 +2294,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &mockSecurityManager{approved: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		// Branch is the raw user-facing name; _ref_name is the formatted ADO ref.
@@ -2314,12 +2314,12 @@ func TestAdoRunPipeline(t *testing.T) {
 		assert.Equal(t, 101, result.RunID)
 		assert.Equal(t, "https://dev.azure.com/myorg/myproj/_build/results?buildId=101", result.WebURL)
 		// Confirmation prompt should show the raw branch, not the formatted ref.
-		assert.Contains(t, sm.lastConfirmText, "branch: feature")
-		assert.NotContains(t, sm.lastConfirmText, "branch: refs/heads/feature")
+		assert.Contains(t, sm.LastConfirmText, "branch: feature")
+		assert.NotContains(t, sm.LastConfirmText, "branch: refs/heads/feature")
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
-		sm := &mockSecurityManager{approved: false}
+		sm := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }}
 		m := NewADOManager(sm)
 
 		args := map[string]interface{}{
@@ -2359,7 +2359,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &mockSecurityManager{approved: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		// No _ref_name: exercises the defensive fallback path.
@@ -2385,7 +2385,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &mockSecurityManager{approved: false} // decline so no HTTP body assertion needed
+		sm := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }} // decline so no HTTP body assertion needed
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
@@ -2400,38 +2400,9 @@ func TestAdoRunPipeline(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, result.Cancelled)
 
-		assert.Contains(t, sm.lastConfirmText, "branch: main",
+		assert.Contains(t, sm.LastConfirmText, "branch: main",
 			"confirmation prompt should display the raw branch name")
-		assert.NotContains(t, sm.lastConfirmText, "branch: refs/heads/main",
+		assert.NotContains(t, sm.LastConfirmText, "branch: refs/heads/main",
 			"confirmation prompt must not display the fully qualified ref")
 	})
 }
-
-type mockSecurityManager struct {
-	approved        bool
-	err             error
-	confirmCalled   bool
-	lastConfirmText string
-}
-
-func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
-func (m *mockSecurityManager) IsPathWritable(path string) (string, error) {
-	return path, nil
-}
-func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
-	return m.approved, m.err
-}
-func (m *mockSecurityManager) LogAudit(action string, args ...any) {}
-func (m *mockSecurityManager) TerminalLock()                       {}
-func (m *mockSecurityManager) TerminalUnlock()                     {}
-func (m *mockSecurityManager) Prompt(message string)               {}
-func (m *mockSecurityManager) Warn(message string)                 {}
-func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	m.confirmCalled = true
-	m.lastConfirmText = message
-	return m.approved, m.err
-}
-func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
-func (m *mockSecurityManager) IsCommandAllowed(command string) bool         { return true }
-func (m *mockSecurityManager) IsBypassActive() bool                         { return false }
-func (m *mockSecurityManager) Close() error                                 { return nil }
