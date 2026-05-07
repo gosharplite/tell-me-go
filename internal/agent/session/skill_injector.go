@@ -16,14 +16,15 @@ import (
 // skillInjector dynamically selects and injects Go development skills into the context.
 type skillInjector struct {
 	Selector skills.SkillSelector
+	Logger   ports.Logger
 }
 
 // NewSkillInjector creates a ports.ContextTransformer that injects skills
 // into the context. It exists as a constructor so the session/ package can
 // inject skill selection into the session/context pipeline without the
 // context/ sub-package importing domain/skills.
-func NewSkillInjector(selector skills.SkillSelector) ports.ContextTransformer {
-	return &skillInjector{Selector: selector}
+func NewSkillInjector(selector skills.SkillSelector, logger ports.Logger) ports.ContextTransformer {
+	return &skillInjector{Selector: selector, Logger: logger}
 }
 
 func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -35,6 +36,9 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 
 	selected, err := t.Selector.SelectSkills(ctx, strings.TrimSpace(taskDescription))
 	if err != nil {
+		if t.Logger != nil {
+			t.Logger.Warn("skill selection failed; proceeding without injected skills", "error", err)
+		}
 		return nil
 	}
 
