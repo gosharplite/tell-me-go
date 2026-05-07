@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -105,6 +106,27 @@ func TestSkillInjector_Transform(t *testing.T) {
 			},
 			validate: func(t *testing.T, req *ports.ContextRequest) {
 				// Success if it doesn't panic
+			},
+		},
+		{
+			name: "SelectSkillsErrorIsLoggedAndSwallowed",
+			selector: &mockSkillSelector{
+				err: errors.New("selector unavailable"),
+			},
+			req: &ports.ContextRequest{
+				History: []*llm.Content{
+					{Role: "user", Parts: []*llm.Part{{Text: "how do I test in Go?"}}},
+				},
+			},
+			validate: func(t *testing.T, req *ports.ContextRequest) {
+				// Transform must NOT return an error — the failure is logged, not propagated.
+				// History must remain unchanged (no injection, no mutation).
+				if len(req.History) != 1 {
+					t.Errorf("expected history unchanged (1 entry), got %d", len(req.History))
+				}
+				if req.PersistHistory {
+					t.Error("expected PersistHistory to remain false when skill selection fails")
+				}
 			},
 		},
 	}
