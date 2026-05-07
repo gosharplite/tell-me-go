@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,11 +29,16 @@ func noopHeartbeat() chan<- struct{} {
 
 // setupADOServer creates an httptest server, registers cleanup, and returns
 // an AdoManager pointed at it with an already-approved or rejected security confirmer.
-func setupADOServer(t *testing.T, handler http.HandlerFunc, approved bool) *AdoManager {
+func setupADOServer(t *testing.T, handler http.HandlerFunc, confirmFunc func(context.Context, string) (bool, error)) *AdoManager {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	return NewADOManager(&mockSecurityManager{approved: approved}, WithBaseURL(server.URL), WithToken("test-pat"))
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	if confirmFunc != nil {
+		sm.ConfirmFunc = confirmFunc
+		sm.AllowAll = false
+	}
+	return NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 }
 
 // ============================================================================
@@ -45,7 +52,7 @@ func TestNewGetBuildTimelineHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/build/builds/1/timeline")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"records":[{"id":"1","name":"Task 1"}]}`))
-		}, true)
+		}, nil)
 
 		handler := newGetBuildTimelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -60,7 +67,7 @@ func TestNewGetBuildTimelineHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}, true)
+		}, nil)
 
 		handler := newGetBuildTimelineHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -79,7 +86,7 @@ func TestNewGetTaskLogHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/build/builds/1/logs/5")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("build output\n"))
-		}, true)
+		}, nil)
 
 		handler := newGetTaskLogHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -94,7 +101,7 @@ func TestNewGetTaskLogHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-		}, true)
+		}, nil)
 
 		handler := newGetTaskLogHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -113,7 +120,7 @@ func TestNewGetBuildChangesHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/build/builds/1/changes")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":"abc","message":"feat: add"}]}`))
-		}, true)
+		}, nil)
 
 		handler := newGetBuildChangesHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -128,7 +135,7 @@ func TestNewGetBuildChangesHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
-		}, true)
+		}, nil)
 
 		handler := newGetBuildChangesHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -151,7 +158,7 @@ func TestNewListPipelinesHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"my-pipeline"}]}`))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newListPipelinesHandler(m, f)
@@ -168,7 +175,7 @@ func TestNewListPipelinesHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newListPipelinesHandler(m, f)
@@ -188,7 +195,7 @@ func TestNewGetPipelineRunHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/runs/101")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":101,"name":"run1","state":"completed","result":"succeeded","createdDate":"d","url":"u"}`))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newGetPipelineRunHandler(m, f)
@@ -205,7 +212,7 @@ func TestNewGetPipelineRunHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newGetPipelineRunHandler(m, f)
@@ -225,7 +232,7 @@ func TestNewGetPipelineDefinitionHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines/123")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":123,"name":"test-pipeline"}`))
-		}, true)
+		}, nil)
 
 		handler := newGetPipelineDefinitionHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -240,7 +247,7 @@ func TestNewGetPipelineDefinitionHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-		}, true)
+		}, nil)
 
 		handler := newGetPipelineDefinitionHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -259,7 +266,7 @@ func TestNewListPipelineRunsHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/_apis/build/builds")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":101,"buildNumber":"r1","status":"completed","result":"succeeded","queueTime":"t","repository":{"name":"repo"}}]}`))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newListPipelineRunsHandler(m, f)
@@ -276,7 +283,7 @@ func TestNewListPipelineRunsHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newListPipelineRunsHandler(m, f)
@@ -297,7 +304,7 @@ func TestNewGetPipelineLogsHandler(t *testing.T) {
 			assert.NotContains(t, r.URL.Path, "/logs/")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":1,"lineCount":10}]}`))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
@@ -317,7 +324,7 @@ func TestNewGetPipelineLogsHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/logs/5")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("log content here"))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
@@ -333,7 +340,7 @@ func TestNewGetPipelineLogsHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
@@ -353,7 +360,7 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":99,"name":"my-pipe"}]}`))
-		}, true)
+		}, nil)
 
 		handler := newCreatePipelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -369,7 +376,7 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"other"}]}`))
-		}, false)
+		}, func(ctx context.Context, msg string) (bool, error) { return false, nil })
 
 		handler := newCreatePipelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -393,7 +400,7 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 				_, _ = w.Write([]byte(`{"id":200}`))
 				return
 			}
-		}, true)
+		}, nil)
 
 		handler := newCreatePipelineHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -414,7 +421,7 @@ func TestNewRunPipelineHandler(t *testing.T) {
 			assert.Contains(t, r.URL.Path, "/_apis/pipelines/1/runs")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":303,"_links":{"web":{"href":"https://dev.azure.com/x"}}}`))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newRunPipelineHandler(m, f)
@@ -429,7 +436,7 @@ func TestNewRunPipelineHandler(t *testing.T) {
 
 	t.Run("Cancelled", func(t *testing.T) {
 		t.Parallel()
-		m := NewADOManager(&mockSecurityManager{approved: false}, WithToken("test-pat"))
+		m := NewADOManager(&toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }}, WithToken("test-pat"))
 		f := newPipelineFormatter()
 		handler := newRunPipelineHandler(m, f)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -454,7 +461,7 @@ func TestNewRunPipelineHandler(t *testing.T) {
 
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":404,"_links":{"web":{"href":"https://dev.azure.com/x"}}}`))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newRunPipelineHandler(m, f)
@@ -489,7 +496,7 @@ func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
 				_, _ = w.Write([]byte(`{}`))
 				return
 			}
-		}, true)
+		}, nil)
 
 		handler := newUpdateBuildDefinitionVariablesHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -512,7 +519,7 @@ func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":123,"variables":{}}`))
-		}, false)
+		}, func(ctx context.Context, msg string) (bool, error) { return false, nil })
 
 		handler := newUpdateBuildDefinitionVariablesHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -532,7 +539,7 @@ func TestNewUpdateBuildDefinitionVariablesHandler(t *testing.T) {
 		t.Parallel()
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-		}, true)
+		}, nil)
 
 		handler := newUpdateBuildDefinitionVariablesHandler(m)
 		_, err := handler(context.Background(), map[string]interface{}{
@@ -559,7 +566,7 @@ func TestHandlerNilHeartbeat(t *testing.T) {
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("output"))
-		}, true)
+		}, nil)
 
 		handler := newGetTaskLogHandler(m)
 		result, err := handler(context.Background(), map[string]interface{}{
@@ -575,7 +582,7 @@ func TestHandlerNilHeartbeat(t *testing.T) {
 		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("log data"))
-		}, true)
+		}, nil)
 
 		f := newPipelineFormatter()
 		handler := newGetPipelineLogsHandler(m, f)
