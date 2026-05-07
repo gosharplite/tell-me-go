@@ -10,12 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
+
 	"github.com/stretchr/testify/assert"
 )
 
 func TestAdoManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	tests := []struct {
 		name           string
@@ -80,7 +82,7 @@ func TestAdoManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 
 func TestAdoManager_ExecuteRequest_NetworkError(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// We use a client that points to a non-existent port or closed server
 	m := NewADOManager(sm,
@@ -96,7 +98,7 @@ func TestAdoManager_ExecuteRequest_NetworkError(t *testing.T) {
 }
 
 func TestAdoManager_ExecuteRequest_AuthMissing(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	m := NewADOManager(sm)
 
@@ -109,7 +111,7 @@ func TestAdoManager_ExecuteRequest_AuthMissing(t *testing.T) {
 
 func TestAdoManager_GetPipelineRun_Errors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	tests := []struct {
 		name           string
@@ -162,7 +164,7 @@ func TestAdoManager_GetPipelineRun_Errors(t *testing.T) {
 }
 
 func TestAdoManager_ResolvePipelineID_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Fetch Pipelines Failure", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +193,7 @@ func TestAdoManager_ResolvePipelineID_Errors(t *testing.T) {
 }
 
 func TestAdoManager_ExecuteRunPipeline_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Malformed JSON Response", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -220,7 +222,7 @@ func TestAdoManager_ExecuteRunPipeline_Errors(t *testing.T) {
 }
 
 func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -258,7 +260,7 @@ func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 }
 
 func TestAdoManager_ListPipelineRuns_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -296,7 +298,7 @@ func TestAdoManager_ListPipelineRuns_Errors(t *testing.T) {
 }
 
 func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -347,7 +349,7 @@ func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
 }
 
 func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -408,7 +410,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 }
 
 func TestAdoManager_AdoListPullRequests_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -446,7 +448,7 @@ func TestAdoManager_AdoListPullRequests_Errors(t *testing.T) {
 }
 
 func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -488,7 +490,7 @@ func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 }
 
 func TestAdoManager_GetPipelineDefinition_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -526,7 +528,7 @@ func TestAdoManager_GetPipelineDefinition_Errors(t *testing.T) {
 }
 
 func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
-	sm := &mockSecurityManager{approved: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)
@@ -608,7 +610,7 @@ func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
 		}))
 		t.Cleanup(ts.Close)
 
-		deniedSM := &mockSecurityManager{approved: false}
+		deniedSM := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }}
 		m := NewADOManager(deniedSM, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{
 			"organization":  "o",

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -256,7 +258,7 @@ func TestRegisterRepository(t *testing.T) {
 func TestRegister(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		r := &mockRegistry{}
-		sm := &mockSecurityManager{approved: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 		// No AZURE_PAT_ALL env — Register should still succeed (token is optional
 		// at registration time; the handlers check it at execution time).
@@ -276,7 +278,7 @@ func TestRegister(t *testing.T) {
 		// on the second call.
 		r := &failingRegistry{maxCalls: 1}
 
-		sm := &mockSecurityManager{approved: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
 		err := Register(r, sm, nil)
 
 		assert.Error(t, err)
