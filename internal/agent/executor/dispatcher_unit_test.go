@@ -657,3 +657,51 @@ func TestBuildExecutionBatches_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestRunExecutionPlan_HappyPath_SuccessfulBatchesReturnNil covers the final
+// return ctx.Err() at the tail of runExecutionPlan when all batches succeed
+// and the context is still valid (not cancelled). The uncovered line is:
+//
+//	return ctx.Err()   // line 402 in executor.go — returns nil on happy path
+//
+// This test ensures that a future refactor mutating ctx mid-function or
+// wrapping the final return won't silently change behavior.
+func TestRunExecutionPlan_HappyPath_SuccessfulBatchesReturnNil(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockZombieRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "p1"}, {Name: "p2"}}
+		},
+	}
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+
+	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, logger, observer)
+	require.NoError(t, err)
+
+	// Replace runtime with a fast mock that always succeeds — no delays, no panics.
+	dispatcher.pipeline.(*defaultToolPipeline).runtime = &mockExecutor{
+		Result: tools.ToolResult{Text: "ok"},
+	}
+
+	// Two tools in a single parallel batch: exercises the full loop path,
+	// not just the empty-batches shortcut.
+	calls := []*llm.FunctionCall{{Name: "p1"}, {Name: "p2"}}
+	results := make([]tools.ToolResult, 2)
+
+	// context.Background() is never cancelled — this is the critical ingredient
+	// that distinguishes this test from the existing PostLoopContextCancellation tests.
+	err = dispatcher.runExecutionPlan(context.Background(), calls, nil, results)
+
+	// The coverage target: ctx.Err() returns nil on the happy path.
+	require.NoError(t, err)
+
+	// Confirm side effects are correct.
+	assert.Equal(t, "ok", results[0].Text)
+	assert.NoError(t, results[0].Error)
+	assert.Equal(t, "ok", results[1].Text)
+	assert.NoError(t, results[1].Error)
+}

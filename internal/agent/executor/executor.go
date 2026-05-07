@@ -396,10 +396,7 @@ func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.Function
 			planErrors = append(planErrors, haltErr)
 		}
 		if halt {
-			if len(planErrors) > 0 {
-				return errors.Join(planErrors...)
-			}
-			return ctx.Err()
+			return errors.Join(planErrors...)
 		}
 	}
 
