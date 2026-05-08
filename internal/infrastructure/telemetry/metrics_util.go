@@ -30,17 +30,13 @@ func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir strin
 	if data, err := os.ReadFile(pricingPath); err == nil {
 		var pd domain_pricing.PricingData
 		if err := json.Unmarshal(data, &pd); err == nil {
-			if os.Getenv("TELL_ME_DEBUG") == "1" {
-				slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
-			}
+			slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
 			return pd
 		}
 	}
 
 	// 2. Fallback to hardcoded defaults
-	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		slog.Debug("falling back to hardcoded default pricing")
-	}
+	slog.Debug("falling back to hardcoded default pricing")
 	return config.DefaultPricing()
 }
 

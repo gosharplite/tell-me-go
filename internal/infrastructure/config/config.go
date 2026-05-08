@@ -4,6 +4,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/spf13/viper"
 )
+
+// isDebug reports whether the default slog logger is at Debug level.
+func isDebug() bool {
+	return slog.Default().Enabled(context.Background(), slog.LevelDebug)
+}
 
 // YAMLConfigLoader implements domain_config.ConfigLoader.
 type YAMLConfigLoader struct {
@@ -52,7 +58,17 @@ func load(path string) (*domain_config.Config, error) {
 		return nil, err
 	}
 
-	debugLogModels(&cfg)
+	if isDebug() {
+		slog.Debug("cfg.Models count", slog.Int("count", len(cfg.Models)))
+		for k, v := range cfg.Models {
+			slog.Debug("model detail",
+				slog.String("model", k),
+				slog.Int("context_window", v.ContextWindow),
+				slog.Float64("pricing_comp", v.Pricing.Comp),
+				slog.Float64("pricing_hit", v.Pricing.Hit),
+				slog.Float64("pricing_miss", v.Pricing.Miss))
+		}
+	}
 	syncLegacyFields(&cfg)
 
 	// Domain-level provider validation. Hard errors fail the load;
@@ -79,7 +95,10 @@ func validationLogger() *slog.Logger {
 
 // configureViper creates a Viper instance, loads the YAML file, and binds environment variables.
 func configureViper(path string) (*viper.Viper, error) {
-	debugLogFileStatus(path)
+	slog.Debug("========================================")
+	slog.Debug("loading configuration file", slog.String("path", path))
+	_, err := os.Stat(path)
+	slog.Debug("file status", slog.String("path", path), slog.Bool("exists", err == nil))
 
 	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
 
@@ -112,14 +131,21 @@ func readConfigFile(v *viper.Viper, path string) error {
 		return err
 	}
 
-	debugLogRawContent(path, data)
+	if isDebug() {
+		slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
+	}
 
 	v.SetConfigType("yaml")
 	if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
 		return fmt.Errorf("viper failed to read config: %w", err)
 	}
 
-	debugLogViperKeys(v)
+	if isDebug() {
+		slog.Debug("viper parsed keys")
+		for _, key := range v.AllKeys() {
+			slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
+		}
+	}
 	return nil
 }
 
@@ -139,57 +165,6 @@ func unmarshalConfig(v *viper.Viper, cfg *domain_config.Config) error {
 		return fmt.Errorf("failed to unmarshal viper config: %w", err)
 	}
 	return nil
-}
-
-// isDebug returns true when TELL_ME_DEBUG=1 is set.
-func isDebug() bool {
-	return os.Getenv("TELL_ME_DEBUG") == "1"
-}
-
-// debugLogFileStatus logs file existence information when debug mode is enabled.
-func debugLogFileStatus(path string) {
-	if !isDebug() {
-		return
-	}
-	slog.Debug("========================================")
-	slog.Debug("loading configuration file", slog.String("path", path))
-	_, err := os.Stat(path)
-	slog.Debug("file status", slog.String("path", path), slog.Bool("exists", err == nil))
-}
-
-// debugLogRawContent logs truncated raw file content when debug mode is enabled.
-func debugLogRawContent(path string, data []byte) {
-	if !isDebug() {
-		return
-	}
-	slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
-}
-
-// debugLogViperKeys logs all keys parsed by Viper when debug mode is enabled.
-func debugLogViperKeys(v *viper.Viper) {
-	if !isDebug() {
-		return
-	}
-	slog.Debug("viper parsed keys")
-	for _, key := range v.AllKeys() {
-		slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
-	}
-}
-
-// debugLogModels logs model configuration details after unmarshaling when debug mode is enabled.
-func debugLogModels(cfg *domain_config.Config) {
-	if !isDebug() {
-		return
-	}
-	slog.Debug("cfg.Models count", slog.Int("count", len(cfg.Models)))
-	for k, v := range cfg.Models {
-		slog.Debug("model detail",
-			slog.String("model", k),
-			slog.Int("context_window", v.ContextWindow),
-			slog.Float64("pricing_comp", v.Pricing.Comp),
-			slog.Float64("pricing_hit", v.Pricing.Hit),
-			slog.Float64("pricing_miss", v.Pricing.Miss))
-	}
 }
 
 func expandEnvHook(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {

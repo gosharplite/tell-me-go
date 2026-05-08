@@ -5,9 +5,12 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 )
+
+var errRepoFailure = errors.New("repo failure")
 
 type mockSkillRepository struct {
 	skills []Skill
@@ -65,7 +68,7 @@ func TestDefaultSkillSelector(t *testing.T) {
 		repo           SkillRepository
 		expectedSkills []string
 		wantErr        bool
-		validate       func(t *testing.T, selector SkillSelector, selected []Skill)
+		validate       func(t *testing.T, selector SkillSelector, selected []Skill, err error)
 	}{
 		{
 			name:           "TokenBudgetConstraint",
@@ -84,7 +87,7 @@ func TestDefaultSkillSelector(t *testing.T) {
 			budget:         50,
 			query:          "testing patterns",
 			expectedSkills: []string{"unrelated-skill"},
-			validate: func(t *testing.T, _ SkillSelector, selected []Skill) {
+			validate: func(t *testing.T, _ SkillSelector, selected []Skill, _ error) {
 				for _, s := range selected {
 					if s.TokenCount > 50 {
 						t.Errorf("skill %s exceeds budget with token count %d", s.Name, s.TokenCount)
@@ -108,13 +111,30 @@ func TestDefaultSkillSelector(t *testing.T) {
 					{Name: "b", TokenCount: 10},
 				},
 			},
-			validate: func(t *testing.T, selector SkillSelector, selected []Skill) {
+			validate: func(t *testing.T, selector SkillSelector, selected []Skill, _ error) {
 				res2, err := selector.SelectSkills(context.Background(), "nothing")
 				if err != nil {
 					t.Fatalf("second call failed: %v", err)
 				}
 				if !reflect.DeepEqual(selected, res2) {
 					t.Error("expected consistent order for same input")
+				}
+			},
+		},
+		{
+			name:   "GetAllErrorPropagation",
+			budget: 100,
+			query:  "anything",
+			repo: &mockSkillRepository{
+				err: errRepoFailure,
+			},
+			wantErr: true,
+			validate: func(t *testing.T, _ SkillSelector, selected []Skill, err error) {
+				if !errors.Is(err, errRepoFailure) {
+					t.Errorf("expected error to wrap errRepoFailure, got: %v", err)
+				}
+				if selected != nil {
+					t.Errorf("expected nil skills slice on error, got: %+v", selected)
 				}
 			},
 		},
@@ -142,7 +162,7 @@ func TestDefaultSkillSelector(t *testing.T) {
 			}
 
 			if tt.validate != nil {
-				tt.validate(t, selector, selected)
+				tt.validate(t, selector, selected, err)
 			}
 		})
 	}

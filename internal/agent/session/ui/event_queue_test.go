@@ -28,13 +28,13 @@ func TestEventQueue_EnqueueNonCritical_CtxDone(t *testing.T) {
 	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 
 	// Fill the single-slot channel so the send case would block
-	f.bridge.queue.sendDirect(events.TurnStatusEvent{})
+	f.bridge.queue.(*eventQueue).sendDirect(events.TurnStatusEvent{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	// Cancellation is checked first — no non-determinism
-	err := f.bridge.queue.enqueueNonCritical(ctx, events.InferenceStartedEvent{})
+	err := f.bridge.queue.(*eventQueue).enqueueNonCritical(ctx, events.InferenceStartedEvent{})
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -50,7 +50,7 @@ func TestEventQueue_EnqueueNonCritical_ActorDead(t *testing.T) {
 	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 
 	// Fill the single-slot channel so the send case would block
-	f.bridge.queue.sendDirect(events.TurnStatusEvent{})
+	f.bridge.queue.(*eventQueue).sendDirect(events.TurnStatusEvent{})
 
 	// Kill the actor — loopCtx.Err() will be non-nil
 	f.bridge.KillActor()
@@ -71,7 +71,7 @@ func TestEventQueue_EnqueueCritical_CallerContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := f.bridge.queue.enqueueCritical(ctx, events.TurnStatusEvent{})
+	err := f.bridge.queue.(*eventQueue).enqueueCritical(ctx, events.TurnStatusEvent{})
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -84,7 +84,7 @@ func TestEventQueue_EnqueueCritical_ActorDead(t *testing.T) {
 
 	f.bridge.KillActor()
 
-	err := f.bridge.queue.enqueueCritical(context.Background(), events.TurnStatusEvent{})
+	err := f.bridge.queue.(*eventQueue).enqueueCritical(context.Background(), events.TurnStatusEvent{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "uibridge actor is dead")
 }

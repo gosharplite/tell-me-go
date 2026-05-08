@@ -204,7 +204,7 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	// forcing the select block to rely on <-loopCtx.Done()
 	for i := 0; i < 100; i++ {
 		// Bypass the enqueue method to strictly fill the channel
-		bridge.queue.sendDirect(events.TurnStarted{})
+		bridge.queue.(*eventQueue).sendDirect(events.TurnStarted{})
 	}
 
 	// Attempt to send a critical event that requires delivery (e.g., ConsentStartedEvent)
