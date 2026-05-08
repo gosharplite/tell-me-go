@@ -42,3 +42,13 @@ func (b *Bridge) Wg() *sync.WaitGroup {
 func (b *Bridge) SetBeforeBlockingSendHook(fn func()) {
 	b.queue.beforeBlockingSendHook = fn
 }
+
+// SetPanicHook installs a callback fired by enqueueNonCritical inside the
+// default (load-shedding) branch, after the pre-guards but before the debug
+// log. Tests use this to inject a panic for verifying HandleEvent's
+// defer/recover safety net.
+//
+// The hook is nil by default and has zero overhead in production.
+func (b *Bridge) SetPanicHook(fn func()) {
+	b.queue.panicHook = fn
+}

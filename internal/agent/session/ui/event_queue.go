@@ -33,6 +33,10 @@ type eventQueue struct {
 	// passed both pre-guards and is about to enter the blocking select.
 	// See ADR-032 for the test-hook policy and Appendix A for registration.
 	beforeBlockingSendHook func() //nolint:unused // test hook
+
+	// panicHook is nil in production. Tests can set it to a function that
+	// panics, to verify HandleEvent's defer/recover path.
+	panicHook func() //nolint:unused // test hook
 }
 
 // newEventQueue creates a new eventQueue with the given capacity.
@@ -113,6 +117,9 @@ func (eq *eventQueue) enqueueNonCritical(ctx context.Context, e events.Event) er
 	case eq.ch <- e:
 		return nil
 	default:
+		if eq.panicHook != nil {
+			eq.panicHook()
+		}
 		eq.logger.Debug("UI Bridge queue full, shedding load/visual event")
 		return nil
 	}

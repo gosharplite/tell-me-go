@@ -723,27 +723,16 @@ func TestUIBridge_HandleEvent_BridgeClosed(t *testing.T) {
 
 func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
 	t.Parallel()
-	// TODO(arch): This test couples to private eventQueue fields (queue.ch,
-	// queue.logger) to force a panic that production code cannot produce.
-	// Replace with an injected eventEnqueuer fake once that seam is extracted.
-	// See architect review of commit 89ac54ee.
 	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewBridge(mRenderer)
+	bridge := NewBridge(mRenderer, withBridgeQueueCapacity(1))
 	bridge.AbortStart()
 	defer bridge.Cleanup()
 
-	// Force a panic inside enqueueEvent after the defer/recover in HandleEvent
-	// is registered. Setting ch=nil makes the select fall through to default;
-	// setting logger=nil causes the panic in the default branch.
-	bridge.queue.ch = nil
-	bridge.queue.logger = nil
+	// Fill the single-slot channel so the next non-critical event hits
+	// the default (load-shedding) branch in enqueueNonCritical.
+	bridge.queue.sendDirect(events.TurnStarted{})
 
-	// Restore fields so Cleanup's CloseInput (close(nil) panics) works safely.
-	// This defer runs BEFORE bridge.Cleanup() due to LIFO ordering.
-	defer func() {
-		bridge.queue.ch = make(chan events.Event, 1)
-		bridge.queue.logger = slog.Default()
-	}()
+	bridge.SetPanicHook(func() { panic("injected test panic") })
 
 	err := bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
 	assert.NoError(t, err)
