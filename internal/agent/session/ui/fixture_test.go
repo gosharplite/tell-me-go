@@ -5,7 +5,9 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +75,46 @@ type uiBridgeFixture struct {
 	logBuf   *syncWriter
 }
 
+// startListen launches bridge.Listen in a goroutine and registers a t.Cleanup
+// that fails the test if Listen returned a non-cancellation error.
+//
+// The returned cancel function should be deferred or called explicitly to
+// shut down the listener; t.Cleanup will then read the error channel exactly
+// once after Listen exits.
+//
+// The returned done channel closes when Listen returns. Tests that need to
+// wait for Listen to exit mid-test (e.g., after a panic) can select on done.
+func startListen(t *testing.T, b *Bridge) (ctx context.Context, cancel context.CancelFunc, done <-chan struct{}) {
+	t.Helper()
+	ctx, cancel = context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(errCh)
+		defer close(doneCh)
+		if err := b.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			// Panics recovered by the bridge's internal recovery are
+			// expected when tests intentionally trigger panics. The
+			// test surfaces these via the done channel instead.
+			if !strings.Contains(err.Error(), "uibridge panicked:") {
+				errCh <- err
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err, ok := <-errCh:
+			if ok && err != nil {
+				t.Errorf("Listen returned unexpected error: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Errorf("Listen did not exit within 2s of cancel()")
+		}
+	})
+	return ctx, cancel, doneCh
+}
+
 // newUIBridgeFixture initializes a bridge with a controllable renderer and starts its listen loop.
 func newUIBridgeFixture(t *testing.T, opts ...bridgeOption) *uiBridgeFixture {
 	t.Helper()
@@ -87,7 +129,7 @@ func newUIBridgeFixture(t *testing.T, opts ...bridgeOption) *uiBridgeFixture {
 	opts = append(opts, WithBridgeLogger(logger))
 
 	bridge := NewBridge(renderer, opts...)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel, _ := startListen(t, bridge)
 
 	f := &uiBridgeFixture{
 		bridge:   bridge,
@@ -101,12 +143,11 @@ func newUIBridgeFixture(t *testing.T, opts ...bridgeOption) *uiBridgeFixture {
 		bridge.CloseInput()
 		f.UnblockLoop() // Crucial: ensure bridge can drain events during Cleanup
 		bridge.Cleanup()
-		cancel()
+		// cancel() is now handled by startListen's t.Cleanup, which runs
+		// after this cleanup (LIFO order: fixture cleanup first, then
+		// startListen cleanup calls cancel() and reads errCh).
 	})
 
-	go func() {
-		_ = bridge.Listen(ctx)
-	}()
 	bridge.WaitStarted()
 
 	return f
