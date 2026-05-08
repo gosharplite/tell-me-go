@@ -51,3 +51,39 @@ func TestNewLogger(t *testing.T) {
 		})
 	}
 }
+
+func TestIsDebugEnabled(t *testing.T) {
+	tests := []struct {
+		name   string
+		envVal string
+		want   bool
+	}{
+		{
+			name:   "Debug enabled",
+			envVal: "1",
+			want:   true,
+		},
+		{
+			name:   "Debug disabled - empty",
+			envVal: "",
+			want:   false,
+		},
+		{
+			name:   "Debug disabled - zero",
+			envVal: "0",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TELL_ME_DEBUG", tt.envVal)
+
+			got := IsDebugEnabled()
+			if got != tt.want {
+				t.Errorf("IsDebugEnabled() = %v; want %v", got, tt.want)
+			}
+		})
+	}
+}

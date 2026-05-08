@@ -141,7 +141,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	sm := security.NewSecurityManager(interactorProvider)
 
 	// 3. Setup Logger
-	isDebug := os.Getenv("TELL_ME_DEBUG") == "1"
+	isDebug := logging.IsDebugEnabled()
 	logger := logging.NewLogger(stderr, isDebug)
 	slog.SetDefault(logger)
 
