@@ -211,14 +211,16 @@ func TestEventQueue_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	defer cancel2()
 
 	done := make(chan struct{})
-	started := make(chan struct{})
+	inSelect := make(chan struct{})
+	var once sync.Once
+	q.beforeBlockingSendHook = func() { once.Do(func() { close(inSelect) }) }
+
 	go func() {
-		close(started)
 		defer close(done)
 		_ = q.enqueueEvent(ctx, events.ResponseEvent{})
 	}()
 
-	<-started
+	<-inSelect // deterministic: goroutine is past pre-guards, now in blocking select
 
 	// Prove that done does not receive a value prematurely
 	select {
