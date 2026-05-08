@@ -19,6 +19,11 @@ import (
 	"github.com/spf13/viper"
 )
 
+// isDebug reports whether the default slog logger is at Debug level.
+func isDebug() bool {
+	return slog.Default().Enabled(context.Background(), slog.LevelDebug)
+}
+
 // YAMLConfigLoader implements domain_config.ConfigLoader.
 type YAMLConfigLoader struct {
 	Finder domain_config.ConfigFinder
@@ -53,7 +58,7 @@ func load(path string) (*domain_config.Config, error) {
 		return nil, err
 	}
 
-	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+	if isDebug() {
 		slog.Debug("cfg.Models count", slog.Int("count", len(cfg.Models)))
 		for k, v := range cfg.Models {
 			slog.Debug("model detail",
@@ -82,7 +87,7 @@ func load(path string) (*domain_config.Config, error) {
 // slog logger; otherwise it discards warn output to keep test output
 // quiet. Hard errors are returned via the error path regardless.
 func validationLogger() *slog.Logger {
-	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+	if isDebug() {
 		return slog.Default()
 	}
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -126,7 +131,7 @@ func readConfigFile(v *viper.Viper, path string) error {
 		return err
 	}
 
-	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+	if isDebug() {
 		slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
 	}
 
@@ -135,7 +140,7 @@ func readConfigFile(v *viper.Viper, path string) error {
 		return fmt.Errorf("viper failed to read config: %w", err)
 	}
 
-	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+	if isDebug() {
 		slog.Debug("viper parsed keys")
 		for _, key := range v.AllKeys() {
 			slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
