@@ -122,9 +122,9 @@ func TestDefaultSkillSelector(t *testing.T) {
 			},
 		},
 		{
-			name:    "GetAllErrorPropagation",
-			budget:  100,
-			query:   "anything",
+			name:   "GetAllErrorPropagation",
+			budget: 100,
+			query:  "anything",
 			repo: &mockSkillRepository{
 				err: errRepoFailure,
 			},

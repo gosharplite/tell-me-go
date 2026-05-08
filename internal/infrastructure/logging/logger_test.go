@@ -51,4 +51,3 @@ func TestNewLogger(t *testing.T) {
 		})
 	}
 }
-
