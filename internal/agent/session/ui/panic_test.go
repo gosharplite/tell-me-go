@@ -5,7 +5,6 @@ package ui_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -76,16 +75,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := ui.NewBridge(mock, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	done := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		defer close(done)
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-	}()
+	_, _, done := ui.StartListen(t, bridge)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -128,16 +118,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	}).Return(func() {})
 
 	bridge := ui.NewBridge(mockRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	done := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		defer close(done)
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-	}()
+	ctx, _, done := ui.StartListen(t, bridge)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -175,16 +156,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	done := make(chan struct{})
-	testCtx, testCancel := context.WithCancel(context.Background())
-	t.Cleanup(testCancel)
-	errChan := make(chan error, 1)
-	go func() {
-		defer close(done)
-		if err := bridge.Listen(testCtx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-	}()
+	_, _, done := ui.StartListen(t, bridge)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -230,15 +202,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	}).Once()
 
 	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	ctx, _, _ := ui.StartListen(t, bridge)
 	bridge.WaitStarted()
 
 	// Send two events
@@ -264,15 +228,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	ctx, _, _ := ui.StartListen(t, bridge)
 	bridge.WaitStarted()
 
 	// Close the input to simulate a shutdown sequence.

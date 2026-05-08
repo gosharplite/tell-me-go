@@ -4,8 +4,6 @@
 package ui
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -28,15 +26,7 @@ func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 		WithBridgeLogger(slog.Default()),
 		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	const numCalls = 100

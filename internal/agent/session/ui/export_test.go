@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -15,6 +16,16 @@ func SyncBridge(t *testing.T, b *Bridge, m interface {
 	On(methodName string, arguments ...interface{}) *mock.Call
 }) {
 	syncBridge(t, b, m)
+}
+
+// StartListen is the exported wrapper around startListen for use by external
+// test packages (package ui_test). It launches bridge.Listen in a goroutine,
+// registers a t.Cleanup that surfaces non-cancellation errors, and returns
+// the listen context, its cancel function, and a channel that closes when
+// Listen exits.
+func StartListen(t *testing.T, b *Bridge) (context.Context, context.CancelFunc, <-chan struct{}) {
+	t.Helper()
+	return startListen(t, b)
 }
 
 // Wg returns a pointer to the internal wait group for test synchronization.

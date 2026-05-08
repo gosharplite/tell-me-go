@@ -5,7 +5,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -35,15 +34,7 @@ func newStartedTestBridge(t *testing.T) (*Bridge, context.CancelFunc, *agenttest
 		WithBridgeLogFile("log.txt"),
 		WithBridgeLogger(slog.Default()),
 	)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, cancel, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	return bridge, cancel, mRenderer
 }
@@ -305,15 +296,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				WithBridgeLogFile("log.txt"),
 				WithBridgeLogger(slog.Default()),
 			)
-			ctx, cancel := context.WithCancel(context.Background())
-			t.Cleanup(cancel)
-			errChan := make(chan error, 1)
-			go func() {
-				if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-					errChan <- err
-				}
-				close(errChan)
-			}()
+			_, _, _ = startListen(t, bridge)
 			bridge.WaitStarted()
 			defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 			// Set up expectations BEFORE preSetup
@@ -367,15 +350,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	ctx, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -450,15 +425,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	ctx, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -495,15 +462,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -527,15 +486,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -585,15 +536,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	spinnerStarted := make(chan struct{})
@@ -667,15 +610,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	var activeSpinners int32
@@ -714,15 +649,7 @@ func TestUIBridge_NilLoggerFallback(t *testing.T) {
 	mRenderer := new(agenttest.MockUIRenderer)
 	// Instantiate without WithLogger
 	bridge := NewBridge(mRenderer)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -733,20 +660,11 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
 	// Initialize bridge with a very small timeout via functional option
 	bridge := NewBridge(mRenderer,
 		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	bridgeCtx := bridge.getLoopContext() // Use the internal loop context for verification
 

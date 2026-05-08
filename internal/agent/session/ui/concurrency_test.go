@@ -5,7 +5,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -22,15 +21,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	var activeSpinners int32
@@ -81,15 +72,7 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()

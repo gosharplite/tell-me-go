@@ -5,7 +5,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -226,15 +225,7 @@ func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
+	ctx, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 
 	// Shutdown the bridge
