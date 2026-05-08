@@ -31,7 +31,7 @@ type eventQueue struct {
 	// beforeBlockingSendHook is nil in production. Tests can set it to a
 	// signal channel to deterministically observe when enqueueCritical has
 	// passed both pre-guards and is about to enter the blocking select.
-	// See ADR-011 §3 Rule 2 for the pattern this enables.
+	// See ADR-032 for the test-hook policy and Appendix A for registration.
 	beforeBlockingSendHook func() //nolint:unused // test hook
 }
 
