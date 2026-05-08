@@ -135,8 +135,8 @@ The combined `git push origin main dev --tags` is replaced with two separate pus
 |---|---|
 | **Rebase `dev` onto `main` after each release** instead of merging back | Rewrites `dev`'s history. Breaks any in-flight feature branches based on `dev`. Forces every contributor to `git pull --rebase` after every release or face conflicts. |
 | **Single trunk (delete `dev`)** | Too large a workflow change for the current contributor base and CI maturity. Worth revisiting if/when CI gates can substitute for `dev`'s integration role, but that is a separate ADR. |
-| **Automated release script that performs back-merge automatically** | Deferred. First codify the policy in the SOP so the contract is human-readable and reviewable; then automate against the codified contract. Premature automation of an under-specified workflow was part of how the original bug persisted unnoticed. |
-| **CI job that fails the build if `origin/main..origin/dev` is non-zero** | Complementary, not a replacement. Listed under "Future Work" below — a daily CI alert would catch divergence between releases (e.g., from operator error) but does not replace the SOP-level gates that enforce convergence at the moment of release. |
+| **Automated release script that performs back-merge automatically** | Rejected. The project strictly relies on explicit SOP execution (`docs/sop/lifecycle/public_release.md`) by operators/LLM agents. Automating the workflow hides the invariant and masks the explicit policy contract. |
+| **Makefile check that fails the build if `origin/main..origin/dev` is non-zero** | Rejected. The SOP's pre-flight and post-flight gates strictly enforce convergence at the moment of release. An out-of-band Makefile check is unnecessary. |
 
 ## Implementation Plan
 
@@ -163,8 +163,6 @@ Acceptance criteria for the SOP rewrite:
 
 ## Future Work
 
-- **CI convergence monitor.** Add a scheduled CI job that runs `git rev-list --count origin/main..origin/dev` daily and alerts if non-zero. This catches divergence introduced **between** releases (e.g., a direct push to `main` for a hotfix that bypasses the SOP) — a class of failure the SOP gates cannot detect.
-- **Automated release script.** Codify the SOP into an executable script that performs all gates non-interactively. Defer until the SOP has been exercised through several real releases under the new policy and any rough edges in the recovery paths are smoothed.
 - **`ConfigApplyFailed`-style observability.** If the back-merge fallback (Step 4.6's `--no-ff` resolution path) is exercised frequently in practice, consider emitting a structured log line for telemetry. Not pursued now because the fallback is expected to be rare.
 
 ## References
