@@ -34,7 +34,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
@@ -60,7 +60,7 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
@@ -114,7 +114,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	testCtx := context.Background()
 
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
@@ -188,7 +188,7 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	bridge := NewBridge(mRenderer)
 
 	// Start the bridge to initialize everything
-	_, cancel := startListen(t, bridge)
+	_, cancel, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	bridge.WaitStarted()
 

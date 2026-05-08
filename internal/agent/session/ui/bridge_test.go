@@ -34,7 +34,7 @@ func newStartedTestBridge(t *testing.T) (*Bridge, context.CancelFunc, *agenttest
 		WithBridgeLogFile("log.txt"),
 		WithBridgeLogger(slog.Default()),
 	)
-	_, cancel := startListen(t, bridge)
+	_, cancel, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	return bridge, cancel, mRenderer
 }
@@ -296,7 +296,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				WithBridgeLogFile("log.txt"),
 				WithBridgeLogger(slog.Default()),
 			)
-			_, _ = startListen(t, bridge)
+			_, _, _ = startListen(t, bridge)
 			bridge.WaitStarted()
 			defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 			// Set up expectations BEFORE preSetup
@@ -350,7 +350,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, _ := startListen(t, bridge)
+	ctx, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -425,7 +425,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, _ := startListen(t, bridge)
+	ctx, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -462,7 +462,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -486,7 +486,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -536,7 +536,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	spinnerStarted := make(chan struct{})
@@ -610,7 +610,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	var activeSpinners int32
@@ -649,7 +649,7 @@ func TestUIBridge_NilLoggerFallback(t *testing.T) {
 	mRenderer := new(agenttest.MockUIRenderer)
 	// Instantiate without WithLogger
 	bridge := NewBridge(mRenderer)
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -664,7 +664,7 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 	bridge := NewBridge(mRenderer,
 		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
-	_, _ = startListen(t, bridge)
+	_, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	bridgeCtx := bridge.getLoopContext() // Use the internal loop context for verification
 
