@@ -52,7 +52,7 @@ func load(path string) (*domain_config.Config, error) {
 		return nil, err
 	}
 
-	debugLogModels(&cfg)
+	logDebugModels(&cfg)
 	syncLegacyFields(&cfg)
 
 	// Domain-level provider validation. Hard errors fail the load;
@@ -71,7 +71,7 @@ func load(path string) (*domain_config.Config, error) {
 // slog logger; otherwise it discards warn output to keep test output
 // quiet. Hard errors are returned via the error path regardless.
 func validationLogger() *slog.Logger {
-	if isDebug() {
+	if isDebugEnabled() {
 		return slog.Default()
 	}
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -79,7 +79,7 @@ func validationLogger() *slog.Logger {
 
 // configureViper creates a Viper instance, loads the YAML file, and binds environment variables.
 func configureViper(path string) (*viper.Viper, error) {
-	debugLogFileStatus(path)
+	logDebugFileStatus(path)
 
 	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
 
@@ -112,14 +112,14 @@ func readConfigFile(v *viper.Viper, path string) error {
 		return err
 	}
 
-	debugLogRawContent(path, data)
+	logDebugRawContent(path, data)
 
 	v.SetConfigType("yaml")
 	if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
 		return fmt.Errorf("viper failed to read config: %w", err)
 	}
 
-	debugLogViperKeys(v)
+	logDebugViperKeys(v)
 	return nil
 }
 
@@ -141,14 +141,14 @@ func unmarshalConfig(v *viper.Viper, cfg *domain_config.Config) error {
 	return nil
 }
 
-// isDebug returns true when TELL_ME_DEBUG=1 is set.
-func isDebug() bool {
+// isDebugEnabled returns true when TELL_ME_DEBUG=1 is set.
+func isDebugEnabled() bool {
 	return os.Getenv("TELL_ME_DEBUG") == "1"
 }
 
-// debugLogFileStatus logs file existence information when debug mode is enabled.
-func debugLogFileStatus(path string) {
-	if !isDebug() {
+// logDebugFileStatus logs file existence information when debug mode is enabled.
+func logDebugFileStatus(path string) {
+	if !isDebugEnabled() {
 		return
 	}
 	slog.Debug("========================================")
@@ -157,17 +157,17 @@ func debugLogFileStatus(path string) {
 	slog.Debug("file status", slog.String("path", path), slog.Bool("exists", err == nil))
 }
 
-// debugLogRawContent logs truncated raw file content when debug mode is enabled.
-func debugLogRawContent(path string, data []byte) {
-	if !isDebug() {
+// logDebugRawContent logs truncated raw file content when debug mode is enabled.
+func logDebugRawContent(path string, data []byte) {
+	if !isDebugEnabled() {
 		return
 	}
 	slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
 }
 
-// debugLogViperKeys logs all keys parsed by Viper when debug mode is enabled.
-func debugLogViperKeys(v *viper.Viper) {
-	if !isDebug() {
+// logDebugViperKeys logs all keys parsed by Viper when debug mode is enabled.
+func logDebugViperKeys(v *viper.Viper) {
+	if !isDebugEnabled() {
 		return
 	}
 	slog.Debug("viper parsed keys")
@@ -176,9 +176,9 @@ func debugLogViperKeys(v *viper.Viper) {
 	}
 }
 
-// debugLogModels logs model configuration details after unmarshaling when debug mode is enabled.
-func debugLogModels(cfg *domain_config.Config) {
-	if !isDebug() {
+// logDebugModels logs model configuration details after unmarshaling when debug mode is enabled.
+func logDebugModels(cfg *domain_config.Config) {
+	if !isDebugEnabled() {
 		return
 	}
 	slog.Debug("cfg.Models count", slog.Int("count", len(cfg.Models)))
