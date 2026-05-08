@@ -40,5 +40,5 @@ func (b *Bridge) Wg() *sync.WaitGroup {
 //
 // The hook is nil by default and has zero overhead in production.
 func (b *Bridge) SetBeforeBlockingSendHook(fn func()) {
-	b.queue.beforeBlockingSendHook = fn
+	b.queue.(*eventQueue).beforeBlockingSendHook = fn
 }

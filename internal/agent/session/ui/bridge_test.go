@@ -723,27 +723,12 @@ func TestUIBridge_HandleEvent_BridgeClosed(t *testing.T) {
 
 func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
 	t.Parallel()
-	// TODO(arch): This test couples to private eventQueue fields (queue.ch,
-	// queue.logger) to force a panic that production code cannot produce.
-	// Replace with an injected eventEnqueuer fake once that seam is extracted.
-	// See architect review of commit 89ac54ee.
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer)
 	bridge.AbortStart()
 	defer bridge.Cleanup()
 
-	// Force a panic inside enqueueEvent after the defer/recover in HandleEvent
-	// is registered. Setting ch=nil makes the select fall through to default;
-	// setting logger=nil causes the panic in the default branch.
-	bridge.queue.ch = nil
-	bridge.queue.logger = nil
-
-	// Restore fields so Cleanup's CloseInput (close(nil) panics) works safely.
-	// This defer runs BEFORE bridge.Cleanup() due to LIFO ordering.
-	defer func() {
-		bridge.queue.ch = make(chan events.Event, 1)
-		bridge.queue.logger = slog.Default()
-	}()
+	bridge.queue = &panicFakeEnqueuer{}
 
 	err := bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
 	assert.NoError(t, err)
@@ -852,3 +837,15 @@ func TestUIBridge_HandleEvent_CallerContextCancelled(t *testing.T) {
 	err := f.bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
 	assert.ErrorIs(t, err, context.Canceled)
 }
+
+// panicFakeEnqueuer implements eventEnqueuer and panics from enqueueEvent,
+// enabling deterministic testing of HandleEvent's defer/recover path.
+type panicFakeEnqueuer struct{}
+
+func (p *panicFakeEnqueuer) enqueueEvent(context.Context, events.Event) error {
+	panic("injected test panic")
+}
+func (p *panicFakeEnqueuer) isInputClosed() bool                              { return false }
+func (p *panicFakeEnqueuer) closeInput()                                       {}
+func (p *panicFakeEnqueuer) recv() <-chan events.Event                         { return nil }
+func (p *panicFakeEnqueuer) drainRemainingEvents(func(context.Context, events.Event)) {}
