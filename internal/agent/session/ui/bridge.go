@@ -18,6 +18,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
+// eventEnqueuer is the seam between Bridge and the event channel.
+// *eventQueue is the sole production implementation.
+type eventEnqueuer interface {
+	enqueueEvent(ctx context.Context, e events.Event) error
+	isInputClosed() bool
+	closeInput()
+	recv() <-chan events.Event
+	drainRemainingEvents(func(context.Context, events.Event))
+}
+
 // bridgeOption configures a Bridge instance.
 type bridgeOption func(*Bridge)
 
@@ -84,7 +94,7 @@ type Bridge struct {
 	logFile            string
 	stateMachine       *uiStateMachine
 	spinner            *spinnerCoord
-	queue              *eventQueue
+	queue              eventEnqueuer
 	dispatcher         *eventDispatcher
 	cleanupOnce        sync.Once
 	cleanupInvocations int32

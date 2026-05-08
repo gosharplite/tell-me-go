@@ -724,15 +724,11 @@ func TestUIBridge_HandleEvent_BridgeClosed(t *testing.T) {
 func TestUIBridge_HandleEvent_PanicRecovery(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
-	bridge := NewBridge(mRenderer, withBridgeQueueCapacity(1))
+	bridge := NewBridge(mRenderer)
 	bridge.AbortStart()
 	defer bridge.Cleanup()
 
-	// Fill the single-slot channel so the next non-critical event hits
-	// the default (load-shedding) branch in enqueueNonCritical.
-	bridge.queue.sendDirect(events.TurnStarted{})
-
-	bridge.SetPanicHook(func() { panic("injected test panic") })
+	bridge.queue = &panicFakeEnqueuer{}
 
 	err := bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
 	assert.NoError(t, err)
@@ -841,3 +837,15 @@ func TestUIBridge_HandleEvent_CallerContextCancelled(t *testing.T) {
 	err := f.bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
 	assert.ErrorIs(t, err, context.Canceled)
 }
+
+// panicFakeEnqueuer implements eventEnqueuer and panics from enqueueEvent,
+// enabling deterministic testing of HandleEvent's defer/recover path.
+type panicFakeEnqueuer struct{}
+
+func (p *panicFakeEnqueuer) enqueueEvent(context.Context, events.Event) error {
+	panic("injected test panic")
+}
+func (p *panicFakeEnqueuer) isInputClosed() bool                              { return false }
+func (p *panicFakeEnqueuer) closeInput()                                       {}
+func (p *panicFakeEnqueuer) recv() <-chan events.Event                         { return nil }
+func (p *panicFakeEnqueuer) drainRemainingEvents(func(context.Context, events.Event)) {}
