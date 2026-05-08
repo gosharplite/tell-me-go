@@ -4,6 +4,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
 	"github.com/spf13/viper"
 )
 
@@ -53,14 +53,16 @@ func load(path string) (*domain_config.Config, error) {
 		return nil, err
 	}
 
-	slog.Debug("cfg.Models count", slog.Int("count", len(cfg.Models)))
-	for k, v := range cfg.Models {
-		slog.Debug("model detail",
-			slog.String("model", k),
-			slog.Int("context_window", v.ContextWindow),
-			slog.Float64("pricing_comp", v.Pricing.Comp),
-			slog.Float64("pricing_hit", v.Pricing.Hit),
-			slog.Float64("pricing_miss", v.Pricing.Miss))
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		slog.Debug("cfg.Models count", slog.Int("count", len(cfg.Models)))
+		for k, v := range cfg.Models {
+			slog.Debug("model detail",
+				slog.String("model", k),
+				slog.Int("context_window", v.ContextWindow),
+				slog.Float64("pricing_comp", v.Pricing.Comp),
+				slog.Float64("pricing_hit", v.Pricing.Hit),
+				slog.Float64("pricing_miss", v.Pricing.Miss))
+		}
 	}
 	syncLegacyFields(&cfg)
 
@@ -80,7 +82,7 @@ func load(path string) (*domain_config.Config, error) {
 // slog logger; otherwise it discards warn output to keep test output
 // quiet. Hard errors are returned via the error path regardless.
 func validationLogger() *slog.Logger {
-	if logging.IsDebugEnabled() {
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
 		return slog.Default()
 	}
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -124,16 +126,20 @@ func readConfigFile(v *viper.Viper, path string) error {
 		return err
 	}
 
-	slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
+	}
 
 	v.SetConfigType("yaml")
 	if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
 		return fmt.Errorf("viper failed to read config: %w", err)
 	}
 
-	slog.Debug("viper parsed keys")
-	for _, key := range v.AllKeys() {
-		slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		slog.Debug("viper parsed keys")
+		for _, key := range v.AllKeys() {
+			slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
+		}
 	}
 	return nil
 }
