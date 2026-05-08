@@ -845,7 +845,7 @@ type panicFakeEnqueuer struct{}
 func (p *panicFakeEnqueuer) enqueueEvent(context.Context, events.Event) error {
 	panic("injected test panic")
 }
-func (p *panicFakeEnqueuer) isInputClosed() bool                              { return false }
-func (p *panicFakeEnqueuer) closeInput()                                       {}
-func (p *panicFakeEnqueuer) recv() <-chan events.Event                         { return nil }
+func (p *panicFakeEnqueuer) isInputClosed() bool                                      { return false }
+func (p *panicFakeEnqueuer) closeInput()                                              {}
+func (p *panicFakeEnqueuer) recv() <-chan events.Event                                { return nil }
 func (p *panicFakeEnqueuer) drainRemainingEvents(func(context.Context, events.Event)) {}
