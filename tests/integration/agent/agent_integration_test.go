@@ -145,8 +145,11 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
 		agent.WithSecurityManager(sm),
-		agent.WithLoader(&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}),
-		agent.WithSessionLoader(&config.JSONSessionLoader{}),
+		agent.WithConfigWatcher(config.NewFileConfigWatcher(
+			&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()},
+			&config.JSONSessionLoader{},
+			100, 10, 20, nil,
+		)),
 	)
 	require.NoError(t, err)
 

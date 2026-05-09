@@ -287,13 +287,14 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	loader := &agenttest.MockConfigLoader{}
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
+	cw := infra_config.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithConfigWatcher(cw))
 	require.NoError(t, err)
 
 	a := asAgent(t, chatter)
 	assert.NotNil(t, a.configWatcher)
-	// Verify it's not the no-op one if we can, but at least we covered the branch
+	// Verify the injected watcher is the one we passed
+	assert.Equal(t, cw, a.configWatcher)
 }
 
 func TestAgent_Chat_AddContentError(t *testing.T) {

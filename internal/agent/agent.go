@@ -23,7 +23,6 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 )
@@ -62,8 +61,6 @@ type agent struct {
 	model            string
 	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
-	loader           domain_config.ConfigLoader
-	sessionLoader    domain_config.SessionLoader
 	registerInternal bool
 	initCtx          context.Context
 
@@ -112,11 +109,13 @@ func (a *agent) initComponents() error {
 	}
 	a.executor = exec
 
-	cw := infra_config.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
-	if a.loader != nil || a.sessionLoader != nil {
-		cw = infra_config.NewFileConfigWatcher(a.loader, a.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, a.logger)
+	if a.configWatcher == nil {
+		a.configWatcher = domain_config.NewNoOpConfigWatcher(
+			domain_config.DefaultMaxHistoryTokens,
+			domain_config.DefaultMaxToolTurns,
+			domain_config.DefaultMaxHistoryTurns,
+		)
 	}
-	a.configWatcher = cw
 
 	a.config.Store(&runtimeConfig{
 		ProviderName:     a.providerName,

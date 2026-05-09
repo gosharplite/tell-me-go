@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
@@ -52,8 +54,21 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	}
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
+	// Build config watcher: production always uses file-based watcher.
+	// The agent's nil-guard in initComponents() provides a no-op fallback
+	// for bare construction (e.g. tests) where no option is passed.
+	cw := infra_config.NewFileConfigWatcher(
+		&infra_config.YAMLConfigLoader{Finder: infra_config.NewDefaultConfigFinder()},
+		&infra_config.JSONSessionLoader{},
+		domain_config.DefaultMaxHistoryTokens,
+		domain_config.DefaultMaxToolTurns,
+		domain_config.DefaultMaxHistoryTurns,
+		deps.GetLogger(),
+	)
+
 	// 2. Compose Agent Options
 	opts := []agent.AgentOption{
+		agent.WithConfigWatcher(cw),
 		agent.WithLogger(deps.GetLogger()),
 		agent.WithSummarizer(summarizer),
 		agent.WithSkillSelector(skillSelector),
