@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/mock"
 )
@@ -35,18 +36,20 @@ func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 	return args.Get(0).(map[string]string), args.Error(1)
 }
 
-func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
-	sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
-
+func setupPolicyTestWithAnswer(t *testing.T, answer string) (*SecurityManager, *policyTool, context.Context) {
+	t.Helper()
 	mockKV := new(mockKVStore)
 	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-
+	sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: answer} })
 	p, err := newPolicyTool(sm, mockKV)
 	if err != nil {
 		t.Fatalf("failed to create policyTool: %v", err)
 	}
-	ctx := context.Background()
-	return sm, p, ctx
+	return sm, p, context.Background()
+}
+
+func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
+	return setupPolicyTestWithAnswer(t, "y")
 }
 
 func TestPolicyTool_SafePathManagement(t *testing.T) {
@@ -293,91 +296,39 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 	})
 }
 
+func assertBypassSuccess(t *testing.T, res tools.ToolResult, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(res.Text, "denied") {
+		t.Errorf("Expected success, got denied")
+	}
+}
+
 func TestPolicyTool_BypassBehavior(t *testing.T) {
 	t.Parallel()
+	sm, p, ctx := setupPolicyTestWithAnswer(t, "n")
+	sm.SetBypassActive(true)
 
 	t.Run("RegisterSafePath bypass", func(t *testing.T) {
-		t.Parallel()
-		mockKV := new(mockKVStore)
-		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "n"} })
-		p, err := newPolicyTool(sm, mockKV)
-		if err != nil {
-			t.Fatalf("failed to create policyTool: %v", err)
-		}
-		ctx := context.Background()
-		sm.SetBypassActive(true)
-		path := filepath.Join(t.TempDir(), "b1")
-		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "r"}, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if strings.Contains(res.Text, "denied") {
-			t.Errorf("Expected success, got denied")
-		}
+		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "b1"), "reason": "r"}, nil)
+		assertBypassSuccess(t, res, err)
 	})
 
 	t.Run("RemoveSafePath bypass", func(t *testing.T) {
-		t.Parallel()
-		mockKV := new(mockKVStore)
-		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "n"} })
-		p, err := newPolicyTool(sm, mockKV)
-		if err != nil {
-			t.Fatalf("failed to create policyTool: %v", err)
-		}
-		ctx := context.Background()
-		sm.SetBypassActive(true)
-		path := filepath.Join(t.TempDir(), "b1")
-		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if strings.Contains(res.Text, "denied") {
-			t.Errorf("Expected success, got denied")
-		}
+		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "b1")}, nil)
+		assertBypassSuccess(t, res, err)
 	})
 
 	t.Run("RegisterReadPath bypass", func(t *testing.T) {
-		t.Parallel()
-		mockKV := new(mockKVStore)
-		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "n"} })
-		p, err := newPolicyTool(sm, mockKV)
-		if err != nil {
-			t.Fatalf("failed to create policyTool: %v", err)
-		}
-		ctx := context.Background()
-		sm.SetBypassActive(true)
-		path := filepath.Join(t.TempDir(), "b2")
-		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "r"}, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if strings.Contains(res.Text, "denied") {
-			t.Errorf("Expected success, got denied")
-		}
+		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "b2"), "reason": "r"}, nil)
+		assertBypassSuccess(t, res, err)
 	})
 
 	t.Run("RemoveReadPath bypass", func(t *testing.T) {
-		t.Parallel()
-		mockKV := new(mockKVStore)
-		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "n"} })
-		p, err := newPolicyTool(sm, mockKV)
-		if err != nil {
-			t.Fatalf("failed to create policyTool: %v", err)
-		}
-		ctx := context.Background()
-		sm.SetBypassActive(true)
-		path := filepath.Join(t.TempDir(), "b2")
-		res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if strings.Contains(res.Text, "denied") {
-			t.Errorf("Expected success, got denied")
-		}
+		res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "b2")}, nil)
+		assertBypassSuccess(t, res, err)
 	})
 }
 

@@ -208,135 +208,111 @@ func TestIsTTY_False(t *testing.T) {
 	}
 }
 
-func TestCaptureFromTTY_TableDriven(t *testing.T) {
+func setupCapturerForTTY(t *testing.T, stdin io.Reader) *capturer {
+	t.Helper()
+	c := NewCapturer(stdin, io.Discard, io.Discard, nil,
+		&mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
+		"", "", false).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	return c
+}
+
+func TestCaptureFromTTY_MultiLineInput(t *testing.T) {
 	t.Parallel()
+	pr, pw, _ := os.Pipe()
 
-	tests := []struct {
-		name    string
-		setup   func(t *testing.T) (io.Reader, io.Closer)
-		ctxFunc func() (context.Context, context.CancelFunc)
-		want    string
-		wantErr error
-	}{
-		{
-			name: "Multi-line Input",
-			setup: func(t *testing.T) (io.Reader, io.Closer) {
-				pr, pw, _ := os.Pipe()
-				go func() {
-					_, _ = pw.Write([]byte("line 1\nline 2"))
-					_ = pw.Close()
-				}()
-				return pr, nil // closer handled by goroutine or t.Cleanup if we wanted but pw.Close() is key
-			},
-			ctxFunc: func() (context.Context, context.CancelFunc) {
-				return context.WithCancel(context.Background())
-			},
-			want: "line 1\nline 2",
-		},
-		{
-			name: "Empty Input",
-			setup: func(t *testing.T) (io.Reader, io.Closer) {
-				pr, pw, _ := os.Pipe()
-				_ = pw.Close()
-				return pr, nil
-			},
-			ctxFunc: func() (context.Context, context.CancelFunc) {
-				return context.WithCancel(context.Background())
-			},
-			want: "",
-		},
-		{
-			name: "Context Cancellation",
-			setup: func(t *testing.T) (io.Reader, io.Closer) {
-				pr, pw, _ := os.Pipe()
-				t.Cleanup(func() {
-					if err := pr.Close(); err != nil {
-						t.Logf("failed to close pipe reader: %v", err)
-					}
-					if err := pw.Close(); err != nil {
-						t.Logf("failed to close pipe writer: %v", err)
-					}
-				})
-				return pr, nil
-			},
-			ctxFunc: func() (context.Context, context.CancelFunc) {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-				return ctx, cancel
-			},
-			wantErr: context.DeadlineExceeded,
-		},
-		{
-			name: "Input Size Limit",
-			setup: func(t *testing.T) (io.Reader, io.Closer) {
-				pr, pw, _ := os.Pipe()
-				go func() {
-					// Write more than 1MB
-					data := make([]byte, 1024*1024+100)
-					for i := range data {
-						data[i] = 'A'
-					}
-					_, _ = pw.Write(data)
-					_ = pw.Close()
-				}()
-				return pr, nil
-			},
-			ctxFunc: func() (context.Context, context.CancelFunc) {
-				return context.WithCancel(context.Background())
-			},
-			want: strings.Repeat("A", 1024*1024), // Should be truncated to maxPromptSize
-		},
+	go func() {
+		_, _ = pw.Write([]byte("line 1\nline 2"))
+		_ = pw.Close()
+	}()
+
+	c := setupCapturerForTTY(t, pr)
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close() // goroutine may have already closed pw; best-effort cleanup
+	})
+
+	got, err := c.captureFromTTY(context.Background(), false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if got != "line 1\nline 2" {
+		t.Errorf("got %q, want %q", got, "line 1\nline 2")
+	}
+}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			stdin, closer := tt.setup(t)
+func TestCaptureFromTTY_EmptyInput(t *testing.T) {
+	t.Parallel()
+	pr, pw, _ := os.Pipe()
+	_ = pw.Close()
 
-			ctx, cancel := tt.ctxFunc()
-			defer cancel()
+	c := setupCapturerForTTY(t, pr)
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close() // may have already been closed; best-effort cleanup
+	})
 
-			c := NewCapturer(stdin, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", false).(*capturer)
-			t.Cleanup(func() {
-				if err := c.Close(context.Background()); err != nil {
-					t.Logf("failed to close capturer: %v", err)
-				}
-			})
+	got, err := c.captureFromTTY(context.Background(), false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want empty string", got)
+	}
+}
 
-			if closer != nil {
-				t.Cleanup(func() {
-					if err := closer.Close(); err != nil {
-						t.Logf("failed to close: %v", err)
-					}
-				})
-			}
-			if f, ok := stdin.(*os.File); ok {
-				t.Cleanup(func() {
-					if err := f.Close(); err != nil {
-						t.Logf("failed to close file: %v", err)
-					}
-				})
-			}
+func TestCaptureFromTTY_ContextCancellation(t *testing.T) {
+	t.Parallel()
+	pr, pw, _ := os.Pipe()
 
-			got, err := c.captureFromTTY(ctx, false)
-			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("expected error %v, got %v", tt.wantErr, err)
-				}
-				return
-			}
+	c := setupCapturerForTTY(t, pr)
+	t.Cleanup(func() {
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+	})
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err := c.captureFromTTY(ctx, false)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded, got %v", err)
+	}
+}
 
-			if got != tt.want {
-				t.Errorf("got length %d, want %d", len(got), len(tt.want))
-				if len(got) < 100 {
-					t.Errorf("got %q, want %q", got, tt.want)
-				}
-			}
-		})
+func TestCaptureFromTTY_InputSizeLimit(t *testing.T) {
+	t.Parallel()
+	pr, pw, _ := os.Pipe()
+
+	go func() {
+		data := make([]byte, 1024*1024+100)
+		for i := range data {
+			data[i] = 'A'
+		}
+		_, _ = pw.Write(data)
+		_ = pw.Close()
+	}()
+
+	c := setupCapturerForTTY(t, pr)
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close() // goroutine may have already closed pw; best-effort cleanup
+	})
+
+	got, err := c.captureFromTTY(context.Background(), false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := strings.Repeat("A", 1024*1024)
+	if got != want {
+		t.Errorf("got length %d, want length %d", len(got), len(want))
 	}
 }
 
