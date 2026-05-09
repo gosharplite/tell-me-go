@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
+	agentskills "github.com/gosharplite/tell-me-go/internal/agent/skills"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -134,7 +135,7 @@ func (a *agent) initComponents() error {
 		Summarizer: a.summarizer,
 		Estimator:  strategy,
 		Events:     a.events,
-		Extras:     []ports.ContextTransformer{session.NewSkillInjector(a.skillSelector, a.logger)},
+		Extras:     []ports.ContextTransformer{agentskills.NewSkillInjector(a.skillSelector, a.logger)},
 	}
 
 	a.ctxManager = sessctx.NewManager(strategy, a.hManager, a.events, factory,
