@@ -17,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -214,7 +213,7 @@ func TestAgentInternal_Getters(t *testing.T) {
 		{
 			name: "GetConfigWatcher",
 			setup: func(mock *mockInternalAccessor) any {
-				cw := infra_config.NewNoOpConfigWatcher(1000, 10, 5)
+				cw := domain_config.NewNoOpConfigWatcher(1000, 10, 5)
 				mock.On("GetConfigWatcherForInternalUse").Return(cw)
 				return cw
 			},
@@ -338,7 +337,7 @@ func TestAgentInternal_Setters(t *testing.T) {
 		{
 			name: "SetConfigWatcherForTest",
 			setup: func(mock *mockInternalAccessor) any {
-				cw := infra_config.NewNoOpConfigWatcher(1000, 10, 5)
+				cw := domain_config.NewNoOpConfigWatcher(1000, 10, 5)
 				mock.On("SetConfigWatcherForInternalUse", cw).Return()
 				return cw
 			},

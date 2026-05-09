@@ -14,7 +14,7 @@ import (
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -258,7 +258,7 @@ func TestAgent_BareConstruction_FieldAssignment(t *testing.T) {
 	// Set*/Get* accessors.
 	a := &agent{}
 
-	cw := infra_config.NewNoOpConfigWatcher(0, 0, 0)
+	cw := domain_config.NewNoOpConfigWatcher(0, 0, 0)
 	a.configWatcher = cw
 	assert.Equal(t, cw, a.configWatcher)
 
@@ -280,14 +280,14 @@ func TestAgent_GetLogger_Default(t *testing.T) {
 	assert.NotNil(t, a.getLogger())
 }
 
-func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
+func TestAgent_InitComponents_ConfigWatcher(t *testing.T) {
 	ctx := context.Background()
 	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	cw := infra_config.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := domain_config.NewNoOpConfigWatcher(100, 10, 20)
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithConfigWatcher(cw))
 	require.NoError(t, err)
 
