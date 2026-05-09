@@ -23,6 +23,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 )
@@ -41,7 +42,7 @@ type agent struct {
 	gateway       domain_llm.LLMGateway
 	engine        *orchestrator.Engine
 	ctxManager    *sessctx.Manager
-	configWatcher session.ConfigWatcher
+	configWatcher domain_config.ConfigWatcher
 	strategy      *sessctx.Strategy
 	executor      *executor.Dispatcher
 	events        events.EventBus
@@ -111,9 +112,9 @@ func (a *agent) initComponents() error {
 	}
 	a.executor = exec
 
-	cw := session.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
+	cw := infra_config.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
 	if a.loader != nil || a.sessionLoader != nil {
-		cw = session.NewFileConfigWatcher(a.loader, a.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, a.logger)
+		cw = infra_config.NewFileConfigWatcher(a.loader, a.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, a.logger)
 	}
 	a.configWatcher = cw
 
@@ -225,7 +226,8 @@ func (a *agent) prepareRuntimeConfig() runtimeConfig {
 	newCfg.Limits.MaxHistoryTurns = histTurns
 
 	if a.strategy != nil {
-		a.configWatcher.SyncToStrategy(a.strategy)
+		a.strategy.SetLimits(tokens, toolTurns, histTurns)
+		a.strategy.SetContextWindow(a.configWatcher.GetContextWindow())
 	}
 
 	a.config.Store(&newCfg)
@@ -397,7 +399,7 @@ type InternalAccessor interface {
 	GetTrackerForInternalUse() domain_pricing.CostTracker
 	GetCtxManagerForInternalUse() *sessctx.Manager
 	GetEventsForInternalUse() events.EventBus
-	GetConfigWatcherForInternalUse() session.ConfigWatcher
+	GetConfigWatcherForInternalUse() domain_config.ConfigWatcher
 	GetRuntimeSnapshotForInternalUse() struct {
 		ProviderName     string
 		Model            string
@@ -406,7 +408,7 @@ type InternalAccessor interface {
 		Limits           events.Limits
 	}
 	SetEventsForInternalUse(bus events.EventBus)
-	SetConfigWatcherForInternalUse(cw session.ConfigWatcher)
+	SetConfigWatcherForInternalUse(cw domain_config.ConfigWatcher)
 	SetCtxManagerForInternalUse(cm *sessctx.Manager)
 	SetLoggerForInternalUse(l ports.Logger)
 	SetTrackerForInternalUse(t domain_pricing.CostTracker)

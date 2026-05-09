@@ -4,7 +4,7 @@
 package agent
 
 import (
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -54,7 +54,7 @@ func (a *agent) GetEventsForInternalUse() events.EventBus {
 	return a.events
 }
 
-func (a *agent) GetConfigWatcherForInternalUse() session.ConfigWatcher {
+func (a *agent) GetConfigWatcherForInternalUse() domain_config.ConfigWatcher {
 	return a.configWatcher
 }
 
@@ -89,7 +89,7 @@ func (a *agent) SetEventsForInternalUse(bus events.EventBus) {
 	a.events = bus
 }
 
-func (a *agent) SetConfigWatcherForInternalUse(cw session.ConfigWatcher) {
+func (a *agent) SetConfigWatcherForInternalUse(cw domain_config.ConfigWatcher) {
 	a.configWatcher = cw
 }
 
