@@ -955,14 +955,14 @@ func TestGetToolNames(t *testing.T) {
 	}
 }
 
-func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
+func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 	ctx := context.Background()
 
-	// With empty mode, ResolvePaths falls back to "default", so TurnsLogPath
-	// is non-empty.  The empty-path error guard at service.go:209 is
-	// unreachable through ResolvePaths.  This test verifies the actual fallback
-	// behaviour: the call proceeds to LogOpener.Open which fails with
-	// os.ErrNotExist, yielding a graceful "No turns log found" message.
+	// Verifies that an empty Config.Mode falls back to "default" mode in path
+	// resolution.  The call proceeds to LogOpener.Open for the default-mode
+	// path, which fails with os.ErrNotExist, yielding a graceful "No turns log
+	// found" message.  (The empty-path guard — service.go:214 — is tested
+	// separately in TestChatService_StreamTurnsLog_EmptyPath.)
 	mFS := new(mockFileSystemStream)
 	logPath := persistence.ResolvePaths("/nonexistent", "").TurnsLogPath
 	mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrNotExist)
@@ -980,4 +980,33 @@ func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "No turns log found for this session yet.\n", out.String())
 	mFS.AssertExpectations(t)
+}
+
+func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
+	ctx := context.Background()
+
+	// Inject a resolvePaths stub that returns a zero-value Paths struct
+	// (all fields empty, including TurnsLogPath). This exercises the
+	// defensive guard at service.go:214 which is otherwise unreachable
+	// through the real persistence.ResolvePaths.
+	origResolve := agent.PathResolveFunc
+	agent.PathResolveFunc = func(homeDir, mode string) *persistence.Paths {
+		return &persistence.Paths{}
+	}
+	t.Cleanup(func() {
+		agent.PathResolveFunc = origResolve
+	})
+
+	// LogOpener must not be called — the guard should short-circuit before Open.
+	service := agent.NewChatService(
+		"/test", "v1", io.Discard, io.Discard, nil,
+		nil, nil, nil, nil, nil, nil,
+	)
+
+	var out bytes.Buffer
+	cfg := &config.Config{Mode: "assistant"}
+	err := service.StreamTurnsLog(ctx, cfg, &out)
+
+	assert.Error(t, err)
+	assert.Equal(t, "turns log path not available", err.Error())
 }

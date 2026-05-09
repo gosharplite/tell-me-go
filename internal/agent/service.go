@@ -21,6 +21,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/ioutils"
 )
 
+// PathResolveFunc is the function used to resolve session filesystem paths.
+// It is exported to allow tests to exercise the empty-path defensive guard
+// in StreamTurnsLog. Production code must not override this.
+var PathResolveFunc func(homeDir, mode string) *persistence.Paths = persistence.ResolvePaths
+
 // SessionLifecycleManager defines the interface for building and finalizing sessions.
 type SessionLifecycleManager interface {
 	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error)
@@ -45,6 +50,10 @@ type chatService struct {
 	HistoryRenderer  ports.HistoryRenderer
 	HistoryBrowser   ports.HistoryBrowser
 	LogOpener        LogFileOpener
+
+	// resolvePaths resolves session filesystem paths. Defaults to persistence.ResolvePaths.
+	// Injectable for testing the empty-path defensive guard in StreamTurnsLog.
+	resolvePaths func(homeDir, mode string) *persistence.Paths
 }
 
 // NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
@@ -59,7 +68,7 @@ func NewChatService(
 	historyBrowser ports.HistoryBrowser,
 	logOpener LogFileOpener,
 ) ChatService {
-	return &chatService{
+	svc := &chatService{
 		HomeDir:          homeDir,
 		Version:          version,
 		Stdout:           stdout,
@@ -72,6 +81,12 @@ func NewChatService(
 		HistoryBrowser:   historyBrowser,
 		LogOpener:        logOpener,
 	}
+
+	if svc.resolvePaths == nil {
+		svc.resolvePaths = PathResolveFunc
+	}
+
+	return svc
 }
 
 // GetLastUserMessage implements ChatService.
@@ -203,12 +218,12 @@ func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]s
 
 // StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
 func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Config, out io.Writer) (err error) {
-	paths := persistence.ResolvePaths(s.HomeDir, cfg.Mode)
-	// Coverage: defensive guard — ResolvePaths always produces a non-empty TurnsLogPath
-	// for all valid modes (empty/invalid modes fall back to "default"). This guard is
-	// unreachable through the public API but serves as a safety net against future
-	// regressions in path resolution. See TestChatService_StreamTurnsLog_EmptyPath
-	// for verification of the empty-mode fallback behavior.
+	paths := s.resolvePaths(s.HomeDir, cfg.Mode)
+	// Coverage: defensive guard — the default resolvePaths (persistence.ResolvePaths)
+	// always produces a non-empty TurnsLogPath for all valid modes (empty/invalid modes
+	// fall back to "default"). This guard is a safety net against future regressions in
+	// path resolution. See TestChatService_StreamTurnsLog_EmptyPath for verification
+	// that a nil/empty TurnsLogPath returns "turns log path not available".
 	if paths.TurnsLogPath == "" {
 		return errors.New("turns log path not available")
 	}
