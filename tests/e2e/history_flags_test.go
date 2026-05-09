@@ -18,6 +18,55 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
+// historyNavEnv holds the shared test environment for history navigation E2E tests.
+type historyNavEnv struct {
+	env        []string
+	configPath string
+	histPath   string
+}
+
+// newHistoryNavEnv creates a mock server, temp config, env vars, and populates
+// the session history with 3 sequential prompts ("Message 1", "Message 2", "Message 3").
+func newHistoryNavEnv(t *testing.T) *historyNavEnv {
+	t.Helper()
+
+	// 1. Setup Mock Server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := createTextResponse("google", "Response to your prompt")
+		_, _ = fmt.Fprint(w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	// 2. Setup Environment
+	homeDir := t.TempDir()
+	configPath := createTempConfig(t, "google", server.URL)
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL,
+		"TELL_ME_MOCK_ANSWER=y",
+	}
+
+	histPath := filepath.Join(homeDir, "output", "assistant", "history.jsonl")
+
+	// 3. Populate session history with 3 distinct prompts
+	prompts := []string{"Message 1", "Message 2", "Message 3"}
+	for _, p := range prompts {
+		_, _, err := runCommandWithEnv(env, "", "-c="+configPath, p)
+		if err != nil {
+			t.Fatalf("Failed to send prompt %q: %v", p, err)
+		}
+		forceReconcileHistory(t, histPath)
+		time.Sleep(1000 * time.Millisecond)
+	}
+
+	return &historyNavEnv{
+		env:        env,
+		configPath: configPath,
+		histPath:   histPath,
+	}
+}
+
 // forceReconcileHistory ensures the history file is fully flushed and visible on Windows.
 func forceReconcileHistory(t *testing.T, path string) {
 	t.Helper()
@@ -33,112 +82,104 @@ func forceReconcileHistory(t *testing.T, path string) {
 	}
 }
 
-func TestHistoryNavigationFlags(t *testing.T) {
+func TestHistoryNavigationFlags_LastNMessages(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
-	// 1. Setup Mock Server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		resp := createTextResponse("google", "Response to your prompt")
-		_, _ = fmt.Fprint(w, resp)
-	}))
-	defer server.Close()
+	env := newHistoryNavEnv(t)
 
-	// 2. Setup Environment
-	homeDir := t.TempDir()
-	configPath := createTempConfig(t, "google", server.URL)
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL,
-		"TELL_ME_MOCK_ANSWER=y", // For --retry confirmation
+	forceReconcileHistory(t, env.histPath)
+	stdout, stderr, err := runCommandWithEnv(env.env, "", "-c="+env.configPath, "-l", "4")
+	if err != nil {
+		t.Fatalf("CLI -l 4 failed: %v\nStderr: %s", err, stderr)
 	}
 
-	histPath := filepath.Join(homeDir, "output", "assistant", "history.jsonl")
+	out := stripANSI(stdout)
+	if !strings.Contains(out, "Message 2") {
+		t.Errorf("Expected output to contain 'Message 2', got: %q", out)
+	}
+	if !strings.Contains(out, "Message 3") {
+		t.Errorf("Expected output to contain 'Message 3', got: %q", out)
+	}
+}
 
-	// 3. Setup: Send 3 distinct prompts sequentially to populate session history.
-	prompts := []string{"Message 1", "Message 2", "Message 3"}
-	for _, p := range prompts {
-		_, _, err := runCommandWithEnv(env, "", "-c="+configPath, p)
-		if err != nil {
-			t.Fatalf("Failed to send prompt %q: %v", p, err)
-		}
-		forceReconcileHistory(t, histPath)
-		// Windows file lock mitigation
-		time.Sleep(1000 * time.Millisecond)
+func TestHistoryNavigationFlags_GoBack(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
 	}
 
-	t.Run("LastNMessages", func(t *testing.T) {
-		forceReconcileHistory(t, histPath)
-		stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-l", "4")
-		if err != nil {
-			t.Fatalf("CLI -l 4 failed: %v\nStderr: %s", err, stderr)
-		}
+	env := newHistoryNavEnv(t)
 
-		out := stripANSI(stdout)
-		if !strings.Contains(out, "Message 2") {
-			t.Errorf("Expected output to contain 'Message 2', got: %q", out)
-		}
-		if !strings.Contains(out, "Message 3") {
-			t.Errorf("Expected output to contain 'Message 3', got: %q", out)
-		}
-	})
+	// Test -b (Go back / Undo)
+	_, stderr, err := runCommandWithEnv(env.env, "", "-c="+env.configPath, "-b", "1")
+	if err != nil {
+		t.Fatalf("CLI -b 1 failed: %v\nStderr: %s", err, stderr)
+	}
+	forceReconcileHistory(t, env.histPath)
+	time.Sleep(1000 * time.Millisecond)
 
-	t.Run("GoBack", func(t *testing.T) {
-		// Test -b (Go back / Undo)
-		_, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-b", "1")
-		if err != nil {
-			t.Fatalf("CLI -b 1 failed: %v\nStderr: %s", err, stderr)
-		}
-		forceReconcileHistory(t, histPath)
-		time.Sleep(1000 * time.Millisecond)
+	stdout, stderr, err := runCommandWithEnv(env.env, "", "-c="+env.configPath, "-l", "4")
+	if err != nil {
+		t.Fatalf("CLI -l 4 after -b 1 failed: %v\nStderr: %s", err, stderr)
+	}
 
-		stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-l", "4")
-		if err != nil {
-			t.Fatalf("CLI -l 4 after -b 1 failed: %v\nStderr: %s", err, stderr)
-		}
+	out := stripANSI(stdout)
+	if !strings.Contains(out, "Message 1") {
+		t.Errorf("Expected output to contain 'Message 1', got: %q", out)
+	}
+	if !strings.Contains(out, "Message 2") {
+		t.Errorf("Expected output to contain 'Message 2', got: %q", out)
+	}
+	if strings.Contains(out, "Message 3") {
+		t.Errorf("Expected output NOT to contain 'Message 3' after -b 1, got: %q", out)
+	}
+}
 
-		out := stripANSI(stdout)
-		if !strings.Contains(out, "Message 1") {
-			t.Errorf("Expected output to contain 'Message 1', got: %q", out)
-		}
-		if !strings.Contains(out, "Message 2") {
-			t.Errorf("Expected output to contain 'Message 2', got: %q", out)
-		}
-		if strings.Contains(out, "Message 3") {
-			t.Errorf("Expected output NOT to contain 'Message 3' after -b 1, got: %q", out)
-		}
-	})
+func TestHistoryNavigationFlags_Retry(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 
-	t.Run("Retry", func(t *testing.T) {
-		// Test --retry
-		stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "--retry")
-		if err != nil {
-			t.Fatalf("CLI --retry failed: %v\nStderr: %s", err, stderr)
-		}
-		forceReconcileHistory(t, histPath)
-		time.Sleep(1000 * time.Millisecond)
+	env := newHistoryNavEnv(t)
 
-		out := stripANSI(stdout)
-		if !strings.Contains(out, "Response to your prompt") {
-			t.Errorf("Expected model response, got: %q", out)
-		}
+	// Roll back 1 turn first, matching the precondition the original
+	// shared-state test relied on (GoBack ran before Retry).
+	_, stderr, err := runCommandWithEnv(env.env, "", "-c="+env.configPath, "-b", "1")
+	if err != nil {
+		t.Fatalf("CLI -b 1 (prerequisite for retry) failed: %v\nStderr: %s", err, stderr)
+	}
+	forceReconcileHistory(t, env.histPath)
+	time.Sleep(1000 * time.Millisecond)
 
-		content, err := os.ReadFile(histPath)
-		if err != nil {
-			t.Fatalf("Failed to read history file: %v", err)
-		}
+	// Test --retry
+	stdout, stderr, err := runCommandWithEnv(env.env, "", "-c="+env.configPath, "--retry")
+	if err != nil {
+		t.Fatalf("CLI --retry failed: %v\nStderr: %s", err, stderr)
+	}
+	forceReconcileHistory(t, env.histPath)
+	time.Sleep(1000 * time.Millisecond)
 
-		histStr := string(content)
-		if !strings.Contains(histStr, "Message 2") {
-			t.Errorf("Expected history to contain 'Message 2', got: %q", histStr)
-		}
-		if strings.Contains(histStr, "Message 3") {
-			t.Errorf("Expected history NOT to contain 'Message 3', got: %q", histStr)
-		}
-	})
+	out := stripANSI(stdout)
+	if !strings.Contains(out, "Response to your prompt") {
+		t.Errorf("Expected model response, got: %q", out)
+	}
+
+	content, err := os.ReadFile(env.histPath)
+	if err != nil {
+		t.Fatalf("Failed to read history file: %v", err)
+	}
+
+	histStr := string(content)
+	if !strings.Contains(histStr, "Message 2") {
+		t.Errorf("Expected history to contain 'Message 2', got: %q", histStr)
+	}
+	if strings.Contains(histStr, "Message 3") {
+		t.Errorf("Expected history NOT to contain 'Message 3', got: %q", histStr)
+	}
 }
 
 func TestHistoryOnlyExit(t *testing.T) {
