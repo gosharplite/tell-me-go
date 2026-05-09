@@ -132,9 +132,9 @@ func TestGetRuntimeSnapshotForInternalUse_FieldMapping(t *testing.T) {
 
 	// Seed the atomic config via the write-path bridge.
 	a.SetRuntimeConfigForInternalUse(
-		"openai",     // providerName
-		"gpt-4o",     // model
-		"chat",       // mode
+		"openai", // providerName
+		"gpt-4o", // model
+		"chat",   // mode
 		map[string]domain_pricing.ModelPricing{
 			"gpt-4o": {Hit: 0.01, Miss: 0.02},
 		},
