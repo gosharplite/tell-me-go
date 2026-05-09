@@ -1,15 +1,14 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package config
 
 import (
 	"os"
 	"sync"
 	"time"
 
-	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -40,54 +39,11 @@ func setLimitsLocked(tokens, toolTurns, historyTurns int, maxHistoryTokens, maxT
 // resolveContextWindow determines the context window for the given model.
 // It returns the model-specific override if one exists with a positive value;
 // otherwise it returns the provided default window.
-func resolveContextWindow(cfg *config.Config, model string, defaultWindow int) int {
+func resolveContextWindow(cfg *domain_config.Config, model string, defaultWindow int) int {
 	if mCfg, ok := cfg.Models[model]; ok && mCfg.ContextWindow > 0 {
 		return mCfg.ContextWindow
 	}
 	return defaultWindow
-}
-
-// ConfigWatcher defines the interface for monitoring configuration.
-type ConfigWatcher interface {
-	SetPaths(main, session string)
-
-	// Refresh re-reads configuration from the underlying source (file, env,
-	// or in-memory store) using modelHint to disambiguate model-specific
-	// overrides. It is invoked by (*agent).applyConfig before the fallible
-	// delegate chain runs.
-	//
-	// Refresh is intentionally void per ADR-029 §5: it implements best-effort
-	// reload semantics. A failed refresh leaves the watcher's prior state
-	// intact, which is acceptable because the next chat turn will retry
-	// (idempotent reload). Promoting Refresh to fallible would force every
-	// caller to decide between "abort the chat" and "log and continue" —
-	// a policy choice the ADR explicitly defers.
-	//
-	// Do NOT change this signature to return error without first amending
-	// ADR-029. The fail-fast delegate chain in (*agent).applyConfig is
-	// scoped to SafePublish, Engine.Reconfigure, and Manager.Reconfigure
-	// only; expanding the chain is a non-trivial architectural decision.
-	Refresh(model string)
-	SetLimits(tokens, toolTurns, historyTurns int)
-	GetLimits() (tokens, toolTurns, historyTurns int)
-	ApplyLimits(l events.Limits)
-
-	// SyncToStrategy pushes the watcher's current limits into a *sessctx.Strategy
-	// so that token-budget calculations downstream see the latest configuration.
-	// It is invoked by (*agent).applyConfig after Refresh and before the fallible
-	// delegate chain runs.
-	//
-	// SyncToStrategy is intentionally void per ADR-029 §5: it performs only
-	// in-memory field assignments on a Strategy that the caller already owns.
-	// There is no I/O, no validation, and no observable failure mode. Promoting
-	// it to fallible would add a return-value-checking burden at every call
-	// site for a contract that cannot fail.
-	//
-	// Do NOT change this signature to return error without first amending
-	// ADR-029. The fail-fast delegate chain in (*agent).applyConfig is
-	// scoped to SafePublish, Engine.Reconfigure, and Manager.Reconfigure
-	// only; expanding the chain is a non-trivial architectural decision.
-	SyncToStrategy(cs *sessctx.Strategy)
 }
 
 // reloadSnapshot captures the mutable comparison state needed to decide
@@ -101,11 +57,11 @@ type reloadSnapshot struct {
 	lastModel      string
 }
 
-// fileConfigWatcher monitors configuration files for changes and caches values.
+// FileConfigWatcher monitors configuration files for changes and caches values.
 type FileConfigWatcher struct {
 	mu                   sync.RWMutex
-	Loader               config.ConfigLoader
-	SessionLoader        config.SessionLoader
+	Loader               domain_config.ConfigLoader
+	SessionLoader        domain_config.SessionLoader
 	FS                   FileStat
 	logger               ports.Logger
 	mainPath             string
@@ -124,7 +80,7 @@ type FileConfigWatcher struct {
 }
 
 // NewFileConfigWatcher creates a new fileConfigWatcher with default values.
-func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.SessionLoader, tokens, toolTurns, historyTurns int, logger ports.Logger) ConfigWatcher {
+func NewFileConfigWatcher(mainLoader domain_config.ConfigLoader, sessionLoader domain_config.SessionLoader, tokens, toolTurns, historyTurns int, logger ports.Logger) domain_config.ConfigWatcher {
 	defaultWindow := 1000000
 
 	return &FileConfigWatcher{
@@ -199,7 +155,7 @@ func (cw *FileConfigWatcher) Refresh(model string) {
 // configuration file. It must NOT hold any mutex. It returns the parsed
 // config, the os.FileInfo from Stat, and whether the file was actually
 // reloaded. If no reload is needed, it returns (nil, nil, false).
-func (cw *FileConfigWatcher) loadMainOutsideLock(snap reloadSnapshot, model string) (*config.Config, os.FileInfo, bool) {
+func (cw *FileConfigWatcher) loadMainOutsideLock(snap reloadSnapshot, model string) (*domain_config.Config, os.FileInfo, bool) {
 	ok, info := cw.shouldReloadMain(snap, model)
 	if !ok {
 		return nil, nil, false
@@ -244,7 +200,7 @@ func (cw *FileConfigWatcher) shouldReloadMain(snap reloadSnapshot, model string)
 // session configuration file. It must NOT hold any mutex. It returns the
 // parsed session config, the os.FileInfo from Stat, and whether the file
 // was actually reloaded. If no reload is needed, it returns (nil, nil, false).
-func (cw *FileConfigWatcher) loadSessionOutsideLock(snap reloadSnapshot, forceUpdate bool) (*config.SessionConfig, os.FileInfo, bool) {
+func (cw *FileConfigWatcher) loadSessionOutsideLock(snap reloadSnapshot, forceUpdate bool) (*domain_config.SessionConfig, os.FileInfo, bool) {
 	if snap.sessionPath == "" {
 		return nil, nil, false
 	}
@@ -276,7 +232,7 @@ func (cw *FileConfigWatcher) loadSessionOutsideLock(snap reloadSnapshot, forceUp
 
 // applyMainConfig updates the watcher's cached state from a successfully
 // loaded main configuration. The caller must hold cw.mu (write lock).
-func (cw *FileConfigWatcher) applyMainConfig(cfg *config.Config, info os.FileInfo, model string) {
+func (cw *FileConfigWatcher) applyMainConfig(cfg *domain_config.Config, info os.FileInfo, model string) {
 	cw.lastMainMod = info.ModTime()
 	cw.lastModel = model
 
@@ -289,7 +245,7 @@ func (cw *FileConfigWatcher) applyMainConfig(cfg *config.Config, info os.FileInf
 
 // applySessionLimits applies non-nil session config overrides to the watcher's
 // cached limits. The caller must hold cw.mu (write lock).
-func (cw *FileConfigWatcher) applySessionLimits(cfg *config.SessionConfig) {
+func (cw *FileConfigWatcher) applySessionLimits(cfg *domain_config.SessionConfig) {
 	if cfg.MaxHistoryTokens != nil {
 		cw.maxHistoryTokens = *cfg.MaxHistoryTokens
 	}
@@ -330,17 +286,19 @@ func (cw *FileConfigWatcher) ApplyLimits(l events.Limits) {
 	setLimitsLocked(l.MaxHistoryTokens, l.MaxToolTurns, l.MaxHistoryTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
-// SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
-func (cw *FileConfigWatcher) SyncToStrategy(cs *sessctx.Strategy) {
+// GetContextWindow returns the current cached context window.
+func (cw *FileConfigWatcher) GetContextWindow() int {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
-	if cs != nil {
-		cs.SetLimits(cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns)
-		cs.SetContextWindow(cw.contextWindow)
-	}
+	return cw.contextWindow
 }
 
-// noOpConfigWatcher implements ConfigWatcher but performs no file operations.
+// GetDefaultWindow returns the default context window value.
+func (cw *FileConfigWatcher) GetDefaultWindow() int {
+	return cw.defaultWindow
+}
+
+// noOpConfigWatcher implements domain_config.ConfigWatcher but performs no file operations.
 type noOpConfigWatcher struct {
 	mu               sync.RWMutex
 	maxHistoryTokens int
@@ -350,7 +308,7 @@ type noOpConfigWatcher struct {
 }
 
 // NewNoOpConfigWatcher creates a new noOpConfigWatcher with default values.
-func NewNoOpConfigWatcher(tokens, toolTurns, historyTurns int) ConfigWatcher {
+func NewNoOpConfigWatcher(tokens, toolTurns, historyTurns int) domain_config.ConfigWatcher {
 	return &noOpConfigWatcher{
 		maxHistoryTokens: tokens,
 		maxToolTurns:     toolTurns,
@@ -386,22 +344,9 @@ func (cw *noOpConfigWatcher) ApplyLimits(l events.Limits) {
 	setLimitsLocked(l.MaxHistoryTokens, l.MaxToolTurns, l.MaxHistoryTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
-// SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
-func (cw *noOpConfigWatcher) SyncToStrategy(cs *sessctx.Strategy) {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
-	if cs != nil {
-		cs.SetLimits(cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns)
-		cs.SetContextWindow(cw.contextWindow)
-	}
-}
-
-func (cw *FileConfigWatcher) GetContextWindow() int {
+// GetContextWindow returns the current cached context window.
+func (cw *noOpConfigWatcher) GetContextWindow() int {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.contextWindow
-}
-
-func (cw *FileConfigWatcher) GetDefaultWindow() int {
-	return cw.defaultWindow
 }
