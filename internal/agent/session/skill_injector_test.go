@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
@@ -74,7 +75,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 				},
 			},
 			validate: func(t *testing.T, req *ports.ContextRequest) {
-				assert.Len(t, req.History, 2)
+				require.Len(t, req.History, 2)
 				assert.Equal(t, "system", req.History[0].Role)
 				assert.True(t, req.History[0].Pinned, "expected injected system message to be pinned")
 				injectedText := req.History[0].Parts[0].Text
@@ -140,7 +141,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 				assert.Len(t, req.History, 1, "expected history unchanged")
 				assert.False(t, req.PersistHistory, "expected PersistHistory to remain false when skill selection fails")
 				// Verify the warning was logged.
-				assert.Len(t, errLogger.warns, 1)
+				require.Len(t, errLogger.warns, 1)
 				assert.Equal(t, "skill selection failed; proceeding without injected skills", errLogger.warns[0].msg)
 			},
 		},
