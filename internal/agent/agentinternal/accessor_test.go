@@ -11,13 +11,13 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -49,8 +49,8 @@ func (m *mockInternalAccessor) GetEventsForInternalUse() events.EventBus {
 	return m.Called().Get(0).(events.EventBus)
 }
 
-func (m *mockInternalAccessor) GetConfigWatcherForInternalUse() session.ConfigWatcher {
-	return m.Called().Get(0).(session.ConfigWatcher)
+func (m *mockInternalAccessor) GetConfigWatcherForInternalUse() domain_config.ConfigWatcher {
+	return m.Called().Get(0).(domain_config.ConfigWatcher)
 }
 
 func (m *mockInternalAccessor) GetRuntimeSnapshotForInternalUse() struct {
@@ -73,7 +73,7 @@ func (m *mockInternalAccessor) SetEventsForInternalUse(bus events.EventBus) {
 	m.Called(bus)
 }
 
-func (m *mockInternalAccessor) SetConfigWatcherForInternalUse(cw session.ConfigWatcher) {
+func (m *mockInternalAccessor) SetConfigWatcherForInternalUse(cw domain_config.ConfigWatcher) {
 	m.Called(cw)
 }
 
@@ -214,7 +214,7 @@ func TestAgentInternal_Getters(t *testing.T) {
 		{
 			name: "GetConfigWatcher",
 			setup: func(mock *mockInternalAccessor) any {
-				cw := session.NewNoOpConfigWatcher(1000, 10, 5)
+				cw := infra_config.NewNoOpConfigWatcher(1000, 10, 5)
 				mock.On("GetConfigWatcherForInternalUse").Return(cw)
 				return cw
 			},
@@ -338,12 +338,12 @@ func TestAgentInternal_Setters(t *testing.T) {
 		{
 			name: "SetConfigWatcherForTest",
 			setup: func(mock *mockInternalAccessor) any {
-				cw := session.NewNoOpConfigWatcher(1000, 10, 5)
+				cw := infra_config.NewNoOpConfigWatcher(1000, 10, 5)
 				mock.On("SetConfigWatcherForInternalUse", cw).Return()
 				return cw
 			},
 			call: func(ai *AgentInternal, val any) {
-				ai.SetConfigWatcherForTest(val.(session.ConfigWatcher))
+				ai.SetConfigWatcherForTest(val.(domain_config.ConfigWatcher))
 			},
 		},
 		{
@@ -566,7 +566,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 
 		gotDeps, gotHM, gotCleanup, err := m.BuildSessionDependencies(
 			context.Background(),
-			&config.Config{},
+			&domain_config.Config{},
 			"/some/path",
 			true,
 			nil, // CapturerInteractor — nil is fine with mock.Anything
@@ -594,7 +594,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 
 		gotDeps, gotHM, gotCleanup, err := m.BuildSessionDependencies(
 			context.Background(),
-			&config.Config{},
+			&domain_config.Config{},
 			"/some/path",
 			false,
 			nil,
@@ -623,7 +623,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 			context.Background(),
 			&agenttest.MockHistoryManager{},
 			&agenttest.MockServiceSessionDependencies{},
-			&config.Config{},
+			&domain_config.Config{},
 		)
 
 		assert.NoError(t, err)
@@ -644,7 +644,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 			context.Background(),
 			&agenttest.MockHistoryManager{},
 			&agenttest.MockServiceSessionDependencies{},
-			&config.Config{},
+			&domain_config.Config{},
 		)
 
 		assert.Error(t, err)

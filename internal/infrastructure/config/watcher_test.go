@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session_test
+package config
 
 import (
 	"encoding/json"
@@ -14,9 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
-	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +22,7 @@ import (
 
 type testSessionLoader struct{}
 
-func (l *testSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
+func (l *testSessionLoader) LoadSession(path string) (*domain_config.SessionConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -33,7 +31,7 @@ func (l *testSessionLoader) LoadSession(path string) (*config.SessionConfig, err
 	if err := json.Unmarshal(data, &pCfg); err != nil {
 		return nil, err
 	}
-	cfg := &config.SessionConfig{}
+	cfg := &domain_config.SessionConfig{}
 	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
 		cfg.MaxHistoryTokens = l.toIntPtr(val)
 	}
@@ -75,9 +73,9 @@ type sleepingConfigLoader struct {
 	delay time.Duration
 }
 
-func (l sleepingConfigLoader) Load(path string) (*config.Config, error) {
+func (l sleepingConfigLoader) Load(path string) (*domain_config.Config, error) {
 	time.Sleep(l.delay)
-	return &config.Config{
+	return &domain_config.Config{
 		MaxHistoryTokens: 500,
 		MaxToolTurns:     10,
 		MaxHistoryTurns:  20,
@@ -89,8 +87,8 @@ func (l sleepingConfigLoader) Load(path string) (*config.Config, error) {
 // delay concurrent readers beyond ~50ms. This test FAILS on the old
 // lock-across-I/O design and PASSES after the three-phase refactor.
 func TestFileConfigWatcher_ConcurrentRefreshAndRead(t *testing.T) {
-	fcw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	cw := fcw.(*session.FileConfigWatcher)
+	fcw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := fcw.(*FileConfigWatcher)
 
 	// Simulate slow disk: 200ms Stat + 100ms Load = 300ms total I/O.
 	futureTime := time.Now().Add(time.Hour)
@@ -125,7 +123,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "session.json")
 
-	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths("", sessionPath)
 
 	// 1. Initial defaults
@@ -166,7 +164,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "malformed.json")
 
-	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths("", sessionPath)
 
 	if err := os.WriteFile(sessionPath, []byte(`{invalid}`), 0644); err != nil {
@@ -182,7 +180,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 }
 
 func TestConfigWatcher_MissingFile(t *testing.T) {
-	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths("", "non-existent.json")
 
 	// Should not panic
@@ -193,13 +191,13 @@ func TestConfigWatcher_MissingFile(t *testing.T) {
 	}
 }
 
-func setupConfigWatcherTest(t *testing.T) (session.ConfigWatcher, string, string) {
+func setupConfigWatcherTest(t *testing.T) (domain_config.ConfigWatcher, string, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	mainPath := filepath.Join(tmpDir, "main.yaml")
 	sessionPath := filepath.Join(tmpDir, "session.json")
 
-	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths(mainPath, sessionPath)
 	return cw, mainPath, sessionPath
 }
@@ -214,7 +212,7 @@ func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
 
 func testYamlLoading(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
-	cw := fcw.(*session.FileConfigWatcher)
+	cw := fcw.(*FileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -226,7 +224,7 @@ MAX_TURNS: 5
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&config.Config{
+	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
 		MaxHistoryTokens: 500,
 		MaxToolTurns:     5,
 	}, nil)
@@ -244,7 +242,7 @@ MAX_TURNS: 5
 
 func testModelIsolation(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
-	cw := fcw.(*session.FileConfigWatcher)
+	cw := fcw.(*FileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -257,8 +255,8 @@ MODELS:
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&config.Config{
-		Models: map[string]config.ModelConfig{
+	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
+		Models: map[string]domain_config.ModelConfig{
 			"model-a": {ContextWindow: 1000},
 		},
 	}, nil)
@@ -290,7 +288,7 @@ MODELS:
 
 func testPrecedenceRules(t *testing.T) {
 	fcw, mainPath, sessionPath := setupConfigWatcherTest(t)
-	cw := fcw.(*session.FileConfigWatcher)
+	cw := fcw.(*FileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -302,7 +300,7 @@ MAX_TURNS: 5
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&config.Config{
+	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
 		MaxHistoryTokens: 500,
 		MaxToolTurns:     5,
 	}, nil)
@@ -323,7 +321,7 @@ MAX_TURNS: 5
 
 func testDeletionRobustness(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
-	cw := fcw.(*session.FileConfigWatcher)
+	cw := fcw.(*FileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -335,7 +333,7 @@ MAX_TURNS: 5
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&config.Config{
+	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
 		MaxHistoryTokens: 500,
 		MaxToolTurns:     5,
 	}, nil)
@@ -362,43 +360,20 @@ MAX_TURNS: 5
 	}
 }
 
-// stubFileInfo implements os.FileInfo for testing.
-type stubFileInfo struct{ modTime time.Time }
-
-func (s stubFileInfo) Name() string       { return "stub" }
-func (s stubFileInfo) Size() int64        { return 0 }
-func (s stubFileInfo) Mode() os.FileMode  { return 0 }
-func (s stubFileInfo) ModTime() time.Time { return s.modTime }
-func (s stubFileInfo) IsDir() bool        { return false }
-func (s stubFileInfo) Sys() interface{}   { return nil }
-
-// stubFileStat implements session.FileStat for testing.
-type stubFileStat struct {
-	statErr error
-	modTime time.Time
-}
-
-func (s stubFileStat) Stat(name string) (os.FileInfo, error) {
-	if s.statErr != nil {
-		return nil, s.statErr
-	}
-	return stubFileInfo{modTime: s.modTime}, nil
-}
-
-// stubConfigLoader implements config.ConfigLoader for testing.
+// stubConfigLoader implements domain_config.ConfigLoader for testing.
 type stubConfigLoader struct {
 	loadErr error
-	cfg     *config.Config
+	cfg     *domain_config.Config
 }
 
-func (l stubConfigLoader) Load(path string) (*config.Config, error) {
+func (l stubConfigLoader) Load(path string) (*domain_config.Config, error) {
 	if l.loadErr != nil {
 		return nil, l.loadErr
 	}
 	if l.cfg != nil {
 		return l.cfg, nil
 	}
-	return &config.Config{
+	return &domain_config.Config{
 		MaxHistoryTokens: 10000,
 		MaxToolTurns:     20,
 		MaxHistoryTurns:  50,
@@ -407,8 +382,8 @@ func (l stubConfigLoader) Load(path string) (*config.Config, error) {
 
 func TestFileConfigWatcher_Refresh_LoadError(t *testing.T) {
 	// Setup: Create FileConfigWatcher with a future mod time (triggers Stat) and a loader that errors.
-	fcw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	cw := fcw.(*session.FileConfigWatcher)
+	fcw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := fcw.(*FileConfigWatcher)
 
 	cw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	cw.Loader = stubConfigLoader{loadErr: errors.New("parse error")}
@@ -426,8 +401,8 @@ func TestFileConfigWatcher_Refresh_LoadError(t *testing.T) {
 
 func TestFileConfigWatcher_Refresh_StatError(t *testing.T) {
 	// Setup: Create FileConfigWatcher with Stat returning os.ErrNotExist.
-	fcw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	cw := fcw.(*session.FileConfigWatcher)
+	fcw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := fcw.(*FileConfigWatcher)
 
 	cw.FS = stubFileStat{statErr: os.ErrNotExist}
 	cw.SetPaths("/fake/main.yaml", "")
@@ -456,8 +431,8 @@ func TestConfigWatcher_LoadSessionConfig_ReadError(t *testing.T) {
 	var buf testfixtures.SyncWriter
 	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	cw := session.NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, testLogger)
-	fcw := cw.(*session.FileConfigWatcher)
+	cw := NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, testLogger)
+	fcw := cw.(*FileConfigWatcher)
 
 	// Override FS to return a future mod time so updateFromSession triggers loadSessionConfig.
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
@@ -486,8 +461,8 @@ func TestConfigWatcher_LoadSessionConfig_NilLogger(t *testing.T) {
 	}
 
 	// logger=nil intentionally — this is the branch under test.
-	cw := session.NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, nil)
-	fcw := cw.(*session.FileConfigWatcher)
+	cw := NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, nil)
+	fcw := cw.(*FileConfigWatcher)
 
 	// Ensure Stat returns a future mod time so updateFromSession triggers loadSessionConfig.
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
@@ -512,8 +487,8 @@ func TestConfigWatcher_LoadSessionConfig_NilSessionLoader(t *testing.T) {
 	}
 
 	// sessionLoader=nil
-	cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	fcw := cw.(*session.FileConfigWatcher)
+	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	fcw := cw.(*FileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -536,8 +511,8 @@ func TestConfigWatcher_LoadSessionConfig_NilSessionConfig(t *testing.T) {
 	}
 
 	// nilSessionLoader returns (nil, nil) — session config is absent
-	cw := session.NewFileConfigWatcher(nil, &nilSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*session.FileConfigWatcher)
+	cw := NewFileConfigWatcher(nil, &nilSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*FileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -559,8 +534,8 @@ func TestConfigWatcher_LoadSessionConfig_MissingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*session.FileConfigWatcher)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*FileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -588,8 +563,8 @@ func TestConfigWatcher_LoadSessionConfig_AllFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*session.FileConfigWatcher)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*FileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -624,8 +599,8 @@ func TestFileConfigWatcher_SetLimits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-			fcw := cw.(*session.FileConfigWatcher)
+			cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+			fcw := cw.(*FileConfigWatcher)
 
 			fcw.SetLimits(tt.tokens, tt.toolTurns, tt.histTurns)
 			tokens, toolTurns, histTurns := cw.GetLimits()
@@ -653,8 +628,8 @@ func TestFileConfigWatcher_ApplyLimits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-			fcw := cw.(*session.FileConfigWatcher)
+			cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+			fcw := cw.(*FileConfigWatcher)
 
 			fcw.ApplyLimits(tt.limits)
 			tokens, toolTurns, histTurns := cw.GetLimits()
@@ -668,74 +643,6 @@ func TestFileConfigWatcher_ApplyLimits(t *testing.T) {
 	}
 }
 
-func TestFileConfigWatcher_SyncToStrategy(t *testing.T) {
-	t.Run("pushes limits", func(t *testing.T) {
-		cw := session.NewFileConfigWatcher(nil, nil, 500, 10, 20, nil)
-		fcw := cw.(*session.FileConfigWatcher)
-
-		fcw.SetLimits(500, 10, 20)
-		strategy := sessctx.NewStrategy(nil)
-		fcw.SyncToStrategy(strategy)
-
-		if strategy.GetMaxHistoryTokens() != 500 {
-			t.Errorf("expected 500, got %d", strategy.GetMaxHistoryTokens())
-		}
-		if strategy.GetMaxToolTurns() != 10 {
-			t.Errorf("expected 10, got %d", strategy.GetMaxToolTurns())
-		}
-	})
-
-	t.Run("pushes context window", func(t *testing.T) {
-		cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-		fcw := cw.(*session.FileConfigWatcher)
-
-		strategy := sessctx.NewStrategy(nil)
-		fcw.SyncToStrategy(strategy)
-
-		if strategy.GetContextWindow() != 1000000 {
-			t.Errorf("expected 1000000, got %d", strategy.GetContextWindow())
-		}
-	})
-
-	t.Run("nil strategy no-op", func(t *testing.T) {
-		cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-		fcw := cw.(*session.FileConfigWatcher)
-
-		// Must not panic
-		fcw.SyncToStrategy(nil)
-	})
-}
-
-func TestFileConfigWatcher_SyncToStrategy_Divergence(t *testing.T) {
-	cw := session.NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	fcw := cw.(*session.FileConfigWatcher)
-
-	strategy := sessctx.NewStrategy(nil)
-
-	// Sync initial values
-	fcw.SyncToStrategy(strategy)
-	if strategy.GetMaxHistoryTokens() != 100 {
-		t.Fatalf("initial sync: expected 100, got %d", strategy.GetMaxHistoryTokens())
-	}
-
-	// Change watcher WITHOUT syncing
-	fcw.SetLimits(999, 50, 60)
-
-	// Strategy must still reflect OLD values — proof of divergence
-	if strategy.GetMaxHistoryTokens() != 100 {
-		t.Errorf("strategy should retain old value 100 before re-sync, got %d", strategy.GetMaxHistoryTokens())
-	}
-
-	// Re-sync — strategy must now reflect NEW values
-	fcw.SyncToStrategy(strategy)
-	if strategy.GetMaxHistoryTokens() != 999 {
-		t.Errorf("after re-sync: expected 999, got %d", strategy.GetMaxHistoryTokens())
-	}
-	if strategy.GetMaxToolTurns() != 50 {
-		t.Errorf("after re-sync: expected 50, got %d", strategy.GetMaxToolTurns())
-	}
-}
-
 func TestFileConfigWatcher_ForceUpdateSession(t *testing.T) {
 	tmpDir := t.TempDir()
 	mainPath := filepath.Join(tmpDir, "main.yaml")
@@ -746,8 +653,8 @@ func TestFileConfigWatcher_ForceUpdateSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cw := session.NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*session.FileConfigWatcher)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
+	fcw := cw.(*FileConfigWatcher)
 
 	// FS returns a fixed PAST modTime for both main and session files.
 	pastTime := time.Now().Add(-1 * time.Hour)
@@ -793,7 +700,7 @@ func TestFileConfigWatcher_ForceUpdateSession(t *testing.T) {
 }
 
 func TestNoOpConfigWatcher_ConstructorAndGetLimits(t *testing.T) {
-	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+	cw := NewNoOpConfigWatcher(100, 10, 20)
 
 	tokens, toolTurns, historyTurns := cw.GetLimits()
 	if tokens != 100 {
@@ -808,7 +715,7 @@ func TestNoOpConfigWatcher_ConstructorAndGetLimits(t *testing.T) {
 }
 
 func TestNoOpConfigWatcher_SetPathsAndRefresh(t *testing.T) {
-	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+	cw := NewNoOpConfigWatcher(100, 10, 20)
 
 	// SetPaths should not panic
 	cw.SetPaths("/some/main.yaml", "/some/session.json")
@@ -839,7 +746,7 @@ func TestNoOpConfigWatcher_SetLimits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cw := session.NewNoOpConfigWatcher(100, 10, 20)
+			cw := NewNoOpConfigWatcher(100, 10, 20)
 
 			cw.SetLimits(tt.tokens, tt.toolTurns, tt.histTurns)
 			tokens, toolTurns, histTurns := cw.GetLimits()
@@ -867,7 +774,7 @@ func TestNoOpConfigWatcher_ApplyLimits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cw := session.NewNoOpConfigWatcher(100, 10, 20)
+			cw := NewNoOpConfigWatcher(100, 10, 20)
 
 			cw.ApplyLimits(tt.limits)
 			tokens, toolTurns, histTurns := cw.GetLimits()
@@ -881,40 +788,8 @@ func TestNoOpConfigWatcher_ApplyLimits(t *testing.T) {
 	}
 }
 
-func TestNoOpConfigWatcher_SyncToStrategy(t *testing.T) {
-	t.Run("pushes limits", func(t *testing.T) {
-		cw := session.NewNoOpConfigWatcher(500, 10, 20)
-		cw.SetLimits(500, 10, 20)
-		strategy := sessctx.NewStrategy(nil)
-		cw.SyncToStrategy(strategy)
-
-		if strategy.GetMaxHistoryTokens() != 500 {
-			t.Errorf("expected 500, got %d", strategy.GetMaxHistoryTokens())
-		}
-		if strategy.GetMaxToolTurns() != 10 {
-			t.Errorf("expected 10, got %d", strategy.GetMaxToolTurns())
-		}
-	})
-
-	t.Run("pushes context window", func(t *testing.T) {
-		cw := session.NewNoOpConfigWatcher(100, 10, 20)
-		strategy := sessctx.NewStrategy(nil)
-		cw.SyncToStrategy(strategy)
-
-		if strategy.GetContextWindow() != 1000000 {
-			t.Errorf("expected 1000000, got %d", strategy.GetContextWindow())
-		}
-	})
-
-	t.Run("nil strategy no-op", func(t *testing.T) {
-		cw := session.NewNoOpConfigWatcher(100, 10, 20)
-		// Must not panic
-		cw.SyncToStrategy(nil)
-	})
-}
-
 func TestNoOpConfigWatcher_RaceDetector(t *testing.T) {
-	cw := session.NewNoOpConfigWatcher(100, 10, 20)
+	cw := NewNoOpConfigWatcher(100, 10, 20)
 
 	done := make(chan struct{})
 	for i := 0; i < 10; i++ {
@@ -937,13 +812,13 @@ type errorSessionLoader struct {
 	err error
 }
 
-func (l *errorSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
+func (l *errorSessionLoader) LoadSession(path string) (*domain_config.SessionConfig, error) {
 	return nil, l.err
 }
 
 // nilSessionLoader returns (nil, nil) to simulate a missing session config.
 type nilSessionLoader struct{}
 
-func (l *nilSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
+func (l *nilSessionLoader) LoadSession(path string) (*domain_config.SessionConfig, error) {
 	return nil, nil
 }

@@ -1,11 +1,11 @@
-package session
+package config
 
 import (
 	"os"
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
 // stubFileInfo implements os.FileInfo for testing.
@@ -31,11 +31,11 @@ func (s stubFileStat) Stat(name string) (os.FileInfo, error) {
 	return stubFileInfo{modTime: s.modTime}, nil
 }
 
-// mockConfigLoader implements config.ConfigLoader for internal tests.
+// mockConfigLoader implements domain_config.ConfigLoader for internal tests.
 type mockConfigLoader struct{}
 
-func (mockConfigLoader) Load(path string) (*config.Config, error) {
-	return &config.Config{
+func (mockConfigLoader) Load(path string) (*domain_config.Config, error) {
+	return &domain_config.Config{
 		MaxHistoryTokens: 10000,
 		MaxToolTurns:     20,
 		MaxHistoryTurns:  50,
@@ -137,15 +137,15 @@ func TestResolveContextWindow(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		cfg           *config.Config
+		cfg           *domain_config.Config
 		model         string
 		defaultWindow int
 		want          int
 	}{
 		{
 			name: "model present with positive window returns override",
-			cfg: &config.Config{
-				Models: map[string]config.ModelConfig{
+			cfg: &domain_config.Config{
+				Models: map[string]domain_config.ModelConfig{
 					"gpt-5": {ContextWindow: 128000},
 				},
 			},
@@ -155,8 +155,8 @@ func TestResolveContextWindow(t *testing.T) {
 		},
 		{
 			name: "model present with zero window falls back to default",
-			cfg: &config.Config{
-				Models: map[string]config.ModelConfig{
+			cfg: &domain_config.Config{
+				Models: map[string]domain_config.ModelConfig{
 					"gpt-5": {ContextWindow: 0},
 				},
 			},
@@ -166,8 +166,8 @@ func TestResolveContextWindow(t *testing.T) {
 		},
 		{
 			name: "model present with negative window falls back to default",
-			cfg: &config.Config{
-				Models: map[string]config.ModelConfig{
+			cfg: &domain_config.Config{
+				Models: map[string]domain_config.ModelConfig{
 					"gpt-5": {ContextWindow: -1},
 				},
 			},
@@ -177,8 +177,8 @@ func TestResolveContextWindow(t *testing.T) {
 		},
 		{
 			name: "model not found returns default",
-			cfg: &config.Config{
-				Models: map[string]config.ModelConfig{
+			cfg: &domain_config.Config{
+				Models: map[string]domain_config.ModelConfig{
 					"other-model": {ContextWindow: 64000},
 				},
 			},
@@ -188,15 +188,15 @@ func TestResolveContextWindow(t *testing.T) {
 		},
 		{
 			name:          "nil Models map returns default",
-			cfg:           &config.Config{},
+			cfg:           &domain_config.Config{},
 			model:         "gpt-5",
 			defaultWindow: defaultWindow,
 			want:          defaultWindow,
 		},
 		{
 			name: "custom default window is used when model absent",
-			cfg: &config.Config{
-				Models: map[string]config.ModelConfig{},
+			cfg: &domain_config.Config{
+				Models: map[string]domain_config.ModelConfig{},
 			},
 			model:         "gpt-5",
 			defaultWindow: 500000,

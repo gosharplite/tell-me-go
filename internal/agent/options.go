@@ -68,13 +68,6 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// WithLoader sets the configuration loader for the agent.
-func WithLoader(loader domain_config.ConfigLoader) AgentOption {
-	return func(a *agent) {
-		a.loader = loader
-	}
-}
-
 // WithSessionCostTracker sets the cost tracker for the agent.
 func WithSessionCostTracker(tracker domain_pricing.CostTracker) AgentOption {
 	return func(a *agent) {
@@ -82,10 +75,10 @@ func WithSessionCostTracker(tracker domain_pricing.CostTracker) AgentOption {
 	}
 }
 
-// WithSessionLoader sets the session configuration loader for the agent.
-func WithSessionLoader(loader domain_config.SessionLoader) AgentOption {
+// WithConfigWatcher sets the configuration watcher for hot-reload support.
+func WithConfigWatcher(cw domain_config.ConfigWatcher) AgentOption {
 	return func(a *agent) {
-		a.sessionLoader = loader
+		a.configWatcher = cw
 	}
 }
 
