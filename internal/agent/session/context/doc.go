@@ -16,7 +16,9 @@ Entry points:
 
 This package does not depend on any sibling under internal/agent/session.
 The reverse direction (session → session/context) is the only allowed coupling,
-maintained explicitly by session/internal_tools.go and session/skill_injector.go.
+maintained explicitly by session/internal_tools.go.
+The skill injector was extracted to internal/agent/skills/ per ADR-030.
+The config watcher was extracted to domain/config and infrastructure/config per ADR-030.
 
 See ADR-026 for the decomposition rationale.
 */

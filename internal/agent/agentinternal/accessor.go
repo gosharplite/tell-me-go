@@ -27,9 +27,8 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -84,8 +83,8 @@ func (a *AgentInternal) GetEvents() events.EventBus {
 	return a.raw.GetEventsForInternalUse()
 }
 
-// GetConfigWatcher returns the agent's session.ConfigWatcher.
-func (a *AgentInternal) GetConfigWatcher() session.ConfigWatcher {
+// GetConfigWatcher returns the agent's domain_config.ConfigWatcher.
+func (a *AgentInternal) GetConfigWatcher() domain_config.ConfigWatcher {
 	return a.raw.GetConfigWatcherForInternalUse()
 }
 
@@ -149,8 +148,8 @@ func (a *AgentInternal) SetEventsForTest(bus events.EventBus) {
 	a.raw.SetEventsForInternalUse(bus)
 }
 
-// SetConfigWatcherForTest replaces the agent's session.ConfigWatcher.
-func (a *AgentInternal) SetConfigWatcherForTest(cw session.ConfigWatcher) {
+// SetConfigWatcherForTest replaces the agent's domain_config.ConfigWatcher.
+func (a *AgentInternal) SetConfigWatcherForTest(cw domain_config.ConfigWatcher) {
 	a.raw.SetConfigWatcherForInternalUse(cw)
 }
 
@@ -198,7 +197,7 @@ type mockSessionLifecycleManager struct {
 	mock.Mock
 }
 
-func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
+func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
 	var deps ports.SessionDependencies
 	if args.Get(0) != nil {
@@ -211,7 +210,7 @@ func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Conte
 	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
 }
 
-func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error {
 	args := m.Called(ctx, hManager, deps, cfg)
 	return args.Error(0)
 }

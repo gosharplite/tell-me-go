@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -145,8 +146,11 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
 		agent.WithSecurityManager(sm),
-		agent.WithLoader(&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}),
-		agent.WithSessionLoader(&config.JSONSessionLoader{}),
+		agent.WithConfigWatcher(config.NewFileConfigWatcher(
+			&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()},
+			&config.JSONSessionLoader{},
+			100, 10, 20, nil,
+		)),
 	)
 	require.NoError(t, err)
 
@@ -797,7 +801,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 	a := agentinternal.NewBareAgent()
 	a.SetEventsForTest(bus)
-	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetConfigWatcherForTest(domain_config.NewNoOpConfigWatcher(1000, 5, 10))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -817,7 +821,7 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 
 	a := agentinternal.NewBareAgent()
 	a.SetEventsForTest(mockBus)
-	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetConfigWatcherForTest(domain_config.NewNoOpConfigWatcher(1000, 5, 10))
 	a.SetRuntimeConfigForTest(agentinternal.RuntimeSnapshot{})
 
 	err := a.ApplyConfig(context.Background())

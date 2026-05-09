@@ -24,20 +24,21 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand lint vulncheck dead-code check check-full
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-architecture lint vulncheck dead-code check check-full
 
 help:
 	@echo "tell-me-go development tasks:"
 	@echo "  make build      - Build binary with dynamic version (set VERSION=x.y.z)"
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
+	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
 	@echo "  make lint       - Run golangci-lint static analysis"
 	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
-	@echo "  make check      - Run full quality pipeline: fmt tidy build lint vulncheck test dead-code test-coverage"
-	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint vulncheck test dead-code test-race test-coverage"
+	@echo "  make check      - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck test dead-code test-coverage"
+	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck test dead-code test-race test-coverage"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
 build:
@@ -224,6 +225,9 @@ else
 	@echo "  ✓ *ForInternalUse brand contained to bridge package."
 endif
 
+verify-architecture:
+	@ARCH_FAIL_ON_VIOLATION=1 go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
+
 # AI-SAFE RACE TEST: 
 # Running 'go test -race ./...' globally can time out in constrained environments.
 # This target iterates through packages sequentially for stability.
@@ -264,6 +268,8 @@ dead-code:
 check: fmt tidy build
 	@echo "=== lint ==="
 	@$(MAKE) lint
+	@echo "=== verify-architecture ==="
+	@$(MAKE) verify-architecture
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="
@@ -280,6 +286,8 @@ check: fmt tidy build
 check-full: fmt tidy build
 	@echo "=== lint ==="
 	@$(MAKE) lint
+	@echo "=== verify-architecture ==="
+	@$(MAKE) verify-architecture
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="

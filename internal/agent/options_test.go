@@ -15,19 +15,16 @@ import (
 )
 
 type localMockSummarizer struct{ ports.Summarizer }
-type localMockLoader struct{ domain_config.ConfigLoader }
-type localMockSessionLoader struct{ domain_config.SessionLoader }
 type localMockTracker struct{ domain_pricing.CostTracker }
 type localMockSkillSelector struct{ skills.SkillSelector }
 
 func TestAgentOptions(t *testing.T) {
 	t.Parallel()
 	mockSummarizer := &localMockSummarizer{}
-	mockLoader := &localMockLoader{}
-	mockSessionLoader := &localMockSessionLoader{}
 	mockTracker := &localMockTracker{}
 	mockLogger := slog.Default()
 	mockSkillSelector := &localMockSkillSelector{}
+	mockConfigWatcher := domain_config.NewNoOpConfigWatcher(100, 10, 20)
 	overrides := map[string]domain_pricing.ModelPricing{
 		"test": {Miss: 1.0},
 	}
@@ -61,17 +58,10 @@ func TestAgentOptions(t *testing.T) {
 			},
 		},
 		{
-			name:   "WithLoader",
-			option: WithLoader(mockLoader),
+			name:   "WithConfigWatcher",
+			option: WithConfigWatcher(mockConfigWatcher),
 			validate: func(t *testing.T, a *agent) {
-				require.Equal(t, mockLoader, a.loader)
-			},
-		},
-		{
-			name:   "WithSessionLoader",
-			option: WithSessionLoader(mockSessionLoader),
-			validate: func(t *testing.T, a *agent) {
-				require.Equal(t, mockSessionLoader, a.sessionLoader)
+				require.Equal(t, mockConfigWatcher, a.configWatcher)
 			},
 		},
 		{

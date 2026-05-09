@@ -10,15 +10,14 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
-	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
-// stubConfigWatcher implements session.ConfigWatcher with canned return
+// stubConfigWatcher implements domain_config.ConfigWatcher with canned return
 // values for GetLimits(). Used by TestApplyConfig_FailFastChain to inject
 // valid or invalid limits into the delegate chain without modifying
 // production ConfigWatcher implementations.
@@ -30,12 +29,12 @@ type stubConfigWatcher struct {
 	historyTurns int
 }
 
-func (s *stubConfigWatcher) SetPaths(_, _ string)               {}
-func (s *stubConfigWatcher) Refresh(_ string)                   {}
-func (s *stubConfigWatcher) SetLimits(_, _, _ int)              {}
-func (s *stubConfigWatcher) GetLimits() (int, int, int)         { return s.tokens, s.toolTurns, s.historyTurns }
-func (s *stubConfigWatcher) ApplyLimits(_ events.Limits)        {}
-func (s *stubConfigWatcher) SyncToStrategy(_ *sessctx.Strategy) {}
+func (s *stubConfigWatcher) SetPaths(_, _ string)        {}
+func (s *stubConfigWatcher) Refresh(_ string)            {}
+func (s *stubConfigWatcher) SetLimits(_, _, _ int)       {}
+func (s *stubConfigWatcher) GetLimits() (int, int, int)  { return s.tokens, s.toolTurns, s.historyTurns }
+func (s *stubConfigWatcher) ApplyLimits(_ events.Limits) {}
+func (s *stubConfigWatcher) GetContextWindow() int       { return 1000000 }
 
 // ---------------------------------------------------------------------------
 // TestApplyConfig_FailFastChain
@@ -216,7 +215,7 @@ func newTestAgent(t *testing.T) (ports.Chatter, InternalAccessor) {
 }
 
 // Ensure stubConfigWatcher satisfies the interface at compile time.
-var _ session.ConfigWatcher = (*stubConfigWatcher)(nil)
+var _ domain_config.ConfigWatcher = (*stubConfigWatcher)(nil)
 
 // TestApplyConfig_NilEngineAndCtxManager verifies that applyConfig does not
 // panic or error when the agent's engine and context manager are nil. This

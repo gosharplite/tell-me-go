@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -258,7 +258,7 @@ func TestAgent_BareConstruction_FieldAssignment(t *testing.T) {
 	// Set*/Get* accessors.
 	a := &agent{}
 
-	cw := session.NewNoOpConfigWatcher(0, 0, 0)
+	cw := domain_config.NewNoOpConfigWatcher(0, 0, 0)
 	a.configWatcher = cw
 	assert.Equal(t, cw, a.configWatcher)
 
@@ -280,20 +280,21 @@ func TestAgent_GetLogger_Default(t *testing.T) {
 	assert.NotNil(t, a.getLogger())
 }
 
-func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
+func TestAgent_InitComponents_ConfigWatcher(t *testing.T) {
 	ctx := context.Background()
 	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	loader := &agenttest.MockConfigLoader{}
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
+	cw := domain_config.NewNoOpConfigWatcher(100, 10, 20)
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithConfigWatcher(cw))
 	require.NoError(t, err)
 
 	a := asAgent(t, chatter)
 	assert.NotNil(t, a.configWatcher)
-	// Verify it's not the no-op one if we can, but at least we covered the branch
+	// Verify the injected watcher is the one we passed
+	assert.Equal(t, cw, a.configWatcher)
 }
 
 func TestAgent_Chat_AddContentError(t *testing.T) {

@@ -1,17 +1,18 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package skills
 
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockSkillSelector struct {
@@ -74,22 +75,12 @@ func TestSkillInjector_Transform(t *testing.T) {
 				},
 			},
 			validate: func(t *testing.T, req *ports.ContextRequest) {
-				if len(req.History) != 2 {
-					t.Fatalf("expected 2 history entries, got %d", len(req.History))
-				}
-				if req.History[0].Role != "system" {
-					t.Errorf("expected first message to be system, got %q", req.History[0].Role)
-				}
-				if !req.History[0].Pinned {
-					t.Error("expected injected system message to be pinned")
-				}
+				require.Len(t, req.History, 2)
+				assert.Equal(t, "system", req.History[0].Role)
+				assert.True(t, req.History[0].Pinned, "expected injected system message to be pinned")
 				injectedText := req.History[0].Parts[0].Text
-				if !strings.Contains(injectedText, "test-skill") {
-					t.Errorf("expected injected text to contain skill name, got %q", injectedText)
-				}
-				if !strings.Contains(injectedText, "Use testing.") {
-					t.Errorf("expected injected text to contain skill content, got %q", injectedText)
-				}
+				assert.Contains(t, injectedText, "test-skill")
+				assert.Contains(t, injectedText, "Use testing.")
 			},
 		},
 		{
@@ -147,19 +138,11 @@ func TestSkillInjector_Transform(t *testing.T) {
 			validate: func(t *testing.T, req *ports.ContextRequest) {
 				// Transform must NOT return an error — the failure is logged, not propagated.
 				// History must remain unchanged (no injection, no mutation).
-				if len(req.History) != 1 {
-					t.Errorf("expected history unchanged (1 entry), got %d", len(req.History))
-				}
-				if req.PersistHistory {
-					t.Error("expected PersistHistory to remain false when skill selection fails")
-				}
+				assert.Len(t, req.History, 1, "expected history unchanged")
+				assert.False(t, req.PersistHistory, "expected PersistHistory to remain false when skill selection fails")
 				// Verify the warning was logged.
-				if len(errLogger.warns) != 1 {
-					t.Fatalf("expected 1 warning call, got %d", len(errLogger.warns))
-				}
-				if errLogger.warns[0].msg != "skill selection failed; proceeding without injected skills" {
-					t.Errorf("unexpected warning message: %q", errLogger.warns[0].msg)
-				}
+				require.Len(t, errLogger.warns, 1)
+				assert.Equal(t, "skill selection failed; proceeding without injected skills", errLogger.warns[0].msg)
 			},
 		},
 	}
