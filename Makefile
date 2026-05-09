@@ -226,7 +226,6 @@ else
 endif
 
 verify-architecture:
-	@echo "=== verify-architecture ==="
 	@ARCH_FAIL_ON_VIOLATION=1 go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
 
 # AI-SAFE RACE TEST: 
