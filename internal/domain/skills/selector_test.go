@@ -57,7 +57,7 @@ func assertExpectedSkills(t *testing.T, got []Skill, want []string) {
 	}
 }
 
-func TestDefaultSkillSelector(t *testing.T) {
+func TestDefaultSkillSelector_Ordering(t *testing.T) {
 	t.Parallel()
 	defaultRepo := setupMockRepo()
 
@@ -65,10 +65,7 @@ func TestDefaultSkillSelector(t *testing.T) {
 		name           string
 		budget         int
 		query          string
-		repo           SkillRepository
 		expectedSkills []string
-		wantErr        bool
-		validate       func(t *testing.T, selector SkillSelector, selected []Skill, err error)
 	}{
 		{
 			name:           "TokenBudgetConstraint",
@@ -87,13 +84,6 @@ func TestDefaultSkillSelector(t *testing.T) {
 			budget:         50,
 			query:          "testing patterns",
 			expectedSkills: []string{"unrelated-skill"},
-			validate: func(t *testing.T, _ SkillSelector, selected []Skill, _ error) {
-				for _, s := range selected {
-					if s.TokenCount > 50 {
-						t.Errorf("skill %s exceeds budget with token count %d", s.Name, s.TokenCount)
-					}
-				}
-			},
 		},
 		{
 			name:           "RelevanceRanking",
@@ -101,6 +91,33 @@ func TestDefaultSkillSelector(t *testing.T) {
 			query:          "tdd is great",
 			expectedSkills: []string{"golang-testing", "golang-patterns", "unrelated-skill"},
 		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			selector := NewDefaultSkillSelector(defaultRepo, tt.budget)
+			selected, err := selector.SelectSkills(ctx, tt.query)
+			if err != nil {
+				t.Fatalf("SelectSkills() unexpected error: %v", err)
+			}
+			assertExpectedSkills(t, selected, tt.expectedSkills)
+		})
+	}
+}
+
+func TestDefaultSkillSelector_ErrorsAndConsistency(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		budget   int
+		query    string
+		repo     SkillRepository
+		validate func(t *testing.T, selector SkillSelector, selected []Skill, err error)
+	}{
 		{
 			name:   "OrderConsistency",
 			budget: 100,
@@ -128,7 +145,6 @@ func TestDefaultSkillSelector(t *testing.T) {
 			repo: &mockSkillRepository{
 				err: errRepoFailure,
 			},
-			wantErr: true,
 			validate: func(t *testing.T, _ SkillSelector, selected []Skill, err error) {
 				if !errors.Is(err, errRepoFailure) {
 					t.Errorf("expected error to wrap errRepoFailure, got: %v", err)
@@ -145,25 +161,9 @@ func TestDefaultSkillSelector(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			repo := tt.repo
-			if repo == nil {
-				repo = defaultRepo
-			}
-
-			selector := NewDefaultSkillSelector(repo, tt.budget)
+			selector := NewDefaultSkillSelector(tt.repo, tt.budget)
 			selected, err := selector.SelectSkills(ctx, tt.query)
-
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("SelectSkills() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if tt.expectedSkills != nil {
-				assertExpectedSkills(t, selected, tt.expectedSkills)
-			}
-
-			if tt.validate != nil {
-				tt.validate(t, selector, selected, err)
-			}
+			tt.validate(t, selector, selected, err)
 		})
 	}
 }
