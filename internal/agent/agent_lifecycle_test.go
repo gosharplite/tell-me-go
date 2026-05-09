@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -258,7 +258,7 @@ func TestAgent_BareConstruction_FieldAssignment(t *testing.T) {
 	// Set*/Get* accessors.
 	a := &agent{}
 
-	cw := session.NewNoOpConfigWatcher(0, 0, 0)
+	cw := infra_config.NewNoOpConfigWatcher(0, 0, 0)
 	a.configWatcher = cw
 	assert.Equal(t, cw, a.configWatcher)
 

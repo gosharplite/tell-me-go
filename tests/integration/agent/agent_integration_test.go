@@ -797,7 +797,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 	a := agentinternal.NewBareAgent()
 	a.SetEventsForTest(bus)
-	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetConfigWatcherForTest(config.NewNoOpConfigWatcher(1000, 5, 10))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -817,7 +817,7 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 
 	a := agentinternal.NewBareAgent()
 	a.SetEventsForTest(mockBus)
-	a.SetConfigWatcherForTest(session.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetConfigWatcherForTest(config.NewNoOpConfigWatcher(1000, 5, 10))
 	a.SetRuntimeConfigForTest(agentinternal.RuntimeSnapshot{})
 
 	err := a.ApplyConfig(context.Background())

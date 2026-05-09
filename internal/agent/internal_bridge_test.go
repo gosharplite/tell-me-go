@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -85,7 +85,7 @@ func TestInternalBridge_GettersAndSetters(t *testing.T) {
 
 	t.Run("Getter/GetConfigWatcherForInternalUse", func(t *testing.T) {
 		a := &agent{}
-		cw := session.NewNoOpConfigWatcher(1000, 10, 5)
+		cw := infra_config.NewNoOpConfigWatcher(1000, 10, 5)
 		a.configWatcher = cw
 
 		got := a.GetConfigWatcherForInternalUse()
