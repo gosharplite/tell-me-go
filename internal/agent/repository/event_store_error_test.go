@@ -118,8 +118,8 @@ func TestGetSessionEvents_CloseError(t *testing.T) {
 //  2. parseSessionEvents calls rows.Err() after the scan loop and wraps it:
 //     "event rows iteration: <close error>"
 //  3. This makes err non-nil when getSessionEvents evaluates its defer.
-//  4. The defer's err==nil guard (lines 43-45) is therefore unreachable
-//     in practice — it exists as defensive code only.
+//  4. The defer's err==nil guard is therefore unreachable in practice —
+//     it exists as defensive code only (see inline comment in event_store.go).
 //
 // This test exercises the full propagation chain: data parses successfully,
 // CloseError fires, the error reaches the caller.
