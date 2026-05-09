@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/config/configtest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
@@ -213,7 +213,7 @@ func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
 func testYamlLoading(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(agenttest.MockConfigLoader)
+	mockLoader := new(configtest.MockConfigLoader)
 	cw.Loader = mockLoader
 
 	yamlContent := `
@@ -243,7 +243,7 @@ MAX_TURNS: 5
 func testModelIsolation(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(agenttest.MockConfigLoader)
+	mockLoader := new(configtest.MockConfigLoader)
 	cw.Loader = mockLoader
 
 	yamlContent := `
@@ -289,7 +289,7 @@ MODELS:
 func testPrecedenceRules(t *testing.T) {
 	fcw, mainPath, sessionPath := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(agenttest.MockConfigLoader)
+	mockLoader := new(configtest.MockConfigLoader)
 	cw.Loader = mockLoader
 
 	yamlContent := `
@@ -322,7 +322,7 @@ MAX_TURNS: 5
 func testDeletionRobustness(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(agenttest.MockConfigLoader)
+	mockLoader := new(configtest.MockConfigLoader)
 	cw.Loader = mockLoader
 
 	yamlContent := `

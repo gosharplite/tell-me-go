@@ -10,7 +10,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
-	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +24,7 @@ func TestAgentOptions(t *testing.T) {
 	mockTracker := &localMockTracker{}
 	mockLogger := slog.Default()
 	mockSkillSelector := &localMockSkillSelector{}
-	mockConfigWatcher := infra_config.NewNoOpConfigWatcher(100, 10, 20)
+	mockConfigWatcher := domain_config.NewNoOpConfigWatcher(100, 10, 20)
 	overrides := map[string]domain_pricing.ModelPricing{
 		"test": {Miss: 1.0},
 	}
