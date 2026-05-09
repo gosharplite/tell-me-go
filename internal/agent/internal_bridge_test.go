@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"testing"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -115,14 +116,17 @@ func TestInternalBridge_GettersAndSetters(t *testing.T) {
 	})
 }
 
-// TestGetRuntimeSnapshotForInternalUse_FullCopy verifies that every field
+// TestGetRuntimeSnapshotForInternalUse_FieldMapping verifies that every field
 // from the agent's internal runtimeConfig is correctly copied into the
 // anonymous struct returned by GetRuntimeSnapshotForInternalUse.
 //
-// This guards against field-drift: if a new field is added to runtimeConfig
-// but forgotten in the snapshot mapping, consumers silently receive zero
-// values. See issue #273.
-func TestGetRuntimeSnapshotForInternalUse_FullCopy(t *testing.T) {
+// This guards against the scenario where a field already exists in both
+// runtimeConfig and the snapshot struct, but is accidentally removed or
+// omitted from the copy logic at internal_bridge.go:76-81. For type-level
+// drift detection (new fields added to runtimeConfig but not to the
+// snapshot struct), see TestGetRuntimeSnapshotForInternalUse_TypeParity.
+// See issue #273.
+func TestGetRuntimeSnapshotForInternalUse_FieldMapping(t *testing.T) {
 	// Use a bare agent — no full initialization needed.
 	a := &agent{}
 
@@ -199,5 +203,40 @@ func TestGetRuntimeSnapshotForInternalUse_NilConfig(t *testing.T) {
 	}
 	if snap.Limits != (events.Limits{}) {
 		t.Errorf("Limits = %+v; want zero value", snap.Limits)
+	}
+}
+
+// TestGetRuntimeSnapshotForInternalUse_TypeParity uses reflection to enforce
+// structural parity between the unexported runtimeConfig struct and the
+// anonymous struct returned by GetRuntimeSnapshotForInternalUse.
+//
+// If a developer adds a field to runtimeConfig but forgets to add it to the
+// snapshot struct (or changes its type), this test fails immediately with a
+// precise message naming the mismatched field. This is a compile-time-adjacent
+// architectural guard that the FieldMapping test alone cannot provide.
+//
+// See issue #273.
+func TestGetRuntimeSnapshotForInternalUse_TypeParity(t *testing.T) {
+	cfgType := reflect.TypeOf(runtimeConfig{})
+	snapType := reflect.TypeOf((&agent{}).GetRuntimeSnapshotForInternalUse())
+
+	// 1. Field count must match.
+	if cfgType.NumField() != snapType.NumField() {
+		t.Errorf("field count mismatch: runtimeConfig has %d fields, snapshot has %d",
+			cfgType.NumField(), snapType.NumField())
+	}
+
+	// 2. Every runtimeConfig field must exist in the snapshot with the same type.
+	for i := 0; i < cfgType.NumField(); i++ {
+		cfgField := cfgType.Field(i)
+		snapField, ok := snapType.FieldByName(cfgField.Name)
+		if !ok {
+			t.Errorf("snapshot is missing field %q (present in runtimeConfig)", cfgField.Name)
+			continue
+		}
+		if cfgField.Type != snapField.Type {
+			t.Errorf("field %q type mismatch: runtimeConfig=%v, snapshot=%v",
+				cfgField.Name, cfgField.Type, snapField.Type)
+		}
 	}
 }
