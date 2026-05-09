@@ -23,7 +23,6 @@ type historyNavEnv struct {
 	env        []string
 	configPath string
 	histPath   string
-	server     *httptest.Server
 }
 
 // newHistoryNavEnv creates a mock server, temp config, env vars, and populates
@@ -65,7 +64,6 @@ func newHistoryNavEnv(t *testing.T) *historyNavEnv {
 		env:        env,
 		configPath: configPath,
 		histPath:   histPath,
-		server:     server,
 	}
 }
 
