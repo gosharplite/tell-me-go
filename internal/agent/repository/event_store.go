@@ -39,10 +39,11 @@ func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) (e
 		return nil, fmt.Errorf("querying session events: %w", err)
 	}
 	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			if err == nil {
-				err = fmt.Errorf("closing event rows: %w", closeErr)
-			}
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			// Defensive only: database/sql surfaces driver Close errors
+			// via rows.Err() inside parseSessionEvents before this defer
+			// evaluates, so this branch is unreachable in practice.
+			err = fmt.Errorf("closing event rows: %w", closeErr)
 		}
 	}()
 
