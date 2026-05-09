@@ -178,6 +178,18 @@ func (idx *indexer) needsRefresh() bool {
 }
 
 func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*packages.Package, error) {
+	// First, discover the module path so we can use a module-qualified
+	// pattern (modulePath/...) instead of "./...". The "./..." pattern is
+	// restricted to the test's package scope when running inside go test,
+	// which prevents architecture verification from seeing cross-package
+	// imports in other parts of the module.
+	modulePath := idx.discoverModulePath(ctx, fset)
+
+	pattern := "./..."
+	if modulePath != "" {
+		pattern = modulePath + "/..."
+	}
+
 	cfg := &packages.Config{
 		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedModule,
 		Dir:     idx.dir,
@@ -195,7 +207,28 @@ func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 		// every dead_code_graph consumer.
 		Tests: true,
 	}
-	return packages.Load(cfg, "./...")
+	return packages.Load(cfg, pattern)
+}
+
+// discoverModulePath performs a lightweight package load to discover the
+// Go module path. Returns "" if the module cannot be determined.
+func (idx *indexer) discoverModulePath(ctx context.Context, fset *token.FileSet) string {
+	cfg := &packages.Config{
+		Mode:    packages.NeedName | packages.NeedModule,
+		Dir:     idx.dir,
+		Fset:    fset,
+		Context: ctx,
+	}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil || len(pkgs) == 0 {
+		return ""
+	}
+	for _, pkg := range pkgs {
+		if pkg.Module != nil && pkg.Module.Path != "" {
+			return pkg.Module.Path
+		}
+	}
+	return ""
 }
 
 func (idx *indexer) updateState(pkgs []*packages.Package, symbolsByPath map[string][]symbolLocation, usagesByName map[string][]location, fset *token.FileSet) {

@@ -15,8 +15,8 @@ func TestVerifyRealArchitecture(t *testing.T) {
 	}
 
 	m := &architectureManager{
-		SP:     &mockSecurityProvider{},
-		Runner: &realAnalysisGoRunner{},
+		SP:  &mockSecurityProvider{},
+		idx: getSharedIndexer(t),
 	}
 
 	res, err := m.VerifyArchitecture(context.Background(), nil, nil)
@@ -25,8 +25,6 @@ func TestVerifyRealArchitecture(t *testing.T) {
 	}
 
 	if strings.Contains(res.Text, "FAILED") {
-		t.Logf("Architecture validation FAILED:\n%s", res.Text)
-	} else {
-		t.Log("✅ No architectural violations detected.")
+		t.Errorf("Architecture validation FAILED:\n%s", res.Text)
 	}
 }
