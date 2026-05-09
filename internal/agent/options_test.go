@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"testing"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
-	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/stretchr/testify/require"
 )
 
