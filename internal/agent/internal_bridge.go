@@ -4,8 +4,8 @@
 package agent
 
 import (
-	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"

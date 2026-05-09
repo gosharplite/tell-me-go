@@ -29,12 +29,12 @@ type stubConfigWatcher struct {
 	historyTurns int
 }
 
-func (s *stubConfigWatcher) SetPaths(_, _ string)               {}
-func (s *stubConfigWatcher) Refresh(_ string)                   {}
-func (s *stubConfigWatcher) SetLimits(_, _, _ int)              {}
-func (s *stubConfigWatcher) GetLimits() (int, int, int)         { return s.tokens, s.toolTurns, s.historyTurns }
-func (s *stubConfigWatcher) ApplyLimits(_ events.Limits)        {}
-func (s *stubConfigWatcher) GetContextWindow() int              { return 1000000 }
+func (s *stubConfigWatcher) SetPaths(_, _ string)        {}
+func (s *stubConfigWatcher) Refresh(_ string)            {}
+func (s *stubConfigWatcher) SetLimits(_, _, _ int)       {}
+func (s *stubConfigWatcher) GetLimits() (int, int, int)  { return s.tokens, s.toolTurns, s.historyTurns }
+func (s *stubConfigWatcher) ApplyLimits(_ events.Limits) {}
+func (s *stubConfigWatcher) GetContextWindow() int       { return 1000000 }
 
 // ---------------------------------------------------------------------------
 // TestApplyConfig_FailFastChain

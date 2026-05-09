@@ -88,7 +88,7 @@ func (l sleepingConfigLoader) Load(path string) (*domain_config.Config, error) {
 // lock-across-I/O design and PASSES after the three-phase refactor.
 func TestFileConfigWatcher_ConcurrentRefreshAndRead(t *testing.T) {
 	fcw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	cw := fcw.(*FileConfigWatcher)
+	cw := fcw.(*fileConfigWatcher)
 
 	// Simulate slow disk: 200ms Stat + 100ms Load = 300ms total I/O.
 	futureTime := time.Now().Add(time.Hour)
@@ -212,7 +212,7 @@ func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
 
 func testYamlLoading(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
-	cw := fcw.(*FileConfigWatcher)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -242,7 +242,7 @@ MAX_TURNS: 5
 
 func testModelIsolation(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
-	cw := fcw.(*FileConfigWatcher)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -281,14 +281,14 @@ MODELS:
 	if window == 1000 {
 		t.Errorf("model-b should NOT retain model-a's context window after switching back")
 	}
-	if window != cw.GetDefaultWindow() {
+	if window != cw.getDefaultWindow() {
 		t.Errorf("expected default context window for model-b, got %d", window)
 	}
 }
 
 func testPrecedenceRules(t *testing.T) {
 	fcw, mainPath, sessionPath := setupConfigWatcherTest(t)
-	cw := fcw.(*FileConfigWatcher)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -321,7 +321,7 @@ MAX_TURNS: 5
 
 func testDeletionRobustness(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
-	cw := fcw.(*FileConfigWatcher)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(agenttest.MockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -383,7 +383,7 @@ func (l stubConfigLoader) Load(path string) (*domain_config.Config, error) {
 func TestFileConfigWatcher_Refresh_LoadError(t *testing.T) {
 	// Setup: Create FileConfigWatcher with a future mod time (triggers Stat) and a loader that errors.
 	fcw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	cw := fcw.(*FileConfigWatcher)
+	cw := fcw.(*fileConfigWatcher)
 
 	cw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	cw.Loader = stubConfigLoader{loadErr: errors.New("parse error")}
@@ -402,7 +402,7 @@ func TestFileConfigWatcher_Refresh_LoadError(t *testing.T) {
 func TestFileConfigWatcher_Refresh_StatError(t *testing.T) {
 	// Setup: Create FileConfigWatcher with Stat returning os.ErrNotExist.
 	fcw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	cw := fcw.(*FileConfigWatcher)
+	cw := fcw.(*fileConfigWatcher)
 
 	cw.FS = stubFileStat{statErr: os.ErrNotExist}
 	cw.SetPaths("/fake/main.yaml", "")
@@ -432,7 +432,7 @@ func TestConfigWatcher_LoadSessionConfig_ReadError(t *testing.T) {
 	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	cw := NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, testLogger)
-	fcw := cw.(*FileConfigWatcher)
+	fcw := cw.(*fileConfigWatcher)
 
 	// Override FS to return a future mod time so updateFromSession triggers loadSessionConfig.
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
@@ -462,7 +462,7 @@ func TestConfigWatcher_LoadSessionConfig_NilLogger(t *testing.T) {
 
 	// logger=nil intentionally — this is the branch under test.
 	cw := NewFileConfigWatcher(nil, &errorSessionLoader{err: errors.New("permission denied")}, 100, 10, 20, nil)
-	fcw := cw.(*FileConfigWatcher)
+	fcw := cw.(*fileConfigWatcher)
 
 	// Ensure Stat returns a future mod time so updateFromSession triggers loadSessionConfig.
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
@@ -488,7 +488,7 @@ func TestConfigWatcher_LoadSessionConfig_NilSessionLoader(t *testing.T) {
 
 	// sessionLoader=nil
 	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-	fcw := cw.(*FileConfigWatcher)
+	fcw := cw.(*fileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -512,7 +512,7 @@ func TestConfigWatcher_LoadSessionConfig_NilSessionConfig(t *testing.T) {
 
 	// nilSessionLoader returns (nil, nil) — session config is absent
 	cw := NewFileConfigWatcher(nil, &nilSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*FileConfigWatcher)
+	fcw := cw.(*fileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -535,7 +535,7 @@ func TestConfigWatcher_LoadSessionConfig_MissingFields(t *testing.T) {
 	}
 
 	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*FileConfigWatcher)
+	fcw := cw.(*fileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -564,7 +564,7 @@ func TestConfigWatcher_LoadSessionConfig_AllFields(t *testing.T) {
 	}
 
 	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*FileConfigWatcher)
+	fcw := cw.(*fileConfigWatcher)
 
 	fcw.FS = stubFileStat{modTime: time.Now().Add(time.Hour)}
 	fcw.SetPaths("", sessionPath)
@@ -600,7 +600,7 @@ func TestFileConfigWatcher_SetLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-			fcw := cw.(*FileConfigWatcher)
+			fcw := cw.(*fileConfigWatcher)
 
 			fcw.SetLimits(tt.tokens, tt.toolTurns, tt.histTurns)
 			tokens, toolTurns, histTurns := cw.GetLimits()
@@ -629,7 +629,7 @@ func TestFileConfigWatcher_ApplyLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
-			fcw := cw.(*FileConfigWatcher)
+			fcw := cw.(*fileConfigWatcher)
 
 			fcw.ApplyLimits(tt.limits)
 			tokens, toolTurns, histTurns := cw.GetLimits()
@@ -654,7 +654,7 @@ func TestFileConfigWatcher_ForceUpdateSession(t *testing.T) {
 	}
 
 	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
-	fcw := cw.(*FileConfigWatcher)
+	fcw := cw.(*fileConfigWatcher)
 
 	// FS returns a fixed PAST modTime for both main and session files.
 	pastTime := time.Now().Add(-1 * time.Hour)

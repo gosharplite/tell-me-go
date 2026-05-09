@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"testing"
 
-	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/stretchr/testify/mock"
 )
 

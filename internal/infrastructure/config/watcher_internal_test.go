@@ -48,13 +48,13 @@ func TestShouldReloadMain(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		setup  func(cw *FileConfigWatcher)
+		setup  func(cw *fileConfigWatcher)
 		model  string
 		wantOK bool
 	}{
 		{
 			name: "empty path returns false",
-			setup: func(cw *FileConfigWatcher) {
+			setup: func(cw *fileConfigWatcher) {
 				cw.SetPaths("", "")
 			},
 			model:  "gpt-5",
@@ -62,7 +62,7 @@ func TestShouldReloadMain(t *testing.T) {
 		},
 		{
 			name: "stat error returns false",
-			setup: func(cw *FileConfigWatcher) {
+			setup: func(cw *fileConfigWatcher) {
 				cw.SetPaths("/fake/main.yaml", "")
 				cw.FS = stubFileStat{statErr: os.ErrNotExist}
 			},
@@ -71,7 +71,7 @@ func TestShouldReloadMain(t *testing.T) {
 		},
 		{
 			name: "unchanged mod time and same model returns false",
-			setup: func(cw *FileConfigWatcher) {
+			setup: func(cw *fileConfigWatcher) {
 				cw.SetPaths("/fake/main.yaml", "")
 				cw.FS = stubFileStat{modTime: pastTime}
 			},
@@ -80,7 +80,7 @@ func TestShouldReloadMain(t *testing.T) {
 		},
 		{
 			name: "newer mod time returns true",
-			setup: func(cw *FileConfigWatcher) {
+			setup: func(cw *fileConfigWatcher) {
 				cw.SetPaths("/fake/main.yaml", "")
 				cw.FS = stubFileStat{modTime: futureTime}
 				cw.Loader = mockConfigLoader{}
@@ -90,7 +90,7 @@ func TestShouldReloadMain(t *testing.T) {
 		},
 		{
 			name: "same mod time but different model returns true",
-			setup: func(cw *FileConfigWatcher) {
+			setup: func(cw *fileConfigWatcher) {
 				cw.SetPaths("/fake/main.yaml", "")
 				cw.FS = stubFileStat{modTime: pastTime}
 				cw.Loader = mockConfigLoader{}
@@ -100,7 +100,7 @@ func TestShouldReloadMain(t *testing.T) {
 		},
 		{
 			name: "nil Loader returns false",
-			setup: func(cw *FileConfigWatcher) {
+			setup: func(cw *fileConfigWatcher) {
 				cw.SetPaths("/fake/main.yaml", "")
 				cw.FS = stubFileStat{modTime: futureTime}
 				cw.Loader = nil
@@ -114,7 +114,7 @@ func TestShouldReloadMain(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fcw := NewFileConfigWatcher(
 				nil, nil, 100, 10, 20, nil,
-			).(*FileConfigWatcher)
+			).(*fileConfigWatcher)
 
 			tt.setup(fcw)
 

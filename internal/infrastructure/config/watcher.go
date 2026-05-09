@@ -57,8 +57,8 @@ type reloadSnapshot struct {
 	lastModel      string
 }
 
-// FileConfigWatcher monitors configuration files for changes and caches values.
-type FileConfigWatcher struct {
+// fileConfigWatcher monitors configuration files for changes and caches values.
+type fileConfigWatcher struct {
 	mu                   sync.RWMutex
 	Loader               domain_config.ConfigLoader
 	SessionLoader        domain_config.SessionLoader
@@ -83,7 +83,7 @@ type FileConfigWatcher struct {
 func NewFileConfigWatcher(mainLoader domain_config.ConfigLoader, sessionLoader domain_config.SessionLoader, tokens, toolTurns, historyTurns int, logger ports.Logger) domain_config.ConfigWatcher {
 	defaultWindow := 1000000
 
-	return &FileConfigWatcher{
+	return &fileConfigWatcher{
 		Loader:               mainLoader,
 		SessionLoader:        sessionLoader,
 		FS:                   realFileStat{},
@@ -100,7 +100,7 @@ func NewFileConfigWatcher(mainLoader domain_config.ConfigLoader, sessionLoader d
 }
 
 // SetPaths sets the configuration file paths.
-func (cw *FileConfigWatcher) SetPaths(main, session string) {
+func (cw *fileConfigWatcher) SetPaths(main, session string) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	cw.mainPath = main
@@ -110,7 +110,7 @@ func (cw *FileConfigWatcher) SetPaths(main, session string) {
 // snapshotReloadState returns a stack-local copy of the watcher's mutable
 // comparison fields. Caller must NOT hold any lock; this method acquires
 // and releases RLock internally.
-func (cw *FileConfigWatcher) snapshotReloadState() reloadSnapshot {
+func (cw *fileConfigWatcher) snapshotReloadState() reloadSnapshot {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return reloadSnapshot{
@@ -127,7 +127,7 @@ func (cw *FileConfigWatcher) snapshotReloadState() reloadSnapshot {
 //  1. RLock snapshot of comparison state
 //  2. All blocking I/O without any lock
 //  3. Write lock only for in-memory mutations
-func (cw *FileConfigWatcher) Refresh(model string) {
+func (cw *fileConfigWatcher) Refresh(model string) {
 	// Phase 1: Snapshot mutable comparison state under RLock.
 	snap := cw.snapshotReloadState()
 
@@ -155,7 +155,7 @@ func (cw *FileConfigWatcher) Refresh(model string) {
 // configuration file. It must NOT hold any mutex. It returns the parsed
 // config, the os.FileInfo from Stat, and whether the file was actually
 // reloaded. If no reload is needed, it returns (nil, nil, false).
-func (cw *FileConfigWatcher) loadMainOutsideLock(snap reloadSnapshot, model string) (*domain_config.Config, os.FileInfo, bool) {
+func (cw *fileConfigWatcher) loadMainOutsideLock(snap reloadSnapshot, model string) (*domain_config.Config, os.FileInfo, bool) {
 	ok, info := cw.shouldReloadMain(snap, model)
 	if !ok {
 		return nil, nil, false
@@ -175,7 +175,7 @@ func (cw *FileConfigWatcher) loadMainOutsideLock(snap reloadSnapshot, model stri
 // stat'd, neither the modification time nor the model have changed, or the
 // Loader is nil. Otherwise it returns (true, info) where info is the
 // os.FileInfo from Stat.
-func (cw *FileConfigWatcher) shouldReloadMain(snap reloadSnapshot, model string) (bool, os.FileInfo) {
+func (cw *fileConfigWatcher) shouldReloadMain(snap reloadSnapshot, model string) (bool, os.FileInfo) {
 	if snap.mainPath == "" {
 		return false, nil
 	}
@@ -200,7 +200,7 @@ func (cw *FileConfigWatcher) shouldReloadMain(snap reloadSnapshot, model string)
 // session configuration file. It must NOT hold any mutex. It returns the
 // parsed session config, the os.FileInfo from Stat, and whether the file
 // was actually reloaded. If no reload is needed, it returns (nil, nil, false).
-func (cw *FileConfigWatcher) loadSessionOutsideLock(snap reloadSnapshot, forceUpdate bool) (*domain_config.SessionConfig, os.FileInfo, bool) {
+func (cw *fileConfigWatcher) loadSessionOutsideLock(snap reloadSnapshot, forceUpdate bool) (*domain_config.SessionConfig, os.FileInfo, bool) {
 	if snap.sessionPath == "" {
 		return nil, nil, false
 	}
@@ -232,7 +232,7 @@ func (cw *FileConfigWatcher) loadSessionOutsideLock(snap reloadSnapshot, forceUp
 
 // applyMainConfig updates the watcher's cached state from a successfully
 // loaded main configuration. The caller must hold cw.mu (write lock).
-func (cw *FileConfigWatcher) applyMainConfig(cfg *domain_config.Config, info os.FileInfo, model string) {
+func (cw *fileConfigWatcher) applyMainConfig(cfg *domain_config.Config, info os.FileInfo, model string) {
 	cw.lastMainMod = info.ModTime()
 	cw.lastModel = model
 
@@ -245,7 +245,7 @@ func (cw *FileConfigWatcher) applyMainConfig(cfg *domain_config.Config, info os.
 
 // applySessionLimits applies non-nil session config overrides to the watcher's
 // cached limits. The caller must hold cw.mu (write lock).
-func (cw *FileConfigWatcher) applySessionLimits(cfg *domain_config.SessionConfig) {
+func (cw *fileConfigWatcher) applySessionLimits(cfg *domain_config.SessionConfig) {
 	if cfg.MaxHistoryTokens != nil {
 		cw.maxHistoryTokens = *cfg.MaxHistoryTokens
 	}
@@ -259,42 +259,42 @@ func (cw *FileConfigWatcher) applySessionLimits(cfg *domain_config.SessionConfig
 
 // logSessionLoadErrorNoLock logs a session load error without reading
 // cw.sessionPath from the watcher. It is safe to call outside the mutex.
-func (cw *FileConfigWatcher) logSessionLoadErrorNoLock(err error, sessionPath string) {
+func (cw *fileConfigWatcher) logSessionLoadErrorNoLock(err error, sessionPath string) {
 	if !os.IsNotExist(err) && cw.logger != nil {
 		cw.logger.Warn("Failed to load session config", "path", sessionPath, "error", err)
 	}
 }
 
 // SetLimits updates the cached limits manually.
-func (cw *FileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
+func (cw *fileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	setLimitsLocked(tokens, toolTurns, historyTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
 // GetLimits returns the current cached limits.
-func (cw *FileConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns int) {
+func (cw *fileConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns int) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns
 }
 
 // ApplyLimits updates the cached limits from an events.Limits struct.
-func (cw *FileConfigWatcher) ApplyLimits(l events.Limits) {
+func (cw *fileConfigWatcher) ApplyLimits(l events.Limits) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	setLimitsLocked(l.MaxHistoryTokens, l.MaxToolTurns, l.MaxHistoryTurns, &cw.maxHistoryTokens, &cw.maxToolTurns, &cw.maxHistoryTurns)
 }
 
 // GetContextWindow returns the current cached context window.
-func (cw *FileConfigWatcher) GetContextWindow() int {
+func (cw *fileConfigWatcher) GetContextWindow() int {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.contextWindow
 }
 
-// GetDefaultWindow returns the default context window value.
-func (cw *FileConfigWatcher) GetDefaultWindow() int {
+// getDefaultWindow returns the default context window value.
+func (cw *fileConfigWatcher) getDefaultWindow() int {
 	return cw.defaultWindow
 }
 
