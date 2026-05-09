@@ -21,11 +21,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/ioutils"
 )
 
-// PathResolveFunc is the function used to resolve session filesystem paths.
-// It is exported to allow tests to exercise the empty-path defensive guard
-// in StreamTurnsLog. Production code must not override this.
-var PathResolveFunc func(homeDir, mode string) *persistence.Paths = persistence.ResolvePaths
-
 // SessionLifecycleManager defines the interface for building and finalizing sessions.
 type SessionLifecycleManager interface {
 	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error)
@@ -35,6 +30,17 @@ type SessionLifecycleManager interface {
 // LogFileOpener defines the minimal interface required to open session log files.
 type LogFileOpener interface {
 	Open(ctx context.Context, name string) (persistence.File, error)
+}
+
+// ChatServiceOption configures a chatService during construction.
+type ChatServiceOption func(*chatService)
+
+// WithPathResolver overrides the default path resolution function.
+// The default is persistence.ResolvePaths.
+func WithPathResolver(resolver func(homeDir, mode string) *persistence.Paths) ChatServiceOption {
+	return func(s *chatService) {
+		s.resolvePaths = resolver
+	}
 }
 
 type chatService struct {
@@ -67,6 +73,7 @@ func NewChatService(
 	historyRenderer ports.HistoryRenderer,
 	historyBrowser ports.HistoryBrowser,
 	logOpener LogFileOpener,
+	opts ...ChatServiceOption,
 ) ChatService {
 	svc := &chatService{
 		HomeDir:          homeDir,
@@ -80,10 +87,11 @@ func NewChatService(
 		HistoryRenderer:  historyRenderer,
 		HistoryBrowser:   historyBrowser,
 		LogOpener:        logOpener,
+		resolvePaths:     persistence.ResolvePaths, // default
 	}
 
-	if svc.resolvePaths == nil {
-		svc.resolvePaths = PathResolveFunc
+	for _, opt := range opts {
+		opt(svc)
 	}
 
 	return svc

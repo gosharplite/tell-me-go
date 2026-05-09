@@ -985,22 +985,20 @@ func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 	ctx := context.Background()
 
-	// Inject a resolvePaths stub that returns a zero-value Paths struct
-	// (all fields empty, including TurnsLogPath). This exercises the
-	// defensive guard at service.go:214 which is otherwise unreachable
-	// through the real persistence.ResolvePaths.
-	origResolve := agent.PathResolveFunc
-	agent.PathResolveFunc = func(homeDir, mode string) *persistence.Paths {
+	// Inject a resolvePaths stub via WithPathResolver that returns a
+	// zero-value Paths struct (all fields empty, including TurnsLogPath).
+	// This exercises the defensive guard at service.go:214 which is
+	// otherwise unreachable through the real persistence.ResolvePaths.
+	emptyPathResolver := func(homeDir, mode string) *persistence.Paths {
 		return &persistence.Paths{}
 	}
-	t.Cleanup(func() {
-		agent.PathResolveFunc = origResolve
-	})
 
 	// LogOpener must not be called — the guard should short-circuit before Open.
+	// Passing nil for LogOpener proves this: if Open is reached, the test panics.
 	service := agent.NewChatService(
 		"/test", "v1", io.Discard, io.Discard, nil,
 		nil, nil, nil, nil, nil, nil,
+		agent.WithPathResolver(emptyPathResolver),
 	)
 
 	var out bytes.Buffer
