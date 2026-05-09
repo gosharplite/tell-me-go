@@ -227,7 +227,7 @@ endif
 
 verify-architecture:
 	@echo "=== verify-architecture ==="
-	@go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
+	@ARCH_FAIL_ON_VIOLATION=1 go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
 
 # AI-SAFE RACE TEST: 
 # Running 'go test -race ./...' globally can time out in constrained environments.
