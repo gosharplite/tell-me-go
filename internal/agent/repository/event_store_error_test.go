@@ -108,23 +108,6 @@ func TestGetSessionEvents_CloseError(t *testing.T) {
 	assert.Nil(t, events)
 }
 
-func TestGetSessionEvents_CloseErrorWhenParseSucceeds(t *testing.T) {
-	// The err==nil branch at lines 43-45 in event_store.go is unreachable
-	// with standard database/sql: after rows.Next() returns false, the
-	// driver's Close() is called automatically and any error is surfaced
-	// through rows.Err() before our deferred rows.Close() runs.  This means
-	// parseSessionEvents always sees the close error via rows.Err(), making
-	// err non-nil when the defer evaluates it.
-	//
-	// The existing TestGetSessionEvents_CloseError verifies that close
-	// errors ARE propagated — just through the rows.Err() path rather
-	// than the deferred err==nil path.
-	//
-	// This test exists as documentation; the real coverage for close-error
-	// propagation is in TestGetSessionEvents_CloseError.
-	t.Skip("err==nil close-error branch unreachable with database/sql semantics")
-}
-
 // TestGetSessionEvents_CloseErrorPropagationPath proves that close errors
 // ARE propagated to the caller — they just flow through the rows.Err() path
 // inside parseSessionEvents rather than the err==nil defer branch.
@@ -135,8 +118,8 @@ func TestGetSessionEvents_CloseErrorWhenParseSucceeds(t *testing.T) {
 //  2. parseSessionEvents calls rows.Err() after the scan loop and wraps it:
 //     "event rows iteration: <close error>"
 //  3. This makes err non-nil when getSessionEvents evaluates its defer.
-//  4. The defer's err==nil guard (lines 43-45) is therefore unreachable
-//     in practice — it exists as defensive code only.
+//  4. The defer's err==nil guard is therefore unreachable in practice —
+//     it exists as defensive code only (see inline comment in event_store.go).
 //
 // This test exercises the full propagation chain: data parses successfully,
 // CloseError fires, the error reaches the caller.
