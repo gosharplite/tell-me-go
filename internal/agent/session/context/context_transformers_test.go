@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1469,9 +1470,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 			validateResult: func(t *testing.T, req *ports.ContextRequest) {
 				modelMsg := req.History[1]
 				fcPart := modelMsg.Parts[1]
-				if string(fcPart.ThoughtSignature) != "sig-123" {
-					t.Errorf("expected thought signature 'sig-123', got '%s'", fcPart.ThoughtSignature)
-				}
+				assert.Equal(t, "sig-123", string(fcPart.ThoughtSignature))
 			},
 		},
 		{
@@ -1490,9 +1489,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 			wantPersist: false,
 			validateResult: func(t *testing.T, req *ports.ContextRequest) {
 				fcPart := req.History[0].Parts[1]
-				if len(fcPart.ThoughtSignature) != 0 {
-					t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
-				}
+				assert.Empty(t, fcPart.ThoughtSignature)
 			},
 		},
 		{
@@ -1518,9 +1515,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 			wantPersist: false,
 			validateResult: func(t *testing.T, req *ports.ContextRequest) {
 				fcPart := req.History[0].Parts[1]
-				if len(fcPart.ThoughtSignature) != 0 {
-					t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
-				}
+				assert.Empty(t, fcPart.ThoughtSignature)
 			},
 		},
 		{
@@ -1542,9 +1537,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 			wantPersist: false,
 			validateResult: func(t *testing.T, req *ports.ContextRequest) {
 				fcPart := req.History[0].Parts[1]
-				if string(fcPart.ThoughtSignature) != "existing-sig" {
-					t.Errorf("expected existing thought signature 'existing-sig', got '%s'", fcPart.ThoughtSignature)
-				}
+				assert.Equal(t, "existing-sig", string(fcPart.ThoughtSignature))
 			},
 		},
 		{
@@ -1564,9 +1557,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 			wantPersist: true,
 			validateResult: func(t *testing.T, req *ports.ContextRequest) {
 				fcPart := req.History[0].Parts[2]
-				if string(fcPart.ThoughtSignature) != "sig-1" {
-					t.Errorf("expected first thought signature 'sig-1', got '%s'", fcPart.ThoughtSignature)
-				}
+				assert.Equal(t, "sig-1", string(fcPart.ThoughtSignature))
 			},
 		},
 	}
@@ -1574,12 +1565,8 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := propagator.Transform(ctx, tt.inputReq)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.inputReq.PersistHistory != tt.wantPersist {
-				t.Errorf("PersistHistory = %v, want %v", tt.inputReq.PersistHistory, tt.wantPersist)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPersist, tt.inputReq.PersistHistory)
 			if tt.validateResult != nil {
 				tt.validateResult(t, tt.inputReq)
 			}
