@@ -25,6 +25,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -800,7 +801,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 	a := agentinternal.NewBareAgent()
 	a.SetEventsForTest(bus)
-	a.SetConfigWatcherForTest(config.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetConfigWatcherForTest(domain_config.NewNoOpConfigWatcher(1000, 5, 10))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -820,7 +821,7 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 
 	a := agentinternal.NewBareAgent()
 	a.SetEventsForTest(mockBus)
-	a.SetConfigWatcherForTest(config.NewNoOpConfigWatcher(1000, 5, 10))
+	a.SetConfigWatcherForTest(domain_config.NewNoOpConfigWatcher(1000, 5, 10))
 	a.SetRuntimeConfigForTest(agentinternal.RuntimeSnapshot{})
 
 	err := a.ApplyConfig(context.Background())
