@@ -646,6 +646,7 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			stdin, closer := tt.setup(t)
+			cleanupTestStdin(t, stdin, closer)
 
 			ctx, cancel := tt.ctxFunc()
 			defer cancel()
@@ -656,30 +657,11 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 					t.Logf("failed to close capturer: %v", err)
 				}
 			})
-
-			if closer != nil {
-				t.Cleanup(func() {
-					if err := closer.Close(); err != nil {
-						t.Logf("failed to close: %v", err)
-					}
-				})
-			}
-			if f, ok := stdin.(*os.File); ok {
-				t.Cleanup(func() {
-					if err := f.Close(); err != nil {
-						t.Logf("failed to close file: %v", err)
-					}
-				})
-			}
 			c.isTTYOverride = tt.isTTYOverride
 
 			got, err := c.ReadSingleKey(ctx)
 			if tt.wantErr != "" {
-				if err == nil {
-					t.Errorf("expected error containing %q, got nil", tt.wantErr)
-				} else if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
-				}
+				assertSingleKeyError(t, err, tt.wantErr)
 				return
 			}
 
@@ -695,6 +677,33 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func cleanupTestStdin(t *testing.T, stdin io.Reader, closer io.Closer) {
+	t.Helper()
+	if closer != nil {
+		t.Cleanup(func() {
+			if err := closer.Close(); err != nil {
+				t.Logf("failed to close: %v", err)
+			}
+		})
+	}
+	if f, ok := stdin.(*os.File); ok {
+		t.Cleanup(func() {
+			if err := f.Close(); err != nil {
+				t.Logf("failed to close file: %v", err)
+			}
+		})
+	}
+}
+
+func assertSingleKeyError(t *testing.T, err error, wantErr string) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("expected error containing %q, got nil", wantErr)
+	} else if !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("expected error containing %q, got %v", wantErr, err)
+	}
+}
 
 func TestCapturer_ReadLine_Success(t *testing.T) {
 	t.Parallel()

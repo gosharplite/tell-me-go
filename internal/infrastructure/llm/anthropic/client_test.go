@@ -951,25 +951,7 @@ func TestMetricsMapping(t *testing.T) {
 			t.Fatalf("fromAnthropicResponse failed: %v", err)
 		}
 
-		if metrics.PromptTokens != 1500 {
-			t.Errorf("expected PromptTokens 1500, got %d", metrics.PromptTokens)
-		}
-		if metrics.CachedTokens != 1000 {
-			t.Errorf("expected CachedTokens 1000, got %d", metrics.CachedTokens)
-		}
-		if metrics.CacheWriteTokens != 200 {
-			t.Errorf("expected CacheWriteTokens 200, got %d", metrics.CacheWriteTokens)
-		}
-		// Pins issue #72: Anthropic does not separately report
-		// reasoning tokens on the wire. The client must always set
-		// ThinkingTokens=0 so the pricing layer's
-		//   OutputCost = ResponseTokens × Comp + ThinkingTokens × Thinking
-		// reduces to ResponseTokens × Comp (wire-correct: Anthropic
-		// rolls reasoning into output_tokens at the standard rate).
-		// See ADR-023.
-		if metrics.ThinkingTokens != 0 {
-			t.Errorf("Anthropic must always report ThinkingTokens=0; got %d", metrics.ThinkingTokens)
-		}
+		assertMetricsMapping(t, metrics, 1500, 1000, 200)
 	})
 
 	t.Run("Vertex AI (Incremental InputTokens)", func(t *testing.T) {
@@ -989,26 +971,36 @@ func TestMetricsMapping(t *testing.T) {
 		}
 
 		// PromptTokens should be normalized to Total (500 delta + 1000 cache_read + 200 cache_creation = 1700)
-		if metrics.PromptTokens != 1700 {
-			t.Errorf("expected normalized PromptTokens 1700 for Vertex, got %d", metrics.PromptTokens)
-		}
-		if metrics.CachedTokens != 1000 {
-			t.Errorf("expected CachedTokens 1000, got %d", metrics.CachedTokens)
-		}
-		if metrics.CacheWriteTokens != 200 {
-			t.Errorf("expected CacheWriteTokens 200, got %d", metrics.CacheWriteTokens)
-		}
-		// Pins issue #72: Anthropic does not separately report
-		// reasoning tokens on the wire. The client must always set
-		// ThinkingTokens=0 so the pricing layer's
-		//   OutputCost = ResponseTokens × Comp + ThinkingTokens × Thinking
-		// reduces to ResponseTokens × Comp (wire-correct: Anthropic
-		// rolls reasoning into output_tokens at the standard rate).
-		// See ADR-023.
-		if metrics.ThinkingTokens != 0 {
-			t.Errorf("Anthropic must always report ThinkingTokens=0; got %d", metrics.ThinkingTokens)
-		}
+		assertMetricsMapping(t, metrics, 1700, 1000, 200)
 	})
+}
+
+// assertMetricsMapping asserts the four metrics fields that every
+// Anthropic response must set.
+//
+// Pins issue #72: Anthropic does not separately report reasoning
+// tokens on the wire. The client must always set ThinkingTokens=0 so
+// the pricing layer's
+//
+//	OutputCost = ResponseTokens × Comp + ThinkingTokens × Thinking
+//
+// reduces to ResponseTokens × Comp (wire-correct: Anthropic rolls
+// reasoning into output_tokens at the standard rate).
+// See ADR-023.
+func assertMetricsMapping(t *testing.T, m *llm.Metrics, wantPrompt, wantCached, wantCacheWrite int32) {
+	t.Helper()
+	if m.PromptTokens != wantPrompt {
+		t.Errorf("expected PromptTokens %d, got %d", wantPrompt, m.PromptTokens)
+	}
+	if m.CachedTokens != wantCached {
+		t.Errorf("expected CachedTokens %d, got %d", wantCached, m.CachedTokens)
+	}
+	if m.CacheWriteTokens != wantCacheWrite {
+		t.Errorf("expected CacheWriteTokens %d, got %d", wantCacheWrite, m.CacheWriteTokens)
+	}
+	if m.ThinkingTokens != 0 {
+		t.Errorf("Anthropic must always report ThinkingTokens=0; got %d", m.ThinkingTokens)
+	}
 }
 
 func TestTransientPartsSupport(t *testing.T) {
