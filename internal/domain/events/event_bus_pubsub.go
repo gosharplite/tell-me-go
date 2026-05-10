@@ -185,10 +185,14 @@ func (b *SimpleEventBus) drain(w *subscriberWrapper) {
 }
 
 func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, event Event) (err error) {
+	// Cache event type before calling sub.Handle so that if event.Type()
+	// panics inside the recover block below, we don't lose the original
+	// subscriber panic reason and stack trace.
+	eventType := event.Type()
+
 	defer func() {
 		if r := recover(); r != nil {
 			subType := fmt.Sprintf("%T", sub)
-			eventType := event.Type()
 			stack := string(debug.Stack())
 
 			// 1. Emit structured log with context
