@@ -24,6 +24,22 @@ import (
 	"google.golang.org/genai"
 )
 
+// stubAuthenticator is a local test double for auth.Authenticator.
+// It proves that consumer packages can now implement the interface
+// without importing any auth concrete type (ADR-033).
+type stubAuthenticator struct {
+	token string
+}
+
+func (s *stubAuthenticator) Invalidate() {}
+
+func (s *stubAuthenticator) Apply(_ context.Context, req *auth.Request) error {
+	if s.token != "" {
+		req.Headers["Authorization"] = "Bearer " + s.token
+	}
+	return nil
+}
+
 func validateAuthOnly(t *testing.T, r *http.Request) {
 	if r.Header.Get("Authorization") != "Bearer test-token" {
 		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
@@ -766,6 +782,24 @@ func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestNewClient_WithLocalStubAuthenticator verifies that a consumer-defined
+// test double (not importing any auth concrete type) satisfies
+// auth.Authenticator and correctly injects credentials.
+func TestNewClient_WithLocalStubAuthenticator(t *testing.T) {
+	stub := &stubAuthenticator{token: "local-stub-token"}
+
+	client, err := NewClient("https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models", "gemini-2.0-flash", stub, WithTimeout(30*time.Second))
+	if err != nil {
+		t.Fatalf("NewClient with local stub authenticator: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if client.authenticator != stub {
+		t.Fatal("client did not retain the stub authenticator")
+	}
 }
 
 func TestNewClient_Options(t *testing.T) {
