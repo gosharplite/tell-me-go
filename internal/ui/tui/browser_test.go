@@ -780,8 +780,8 @@ func searchTestCases() []updateTestCase {
 func systemTestCases() []updateTestCase {
 	return []updateTestCase{
 		{
-			name: "WindowSizeMsg updates dimensions",
-			msg:  tea.WindowSizeMsg{Width: 100, Height: 50},
+			name:  "WindowSizeMsg updates dimensions",
+			msg:   tea.WindowSizeMsg{Width: 100, Height: 50},
 			check: checkWindowSizeMsg,
 		},
 		{
@@ -807,7 +807,7 @@ func systemTestCases() []updateTestCase {
 				m.lastMutationTime = time.Now().Add(-1 * time.Second)
 				m.history = []ports.HistoryViewDTO{{Role: "user"}}
 			},
-			msg: fileChangedMsg{},
+			msg:   fileChangedMsg{},
 			check: checkFileChangedMsg,
 		},
 		{
@@ -816,7 +816,7 @@ func systemTestCases() []updateTestCase {
 				m.lastMutationTime = time.Now()
 				m.history = []ports.HistoryViewDTO{{Role: "user"}}
 			},
-			msg: fileChangedMsg{},
+			msg:   fileChangedMsg{},
 			check: checkFileChangedMsgDebounced,
 		},
 	}
