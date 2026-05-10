@@ -5,10 +5,14 @@ package config
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 )
@@ -500,6 +504,145 @@ PROVIDERS:
 				t.Errorf("MaxTokens = %d; want %d", got, tt.wantVal)
 			}
 		})
+	}
+}
+
+// TestReadConfigFile_NonNotExistError exercises the os.ReadFile error path
+// that is NOT os.ErrNotExist (line 131 in config.go). When os.ReadFile fails
+// with a permission error, path-is-directory error, etc., readConfigFile must
+// return the raw error and NOT silently swallow it as a missing file.
+func TestReadConfigFile_NonNotExistError(t *testing.T) {
+	tmpDir := t.TempDir()
+	dirPath := filepath.Join(tmpDir, "config-dir")
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
+
+	v := viper.New()
+	err := readConfigFile(v, dirPath)
+	if err == nil {
+		t.Fatal("expected error when reading a directory as a config file, got nil")
+	}
+	if os.IsNotExist(err) {
+		t.Errorf("expected a non-IsNotExist error, but got IsNotExist: %v", err)
+	}
+}
+
+// TestReadConfigFile_WithDebugEnabled exercises the two isDebug() branches
+// inside readConfigFile (lines 134–136 and 143–147). The default slog logger
+// runs at Info level so those blocks are normally skipped during tests.  We
+// temporarily promote the default logger to Debug (writing to io.Discard to
+// keep output quiet) and restore the original logger via t.Cleanup.
+func TestReadConfigFile_WithDebugEnabled(t *testing.T) {
+	// Save and restore default logger
+	originalLogger := slog.Default()
+	debugLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	slog.SetDefault(debugLogger)
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "debug-config.yaml")
+	if err := os.WriteFile(configPath, []byte("MODE: debug-test\n"), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	v := viper.New()
+	if err := readConfigFile(v, configPath); err != nil {
+		t.Fatalf("readConfigFile() with debug enabled failed: %v", err)
+	}
+}
+
+// TestValidationLogger_WhenDebug exercises the isDebug() true branch of
+// validationLogger (lines 90-92). When the default slog logger is at Debug
+// level, validationLogger must return slog.Default() — not the discard logger.
+func TestValidationLogger_WhenDebug(t *testing.T) {
+	originalLogger := slog.Default()
+	debugLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	slog.SetDefault(debugLogger)
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	got := validationLogger()
+	if got == nil {
+		t.Fatal("validationLogger() returned nil")
+	}
+	if got != slog.Default() {
+		t.Error("expected validationLogger() to return slog.Default() when debug is enabled")
+	}
+}
+
+// TestLoad_UnmarshalError exercises the unmarshalConfig error path (lines
+// 164-166) and load's propagation of it (lines 57-59). Viper+mapstructure
+// with WeaklyTypedInput silently coerces most type mismatches, but a scalar
+// string where a map is expected (MODELS: "not-a-map") reliably triggers a
+// decode failure.
+func TestLoad_UnmarshalError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "bad-types.yaml")
+	yamlContent := `
+MODE: "test"
+MODELS: "this-is-a-string-not-a-map"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	_, err := load(configPath)
+	if err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to unmarshal viper config") {
+		t.Errorf("expected error wrapping 'failed to unmarshal viper config', got: %v", err)
+	}
+}
+
+// TestLoad_ModelDebugLogging exercises the isDebug() block in load that
+// iterates cfg.Models (lines 61-70). The default slog logger runs at Info
+// level so the block is normally skipped during tests. We temporarily
+// promote the logger to Debug (writing to io.Discard) and supply a config
+// with at least one model entry so both the count log and the per-model
+// iteration body are exercised.
+func TestLoad_ModelDebugLogging(t *testing.T) {
+	originalLogger := slog.Default()
+	debugLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	slog.SetDefault(debugLogger)
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "debug-models.yaml")
+	yamlContent := `
+MODE: "debug-test"
+SELECTED_PROVIDER: "openai"
+PROVIDERS:
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-5"
+    API_KEY: "sk-test"
+MODELS:
+  "gpt-5":
+    CONTEXT_WINDOW: 128000
+    PRICING:
+      COMP: 5.00
+      HIT: 2.50
+      MISS: 0.00
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() with debug+models failed: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+
+	m, ok := cfg.Models["gpt-5"]
+	if !ok {
+		t.Fatal("expected model 'gpt-5' in config")
+	}
+	if m.ContextWindow != 128000 {
+		t.Errorf("expected ContextWindow 128000, got %d", m.ContextWindow)
 	}
 }
 
