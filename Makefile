@@ -226,7 +226,11 @@ else
 endif
 
 verify-architecture:
+ifeq ($(IS_POSIX),true)
 	@ARCH_FAIL_ON_VIOLATION=1 go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
+else
+	@set ARCH_FAIL_ON_VIOLATION=1 && go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
+endif
 
 # AI-SAFE RACE TEST: 
 # Running 'go test -race ./...' globally can time out in constrained environments.
