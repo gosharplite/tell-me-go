@@ -41,7 +41,7 @@ type hookHandler struct {
 
 func (h *hookHandler) Handle(ctx context.Context, r slog.Record) error {
 	err := h.Handler.Handle(ctx, r)
-	if strings.Contains(r.Message, "panic in dynamic event bus subscriber loop") {
+	if strings.Contains(r.Message, "panic in event bus subscriber loop") {
 		select {
 		case <-h.onPanicMsg:
 			// already closed
@@ -114,8 +114,8 @@ func TestStartSubscriberLoop_PanicRecovery(t *testing.T) {
 
 	// Verify the panic was logged by startSubscriberLoop's recover().
 	output := buf.String()
-	if !strings.Contains(output, "panic in dynamic event bus subscriber loop") {
-		t.Errorf("expected 'panic in dynamic event bus subscriber loop' in log, got: %s", output)
+	if !strings.Contains(output, "panic in event bus subscriber loop") {
+		t.Errorf("expected 'panic in event bus subscriber loop' in log, got: %s", output)
 	}
 	if !strings.Contains(output, "event Type() panic") {
 		t.Errorf("expected 'event Type() panic' in log, got: %s", output)
