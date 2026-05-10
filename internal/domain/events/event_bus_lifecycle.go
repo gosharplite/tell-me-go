@@ -146,6 +146,10 @@ func (b *SimpleEventBus) cancelFlushWaiter(cancelled *bool, err error) error {
 // Listen starts all per-subscriber background worker loops and blocks until the context is canceled.
 // Workers are tracked via b.workerWG for coordinated shutdown.
 // Listen blocks until all worker goroutines have fully drained before returning.
+//
+// If the bus is already listening, Listen returns nil immediately and the supplied
+// ctx is ignored. Use ErrAlreadyListening to detect this state proactively when
+// callers have been migrated to support the sentinel.
 func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	if b == nil {
 		return ErrBusNotInitialized
@@ -175,7 +179,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 
 	if b.running {
 		b.mu.Unlock()
-		return ErrAlreadyListening
+		return nil
 	}
 
 	b.running = true
