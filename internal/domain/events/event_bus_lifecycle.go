@@ -5,7 +5,6 @@ package events
 
 import (
 	"context"
-	"log/slog"
 	"runtime/debug"
 )
 
@@ -193,18 +192,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	wrappers = append(wrappers, b.globalSubscribers...)
 
 	for _, w := range wrappers {
-		w := w
-		b.workerWG.Add(1)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					b.getLogger().ErrorContext(listenCtx, "panic in event bus subscriber loop",
-						slog.Any("error", r),
-						slog.String("stack", string(debug.Stack())))
-				}
-			}()
-			_ = b.subscriberLoop(listenCtx, w)
-		}()
+		b.startSubscriberLoop(w)
 	}
 
 	// Signal that the listener is fully initialized

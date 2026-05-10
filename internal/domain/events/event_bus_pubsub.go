@@ -280,16 +280,17 @@ func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 // startSubscriberLoop starts the background worker loop for a given subscriber.
 // It assumes b.mu is held by the caller.
 func (b *SimpleEventBus) startSubscriberLoop(w *subscriberWrapper) {
+	ctx := b.listenCtx
 	b.workerWG.Add(1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				b.getLogger().ErrorContext(b.listenCtx, "panic in dynamic event bus subscriber loop",
+				b.getLogger().ErrorContext(ctx, "panic in event bus subscriber loop",
 					slog.Any("error", r),
 					slog.String("stack", string(debug.Stack())))
 			}
 		}()
-		_ = b.subscriberLoop(b.listenCtx, w)
+		_ = b.subscriberLoop(ctx, w)
 	}()
 }
 
