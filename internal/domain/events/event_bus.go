@@ -7,8 +7,6 @@ import (
 	"context"
 	"log/slog"
 	"sync"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // SimpleEventBus is an implementation of EventBus.
@@ -24,7 +22,6 @@ type SimpleEventBus struct {
 
 	running   bool
 	listenCtx context.Context
-	listenG   *errgroup.Group
 	started   chan struct{}
 	startOnce sync.Once
 
