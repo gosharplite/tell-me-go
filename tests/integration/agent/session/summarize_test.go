@@ -154,7 +154,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
+	client, err := gemini.NewClient(apiURL, "test-model", &auth.BearerAuth{Token: "test"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

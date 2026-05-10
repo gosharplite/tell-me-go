@@ -69,7 +69,7 @@ func (s *truncationTestSetup) build(t *testing.T) *Client {
 	t.Cleanup(server.Close)
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	authenticator := &auth.VertexAuth{Token: "test-token"}
+	authenticator := &auth.BearerAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 
@@ -107,7 +107,7 @@ func TestGemini_DefaultMaxOutputTokens_IsGenerous(t *testing.T) {
 	t.Parallel()
 
 	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	c, err := NewClient(apiURL, "gemini-1.5-flash", &auth.VertexAuth{Token: "t"})
+	c, err := NewClient(apiURL, "gemini-1.5-flash", &auth.BearerAuth{Token: "t"})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestGemini_WithMaxOutputTokens_Override(t *testing.T) {
 	const override = 32000
 	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	c, err := NewClient(apiURL, "gemini-1.5-flash",
-		&auth.VertexAuth{Token: "t"},
+		&auth.BearerAuth{Token: "t"},
 		WithMaxOutputTokens(override),
 	)
 	if err != nil {
@@ -160,7 +160,7 @@ func TestGemini_WithMaxOutputTokens_ZeroFallsBackToDefault(t *testing.T) {
 
 	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	c, err := NewClient(apiURL, "gemini-1.5-flash",
-		&auth.VertexAuth{Token: "t"},
+		&auth.BearerAuth{Token: "t"},
 		WithMaxOutputTokens(0),
 	)
 	if err != nil {
