@@ -141,7 +141,7 @@ func runSendChatTest(t *testing.T, tt sendChatTestCase) {
 	t.Cleanup(server.Close)
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	authenticator := &auth.VertexAuth{Token: "test-token"}
+	authenticator := &auth.BearerAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	client, err := NewClient(
@@ -193,7 +193,7 @@ func TestRefreshAuth(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	authenticator := &auth.VertexAuth{Token: "test-token"}
+	authenticator := &auth.BearerAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	client, _ := NewClient(apiURL, "test-model", authenticator, WithEventBus(bus), WithTimeout(5*time.Second))
@@ -262,7 +262,7 @@ func runGenerateImagesTest(t *testing.T, tt generateImagesTestCase) {
 	apiURL := "http://localhost/v1" // Trigger GeminiAPI backend with v1
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	client, err := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, WithEventBus(bus), WithTimeout(5*time.Second))
+	client, err := NewClient(apiURL, "test-model", &auth.BearerAuth{Token: "test"}, WithEventBus(bus), WithTimeout(5*time.Second))
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -664,7 +664,7 @@ func TestGemini_EdgeCase_DetermineBackend_MockURL(t *testing.T) {
 }
 
 func TestGemini_ModelQualification(t *testing.T) {
-	authenticator := &auth.VertexAuth{Token: "test-token"}
+	authenticator := &auth.BearerAuth{Token: "test-token"}
 
 	t.Run("Qualify short model name", func(t *testing.T) {
 		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/deepseek-ai/models"

@@ -53,6 +53,9 @@ func NewVertexAuth() *VertexAuth {
 }
 
 func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
+	if a.tokenCmdFunc == nil {
+		return nil, fmt.Errorf("tokenCmdFunc not wired; use NewVertexAuth() to construct VertexAuth")
+	}
 	return a.tokenCmdFunc()
 }
 

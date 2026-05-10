@@ -598,3 +598,23 @@ func TestNewVertexAuth_DefaultTokenCmdFunc(t *testing.T) {
 		t.Fatal("NewVertexAuth must wire a default tokenCmdFunc")
 	}
 }
+
+// TestVertexAuth_NilTokenCmdFunc_ReturnsError verifies that calling getToken()
+// on a bare &VertexAuth{} without a wired tokenCmdFunc returns a descriptive error
+// instead of panicking. This guards against future test code that constructs
+// VertexAuth without using NewVertexAuth() or presetting Token.
+func TestVertexAuth_NilTokenCmdFunc_ReturnsError(t *testing.T) {
+	auth := &VertexAuth{
+		CacheDir: t.TempDir(), // isolate from any stale cached token on disk
+	}
+	// No Token set, no tokenCmdFunc wired — should hit the nil guard
+
+	_, err := auth.getToken(context.Background())
+
+	if err == nil {
+		t.Fatal("expected error for nil tokenCmdFunc, got nil")
+	}
+	if !strings.Contains(err.Error(), "NewVertexAuth") {
+		t.Errorf("error should mention NewVertexAuth, got: %v", err)
+	}
+}
