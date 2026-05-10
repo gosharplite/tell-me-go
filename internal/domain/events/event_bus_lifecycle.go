@@ -175,7 +175,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 
 	if b.running {
 		b.mu.Unlock()
-		return nil // Already running
+		return ErrAlreadyListening
 	}
 
 	b.running = true

@@ -146,6 +146,9 @@ func (b *SimpleEventBus) subscriberLoop(ctx context.Context, w *subscriberWrappe
 	defer b.workerWG.Done()
 	for {
 		select {
+		// ctx = listenCtx (per-Listen scope); b.ctx = bus-wide scope.
+		// Both are watched so Shutdown() can stop workers even when
+		// Listen() was called with a long-lived parent context.
 		case <-ctx.Done():
 			b.drain(w)
 			return nil
