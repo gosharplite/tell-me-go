@@ -591,3 +591,10 @@ func TestVertexAuth_CacheWriteFailure(t *testing.T) {
 		t.Errorf("got %s, want resilient-token", token)
 	}
 }
+
+func TestNewVertexAuth_DefaultTokenCmdFunc(t *testing.T) {
+	a := NewVertexAuth()
+	if a.tokenCmdFunc == nil {
+		t.Fatal("NewVertexAuth must wire a default tokenCmdFunc")
+	}
+}

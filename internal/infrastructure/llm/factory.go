@@ -136,7 +136,7 @@ var authStrategies = map[string]authStrategy{
 	"openai": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
 			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
-				return &auth.VertexAuth{}, nil
+				return auth.NewVertexAuth(), nil
 			}
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
@@ -145,7 +145,7 @@ var authStrategies = map[string]authStrategy{
 	"deepseek": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
 			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
-				return &auth.VertexAuth{}, nil
+				return auth.NewVertexAuth(), nil
 			}
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
@@ -166,7 +166,7 @@ func resolveGoogleAuth(p *config.LLMProvider) (auth.Authenticator, error) {
 	if p.APIKey != "" {
 		return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
 	}
-	return &auth.VertexAuth{}, nil
+	return auth.NewVertexAuth(), nil
 }
 
 func resolveTimeout(cfg *config.Config) time.Duration {
