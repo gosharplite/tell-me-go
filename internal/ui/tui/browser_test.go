@@ -863,6 +863,7 @@ func TestBrowserModel_SystemMessageOffset(t *testing.T) {
 }
 
 func checkWindowSizeMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
 	if m.width != 100 || m.height != 50 {
 		t.Errorf("expected 100x50, got %dx%d", m.width, m.height)
 	}
@@ -872,6 +873,7 @@ func checkWindowSizeMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHis
 }
 
 func checkHistoryLoadedMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
 	if len(m.history) != 1 {
 		t.Errorf("expected 1 history item, got %d", len(m.history))
 	}
@@ -884,12 +886,14 @@ func checkHistoryLoadedMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mock
 }
 
 func checkHistoryLoadedMsgError(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
 	if m.err == nil || m.err.Error() != "boom" {
 		t.Error("expected error 'boom'")
 	}
 }
 
 func checkFileChangedMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
 	if len(m.history) != 0 {
 		t.Error("expected history to be cleared for reload")
 	}
@@ -899,6 +903,7 @@ func checkFileChangedMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHi
 }
 
 func checkFileChangedMsgDebounced(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
 	if len(m.history) != 1 {
 		t.Error("expected history NOT to be cleared (debounced)")
 	}

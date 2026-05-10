@@ -681,10 +681,18 @@ func boolPtr(b bool) *bool { return &b }
 func cleanupTestStdin(t *testing.T, stdin io.Reader, closer io.Closer) {
 	t.Helper()
 	if closer != nil {
-		t.Cleanup(func() { _ = closer.Close() })
+		t.Cleanup(func() {
+			if err := closer.Close(); err != nil {
+				t.Logf("failed to close: %v", err)
+			}
+		})
 	}
 	if f, ok := stdin.(*os.File); ok {
-		t.Cleanup(func() { _ = f.Close() })
+		t.Cleanup(func() {
+			if err := f.Close(); err != nil {
+				t.Logf("failed to close file: %v", err)
+			}
+		})
 	}
 }
 
