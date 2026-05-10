@@ -98,11 +98,23 @@ func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
 	if targetPath == filePath {
 		return true
 	}
-	rel, err := filepath.Rel(targetPath, filePath)
-	if err != nil {
-		return false
+	if strings.HasPrefix(filePath, targetPath) {
+		// Empty target matches everything (filepath.Rel semantics).
+		if len(targetPath) == 0 {
+			return true
+		}
+		// If targetPath is a root directory (e.g., "/" or "C:\"),
+		// it already ends in a separator.
+		if targetPath[len(targetPath)-1] == filepath.Separator {
+			return true
+		}
+		// Otherwise, require a separator at the boundary to prevent
+		// partial matches (e.g., /foo matching /foobar).
+		if len(filePath) > len(targetPath) && filePath[len(targetPath)] == filepath.Separator {
+			return true
+		}
 	}
-	return !strings.HasPrefix(rel, "..")
+	return false
 }
 
 func (idx *indexer) matchesQuery(sym symbolLocation, query string, exportedOnly bool) bool {
@@ -134,15 +146,8 @@ func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string, h
 	}
 
 	for _, loc := range usages {
-		// Optimized path check instead of filepath.Rel
-		if loc.Path == searchPath {
+		if idx.isInSearchPath(searchPath, loc.Path) {
 			results = append(results, loc)
-			continue
-		}
-		if strings.HasPrefix(loc.Path, searchPath) {
-			if len(loc.Path) > len(searchPath) && loc.Path[len(searchPath)] == filepath.Separator {
-				results = append(results, loc)
-			}
 		}
 	}
 
