@@ -278,7 +278,7 @@ func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 // It assumes b.mu is held by the caller.
 func (b *SimpleEventBus) startSubscriberLoop(w *subscriberWrapper) {
 	b.workerWG.Add(1)
-	b.listenG.Go(func() error {
+	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				b.getLogger().Error("panic in dynamic event bus subscriber loop",
@@ -286,8 +286,8 @@ func (b *SimpleEventBus) startSubscriberLoop(w *subscriberWrapper) {
 					slog.String("stack", string(debug.Stack())))
 			}
 		}()
-		return b.subscriberLoop(b.listenCtx, w)
-	})
+		_ = b.subscriberLoop(b.ctx, w)
+	}()
 }
 
 // SafePublish attempts to publish an event with a forced timeout.

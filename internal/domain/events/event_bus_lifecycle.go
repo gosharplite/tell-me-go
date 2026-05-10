@@ -7,8 +7,6 @@ import (
 	"context"
 	"log/slog"
 	"runtime/debug"
-
-	"golang.org/x/sync/errgroup"
 )
 
 func (b *SimpleEventBus) WaitStarted() {
@@ -146,7 +144,7 @@ func (b *SimpleEventBus) cancelFlushWaiter(cancelled *bool, err error) error {
 }
 
 // Listen starts all per-subscriber background worker loops and blocks until the context is canceled.
-// Implementation follows the coordinated concurrency pattern using errgroup.
+// Workers are tracked via b.workerWG for coordinated shutdown.
 func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	if b == nil {
 		return ErrBusNotInitialized
@@ -161,8 +159,11 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 		return nil
 	}
 
-	// Create a derived context for the listener
-	g, listenCtx := errgroup.WithContext(ctx)
+	// Derive a cancellable context for this listen session.
+	// When ctx is cancelled or the bus shuts down, listenCtx cancels and
+	// all subscriber loops exit, draining their queues.
+	listenCtx, cancelListen := context.WithCancel(ctx)
+	defer cancelListen()
 
 	b.mu.Lock()
 	if b.closed {
@@ -177,17 +178,8 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	}
 
 	b.running = true
-	b.listenCtx = listenCtx
-	b.listenG = g
 
-	// Coordinated shutdown: even if there are no subscribers,
-	// the bus should stay "running" until the context is cancelled.
-	b.listenG.Go(func() error {
-		<-listenCtx.Done()
-		return nil
-	})
-
-	// Collect all current subscribers to start their workers
+	// Collect all current subscribers and start their worker goroutines.
 	var wrappers []*subscriberWrapper
 	for _, ws := range b.subscribers {
 		wrappers = append(wrappers, ws...)
@@ -197,7 +189,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	for _, w := range wrappers {
 		w := w
 		b.workerWG.Add(1)
-		b.listenG.Go(func() error {
+		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					b.getLogger().Error("panic in event bus subscriber loop",
@@ -205,19 +197,20 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 						slog.String("stack", string(debug.Stack())))
 				}
 			}()
-			return b.subscriberLoop(b.listenCtx, w)
-		})
+			_ = b.subscriberLoop(listenCtx, w)
+		}()
 	}
 
 	// Signal that the listener is fully initialized
 	b.signalStarted()
 	b.mu.Unlock()
 
-	err := b.listenG.Wait()
+	// Block until the listen context is cancelled (parent ctx done, or bus shutdown).
+	<-listenCtx.Done()
 
 	b.mu.Lock()
 	b.running = false
 	b.mu.Unlock()
 
-	return err
+	return nil
 }

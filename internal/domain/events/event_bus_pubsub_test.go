@@ -40,6 +40,7 @@ type hookHandler struct {
 }
 
 func (h *hookHandler) Handle(ctx context.Context, r slog.Record) error {
+	err := h.Handler.Handle(ctx, r)
 	if strings.Contains(r.Message, "panic in dynamic event bus subscriber loop") {
 		select {
 		case <-h.onPanicMsg:
@@ -48,7 +49,7 @@ func (h *hookHandler) Handle(ctx context.Context, r slog.Record) error {
 			close(h.onPanicMsg)
 		}
 	}
-	return h.Handler.Handle(ctx, r)
+	return err
 }
 
 // TestStartSubscriberLoop_PanicRecovery exercises the recover() path in
