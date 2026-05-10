@@ -231,7 +231,7 @@ func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
 	b.globalSubscribers = append(b.globalSubscribers, w)
 
 	if b.running && b.asyncDispatch {
-		b.startSubscriberLoop(w)
+		b.startSubscriberLoopLocked(w)
 	}
 }
 
@@ -252,7 +252,7 @@ func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
 	b.globalSubscribers = append(b.globalSubscribers, w)
 
 	if b.running && b.asyncDispatch {
-		b.startSubscriberLoop(w)
+		b.startSubscriberLoopLocked(w)
 	}
 }
 
@@ -273,13 +273,13 @@ func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 	b.subscribers[eventType] = append(b.subscribers[eventType], w)
 
 	if b.running && b.asyncDispatch {
-		b.startSubscriberLoop(w)
+		b.startSubscriberLoopLocked(w)
 	}
 }
 
-// startSubscriberLoop starts the background worker loop for a given subscriber.
+// startSubscriberLoopLocked starts the background worker loop for a given subscriber.
 // It assumes b.mu is held by the caller.
-func (b *SimpleEventBus) startSubscriberLoop(w *subscriberWrapper) {
+func (b *SimpleEventBus) startSubscriberLoopLocked(w *subscriberWrapper) {
 	ctx := b.listenCtx
 	b.workerWG.Add(1)
 	go func() {

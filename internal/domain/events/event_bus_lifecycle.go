@@ -192,7 +192,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	wrappers = append(wrappers, b.globalSubscribers...)
 
 	for _, w := range wrappers {
-		b.startSubscriberLoop(w)
+		b.startSubscriberLoopLocked(w)
 	}
 
 	// Signal that the listener is fully initialized
