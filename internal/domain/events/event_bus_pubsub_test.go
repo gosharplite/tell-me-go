@@ -23,28 +23,52 @@ func (s *panicSubscriber) Handle(ctx context.Context, e Event) error {
 }
 
 // panickingTypeEvent is an event whose Type() method panics.
-// When used with a panicking subscriber, notifySubscriber catches the
-// subscriber panic first, then calls event.Type() in its recover block,
-// triggering a second panic that propagates to startSubscriberLoop's recover.
+// With Fix 1 (cached event.Type()), notifySubscriber calls Type() before
+// sub.Handle, so the panic happens there; the recover catches it and returns
+// an error. subscriberLoop then calls event.Type() again in its error-logging
+// path, triggering a second panic that propagates to startSubscriberLoop's recover.
 type panickingTypeEvent struct{}
 
 func (e panickingTypeEvent) Type() string { panic("event Type() panic") }
 
+// hookHandler wraps a slog.Handler and closes onPanicMsg when it intercepts
+// a log message containing the expected substring. Used for deterministic
+// synchronization with background goroutines instead of time.Sleep.
+type hookHandler struct {
+	slog.Handler
+	onPanicMsg chan struct{}
+}
+
+func (h *hookHandler) Handle(ctx context.Context, r slog.Record) error {
+	if strings.Contains(r.Message, "panic in dynamic event bus subscriber loop") {
+		select {
+		case <-h.onPanicMsg:
+			// already closed
+		default:
+			close(h.onPanicMsg)
+		}
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
 // TestStartSubscriberLoop_PanicRecovery exercises the recover() path in
-// startSubscriberLoop where a dynamically-added subscriber causes a panic
-// chain that escapes notifySubscriber's recovery and reaches the
-// startSubscriberLoop safety net.
+// startSubscriberLoop where a panic escapes both notifySubscriber's recovery
+// and subscriberLoop, reaching the startSubscriberLoop safety net.
 //
 // The chain works as follows:
-//  1. subscriber.Handle panics → caught by notifySubscriber's recover
-//  2. notifySubscriber's recover calls event.Type() → second panic (Type panics)
-//  3. second panic escapes notifySubscriber → caught by startSubscriberLoop's recover
+//  1. notifySubscriber calls event.Type() (cached before defer) → panics
+//  2. notifySubscriber's recover catches it, returns an error
+//  3. subscriberLoop calls event.Type() again for error logging → second panic
+//  4. second panic escapes subscriberLoop → caught by startSubscriberLoop's recover
 func TestStartSubscriberLoop_PanicRecovery(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	baseHandler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	panicCaught := make(chan struct{})
+	hook := &hookHandler{Handler: baseHandler, onPanicMsg: panicCaught}
+	logger := slog.New(hook)
 
 	bus := NewSimpleEventBus(ctx,
 		WithAsync(true),
@@ -67,15 +91,21 @@ func TestStartSubscriberLoop_PanicRecovery(t *testing.T) {
 
 	// Send a panickingTypeEvent directly to the subscriber's channel,
 	// bypassing Publish (which would panic on event.Type()).
-	// This triggers the chain: subscriber.Handle panics → notifySubscriber
-	// catches it → event.Type() panics in the recover block → startSubscriberLoop catches.
+	// This triggers the chain: notifySubscriber calls event.Type() → panics →
+	// recover returns error → subscriberLoop calls event.Type() for logging →
+	// second panic → startSubscriberLoop catches.
 	bus.mu.RLock()
 	w := bus.globalSubscribers[0]
 	bus.mu.RUnlock()
 	w.ch <- panickingTypeEvent{}
 
-	// Give the goroutine time to panic and recover.
-	time.Sleep(100 * time.Millisecond)
+	// Wait for startSubscriberLoop's recover to log the panic.
+	select {
+	case <-panicCaught:
+		// Good — the recover fired and logged the expected message.
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for startSubscriberLoop panic recovery log")
+	}
 
 	// Shutdown cleanly.
 	cancel()
