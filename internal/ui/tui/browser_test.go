@@ -780,16 +780,9 @@ func searchTestCases() []updateTestCase {
 func systemTestCases() []updateTestCase {
 	return []updateTestCase{
 		{
-			name: "WindowSizeMsg updates dimensions",
-			msg:  tea.WindowSizeMsg{Width: 100, Height: 50},
-			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				if m.width != 100 || m.height != 50 {
-					t.Errorf("expected 100x50, got %dx%d", m.width, m.height)
-				}
-				if !m.ready {
-					t.Error("expected ready to be true after WindowSizeMsg")
-				}
-			},
+			name:  "WindowSizeMsg updates dimensions",
+			msg:   tea.WindowSizeMsg{Width: 100, Height: 50},
+			check: checkWindowSizeMsg,
 		},
 		{
 			name: "historyLoadedMsg updates history",
@@ -799,28 +792,14 @@ func systemTestCases() []updateTestCase {
 				},
 				nextCursor: "next",
 			},
-			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				if len(m.history) != 1 {
-					t.Errorf("expected 1 history item, got %d", len(m.history))
-				}
-				if m.cursor != "next" {
-					t.Errorf("expected cursor 'next', got %q", m.cursor)
-				}
-				if m.isLoading {
-					t.Error("expected isLoading to be false")
-				}
-			},
+			check: checkHistoryLoadedMsg,
 		},
 		{
 			name: "historyLoadedMsg with error",
 			msg: historyLoadedMsg{
 				err: errors.New("boom"),
 			},
-			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				if m.err == nil || m.err.Error() != "boom" {
-					t.Error("expected error 'boom'")
-				}
-			},
+			check: checkHistoryLoadedMsgError,
 		},
 		{
 			name: "fileChangedMsg triggers reload",
@@ -828,15 +807,8 @@ func systemTestCases() []updateTestCase {
 				m.lastMutationTime = time.Now().Add(-1 * time.Second)
 				m.history = []ports.HistoryViewDTO{{Role: "user"}}
 			},
-			msg: fileChangedMsg{},
-			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				if len(m.history) != 0 {
-					t.Error("expected history to be cleared for reload")
-				}
-				if !m.isLoading {
-					t.Error("expected isLoading to be true")
-				}
-			},
+			msg:   fileChangedMsg{},
+			check: checkFileChangedMsg,
 		},
 		{
 			name: "fileChangedMsg ignored if too soon after mutation",
@@ -844,12 +816,8 @@ func systemTestCases() []updateTestCase {
 				m.lastMutationTime = time.Now()
 				m.history = []ports.HistoryViewDTO{{Role: "user"}}
 			},
-			msg: fileChangedMsg{},
-			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				if len(m.history) != 1 {
-					t.Error("expected history NOT to be cleared (debounced)")
-				}
-			},
+			msg:   fileChangedMsg{},
+			check: checkFileChangedMsgDebounced,
 		},
 	}
 }
@@ -892,4 +860,51 @@ func TestBrowserModel_SystemMessageOffset(t *testing.T) {
 		// turnsToRemove = (5 - 3 + 1) / 2 = 1.
 		verifyRollbackInteraction(t, m, mockModifier, 1)
 	})
+}
+
+func checkWindowSizeMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
+	if m.width != 100 || m.height != 50 {
+		t.Errorf("expected 100x50, got %dx%d", m.width, m.height)
+	}
+	if !m.ready {
+		t.Error("expected ready to be true after WindowSizeMsg")
+	}
+}
+
+func checkHistoryLoadedMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
+	if len(m.history) != 1 {
+		t.Errorf("expected 1 history item, got %d", len(m.history))
+	}
+	if m.cursor != "next" {
+		t.Errorf("expected cursor 'next', got %q", m.cursor)
+	}
+	if m.isLoading {
+		t.Error("expected isLoading to be false")
+	}
+}
+
+func checkHistoryLoadedMsgError(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
+	if m.err == nil || m.err.Error() != "boom" {
+		t.Error("expected error 'boom'")
+	}
+}
+
+func checkFileChangedMsg(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
+	if len(m.history) != 0 {
+		t.Error("expected history to be cleared for reload")
+	}
+	if !m.isLoading {
+		t.Error("expected isLoading to be true")
+	}
+}
+
+func checkFileChangedMsgDebounced(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+	t.Helper()
+	if len(m.history) != 1 {
+		t.Error("expected history NOT to be cleared (debounced)")
+	}
 }

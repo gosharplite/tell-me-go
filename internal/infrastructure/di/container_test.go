@@ -24,6 +24,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -543,6 +544,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 		tracker:         tracker,
 		pricingData:     pData,
 		sessionProvider: sessionProvider,
+		health:          factory.NewHealthCheckManager(nil),
 		clientFactory: func() (llm.ExtendedClient, error) {
 			return client, nil
 		},
@@ -563,6 +565,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.Equal(t, pData, deps.GetPricingData())
 	assert.NotNil(t, deps.GetClient())
 	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
+	assert.NotNil(t, deps.GetHealthManager())
 }
 
 type mockKVStore struct {
@@ -1089,4 +1092,16 @@ func TestBypassConfirmationPriority(t *testing.T) {
 			mockKV.AssertExpectations(t)
 		})
 	}
+}
+
+func TestBootstrapper_Getters(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+
+	assert.NotNil(t, b.GetHistoryBrowser())
+	assert.NotNil(t, b.GetUIRenderer())
+	assert.NotNil(t, b.GetHistoryRenderer())
 }

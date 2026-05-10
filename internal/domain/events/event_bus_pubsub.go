@@ -146,6 +146,9 @@ func (b *SimpleEventBus) subscriberLoop(ctx context.Context, w *subscriberWrappe
 	defer b.workerWG.Done()
 	for {
 		select {
+		// ctx = listenCtx (per-Listen scope); b.ctx = bus-wide scope.
+		// Both are watched so Shutdown() can stop workers even when
+		// Listen() was called with a long-lived parent context.
 		case <-ctx.Done():
 			b.drain(w)
 			return nil
@@ -185,10 +188,14 @@ func (b *SimpleEventBus) drain(w *subscriberWrapper) {
 }
 
 func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, event Event) (err error) {
+	// Cache event type before calling sub.Handle so that if event.Type()
+	// panics inside the recover block below, we don't lose the original
+	// subscriber panic reason and stack trace.
+	eventType := event.Type()
+
 	defer func() {
 		if r := recover(); r != nil {
 			subType := fmt.Sprintf("%T", sub)
-			eventType := event.Type()
 			stack := string(debug.Stack())
 
 			// 1. Emit structured log with context
@@ -224,7 +231,7 @@ func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
 	b.globalSubscribers = append(b.globalSubscribers, w)
 
 	if b.running && b.asyncDispatch {
-		b.startSubscriberLoop(w)
+		b.startSubscriberLoopLocked(w)
 	}
 }
 
@@ -245,7 +252,7 @@ func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
 	b.globalSubscribers = append(b.globalSubscribers, w)
 
 	if b.running && b.asyncDispatch {
-		b.startSubscriberLoop(w)
+		b.startSubscriberLoopLocked(w)
 	}
 }
 
@@ -266,24 +273,25 @@ func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 	b.subscribers[eventType] = append(b.subscribers[eventType], w)
 
 	if b.running && b.asyncDispatch {
-		b.startSubscriberLoop(w)
+		b.startSubscriberLoopLocked(w)
 	}
 }
 
-// startSubscriberLoop starts the background worker loop for a given subscriber.
+// startSubscriberLoopLocked starts the background worker loop for a given subscriber.
 // It assumes b.mu is held by the caller.
-func (b *SimpleEventBus) startSubscriberLoop(w *subscriberWrapper) {
+func (b *SimpleEventBus) startSubscriberLoopLocked(w *subscriberWrapper) {
+	ctx := b.listenCtx
 	b.workerWG.Add(1)
-	b.listenG.Go(func() error {
+	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				b.getLogger().Error("panic in dynamic event bus subscriber loop",
+				b.getLogger().ErrorContext(ctx, "panic in event bus subscriber loop",
 					slog.Any("error", r),
 					slog.String("stack", string(debug.Stack())))
 			}
 		}()
-		return b.subscriberLoop(b.listenCtx, w)
-	})
+		_ = b.subscriberLoop(ctx, w)
+	}()
 }
 
 // SafePublish attempts to publish an event with a forced timeout.

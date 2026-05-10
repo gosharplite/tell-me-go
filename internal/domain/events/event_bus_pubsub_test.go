@@ -1,0 +1,182 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package events
+
+import (
+	"bytes"
+	"context"
+	"log/slog"
+	"strings"
+	"testing"
+	"time"
+)
+
+// panicSubscriber is a test helper that panics in Handle.
+// Duplicated from events_test.go (package events_test) for white-box access.
+type panicSubscriber struct {
+	msg string
+}
+
+func (s *panicSubscriber) Handle(ctx context.Context, e Event) error {
+	panic(s.msg)
+}
+
+// panickingTypeEvent is an event whose Type() method panics.
+// With Fix 1 (cached event.Type()), notifySubscriber calls Type() before
+// sub.Handle, so the panic happens there; the recover catches it and returns
+// an error. subscriberLoop then calls event.Type() again in its error-logging
+// path, triggering a second panic that propagates to startSubscriberLoopLocked's recover.
+type panickingTypeEvent struct{}
+
+func (e panickingTypeEvent) Type() string { panic("event Type() panic") }
+
+// hookHandler wraps a slog.Handler and closes onPanicMsg when it intercepts
+// a log message containing the expected substring. Used for deterministic
+// synchronization with background goroutines instead of time.Sleep.
+type hookHandler struct {
+	slog.Handler
+	onPanicMsg chan struct{}
+}
+
+func (h *hookHandler) Handle(ctx context.Context, r slog.Record) error {
+	err := h.Handler.Handle(ctx, r)
+	if strings.Contains(r.Message, "panic in event bus subscriber loop") {
+		select {
+		case <-h.onPanicMsg:
+			// already closed
+		default:
+			close(h.onPanicMsg)
+		}
+	}
+	return err
+}
+
+// TestStartSubscriberLoopLocked_PanicRecovery exercises the recover() path in
+// startSubscriberLoopLocked where a panic escapes both notifySubscriber's recovery
+// and subscriberLoop, reaching the startSubscriberLoopLocked safety net.
+//
+// The chain works as follows:
+//  1. notifySubscriber calls event.Type() (cached before defer) → panics
+//  2. notifySubscriber's recover catches it, returns an error
+//  3. subscriberLoop calls event.Type() again for error logging → second panic
+//  4. second panic escapes subscriberLoop → caught by startSubscriberLoopLocked's recover
+func TestStartSubscriberLoopLocked_PanicRecovery(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var buf bytes.Buffer
+	baseHandler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	panicCaught := make(chan struct{})
+	hook := &hookHandler{Handler: baseHandler, onPanicMsg: panicCaught}
+	logger := slog.New(hook)
+
+	bus := NewSimpleEventBus(ctx,
+		WithAsync(true),
+		WithQueueSize(1),
+		WithLogger(logger),
+	)
+
+	// Start Listen in background so the bus is "running".
+	// This is required for startSubscriberLoopLocked to be called by SubscribeGlobal.
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		_ = bus.Listen(ctx)
+	}()
+	bus.WaitStarted()
+
+	// Dynamically subscribe a subscriber that panics on Handle.
+	// Because the bus is already running, SubscribeGlobal calls startSubscriberLoopLocked.
+	bus.SubscribeGlobal(&panicSubscriber{msg: "dynamic panic boom"})
+
+	// Send a panickingTypeEvent directly to the subscriber's channel,
+	// bypassing Publish (which would panic on event.Type()).
+	// This triggers the chain: notifySubscriber calls event.Type() → panics →
+	// recover returns error → subscriberLoop calls event.Type() for logging →
+	// second panic → startSubscriberLoopLocked catches.
+	bus.mu.RLock()
+	w := bus.globalSubscribers[0]
+	bus.mu.RUnlock()
+	w.ch <- panickingTypeEvent{}
+
+	// Wait for startSubscriberLoopLocked's recover to log the panic.
+	select {
+	case <-panicCaught:
+		// Good — the recover fired and logged the expected message.
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for startSubscriberLoopLocked panic recovery log")
+	}
+
+	// Shutdown cleanly.
+	cancel()
+	<-listenDone
+
+	// Verify the panic was logged by startSubscriberLoopLocked's recover().
+	output := buf.String()
+	if !strings.Contains(output, "panic in event bus subscriber loop") {
+		t.Errorf("expected 'panic in event bus subscriber loop' in log, got: %s", output)
+	}
+	if !strings.Contains(output, "event Type() panic") {
+		t.Errorf("expected 'event Type() panic' in log, got: %s", output)
+	}
+}
+
+// TestSubscriberLoop_ClosedChannel exercises the !ok (closed-channel) return
+// path in subscriberLoop. When a subscriber's channel is closed externally,
+// the worker observes a zero-value Event with ok=false and returns nil.
+//
+// Synchronization is deterministic via workerWG: close(w.ch) causes the
+// worker to exit the for-select loop, fire defer workerWG.Done(), and
+// unblock workerWG.Wait().
+func TestSubscriberLoop_ClosedChannel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bus := NewSimpleEventBus(ctx, WithAsync(true), WithQueueSize(1))
+
+	// Start Listen in a background goroutine and wait for full initialization.
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		_ = bus.Listen(ctx)
+	}()
+	bus.WaitStarted()
+
+	// Subscribe a no-op global subscriber to create an active worker goroutine.
+	bus.SubscribeGlobal(&funcSubscriber{f: func(ctx context.Context, e Event) {}})
+
+	// Retrieve the wrapper for the subscriber we just added.
+	bus.mu.RLock()
+	if len(bus.globalSubscribers) == 0 {
+		bus.mu.RUnlock()
+		t.Fatal("expected at least one global subscriber")
+	}
+	w := bus.globalSubscribers[0]
+	bus.mu.RUnlock()
+
+	// Close the subscriber's channel. The worker goroutine currently blocked
+	// on <-w.ch will receive a zero-value with ok=false and return nil.
+	close(w.ch)
+
+	// Wait for the worker to exit. workerWG.Wait() returns only after
+	// subscriberLoop's defer workerWG.Done() fires.
+	workerDone := make(chan struct{})
+	go func() {
+		bus.workerWG.Wait()
+		close(workerDone)
+	}()
+
+	select {
+	case <-workerDone:
+		// Worker exited via the closed-channel path — success.
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not exit after channel close — closed-channel path was not exercised")
+	}
+
+	// Clean shutdown: cancel the listen context and wait for Listen to return.
+	cancel()
+	<-listenDone
+}

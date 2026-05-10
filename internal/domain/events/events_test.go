@@ -938,6 +938,37 @@ func TestSimpleEventBus_ListenDefensive(t *testing.T) {
 			t.Errorf("expected ErrBusClosed, got %v", err)
 		}
 	})
+
+	t.Run("AlreadyRunning", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+		eventstest.CleanupBus(t, bus)
+
+		// Start the first Listen in a background goroutine and wait for
+		// full initialization. After WaitStarted returns, b.running is
+		// guaranteed true under the lock.
+		listenDone := make(chan struct{})
+		go func() {
+			defer close(listenDone)
+			_ = bus.Listen(ctx)
+		}()
+		bus.WaitStarted()
+
+		// Call Listen a second time on an already-running bus.
+		// This exercises the early-return path:
+		//   if b.running { b.mu.Unlock(); return nil }
+		err := bus.Listen(ctx)
+		if err != nil {
+			t.Errorf("expected nil on re-entrant Listen to already-running bus, got %v", err)
+		}
+
+		// Clean shutdown: cancel the context and wait for the first Listen
+		// goroutine to return.
+		cancel()
+		<-listenDone
+	})
 }
 
 func TestSimpleEventBus_NilAndClosedSubscriptions(t *testing.T) {
