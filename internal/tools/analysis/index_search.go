@@ -99,6 +99,10 @@ func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
 		return true
 	}
 	if strings.HasPrefix(filePath, targetPath) {
+		// Empty target matches everything (filepath.Rel semantics).
+		if len(targetPath) == 0 {
+			return true
+		}
 		// If targetPath is a root directory (e.g., "/" or "C:\"),
 		// it already ends in a separator.
 		if targetPath[len(targetPath)-1] == filepath.Separator {
