@@ -22,7 +22,6 @@ import (
 
 // Authenticator defines the interface for injecting credentials into API requests.
 type Authenticator interface {
-	getToken(ctx context.Context) (string, error)
 	Invalidate()
 	Apply(ctx context.Context, req *Request) error
 }
