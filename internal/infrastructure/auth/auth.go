@@ -22,7 +22,6 @@ import (
 
 // Authenticator defines the interface for injecting credentials into API requests.
 type Authenticator interface {
-	getToken(ctx context.Context) (string, error)
 	Invalidate()
 	Apply(ctx context.Context, req *Request) error
 }
@@ -41,11 +40,22 @@ type VertexAuth struct {
 	CacheDir string
 }
 
-func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
-	if a.tokenCmdFunc != nil {
-		return a.tokenCmdFunc()
+// NewVertexAuth returns a VertexAuth wired with the production gcloud executor
+// as its default token source. Tests may construct VertexAuth directly with a
+// custom tokenCmdFunc to bypass gcloud.
+func NewVertexAuth() *VertexAuth {
+	return &VertexAuth{
+		tokenCmdFunc: func() ([]byte, error) {
+			return exec.Command("gcloud", "auth", "print-access-token").Output()
+		},
 	}
-	return exec.Command("gcloud", "auth", "print-access-token").Output()
+}
+
+func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
+	if a.tokenCmdFunc == nil {
+		return nil, fmt.Errorf("tokenCmdFunc not wired; use NewVertexAuth() to construct VertexAuth")
+	}
+	return a.tokenCmdFunc()
 }
 
 var getUID = os.Getuid
@@ -138,7 +148,6 @@ type APIKeyAuth struct {
 	APIKey string
 }
 
-func (a *APIKeyAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
 func (a *APIKeyAuth) Invalidate() {
 }
 func (a *APIKeyAuth) Apply(ctx context.Context, req *Request) error {
@@ -154,7 +163,6 @@ type BearerAuth struct {
 	Token string
 }
 
-func (a *BearerAuth) getToken(ctx context.Context) (string, error) { return a.Token, nil }
 func (a *BearerAuth) Invalidate() {
 }
 func (a *BearerAuth) Apply(ctx context.Context, req *Request) error {
@@ -169,7 +177,6 @@ type AnthropicAuth struct {
 	APIKey string
 }
 
-func (a *AnthropicAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
 func (a *AnthropicAuth) Invalidate() {
 }
 func (a *AnthropicAuth) Apply(ctx context.Context, req *Request) error {
@@ -254,7 +261,6 @@ func (a *ServiceAccountAuth) Apply(ctx context.Context, req *Request) error {
 // noOpAuth implements the Authenticator interface for providers that do not require authentication.
 type noOpAuth struct{}
 
-func (a *noOpAuth) getToken(ctx context.Context) (string, error) { return "", nil }
 func (a *noOpAuth) Invalidate() {
 }
 func (a *noOpAuth) Apply(ctx context.Context, req *Request) error {

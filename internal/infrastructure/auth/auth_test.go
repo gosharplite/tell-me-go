@@ -372,10 +372,6 @@ func TestOtherAuthenticators(t *testing.T) {
 		if req.Headers["x-goog-api-key"] != "test-api-key" {
 			t.Errorf("got %s, want test-api-key", req.Headers["x-goog-api-key"])
 		}
-		token, _ := auth.getToken(ctx)
-		if token != "test-api-key" {
-			t.Errorf("got %s, want test-api-key", token)
-		}
 		auth.Invalidate() // should do nothing
 	})
 
@@ -385,10 +381,6 @@ func TestOtherAuthenticators(t *testing.T) {
 		_ = auth.Apply(ctx, req)
 		if req.Headers["Authorization"] != "Bearer test-bearer" {
 			t.Errorf("got %s, want Bearer test-bearer", req.Headers["Authorization"])
-		}
-		token, _ := auth.getToken(ctx)
-		if token != "test-bearer" {
-			t.Errorf("got %s, want test-bearer", token)
 		}
 		auth.Invalidate() // should do nothing
 	})
@@ -400,10 +392,6 @@ func TestOtherAuthenticators(t *testing.T) {
 		if req.Headers["x-api-key"] != "test-anthropic" {
 			t.Errorf("got %s, want test-anthropic", req.Headers["x-api-key"])
 		}
-		token, _ := auth.getToken(ctx)
-		if token != "test-anthropic" {
-			t.Errorf("got %s, want test-anthropic", token)
-		}
 		auth.Invalidate() // should do nothing
 	})
 }
@@ -414,18 +402,9 @@ func TestNoOpAuth(t *testing.T) {
 	// Should not panic
 	a.Invalidate()
 
-	// Should return empty string and nil error
-	token, err := a.getToken(context.Background())
-	if err != nil {
-		t.Errorf("getToken() expected nil error, got %v", err)
-	}
-	if token != "" {
-		t.Errorf("getToken() expected empty string, got %s", token)
-	}
-
 	// Should return nil error
 	req := &Request{Headers: make(map[string]string)}
-	err = a.Apply(context.Background(), req)
+	err := a.Apply(context.Background(), req)
 	if err != nil {
 		t.Errorf("Apply() expected nil error, got %v", err)
 	}
@@ -589,5 +568,32 @@ func TestVertexAuth_CacheWriteFailure(t *testing.T) {
 	}
 	if token != "resilient-token" {
 		t.Errorf("got %s, want resilient-token", token)
+	}
+}
+
+func TestNewVertexAuth_DefaultTokenCmdFunc(t *testing.T) {
+	a := NewVertexAuth()
+	if a.tokenCmdFunc == nil {
+		t.Fatal("NewVertexAuth must wire a default tokenCmdFunc")
+	}
+}
+
+// TestVertexAuth_NilTokenCmdFunc_ReturnsError verifies that calling getToken()
+// on a bare &VertexAuth{} without a wired tokenCmdFunc returns a descriptive error
+// instead of panicking. This guards against future test code that constructs
+// VertexAuth without using NewVertexAuth() or presetting Token.
+func TestVertexAuth_NilTokenCmdFunc_ReturnsError(t *testing.T) {
+	auth := &VertexAuth{
+		CacheDir: t.TempDir(), // isolate from any stale cached token on disk
+	}
+	// No Token set, no tokenCmdFunc wired — should hit the nil guard
+
+	_, err := auth.getToken(context.Background())
+
+	if err == nil {
+		t.Fatal("expected error for nil tokenCmdFunc, got nil")
+	}
+	if !strings.Contains(err.Error(), "NewVertexAuth") {
+		t.Errorf("error should mention NewVertexAuth, got: %v", err)
 	}
 }

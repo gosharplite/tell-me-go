@@ -85,7 +85,7 @@ func TestSearchToolSelection(t *testing.T) {
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			eventstest.CleanupBus(t, bus)
-			client, err := gemini.NewClient(tt.apiURL, "model", &auth.VertexAuth{Token: "test"}, gemini.WithSearch(true), gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
+			client, err := gemini.NewClient(tt.apiURL, "model", &auth.BearerAuth{Token: "test"}, gemini.WithSearch(true), gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}

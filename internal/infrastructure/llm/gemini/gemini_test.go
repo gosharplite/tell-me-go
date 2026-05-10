@@ -24,6 +24,22 @@ import (
 	"google.golang.org/genai"
 )
 
+// stubAuthenticator is a local test double for auth.Authenticator.
+// It proves that consumer packages can now implement the interface
+// without importing any auth concrete type (ADR-033).
+type stubAuthenticator struct {
+	token string
+}
+
+func (s *stubAuthenticator) Invalidate() {}
+
+func (s *stubAuthenticator) Apply(_ context.Context, req *auth.Request) error {
+	if s.token != "" {
+		req.Headers["Authorization"] = "Bearer " + s.token
+	}
+	return nil
+}
+
 func validateAuthOnly(t *testing.T, r *http.Request) {
 	if r.Header.Get("Authorization") != "Bearer test-token" {
 		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
@@ -141,7 +157,7 @@ func runSendChatTest(t *testing.T, tt sendChatTestCase) {
 	t.Cleanup(server.Close)
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	authenticator := &auth.VertexAuth{Token: "test-token"}
+	authenticator := &auth.BearerAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	client, err := NewClient(
@@ -193,7 +209,7 @@ func TestRefreshAuth(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	authenticator := &auth.VertexAuth{Token: "test-token"}
+	authenticator := &auth.BearerAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	client, _ := NewClient(apiURL, "test-model", authenticator, WithEventBus(bus), WithTimeout(5*time.Second))
@@ -262,7 +278,7 @@ func runGenerateImagesTest(t *testing.T, tt generateImagesTestCase) {
 	apiURL := "http://localhost/v1" // Trigger GeminiAPI backend with v1
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
-	client, err := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, WithEventBus(bus), WithTimeout(5*time.Second))
+	client, err := NewClient(apiURL, "test-model", &auth.BearerAuth{Token: "test"}, WithEventBus(bus), WithTimeout(5*time.Second))
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -664,7 +680,7 @@ func TestGemini_EdgeCase_DetermineBackend_MockURL(t *testing.T) {
 }
 
 func TestGemini_ModelQualification(t *testing.T) {
-	authenticator := &auth.VertexAuth{Token: "test-token"}
+	authenticator := &auth.BearerAuth{Token: "test-token"}
 
 	t.Run("Qualify short model name", func(t *testing.T) {
 		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/deepseek-ai/models"
@@ -766,6 +782,24 @@ func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestNewClient_WithLocalStubAuthenticator verifies that a consumer-defined
+// test double (not importing any auth concrete type) satisfies
+// auth.Authenticator and correctly injects credentials.
+func TestNewClient_WithLocalStubAuthenticator(t *testing.T) {
+	stub := &stubAuthenticator{token: "local-stub-token"}
+
+	client, err := NewClient("https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models", "gemini-2.0-flash", stub, WithTimeout(30*time.Second))
+	if err != nil {
+		t.Fatalf("NewClient with local stub authenticator: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if client.authenticator != stub {
+		t.Fatal("client did not retain the stub authenticator")
+	}
 }
 
 func TestNewClient_Options(t *testing.T) {
