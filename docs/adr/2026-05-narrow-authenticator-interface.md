@@ -1,6 +1,6 @@
 # ADR-033: Narrow the `auth.Authenticator` Interface (Remove `getToken`)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-10
 - **Deciders:** @thptcnec (Architect)
 
