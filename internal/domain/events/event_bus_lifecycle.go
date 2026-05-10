@@ -147,8 +147,7 @@ func (b *SimpleEventBus) cancelFlushWaiter(cancelled *bool, err error) error {
 // Listen blocks until all worker goroutines have fully drained before returning.
 //
 // If the bus is already listening, Listen returns nil immediately and the supplied
-// ctx is ignored. Use ErrAlreadyListening to detect this state proactively when
-// callers have been migrated to support the sentinel.
+// ctx is ignored.
 func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	if b == nil {
 		return ErrBusNotInitialized

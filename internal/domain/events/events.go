@@ -23,7 +23,6 @@ type Subscriber interface {
 var (
 	ErrBusClosed         = errors.New("event bus is closed")
 	ErrBusNotInitialized = errors.New("event bus is nil or uninitialized")
-	ErrAlreadyListening  = errors.New("event bus is already listening")
 )
 
 const (
