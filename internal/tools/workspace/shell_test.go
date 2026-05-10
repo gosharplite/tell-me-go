@@ -283,15 +283,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sm := &toolstest.MockSecurityManager{AllowAll: true}
-			sm.SetBypassActive(true)
-			validator := &toolstest.MockCommandValidator{}
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(sm, validator)
-			}
-
-			tool := newTestShellTool(sm, validator)
+			tool := setupPipeMocks(t, tt.setupMocks)
 
 			args := map[string]interface{}{
 				"commands": tt.commands,
@@ -300,9 +292,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 			res, err := tool.PipeCommands(ctx, args, nil)
 
 			if tt.wantErr {
-				if res.Error == nil && err == nil {
-					t.Error("expected error, got none")
-				}
+				assertPipeError(t, err, res)
 				return
 			}
 			if err != nil || res.Error != nil {
@@ -312,6 +302,24 @@ func TestShellTool_PipeCommands(t *testing.T) {
 				t.Errorf("expected output to contain %q, got %q", tt.expectedText, res.Text)
 			}
 		})
+	}
+}
+
+func setupPipeMocks(t *testing.T, setupMocks func(sm *toolstest.MockSecurityManager, v *toolstest.MockCommandValidator)) *shellTool {
+	t.Helper()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	validator := &toolstest.MockCommandValidator{}
+	if setupMocks != nil {
+		setupMocks(sm, validator)
+	}
+	return newTestShellTool(sm, validator)
+}
+
+func assertPipeError(t *testing.T, err error, res tools.ToolResult) {
+	t.Helper()
+	if res.Error == nil && err == nil {
+		t.Error("expected error, got none")
 	}
 }
 

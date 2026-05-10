@@ -148,31 +148,66 @@ func TestGetRuntimeSnapshotForInternalUse_FieldMapping(t *testing.T) {
 	// Read back via the snapshot method under test.
 	snap := a.GetRuntimeSnapshotForInternalUse()
 
-	// Assert each field independently so failures pinpoint the exact field.
-	if snap.ProviderName != "openai" {
-		t.Errorf("ProviderName = %q; want %q", snap.ProviderName, "openai")
+	// Assert each field independently via subtests so failures pinpoint the exact field.
+	t.Run("ProviderName", func(t *testing.T) {
+		assertProviderName(t, snap.ProviderName)
+	})
+	t.Run("Model", func(t *testing.T) {
+		assertModel(t, snap.Model)
+	})
+	t.Run("Mode", func(t *testing.T) {
+		assertMode(t, snap.Mode)
+	})
+	t.Run("PricingOverrides", func(t *testing.T) {
+		assertPricingOverrides(t, snap.PricingOverrides)
+	})
+	t.Run("Limits", func(t *testing.T) {
+		assertLimits(t, snap.Limits)
+	})
+}
+
+func assertProviderName(t *testing.T, got string) {
+	t.Helper()
+	if got != "openai" {
+		t.Errorf("ProviderName = %q; want %q", got, "openai")
 	}
-	if snap.Model != "gpt-4o" {
-		t.Errorf("Model = %q; want %q", snap.Model, "gpt-4o")
+}
+
+func assertModel(t *testing.T, got string) {
+	t.Helper()
+	if got != "gpt-4o" {
+		t.Errorf("Model = %q; want %q", got, "gpt-4o")
 	}
-	if snap.Mode != "chat" {
-		t.Errorf("Mode = %q; want %q", snap.Mode, "chat")
+}
+
+func assertMode(t *testing.T, got string) {
+	t.Helper()
+	if got != "chat" {
+		t.Errorf("Mode = %q; want %q", got, "chat")
 	}
-	if len(snap.PricingOverrides) != 1 {
-		t.Errorf("PricingOverrides len = %d; want 1", len(snap.PricingOverrides))
-	} else if p, ok := snap.PricingOverrides["gpt-4o"]; !ok {
+}
+
+func assertPricingOverrides(t *testing.T, got map[string]domain_pricing.ModelPricing) {
+	t.Helper()
+	if len(got) != 1 {
+		t.Errorf("PricingOverrides len = %d; want 1", len(got))
+	} else if p, ok := got["gpt-4o"]; !ok {
 		t.Errorf("PricingOverrides missing key %q", "gpt-4o")
 	} else if p.Hit != 0.01 || p.Miss != 0.02 {
 		t.Errorf("PricingOverrides[gpt-4o] = %+v; want {Hit:0.01 Miss:0.02}", p)
 	}
-	if snap.Limits.MaxHistoryTokens != 4000 {
-		t.Errorf("Limits.MaxHistoryTokens = %d; want 4000", snap.Limits.MaxHistoryTokens)
+}
+
+func assertLimits(t *testing.T, got events.Limits) {
+	t.Helper()
+	if got.MaxHistoryTokens != 4000 {
+		t.Errorf("Limits.MaxHistoryTokens = %d; want 4000", got.MaxHistoryTokens)
 	}
-	if snap.Limits.MaxToolTurns != 15 {
-		t.Errorf("Limits.MaxToolTurns = %d; want 15", snap.Limits.MaxToolTurns)
+	if got.MaxToolTurns != 15 {
+		t.Errorf("Limits.MaxToolTurns = %d; want 15", got.MaxToolTurns)
 	}
-	if snap.Limits.MaxHistoryTurns != 8 {
-		t.Errorf("Limits.MaxHistoryTurns = %d; want 8", snap.Limits.MaxHistoryTurns)
+	if got.MaxHistoryTurns != 8 {
+		t.Errorf("Limits.MaxHistoryTurns = %d; want 8", got.MaxHistoryTurns)
 	}
 }
 
