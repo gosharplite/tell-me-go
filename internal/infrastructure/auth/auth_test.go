@@ -372,10 +372,6 @@ func TestOtherAuthenticators(t *testing.T) {
 		if req.Headers["x-goog-api-key"] != "test-api-key" {
 			t.Errorf("got %s, want test-api-key", req.Headers["x-goog-api-key"])
 		}
-		token, _ := auth.getToken(ctx)
-		if token != "test-api-key" {
-			t.Errorf("got %s, want test-api-key", token)
-		}
 		auth.Invalidate() // should do nothing
 	})
 
@@ -385,10 +381,6 @@ func TestOtherAuthenticators(t *testing.T) {
 		_ = auth.Apply(ctx, req)
 		if req.Headers["Authorization"] != "Bearer test-bearer" {
 			t.Errorf("got %s, want Bearer test-bearer", req.Headers["Authorization"])
-		}
-		token, _ := auth.getToken(ctx)
-		if token != "test-bearer" {
-			t.Errorf("got %s, want test-bearer", token)
 		}
 		auth.Invalidate() // should do nothing
 	})
@@ -400,10 +392,6 @@ func TestOtherAuthenticators(t *testing.T) {
 		if req.Headers["x-api-key"] != "test-anthropic" {
 			t.Errorf("got %s, want test-anthropic", req.Headers["x-api-key"])
 		}
-		token, _ := auth.getToken(ctx)
-		if token != "test-anthropic" {
-			t.Errorf("got %s, want test-anthropic", token)
-		}
 		auth.Invalidate() // should do nothing
 	})
 }
@@ -414,18 +402,9 @@ func TestNoOpAuth(t *testing.T) {
 	// Should not panic
 	a.Invalidate()
 
-	// Should return empty string and nil error
-	token, err := a.getToken(context.Background())
-	if err != nil {
-		t.Errorf("getToken() expected nil error, got %v", err)
-	}
-	if token != "" {
-		t.Errorf("getToken() expected empty string, got %s", token)
-	}
-
 	// Should return nil error
 	req := &Request{Headers: make(map[string]string)}
-	err = a.Apply(context.Background(), req)
+	err := a.Apply(context.Background(), req)
 	if err != nil {
 		t.Errorf("Apply() expected nil error, got %v", err)
 	}
