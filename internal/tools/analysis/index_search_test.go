@@ -20,12 +20,12 @@ func TestIsInSearchPath(t *testing.T) {
 		target, file string
 		want         bool
 	}{
-		{"exact match", "/a/b.go", "/a/b.go", true},
-		{"child in subdirectory", "/a", "/a/b.go", true},
-		{"sibling prefix rejected", "/foo", "/foobar.go", false},
-		{"root directory", "/", "/a/b.go", true},
-		{"empty target matches all", "", "/a/b.go", true},
-		{"unrelated path", "/x", "/y/b.go", false},
+		{"exact match", filepath.FromSlash("/a/b.go"), filepath.FromSlash("/a/b.go"), true},
+		{"child in subdirectory", filepath.FromSlash("/a"), filepath.FromSlash("/a/b.go"), true},
+		{"sibling prefix rejected", filepath.FromSlash("/foo"), filepath.FromSlash("/foobar.go"), false},
+		{"root directory", filepath.FromSlash("/"), filepath.FromSlash("/a/b.go"), true},
+		{"empty target matches all", "", filepath.FromSlash("/a/b.go"), true},
+		{"unrelated path", filepath.FromSlash("/x"), filepath.FromSlash("/y/b.go"), false},
 		{"Win root", winRoot, winFile, true},
 		{"Win child", winChild, winFile, true},
 		{"Win sibling rejected", winChild, winSibling, false},
