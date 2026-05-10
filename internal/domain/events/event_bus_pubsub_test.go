@@ -121,3 +121,62 @@ func TestStartSubscriberLoopLocked_PanicRecovery(t *testing.T) {
 		t.Errorf("expected 'event Type() panic' in log, got: %s", output)
 	}
 }
+
+// TestSubscriberLoop_ClosedChannel exercises the !ok (closed-channel) return
+// path in subscriberLoop. When a subscriber's channel is closed externally,
+// the worker observes a zero-value Event with ok=false and returns nil.
+//
+// Synchronization is deterministic via workerWG: close(w.ch) causes the
+// worker to exit the for-select loop, fire defer workerWG.Done(), and
+// unblock workerWG.Wait().
+func TestSubscriberLoop_ClosedChannel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bus := NewSimpleEventBus(ctx, WithAsync(true), WithQueueSize(1))
+
+	// Start Listen in a background goroutine and wait for full initialization.
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		_ = bus.Listen(ctx)
+	}()
+	bus.WaitStarted()
+
+	// Subscribe a no-op global subscriber to create an active worker goroutine.
+	bus.SubscribeGlobal(&funcSubscriber{f: func(ctx context.Context, e Event) {}})
+
+	// Retrieve the wrapper for the subscriber we just added.
+	bus.mu.RLock()
+	if len(bus.globalSubscribers) == 0 {
+		bus.mu.RUnlock()
+		t.Fatal("expected at least one global subscriber")
+	}
+	w := bus.globalSubscribers[0]
+	bus.mu.RUnlock()
+
+	// Close the subscriber's channel. The worker goroutine currently blocked
+	// on <-w.ch will receive a zero-value with ok=false and return nil.
+	close(w.ch)
+
+	// Wait for the worker to exit. workerWG.Wait() returns only after
+	// subscriberLoop's defer workerWG.Done() fires.
+	workerDone := make(chan struct{})
+	go func() {
+		bus.workerWG.Wait()
+		close(workerDone)
+	}()
+
+	select {
+	case <-workerDone:
+		// Worker exited via the closed-channel path — success.
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not exit after channel close — closed-channel path was not exercised")
+	}
+
+	// Clean shutdown: cancel the listen context and wait for Listen to return.
+	cancel()
+	<-listenDone
+}
