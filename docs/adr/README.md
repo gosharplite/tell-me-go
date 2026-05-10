@@ -34,6 +34,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-030** | Release Branch Synchronization Policy | 2026-05 | Accepted | [2026-05-release-branch-synchronization-policy.md](2026-05-release-branch-synchronization-policy.md) |
 | **ADR-031** | Caller Cancellation Priority in Dual-Context Enqueue | 2026-05 | Accepted | [2026-05-caller-cancellation-priority.md](2026-05-caller-cancellation-priority.md) |
 | **ADR-032** | Test-Hook Policy for Unexported Concrete Types | 2026-05 | Accepted | [2026-05-test-hook-policy.md](2026-05-test-hook-policy.md) |
+| **ADR-033** | Narrow the `auth.Authenticator` Interface (Remove `getToken`) | 2026-05 | Proposed | [2026-05-narrow-authenticator-interface.md](2026-05-narrow-authenticator-interface.md) |
 
 ## How to Create a New ADR
 
