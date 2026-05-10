@@ -41,11 +41,19 @@ type VertexAuth struct {
 	CacheDir string
 }
 
-func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
-	if a.tokenCmdFunc != nil {
-		return a.tokenCmdFunc()
+// NewVertexAuth returns a VertexAuth wired with the production gcloud executor
+// as its default token source. Tests may construct VertexAuth directly with a
+// custom tokenCmdFunc to bypass gcloud.
+func NewVertexAuth() *VertexAuth {
+	return &VertexAuth{
+		tokenCmdFunc: func() ([]byte, error) {
+			return exec.Command("gcloud", "auth", "print-access-token").Output()
+		},
 	}
-	return exec.Command("gcloud", "auth", "print-access-token").Output()
+}
+
+func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
+	return a.tokenCmdFunc()
 }
 
 var getUID = os.Getuid
