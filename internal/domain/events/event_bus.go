@@ -21,6 +21,7 @@ type SimpleEventBus struct {
 	log               *slog.Logger
 
 	running   bool
+	listenCtx context.Context
 	started   chan struct{}
 	startOnce sync.Once
 

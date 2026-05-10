@@ -145,6 +145,7 @@ func (b *SimpleEventBus) cancelFlushWaiter(cancelled *bool, err error) error {
 
 // Listen starts all per-subscriber background worker loops and blocks until the context is canceled.
 // Workers are tracked via b.workerWG for coordinated shutdown.
+// Listen blocks until all worker goroutines have fully drained before returning.
 func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	if b == nil {
 		return ErrBusNotInitialized
@@ -160,8 +161,8 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	}
 
 	// Derive a cancellable context for this listen session.
-	// When ctx is cancelled or the bus shuts down, listenCtx cancels and
-	// all subscriber loops exit, draining their queues.
+	// Stored on the bus so dynamically added subscribers share the same
+	// cancellation scope as pre-existing workers.
 	listenCtx, cancelListen := context.WithCancel(ctx)
 	defer cancelListen()
 
@@ -178,6 +179,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	}
 
 	b.running = true
+	b.listenCtx = listenCtx
 
 	// Collect all current subscribers and start their worker goroutines.
 	var wrappers []*subscriberWrapper
@@ -192,7 +194,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					b.getLogger().Error("panic in event bus subscriber loop",
+					b.getLogger().ErrorContext(listenCtx, "panic in event bus subscriber loop",
 						slog.Any("error", r),
 						slog.String("stack", string(debug.Stack())))
 				}
@@ -208,9 +210,16 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	// Block until the listen context is cancelled (parent ctx done, or bus shutdown).
 	<-listenCtx.Done()
 
+	// Disable dynamic subscriptions before waiting for workers to drain.
+	// This prevents a sync.WaitGroup reuse panic: no new Add(1) can occur
+	// after Wait() begins.
 	b.mu.Lock()
 	b.running = false
+	b.listenCtx = nil
 	b.mu.Unlock()
+
+	// Wait for all worker goroutines to finish draining before returning.
+	b.wgWait(&b.workerWG)
 
 	return nil
 }

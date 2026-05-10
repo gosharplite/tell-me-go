@@ -281,12 +281,12 @@ func (b *SimpleEventBus) startSubscriberLoop(w *subscriberWrapper) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				b.getLogger().Error("panic in dynamic event bus subscriber loop",
+				b.getLogger().ErrorContext(b.listenCtx, "panic in dynamic event bus subscriber loop",
 					slog.Any("error", r),
 					slog.String("stack", string(debug.Stack())))
 			}
 		}()
-		_ = b.subscriberLoop(b.ctx, w)
+		_ = b.subscriberLoop(b.listenCtx, w)
 	}()
 }
 
