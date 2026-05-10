@@ -98,11 +98,12 @@ func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
 	if targetPath == filePath {
 		return true
 	}
-	rel, err := filepath.Rel(targetPath, filePath)
-	if err != nil {
-		return false
+	if strings.HasPrefix(filePath, targetPath) {
+		if len(filePath) > len(targetPath) && filePath[len(targetPath)] == filepath.Separator {
+			return true
+		}
 	}
-	return !strings.HasPrefix(rel, "..")
+	return false
 }
 
 func (idx *indexer) matchesQuery(sym symbolLocation, query string, exportedOnly bool) bool {
