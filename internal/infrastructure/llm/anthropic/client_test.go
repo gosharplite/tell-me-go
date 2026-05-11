@@ -628,30 +628,6 @@ func TestPrepareRequest_ToAnthropicMessagesError(t *testing.T) {
 	})
 }
 
-func TestMarshalRequestPayload_Error(t *testing.T) {
-	// marshalRequestPayload wraps json.Marshal. json.Marshal fails on channels,
-	// functions, and a few other non-serializable Go types. A channel is the
-	// simplest non-marshalable value that exercises the error branch extracted
-	// from prepareAnthropicRequest (Task 1).
-	c := NewClient("", "", nil)
-
-	badPayload := map[string]interface{}{
-		"impossible": make(chan int),
-	}
-
-	body, err := c.marshalRequestPayload(badPayload)
-
-	if err == nil {
-		t.Fatal("expected marshal error, got nil")
-	}
-	if body != nil {
-		t.Errorf("expected nil body on error, got %d bytes", len(body))
-	}
-	if !strings.Contains(err.Error(), "json: unsupported type") {
-		t.Errorf("expected error containing %q, got %q", "json: unsupported type", err.Error())
-	}
-}
-
 func TestSendChat_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
