@@ -506,7 +506,7 @@ func TestSendChat_Non200WithReadFailure(t *testing.T) {
 	// When the API returns a non-200 status AND the response body cannot be
 	// read, the caller receives a combined error — not an *llmerr.APIError,
 	// because constructing one requires reading the body.
-	c := NewClient("http://127.0.0.1:1", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
+	c := NewClient("", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
 	c.httpClient.Transport = &readFailureRoundTripper{}
 
 	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
@@ -550,7 +550,7 @@ func TestPrepareRequest_ToAnthropicMessagesError(t *testing.T) {
 	// sub-cases verify that conversion errors in toAnthropicMessages /
 	// convertToAnthropicBlocks / partToContentBlock propagate correctly
 	// without reaching the HTTP layer.
-	c := NewClient("http://127.0.0.1:1", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
+	c := NewClient("", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
 
 	t.Run("malformed FunctionCall in standard Parts", func(t *testing.T) {
 		history := []*llm.Content{{
@@ -633,7 +633,7 @@ func TestMarshalRequestPayload_Error(t *testing.T) {
 	// functions, and a few other non-serializable Go types. A channel is the
 	// simplest non-marshalable value that exercises the error branch extracted
 	// from prepareAnthropicRequest (Task 1).
-	c := &client{}
+	c := NewClient("", "", nil)
 
 	badPayload := map[string]interface{}{
 		"impossible": make(chan int),
