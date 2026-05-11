@@ -30,96 +30,31 @@ import (
 )
 
 func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
-	tmpDir := t.TempDir()
-	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
-	reg := registry.New()
-	if err := reg.Register(&tools.ToolDeclaration{
-		Name:        "dummy_tool",
-		Description: "A dummy tool for token estimation stability",
-	}, nil); err != nil {
-		t.Fatalf("failed to register tool: %v", err)
-	}
-	ctx := context.Background()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	eventstest.CleanupBus(t, bus)
-
-	// Mock server for summarization
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		apiResp := genai.GenerateContentResponse{
-			Candidates: []*genai.Candidate{
-				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Auto-summary content"}}}},
-			},
-		}
-		if err := json.NewEncoder(w).Encode(apiResp); err != nil {
-			t.Errorf("failed to encode response: %v", err)
-		}
-	}))
+	hManager, cm, _, server := setupAutoSummarizeTest(t)
 	defer server.Close()
 
-	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := gemini.NewClient(apiURL, "test-model", &auth.BearerAuth{Token: "test"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-
-	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client)
-	factory := &sessctx.Factory{
-		Registry:   reg,
-		History:    hManager,
-		Summarizer: llm.NewSummarizer(gw, bus),
-		Estimator:  strategy,
-		Events:     bus,
-	}
-	cm := sessctx.NewManager(strategy, hManager, bus, factory)
-
-	// Set a token limit to trigger auto-summarization.
+	// Set tight limit to trigger summarization.
 	// Use 100000. Safety limit = 99000. 90% = 90000.
 	if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20}); err != nil {
 		t.Fatalf("Reconfigure setup failed: %v", err)
 	}
 
-	// Add 95k tokens of history.
-	longText := strings.Repeat("A", 32000) // approx 10k tokens
-	for i := 0; i < 9; i++ {
-		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: longText}}})
-		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "Response"}}})
-	}
+	// Add 95k tokens of history (9 turns = 18 messages).
+	addHeavyHistory(t, hManager, 9)
+	assertHistoryLength(t, hManager, 18)
 
-	// Verify initial count
-	initialContents, _ := hManager.GetWindow(ctx, 0, -1)
-	if len(initialContents) != 18 {
-		t.Fatalf("expected 18 messages, got %d", len(initialContents))
-	}
-
-	// Call Prepare, which should trigger AutoSummarize on the context window
-	preparedHistory, metadata, err := cm.Prepare(ctx, 1)
+	// Call Prepare, which should trigger AutoSummarize on the context window.
+	preparedHistory, metadata, err := cm.Prepare(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
 	t.Logf("Tokens after Prepare: %d", metadata.FinalTokenCount)
 
-	// Check if the returned context window was replaced
-	// Initial 18 messages (9 turns).
-	// maxTurnsToSummarize = 9 / 2 = 4.
-	// 4 turns (8 messages) replaced by 2.
-	// Total: 18 - 8 + 2 = 12 messages.
-	if len(preparedHistory) != 12 {
-		t.Errorf("expected 12 messages after auto-summarization, got %d", len(preparedHistory))
-	}
-
-	// Index 0 should be the auto-summary user message in the returned context window
-	if !strings.Contains(preparedHistory[0].Parts[0].Text, "system auto-summary") {
-		t.Errorf("first message should be auto-summary, got: %s", preparedHistory[0].Parts[0].Text)
-	}
-
-	// Verify that the persistent store was updated with the summary
-	historyContents, _ := hManager.GetWindow(ctx, 0, -1)
-	if len(historyContents) != 12 {
-		t.Errorf("expected 12 messages in persistent store after auto-summarization, got %d", len(historyContents))
-	}
+	// 18 messages → 4 turns summarized (8 msgs) + 2 summary msgs = 12.
+	assertPreparedLength(t, preparedHistory, 12)
+	assertFirstMessageContains(t, preparedHistory, "system auto-summary")
+	assertHistoryLength(t, hManager, 12)
 }
 
 func TestAutoSummarize_Logging(t *testing.T) {
@@ -197,6 +132,31 @@ func addHeavyHistory(t *testing.T, h ports.HistoryManager, turns int) {
 	for i := 0; i < turns; i++ {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: longText}}})
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "Response"}}})
+	}
+}
+
+func assertHistoryLength(t *testing.T, h ports.HistoryManager, expected int) {
+	t.Helper()
+	contents, _ := h.GetWindow(context.Background(), 0, -1)
+	if len(contents) != expected {
+		t.Errorf("expected %d messages in persistent store, got %d", expected, len(contents))
+	}
+}
+
+func assertPreparedLength(t *testing.T, prepared []*domain_llm.Content, expected int) {
+	t.Helper()
+	if len(prepared) != expected {
+		t.Errorf("expected %d messages in prepared history, got %d", expected, len(prepared))
+	}
+}
+
+func assertFirstMessageContains(t *testing.T, prepared []*domain_llm.Content, substr string) {
+	t.Helper()
+	if len(prepared) == 0 {
+		t.Fatal("prepared history is empty, cannot check first message")
+	}
+	if !strings.Contains(prepared[0].Parts[0].Text, substr) {
+		t.Errorf("first message should contain %q, got: %s", substr, prepared[0].Parts[0].Text)
 	}
 }
 
