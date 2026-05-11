@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,5 +114,73 @@ func assertEventResults(t *testing.T, fetched []event, err error, wantErr, wantN
 		if !found {
 			t.Errorf("Expected to find event ID %s", wantID)
 		}
+	}
+}
+
+// stubCloser is a minimal io.Closer-like stub for testing wrapCloseErr.
+type stubCloser struct {
+	err error
+}
+
+func (s *stubCloser) Close() error { return s.err }
+
+func TestWrapCloseErr(t *testing.T) {
+	errClose := errors.New("close failed")
+	errExisting := errors.New("prior error")
+
+	tests := []struct {
+		name         string
+		closeErr     error
+		existingErr  error
+		wantErr      bool
+		wantContains string
+	}{
+		{
+			name:         "close error with no existing error — wraps",
+			closeErr:     errClose,
+			existingErr:  nil,
+			wantErr:      true,
+			wantContains: "closing event rows",
+		},
+		{
+			name:         "close error with existing error — suppressed",
+			closeErr:     errClose,
+			existingErr:  errExisting,
+			wantErr:      true,
+			wantContains: "prior error",
+		},
+		{
+			name:        "no close error, no existing error — nil",
+			closeErr:    nil,
+			existingErr: nil,
+			wantErr:     false,
+		},
+		{
+			name:         "no close error, existing error — preserved",
+			closeErr:     nil,
+			existingErr:  errExisting,
+			wantErr:      true,
+			wantContains: "prior error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			closer := &stubCloser{err: tt.closeErr}
+			got := wrapCloseErr(closer, tt.existingErr)
+
+			if tt.wantErr {
+				if got == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !strings.Contains(got.Error(), tt.wantContains) {
+					t.Errorf("error %q does not contain %q", got.Error(), tt.wantContains)
+				}
+			} else {
+				if got != nil {
+					t.Errorf("expected nil, got %v", got)
+				}
+			}
+		})
 	}
 }

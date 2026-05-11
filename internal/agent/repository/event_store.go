@@ -38,14 +38,9 @@ func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) (e
 	if err != nil {
 		return nil, fmt.Errorf("querying session events: %w", err)
 	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil && err == nil {
-			// Defensive only: database/sql surfaces driver Close errors
-			// via rows.Err() inside parseSessionEvents before this defer
-			// evaluates, so this branch is unreachable in practice.
-			err = fmt.Errorf("closing event rows: %w", closeErr)
-		}
-	}()
+	defer func(rows closer) {
+		err = wrapCloseErr(rows, err)
+	}(rows)
 
 	events, err = parseSessionEvents(rows)
 	if err != nil {
@@ -53,6 +48,21 @@ func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) (e
 	}
 
 	return events, nil
+}
+
+// closer exposes the Close method for testability.
+type closer interface {
+	Close() error
+}
+
+// wrapCloseErr wraps a Close() error when there is no pre-existing error.
+// In production, database/sql surfaces driver Close errors via rows.Err()
+// before this runs, so the existingErr==nil branch is defensive only.
+func wrapCloseErr(closer closer, existingErr error) error {
+	if closeErr := closer.Close(); closeErr != nil && existingErr == nil {
+		return fmt.Errorf("closing event rows: %w", closeErr)
+	}
+	return existingErr
 }
 
 func buildSessionEventsQuery(eventIDs []string) (string, []interface{}) {
