@@ -33,6 +33,11 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	hManager, cm, _, server := setupAutoSummarizeTest(t)
 	defer server.Close()
 
+	// Note: Unlike the original inline version, we do not register a "dummy_tool".
+	// setupAutoSummarizeTest leaves the registry empty, which is intentional —
+	// this test only cares that summarization triggers, and the 95k-token payload
+	// (~5× above the 90k threshold) dwarfs any tool-overhead variance (~200 tokens).
+
 	// Set tight limit to trigger summarization.
 	// Use 100000. Safety limit = 99000. 90% = 90000.
 	if err := cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20}); err != nil {
@@ -137,7 +142,10 @@ func addHeavyHistory(t *testing.T, h ports.HistoryManager, turns int) {
 
 func assertHistoryLength(t *testing.T, h ports.HistoryManager, expected int) {
 	t.Helper()
-	contents, _ := h.GetWindow(context.Background(), 0, -1)
+	contents, err := h.GetWindow(context.Background(), 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
 	if len(contents) != expected {
 		t.Errorf("expected %d messages in persistent store, got %d", expected, len(contents))
 	}
