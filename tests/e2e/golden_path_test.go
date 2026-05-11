@@ -48,7 +48,7 @@ func TestGoldenPath_ConfigToShutdown(t *testing.T) {
 	// Step 1 — Setup
 	homeDir := t.TempDir()
 	sm := security.NewSecurityManager(security.NoOpInteractor)
-	defer sm.Close()
+	defer func() { _ = sm.Close() }()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	// Step 2 — Create bootstrapper with mock LLM client
