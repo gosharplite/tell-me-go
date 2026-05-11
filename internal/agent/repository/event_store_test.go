@@ -150,10 +150,10 @@ func TestWrapCloseErr(t *testing.T) {
 			wantContains: "prior error",
 		},
 		{
-			name:         "no close error, no existing error — nil",
-			closeErr:     nil,
-			existingErr:  nil,
-			wantErr:      false,
+			name:        "no close error, no existing error — nil",
+			closeErr:    nil,
+			existingErr: nil,
+			wantErr:     false,
 		},
 		{
 			name:         "no close error, existing error — preserved",
