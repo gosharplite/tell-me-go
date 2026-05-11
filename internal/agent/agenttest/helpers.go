@@ -111,11 +111,16 @@ type mockServiceSessionDependencies struct {
 	mock.Mock
 }
 
-func (m *mockServiceSessionDependencies) GetGateway() llm.LLMGateway { return nil }
+func (m *mockServiceSessionDependencies) GetGateway() llm.LLMGateway {
+	return m.Called().Get(0).(llm.LLMGateway)
+}
 func (m *mockServiceSessionDependencies) GetHistoryManager() ports.HistoryManager {
 	return m.Called().Get(0).(ports.HistoryManager)
 }
-func (m *mockServiceSessionDependencies) GetRegistry() (tools.Registry, error) { return nil, nil }
+func (m *mockServiceSessionDependencies) GetRegistry() (tools.Registry, error) {
+	args := m.Called()
+	return args.Get(0).(tools.Registry), args.Error(1)
+}
 func (m *mockServiceSessionDependencies) GetSecurityManager() security.Manager {
 	return m.Called().Get(0).(security.Manager)
 }
@@ -136,13 +141,17 @@ func (m *mockServiceSessionDependencies) GetPaths() *persistence.Paths {
 	return m.Called().Get(0).(*persistence.Paths)
 }
 func (m *mockServiceSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing {
-	return nil
+	return m.Called().Get(0).(map[string]pricing.ModelPricing)
 }
-func (m *mockServiceSessionDependencies) GetTracker() pricing.CostTracker { return nil }
+func (m *mockServiceSessionDependencies) GetTracker() pricing.CostTracker {
+	return m.Called().Get(0).(pricing.CostTracker)
+}
 func (m *mockServiceSessionDependencies) GetPricingData() pricing.PricingData {
-	return pricing.PricingData{}
+	return m.Called().Get(0).(pricing.PricingData)
 }
-func (m *mockServiceSessionDependencies) GetClient() llm.LLMClient { return nil }
+func (m *mockServiceSessionDependencies) GetClient() llm.LLMClient {
+	return m.Called().Get(0).(llm.LLMClient)
+}
 func (m *mockServiceSessionDependencies) GetSessionProvider() ports.SessionProvider {
 	args := m.Called()
 	if args.Get(0) == nil {

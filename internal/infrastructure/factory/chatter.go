@@ -21,6 +21,21 @@ import (
 
 // NewChatter builds the object graph for the orchestration layer.
 func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+	// Required dependency validation.
+	// Note: CostTracker may be nil by design — the engine provides a no-op fallback.
+	if deps.GetEventBus() == nil {
+		return nil, fmt.Errorf("event bus is required")
+	}
+	if deps.GetPaths() == nil {
+		return nil, fmt.Errorf("paths is required")
+	}
+	if deps.GetGateway() == nil {
+		return nil, fmt.Errorf("gateway is required")
+	}
+	if deps.GetHistoryManager() == nil {
+		return nil, fmt.Errorf("history manager is required")
+	}
+
 	telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.TracePath)
 
 	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus(), infra_llm.WithLogger(deps.GetLogger()))
