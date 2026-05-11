@@ -191,153 +191,131 @@ func TestNewChatter(t *testing.T) {
 	})
 }
 
+// setupNilDepTest creates the temp directories and valid dependencies
+// shared by all nil-dependency test cases. Callers mutate the returned
+// deps to nil out the specific field under test.
+func setupNilDepTest(t *testing.T) (*mockSessionDeps, ports.ChatterConfig) {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	skillsDir := filepath.Join(tmpDir, "docs", "skills")
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		t.Fatalf("failed to create skills dir: %v", err)
+	}
+	modeDir := filepath.Join(tmpDir, "modes", "dev")
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		t.Fatalf("failed to create mode dir: %v", err)
+	}
+
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
+
+	deps := &mockSessionDeps{
+		gw:              &mockGateway{},
+		hManager:        &mockHistoryManager{},
+		reg:             &mockRegistry{},
+		sm:              &mockSecurityManager{},
+		bus:             bus,
+		paths:           &persistence.Paths{ModeDir: modeDir},
+		tracker:         &mockTracker{},
+		sessionProvider: &agenttest.MockSessionProvider{},
+	}
+
+	cfg := ports.ChatterConfig{
+		ProviderName: "test-provider",
+		Model:        "test-model",
+		Mode:         "chat",
+		LogPath:      filepath.Join(tmpDir, "trace.log"),
+		TracePath:    filepath.Join(tmpDir, "trace.jsonl"),
+	}
+
+	return deps, cfg
+}
+
+// callNewChatter wraps NewChatter with panic recovery so that unexpected panics
+// are reported as test failures instead of crashing the test binary.
+func callNewChatter(t *testing.T, deps *mockSessionDeps, cfg ports.ChatterConfig) (chatter ports.Chatter, err error) {
+	t.Helper()
+	var didPanic bool
+	var panicVal any
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				didPanic = true
+				panicVal = r
+			}
+		}()
+		chatter, err = NewChatter(context.Background(), deps, cfg)
+	}()
+	if didPanic {
+		t.Fatalf("BUG: NewChatter panicked unexpectedly: %v", panicVal)
+	}
+	return chatter, err
+}
+
+// assertNilDepRequired verifies that NewChatter returns an error containing
+// wantErr when the dependency nil'd by setNil is missing.
+func assertNilDepRequired(t *testing.T, deps *mockSessionDeps, cfg ports.ChatterConfig, setNil func(*mockSessionDeps), wantErr string) {
+	t.Helper()
+	setNil(deps)
+	_, err := callNewChatter(t, deps, cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("expected error containing %q, got: %v", wantErr, err)
+	}
+}
+
+// assertNilDepOptional verifies that NewChatter does not panic when the
+// dependency nil'd by setNil is missing. Errors are logged but not fatal,
+// since the production code tolerates nil for this dependency.
+func assertNilDepOptional(t *testing.T, deps *mockSessionDeps, cfg ports.ChatterConfig, setNil func(*mockSessionDeps), label string) {
+	t.Helper()
+	setNil(deps)
+	_, err := callNewChatter(t, deps, cfg)
+	if err != nil {
+		t.Logf("NOTE: nil %s returned error (unexpected but safe): %v", label, err)
+	}
+}
+
 // TestNewChatter_NilDependencyError verifies that NewChatter returns a clear error
 // (not a panic) when critical dependencies are nil. It uses the field-based
 // mockSessionDeps struct so that nil can be injected directly without testify
 // type-assertion interference.
 func TestNewChatter_NilDependencyError(t *testing.T) {
-	sharedConfig := func(tmpDir string) ports.ChatterConfig {
-		return ports.ChatterConfig{
-			ProviderName: "test-provider",
-			Model:        "test-model",
-			Mode:         "chat",
-			LogPath:      filepath.Join(tmpDir, "trace.log"),
-			TracePath:    filepath.Join(tmpDir, "trace.jsonl"),
-		}
-	}
+	t.Run("nil gateway", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.gw = nil }, "gateway is required")
+	})
 
-	validDeps := func(t *testing.T, tmpDir string) *mockSessionDeps {
-		t.Helper()
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
-		return &mockSessionDeps{
-			gw:              &mockGateway{},
-			hManager:        &mockHistoryManager{},
-			reg:             &mockRegistry{},
-			sm:              &mockSecurityManager{},
-			bus:             bus,
-			paths:           &persistence.Paths{ModeDir: filepath.Join(tmpDir, "modes", "dev")},
-			tracker:         &mockTracker{},
-			sessionProvider: &agenttest.MockSessionProvider{},
-		}
-	}
+	t.Run("nil security manager", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepOptional(t, deps, cfg, func(d *mockSessionDeps) { d.sm = nil }, "security manager")
+	})
 
-	tests := []struct {
-		name      string
-		nilFields []string
-		wantErr   string // empty = expect no error
-		byDesign  bool   // true = nil is intentionally tolerated, not a bug
-	}{
-		{
-			name:      "nil gateway",
-			nilFields: []string{"gw"},
-			wantErr:   "gateway is required",
-		},
-		{
-			name:      "nil security manager",
-			nilFields: []string{"sm"},
-			wantErr:   "",
-		},
-		{
-			name:      "nil registry",
-			nilFields: []string{"reg"},
-			wantErr:   "failed to create tool executor",
-		},
-		{
-			name:      "nil event bus",
-			nilFields: []string{"bus"},
-			wantErr:   "event bus is required",
-		},
-		{
-			name:      "nil history manager",
-			nilFields: []string{"hManager"},
-			wantErr:   "history manager is required",
-		},
-		{
-			name:      "nil paths",
-			nilFields: []string{"paths"},
-			wantErr:   "paths is required",
-		},
-		{
-			name:      "nil tracker",
-			nilFields: []string{"tracker"},
-			wantErr:   "",
-			byDesign:  true, // Engine tolerates nil CostTracker per Reconfigure comment
-		},
-	}
+	t.Run("nil registry", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.reg = nil }, "failed to create tool executor")
+	})
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			skillsDir := filepath.Join(tmpDir, "docs", "skills")
-			if err := os.MkdirAll(skillsDir, 0755); err != nil {
-				t.Fatalf("failed to create skills dir: %v", err)
-			}
-			modeDir := filepath.Join(tmpDir, "modes", "dev")
-			if err := os.MkdirAll(modeDir, 0755); err != nil {
-				t.Fatalf("failed to create mode dir: %v", err)
-			}
+	t.Run("nil event bus", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.bus = nil }, "event bus is required")
+	})
 
-			deps := validDeps(t, tmpDir)
-			for _, f := range tt.nilFields {
-				switch f {
-				case "gw":
-					deps.gw = nil
-				case "hManager":
-					deps.hManager = nil
-				case "reg":
-					deps.reg = nil
-				case "sm":
-					deps.sm = nil
-				case "bus":
-					deps.bus = nil
-				case "paths":
-					deps.paths = nil
-				case "tracker":
-					deps.tracker = nil
-				}
-			}
-			cfg := sharedConfig(tmpDir)
+	t.Run("nil history manager", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.hManager = nil }, "history manager is required")
+	})
 
-			var didPanic bool
-			var panicVal any
-			var chatter ports.Chatter
-			var err error
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						didPanic = true
-						panicVal = r
-					}
-				}()
-				chatter, err = NewChatter(context.Background(), deps, cfg)
-			}()
+	t.Run("nil paths", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepRequired(t, deps, cfg, func(d *mockSessionDeps) { d.paths = nil }, "paths is required")
+	})
 
-			if didPanic {
-				if tt.wantErr != "" {
-					t.Errorf("expected error containing %q, but got panic: %v", tt.wantErr, panicVal)
-				} else {
-					t.Errorf("BUG: NewChatter panicked on %s instead of returning an error: %v", tt.name, panicVal)
-				}
-				return
-			}
-
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Logf("NOTE: %s returned error (unexpected but safe): %v", tt.name, err)
-				} else if tt.byDesign {
-					t.Logf("NOTE: %s produced no error (by design — engine nil-tolerant)", tt.name)
-				} else {
-					t.Errorf("BUG: %s produced no error (silent nil acceptance); chatter is non-nil=%v", tt.name, chatter != nil)
-				}
-			} else {
-				if err == nil {
-					t.Errorf("expected error containing %q, got nil", tt.wantErr)
-				} else if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
-				}
-			}
-		})
-	}
+	t.Run("nil tracker", func(t *testing.T) {
+		deps, cfg := setupNilDepTest(t)
+		assertNilDepOptional(t, deps, cfg, func(d *mockSessionDeps) { d.tracker = nil }, "tracker")
+	})
 }

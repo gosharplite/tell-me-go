@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
@@ -19,33 +20,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
-// NewChatter builds the object graph for the orchestration layer.
-func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
-	// Required dependency validation.
-	// Note: CostTracker may be nil by design — the engine provides a no-op fallback.
-	// Note: SecurityManager nil-check is intentionally deferred to downstream
-	// guards in agent.NewAgent; the type assertion below safely handles nil
-	// (ok == false) and the agent's initComponents returns an error for nil SecurityManager.
-	if deps.GetEventBus() == nil {
-		return nil, fmt.Errorf("event bus is required")
-	}
-	if deps.GetPaths() == nil {
-		return nil, fmt.Errorf("paths is required")
-	}
-	if deps.GetGateway() == nil {
-		return nil, fmt.Errorf("gateway is required")
-	}
-	if deps.GetHistoryManager() == nil {
-		return nil, fmt.Errorf("history manager is required")
-	}
-
-	telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.TracePath)
-
-	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus(), infra_llm.WithLogger(deps.GetLogger()))
-
-	// 1. Prepare specialized domain service dependencies.
-	// Initial attempt: derive from homeDir
-	homeDir := filepath.Dir(filepath.Dir(deps.GetPaths().ModeDir))
+// resolveSkillsDir finds the skills directory, falling back from homeDir to CWD.
+func resolveSkillsDir(paths *persistence.Paths) string {
+	homeDir := filepath.Dir(filepath.Dir(paths.ModeDir))
 	skillsDir := filepath.Join(homeDir, "docs", "skills")
 
 	// Workspace-aware fallback: if not in homeDir, check CWD
@@ -58,13 +35,51 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		}
 	}
 
-	// Normalize and authorize the directory for AI tools
-	skillsDir = filepath.Clean(skillsDir)
+	return filepath.Clean(skillsDir)
+}
+
+// registerReadOnlySkillsPath registers the skills directory with the security
+// manager if it supports the RegisterReadOnlyPath method.
+func registerReadOnlySkillsPath(deps ports.SessionDependencies, dir string) {
 	if sm, ok := deps.GetSecurityManager().(interface {
 		RegisterReadOnlyPath(path string)
 	}); ok {
-		sm.RegisterReadOnlyPath(skillsDir)
+		sm.RegisterReadOnlyPath(dir)
 	}
+}
+
+// validateChatterDeps returns an error if any required dependency is nil.
+// CostTracker and SecurityManager are intentionally excluded — both may
+// be nil by design and have downstream guards in agent.NewAgent.
+func validateChatterDeps(deps ports.SessionDependencies) error {
+	if deps.GetEventBus() == nil {
+		return fmt.Errorf("event bus is required")
+	}
+	if deps.GetPaths() == nil {
+		return fmt.Errorf("paths is required")
+	}
+	if deps.GetGateway() == nil {
+		return fmt.Errorf("gateway is required")
+	}
+	if deps.GetHistoryManager() == nil {
+		return fmt.Errorf("history manager is required")
+	}
+	return nil
+}
+
+// NewChatter builds the object graph for the orchestration layer.
+func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+	if err := validateChatterDeps(deps); err != nil {
+		return nil, err
+	}
+
+	telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.TracePath)
+
+	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus(), infra_llm.WithLogger(deps.GetLogger()))
+
+	skillsDir := resolveSkillsDir(deps.GetPaths())
+
+	registerReadOnlySkillsPath(deps, skillsDir)
 
 	skillRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
 	if err != nil {
