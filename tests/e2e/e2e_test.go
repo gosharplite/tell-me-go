@@ -84,6 +84,13 @@ func stripANSI(str string) string {
 	return re.ReplaceAllString(str, "")
 }
 
+func assertContains(t *testing.T, haystack, needle string) {
+	t.Helper()
+	if !strings.Contains(haystack, needle) {
+		t.Errorf("expected output to contain %q, got: %q", needle, haystack)
+	}
+}
+
 func runCommand(args ...string) (string, string, error) {
 	return runCommandWithEnv(nil, "", args...)
 }
