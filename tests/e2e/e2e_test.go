@@ -28,6 +28,21 @@ var binPath string
 var projectRoot string
 
 func TestMain(m *testing.M) {
+	// testing.Short() panics in TestMain if flag.Parse() hasn't run yet.
+	// Check os.Args directly to decide whether to skip the binary build.
+	shortMode := false
+	for _, a := range os.Args {
+		if a == "-test.short" || a == "-test.short=true" {
+			shortMode = true
+			break
+		}
+	}
+	if shortMode {
+		// In-process tests don't need the compiled binary.
+		code := m.Run()
+		os.Exit(code)
+	}
+
 	// Build the binary once for all E2E tests
 	tempDir, err := os.MkdirTemp("", "tell-me-go-e2e")
 	if err != nil {
