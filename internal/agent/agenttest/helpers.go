@@ -149,9 +149,6 @@ func (m *mockServiceSessionDependencies) GetTracker() pricing.CostTracker {
 func (m *mockServiceSessionDependencies) GetPricingData() pricing.PricingData {
 	return m.Called().Get(0).(pricing.PricingData)
 }
-func (m *mockServiceSessionDependencies) GetClient() llm.LLMClient {
-	return m.Called().Get(0).(llm.LLMClient)
-}
 func (m *mockServiceSessionDependencies) GetSessionProvider() ports.SessionProvider {
 	args := m.Called()
 	if args.Get(0) == nil {

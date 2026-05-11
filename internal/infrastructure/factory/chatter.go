@@ -23,6 +23,9 @@ import (
 func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 	// Required dependency validation.
 	// Note: CostTracker may be nil by design — the engine provides a no-op fallback.
+	// Note: SecurityManager nil-check is intentionally deferred to downstream
+	// guards in agent.NewAgent; the type assertion below safely handles nil
+	// (ok == false) and the agent's initComponents provides a no-op fallback.
 	if deps.GetEventBus() == nil {
 		return nil, fmt.Errorf("event bus is required")
 	}

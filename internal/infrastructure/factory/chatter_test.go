@@ -21,6 +21,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// mockSessionDeps is a field-based SessionDependencies used exclusively for
+// nil-dependency injection tests. The testify mock in agenttest
+// (MockServiceSessionDependencies) cannot inject nil because its
+// m.Called().Get(0).(T) type assertions panic on nil interface values.
+// Use this struct only when you need to test nil-dependency behavior;
+// use MockServiceSessionDependencies for all other test scenarios.
 type mockSessionDeps struct {
 	gw              llm.LLMGateway
 	hManager        ports.HistoryManager
