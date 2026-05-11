@@ -15,59 +15,62 @@ import (
 	"testing"
 )
 
-func TestMultiTurnToolOrchestration(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping slow E2E test in short mode")
-	}
-
+// buildMultiTurnResponses returns a 3-step mock response sequence for
+// the multi-turn orchestration test, plus a collector for any validation
+// errors detected inside closures (which run on the mock server goroutine
+// and must not call t.Errorf directly).
+func buildMultiTurnResponses(t *testing.T) ([]func(reqBody []byte) string, *[]string) {
+	t.Helper()
 	provider := "google"
-	var turnCount int
+	var validationErrors []string
 
-	// Define a sequence of model responses
-	// 1. Call list_files
-	// 2. Based on result, call read_file
-	// 3. Final answer
 	responses := []func(reqBody []byte) string{
+		// Step 1: call list_files
 		func(reqBody []byte) string {
-			return createToolCallResponse(provider, "list_files", map[string]interface{}{"path": ".", "reason": "E2E multi-turn step 1: list workspace files"})
+			return createToolCallResponse(provider, "list_files", map[string]interface{}{
+				"path":   ".",
+				"reason": "E2E multi-turn step 1: list workspace files",
+			})
 		},
+		// Step 2: verify list_files result was sent back, then call read_files
 		func(reqBody []byte) string {
-			// Verify previous tool result was sent back
 			if !strings.Contains(string(reqBody), "test.txt") {
-				t.Errorf("Expected request to contain 'test.txt' from list_files result, got: %s", string(reqBody))
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("expected request to contain 'test.txt' from list_files result, got: %s", string(reqBody)))
 			}
-			return createToolCallResponse(provider, "read_files", map[string]interface{}{"filepaths": []interface{}{"test.txt"}, "reason": "E2E multi-turn step 2: read discovered file"})
+			return createToolCallResponse(provider, "read_files", map[string]interface{}{
+				"filepaths": []interface{}{"test.txt"},
+				"reason":    "E2E multi-turn step 2: read discovered file",
+			})
 		},
+		// Step 3: verify read_files result was sent back, then final answer
 		func(reqBody []byte) string {
-			// Verify read_file result was sent back
 			if !strings.Contains(string(reqBody), "file content") {
-				t.Errorf("Expected request to contain 'file content' from read_file result, got: %s", string(reqBody))
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("expected request to contain 'file content' from read_file result, got: %s", string(reqBody)))
 			}
 			return createTextResponse(provider, "The file content is 'file content'.")
 		},
 	}
+	return responses, &validationErrors
+}
+
+// setupMultiTurnE2E creates an httptest server that dispatches requests
+// through the provided response sequence, a temp home directory, a
+// provider config pointing at the server, and a fixture file.
+func setupMultiTurnE2E(t *testing.T, provider string, responses []func(reqBody []byte) string) (*httptest.Server, string, string) {
+	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bodyBytes, _ := io.ReadAll(r.Body)
-		// We need to determine if it's a new turn or a continuation of a tool call
-		// In Google provider, tool results are sent in 'parts' as 'functionResponse'
 
-		// Increment turn only when we receive a response from the agent (either tool result or new prompt)
-		// Actually, let's just use the length of the 'contents' array in the request body to decide which response to give.
 		var body map[string]interface{}
 		_ = json.Unmarshal(bodyBytes, &body)
 		contents, _ := body["contents"].([]interface{})
 
-		// For the first message, len(contents) is 1.
-		// After first tool call, the agent sends back the history including the tool call and tool response.
-		// Google provider history management:
-		// [USER: prompt]
-		// [MODEL: tool call]
-		// [USER: tool response]
-		// So for the second turn, the model sees 3 messages.
-		// For the third turn, it sees 5 messages.
-
+		// Google provider: each turn adds 2 messages (model + user/tool).
+		// contents[0]=user prompt, contents[1]=model tool call,
+		// contents[2]=tool response, etc.
 		idx := (len(contents) - 1) / 2
 		if idx >= len(responses) {
 			idx = len(responses) - 1
@@ -75,22 +78,35 @@ func TestMultiTurnToolOrchestration(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := fmt.Fprint(w, responses[idx](bodyBytes)); err != nil {
-			t.Errorf("failed to write response: %v", err)
+			t.Errorf("failed to write mock response: %v", err)
 		}
-		turnCount++
 	}))
-	defer server.Close()
 
 	homeDir := t.TempDir()
 	configPath := createTempConfig(t, provider, server.URL)
+
+	// Fixture file for the tool to "read"
+	if err := os.WriteFile(filepath.Join(homeDir, "test.txt"), []byte("file content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	return server, homeDir, configPath
+}
+
+func TestMultiTurnToolOrchestration(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
+	provider := "google"
+	responses, validationErrs := buildMultiTurnResponses(t)
+	server, homeDir, configPath := setupMultiTurnE2E(t, provider, responses)
+	defer server.Close()
+
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
-	}
-
-	// Setup: create a dummy file for the tool to "read"
-	if err := os.WriteFile(filepath.Join(homeDir, "test.txt"), []byte("file content"), 0644); err != nil {
-		t.Fatal(err)
 	}
 
 	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "process the files")
@@ -98,18 +114,17 @@ func TestMultiTurnToolOrchestration(t *testing.T) {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
 
-	out := stripANSI(stdout)
-	if !strings.Contains(out, "The file content is 'file content'.") {
-		t.Errorf("Expected final answer in stdout, got: %q", out)
+	// Report validation errors captured during mock response closures
+	for _, e := range *validationErrs {
+		t.Error(e)
 	}
 
+	out := stripANSI(stdout)
+	assertContains(t, out, "The file content is 'file content'.")
+
 	errOut := stripANSI(stderr)
-	if !strings.Contains(errOut, "[Tool Action] list_files") {
-		t.Errorf("Expected list_files tool action log")
-	}
-	if !strings.Contains(errOut, "[Tool Action] read_files") {
-		t.Errorf("Expected read_files tool action log")
-	}
+	assertContains(t, errOut, "[Tool Action] list_files")
+	assertContains(t, errOut, "[Tool Action] read_files")
 }
 
 func TestToolExecutionInHistory(t *testing.T) {
