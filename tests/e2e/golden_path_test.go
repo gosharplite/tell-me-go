@@ -47,10 +47,11 @@ func (m *goldenPathMockClient) RefreshAuth() error { return nil }
 func TestGoldenPath_ConfigToShutdown(t *testing.T) {
 	// Step 1 — Setup
 	homeDir := t.TempDir()
-	sm := security.NewSecurityManager(nil)
+	sm := security.NewSecurityManager(security.NoOpInteractor)
 	defer sm.Close()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
+	// Step 2 — Create bootstrapper with mock LLM client
 	bootstrapper := di.NewBootstrapper(homeDir, sm, "test-version", io.Discard, io.Discard, logger, nil,
 		func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 			return &goldenPathMockClient{}, nil
