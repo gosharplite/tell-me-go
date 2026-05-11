@@ -16,6 +16,9 @@ import (
 
 func TestPipeCommandsTool(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	// 1. Setup Mock Server
 
 	echoCmd := "echo"
@@ -81,6 +84,9 @@ func TestPipeCommandsTool(t *testing.T) {
 
 func TestExecuteCommandWithRedirection(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	// 1. Setup Mock Server
 
 	echoCmd := "echo"
@@ -147,6 +153,9 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 
 func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	homeDir := t.TempDir()
 	outFile := filepath.Join(homeDir, "piped_out.txt")
 
