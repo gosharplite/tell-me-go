@@ -364,12 +364,18 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		}
 	}
 
-	body, err := json.Marshal(reqPayload)
+	body, err := c.marshalRequestPayload(reqPayload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	return c.buildHTTPRequest(ctx, body)
+}
+
+// marshalRequestPayload serializes the request payload to JSON.
+// Extracted as a method to enable testing of the marshal failure path.
+func (c *client) marshalRequestPayload(v interface{}) ([]byte, error) {
+	return json.Marshal(v)
 }
 
 func (c *client) buildHTTPRequest(ctx context.Context, body []byte) (*http.Request, error) {

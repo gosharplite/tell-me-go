@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -26,6 +27,14 @@ func setupMockAnthropicServer(t *testing.T, handler http.HandlerFunc) (*httptest
 	server := httptest.NewServer(handler)
 	c := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"})
 	return server, c
+}
+
+// failingReader is an io.Reader that always returns an error.
+// Used to simulate a broken response body for testing error-handling paths.
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) {
+	return 0, errors.New("simulated read failure")
 }
 
 func TestSendChat(t *testing.T) {
@@ -490,6 +499,156 @@ func TestSendChat_Errors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSendChat_Non200WithReadFailure(t *testing.T) {
+	// When the API returns a non-200 status AND the response body cannot be
+	// read, the caller receives a combined error — not an *llmerr.APIError,
+	// because constructing one requires reading the body.
+	c := NewClient("http://127.0.0.1:1", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
+	c.httpClient.Transport = &readFailureRoundTripper{}
+
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Must contain all three layers of the error chain
+	if !strings.Contains(err.Error(), "api returned status 500") {
+		t.Errorf("expected error containing %q, got %q", "api returned status 500", err.Error())
+	}
+	if !strings.Contains(err.Error(), "failed to read response body") {
+		t.Errorf("expected error containing %q, got %q", "failed to read response body", err.Error())
+	}
+	if !strings.Contains(err.Error(), "simulated read failure") {
+		t.Errorf("expected error containing %q, got %q", "simulated read failure", err.Error())
+	}
+
+	// Must NOT be an APIError — the body couldn't be read to construct one
+	var apiErr *llmerr.APIError
+	if errors.As(err, &apiErr) {
+		t.Errorf("expected non-APIError, got %T: %v", apiErr, apiErr)
+	}
+}
+
+// readFailureRoundTripper returns a 500 response whose body always fails to read.
+type readFailureRoundTripper struct{}
+
+func (readFailureRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Status:     "500 Internal Server Error",
+		Body:       io.NopCloser(failingReader{}),
+		Header:     make(http.Header),
+	}, nil
+}
+
+func TestPrepareRequest_ToAnthropicMessagesError(t *testing.T) {
+	// prepareAnthropicRequest is called before any network request. These
+	// sub-cases verify that conversion errors in toAnthropicMessages /
+	// convertToAnthropicBlocks / partToContentBlock propagate correctly
+	// without reaching the HTTP layer.
+	c := NewClient("http://127.0.0.1:1", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
+
+	t.Run("malformed FunctionCall in standard Parts", func(t *testing.T) {
+		history := []*llm.Content{{
+			Role: "model",
+			Parts: []*llm.Part{{
+				FunctionCall: &llm.FunctionCall{Name: "foo", ID: ""},
+			}},
+		}}
+		req, err := c.prepareAnthropicRequest(context.Background(), history, nil)
+
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "missing ID for tool call") {
+			t.Errorf("expected error containing %q, got %q", "missing ID for tool call", err.Error())
+		}
+		if req != nil {
+			t.Error("expected nil request on error, got non-nil")
+		}
+	})
+
+	t.Run("malformed FunctionCall in TransientParts", func(t *testing.T) {
+		history := []*llm.Content{{
+			Role: "model",
+			TransientParts: []*llm.Part{{
+				FunctionCall: &llm.FunctionCall{Name: "bar", ID: ""},
+			}},
+		}}
+		req, err := c.prepareAnthropicRequest(context.Background(), history, nil)
+
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "missing ID for tool call") {
+			t.Errorf("expected error containing %q, got %q", "missing ID for tool call", err.Error())
+		}
+		if req != nil {
+			t.Error("expected nil request on error, got non-nil")
+		}
+	})
+
+	t.Run("malformed FunctionResponse", func(t *testing.T) {
+		history := []*llm.Content{{
+			Role: "tool",
+			Parts: []*llm.Part{{
+				FunctionResponse: &llm.FunctionResponse{Name: "baz", ID: ""},
+			}},
+		}}
+		req, err := c.prepareAnthropicRequest(context.Background(), history, nil)
+
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "missing ID for tool response") {
+			t.Errorf("expected error containing %q, got %q", "missing ID for tool response", err.Error())
+		}
+		if req != nil {
+			t.Error("expected nil request on error, got non-nil")
+		}
+	})
+
+	t.Run("no error with valid history", func(t *testing.T) {
+		history := []*llm.Content{{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: "hello"}},
+		}}
+		req, err := c.prepareAnthropicRequest(context.Background(), history, nil)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if req == nil {
+			t.Error("expected non-nil request on success")
+		}
+	})
+}
+
+func TestMarshalRequestPayload_Error(t *testing.T) {
+	// marshalRequestPayload wraps json.Marshal. json.Marshal fails on channels,
+	// functions, and a few other non-serializable Go types. A channel is the
+	// simplest non-marshalable value that exercises the error branch extracted
+	// from prepareAnthropicRequest (Task 1).
+	c := &client{}
+
+	badPayload := map[string]interface{}{
+		"impossible": make(chan int),
+	}
+
+	body, err := c.marshalRequestPayload(badPayload)
+
+	if err == nil {
+		t.Fatal("expected marshal error, got nil")
+	}
+	if body != nil {
+		t.Errorf("expected nil body on error, got %d bytes", len(body))
+	}
+	if !strings.Contains(err.Error(), "json: unsupported type") {
+		t.Errorf("expected error containing %q, got %q", "json: unsupported type", err.Error())
 	}
 }
 
