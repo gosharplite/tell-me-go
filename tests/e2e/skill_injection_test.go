@@ -67,13 +67,6 @@ func validateSkillInjection(t *testing.T, interceptedRequest, skillName, skillCo
 	assertSkillInSystemMessage(t, interceptedRequest)
 }
 
-func assertContains(t *testing.T, interceptedRequest, expected string) {
-	t.Helper()
-	if !strings.Contains(interceptedRequest, expected) {
-		t.Errorf("Expected intercepted request to contain '%s', but it didn't.\nRequest: %s", expected, interceptedRequest)
-	}
-}
-
 func assertSkillInSystemMessage(t *testing.T, interceptedRequest string) {
 	t.Helper()
 	var req struct {
