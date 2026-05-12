@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,7 +107,7 @@ func TestListTodos(t *testing.T) {
 func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, string) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	fs := persistence.NewMockFileSystem()
-	m := &searchManager{SP: sm, FS: fs}
+	m := &searchManager{SP: sm, FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 	tempDir := "/mock/todo-test"
 	sm.RegisterSafePath(tempDir)
@@ -126,7 +127,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	t.Parallel()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	fs := persistence.NewMockFileSystem()
-	m := &searchManager{SP: sm, FS: fs}
+	m := &searchManager{SP: sm, FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	tempDir := "/mock/usages"
@@ -178,7 +179,7 @@ func TestSearchManager_Errors(t *testing.T) {
 	t.Parallel()
 	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	fs := persistence.NewMockFileSystem()
-	m := &searchManager{SP: sm, FS: fs}
+	m := &searchManager{SP: sm, FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	// Setup for success case

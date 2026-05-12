@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type searchMockFile struct {
@@ -192,7 +193,7 @@ func testConcurrentSearchTable(t *testing.T) {
 
 			resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 				return "", strings.Contains(line, tt.query)
-			})
+			}, infra_persistence.NewWorkspacePolicy())
 
 			var results []string
 			for res := range resChan {
@@ -231,7 +232,7 @@ func testConcurrentSearchBinaryLarge(t *testing.T) {
 
 	resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 		return "", strings.Contains(line, "todo")
-	})
+	}, infra_persistence.NewWorkspacePolicy())
 
 	var results []string
 	for res := range resChan {
@@ -262,7 +263,7 @@ func testConcurrentSearchCancellation(t *testing.T) {
 
 	_, errChan := ConcurrentSearch(cancelCtx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 		return "", true
-	})
+	}, infra_persistence.NewWorkspacePolicy())
 
 	err := <-errChan
 	if err != context.Canceled {
@@ -281,7 +282,7 @@ func testConcurrentSearchRace(t *testing.T) {
 				defer wg.Done()
 				resChan, _ := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 					return "", true
-				})
+				}, infra_persistence.NewWorkspacePolicy())
 				for range resChan {
 				}
 			}()

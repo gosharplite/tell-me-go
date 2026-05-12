@@ -9,6 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
@@ -78,19 +79,19 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) *analysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy) *analysisManager {
 	runner := toolchain.NewGoRunner(executor)
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
-		Dependency: newDependencyAnalyzer(runner, sp, bus),
+		Dependency: newDependencyAnalyzer(runner, sp, bus, wp),
 		Sequence:   newSequenceAnalyzer(executor, sp, idx),
 		Change:     newChangeAnalyzer(cache, executor),
 		Types:      newTypeManager(idx, cache, sp),
 		DeadCode:   newDeadCodeAnalyzer(sp, idx),
 
 		Refactor: newRefactorManager(sp),
-		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner},
-		Search:   &searchManager{SP: sp, FS: fs},
+		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp},
+		Search:   &searchManager{SP: sp, FS: fs, Policy: wp},
 		Arch:     &architectureManager{SP: sp, Runner: runner, idx: idx},
 		Events:   bus,
 	}

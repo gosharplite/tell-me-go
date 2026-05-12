@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
@@ -29,7 +30,7 @@ func BenchmarkConcurrentSearch_FullProject(b *testing.B) {
 		ctx, cancel := context.WithCancel(ctx)
 		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 			return "", strings.Contains(line, "func ")
-		})
+		}, infra_persistence.NewWorkspacePolicy())
 
 		var results []string
 		for res := range resChan {
@@ -64,7 +65,7 @@ func BenchmarkConcurrentSearch_EarlyStop(b *testing.B) {
 		ctx, cancel := context.WithCancel(ctx)
 		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 			return "", strings.Contains(line, "func ")
-		})
+		}, infra_persistence.NewWorkspacePolicy())
 
 		var results []string
 		for res := range resChan {

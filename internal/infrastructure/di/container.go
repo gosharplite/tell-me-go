@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
@@ -55,6 +56,7 @@ type Bootstrapper struct {
 	Stderr            io.Writer
 	Logger            *slog.Logger
 	FileSystem        infra_persistence.FileSystem
+	WorkspacePolicy   services.WorkspacePolicy
 	ClientFactory     func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools  func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics   func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
@@ -88,6 +90,10 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		NewSessionState:  infra_persistence.NewSessionState,
 	}
 
+	if b.WorkspacePolicy == nil {
+		b.WorkspacePolicy = infra_persistence.NewWorkspacePolicy()
+	}
+
 	b.sessionFactory = newSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
 		func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
 			return b.RotateSession(ctx, fs, stdout, paths, retentionDays, logger)
@@ -106,7 +112,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 	b.historyFactory = newHistoryFactory(homeDir, fs)
 	b.uiFactory = newUIFactory(sm, stdout, stderr, logger)
 	b.chatFactory = newChatFactory(homeDir, version, stdout, stderr, sm, fs, b, b.uiFactory)
-	b.suggestionFactory = newSuggestionFactory(homeDir, fs, stderr, logger)
+	b.suggestionFactory = newSuggestionFactory(homeDir, fs, stderr, logger, b.WorkspacePolicy)
 	return b
 }
 
@@ -155,6 +161,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		logger:           telemetry.NewSlogLogger(b.Logger),
 		turnsLogger:      turnsLogger,
 		sessionProvider:  sessionProvider,
+		workspacePolicy:  b.WorkspacePolicy,
 		clientFactory:    clientFactory,
 	}
 
@@ -200,6 +207,7 @@ type sessionDeps struct {
 	logger           ports.Logger
 	turnsLogger      ports.TurnsLogger
 	sessionProvider  ports.SessionProvider
+	workspacePolicy  services.WorkspacePolicy
 	health           ports.HealthCheckManager
 
 	initOnce      sync.Once
@@ -282,6 +290,9 @@ func (d *sessionDeps) GetTurnsLogger() ports.TurnsLogger    { return d.turnsLogg
 func (d *sessionDeps) GetPaths() *persistence.Paths         { return d.paths }
 func (d *sessionDeps) GetSessionProvider() ports.SessionProvider {
 	return d.sessionProvider
+}
+func (d *sessionDeps) GetWorkspacePolicy() services.WorkspacePolicy {
+	return d.workspacePolicy
 }
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides

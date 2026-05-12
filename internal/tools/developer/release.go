@@ -18,6 +18,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
@@ -33,6 +34,7 @@ type releaseManager struct {
 	sm           domain_security.PathValidator
 	fs           persistence.FileSystem
 	runner       releaseGoRunner
+	policy       services.WorkspacePolicy
 	archVerifier tools.ToolFunc
 }
 
@@ -53,7 +55,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	}
 
 	pipeline := []readinessCheck{
-		&secretScanner{root: root, fs: m.fs},
+		&secretScanner{root: root, fs: m.fs, policy: m.policy},
 		&dependencyChecker{root: root, fs: m.fs},
 		&linterChecker{runner: m.runner},
 		&architectureChecker{verifier: m.archVerifier},
@@ -160,8 +162,9 @@ func (a *scanAccumulator) addFindings(matches []string) {
 
 // secretScanner implementation
 type secretScanner struct {
-	root string
-	fs   persistence.FileSystem
+	root   string
+	fs     persistence.FileSystem
+	policy services.WorkspacePolicy
 }
 
 func (s *secretScanner) Name() string { return "Security Scan" }
@@ -230,20 +233,7 @@ func (s *secretScanner) scanContent(content []byte, path string, patterns []*reg
 }
 
 func (s *secretScanner) isIgnored(path string) bool {
-	p := filepath.ToSlash(filepath.Clean(path))
-	// Check for common ignored directories in any part of the path
-	parts := strings.Split(p, "/")
-	for _, part := range parts {
-		// Added "configs" to the exclusion list to prevent false positives from environment variable placeholders
-		if part == ".git" || part == "vendor" || part == "node_modules" || part == "configs" {
-			return true
-		}
-	}
-
-	return strings.HasSuffix(p, "_test.go") ||
-		strings.HasSuffix(p, ".md") ||
-		strings.HasSuffix(p, ".json") ||
-		strings.HasSuffix(p, ".golden")
+	return s.policy.ShouldIgnorePath(path)
 }
 
 // dependencyChecker implementation

@@ -18,6 +18,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type mockPromptTracker struct {
@@ -65,7 +66,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 	}
 
 	fs := persistence.NewMockFileSystem()
-	service, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, []string{"hello", "world"}, io.Discard)
+	service, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, []string{"hello", "world"}, io.Discard, infra_persistence.NewWorkspacePolicy())
 	if err != nil {
 		t.Fatalf("failed to create service: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	// Create many files in mock FS to make scan potentially slow (though mock is fast)
 	tmpDir := "/tmp/test"
@@ -133,7 +134,7 @@ func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	// Create some test files in mock FS
 	tmpDir := "/tmp/test"
@@ -177,7 +178,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 		appended: appended,
 	}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	prompt := "new-unique-prompt"
 	err := service.RecordPrompt(context.Background(), prompt)
@@ -270,7 +271,7 @@ func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
 func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	// Create some files in mock FS
 	tmpDir := "/tmp/test"
@@ -301,7 +302,7 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 func TestSuggestionService_ScanFiles_InvalidDir(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	// Call GetSuggestions with a path that definitely doesn't exist in mock FS
 	invalidPath := "/non-existent-dir/file"
@@ -330,7 +331,7 @@ func TestSuggestionService_LoadTopNFails(t *testing.T) {
 	tracker := &errorPromptTracker{}
 	fs := persistence.NewMockFileSystem()
 	// This should log to stderr but not return an error
-	service, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 	if err != nil {
 		t.Fatalf("NewMultiSourceSuggestionService should not fail when tracker fails to load: %v", err)
 	}
@@ -342,7 +343,7 @@ func TestSuggestionService_LoadTopNFails(t *testing.T) {
 func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	err := service.RecordPrompt(context.Background(), "")
 	if err != nil {
@@ -358,7 +359,7 @@ func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	tmpDir := "/tmp/test"
 
@@ -501,7 +502,7 @@ func assertSuggestionsMatch(t *testing.T, got, expected []string) {
 func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	// 1. Record multiple prompts
 	prompts := []string{"p1", "p2", "p3"}
@@ -546,7 +547,7 @@ func TestMultiSourceSuggestionService_Close_WaitsForBackgroundTasks(t *testing.T
 		appended: appended,
 	}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	// Record a prompt
 	prompt := "close-test-prompt"
@@ -576,7 +577,7 @@ func TestNewMultiSourceSuggestionService_NilLogger(t *testing.T) {
 		}
 	}()
 
-	_, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, nil)
+	_, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, nil, infra_persistence.NewWorkspacePolicy())
 	if err != nil {
 		t.Fatalf("NewMultiSourceSuggestionService failed: %v", err)
 	}
@@ -587,7 +588,7 @@ func TestRecordPrompt_NilLogger(t *testing.T) {
 	failTracker := &failingAppendTracker{}
 	fs := persistence.NewMockFileSystem()
 
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, failTracker, nil, nil)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, failTracker, nil, nil, infra_persistence.NewWorkspacePolicy())
 
 	_ = service.RecordPrompt(context.Background(), "test")
 
@@ -632,7 +633,7 @@ func TestMultiSourceSuggestionService_Close_ImmediateCancellation(t *testing.T) 
 func TestRecordPrompt_AfterClose(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	fs := persistence.NewMockFileSystem()
-	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard, infra_persistence.NewWorkspacePolicy())
 
 	// Call Close on the service
 	err := service.Close(context.Background())
