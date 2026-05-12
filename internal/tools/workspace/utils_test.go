@@ -10,11 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
-func TestIsIgnoredDir(t *testing.T) {
+func TestWorkspacePolicyShouldIgnoreDir(t *testing.T) {
+	policy := infra_persistence.NewWorkspacePolicy()
+
 	tests := []struct {
 		name     string
 		input    string
@@ -23,14 +26,22 @@ func TestIsIgnoredDir(t *testing.T) {
 		{"dot git", ".git", true},
 		{"node_modules", "node_modules", true},
 		{"vendor", "vendor", true},
+		{"bin", "bin", true},
+		{"obj", "obj", true},
+		{"output", "output", true},
+		{"dist", "dist", true},
+		{"testdata", "testdata", true},
+		{"configs", "configs", true},
+		{"hidden dir", ".hidden", true},
+		{"current dir dot", ".", false},
 		{"src", "src", false},
 		{"internal", "internal", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isIgnoredDir(tt.input); got != tt.expected {
-				t.Errorf("isIgnoredDir(%q) = %v, want %v", tt.input, got, tt.expected)
+			if got := policy.ShouldIgnoreDir(tt.input); got != tt.expected {
+				t.Errorf("ShouldIgnoreDir(%q) = %v, want %v", tt.input, got, tt.expected)
 			}
 		})
 	}
@@ -84,7 +95,7 @@ func TestWalkAndProcess(t *testing.T) {
 	}
 
 	t.Run("safe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), tempDir, nil, processor)
+		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), tempDir, nil, processor, infra_persistence.NewWorkspacePolicy())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +105,7 @@ func TestWalkAndProcess(t *testing.T) {
 	})
 
 	t.Run("unsafe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, processor)
+		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, processor, infra_persistence.NewWorkspacePolicy())
 		if err == nil {
 			t.Error("expected error for unsafe path")
 		}

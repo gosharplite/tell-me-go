@@ -20,6 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -29,20 +30,13 @@ type infoManager struct {
 	FS     persistence.FileSystem
 	Events events.EventBus
 	Runner AnalysisGoRunner
+	Policy services.WorkspacePolicy
 }
 
 type projectStats struct {
 	fileCounts map[string]int
 	packages   map[string]bool
 	totalLOC   int
-}
-
-func (m *infoManager) isIgnoredDir(name string, isDir bool) bool {
-	if !isDir {
-		return false
-	}
-	// Skip hidden directories, testdata, vendor, and node_modules
-	return name != "." && (strings.HasPrefix(name, ".") || name == "testdata" || name == "vendor" || name == "node_modules")
 }
 
 func (m *infoManager) isTargetSourceFile(name string, isDir bool) bool {
@@ -98,7 +92,7 @@ func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats, hb 
 
 		name := info.Name()
 		isDir := info.IsDir()
-		if m.isIgnoredDir(name, isDir) {
+		if isDir && m.Policy.ShouldIgnoreDir(name) {
 			return filepath.SkipDir
 		}
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
@@ -36,7 +37,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 	}
 
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
+	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -132,7 +133,7 @@ func testGrepFunctions(t *testing.T) {
 		"script.js": "function jsFunc() {}\nconst arrow = () => {}",
 		"main.go":   "func main() {}",
 	})
-	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs}
+	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs, policy: infra_persistence.NewWorkspacePolicy()}
 	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "reason": "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +151,7 @@ func testGrepStructs(t *testing.T) {
 		"data.go": "type User struct {\n    ID int\n}",
 		"app.py":  "class App:\n    pass",
 	})
-	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs}
+	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs, policy: infra_persistence.NewWorkspacePolicy()}
 	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "reason": "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +166,7 @@ func testGrepInterfaces(t *testing.T) {
 	fs, root := setupGrepTest(t, map[string]string{
 		"service.go": "type Service interface {\n    Run()\n}",
 	})
-	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs}
+	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs, policy: infra_persistence.NewWorkspacePolicy()}
 	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "reason": "testing"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +180,7 @@ func testGrepComplexPatterns(t *testing.T) {
 	fs, root := setupGrepTest(t, map[string]string{
 		"script.py": "def my_func():\n    pass\nclass MyClass:\n    pass",
 	})
-	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs}
+	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs, policy: infra_persistence.NewWorkspacePolicy()}
 
 	t.Run("with query", func(t *testing.T) {
 		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "my_func", "reason": "testing"}, nil)
@@ -198,7 +199,7 @@ func testGrepComplexPatterns(t *testing.T) {
 
 func testGrepErrorPaths(t *testing.T) {
 	fs, root := setupGrepTest(t, map[string]string{})
-	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs}
+	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: fs, policy: infra_persistence.NewWorkspacePolicy()}
 
 	t.Run("no results", func(t *testing.T) {
 		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "nonexistent", "reason": "testing"}, nil)
@@ -220,7 +221,7 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 	}
 
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
+	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	args := map[string]interface{}{

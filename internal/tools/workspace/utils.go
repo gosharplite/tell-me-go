@@ -16,6 +16,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
 // fileProcessor is a callback function for processing a file during a walk.
@@ -47,7 +48,7 @@ func walkHeartbeat(ctx context.Context, count int, hb chan<- struct{}) error {
 }
 
 // shouldSkipEntry checks whether a walk entry should be skipped (inaccessible, cancelled, or directory).
-func shouldSkipEntry(ctx context.Context, info os.FileInfo, err error) (bool, error) {
+func shouldSkipEntry(ctx context.Context, info os.FileInfo, err error, policy services.WorkspacePolicy) (bool, error) {
 	if err != nil {
 		return true, nil
 	}
@@ -55,7 +56,7 @@ func shouldSkipEntry(ctx context.Context, info os.FileInfo, err error) (bool, er
 		return true, ctx.Err()
 	}
 	if info.IsDir() {
-		if isIgnoredDir(info.Name()) {
+		if policy.ShouldIgnoreDir(info.Name()) {
 			return true, filepath.SkipDir
 		}
 		return true, nil
@@ -64,7 +65,7 @@ func shouldSkipEntry(ctx context.Context, info os.FileInfo, err error) (bool, er
 }
 
 // walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
-func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs persistence.FileSystem, path string, hb chan<- struct{}, fn fileProcessor) error {
+func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs persistence.FileSystem, path string, hb chan<- struct{}, fn fileProcessor, policy services.WorkspacePolicy) error {
 	if path == "" {
 		path = "."
 	}
@@ -76,7 +77,7 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 
 	count := 0
 	return fs.Walk(ctx, path, func(filePath string, info os.FileInfo, err error) error {
-		if skip, retErr := shouldSkipEntry(ctx, info, err); skip {
+		if skip, retErr := shouldSkipEntry(ctx, info, err, policy); skip {
 			return retErr
 		}
 
@@ -90,7 +91,7 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 }
 
 // ConcurrentSearch walks the path and processes files in parallel using workers.
-func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, hb chan<- struct{}, matcher func(path, line string) (string, bool)) (<-chan string, <-chan error) {
+func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, hb chan<- struct{}, matcher func(path, line string) (string, bool), policy services.WorkspacePolicy) (<-chan string, <-chan error) {
 	errChan := make(chan error, 1)
 	if ctx.Err() != nil {
 		errChan <- ctx.Err()
@@ -119,6 +120,7 @@ func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs 
 		hb:          hb,
 		root:        resolvedRoot,
 		ctx:         ctx,
+		policy:      policy,
 	}
 
 	return p.Execute()
@@ -133,6 +135,7 @@ type searchPipeline struct {
 	hb          chan<- struct{}
 	root        string
 	ctx         context.Context
+	policy      services.WorkspacePolicy
 }
 
 func (p *searchPipeline) Execute() (<-chan string, <-chan error) {
@@ -172,7 +175,7 @@ func (p *searchPipeline) walkFunc(path string, info os.FileInfo, err error) erro
 	}
 
 	if info.IsDir() {
-		if isIgnoredDir(info.Name()) {
+		if p.policy.ShouldIgnoreDir(info.Name()) {
 			return filepath.SkipDir
 		}
 		return nil
@@ -291,10 +294,6 @@ func checkBinary(file persistence.File) (bool, error) {
 		return false, err
 	}
 	return persistence.IsBinary(buf[:n]), nil
-}
-
-func isIgnoredDir(name string) bool {
-	return name == ".git" || name == "node_modules" || name == "vendor" || name == "output" || name == "dist"
 }
 
 func formatMatch(path string, lineNum int, text string) string {

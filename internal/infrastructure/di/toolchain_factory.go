@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -39,15 +40,17 @@ type defaultToolchainFactory struct {
 	HomeDir          string
 	FileSystem       infra_persistence.FileSystem
 	SM               ConfigurableSecurityManager
+	WorkspacePolicy  services.WorkspacePolicy
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
 }
 
-func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error) toolchainFactory {
+func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, wp services.WorkspacePolicy, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error) toolchainFactory {
 	return &defaultToolchainFactory{
 		HomeDir:          homeDir,
 		FileSystem:       fs,
 		SM:               sm,
+		WorkspacePolicy:  wp,
 		RegisterAllTools: registerAll,
 		RegisterMetrics:  registerMetrics,
 	}
@@ -72,6 +75,7 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		EventBus:         params.Bus,
 		FileSystem:       infra_persistence.NewDomainFS(f.FileSystem),
 		HealthManager:    params.HealthManager,
+		WorkspacePolicy:  f.WorkspacePolicy,
 	}
 
 	if err := f.RegisterAllTools(regParams); err != nil {

@@ -236,7 +236,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 			}
 
-			factory := newToolchainFactory(tempDir, nil, sm, nil, nil).(*defaultToolchainFactory)
+			factory := newToolchainFactory(tempDir, nil, sm, nil, nil, nil).(*defaultToolchainFactory)
 			if tt.setup != nil {
 				tt.setup(factory)
 			}

@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestInfoManager_RenderProjectSummary(t *testing.T) {
-	m := &infoManager{}
+	m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
 
 	modInfo := "module example.com/test\ngo 1.21\n"
 	fileCounts := map[string]int{
@@ -46,7 +47,7 @@ func TestInfoManager_RenderProjectSummary(t *testing.T) {
 
 func TestInfoManager_ExtractGenericSkeleton(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
-	m := &infoManager{FS: fs}
+	m := &infoManager{FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -101,7 +102,7 @@ function test() {
 
 func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
-	m := &infoManager{FS: fs}
+	m := &infoManager{FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -137,7 +138,7 @@ func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 
 func TestInfoManager_CollectFileStats(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
-	m := &infoManager{FS: fs}
+	m := &infoManager{FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	// Setup mock files
@@ -176,7 +177,7 @@ func TestInfoManager_CollectFileStats(t *testing.T) {
 
 func TestInfoManager_GetProjectSummary(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
-	m := &infoManager{FS: fs}
+	m := &infoManager{FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	_ = fs.WriteFile(ctx, "go.mod", []byte("module example.com/test\ngo 1.25\n"), 0644)
@@ -197,7 +198,7 @@ func TestInfoManager_GetProjectSummary(t *testing.T) {
 
 func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
-	m := &infoManager{FS: fs}
+	m := &infoManager{FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	t.Run("empty directory", func(t *testing.T) {
@@ -243,7 +244,7 @@ func TestInfoManager_GoDoc(t *testing.T) {
 			return []byte("GoDoc output"), nil
 		},
 	}
-	m := &infoManager{Runner: runner}
+	m := &infoManager{Runner: runner, Policy: infra_persistence.NewWorkspacePolicy()}
 	ctx := context.Background()
 
 	args := map[string]interface{}{

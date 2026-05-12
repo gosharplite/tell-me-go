@@ -6,12 +6,15 @@
 package tools
 
 import (
+	"fmt"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/developer"
@@ -35,12 +38,16 @@ type ToolRegistrationParams struct {
 	AssetsDir        string
 	EventBus         events.EventBus
 	FileSystem       persistence.FileSystem
+	WorkspacePolicy  services.WorkspacePolicy
 	HealthManager    ports.HealthCheckManager
 }
 
 // RegisterAll registers all available tools into the registry.
 func RegisterAll(params ToolRegistrationParams) error {
-	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.HealthManager); err != nil {
+	if params.WorkspacePolicy == nil {
+		return fmt.Errorf("RegisterAll: WorkspacePolicy is required and must not be nil")
+	}
+	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager); err != nil {
 		return err
 	}
 	if params.SessionProvider != nil {
@@ -48,11 +55,11 @@ func RegisterAll(params ToolRegistrationParams) error {
 			return err
 		}
 	}
-	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem)
+	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem, params.WorkspacePolicy)
 	if err != nil {
 		return err
 	}
-	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, archVerify); err != nil {
+	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, archVerify); err != nil {
 		return err
 	}
 	if err := integrations.RegisterAll(params.Registry, params.FileSystem, params.SecurityManager, params.Client, params.AssetsDir); err != nil {

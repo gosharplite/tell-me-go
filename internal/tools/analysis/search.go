@@ -11,13 +11,15 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 type searchManager struct {
-	SP security.PathValidator
-	FS persistence.FileSystem
+	SP     security.PathValidator
+	FS     persistence.FileSystem
+	Policy services.WorkspacePolicy
 }
 
 var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -26,7 +28,7 @@ func (m *searchManager) executeSearch(ctx context.Context, path string, hb chan<
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, hb, matchFunc)
+	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, hb, matchFunc, m.Policy)
 
 	var results []string
 	truncated := false

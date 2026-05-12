@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools"
@@ -45,6 +46,7 @@ func TestNewToolRegistry(t *testing.T) {
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
 		FileSystem:      persistencetest.NewPlainOSFileSystem(),
+		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -69,6 +71,7 @@ func TestRegisterAll_WithSessionProvider(t *testing.T) {
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
 		FileSystem:      persistencetest.NewPlainOSFileSystem(),
+		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
 	}); err != nil {
 		t.Fatalf("RegisterAll with SessionProvider failed: %v", err)
 	}
@@ -87,6 +90,7 @@ func TestToolExecution(t *testing.T) {
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
 		FileSystem:      persistencetest.NewPlainOSFileSystem(),
+		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -112,6 +116,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
 		FileSystem:      persistencetest.NewPlainOSFileSystem(),
+		WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -229,8 +234,9 @@ func TestRegisterAll_Errors(t *testing.T) {
 			t.Parallel()
 			mockReg := &MockRegistry{failAfter: tt.failAfter}
 			params := tools.ToolRegistrationParams{
-				HealthManager: nil,
-				Registry:      mockReg,
+				HealthManager:   nil,
+				Registry:        mockReg,
+				WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
 			}
 			if tt.setup != nil {
 				tt.setup(&params)

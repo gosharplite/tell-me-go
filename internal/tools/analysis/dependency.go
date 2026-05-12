@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
@@ -23,15 +24,17 @@ type defaultDependencyAnalyzer struct {
 	Runner    AnalysisGoRunner
 	SP        domain_security.PolicyEvaluator
 	Events    events.EventBus
+	Policy    services.WorkspacePolicy
 	modPrefix string
 	modMu     sync.Mutex
 }
 
-func newDependencyAnalyzer(runner AnalysisGoRunner, sp domain_security.PolicyEvaluator, bus events.EventBus) *defaultDependencyAnalyzer {
+func newDependencyAnalyzer(runner AnalysisGoRunner, sp domain_security.PolicyEvaluator, bus events.EventBus, wp services.WorkspacePolicy) *defaultDependencyAnalyzer {
 	return &defaultDependencyAnalyzer{
 		Runner: runner,
 		SP:     sp,
 		Events: bus,
+		Policy: wp,
 	}
 }
 
@@ -138,11 +141,6 @@ func (a *defaultDependencyAnalyzer) startHeartbeat(hb chan<- struct{}, done <-ch
 	}
 }
 
-// isSkippedDir reports whether the named directory should be excluded from package scanning.
-func isSkippedDir(name string) bool {
-	return name == "vendor" || (len(name) > 1 && name[0] == '.')
-}
-
 // containsGoFiles reports whether the directory at path contains at least one .go file.
 func containsGoFiles(path string) (bool, error) {
 	files, err := os.ReadDir(path)
@@ -166,7 +164,7 @@ func (a *defaultDependencyAnalyzer) listInternalPackages(root string) ([]string,
 		if !info.IsDir() {
 			return nil
 		}
-		if isSkippedDir(info.Name()) {
+		if a.Policy.ShouldIgnoreDir(info.Name()) {
 			return filepath.SkipDir
 		}
 		hasGo, err := containsGoFiles(path)

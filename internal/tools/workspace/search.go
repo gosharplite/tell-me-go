@@ -12,12 +12,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 type fileSearcher struct {
-	sm domain_security.PathValidator
-	fs persistence.FileSystem
+	sm     domain_security.PathValidator
+	fs     persistence.FileSystem
+	policy services.WorkspacePolicy
 }
 
 // defPatterns defines regex patterns for detecting definitions in supported languages.
@@ -56,7 +58,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher)
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher, s.policy)
 	results, truncated := s.collectSearchResults(resChan, cancel)
 
 	if err := s.checkConcurrentSearchError(errChan); err != nil {
@@ -120,7 +122,7 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher)
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher, s.policy)
 	results, truncated := s.collectSearchResults(resChan, cancel)
 
 	if err := s.checkConcurrentSearchError(errChan); err != nil {

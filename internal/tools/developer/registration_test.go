@@ -9,6 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 )
@@ -73,7 +74,7 @@ func TestRegister(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
 	exec := &mockToolchainExecutor{}
 
-	if err := Register(registry, sm, exec, validator, fs, nil); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
