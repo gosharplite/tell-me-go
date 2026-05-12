@@ -20,7 +20,7 @@ var _ services.WorkspacePolicy = (*defaultWorkspacePolicy)(nil)
 type defaultWorkspacePolicy struct{}
 
 // NewWorkspacePolicy returns a new defaultWorkspacePolicy.
-func NewWorkspacePolicy() services.WorkspacePolicy {
+func NewWorkspacePolicy() *defaultWorkspacePolicy {
 	return &defaultWorkspacePolicy{}
 }
 
@@ -55,8 +55,8 @@ func (p *defaultWorkspacePolicy) ShouldIgnoreDir(name string) bool {
 	if ignoredDirNames[name] {
 		return true
 	}
-	// Hidden directories (e.g. .terraform, .vscode) — but "." itself is not ignored.
-	return len(name) > 1 && name[0] == '.'
+	// Hidden directories (e.g. .terraform, .vscode) — but "." and ".." are not ignored.
+	return len(name) > 1 && name[0] == '.' && name != ".."
 }
 
 // ShouldIgnorePath reports whether the full path should be skipped. It checks
