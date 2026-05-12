@@ -11,8 +11,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
@@ -170,7 +170,7 @@ func TestGetFileDiff(t *testing.T) {
 	r := &fileReader{
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
-		policy: infra_persistence.NewWorkspacePolicy(),
+		policy:   infra_persistence.NewWorkspacePolicy(),
 		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
 	}
 	ctx := context.Background()
@@ -253,7 +253,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 	r := &fileReader{
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
-		policy: infra_persistence.NewWorkspacePolicy(),
+		policy:   infra_persistence.NewWorkspacePolicy(),
 		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
 	}
 	ctx := context.Background()

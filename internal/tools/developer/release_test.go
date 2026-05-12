@@ -176,7 +176,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			tt.setupFiles(fs)
 			runner := tt.setupRunner()
 			m := &releaseManager{
-		policy: infra_persistence.NewWorkspacePolicy(),
+				policy: infra_persistence.NewWorkspacePolicy(),
 				sm:     sm,
 				fs:     fs,
 				runner: runner,
@@ -252,7 +252,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			runner := tt.setupRunner()
 			m := &releaseManager{
-		policy: infra_persistence.NewWorkspacePolicy(),
+				policy: infra_persistence.NewWorkspacePolicy(),
 				sm:     sm,
 				fs:     fs,
 				runner: runner,
@@ -273,7 +273,7 @@ func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
 
 	m := &releaseManager{
 		policy: infra_persistence.NewWorkspacePolicy(),
-		sm: sm,
+		sm:     sm,
 	}
 
 	t.Run("Default", func(t *testing.T) {
