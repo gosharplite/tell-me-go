@@ -54,7 +54,7 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 	// Verify client hasn't been initialized yet
 	assert.Equal(t, 0, callCount)
 
-	// 2. GetGateway should return a non-nil LazyClient
+	// 2. GetGateway should return a non-nil lazyClient
 	gw := deps.GetGateway()
 	assert.NotNil(t, gw)
 	assert.Equal(t, 0, callCount) // Getter itself doesn't trigger init
@@ -177,7 +177,7 @@ func TestLazyClient_GenerateImages(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("GenerateImages", mock.Anything, "test-model", "test-prompt", "image/png").Return([][]byte{{0x01}}, nil)
 
-	lc := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
 	})
 
@@ -191,7 +191,7 @@ func TestLazyClient_RefreshAuth(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("RefreshAuth").Return(nil)
 
-	lc := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
 	})
 
@@ -215,7 +215,7 @@ func TestLazyClient_Generate(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
 
-	lc := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
 	})
 
@@ -228,7 +228,7 @@ func TestLazyClient_SendChat(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("SendChat", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
 
-	lc := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
 	})
 
@@ -239,7 +239,7 @@ func TestLazyClient_SendChat(t *testing.T) {
 
 func TestLazyClient_InitializationFailure_SendChat(t *testing.T) {
 	simulatedErr := errors.New("llm init failed")
-	lc := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return nil, simulatedErr
 	})
 
@@ -250,7 +250,7 @@ func TestLazyClient_InitializationFailure_SendChat(t *testing.T) {
 
 func TestLazyClient_InitializationFailure_Generate(t *testing.T) {
 	simulatedErr := errors.New("llm init failed")
-	lc := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return nil, simulatedErr
 	})
 
@@ -261,7 +261,7 @@ func TestLazyClient_InitializationFailure_Generate(t *testing.T) {
 
 func TestLazyClient_InitializationFailure_GenerateImages(t *testing.T) {
 	simulatedErr := errors.New("llm init failed")
-	lc := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return nil, simulatedErr
 	})
 

@@ -9,27 +9,27 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// LazyClient wraps an LLM client factory and initializes the underlying
+// lazyClient wraps an LLM client factory and initializes the underlying
 // client on first use. It implements llm.ExtendedClient directly.
-type LazyClient struct {
+type lazyClient struct {
 	once    sync.Once
 	err     error
 	client  llm.ExtendedClient
 	factory func() (llm.ExtendedClient, error)
 }
 
-// NewLazyClient creates a LazyClient backed by the given factory function.
-func NewLazyClient(factory func() (llm.ExtendedClient, error)) *LazyClient {
-	return &LazyClient{factory: factory}
+// newLazyClient creates a lazyClient backed by the given factory function.
+func newLazyClient(factory func() (llm.ExtendedClient, error)) *lazyClient {
+	return &lazyClient{factory: factory}
 }
 
-func (lc *LazyClient) init() {
+func (lc *lazyClient) init() {
 	lc.once.Do(func() {
 		lc.client, lc.err = lc.factory()
 	})
 }
 
-func (lc *LazyClient) Generate(ctx stdctx.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (lc *lazyClient) Generate(ctx stdctx.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	lc.init()
 	if lc.err != nil {
 		return nil, nil, fmt.Errorf("LLM provider initialization failed: %w", lc.err)
@@ -37,7 +37,7 @@ func (lc *LazyClient) Generate(ctx stdctx.Context, input []*llm.Content, tools [
 	return lc.client.Generate(ctx, input, tools, resolver)
 }
 
-func (lc *LazyClient) SendChat(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (lc *lazyClient) SendChat(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	lc.init()
 	if lc.err != nil {
 		return nil, nil, fmt.Errorf("LLM provider initialization failed: %w", lc.err)
@@ -45,7 +45,7 @@ func (lc *LazyClient) SendChat(ctx stdctx.Context, history []*llm.Content, tools
 	return lc.client.SendChat(ctx, history, tools, resolver)
 }
 
-func (lc *LazyClient) GenerateImages(ctx stdctx.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (lc *lazyClient) GenerateImages(ctx stdctx.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	lc.init()
 	if lc.err != nil {
 		return nil, fmt.Errorf("LLM provider initialization failed: %w", lc.err)
@@ -53,7 +53,7 @@ func (lc *LazyClient) GenerateImages(ctx stdctx.Context, model, prompt string, m
 	return lc.client.GenerateImages(ctx, model, prompt, mimeType)
 }
 
-func (lc *LazyClient) RefreshAuth() error {
+func (lc *lazyClient) RefreshAuth() error {
 	lc.init()
 	if lc.err != nil {
 		return fmt.Errorf("LLM provider initialization failed: %w", lc.err)
@@ -62,4 +62,4 @@ func (lc *LazyClient) RefreshAuth() error {
 }
 
 // Ensure LazyClient satisfies llm.ExtendedClient at compile time.
-var _ llm.ExtendedClient = (*LazyClient)(nil)
+var _ llm.ExtendedClient = (*lazyClient)(nil)

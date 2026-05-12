@@ -532,10 +532,10 @@ func TestSessionDeps_Getters(t *testing.T) {
 	pData := pricing.PricingData{}
 	sessionProvider := new(mockSessionProvider)
 
-	lazyClient := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
 		return client, nil
 	})
-	lazyRegistry := NewLazyRegistry(func() (tools.Registry, error) {
+	lazyRegistry := newLazyRegistry(func() (tools.Registry, error) {
 		return reg, nil
 	}, &ports.NoOpLogger{})
 
@@ -1023,7 +1023,7 @@ func TestGetHistoryManager_Failure(t *testing.T) {
 
 func TestSessionDeps_GetRegistry_Failure(t *testing.T) {
 	deps := &sessionDeps{
-		lazyRegistry: NewLazyRegistry(func() (tools.Registry, error) {
+		lazyRegistry: newLazyRegistry(func() (tools.Registry, error) {
 			return nil, errors.New("registry failed")
 		}, telemetry.NewSlogLogger(nil)),
 	}

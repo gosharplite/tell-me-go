@@ -135,7 +135,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
 
-	lazyClient := NewLazyClient(func() (llm.ExtendedClient, error) {
+	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
 		return b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
 	})
 
@@ -156,7 +156,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	deps.health = b.healthFactory.BuildHealthManager(cfg, sessionProvider, lazyClient)
 
-	lazyRegistry := NewLazyRegistry(func() (tools.Registry, error) {
+	lazyRegistry := newLazyRegistry(func() (tools.Registry, error) {
 		return b.toolchainFactory.BuildRegistry(toolchainParams{
 			Paths:            paths,
 			SessionProvider:  sessionProvider,
@@ -188,8 +188,8 @@ type sessionDeps struct {
 	workspacePolicy  services.WorkspacePolicy
 	health           ports.HealthCheckManager
 
-	lazyClient   *LazyClient
-	lazyRegistry *LazyRegistry
+	lazyClient   *lazyClient
+	lazyRegistry *lazyRegistry
 }
 
 func (d *sessionDeps) GetGateway() llm.LLMGateway {
@@ -197,7 +197,7 @@ func (d *sessionDeps) GetGateway() llm.LLMGateway {
 }
 func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
 func (d *sessionDeps) GetRegistry() (tools.Registry, error) {
-	return d.lazyRegistry.Get()
+	return d.lazyRegistry.get()
 }
 func (d *sessionDeps) GetSecurityManager() security.Manager { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus         { return d.bus }

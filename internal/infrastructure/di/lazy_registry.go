@@ -8,9 +8,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// LazyRegistry wraps a registry factory and initializes the underlying
-// registry on first call to Get.
-type LazyRegistry struct {
+// lazyRegistry wraps a registry factory and initializes the underlying
+// registry on first call to get.
+type lazyRegistry struct {
 	once    sync.Once
 	err     error
 	reg     tools.Registry
@@ -18,13 +18,13 @@ type LazyRegistry struct {
 	logger  ports.Logger
 }
 
-// NewLazyRegistry creates a LazyRegistry backed by the given factory function.
-func NewLazyRegistry(factory func() (tools.Registry, error), logger ports.Logger) *LazyRegistry {
-	return &LazyRegistry{factory: factory, logger: logger}
+// newLazyRegistry creates a lazyRegistry backed by the given factory function.
+func newLazyRegistry(factory func() (tools.Registry, error), logger ports.Logger) *lazyRegistry {
+	return &lazyRegistry{factory: factory, logger: logger}
 }
 
-// Get returns the initialized registry, or an error if initialization failed.
-func (lr *LazyRegistry) Get() (tools.Registry, error) {
+// get returns the initialized registry, or an error if initialization failed.
+func (lr *lazyRegistry) get() (tools.Registry, error) {
 	lr.once.Do(func() {
 		lr.reg, lr.err = lr.factory()
 		if lr.err != nil {
