@@ -101,7 +101,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error) {
 			return b.NewSessionState(ctx, modeDir)
 		})
-	b.toolchainFactory = newToolchainFactory(homeDir, fs, sm,
+	b.toolchainFactory = newToolchainFactory(homeDir, fs, sm, b.WorkspacePolicy,
 		func(params infra_tools.ToolRegistrationParams) error {
 			return b.RegisterAllTools(params)
 		},

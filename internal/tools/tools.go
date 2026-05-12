@@ -6,6 +6,8 @@
 package tools
 
 import (
+	"fmt"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -42,6 +44,9 @@ type ToolRegistrationParams struct {
 
 // RegisterAll registers all available tools into the registry.
 func RegisterAll(params ToolRegistrationParams) error {
+	if params.WorkspacePolicy == nil {
+		return fmt.Errorf("RegisterAll: WorkspacePolicy is required and must not be nil")
+	}
 	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager); err != nil {
 		return err
 	}
