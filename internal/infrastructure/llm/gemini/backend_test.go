@@ -45,8 +45,8 @@ func TestInitSDK_PrepareAuthHeaderError(t *testing.T) {
 		t.Errorf("expected error to contain %q, got %q", "failed to prepare auth headers", err.Error())
 	}
 
-	if !strings.Contains(err.Error(), sentinel.Error()) {
-		t.Errorf("expected error to contain %q, got %q", sentinel.Error(), err.Error())
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected error to wrap sentinel %q, got %v", sentinel.Error(), err)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestInitSDK_GenaiNewClientError(t *testing.T) {
 		t.Errorf("expected error to contain %q, got %q", "failed to create genai client", err.Error())
 	}
 
-	if !strings.Contains(err.Error(), sentinel.Error()) {
-		t.Errorf("expected error to contain %q, got %q", sentinel.Error(), err.Error())
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected error to wrap sentinel %q, got %v", sentinel.Error(), err)
 	}
 }
