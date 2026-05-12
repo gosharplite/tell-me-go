@@ -10,31 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
-
-func TestIsIgnoredDir(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected bool
-	}{
-		{"dot git", ".git", true},
-		{"node_modules", "node_modules", true},
-		{"vendor", "vendor", true},
-		{"src", "src", false},
-		{"internal", "internal", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isIgnoredDir(tt.input); got != tt.expected {
-				t.Errorf("isIgnoredDir(%q) = %v, want %v", tt.input, got, tt.expected)
-			}
-		})
-	}
-}
 
 func TestFormatMatch(t *testing.T) {
 	path := "test.txt"
@@ -84,7 +63,7 @@ func TestWalkAndProcess(t *testing.T) {
 	}
 
 	t.Run("safe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), tempDir, nil, processor)
+		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), tempDir, nil, processor, infra_persistence.NewWorkspacePolicy())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +73,7 @@ func TestWalkAndProcess(t *testing.T) {
 	})
 
 	t.Run("unsafe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, processor)
+		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, processor, infra_persistence.NewWorkspacePolicy())
 		if err == nil {
 			t.Error("expected error for unsafe path")
 		}

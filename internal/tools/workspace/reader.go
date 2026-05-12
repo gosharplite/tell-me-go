@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -25,6 +26,7 @@ type fileReader struct {
 	sm       domain_security.PathValidator
 	fs       persistence.FileSystem
 	executor commandExecutor
+	policy   services.WorkspacePolicy
 }
 
 func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -265,7 +267,7 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}, 
 		return nil
 	}
 
-	if err := walkAndProcess(ctx, r.sm, r.fs, params.Path, hb, processor); err != nil {
+	if err := walkAndProcess(ctx, r.sm, r.fs, params.Path, hb, processor, r.policy); err != nil {
 		return tools.ToolResult{}, err
 	}
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
@@ -59,7 +60,7 @@ func TestRegister(t *testing.T) {
 	validator := &toolstest.MockCommandValidator{}
 	fs := persistencetest.NewPlainOSFileSystem()
 
-	if err := Register(registry, sm, exec, validator, fs, nil); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
@@ -103,7 +104,7 @@ func TestRegister(t *testing.T) {
 	t.Run("check_system_health", func(t *testing.T) {
 		reg := &mockToolRegistry{}
 		mockHealth := &mockHealthCheckManager{}
-		if err := Register(reg, sm, exec, validator, fs, mockHealth); err != nil {
+		if err := Register(reg, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), mockHealth); err != nil {
 			t.Fatalf("Register failed: %v", err)
 		}
 		found := false

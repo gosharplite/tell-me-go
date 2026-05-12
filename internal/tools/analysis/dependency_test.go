@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
@@ -36,7 +38,7 @@ func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
 		},
 	}
 
-	analyzer := newDependencyAnalyzer(mockRunner, &mockSecurityProvider{}, nil)
+	analyzer := newDependencyAnalyzer(mockRunner, &mockSecurityProvider{}, nil, infra_persistence.NewWorkspacePolicy())
 
 	// Set workdir to tmpDir so that go list -m works
 	// In a real scenario, the tool would run in the project root.

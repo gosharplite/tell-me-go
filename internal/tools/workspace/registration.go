@@ -9,6 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -19,8 +20,8 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem, health ports.HealthCheckManager) error {
-	if err := registerFiles(r, sm, fs, exec); err != nil {
+func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem, wp services.WorkspacePolicy, health ports.HealthCheckManager) error {
+	if err := registerFiles(r, sm, fs, exec, wp); err != nil {
 		return err
 	}
 	if err := registerSystem(r, sm, validator, health); err != nil {
@@ -32,7 +33,7 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 	return nil
 }
 
-func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.FileSystem, exec tools.CommandExecutor) error {
+func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.FileSystem, exec tools.CommandExecutor, wp services.WorkspacePolicy) error {
 	bm := newBackupManager(sm, fs, 10)
 
 	// Inject the executor into the reader if it matches the internal commandExecutor interface.
@@ -43,9 +44,9 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 	}
 
 	m := &fileSystemManager{
-		reader: &fileReader{sm: sm, fs: fs, executor: internalExec},
+		reader: &fileReader{sm: sm, fs: fs, executor: internalExec, policy: wp},
 		writer: &fileWriter{sm: sm, bm: bm, fs: fs},
-		search: &fileSearcher{sm: sm, fs: fs},
+		search: &fileSearcher{sm: sm, fs: fs, policy: wp},
 	}
 
 	type toolSpec struct {

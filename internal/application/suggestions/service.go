@@ -15,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/pkg/matcher"
 )
 
@@ -30,10 +31,11 @@ type multiSourceSuggestionService struct {
 	stateMu   sync.RWMutex
 	closing   bool
 	logger    io.Writer
+	policy    services.WorkspacePolicy
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the history.
-func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string, logger io.Writer) (ports.SuggestionService, error) {
+func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string, logger io.Writer, policy services.WorkspacePolicy) (ports.SuggestionService, error) {
 	if logger == nil {
 		logger = io.Discard
 	}
@@ -43,6 +45,7 @@ func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSys
 		tracker: tracker,
 		fs:      fs,
 		logger:  logger,
+		policy:  policy,
 	}
 
 	// 1. Pre-load Global Top Prompts
@@ -222,7 +225,7 @@ func (s *multiSourceSuggestionService) scanFiles(ctx context.Context, query stri
 func (s *multiSourceSuggestionService) processEntriesBatch(entries []os.DirEntry, dir string, fileQuery string, currentResults []string) []string {
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() && isIgnoredDir(name) {
+		if entry.IsDir() && s.policy.ShouldIgnoreDir(name) {
 			continue
 		}
 
@@ -265,15 +268,4 @@ func (s *multiSourceSuggestionService) mergeSuggestions(s1, s2 []string, limit i
 		return merged[:limit]
 	}
 	return merged
-}
-
-func isIgnoredDir(name string) bool {
-	// 1. Explicitly ignored common dependency/build directories
-	switch name {
-	case ".git", "node_modules", "vendor", "bin", "obj":
-		return true
-	}
-
-	// 2. Ignore hidden directories
-	return strings.HasPrefix(name, ".")
 }

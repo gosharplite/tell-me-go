@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
@@ -70,6 +71,7 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	runner := &mockReleaseRunner{}
 
 	m := &releaseManager{
+		policy: infra_persistence.NewWorkspacePolicy(),
 		sm:     sm,
 		fs:     fs,
 		runner: runner,
@@ -174,6 +176,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			tt.setupFiles(fs)
 			runner := tt.setupRunner()
 			m := &releaseManager{
+				policy: infra_persistence.NewWorkspacePolicy(),
 				sm:     sm,
 				fs:     fs,
 				runner: runner,
@@ -249,6 +252,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			runner := tt.setupRunner()
 			m := &releaseManager{
+				policy: infra_persistence.NewWorkspacePolicy(),
 				sm:     sm,
 				fs:     fs,
 				runner: runner,
@@ -268,7 +272,8 @@ func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
 	sm.RegisterSafePath(".")
 
 	m := &releaseManager{
-		sm: sm,
+		policy: infra_persistence.NewWorkspacePolicy(),
+		sm:     sm,
 	}
 
 	t.Run("Default", func(t *testing.T) {
@@ -302,21 +307,14 @@ func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
 }
 
 func TestSecretScanner_IsIgnored(t *testing.T) {
-	s := &secretScanner{}
+	s := &secretScanner{policy: infra_persistence.NewWorkspacePolicy()}
 	tests := []struct {
 		path   string
 		ignore bool
 	}{
 		{"main.go", false},
 		{".git/config", true},
-		{"vendor/pkg/foo.go", true},
-		{"node_modules/pkg/foo.js", true},
-		{"configs/architect.yaml", true},
-		{"internal/configs/foo.yaml", true},
 		{"foo_test.go", true},
-		{"README.md", true},
-		{"data.json", true},
-		{"test.golden", true},
 	}
 
 	for _, tt := range tests {
