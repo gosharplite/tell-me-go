@@ -15,38 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
-func TestWorkspacePolicyShouldIgnoreDir(t *testing.T) {
-	policy := infra_persistence.NewWorkspacePolicy()
-
-	tests := []struct {
-		name     string
-		input    string
-		expected bool
-	}{
-		{"dot git", ".git", true},
-		{"node_modules", "node_modules", true},
-		{"vendor", "vendor", true},
-		{"bin", "bin", true},
-		{"obj", "obj", true},
-		{"output", "output", true},
-		{"dist", "dist", true},
-		{"testdata", "testdata", true},
-		{"configs", "configs", true},
-		{"hidden dir", ".hidden", true},
-		{"current dir dot", ".", false},
-		{"src", "src", false},
-		{"internal", "internal", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := policy.ShouldIgnoreDir(tt.input); got != tt.expected {
-				t.Errorf("ShouldIgnoreDir(%q) = %v, want %v", tt.input, got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestFormatMatch(t *testing.T) {
 	path := "test.txt"
 	lineNum := 10

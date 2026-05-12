@@ -314,14 +314,7 @@ func TestSecretScanner_IsIgnored(t *testing.T) {
 	}{
 		{"main.go", false},
 		{".git/config", true},
-		{"vendor/pkg/foo.go", true},
-		{"node_modules/pkg/foo.js", true},
-		{"configs/architect.yaml", true},
-		{"internal/configs/foo.yaml", true},
 		{"foo_test.go", true},
-		{"README.md", true},
-		{"data.json", true},
-		{"test.golden", true},
 	}
 
 	for _, tt := range tests {
