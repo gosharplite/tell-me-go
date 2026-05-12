@@ -22,6 +22,7 @@ import (
 type Client struct {
 	mu                sync.RWMutex
 	sdkClient         *genai.Client
+	newGenaiClient    func(context.Context, *genai.ClientConfig) (*genai.Client, error)
 	authenticator     auth.Authenticator
 	apiURL            string
 	model             string
