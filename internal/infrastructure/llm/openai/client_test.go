@@ -444,6 +444,12 @@ func TestSendChat_Errors(t *testing.T) {
 			response:      `{"choices": [], "usage": {"total_tokens": 0}}`,
 			expectedError: "no choices returned from api",
 		},
+		{
+			name:          "Tool Call with Invalid Arguments JSON",
+			status:        http.StatusOK,
+			response:      `{"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "test_tool", "arguments": "{broken json"}}]}, "content": "ok"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}`,
+			expectedError: "failed to unmarshal tool arguments",
+		},
 	}
 
 	for _, tt := range tests {
@@ -528,6 +534,74 @@ func TestSendChat_EmptyToolResponseID(t *testing.T) {
 			_, _, err := c.SendChat(context.Background(), history, tt.tools, nil)
 			if err == nil {
 				t.Fatal("expected error for empty tool response ID, got nil")
+			}
+			if !strings.Contains(err.Error(), "invalid tool payload") {
+				t.Errorf("expected 'invalid tool payload', got %q", err.Error())
+			}
+			if !strings.Contains(err.Error(), "missing ID") {
+				t.Errorf("expected 'missing ID', got %q", err.Error())
+			}
+			if !strings.Contains(err.Error(), "test_tool") {
+				t.Errorf("expected tool name 'test_tool' in error, got %q", err.Error())
+			}
+		})
+	}
+}
+
+// TestSendChat_EmptyToolCallID covers the fail-fast guard in classifyParts
+// when a FunctionCall carries an empty ID. The error must be produced
+// during request construction, before any HTTP call is made.
+func TestSendChat_EmptyToolCallID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		model   string
+		headers map[string]string
+		tools   []*tools.ToolDeclaration
+	}{
+		{
+			name:  "standard /chat/completions path",
+			model: "gpt-4",
+		},
+		{
+			name:    "responses API path (regression guard)",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Use an unreachable server — the error occurs during
+			// request construction, before the HTTP call is made.
+			c := NewClient("http://127.0.0.1:1", tt.model,
+				&auth.BearerAuth{Token: "test-key"},
+				WithHeaders(tt.headers),
+			)
+
+			history := []*llm.Content{
+				{
+					Role: "model",
+					Parts: []*llm.Part{
+						{
+							FunctionCall: &llm.FunctionCall{
+								ID:   "", // ← triggers the guard
+								Name: "test_tool",
+								Args: map[string]interface{}{"param": "val"},
+							},
+						},
+					},
+				},
+			}
+
+			_, _, err := c.SendChat(context.Background(), history, tt.tools, nil)
+			if err == nil {
+				t.Fatal("expected error for empty tool call ID, got nil")
 			}
 			if !strings.Contains(err.Error(), "invalid tool payload") {
 				t.Errorf("expected 'invalid tool payload', got %q", err.Error())
@@ -1282,6 +1356,7 @@ func getResponsesAPIContentBlockTestCases(t *testing.T) []responsesAPITestCase {
 	cases = append(cases, getResponsesAPIDirectContentTestCases(t)...)
 	cases = append(cases, getResponsesAPIRefusalTestCases(t)...)
 	cases = append(cases, getResponsesAPIMixedInputTestCases(t)...)
+	cases = append(cases, getResponsesAPITextBlockFallbackTestCases(t)...)
 	return cases
 }
 
@@ -1400,6 +1475,109 @@ func getResponsesAPIMixedInputTestCases(t *testing.T) []responsesAPITestCase {
 			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
 				if len(resp.Parts) != 1 || resp.Parts[0].Text != "Assistant says: Hi there" {
 					t.Errorf("expected output text")
+				}
+			},
+		},
+	}
+}
+
+// getResponsesAPITextBlockFallbackTestCases covers Gaps #14, #15, #16:
+// the fallback chains in handleTextBlock and handleThoughtBlock.
+//
+// Gap #14: handleTextBlock falls back to InputText when both
+//
+//	extractBlockText(cb.Text) and cb.OutputText are empty.
+//
+// Gap #15: handleThoughtBlock falls back to cb.Reasoning when
+//
+//	cb.Thought is empty.
+//
+// Gap #16: handleThoughtBlock falls back to extractBlockText(cb.Text)
+//
+//	when both cb.Thought and cb.Reasoning are empty and cb.Type=="thought".
+func getResponsesAPITextBlockFallbackTestCases(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
+		// Gap #14: handleTextBlock InputText fallback
+		{
+			name:    "text_block_falls_back_to_input_text",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type:      "text",
+							InputText: "user input text fallback",
+							// no Text, no OutputText — forces InputText fallback
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				if len(resp.Parts) != 1 || resp.Parts[0].Text != "user input text fallback" {
+					t.Errorf("expected InputText fallback 'user input text fallback', got %+v", resp.Parts)
+				}
+			},
+		},
+		// Gap #15: handleThoughtBlock Reasoning fallback
+		{
+			name:    "thought_block_falls_back_to_reasoning_field",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type:      "thought",
+							Reasoning: "reasoning from reasoning field",
+							// no Thought field — forces Reasoning fallback
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				if len(resp.Parts) != 1 {
+					t.Fatalf("expected 1 part, got %d", len(resp.Parts))
+				}
+				if !resp.Parts[0].IsThought {
+					t.Error("expected IsThought=true")
+				}
+				if resp.Parts[0].Text != "reasoning from reasoning field" {
+					t.Errorf("expected 'reasoning from reasoning field', got %q", resp.Parts[0].Text)
+				}
+			},
+		},
+		// Gap #16: handleThoughtBlock type:"thought" text extraction
+		{
+			name:    "thought_block_falls_back_to_text_field",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "thought",
+							Text: "thinking via text field",
+							// no Thought, no Reasoning — forces extractBlockText(cb.Text)
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				if len(resp.Parts) != 1 {
+					t.Fatalf("expected 1 part, got %d", len(resp.Parts))
+				}
+				if !resp.Parts[0].IsThought {
+					t.Error("expected IsThought=true")
+				}
+				if resp.Parts[0].Text != "thinking via text field" {
+					t.Errorf("expected 'thinking via text field', got %q", resp.Parts[0].Text)
 				}
 			},
 		},
@@ -2018,5 +2196,140 @@ func TestChatRequest_ChatTemplateKwargs_IncludedWhenSet(t *testing.T) {
 	want := `"chat_template_kwargs":{"thinking":true}`
 	if !strings.Contains(string(body), want) {
 		t.Errorf("expected %q in JSON; got: %s", want, body)
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		n    int
+		want string
+	}{
+		{
+			name: "Empty string",
+			s:    "",
+			n:    10,
+			want: "",
+		},
+		{
+			name: "Under limit",
+			s:    "hello",
+			n:    10,
+			want: "hello",
+		},
+		{
+			name: "Exactly at limit",
+			s:    "1234567890",
+			n:    10,
+			want: "1234567890",
+		},
+		{
+			name: "One byte over limit",
+			s:    "12345678901",
+			n:    10,
+			want: "1234567890...",
+		},
+		{
+			name: "Zero limit",
+			s:    "hello",
+			n:    0,
+			want: "...",
+		},
+		{
+			name: "Large text",
+			s:    strings.Repeat("A", 300),
+			n:    200,
+			want: strings.Repeat("A", 200) + "...",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncate(tt.s, tt.n)
+			if got != tt.want {
+				t.Errorf("truncate(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAppendToolCall_NilGuard closes Gap #10: the defensive nil-return
+// guard in appendToolCall (client.go:489-491) returns nil when both
+// name is empty and args is nil. Four scenarios exercise every branch:
+// guard triggers, valid call, empty-name-but-non-nil-args, and the
+// JSON-unmarshal error path.
+func TestAppendToolCall_NilGuard(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		id        string
+		toolName  string
+		argsStr   string
+		wantParts int
+		wantErr   string
+	}{
+		{
+			name:      "empty name and nil args — guard triggers",
+			id:        "call_1",
+			toolName:  "",
+			argsStr:   "",
+			wantParts: 0,
+			wantErr:   "",
+		},
+		{
+			name:      "valid name with empty args object",
+			id:        "call_1",
+			toolName:  "my_tool",
+			argsStr:   "{}",
+			wantParts: 1,
+			wantErr:   "",
+		},
+		{
+			name:      "empty name but non-nil args — guard does NOT trigger",
+			id:        "call_1",
+			toolName:  "",
+			argsStr:   `{"x":1}`,
+			wantParts: 1,
+			wantErr:   "",
+		},
+		{
+			name:      "malformed args JSON — error returned",
+			id:        "call_1",
+			toolName:  "my_tool",
+			argsStr:   "{invalid}",
+			wantParts: 0,
+			wantErr:   "failed to unmarshal",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewClient("", "gpt-4", nil)
+			content := &llm.Content{}
+
+			err := c.appendToolCall(content, tt.id, tt.toolName, tt.argsStr)
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+
+			if len(content.Parts) != tt.wantParts {
+				t.Errorf("expected %d parts, got %d", tt.wantParts, len(content.Parts))
+			}
+		})
 	}
 }

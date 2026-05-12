@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 func TestParseToolUseArgs(t *testing.T) {
@@ -203,5 +204,66 @@ func TestTruncate(t *testing.T) {
 				t.Errorf("truncate(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestExtractContent_ToolUseParseError closes Gap #7: when a tool_use
+// block carries malformed JSON in its Input field, extractContent
+// must return an error via parseToolUseArgs.
+func TestExtractContent_ToolUseParseError(t *testing.T) {
+	c := &client{logger: &ports.NoOpLogger{}}
+
+	resp := &messagesResponse{
+		Content: []contentBlock{
+			{
+				Type:  "tool_use",
+				ID:    "toolu_001",
+				Name:  "broken_tool",
+				Input: `{"key": "val`, // ← truncated JSON, parseToolUseArgs will fail
+			},
+		},
+	}
+
+	content, err := c.extractContent(resp)
+	if err == nil {
+		t.Fatal("expected error for malformed tool_use Input, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to unmarshal tool input") {
+		t.Errorf("expected 'failed to unmarshal tool input', got %q", err.Error())
+	}
+	if content != nil {
+		t.Errorf("expected nil content on error, got %+v", content)
+	}
+}
+
+// TestFromAnthropicResponse_ExtractContentError closes Gap #6: when
+// extractContent fails, fromAnthropicResponse must propagate the error
+// and return nil content and nil metrics.
+func TestFromAnthropicResponse_ExtractContentError(t *testing.T) {
+	c := &client{logger: &ports.NoOpLogger{}}
+
+	resp := &messagesResponse{
+		Content: []contentBlock{
+			{
+				Type:  "tool_use",
+				ID:    "toolu_001",
+				Name:  "broken_tool",
+				Input: `{"key": "val`, // ← truncated JSON, parseToolUseArgs will fail
+			},
+		},
+	}
+
+	content, metrics, err := c.fromAnthropicResponse(resp, 1.0)
+	if err == nil {
+		t.Fatal("expected error for malformed tool_use Input, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to unmarshal tool input") {
+		t.Errorf("expected 'failed to unmarshal tool input', got %q", err.Error())
+	}
+	if content != nil {
+		t.Errorf("expected nil content on error, got %+v", content)
+	}
+	if metrics != nil {
+		t.Errorf("expected nil metrics on error, got %+v", metrics)
 	}
 }
