@@ -29,13 +29,6 @@ func (lc *LazyClient) init() {
 	})
 }
 
-// Init explicitly triggers initialization and returns any error.
-// Useful for health checks that need to force early initialization.
-func (lc *LazyClient) Init() error {
-	lc.init()
-	return lc.err
-}
-
 func (lc *LazyClient) Generate(ctx stdctx.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	lc.init()
 	if lc.err != nil {
