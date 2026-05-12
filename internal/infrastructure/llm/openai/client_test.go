@@ -477,6 +477,71 @@ func TestSendChat_Errors(t *testing.T) {
 	}
 }
 
+func TestSendChat_EmptyToolResponseID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		model   string
+		headers map[string]string
+		tools   []*tools.ToolDeclaration
+	}{
+		{
+			name:  "standard /chat/completions path",
+			model: "gpt-4",
+		},
+		{
+			name:    "responses API path (regression guard)",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Use an unreachable server — the error occurs during
+			// request construction, before the HTTP call is made.
+			c := NewClient("http://127.0.0.1:1", tt.model,
+				&auth.BearerAuth{Token: "test-key"},
+				WithHeaders(tt.headers),
+			)
+
+			history := []*llm.Content{
+				{
+					Role: "tool",
+					Parts: []*llm.Part{
+						{
+							FunctionResponse: &llm.FunctionResponse{
+								ID:       "", // ← triggers the guard
+								Name:     "test_tool",
+								Response: map[string]interface{}{"result": "x"},
+							},
+						},
+					},
+				},
+			}
+
+			_, _, err := c.SendChat(context.Background(), history, tt.tools, nil)
+			if err == nil {
+				t.Fatal("expected error for empty tool response ID, got nil")
+			}
+			if !strings.Contains(err.Error(), "invalid tool payload") {
+				t.Errorf("expected 'invalid tool payload', got %q", err.Error())
+			}
+			if !strings.Contains(err.Error(), "missing ID") {
+				t.Errorf("expected 'missing ID', got %q", err.Error())
+			}
+			if !strings.Contains(err.Error(), "test_tool") {
+				t.Errorf("expected tool name 'test_tool' in error, got %q", err.Error())
+			}
+		})
+	}
+}
+
 func TestToOpenAISchema(t *testing.T) {
 	s := &tools.Schema{
 		Type:        "OBJECT",
@@ -554,6 +619,133 @@ func TestSendChat_MarshallingError(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "failed to marshal tool arguments") && !strings.Contains(err.Error(), "json: unsupported type: chan") {
 		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// TestSendChat_MarshalToolResponseError covers Error Path 3: when a
+// FunctionResponse.Response contains a value that json.Marshal cannot
+// encode (e.g., a channel), appendToolResponseMessages returns
+// "failed to marshal tool response". The unit-level MarshalResponse
+// test already proves marshalResponse rejects channels; this test
+// proves the error propagates correctly through the full
+// toStandardMessages → SendChat pipeline on the standard
+// /chat/completions path.
+func TestSendChat_MarshalToolResponseError(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("http://127.0.0.1:1", "gpt-4", &auth.BearerAuth{Token: "test-key"})
+
+	history := []*llm.Content{
+		{
+			Role: "tool",
+			Parts: []*llm.Part{
+				{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:   "call_1",
+						Name: "broken_tool",
+						// "result" key is intentionally absent so we
+						// fall through to json.Marshal(res) which
+						// cannot encode a chan.
+						Response: map[string]interface{}{
+							"bad": make(chan int),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, _, err := c.SendChat(context.Background(), history, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for unmarshalable tool response, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to marshal tool response") {
+		t.Errorf("expected 'failed to marshal tool response', got %q", err.Error())
+	}
+}
+
+// TestCreateHTTPRequest_MarshalError covers Error Path 1: when
+// json.Marshal(payload) fails inside createHTTPRequest. In normal
+// operation message.Content is always a string or []requestContentBlock
+// — both marshal safely. This test injects an unmarshalable chan int
+// directly into Content to force the error, verifying the
+// "failed to marshal request" wrapper is returned.
+func TestCreateHTTPRequest_MarshalError(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("", "gpt-4", nil)
+
+	payload := &chatRequest{
+		Model: "gpt-4",
+		Messages: []message{
+			{
+				Role:    "user",
+				Content: make(chan int), // json.Marshal cannot encode channels
+			},
+		},
+	}
+
+	_, err := c.createHTTPRequest(context.Background(), payload)
+	if err == nil {
+		t.Fatal("expected error for unmarshalable payload, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to marshal request") {
+		t.Errorf("expected 'failed to marshal request', got %q", err.Error())
+	}
+}
+
+// errorReader is an io.ReadCloser whose Read always fails.
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (int, error) {
+	return 0, errors.New("simulated body read failure")
+}
+
+func (e *errorReader) Close() error {
+	return nil
+}
+
+// failingBodyTransport is an http.RoundTripper that returns a response
+// with the given status code and a body that always fails on Read.
+type failingBodyTransport struct {
+	statusCode int
+}
+
+func (t *failingBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode:    t.statusCode,
+		Status:        http.StatusText(t.statusCode),
+		Body:          &errorReader{},
+		Header:        make(http.Header),
+		ContentLength: -1, // unknown length; prevents Content-Length mismatch
+		Request:       req,
+	}, nil
+}
+
+// TestSendChat_ErrorBodyReadFailure covers Error Path 2: when the API
+// returns a non-200 status AND reading the error response body itself
+// fails (the "double failure" path). This cannot be triggered via
+// httptest.Server because w.Write() never fails; we use a custom
+// http.RoundTripper that injects a response with a broken body reader.
+func TestSendChat_ErrorBodyReadFailure(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("http://any-url-will-do", "gpt-4", &auth.BearerAuth{Token: "test-key"})
+
+	// Replace the transport to return a 500 with a broken body.
+	c.httpClient.Transport = &failingBodyTransport{
+		statusCode: http.StatusInternalServerError,
+	}
+
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for body read failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "additionally, failed to read response body") {
+		t.Errorf("expected 'additionally, failed to read response body', got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("expected status code 500 in error, got %q", err.Error())
 	}
 }
 
