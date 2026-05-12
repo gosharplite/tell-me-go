@@ -20,7 +20,7 @@ var _ services.WorkspacePolicy = (*defaultWorkspacePolicy)(nil)
 type defaultWorkspacePolicy struct{}
 
 // NewWorkspacePolicy returns a new defaultWorkspacePolicy.
-func NewWorkspacePolicy() *defaultWorkspacePolicy {
+func NewWorkspacePolicy() services.WorkspacePolicy {
 	return &defaultWorkspacePolicy{}
 }
 
