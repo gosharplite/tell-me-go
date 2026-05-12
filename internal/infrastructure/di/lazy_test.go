@@ -54,10 +54,10 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 	// Verify client hasn't been initialized yet
 	assert.Equal(t, 0, callCount)
 
-	// 2. GetGateway should return a non-nil proxy
+	// 2. GetGateway should return a non-nil lazyClient
 	gw := deps.GetGateway()
 	assert.NotNil(t, gw)
-	assert.Equal(t, 0, callCount) // Getter itself doesn't trigger init anymore
+	assert.Equal(t, 0, callCount) // Getter itself doesn't trigger init
 
 	// 3. Calling Generate should trigger initialization and return error
 	_, _, err = gw.Generate(ctx, nil, nil, nil)
@@ -71,14 +71,11 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, 1, callCount)
 
-	// 5. GetClient should also return a non-nil proxy
-	concreteDeps, ok := deps.(*sessionDeps)
-	require.True(t, ok)
-	client := concreteDeps.GetClient()
-	assert.NotNil(t, client)
+	// 5. GetGateway should also surface the cached error via Generate
+	gw2 := deps.GetGateway()
+	assert.NotNil(t, gw2)
 
-	// Calling methods on client proxy should also return the same error
-	err = client.RefreshAuth()
+	_, _, err = gw2.Generate(ctx, nil, nil, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "LLM provider initialization failed")
 }
@@ -176,35 +173,29 @@ func (m *mockExtendedClient) GetModel() string {
 	return m.Called().String(0)
 }
 
-func TestLazyLLMProxy_GenerateImages(t *testing.T) {
+func TestLazyClient_GenerateImages(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("GenerateImages", mock.Anything, "test-model", "test-prompt", "image/png").Return([][]byte{{0x01}}, nil)
 
-	deps := &sessionDeps{
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return mockClient, nil
-		},
-	}
-	proxy := &lazyLLMProxy{deps: deps}
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return mockClient, nil
+	})
 
-	images, err := proxy.GenerateImages(context.Background(), "test-model", "test-prompt", "image/png")
+	images, err := lc.GenerateImages(context.Background(), "test-model", "test-prompt", "image/png")
 	assert.NoError(t, err)
 	assert.Len(t, images, 1)
 	mockClient.AssertExpectations(t)
 }
 
-func TestLazyLLMProxy_RefreshAuth(t *testing.T) {
+func TestLazyClient_RefreshAuth(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("RefreshAuth").Return(nil)
 
-	deps := &sessionDeps{
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return mockClient, nil
-		},
-	}
-	proxy := &lazyLLMProxy{deps: deps}
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return mockClient, nil
+	})
 
-	err := proxy.RefreshAuth()
+	err := lc.RefreshAuth()
 	assert.NoError(t, err)
 	mockClient.AssertExpectations(t)
 }
@@ -220,76 +211,61 @@ func TestSessionDeps_AdditionalGetters(t *testing.T) {
 	assert.Nil(t, deps.GetTurnsLogger())
 }
 
-func TestLazyLLMProxy_Generate(t *testing.T) {
+func TestLazyClient_Generate(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
 
-	deps := &sessionDeps{
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return mockClient, nil
-		},
-	}
-	proxy := &lazyLLMProxy{deps: deps}
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return mockClient, nil
+	})
 
-	_, _, err := proxy.Generate(context.Background(), nil, nil, nil)
+	_, _, err := lc.Generate(context.Background(), nil, nil, nil)
 	assert.NoError(t, err)
 	mockClient.AssertExpectations(t)
 }
 
-func TestLazyLLMProxy_SendChat(t *testing.T) {
+func TestLazyClient_SendChat(t *testing.T) {
 	mockClient := new(mockExtendedClient)
 	mockClient.On("SendChat", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
 
-	deps := &sessionDeps{
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return mockClient, nil
-		},
-	}
-	proxy := &lazyLLMProxy{deps: deps}
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return mockClient, nil
+	})
 
-	_, _, err := proxy.SendChat(context.Background(), nil, nil, nil)
+	_, _, err := lc.SendChat(context.Background(), nil, nil, nil)
 	assert.NoError(t, err)
 	mockClient.AssertExpectations(t)
 }
 
-func TestLazyLLMProxy_InitializationFailure_SendChat(t *testing.T) {
+func TestLazyClient_InitializationFailure_SendChat(t *testing.T) {
 	simulatedErr := errors.New("llm init failed")
-	deps := &sessionDeps{
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return nil, simulatedErr
-		},
-	}
-	proxy := &lazyLLMProxy{deps: deps}
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return nil, simulatedErr
+	})
 
-	_, _, err := proxy.SendChat(context.Background(), nil, nil, nil)
+	_, _, err := lc.SendChat(context.Background(), nil, nil, nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, simulatedErr)
 }
 
-func TestLazyLLMProxy_InitializationFailure_Generate(t *testing.T) {
+func TestLazyClient_InitializationFailure_Generate(t *testing.T) {
 	simulatedErr := errors.New("llm init failed")
-	deps := &sessionDeps{
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return nil, simulatedErr
-		},
-	}
-	proxy := &lazyLLMProxy{deps: deps}
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return nil, simulatedErr
+	})
 
-	_, _, err := proxy.Generate(context.Background(), nil, nil, nil)
+	_, _, err := lc.Generate(context.Background(), nil, nil, nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, simulatedErr)
 }
 
-func TestLazyLLMProxy_InitializationFailure_GenerateImages(t *testing.T) {
+func TestLazyClient_InitializationFailure_GenerateImages(t *testing.T) {
 	simulatedErr := errors.New("llm init failed")
-	deps := &sessionDeps{
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return nil, simulatedErr
-		},
-	}
-	proxy := &lazyLLMProxy{deps: deps}
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return nil, simulatedErr
+	})
 
-	_, err := proxy.GenerateImages(context.Background(), "", "", "")
+	_, err := lc.GenerateImages(context.Background(), "", "", "")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, simulatedErr)
 }

@@ -524,7 +524,6 @@ func TestSessionDeps_Getters(t *testing.T) {
 	paths := &persistence.Paths{}
 	hManager := &history.Manager{}
 	client := &mockLLMClient{}
-	gw := client
 	reg := registry.New()
 	sm := new(mockConfigurableSecurityManager)
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -533,24 +532,24 @@ func TestSessionDeps_Getters(t *testing.T) {
 	pData := pricing.PricingData{}
 	sessionProvider := new(mockSessionProvider)
 
+	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
+		return client, nil
+	})
+	lazyRegistry := newLazyRegistry(func() (tools.Registry, error) {
+		return reg, nil
+	}, &ports.NoOpLogger{})
+
 	deps := &sessionDeps{
 		paths:           paths,
 		hManager:        hManager,
-		client:          client,
-		gw:              gw,
-		reg:             reg,
 		sm:              sm,
 		bus:             bus,
 		tracker:         tracker,
 		pricingData:     pData,
 		sessionProvider: sessionProvider,
 		health:          factory.NewHealthCheckManager(nil),
-		clientFactory: func() (llm.ExtendedClient, error) {
-			return client, nil
-		},
-		regFactory: func() (tools.Registry, error) {
-			return reg, nil
-		},
+		lazyClient:      lazyClient,
+		lazyRegistry:    lazyRegistry,
 	}
 
 	assert.NotNil(t, deps.GetGateway())
@@ -643,6 +642,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				b.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
 					return simulatedErr
 				}
+				b.toolchainFactory = newToolchainFactory(b.HomeDir, b.FileSystem, b.SM, b.WorkspacePolicy, b.RegisterAllTools, b.RegisterMetrics)
 			},
 			wantErr: "", // Lazy initialization
 		},
@@ -652,6 +652,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 					return simulatedErr
 				}
+				b.toolchainFactory = newToolchainFactory(b.HomeDir, b.FileSystem, b.SM, b.WorkspacePolicy, b.RegisterAllTools, b.RegisterMetrics)
 			},
 			wantErr: "", // Lazy initialization
 		},
@@ -661,6 +662,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				b.RotateSession = func(ctx context.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
 					return simulatedErr
 				}
+				b.sessionFactory = newSessionFactory(b.HomeDir, b.FileSystem, b.SM, b.Stdout, b.Stderr, b.Logger, b.RotateSession, b.NewSessionState)
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 			},
 			wantErr: "session initialization failed during rotation for",
@@ -680,6 +682,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				b.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 					return mockSP, nil
 				}
+				b.sessionFactory = newSessionFactory(b.HomeDir, b.FileSystem, b.SM, b.Stdout, b.Stderr, b.Logger, b.RotateSession, b.NewSessionState)
 			},
 			wantErr: "", // No error from BuildSessionDependencies
 		},
@@ -911,6 +914,7 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	bootstrapper.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 		return mockSP, nil
 	}
+	bootstrapper.sessionFactory = newSessionFactory(bootstrapper.HomeDir, bootstrapper.FileSystem, bootstrapper.SM, bootstrapper.Stdout, bootstrapper.Stderr, bootstrapper.Logger, bootstrapper.RotateSession, bootstrapper.NewSessionState)
 
 	cfg := &config.Config{
 		Mode: "assistant",
@@ -1019,10 +1023,9 @@ func TestGetHistoryManager_Failure(t *testing.T) {
 
 func TestSessionDeps_GetRegistry_Failure(t *testing.T) {
 	deps := &sessionDeps{
-		regFactory: func() (tools.Registry, error) {
+		lazyRegistry: newLazyRegistry(func() (tools.Registry, error) {
 			return nil, errors.New("registry failed")
-		},
-		logger: telemetry.NewSlogLogger(nil),
+		}, telemetry.NewSlogLogger(nil)),
 	}
 	reg, err := deps.GetRegistry()
 	assert.Error(t, err)

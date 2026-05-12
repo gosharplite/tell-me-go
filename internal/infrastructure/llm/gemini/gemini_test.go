@@ -75,6 +75,8 @@ type sendChatTestCase struct {
 	thinkingBudget         int
 	thinkingBudgetSeverity string
 	validateReq            func(t *testing.T, r *http.Request)
+	history                []*llm.Content
+	useSearch              bool
 }
 
 func TestSendChat_Scenarios(t *testing.T) {
@@ -135,6 +137,178 @@ func TestSendChat_Scenarios(t *testing.T) {
 			expectedText:           "OK",
 			validateReq:            validateAuthOnly,
 		},
+		{
+			name: "SearchDisabled",
+			mockResponse: genai.GenerateContentResponse{
+				Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}}}},
+			},
+			expectedText: "OK",
+			validateReq: func(t *testing.T, r *http.Request) {
+				validateAuthOnly(t, r)
+				var req struct {
+					Tools []struct {
+						GoogleSearch *struct{} `json:"googleSearch"`
+					} `json:"tools"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("failed to decode request: %v", err)
+					return
+				}
+				for _, tool := range req.Tools {
+					if tool.GoogleSearch != nil {
+						t.Error("expected no googleSearch tool when search is disabled")
+					}
+				}
+			},
+		},
+		{
+			name: "SearchEnabled",
+			mockResponse: genai.GenerateContentResponse{
+				Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}}}},
+			},
+			useSearch:    true,
+			expectedText: "OK",
+			validateReq: func(t *testing.T, r *http.Request) {
+				validateAuthOnly(t, r)
+				var req struct {
+					Tools []struct {
+						GoogleSearch *struct{} `json:"googleSearch"`
+					} `json:"tools"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("failed to decode request: %v", err)
+					return
+				}
+				found := false
+				for _, tool := range req.Tools {
+					if tool.GoogleSearch != nil {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Error("expected googleSearch tool when search is enabled")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runSendChatTest(t, tt)
+		})
+	}
+}
+
+func TestPrepareRequest_SystemPromptMerging(t *testing.T) {
+	tests := []sendChatTestCase{
+		{
+			name: "DynamicOnly",
+			mockResponse: genai.GenerateContentResponse{
+				Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}}}},
+			},
+			systemInstruction: "", // No static system instruction (WithSystemInstruction returns early on empty)
+			expectedText:      "OK",
+			history: []*llm.Content{
+				{Role: "system", Parts: []*llm.Part{{Text: "You are helpful"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+			},
+			validateReq: func(t *testing.T, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer test-token" {
+					t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+				}
+				var req struct {
+					SystemInstruction struct {
+						Parts []struct {
+							Text string `json:"text"`
+						} `json:"parts"`
+					} `json:"systemInstruction"`
+					Contents []struct {
+						Role  string `json:"role"`
+						Parts []struct {
+							Text string `json:"text"`
+						} `json:"parts"`
+					} `json:"contents"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("failed to decode request: %v", err)
+				}
+
+				// Gap 9: systemInstruction must be present (initialized from nil)
+				if len(req.SystemInstruction.Parts) == 0 {
+					t.Fatal("expected systemInstruction to be present with dynamic parts")
+				}
+				// Gap 7: dynamic system parts appear in systemInstruction
+				if req.SystemInstruction.Parts[0].Text != "You are helpful" {
+					t.Errorf("expected systemInstruction.parts[0].text == %q, got %q",
+						"You are helpful", req.SystemInstruction.Parts[0].Text)
+				}
+
+				// Gap 7: system-role entries must NOT appear in contents
+				for i, c := range req.Contents {
+					if c.Role == "system" {
+						t.Errorf("contents[%d] has role 'system', expected it to be excluded", i)
+					}
+				}
+			},
+		},
+		{
+			name: "StaticAndDynamic",
+			mockResponse: genai.GenerateContentResponse{
+				Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}}}},
+			},
+			systemInstruction: "Be concise",
+			expectedText:      "OK",
+			history: []*llm.Content{
+				{Role: "system", Parts: []*llm.Part{{Text: "You are helpful"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+			},
+			validateReq: func(t *testing.T, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer test-token" {
+					t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+				}
+				var req struct {
+					SystemInstruction struct {
+						Parts []struct {
+							Text string `json:"text"`
+						} `json:"parts"`
+					} `json:"systemInstruction"`
+					Contents []struct {
+						Role  string `json:"role"`
+						Parts []struct {
+							Text string `json:"text"`
+						} `json:"parts"`
+					} `json:"contents"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("failed to decode request: %v", err)
+				}
+
+				// Gap 8: Both static and dynamic parts must be present in systemInstruction
+				if len(req.SystemInstruction.Parts) < 2 {
+					t.Fatalf("expected at least 2 systemInstruction parts (static + dynamic), got %d", len(req.SystemInstruction.Parts))
+				}
+
+				// Collect part texts for order-independent comparison
+				texts := make(map[string]bool)
+				for _, p := range req.SystemInstruction.Parts {
+					texts[p.Text] = true
+				}
+				if !texts["Be concise"] {
+					t.Errorf("expected systemInstruction to contain static part %q, got %v", "Be concise", texts)
+				}
+				if !texts["You are helpful"] {
+					t.Errorf("expected systemInstruction to contain dynamic part %q, got %v", "You are helpful", texts)
+				}
+
+				// Gap 7: system-role entries must NOT appear in contents
+				for i, c := range req.Contents {
+					if c.Role == "system" {
+						t.Errorf("contents[%d] has role 'system', expected it to be excluded", i)
+					}
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -166,6 +340,7 @@ func runSendChatTest(t *testing.T, tt sendChatTestCase) {
 		authenticator,
 		WithThinking(tt.thinkingBudget, tt.thinkingBudgetSeverity, 0),
 		WithSystemInstruction(tt.systemInstruction),
+		WithSearch(tt.useSearch),
 		WithEventBus(bus),
 		WithTimeout(5*time.Second),
 	)
@@ -173,8 +348,11 @@ func runSendChatTest(t *testing.T, tt sendChatTestCase) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	history := []*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+	history := tt.history
+	if history == nil {
+		history = []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+		}
 	}
 	content, _, err := client.SendChat(context.Background(), history, nil, nil)
 
@@ -677,6 +855,89 @@ func TestGemini_EdgeCase_DetermineBackend_MockURL(t *testing.T) {
 	if baseURL != "http://mock" {
 		t.Errorf("expected mock baseURL, got %s", baseURL)
 	}
+}
+
+func TestGemini_EdgeCase_DetermineBackend_MockURL_VertexAI(t *testing.T) {
+	t.Setenv("TELL_ME_MOCK_URL", "http://mock")
+	c := &Client{}
+	// Use a VertexAI URL with no project/location identifiers so the mock
+	// fallback path triggers in determineBackend.
+	apiURL := "https://aiplatform.googleapis.com/v1"
+	backend, project, location, baseURL, _ := c.determineBackend(apiURL)
+
+	if backend != genai.BackendVertexAI {
+		t.Errorf("expected VertexAI backend, got %v", backend)
+	}
+	// Gap 3: project falls back to "mock-project"
+	if project != "mock-project" {
+		t.Errorf("expected mock-project fallback, got %q", project)
+	}
+	// Gap 4: location falls back to "mock-location"
+	if location != "mock-location" {
+		t.Errorf("expected mock-location fallback, got %q", location)
+	}
+	// Gap 2: baseURL is overridden by mock URL
+	if baseURL != "http://mock" {
+		t.Errorf("expected mock baseURL, got %q", baseURL)
+	}
+}
+
+func TestParseVertexAI_NoV1Segment(t *testing.T) {
+	c := &Client{}
+
+	// Gap 6: URL with /locations/{loc}/publisherPath but NO /v1/ segment.
+	// The publisherPath should be everything after the location key and
+	// baseURL should be empty when no /v1/ is present.
+	t.Run("NoV1InPathSegment", func(t *testing.T) {
+		apiURL := "https://us-central1-aiplatform.googleapis.com/locations/us-central1/publishers/google/models/gemini-1.5-flash"
+		backend, project, location, baseURL, publisherPath := c.parseVertexAI(apiURL)
+
+		if backend != genai.BackendVertexAI {
+			t.Errorf("expected VertexAI backend, got %v", backend)
+		}
+		if project != "" {
+			t.Errorf("expected empty project, got %q", project)
+		}
+		if location != "us-central1" {
+			t.Errorf("expected location us-central1, got %q", location)
+		}
+		// Gap 6: publisherPath is the full segment when no /v1/ exists
+		expectedPath := "publishers/google/models/gemini-1.5-flash"
+		if publisherPath != expectedPath {
+			t.Errorf("expected publisherPath %q, got %q", expectedPath, publisherPath)
+		}
+		// Gap 6: baseURL stays empty when /v1/ not present
+		if baseURL != "" {
+			t.Errorf("expected empty baseURL when no /v1/, got %q", baseURL)
+		}
+	})
+
+	// Gap 5: URL where /v1/ appears inside the publisher path segment.
+	// The publisherPath should be truncated at /v1/.
+	t.Run("V1InPathSegment", func(t *testing.T) {
+		apiURL := "https://us-central1-aiplatform.googleapis.com/locations/us-central1/publishers/google/models/gemini-1.5-flash/v1/extra"
+		backend, project, location, baseURL, publisherPath := c.parseVertexAI(apiURL)
+
+		if backend != genai.BackendVertexAI {
+			t.Errorf("expected VertexAI backend, got %v", backend)
+		}
+		if project != "" {
+			t.Errorf("expected empty project, got %q", project)
+		}
+		if location != "us-central1" {
+			t.Errorf("expected location us-central1, got %q", location)
+		}
+		// Gap 5: publisherPath is truncated at /v1/
+		expectedPath := "publishers/google/models/gemini-1.5-flash"
+		if publisherPath != expectedPath {
+			t.Errorf("expected publisherPath %q, got %q", expectedPath, publisherPath)
+		}
+		// Gap 5: baseURL is set when /v1/ present in apiURL
+		expectedBaseURL := "https://us-central1-aiplatform.googleapis.com/locations/us-central1/publishers/google/models/gemini-1.5-flash/"
+		if baseURL != expectedBaseURL {
+			t.Errorf("expected baseURL %q, got %q", expectedBaseURL, baseURL)
+		}
+	})
 }
 
 func TestGemini_ModelQualification(t *testing.T) {
