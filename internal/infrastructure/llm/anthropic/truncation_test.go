@@ -376,3 +376,85 @@ func TestTruncationError_IsTerminal(t *testing.T) {
 	_ = llm.ErrTransient
 	_ = errors.Is
 }
+
+// TestPrepareAnthropicRequest_ThinkingBudgetBumpsMaxTokens closes
+// Gap #2: when thinkingBudget > 0 AND MaxTokens <= thinkingBudget,
+// the Anthropic API requires MaxTokens > thinking budget. The code
+// automatically bumps MaxTokens to thinkingBudget + 1024.
+//
+// Three scenarios are pinned:
+//  1. thinking budget exceeds default MaxTokens → bump applied
+//  2. thinking budget below default MaxTokens → no bump
+//  3. explicit MaxTokens above thinking budget → no bump, explicit
+//     value preserved
+func TestPrepareAnthropicRequest_ThinkingBudgetBumpsMaxTokens(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		maxTokensOpt   anthropicOption // nil means omit
+		thinkingBudget int
+		wantMaxTokens  int
+	}{
+		{
+			name:           "thinking budget exceeds default MaxTokens — bump applied",
+			thinkingBudget: 20000,
+			wantMaxTokens:  21024, // 20000 + 1024
+		},
+		{
+			name:           "thinking budget below default MaxTokens — no bump",
+			thinkingBudget: 4000,
+			wantMaxTokens:  16384, // defaultMaxTokens unchanged
+		},
+		{
+			name:           "explicit MaxTokens above thinking budget — no bump",
+			maxTokensOpt:   WithMaxTokens(30000),
+			thinkingBudget: 20000,
+			wantMaxTokens:  30000, // explicit value preserved
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var captured messagesRequest
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewDecoder(r.Body).Decode(&captured)
+				_ = json.NewEncoder(w).Encode(messagesResponse{
+					Content:    []contentBlock{{Type: "text", Text: "ok"}},
+					StopReason: "end_turn",
+				})
+			}))
+			defer server.Close()
+
+			var opts []anthropicOption
+			if tt.maxTokensOpt != nil {
+				opts = append(opts, tt.maxTokensOpt)
+			}
+			opts = append(opts, WithThinkingBudget(tt.thinkingBudget))
+
+			c := NewClient(server.URL, "claude-3-5-sonnet",
+				&auth.AnthropicAuth{APIKey: "k"},
+				opts...,
+			)
+
+			_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+			if err != nil {
+				t.Fatalf("SendChat failed: %v", err)
+			}
+
+			if captured.MaxTokens != tt.wantMaxTokens {
+				t.Errorf("MaxTokens = %d, want %d", captured.MaxTokens, tt.wantMaxTokens)
+			}
+
+			// Bonus assertion: thinking block must be present when budget > 0
+			if captured.Thinking == nil {
+				t.Error("expected Thinking block to be present when thinkingBudget > 0")
+			} else if captured.Thinking.Budget != tt.thinkingBudget {
+				t.Errorf("Thinking.Budget = %d, want %d", captured.Thinking.Budget, tt.thinkingBudget)
+			}
+		})
+	}
+}
