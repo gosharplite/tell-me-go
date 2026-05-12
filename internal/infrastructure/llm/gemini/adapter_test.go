@@ -178,9 +178,9 @@ func TestFromSDKContent_NilPartFiltering(t *testing.T) {
 	sdkContent := &genai.Content{
 		Role: "model",
 		Parts: []*genai.Part{
-			nil,                     // should be filtered
+			nil, // should be filtered
 			{Text: "valid-part-1"},
-			nil,                     // should be filtered
+			nil, // should be filtered
 			{Text: "valid-part-2"},
 		},
 	}
