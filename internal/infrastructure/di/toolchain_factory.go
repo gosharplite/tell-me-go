@@ -17,11 +17,13 @@ import (
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	infra_toolchain "github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 )
 
 type toolchainFactory interface {
 	BuildRegistry(params toolchainParams) (tools.Registry, error)
+	BuildHealthChecker() ports.HealthChecker
 }
 
 type toolchainParams struct {
@@ -91,4 +93,15 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 	}
 
 	return reg, nil
+}
+
+// BuildHealthChecker creates a HealthChecker for the system toolchain binaries.
+// The required and optional binary lists are owned here — they are toolchain
+// implementation details, not DI orchestration concerns.
+func (f *defaultToolchainFactory) BuildHealthChecker() ports.HealthChecker {
+	return infra_toolchain.NewToolchainHealthChecker(
+		&exec.RealExecutor{},
+		[]string{"git", "go"}, // required binaries
+		[]string{"make"},      // optional binaries
+	)
 }
