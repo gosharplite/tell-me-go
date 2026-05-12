@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -21,12 +20,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
-	infra_toolchain "github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 )
 
@@ -46,6 +42,7 @@ type Bootstrapper struct {
 	toolchainFactory  toolchainFactory
 	telemetryFactory  telemetryFactory
 	historyFactory    historyFactory
+	healthFactory     healthFactory
 	uiFactory         uiFactory
 	chatFactory       chatFactory
 	suggestionFactory suggestionFactory
@@ -95,21 +92,14 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 	}
 
 	b.sessionFactory = newSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
-		func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
-			return b.RotateSession(ctx, fs, stdout, paths, retentionDays, logger)
-		},
-		func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error) {
-			return b.NewSessionState(ctx, modeDir)
-		})
+		b.RotateSession,
+		b.NewSessionState)
 	b.toolchainFactory = newToolchainFactory(homeDir, fs, sm, b.WorkspacePolicy,
-		func(params infra_tools.ToolRegistrationParams) error {
-			return b.RegisterAllTools(params)
-		},
-		func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
-			return b.RegisterMetrics(r, sm, logFile, traceFile, model, mode, pricingOverrides, kvStore)
-		})
+		b.RegisterAllTools,
+		b.RegisterMetrics)
 	b.telemetryFactory = newTelemetryFactory(homeDir, fs, sm, logger)
 	b.historyFactory = newHistoryFactory(homeDir, fs)
+	b.healthFactory = newHealthFactory()
 	b.uiFactory = newUIFactory(sm, stdout, stderr, logger)
 	b.chatFactory = newChatFactory(homeDir, version, stdout, stderr, sm, fs, b, b.uiFactory)
 	b.suggestionFactory = newSuggestionFactory(homeDir, fs, stderr, logger, b.WorkspacePolicy)
@@ -145,10 +135,9 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
 
-	// Lazy initialization factory for the LLM client.
-	clientFactory := func() (llm.ExtendedClient, error) {
+	lazyClient := NewLazyClient(func() (llm.ExtendedClient, error) {
 		return b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
-	}
+	})
 
 	deps := &sessionDeps{
 		paths:            paths,
@@ -162,33 +151,25 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		turnsLogger:      turnsLogger,
 		sessionProvider:  sessionProvider,
 		workspacePolicy:  b.WorkspacePolicy,
-		clientFactory:    clientFactory,
+		lazyClient:       lazyClient,
 	}
 
-	// Initialize Health Manager
-	p := cfg.GetActiveProvider()
-	authenticator, _ := infra_llm.CreateAuthenticator(&p) // Error is handled in health check itself
-	healthCheckers := map[ports.Component]ports.HealthChecker{
-		ports.CompPersistence: sessionProvider.GetHealthChecker(),
-		ports.CompLLMProvider: infra_llm.NewLLMProviderHealthChecker(p.Type, authenticator, p.URL, &lazyLLMProxy{deps: deps}),
-		ports.CompToolchain:   infra_toolchain.NewToolchainHealthChecker(&exec.RealExecutor{}, []string{"git", "go"}, []string{"make"}),
-	}
-	deps.health = factory.NewHealthCheckManager(healthCheckers)
+	deps.health = b.healthFactory.BuildHealthManager(cfg, sessionProvider, lazyClient)
 
-	regFactory := func() (tools.Registry, error) {
+	lazyRegistry := NewLazyRegistry(func() (tools.Registry, error) {
 		return b.toolchainFactory.BuildRegistry(toolchainParams{
 			Paths:            paths,
 			SessionProvider:  sessionProvider,
 			HealthManager:    deps.health,
-			Client:           &lazyLLMProxy{deps: deps},
+			Client:           lazyClient,
 			Bus:              bus,
 			Model:            cfg.Model,
 			Mode:             cfg.Mode,
 			PricingOverrides: pricingOverrides,
 			Capturer:         capturer,
 		})
-	}
-	deps.regFactory = regFactory
+	}, telemetry.NewSlogLogger(b.Logger))
+	deps.lazyRegistry = lazyRegistry
 
 	return deps, hManager, cleanup, nil
 }
@@ -196,9 +177,6 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 type sessionDeps struct {
 	paths            *persistence.Paths
 	hManager         ports.HistoryManager
-	client           llm.LLMClient
-	gw               llm.LLMGateway
-	reg              tools.Registry
 	sm               security.Manager
 	tracker          pricing.CostTracker
 	pricingData      pricing.PricingData
@@ -210,78 +188,16 @@ type sessionDeps struct {
 	workspacePolicy  services.WorkspacePolicy
 	health           ports.HealthCheckManager
 
-	initOnce      sync.Once
-	clientErr     error
-	clientFactory func() (llm.ExtendedClient, error)
-
-	regOnce    sync.Once
-	regErr     error
-	regFactory func() (tools.Registry, error)
-}
-
-type lazyLLMProxy struct {
-	deps *sessionDeps
-}
-
-func (p *lazyLLMProxy) Generate(ctx stdctx.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	p.deps.initClient()
-	if p.deps.clientErr != nil {
-		return nil, nil, fmt.Errorf("LLM provider initialization failed: %w", p.deps.clientErr)
-	}
-	return p.deps.gw.Generate(ctx, input, tools, resolver)
-}
-
-func (p *lazyLLMProxy) SendChat(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	p.deps.initClient()
-	if p.deps.clientErr != nil {
-		return nil, nil, fmt.Errorf("LLM provider initialization failed: %w", p.deps.clientErr)
-	}
-	return p.deps.client.SendChat(ctx, history, tools, resolver)
-}
-
-func (p *lazyLLMProxy) GenerateImages(ctx stdctx.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	p.deps.initClient()
-	if p.deps.clientErr != nil {
-		return nil, fmt.Errorf("LLM provider initialization failed: %w", p.deps.clientErr)
-	}
-	return p.deps.client.GenerateImages(ctx, model, prompt, mimeType)
-}
-
-func (p *lazyLLMProxy) RefreshAuth() error {
-	p.deps.initClient()
-	if p.deps.clientErr != nil {
-		return fmt.Errorf("LLM provider initialization failed: %w", p.deps.clientErr)
-	}
-	return p.deps.client.RefreshAuth()
-}
-
-func (d *sessionDeps) initClient() {
-	d.initOnce.Do(func() {
-		client, err := d.clientFactory()
-		if err != nil {
-			d.clientErr = err
-			return
-		}
-		d.client = client
-		d.gw = client
-	})
+	lazyClient   *LazyClient
+	lazyRegistry *LazyRegistry
 }
 
 func (d *sessionDeps) GetGateway() llm.LLMGateway {
-	return &lazyLLMProxy{deps: d}
+	return d.lazyClient
 }
 func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
 func (d *sessionDeps) GetRegistry() (tools.Registry, error) {
-	d.regOnce.Do(func() {
-		reg, err := d.regFactory()
-		if err != nil {
-			d.regErr = err
-			d.logger.Error("failed to lazily initialize tool registry", slog.Any("error", err))
-			return
-		}
-		d.reg = reg
-	})
-	return d.reg, d.regErr
+	return d.lazyRegistry.Get()
 }
 func (d *sessionDeps) GetSecurityManager() security.Manager { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus         { return d.bus }
@@ -301,7 +217,7 @@ func (d *sessionDeps) GetTracker() pricing.CostTracker            { return d.tra
 func (d *sessionDeps) GetPricingData() pricing.PricingData        { return d.pricingData }
 func (d *sessionDeps) GetHealthManager() ports.HealthCheckManager { return d.health }
 func (d *sessionDeps) GetClient() llm.LLMClient {
-	return &lazyLLMProxy{deps: d}
+	return d.lazyClient
 }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
