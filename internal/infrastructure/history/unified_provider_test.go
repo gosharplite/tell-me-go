@@ -5,6 +5,7 @@ package history
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -16,9 +17,13 @@ import (
 type mockHistoryManager struct {
 	ports.HistoryManager
 	GetWindowFunc func(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error)
+	GetWindowErr  error
 }
 
 func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	if m.GetWindowErr != nil {
+		return nil, m.GetWindowErr
+	}
 	return m.GetWindowFunc(ctx, startIdx, endIdx)
 }
 
@@ -27,6 +32,7 @@ type mockArchiveReader struct {
 	ports.ArchiveReader
 	ReadPageFunc     func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
 	ReadPreviousFunc func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
+	ReadPreviousErr  error
 }
 
 func (m *mockArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
@@ -34,6 +40,9 @@ func (m *mockArchiveReader) ReadPage(ctx context.Context, limit int, offset int6
 }
 
 func (m *mockArchiveReader) ReadPrevious(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+	if m.ReadPreviousErr != nil {
+		return nil, 0, m.ReadPreviousErr
+	}
 	return m.ReadPreviousFunc(ctx, limit, offset)
 }
 
@@ -43,8 +52,10 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 		limit      int
 		cursor     string
 		activeHist []*llm.Content
+		activeErr  error
 		archived   []ports.HistoryViewDTO
 		nextOffset int64
+		archiveErr error
 		wantErr    bool
 		wantDTOs   []ports.HistoryViewDTO
 		wantCursor string
@@ -115,16 +126,50 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 			cursor:  "archive:abc",
 			wantErr: true,
 		},
+		// Gap 11: GetWindow error in fetchActiveHistory
+		{
+			name:      "GetWindow error",
+			limit:     10,
+			cursor:    "",
+			activeErr: errors.New("active history unavailable"),
+			wantErr:   true,
+		},
+		// Gap 12: ReadPrevious error in fetchArchiveHistory
+		{
+			name:       "ReadPrevious error",
+			limit:      10,
+			cursor:     "archive:100",
+			archiveErr: errors.New("archive read failed"),
+			wantErr:    true,
+		},
+		// Gap 13: EOF edge cases
+		{
+			name:       "archive cursor at zero (EOF)",
+			limit:      10,
+			cursor:     "archive:0",
+			wantCursor: "EOF",
+			wantDTOs:   nil,
+		},
+		{
+			name:       "empty active history returns archive:-1 cursor",
+			limit:      10,
+			cursor:     "",
+			activeHist: []*llm.Content{},
+			wantCursor: "archive:-1",
+			wantDTOs:   nil,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockActive := &mockHistoryManager{
+				GetWindowErr: tt.activeErr,
 				GetWindowFunc: func(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 					return tt.activeHist, nil
 				},
 			}
 			mockArchive := &mockArchiveReader{
+				ReadPreviousErr: tt.archiveErr,
 				ReadPreviousFunc: func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 					return tt.archived, tt.nextOffset, nil
 				},

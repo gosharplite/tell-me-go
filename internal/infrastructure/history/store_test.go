@@ -670,9 +670,14 @@ type mockFS struct {
 	openErr      error
 	closeErr     error
 	removeErr    error
+	statErr      error
+	readAtErr    error
 }
 
 func (m *mockFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	if m.statErr != nil {
+		return nil, m.statErr
+	}
 	if m.mkdirErrFunc != nil {
 		if err := m.mkdirErrFunc(name); err != nil {
 			return nil, os.ErrNotExist
@@ -690,6 +695,17 @@ func (m *mockFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) er
 	return m.FileSystem.MkdirAll(context.Background(), path, perm)
 }
 
+func (m *mockFS) Open(ctx context.Context, name string) (persistence.File, error) {
+	if m.openErr != nil {
+		return nil, m.openErr
+	}
+	f, err := m.FileSystem.Open(context.Background(), name)
+	if err != nil {
+		return nil, err
+	}
+	return &mockFileWithErr{File: f, writeErr: m.writeErr, closeErr: m.closeErr, readAtErr: m.readAtErr}, nil
+}
+
 func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
 	if m.openErr != nil {
 		return nil, m.openErr
@@ -698,7 +714,7 @@ func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 	if err != nil {
 		return nil, err
 	}
-	return &mockFileWithErr{File: f, writeErr: m.writeErr, closeErr: m.closeErr}, nil
+	return &mockFileWithErr{File: f, writeErr: m.writeErr, closeErr: m.closeErr, readAtErr: m.readAtErr}, nil
 }
 
 func (m *mockFS) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
@@ -731,8 +747,9 @@ func (m *mockFS) Remove(ctx context.Context, name string) error {
 
 type mockFileWithErr struct {
 	persistence.File
-	writeErr error
-	closeErr error
+	writeErr  error
+	closeErr  error
+	readAtErr error
 }
 
 func (f *mockFileWithErr) Write(p []byte) (n int, err error) {
@@ -748,6 +765,13 @@ func (f *mockFileWithErr) Close() error {
 		return f.closeErr
 	}
 	return f.File.Close()
+}
+
+func (f *mockFileWithErr) ReadAt(p []byte, off int64) (n int, err error) {
+	if f.readAtErr != nil {
+		return 0, f.readAtErr
+	}
+	return f.File.ReadAt(p, off)
 }
 
 func TestJSONLStore_IOErrors(t *testing.T) {
