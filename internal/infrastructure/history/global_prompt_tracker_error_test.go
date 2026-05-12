@@ -4,13 +4,17 @@
 package history
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	domainpersistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -185,5 +189,183 @@ func TestGlobalPromptTracker_ContextCancelledInLoadTopN(t *testing.T) {
 	_, err = tracker.LoadTopN(ctx, 10)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Compaction Error Paths (Gaps 14–17)
+// ---------------------------------------------------------------------------
+
+// seedLargeTrackerFile creates a tracker file >150KB on the real filesystem
+// and returns its path. Used by compaction error path tests that need the
+// retry loop to see the file as still-over-threshold.
+func seedLargeTrackerFile(t *testing.T, baseFS domainpersistence.FileSystem, outputDir string) string {
+	t.Helper()
+	trackerPath := filepath.Join(outputDir, "global_prompts.jsonl")
+	if err := baseFS.MkdirAll(context.Background(), outputDir, 0755); err != nil {
+		t.Fatalf("failed to create output dir: %v", err)
+	}
+
+	largePrompt := strings.Repeat("A", 1000)
+	var buf bytes.Buffer
+	for i := 0; i < 200; i++ {
+		fmt.Fprintf(&buf, `{"timestamp":"t","prompt":"%s%d"}`, largePrompt, i)
+		buf.WriteByte('\n')
+	}
+	if err := baseFS.WriteFile(context.Background(), trackerPath, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("failed to seed large tracker file: %v", err)
+	}
+	return trackerPath
+}
+
+// TestGlobalPromptTracker_CompactLog_StatErrorInRetry tests gap 14:
+// compactLog retry loop — fs.Stat error (L310-312).
+// When performCompactionPass returns false AND the retry Stat also fails,
+// compactLog releases the compacting flag and returns without panic.
+func TestGlobalPromptTracker_CompactLog_StatErrorInRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	outputDir := filepath.Join(tmpDir, "output")
+	trackerPath := seedLargeTrackerFile(t, baseFS, outputDir)
+
+	// statErr causes both performCompactionPass.Stat and the retry-loop Stat to fail
+	mfs := &mockFS{FileSystem: baseFS, statErr: errors.New("injected stat error")}
+
+	tracker := &globalPromptTracker{
+		fs:       mfs,
+		filepath: trackerPath,
+	}
+
+	// compactLog manages its own compacting flag
+	tracker.compacting.Store(true)
+	tracker.compactLog(context.Background())
+
+	if tracker.compacting.Load() {
+		t.Error("expected compacting to be released after Stat error aborts retry")
+	}
+
+	// Verify original file is untouched (no data loss)
+	content, err := baseFS.ReadFile(context.Background(), trackerPath)
+	if err != nil {
+		t.Fatalf("failed to read file after aborted compaction: %v", err)
+	}
+	if len(content) == 0 {
+		t.Error("file should not be empty after aborted compaction")
+	}
+}
+
+// TestGlobalPromptTracker_CompactLog_ContextCancelledInRetry tests gap 15:
+// compactLog retry loop — ctx.Done() cancellation during backoff (L316-317).
+// When performCompactionPass returns false and the context is cancelled,
+// the select in the retry loop picks ctx.Done() and returns immediately.
+func TestGlobalPromptTracker_CompactLog_ContextCancelledInRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	outputDir := filepath.Join(tmpDir, "output")
+	trackerPath := seedLargeTrackerFile(t, baseFS, outputDir)
+
+	// Use a clean mockFS (no errors on Stat/Open) — the pre-cancelled context
+	// causes doLoadTopUniqueEntries to fail with context.Canceled, which makes
+	// performCompactionPass return false. The retry Stat succeeds, then
+	// ctx.Done() fires in the select.
+	mfs := &mockFS{FileSystem: baseFS}
+
+	tracker := &globalPromptTracker{
+		fs:       mfs,
+		filepath: trackerPath,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so both doLoadTopUniqueEntries and retry select see it
+
+	tracker.compacting.Store(true)
+
+	// Use a channel to verify the function returns (doesn't hang on time.After)
+	done := make(chan struct{})
+	go func() {
+		tracker.compactLog(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success — returned promptly
+	case <-time.After(2 * time.Second):
+		t.Fatal("compactLog blocked despite cancelled context")
+	}
+
+	if tracker.compacting.Load() {
+		t.Error("expected compacting to be released after context cancellation")
+	}
+}
+
+// TestGlobalPromptTracker_PerformCompactionPass_StatError tests gap 16:
+// performCompactionPass — initial fs.Stat error (L329-331).
+// When the initial Stat call fails, performCompactionPass returns false
+// immediately without modifying any state.
+func TestGlobalPromptTracker_PerformCompactionPass_StatError(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	outputDir := filepath.Join(tmpDir, "output")
+	trackerPath := seedLargeTrackerFile(t, baseFS, outputDir)
+
+	// Read original content for post-condition check
+	originalContent, err := baseFS.ReadFile(context.Background(), trackerPath)
+	if err != nil {
+		t.Fatalf("failed to read original file: %v", err)
+	}
+
+	mfs := &mockFS{FileSystem: baseFS, statErr: errors.New("injected stat error")}
+
+	tracker := &globalPromptTracker{
+		fs:       mfs,
+		filepath: trackerPath,
+	}
+
+	success := tracker.performCompactionPass(context.Background())
+	if success {
+		t.Error("expected performCompactionPass to return false on Stat error")
+	}
+
+	// Verify file is untouched
+	content, err := baseFS.ReadFile(context.Background(), trackerPath)
+	if err != nil {
+		t.Fatalf("failed to read file after aborted pass: %v", err)
+	}
+	if !bytes.Equal(content, originalContent) {
+		t.Error("file content should be unchanged after Stat error aborts pass")
+	}
+}
+
+// TestGlobalPromptTracker_PerformCompactionPass_LoadError tests gap 17:
+// performCompactionPass — doLoadTopUniqueEntries failure (L336-338).
+// When reading entries fails (e.g., ReadAt error in scanChunk),
+// performCompactionPass returns false before acquiring the lock.
+func TestGlobalPromptTracker_PerformCompactionPass_LoadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	outputDir := filepath.Join(tmpDir, "output")
+	trackerPath := seedLargeTrackerFile(t, baseFS, outputDir)
+
+	// readAtErr causes doLoadTopUniqueEntries → scanChunk → ReadAt to fail
+	mfs := &mockFS{FileSystem: baseFS, readAtErr: errors.New("injected readat error")}
+
+	tracker := &globalPromptTracker{
+		fs:       mfs,
+		filepath: trackerPath,
+	}
+
+	success := tracker.performCompactionPass(context.Background())
+	if success {
+		t.Error("expected performCompactionPass to return false on doLoadTopUniqueEntries error")
+	}
+
+	// Verify no data loss
+	content, err := baseFS.ReadFile(context.Background(), trackerPath)
+	if err != nil {
+		t.Fatalf("failed to read file after aborted pass: %v", err)
+	}
+	if len(content) == 0 {
+		t.Error("file should not be empty after aborted compaction pass")
 	}
 }
