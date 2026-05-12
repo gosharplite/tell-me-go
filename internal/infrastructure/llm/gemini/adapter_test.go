@@ -171,6 +171,36 @@ func TestContent_Conversion_Nil(t *testing.T) {
 	}
 }
 
+func TestFromSDKContent_NilPartFiltering(t *testing.T) {
+	// Gap 10: fromSDKContent must skip nil entries in the Parts slice.
+	// The Gemini SDK can return nil entries after safety filtering of
+	// individual parts within a content block.
+	sdkContent := &genai.Content{
+		Role: "model",
+		Parts: []*genai.Part{
+			nil,                     // should be filtered
+			{Text: "valid-part-1"},
+			nil,                     // should be filtered
+			{Text: "valid-part-2"},
+		},
+	}
+
+	result := fromSDKContent(sdkContent)
+
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result.Parts) != 2 {
+		t.Fatalf("expected 2 parts (nil filtered), got %d", len(result.Parts))
+	}
+	if result.Parts[0].Text != "valid-part-1" {
+		t.Errorf("parts[0] text: got %q, want %q", result.Parts[0].Text, "valid-part-1")
+	}
+	if result.Parts[1].Text != "valid-part-2" {
+		t.Errorf("parts[1] text: got %q, want %q", result.Parts[1].Text, "valid-part-2")
+	}
+}
+
 func TestContent_TransientParts(t *testing.T) {
 	content := &llm.Content{
 		Role: "user",

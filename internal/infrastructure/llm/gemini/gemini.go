@@ -38,6 +38,7 @@ type Client struct {
 	httpTransport     http.RoundTripper
 	headers           map[string]string
 	timeout           time.Duration
+	testTransport     http.RoundTripper // test-only injection; nil in production
 }
 
 // defaultMaxOutputTokens is the per-request output budget when the

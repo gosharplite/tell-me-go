@@ -36,7 +36,9 @@ func (c *Client) initSDK(timeout time.Duration) error {
 	c.mu.RUnlock()
 
 	var tr http.RoundTripper
-	if defaultTr, ok := http.DefaultTransport.(*http.Transport); ok {
+	if c.testTransport != nil {
+		tr = c.testTransport
+	} else if defaultTr, ok := http.DefaultTransport.(*http.Transport); ok {
 		tr = defaultTr.Clone()
 	} else {
 		tr = http.DefaultTransport

@@ -6,6 +6,7 @@ package gemini
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -75,5 +76,38 @@ func TestInitSDK_GenaiNewClientError(t *testing.T) {
 
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected error to wrap sentinel %q, got %v", sentinel.Error(), err)
+	}
+}
+
+func TestInitSDK_TransportFallback(t *testing.T) {
+	// Gap 1: Verify that initSDK uses testTransport when set, exercising
+	// the injection path that bypasses http.DefaultTransport type assertion.
+	// The function is expected to fail at SDK creation (no real endpoint),
+	// but the transport selection path is fully exercised.
+	sentinel := errors.New("sdk not available in test")
+
+	customTransport := &http.Transport{}
+	c := &Client{
+		apiURL:        "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models",
+		model:         "test-model",
+		authenticator: &failingAuthenticator{err: nil},
+		testTransport: customTransport,
+		newGenaiClient: func(ctx context.Context, cfg *genai.ClientConfig) (*genai.Client, error) {
+			// Verify the transport was passed through correctly
+			if cfg.HTTPClient.Transport != customTransport {
+				t.Errorf("expected customTransport in HTTPClient, got %v", cfg.HTTPClient.Transport)
+			}
+			return nil, sentinel
+		},
+	}
+
+	err := c.initSDK(30 * time.Second)
+
+	if err == nil {
+		t.Fatal("expected non-nil error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to create genai client") {
+		t.Errorf("expected error to contain %q, got %q", "failed to create genai client", err.Error())
 	}
 }
