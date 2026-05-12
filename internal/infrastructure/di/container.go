@@ -154,7 +154,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		lazyClient:       lazyClient,
 	}
 
-	deps.health = b.healthFactory.BuildHealthManager(cfg, sessionProvider, lazyClient)
+	deps.health = b.healthFactory.BuildHealthManager(cfg, sessionProvider, lazyClient, b.toolchainFactory)
 
 	lazyRegistry := newLazyRegistry(func() (tools.Registry, error) {
 		return b.toolchainFactory.BuildRegistry(toolchainParams{
