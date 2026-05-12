@@ -101,6 +101,7 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	mockToolchain.On("BuildRegistry", mock.Anything).Run(func(args mock.Arguments) {
 		callCount++
 	}).Return(nil, nil)
+	mockToolchain.On("BuildHealthChecker").Return(&stubHealthChecker{})
 	b.toolchainFactory = mockToolchain
 
 	// 1. BuildSessionDependencies should NOT trigger registry construction
@@ -132,6 +133,21 @@ func (m *mockToolchainFactory) BuildRegistry(params toolchainParams) (tools.Regi
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(tools.Registry), args.Error(1)
+}
+
+func (m *mockToolchainFactory) BuildHealthChecker() ports.HealthChecker {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.HealthChecker)
+}
+
+// stubHealthChecker is a minimal ports.HealthChecker for tests.
+type stubHealthChecker struct{}
+
+func (s *stubHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, error) {
+	return &ports.ComponentReport{Status: ports.StatusHealthy}, nil
 }
 
 type mockExtendedClient struct {

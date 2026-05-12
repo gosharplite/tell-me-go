@@ -509,9 +509,11 @@ func TestSendChat_EmptyToolResponseID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Use an unreachable server — the error occurs during
-			// request construction, before the HTTP call is made.
-			c := NewClient("http://127.0.0.1:1", tt.model,
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Fatal("HTTP server should not have been reached; validation must fail first")
+			}))
+			defer server.Close()
+			c := NewClient(server.URL, tt.model,
 				&auth.BearerAuth{Token: "test-key"},
 				WithHeaders(tt.headers),
 			)
@@ -577,9 +579,11 @@ func TestSendChat_EmptyToolCallID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Use an unreachable server — the error occurs during
-			// request construction, before the HTTP call is made.
-			c := NewClient("http://127.0.0.1:1", tt.model,
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Fatal("HTTP server should not have been reached; validation must fail first")
+			}))
+			defer server.Close()
+			c := NewClient(server.URL, tt.model,
 				&auth.BearerAuth{Token: "test-key"},
 				WithHeaders(tt.headers),
 			)
@@ -707,7 +711,11 @@ func TestSendChat_MarshallingError(t *testing.T) {
 func TestSendChat_MarshalToolResponseError(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient("http://127.0.0.1:1", "gpt-4", &auth.BearerAuth{Token: "test-key"})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP server should not have been reached; validation must fail first")
+	}))
+	defer server.Close()
+	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"})
 
 	history := []*llm.Content{
 		{
