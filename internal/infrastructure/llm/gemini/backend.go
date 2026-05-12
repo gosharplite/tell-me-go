@@ -58,7 +58,12 @@ func (c *Client) initSDK(timeout time.Duration) error {
 		HTTPClient: httpClient,
 	}
 
-	sdkClient, err := genai.NewClient(ctx, clientConfig)
+	newClient := c.newGenaiClient
+	if newClient == nil {
+		newClient = genai.NewClient
+	}
+
+	sdkClient, err := newClient(ctx, clientConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create genai client: %w", err)
 	}
