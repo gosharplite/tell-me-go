@@ -12,6 +12,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// testEmitHeartbeatsPanic is nil in production. Tests set it to a function
+// that panics on the next tick, enabling deterministic panic-recovery testing.
+// See ADR-032 for the test-hook policy.
+var testEmitHeartbeatsPanic func()
+
+// testEmitHeartbeatsTickHook is nil in production. Tests set it to observe
+// tick firings and coordinate with the test goroutine.
+var testEmitHeartbeatsTickHook func()
+
 // InternalTools provides tool wrappers that interact with agent services.
 type InternalTools struct {
 	ctxManager *sessctx.Manager
@@ -37,6 +46,12 @@ func emitHeartbeats(done <-chan struct{}, hb chan<- struct{}) {
 		case <-done:
 			return
 		case <-ticker.C:
+			if testEmitHeartbeatsPanic != nil {
+				testEmitHeartbeatsPanic()
+			}
+			if testEmitHeartbeatsTickHook != nil {
+				testEmitHeartbeatsTickHook()
+			}
 			if hb != nil {
 				select {
 				case hb <- struct{}{}:

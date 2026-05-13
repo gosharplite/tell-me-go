@@ -6,6 +6,8 @@ package session
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -155,6 +157,12 @@ func TestRegisterInternal_RegisterError(t *testing.T) {
 	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "register failed")
+}
+
+func TestRegisterInternal_Success(t *testing.T) {
+	reg := &mockToolRegistrar{} // zero value: both error fields nil → both registrations succeed
+	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
+	require.NoError(t, err)
 }
 
 func TestManageHistory_NegativeIndex(t *testing.T) {
@@ -378,4 +386,127 @@ func TestManageHistory_Success(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, result.Text, "turn 3 has been successfully unpinned")
 	})
+}
+
+func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
+	// 1. Capture os.Stdout via pipe to observe panic recovery output.
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	// 2. Install the test-only panic hook, reset on cleanup.
+	testEmitHeartbeatsPanic = func() {
+		panic("injected test panic")
+	}
+	defer func() { testEmitHeartbeatsPanic = nil }()
+
+	// 3. Start emitHeartbeats in a background goroutine.
+	done := make(chan struct{})
+	hb := make(chan struct{})
+
+	returned := make(chan struct{})
+	go func() {
+		emitHeartbeats(done, hb)
+		close(returned)
+	}()
+
+	// 4. Wait for the goroutine to exit. The panic fires on the first tick
+	//    (2s interval), recover catches it, and the function returns cleanly.
+	select {
+	case <-returned:
+		// goroutine exited as expected
+	case <-time.After(5 * time.Second):
+		t.Fatal("emitHeartbeats did not return within 5s — possible goroutine leak")
+	}
+
+	// Cleanup: close done channel (no-op since goroutine already exited).
+	close(done)
+
+	// 5. Close the write end so the read doesn't block.
+	_ = w.Close()
+
+	// 6. Read captured stdout and verify the panic message was printed.
+	output, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Contains(t, string(output),
+		"panic in summarize history background drainer: injected test panic")
+}
+
+func TestEmitHeartbeats_TickerPaths(t *testing.T) {
+	// These subtests share the global testEmitHeartbeatsTickHook and must
+	// not run in parallel.
+
+	tests := []struct {
+		name     string
+		hb       chan struct{} // bidirectional; nil for the "nil hb" case
+		wantRecv bool          // whether we expect a heartbeat to be receivable
+	}{
+		{
+			name:     "nil hb skip",
+			hb:       nil,
+			wantRecv: false,
+		},
+		{
+			name:     "full channel drop",
+			hb:       make(chan struct{}), // unbuffered, no consumer
+			wantRecv: false,
+		},
+		{
+			name:     "send on capacity",
+			hb:       make(chan struct{}, 1), // buffered, cap=1
+			wantRecv: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Install an idempotent tick hook that signals once.
+			ticked := make(chan struct{}, 1)
+			testEmitHeartbeatsTickHook = func() {
+				select {
+				case ticked <- struct{}{}:
+				default:
+				}
+			}
+			defer func() { testEmitHeartbeatsTickHook = nil }()
+
+			done := make(chan struct{})
+
+			returned := make(chan struct{})
+			go func() {
+				emitHeartbeats(done, tt.hb)
+				close(returned)
+			}()
+
+			// Wait for the first tick to fire.
+			select {
+			case <-ticked:
+			case <-time.After(5 * time.Second):
+				t.Fatal("ticker did not fire within 5s")
+			}
+
+			// Stop the goroutine.
+			close(done)
+
+			// Verify goroutine returns cleanly (no leak, no panic).
+			select {
+			case <-returned:
+			case <-time.After(3 * time.Second):
+				t.Fatal("emitHeartbeats did not return within 3s — possible goroutine leak")
+			}
+
+			// For the "send on capacity" case, verify exactly one heartbeat
+			// was delivered through the buffered channel.
+			if tt.wantRecv {
+				select {
+				case <-tt.hb:
+					// heartbeat received as expected
+				default:
+					t.Error("expected heartbeat on buffered channel but none received")
+				}
+			}
+		})
+	}
 }
