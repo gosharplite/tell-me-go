@@ -46,6 +46,9 @@ func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.
 	// methods from embedded fields, so Len() is a correct lower bound.
 	// It also warms the go/types internal cache, making subsequent
 	// types.Implements calls faster.
+	// Retained primarily as a race-detector hedge: under -race, the
+	// reduction in types.Implements call volume keeps this package
+	// under the 60s test budget (see PR #357 discussion).
 	methodSetLen := types.NewMethodSet(named).Len()
 
 	for _, itf := range interfaces {
@@ -123,6 +126,9 @@ func (idx *indexer) computeImplementationsLazy() map[string][]string {
 	})
 
 	result := <-ch
+	if result.Err != nil || result.Val == nil {
+		return nil
+	}
 	return result.Val.(map[string][]string)
 }
 
