@@ -20,8 +20,8 @@ import (
 
 // mockLogger is a test spy that captures Error calls for assertion.
 type mockLogger struct {
-	ports.NoOpLogger    // safe default for unused log methods
-	errors []string
+	ports.NoOpLogger // safe default for unused log methods
+	errors           []string
 }
 
 func (m *mockLogger) Error(msg string, args ...any) {

@@ -339,7 +339,7 @@ func TestSQLiteTaskStore_ReadAll_ScanError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a tasks table with a TEXT id instead of INTEGER.
 	// rows.Scan into float64 will fail for non-numeric TEXT values.
@@ -365,7 +365,7 @@ func TestSQLiteTaskStore_ReadAll_TimeParseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.Exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);"); err != nil {
 		t.Fatalf("failed to create table: %v", err)
@@ -390,7 +390,7 @@ func TestSQLiteKVStore_GetAll_ScanError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create the settings table with proper schema.
 	if _, err := db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);"); err != nil {

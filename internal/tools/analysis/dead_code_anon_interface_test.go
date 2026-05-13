@@ -314,6 +314,10 @@ func TestAnonymousInterfaceAssertionWarning_LiveCodebaseHeadlinePin(t *testing.T
 	// NOT t.Parallel(): runs against the live module, which other
 	// non-parallel tests may also touch. Conservative serialization.
 
+	if testing.Short() {
+		t.Skip("skipping live-codebase analysis in short/race mode: full-module type resolution is too expensive under the race detector")
+	}
+
 	root, err := filepath.Abs("../../..")
 	require.NoError(t, err)
 

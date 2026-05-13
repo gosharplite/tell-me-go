@@ -42,7 +42,22 @@ func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
 }
 
 func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
+	// Compute the full method set once per type. This includes promoted
+	// methods from embedded fields, so Len() is a correct lower bound.
+	// It also warms the go/types internal cache, making subsequent
+	// types.Implements calls faster.
+	// Retained primarily as a race-detector hedge: under -race, the
+	// reduction in types.Implements call volume keeps this package
+	// under the 60s test budget (see PR #357 discussion).
+	methodSetLen := types.NewMethodSet(named).Len()
+
 	for _, itf := range interfaces {
+		// Pre-filter: type has fewer total methods than the interface
+		// requires — satisfaction is impossible.
+		if methodSetLen < itf.NumMethods() {
+			continue
+		}
+
 		implements := types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf)
 
 		if !implements {
@@ -95,11 +110,39 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 	return impls
 }
 
+func (idx *indexer) computeImplementationsLazy() map[string][]string {
+	ch := idx.sfGroup.DoChan("implementations", func() (any, error) {
+		idx.mu.RLock()
+		pkgs := idx.pkgs
+		idx.mu.RUnlock()
+
+		impls := idx.computeImplementations(pkgs)
+
+		idx.mu.Lock()
+		idx.implementations = impls
+		idx.mu.Unlock()
+
+		return impls, nil
+	})
+
+	result := <-ch
+	if result.Err != nil || result.Val == nil {
+		return nil
+	}
+	return result.Val.(map[string][]string)
+}
+
 func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
 	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil
 	}
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-	return idx.implementations[interfaceMethodId]
+	impls := idx.implementations
+	idx.mu.RUnlock()
+
+	if impls == nil {
+		impls = idx.computeImplementationsLazy()
+	}
+
+	return impls[interfaceMethodId]
 }

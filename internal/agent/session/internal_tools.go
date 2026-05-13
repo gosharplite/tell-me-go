@@ -15,8 +15,8 @@ import (
 
 // InternalTools provides tool wrappers that interact with agent services.
 type InternalTools struct {
-	ctxManager                *sessctx.Manager
-	logger                    ports.Logger
+	ctxManager                 *sessctx.Manager
+	logger                     ports.Logger
 	testEmitHeartbeatsPanic    func() // nil in production; see ADR-032 §Fault-Injection Exception
 	testEmitHeartbeatsTickHook func() // nil in production; see ADR-032
 }
