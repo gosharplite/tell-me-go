@@ -140,6 +140,9 @@ func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId st
 	impls := idx.implementations
 	idx.mu.RUnlock()
 
+	// Lazy gate: Refresh() invalidates implementations (sets to nil).
+	// First caller after TTL expiry triggers the full O(N×M) computation
+	// via singleflight-guarded computeImplementationsLazy(). See ADR-029.
 	if impls == nil {
 		impls = idx.computeImplementationsLazy()
 	}
