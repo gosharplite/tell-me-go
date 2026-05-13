@@ -74,3 +74,7 @@ decision each time.
 | # | Struct | Field | File | Purpose | Since |
 |---|--------|-------|------|---------|-------|
 | 1 | `eventQueue` | `beforeBlockingSendHook` | `internal/agent/session/ui/event_queue.go:31` | Observe goroutine entry into blocking `select` in `enqueueCritical` | 2026-05 |
+| 2 | N/A (package-level) | `testEmitHeartbeatsPanic` | `internal/agent/session/internal_tools.go:18` | Inject a panic on the next ticker firing to verify graceful recovery in `emitHeartbeats` | 2026-05 |
+| 3 | N/A (package-level) | `testEmitHeartbeatsTickHook` | `internal/agent/session/internal_tools.go:23` | Observe ticker firings for deterministic coordination in heartbeat channel-state tests | 2026-05 |
+
+> **Note**: Entries #2 and #3 are package-level variables rather than struct fields. They serve the free function `emitHeartbeats`, which has no receiver and therefore no struct to attach hooks to. The ADR-032 criteria are satisfied by analogy: unexported function, no interface boundary, `time.Sleep` is the only alternative, nil `func()` with zero overhead.

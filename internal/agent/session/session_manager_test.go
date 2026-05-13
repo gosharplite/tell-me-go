@@ -16,6 +16,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -1019,65 +1020,122 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 	t.Parallel()
 
-	mockLogger := new(agenttest.MockPortsLogger)
-
-	mChatter := new(agenttest.MockChatter)
-	var uiSub func(context.Context, events.Event)
-	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
-		uiSub = args.Get(0).(func(context.Context, events.Event))
-	}).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-
-	mUIRenderer := new(agenttest.MockUIRenderer)
-	mUIRenderer.On("SetUseColor", mock.Anything).Return()
-
-	mCapturer := new(agenttest.MockCapturer)
-	mCapturer.On("IsTTY", mock.Anything).Return(true)
-
-	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, nil,
-		io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer,
-		clock.RealClock{}, rand.Reader)
-
-	sCfg := &session.SessionConfigInternal{
-		Config: &config.Config{},
+	tests := []struct {
+		name            string
+		prepareBridge   func(t *testing.T, bridge *ui.Bridge) context.Context
+		expectedMethod  string // "Warn" or "Debug"
+		expectedMessage string
+	}{
+		{
+			name: "actor dead",
+			prepareBridge: func(t *testing.T, bridge *ui.Bridge) context.Context {
+				t.Helper()
+				// Saturate the event queue (default capacity = 100) so the next critical
+				// event is forced into the backpressure path where loopCtx.Done() fires.
+				for i := 0; i < 100; i++ {
+					_ = bridge.HandleEvent(context.Background(), events.TurnStatusEvent{
+						Status: events.TurnStatus{SessionTurns: i},
+					})
+				}
+				// Kill the bridge's actor loop so HandleEvent returns ErrActorDead.
+				bridge.KillActor()
+				return context.Background()
+			},
+			expectedMethod:  "Warn",
+			expectedMessage: "Bridge event failed: actor is dead",
+		},
+		{
+			name: "context canceled",
+			prepareBridge: func(t *testing.T, bridge *ui.Bridge) context.Context {
+				t.Helper()
+				// Pass a cancelled context so HandleEvent returns a pure context.Canceled
+				// (not wrapped with ErrActorDead).
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			expectedMethod:  "Debug",
+			expectedMessage: "Bridge event skipped: context cancelled",
+		},
+		{
+			name: "generic error",
+			prepareBridge: func(t *testing.T, bridge *ui.Bridge) context.Context {
+				t.Helper()
+				// Pass a deadline-exceeded context so HandleEvent returns an error
+				// that is neither ErrActorDead nor context.Canceled.
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
+				// Keep the cancel function alive so the context stays in DeadlineExceeded
+				// state; it is a no-op on an already-expired deadline.
+				_ = cancel
+				return ctx
+			},
+			expectedMethod:  "Warn",
+			expectedMessage: "Failed to handle bridge event",
+		},
 	}
-	deps := session.NewSessionDependencies(
-		&persistence.Paths{}, nil, nil, nil, nil, nil, nil,
-		domain_pricing.PricingData{}, nil, nil,
-		mockLogger,
-		&ports.NoOpTurnsLogger{},
-		new(agenttest.MockSessionProvider),
-		nil,
-	)
 
-	bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(
-		context.Background(), mChatter, sCfg, deps, mCapturer)
-	require.NoError(t, err)
-	require.NotNil(t, uiSub, "Subscribe callback must be captured")
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Saturate the event queue (default capacity = 100) so the next critical
-	// event is forced into the backpressure path where loopCtx.Done() fires.
-	for i := 0; i < 100; i++ {
-		_ = bridge.HandleEvent(context.Background(), events.TurnStatusEvent{
-			Status: events.TurnStatus{SessionTurns: i},
+			mockLogger := new(agenttest.MockPortsLogger)
+
+			mChatter := new(agenttest.MockChatter)
+			var uiSub func(context.Context, events.Event)
+			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
+				uiSub = args.Get(0).(func(context.Context, events.Event))
+			}).Return()
+			mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+			mUIRenderer := new(agenttest.MockUIRenderer)
+			mUIRenderer.On("SetUseColor", mock.Anything).Return()
+
+			mCapturer := new(agenttest.MockCapturer)
+			mCapturer.On("IsTTY", mock.Anything).Return(true)
+
+			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+			orch := session.NewSessionManager("home", "1.0.0", nil, nil,
+				io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer,
+				clock.RealClock{}, rand.Reader)
+
+			sCfg := &session.SessionConfigInternal{
+				Config: &config.Config{},
+			}
+			deps := session.NewSessionDependencies(
+				&persistence.Paths{}, nil, nil, nil, nil, nil, nil,
+				domain_pricing.PricingData{}, nil, nil,
+				mockLogger,
+				&ports.NoOpTurnsLogger{},
+				new(agenttest.MockSessionProvider),
+				nil,
+			)
+
+			bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(
+				context.Background(), mChatter, sCfg, deps, mCapturer)
+			require.NoError(t, err)
+			require.NotNil(t, uiSub, "Subscribe callback must be captured")
+
+			ctx := tt.prepareBridge(t, bridge)
+
+			// Fire a critical event through the captured subscription callback.
+			uiSub(ctx, events.TurnStatusEvent{
+				Status: events.TurnStatus{SessionTurns: 1},
+			})
+
+			switch tt.expectedMethod {
+			case "Warn":
+				require.True(t, mockLogger.WarnCalledWith(tt.expectedMessage),
+					"expected logger.Warn to be called with %q", tt.expectedMessage)
+			case "Debug":
+				require.True(t, mockLogger.DebugCalledWith(tt.expectedMessage),
+					"expected logger.Debug to be called with %q", tt.expectedMessage)
+			}
+
+			// Cleanup bridge — Listen() was never started, so AbortStart is needed.
+			bridge.AbortStart()
+			bridge.CloseInput()
+			bridge.Cleanup()
 		})
 	}
-
-	// Kill the bridge's actor loop so HandleEvent returns an error.
-	bridge.KillActor()
-
-	// Fire a critical event through the captured subscription callback.
-	// Queue is full and actor is dead → enqueueEvent returns "uibridge actor is dead".
-	uiSub(context.Background(), events.TurnStatusEvent{
-		Status: events.TurnStatus{SessionTurns: 1},
-	})
-
-	require.True(t, mockLogger.WarnCalledWith("Bridge event failed: actor is dead"),
-		"expected logger.Warn to be called with 'Bridge event failed: actor is dead'")
-
-	// Cleanup bridge — Listen() was never started, so AbortStart is needed.
-	bridge.AbortStart()
-	bridge.CloseInput()
-	bridge.Cleanup()
 }
