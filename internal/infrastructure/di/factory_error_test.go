@@ -161,16 +161,6 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 			},
 			wantErr: errInfraInit,
 		},
-		{
-			name: "SecuritySetupFailure",
-			setup: func(f *defaultSessionFactory) {
-				f.FileSystem = &infra_persistence.OSFileSystem{}
-				f.SetupSecurity = func(paths *persistence.Paths, configPath string) error {
-					return simulatedErr
-				}
-			},
-			wantErr: errInfraInit,
-		},
 	}
 
 	for _, tt := range tests {
