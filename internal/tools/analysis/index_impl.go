@@ -42,19 +42,19 @@ func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
 }
 
 func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
-	// Compute the full method set once per type. This includes promoted
-	// methods from embedded fields, so Len() is a correct lower bound.
-	// It also warms the go/types internal cache, making subsequent
-	// types.Implements calls faster.
-	// Retained primarily as a race-detector hedge: under -race, the
-	// reduction in types.Implements call volume keeps this package
-	// under the 60s test budget (see PR #357 discussion).
-	methodSetLen := types.NewMethodSet(named).Len()
+	// Compute pointer method set length for the pre-filter below.
+	// The value method set is also computed purely for cache warming:
+	// calling types.NewMethodSet(named) primes the go/types internal
+	// cache, which accelerates the subsequent types.Implements(named, itf)
+	// check. Since *T's method set is always a superset of T's, only the
+	// pointer method set needs to be checked in the pre-filter.
+	_ = types.NewMethodSet(named).Len() // cache warming (see comment above)
+	ptrMethodSetLen := types.NewMethodSet(types.NewPointer(named)).Len()
 
 	for _, itf := range interfaces {
-		// Pre-filter: type has fewer total methods than the interface
-		// requires — satisfaction is impossible.
-		if methodSetLen < itf.NumMethods() {
+		// Pre-filter: if the pointer type doesn't have enough methods
+		// to satisfy the interface, satisfaction is impossible.
+		if ptrMethodSetLen < itf.NumMethods() {
 			continue
 		}
 
