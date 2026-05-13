@@ -250,7 +250,7 @@ func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{})
 }
 
 func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (string, string) {
-	reports, err := m.Ana.DeadCode.GatherOrphanReports(ctx, ".", hb)
+	reports, err := m.Ana.deadCode.GatherOrphanReports(ctx, ".", hb)
 	if err != nil {
 		return "ERROR", err.Error()
 	}

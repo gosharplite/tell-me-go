@@ -62,7 +62,7 @@ type analysisManager struct {
 	Sequence   sequenceAnalyzer
 	Change     changeAnalyzer
 	Types      typeManager
-	DeadCode   deadCodeAnalyzer
+	deadCode   deadCodeAnalyzer
 
 	// Refactoring
 	Refactor *refactorManager
@@ -79,7 +79,7 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy) *analysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy, dc deadCodeAnalyzer) *analysisManager {
 	runner := toolchain.NewGoRunner(executor)
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
@@ -87,7 +87,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		Sequence:   newSequenceAnalyzer(executor, sp, idx),
 		Change:     newChangeAnalyzer(cache, executor),
 		Types:      newTypeManager(idx, cache, sp),
-		DeadCode:   newDeadCodeAnalyzer(sp, idx),
+		deadCode:   dc,
 
 		Refactor: newRefactorManager(sp),
 		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp},
@@ -109,7 +109,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 // Delegated methods for registration
 
 func (m *analysisManager) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.DeadCode.FindOrphanedSymbols(ctx, args, hb)
+	return m.deadCode.FindOrphanedSymbols(ctx, args, hb)
 }
 
 func (m *analysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
