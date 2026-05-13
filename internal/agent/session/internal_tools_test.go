@@ -20,7 +20,7 @@ import (
 
 // mockLogger is a test spy that captures Error calls for assertion.
 type mockLogger struct {
-	ports.Logger
+	ports.NoOpLogger    // safe default for unused log methods
 	errors []string
 }
 

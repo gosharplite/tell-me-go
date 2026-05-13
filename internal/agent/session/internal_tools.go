@@ -23,6 +23,9 @@ type InternalTools struct {
 
 // NewInternalTools creates a new InternalTools provider.
 func NewInternalTools(cm *sessctx.Manager, logger ports.Logger) *InternalTools {
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
 	return &InternalTools{ctxManager: cm, logger: logger}
 }
 
