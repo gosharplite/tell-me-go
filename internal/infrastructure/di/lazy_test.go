@@ -216,6 +216,18 @@ func TestLazyClient_RefreshAuth(t *testing.T) {
 	mockClient.AssertExpectations(t)
 }
 
+func TestLazyClient_InitializationFailure_RefreshAuth(t *testing.T) {
+	simulatedErr := errors.New("llm init failed")
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return nil, simulatedErr
+	})
+
+	err := lc.RefreshAuth()
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, simulatedErr)
+	assert.Contains(t, err.Error(), "LLM provider initialization failed")
+}
+
 func TestSessionDeps_AdditionalGetters(t *testing.T) {
 	deps := &sessionDeps{
 		logger:      telemetry.NewSlogLogger(nil),
