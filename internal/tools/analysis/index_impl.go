@@ -97,6 +97,9 @@ func (idx *indexer) recordInterfaceImplementation(impls map[string][]string, nam
 }
 
 func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string][]string {
+	if idx.testComputeImplementationsHook != nil {
+		idx.testComputeImplementationsHook()
+	}
 	impls := make(map[string][]string)
 	ifaces := idx.collectInterfaces(pkgs)
 
@@ -140,6 +143,9 @@ func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId st
 	impls := idx.implementations
 	idx.mu.RUnlock()
 
+	// Lazy gate: Refresh() invalidates implementations (sets to nil).
+	// First caller after TTL expiry triggers the full O(N×M) computation
+	// via singleflight-guarded computeImplementationsLazy(). See ADR-029.
 	if impls == nil {
 		impls = idx.computeImplementationsLazy()
 	}

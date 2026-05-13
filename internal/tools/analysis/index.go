@@ -63,12 +63,13 @@ type indexer struct {
 	mu   sync.RWMutex
 	pkgs []*packages.Package
 
-	symbolsByPath   map[string][]symbolLocation
-	usagesByName    map[string][]location
-	implementations map[string][]string // interface method id -> concrete method ids
-	lastRefresh     time.Time
-	refreshMu       sync.Mutex         // For serializing Refresh calls
-	sfGroup         singleflight.Group // de-dupes concurrent computeImplementations calls
+	symbolsByPath                  map[string][]symbolLocation
+	usagesByName                   map[string][]location
+	implementations                map[string][]string // interface method id -> concrete method ids
+	lastRefresh                    time.Time
+	refreshMu                      sync.Mutex         // For serializing Refresh calls
+	sfGroup                        singleflight.Group // de-dupes concurrent computeImplementations calls
+	testComputeImplementationsHook func()             // Test hook: nil in production (ADR-032)
 }
 
 const refreshTTL = 5 * time.Second
@@ -240,7 +241,7 @@ func (idx *indexer) updateState(pkgs []*packages.Package, symbolsByPath map[stri
 	idx.fset = fset
 	idx.symbolsByPath = symbolsByPath
 	idx.usagesByName = usagesByName
-	idx.implementations = nil // invalidated; will be lazily recomputed
+	idx.implementations = nil // invalidated; lazily recomputed by GetImplementations (ADR-029)
 	idx.lastRefresh = time.Now()
 }
 

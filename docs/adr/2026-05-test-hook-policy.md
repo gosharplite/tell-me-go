@@ -98,3 +98,4 @@ hooks remain subject to all other ADR-032 criteria, including the registry requi
 | 1 | `eventQueue` | `beforeBlockingSendHook` | `internal/agent/session/ui/event_queue.go:31` | Observe goroutine entry into blocking `select` in `enqueueCritical` | 2026-05 |
 | 2 | `InternalTools` | `testEmitHeartbeatsPanic` | `internal/agent/session/internal_tools.go:22` | Fault-injection: inject a panic on the next ticker firing to verify graceful recovery in `emitHeartbeats` | 2026-05 |
 | 3 | `InternalTools` | `testEmitHeartbeatsTickHook` | `internal/agent/session/internal_tools.go:23` | Observe ticker firings for deterministic coordination in heartbeat channel-state tests | 2026-05 |
+| 4 | `indexer` | `testComputeImplementationsHook` | `internal/tools/analysis/index.go:72` | Count `computeImplementations` invocations for singleflight coalescing verification; nil in production | 2026-05 |

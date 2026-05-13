@@ -144,9 +144,9 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	cache := newASTCache(".")
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy())
-	ana.DeadCode = &mockDeadCodeAnalyzer{}
-	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
+	mockDead := &mockDeadCodeAnalyzer{}
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), mockDead)
+	hea := &healthManager{SP: sm, complexity: ana.complexity, deadCode: mockDead, Exec: mockExec, Runner: mockRunner}
 
 	ctx := context.Background()
 	res, err := hea.GetCodeHealth(ctx, nil, nil)
@@ -178,8 +178,8 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	cache := newASTCache(".")
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy())
-	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy(), &mockDeadCodeAnalyzer{})
+	hea := &healthManager{SP: sm, complexity: ana.complexity, deadCode: &mockDeadCodeAnalyzer{}, Exec: mockExec, Runner: mockRunner}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -311,7 +311,7 @@ func TestHealthManager_CheckDeadCode(t *testing.T) {
 
 			// Inject into a dummy healthManager
 			hea := &healthManager{
-				Ana: &analysisManager{DeadCode: mockAna},
+				deadCode: mockAna,
 			}
 
 			status, details := hea.checkDeadCode(context.Background(), nil)
