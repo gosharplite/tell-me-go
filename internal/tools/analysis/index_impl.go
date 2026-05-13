@@ -42,9 +42,16 @@ func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
 }
 
 func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
+	// Compute the full method set once per type. This includes promoted
+	// methods from embedded fields, so Len() is a correct lower bound.
+	// It also warms the go/types internal cache, making subsequent
+	// types.Implements calls faster.
+	methodSetLen := types.NewMethodSet(named).Len()
+
 	for _, itf := range interfaces {
-		// Pre-filter: concrete type lacks enough methods — impossible to satisfy.
-		if named.NumMethods() < itf.NumMethods() {
+		// Pre-filter: type has fewer total methods than the interface
+		// requires — satisfaction is impossible.
+		if methodSetLen < itf.NumMethods() {
 			continue
 		}
 
@@ -101,19 +108,22 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 }
 
 func (idx *indexer) computeImplementationsLazy() map[string][]string {
-	idx.mu.RLock()
-	pkgs := idx.pkgs
-	idx.mu.RUnlock()
+	ch := idx.sfGroup.DoChan("implementations", func() (any, error) {
+		idx.mu.RLock()
+		pkgs := idx.pkgs
+		idx.mu.RUnlock()
 
-	impls := idx.computeImplementations(pkgs)
+		impls := idx.computeImplementations(pkgs)
 
-	idx.mu.Lock()
-	if idx.implementations == nil {
+		idx.mu.Lock()
 		idx.implementations = impls
-	}
-	idx.mu.Unlock()
+		idx.mu.Unlock()
 
-	return idx.implementations
+		return impls, nil
+	})
+
+	result := <-ch
+	return result.Val.(map[string][]string)
 }
 
 func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
