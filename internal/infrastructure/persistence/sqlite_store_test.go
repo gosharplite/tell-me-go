@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -323,5 +324,87 @@ func testKVStoreDatabaseError(t *testing.T) {
 	}
 	if _, err := kv.GetAll(ctx); err == nil {
 		t.Error("expected error on GetAll with closed DB")
+	}
+}
+
+// =============================================================================
+// ReadAll error paths — scan failure and time parse failure
+// =============================================================================
+
+func TestSQLiteTaskStore_ReadAll_ScanError(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Create a tasks table with a TEXT id instead of INTEGER.
+	// rows.Scan into float64 will fail for non-numeric TEXT values.
+	if _, err := db.Exec("CREATE TABLE tasks (id TEXT PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);"); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO tasks (id, content, status, created_at) VALUES ('not-a-number', 'test', 'pending', '2025-01-01T00:00:00Z');"); err != nil {
+		t.Fatalf("failed to insert row: %v", err)
+	}
+
+	store := newSQLiteTaskStore(db)
+	_, err = store.ReadAll(context.Background())
+	if err == nil {
+		t.Error("expected scan error due to type mismatch, got nil")
+	}
+}
+
+func TestSQLiteTaskStore_ReadAll_TimeParseError(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);"); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	// Insert a row with an unparseable timestamp.
+	if _, err := db.Exec("INSERT INTO tasks (id, content, status, created_at) VALUES (1, 'test', 'pending', 'not-a-timestamp');"); err != nil {
+		t.Fatalf("failed to insert row: %v", err)
+	}
+
+	store := newSQLiteTaskStore(db)
+	_, err = store.ReadAll(context.Background())
+	if err == nil {
+		t.Error("expected time parse error, got nil")
+	}
+}
+
+func TestSQLiteKVStore_GetAll_ScanError(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Create the settings table with proper schema.
+	if _, err := db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);"); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	// Insert a row with a NULL value — scanning NULL into a non-pointer
+	// string variable causes a scan error.
+	if _, err := db.Exec("INSERT INTO settings (key, value) VALUES ('test_key', NULL);"); err != nil {
+		t.Fatalf("failed to insert row: %v", err)
+	}
+
+	store := newSQLiteKVStore(db)
+	_, err = store.GetAll(context.Background())
+	if err == nil {
+		t.Error("expected scan error due to NULL value, got nil")
 	}
 }

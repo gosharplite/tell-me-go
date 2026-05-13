@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -109,5 +110,64 @@ func TestSessionState_GetSettings(t *testing.T) {
 
 	if state.GetSettings() == nil {
 		t.Error("expected GetSettings() to return a non-nil KVStore")
+	}
+}
+
+func TestSessionState_GetHealthChecker_SQLite(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	ctx := context.Background()
+
+	// Default STORAGE_TYPE is "sqlite" — creates a real DB.
+	state, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.Close() }()
+
+	checker := state.GetHealthChecker()
+
+	// Verify it's the real health checker, not the no-op fallback.
+	if checker == nil {
+		t.Fatal("expected non-nil health checker")
+	}
+	if _, ok := checker.(*sqliteHealthChecker); !ok {
+		t.Errorf("expected *sqliteHealthChecker, got %T", checker)
+	}
+}
+
+func TestSessionState_GetHealthChecker_Memory(t *testing.T) {
+	tempDir := t.TempDir()
+	ctx := context.Background()
+
+	t.Setenv("STORAGE_TYPE", "memory")
+	state, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.Close() }()
+
+	checker := state.GetHealthChecker()
+	if checker == nil {
+		t.Fatal("expected non-nil health checker")
+	}
+	if _, ok := checker.(*noOpHealthChecker); !ok {
+		t.Errorf("expected *noOpHealthChecker, got %T", checker)
+	}
+}
+
+func TestNewSessionState_InitRepositoriesFailure(t *testing.T) {
+	t.Parallel()
+
+	// Use a path where the parent directory does not exist.
+	// initSQLiteDB will succeed at sql.Open but ExecContext will fail
+	// because the driver cannot create the DB file in a nonexistent directory.
+	badDir := filepath.Join(t.TempDir(), "nonexistent", "subdir")
+	ctx := context.Background()
+
+	_, err := NewSessionState(ctx, badDir)
+	if err == nil {
+		t.Error("expected error from NewSessionState with invalid path, got nil")
 	}
 }

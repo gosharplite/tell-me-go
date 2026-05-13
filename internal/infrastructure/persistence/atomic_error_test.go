@@ -74,6 +74,24 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			errPattern: "failed to sync temp file: I/O error during sync",
 		},
 		{
+			name: "Write fails",
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
+					return &mockFile{
+						name: dir + "/temp123",
+						data: new(bytes.Buffer),
+						WriteFunc: func(p []byte) (n int, err error) {
+							return 0, errors.New("disk I/O error")
+						},
+					}, nil
+				}
+				return m
+			},
+			wantErr:    true,
+			errPattern: "failed to write temp file: disk I/O error",
+		},
+		{
 			name: "Chmod fails",
 			setupMock: func() *mockFileSystem {
 				m := newMockFS()
@@ -448,6 +466,56 @@ func TestCleanupOldBackups_RemoveAllError(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "Failed to cleanup old backup") {
 		t.Errorf("expected warning 'Failed to cleanup old backup', got: %s", output)
+	}
+}
+
+func TestRenameWithRetry_TransientThenPermanent(t *testing.T) {
+	ctx := context.Background()
+	m := newMockFS()
+
+	callCount := 0
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		callCount++
+		if callCount == 1 {
+			return errors.New("Access is denied")
+		}
+		return errors.New("permission denied") // non-transient
+	}
+
+	err := renameWithRetry(ctx, m, "/tmp/src", "/tmp/dst", 0644)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// Should exit on the second attempt (non-transient), not exhaust all 5 retries.
+	if callCount != 2 {
+		t.Errorf("expected 2 rename attempts, got %d", callCount)
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("expected permanent error, got: %v", err)
+	}
+}
+
+func TestIsTransientRenameError_SharingViolation(t *testing.T) {
+	ctx := context.Background()
+	m := newMockFS()
+	// Path does not exist as a file; Stat will return an error, not IsDir.
+	err := errors.New("The process cannot access the file because it is being used by another process")
+
+	if !isTransientRenameError(ctx, m, err, "/some/file.txt") {
+		t.Error("expected sharing violation to be transient")
+	}
+}
+
+func TestIsTransientRenameError_DirectoryTarget(t *testing.T) {
+	ctx := context.Background()
+	m := newMockFS()
+	// Register the path as a directory in the mock
+	m.dirs["/some/dir"] = true
+
+	err := errors.New("Access is denied")
+
+	if isTransientRenameError(ctx, m, err, "/some/dir") {
+		t.Error("expected Access is denied on a directory to be non-transient (permanent)")
 	}
 }
 
