@@ -36,13 +36,14 @@ A nil-in-production `func()` test hook is **acceptable** when **all** of the fol
 | 4 | **Nil `func()` — zero overhead** | The hook field is a single function pointer. The production path executes one nil-check branch. Zero allocations. |
 | 5 | **Single synchronization point** | The hook observes one well-defined state transition, not broad behavioral verification. Broad verification belongs with interface mocks. |
 | 6 | **Documented** | The field carries a `// Test hook: nil in production` comment and a reference to this ADR. |
+| 7 | **Must not change production behavior** | The hook produces zero observable side effects in production when nil. The only permitted exception is fault-injection for exercising `recover()` blocks, where a `panic()` is the only viable mechanism to trigger the defer/recover path. Hooks that inject faults must be clearly suffixed `Panic` and reference this ADR. |
 
 A hook that violates any criterion **must** use an alternative mechanism:
 
 - **Exported type or interface exists** → Interface mock (ADR-011 Rule 2).
 - **Broad behavioral verification** → Interface mock.
 - **Multiple hooks accumulating on one struct** → Re-evaluate the struct's responsibilities; consider decomposition.
-- **Hook has side effects beyond observation** → Forbidden. Hooks are observation-only.
+- **Hook has side effects beyond observation** → Forbidden, with one exception: fault-injection hooks targeting `recover()` blocks are permitted when no other mechanism can trigger the recovery path. Such hooks must be suffixed `Panic` and documented in the registry.
 
 ### Rationale
 
@@ -60,6 +61,27 @@ Every authorized test hook **must** be registered in Appendix A of this ADR. Add
 requires amending this ADR — making proliferation visible and forcing a conscious architectural
 decision each time.
 
+### Fault-Injection Exception
+
+ADR-032 §Decision Criteria Rule 4 requires hooks to be "observation-only" — they must not alter
+program flow or inject side effects. However, Go's `recover()` mechanism can only be exercised by
+an actual `panic()`. There is no interface-based alternative: a mock that returns an error does
+not trigger `recover()`, and refactoring the `defer/recover` block into an interface defeats the
+purpose of testing the recovery logic itself.
+
+A narrow exception is therefore granted: **fault-injection hooks that call `panic()` are permitted
+when and only when:**
+
+1. The hook targets a specific `defer/recover()` block that cannot be tested by any other means.
+2. The hook field name is suffixed with `Panic` (e.g., `testEmitHeartbeatsPanic`).
+3. The hook is nil in production and set only in dedicated panic-recovery tests.
+4. The test validates both that the panic was caught (no goroutine leak) and that the recovery
+   logic executed (e.g., the error was logged).
+
+This exception does not extend to hooks that inject other side effects (e.g., mutating shared
+state, modifying function arguments, altering control flow beyond `panic()`). Fault-injection
+hooks remain subject to all other ADR-032 criteria, including the registry requirement.
+
 ## Consequences
 
 - **Positive**: Eliminates inconsistent review outcomes for test hooks.
@@ -74,3 +96,5 @@ decision each time.
 | # | Struct | Field | File | Purpose | Since |
 |---|--------|-------|------|---------|-------|
 | 1 | `eventQueue` | `beforeBlockingSendHook` | `internal/agent/session/ui/event_queue.go:31` | Observe goroutine entry into blocking `select` in `enqueueCritical` | 2026-05 |
+| 2 | `InternalTools` | `testEmitHeartbeatsPanic` | `internal/agent/session/internal_tools.go:22` | Fault-injection: inject a panic on the next ticker firing to verify graceful recovery in `emitHeartbeats` | 2026-05 |
+| 3 | `InternalTools` | `testEmitHeartbeatsTickHook` | `internal/agent/session/internal_tools.go:23` | Observe ticker firings for deterministic coordination in heartbeat channel-state tests | 2026-05 |

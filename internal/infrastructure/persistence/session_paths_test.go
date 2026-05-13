@@ -4,9 +4,13 @@
 package persistence
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,5 +192,136 @@ func TestEnsureDirectories(t *testing.T) {
 
 	if _, err := os.Stat(paths.ModeDir); os.IsNotExist(err) {
 		t.Errorf("ModeDir %s was not created", paths.ModeDir)
+	}
+}
+
+// =============================================================================
+// isExpiredBackup edge cases
+// =============================================================================
+
+func TestIsExpiredBackup_NonDirectory(t *testing.T) {
+	t.Parallel()
+
+	entry := &mockDirEntry{name: "20250101_120000_backup", isDir: false}
+	cutoff := time.Now()
+
+	if isExpiredBackup(entry, cutoff) {
+		t.Error("non-directory entry should not be considered an expired backup")
+	}
+}
+
+func TestIsExpiredBackup_ShortName(t *testing.T) {
+	t.Parallel()
+
+	entry := &mockDirEntry{name: "short", isDir: true}
+	cutoff := time.Now()
+
+	if isExpiredBackup(entry, cutoff) {
+		t.Error("entry with name shorter than 15 chars should not be considered an expired backup")
+	}
+}
+
+func TestIsExpiredBackup_NonTimestampName(t *testing.T) {
+	t.Parallel()
+
+	entry := &mockDirEntry{name: "not-a-timestamp_suffix", isDir: true}
+	cutoff := time.Now()
+
+	if isExpiredBackup(entry, cutoff) {
+		t.Error("entry with non-timestamp prefix should not be considered an expired backup")
+	}
+}
+
+// =============================================================================
+// EnsureDirectories failure
+// =============================================================================
+
+func TestEnsureDirectories_MkdirAllFailure(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.MkdirAllFunc = func(ctx context.Context, path string, perm os.FileMode) error {
+		return errors.New("disk full")
+	}
+
+	paths := persistence.ResolvePaths("/home/test", "default")
+	err := EnsureDirectories(context.Background(), m, paths)
+	if err == nil {
+		t.Error("expected error from EnsureDirectories when MkdirAll fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to create session directory") {
+		t.Errorf("expected wrapped error, got: %v", err)
+	}
+}
+
+// =============================================================================
+// RotateSession error paths
+// =============================================================================
+
+func TestRotateSession_BackupCreationFailure(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	// Make the files exist so RotateSession tries to create the backup dir.
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		return &mockFileInfo{name: name}, nil
+	}
+	m.MkdirAllFunc = func(ctx context.Context, path string, perm os.FileMode) error {
+		// Fail on backup directory creation specifically.
+		if strings.Contains(path, "backups") {
+			return errors.New("cannot create backup dir")
+		}
+		return nil
+	}
+
+	paths := persistence.ResolvePaths("/home/test", "default")
+	var buf bytes.Buffer
+	err := RotateSession(context.Background(), m, &buf, *paths, 7, slog.Default())
+	if err == nil {
+		t.Error("expected error when backup dir creation fails, got nil")
+	}
+}
+
+func TestRotateSession_PartialArchiveErrors(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	// Make multiple files exist.
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		return &mockFileInfo{name: name}, nil
+	}
+	// First Rename succeeds, second fails.
+	renameCount := 0
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		renameCount++
+		if renameCount == 1 {
+			return nil // first file moves fine
+		}
+		return errors.New("rename failed for second file")
+	}
+
+	paths := persistence.ResolvePaths("/home/test", "default")
+	var buf bytes.Buffer
+	err := RotateSession(context.Background(), m, &buf, *paths, 7, slog.Default())
+	if err == nil {
+		t.Error("expected error from partial archive failures, got nil")
+	}
+}
+
+// =============================================================================
+// initializePaths failure propagation
+// =============================================================================
+
+func TestInitializePaths_EnsureDirectoriesFailure(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.MkdirAllFunc = func(ctx context.Context, path string, perm os.FileMode) error {
+		return errors.New("cannot create dir")
+	}
+
+	_, err := initializePaths(context.Background(), m, "/home/test", "default")
+	if err == nil {
+		t.Error("expected error when EnsureDirectories fails inside initializePaths, got nil")
 	}
 }

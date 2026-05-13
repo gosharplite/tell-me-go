@@ -95,7 +95,7 @@ func TestInternalTools_Errors(t *testing.T) {
 	hm := &agenttest.MockHistoryManager{}
 	cm := sessctx.NewManager(cs, hm, nil, nil)
 
-	it := session.NewInternalTools(cm)
+	it := session.NewInternalTools(cm, &ports.NoOpLogger{})
 
 	_, err := it.SummarizeHistory(context.Background(), map[string]interface{}{"turns": "invalid"}, nil)
 	if err == nil {

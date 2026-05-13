@@ -88,7 +88,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, registry tools.
 	}
 
 	if a.registerInternal {
-		if err := session.RegisterInternal(a.registry, a.ctxManager); err != nil {
+		if err := session.RegisterInternal(a.registry, a.ctxManager, a.getLogger()); err != nil {
 			return nil, fmt.Errorf("failed to register internal tools: %w", err)
 		}
 	}

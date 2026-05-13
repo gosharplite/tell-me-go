@@ -366,4 +366,55 @@ func TestRecoveryStep_Process(t *testing.T) {
 		assert.Equal(t, ProcessResult{}, res)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
+
+	t.Run("event publish failure (non-bus-init)", func(t *testing.T) {
+		ctx := context.Background()
+
+		bus := &eventstest.TestEventBus{}
+		bus.SetPublishErr(errors.New("bus full"))
+
+		step := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Second}}
+		turn := &Turn{
+			Events: bus,
+			Clock:  &agenttest.MockClock{},
+			State: &TurnState{
+				LastError:  llm.ErrTransient,
+				RetryCount: 0,
+			},
+		}
+
+		res, err := step.Process(ctx, turn)
+
+		// attemptRetry returns early after SafePublish failure (non-bus-init)
+		assert.Equal(t, ProcessResult{}, res)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "bus full")
+		// RetryCount was incremented at line 122 before the publish
+		assert.Equal(t, 1, turn.State.RetryCount)
+	})
+
+	t.Run("context cancelled before select (interleaving)", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		bus := &eventstest.TestEventBus{} // no error injection — publish succeeds
+		step := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Second}}
+		turn := &Turn{
+			Events: bus,
+			Clock:  &agenttest.MockClock{},
+			State: &TurnState{
+				LastError:  llm.ErrTransient,
+				RetryCount: 0,
+			},
+		}
+
+		res, err := step.Process(ctx, turn)
+
+		// ctx.Err() check at line 147 catches the cancellation before select
+		assert.Equal(t, ProcessResult{}, res)
+		assert.ErrorIs(t, err, context.Canceled)
+		// RetryCount incremented proves we passed through publish and hit
+		// the ctx.Err() guard, not the select case
+		assert.Equal(t, 1, turn.State.RetryCount)
+	})
 }

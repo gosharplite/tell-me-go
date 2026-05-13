@@ -547,6 +547,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 		tracker:         tracker,
 		pricingData:     pData,
 		sessionProvider: sessionProvider,
+		workspacePolicy: infra_persistence.NewWorkspacePolicy(),
 		health:          factory.NewHealthCheckManager(nil),
 		lazyClient:      lazyClient,
 		lazyRegistry:    lazyRegistry,
@@ -565,6 +566,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.NotNil(t, deps.GetClient())
 	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
 	assert.NotNil(t, deps.GetHealthManager())
+	assert.NotNil(t, deps.GetWorkspacePolicy())
 }
 
 type mockKVStore struct {
@@ -791,6 +793,48 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 	assert.Contains(t, logOutput, "failed to unmarshal authorized_safe_paths")
 	assert.Contains(t, logOutput, "failed to unmarshal authorized_read_paths")
 	assert.Contains(t, logOutput, "invalid-json")
+}
+
+func TestLoadPathsFromSettings_EmptyValueAndSuccessPath(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("empty value returns early without registering", func(t *testing.T) {
+		mockKV := new(mockKVStore)
+		mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return("", nil)
+
+		sm := new(mockConfigurableSecurityManager)
+		// sm.RegisterSafePath should NOT be called
+
+		var logBuf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+		loadPathsFromSettings(ctx, mockKV, "authorized_safe_paths", sm.RegisterSafePath, logger)
+
+		// Verify no log output (no error, no registration)
+		assert.Empty(t, logBuf.String())
+		sm.AssertNotCalled(t, "RegisterSafePath", mock.Anything)
+		mockKV.AssertExpectations(t)
+	})
+
+	t.Run("valid JSON registers all paths", func(t *testing.T) {
+		mockKV := new(mockKVStore)
+		mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return(`["/tmp/a","/tmp/b"]`, nil)
+
+		sm := new(mockConfigurableSecurityManager)
+		sm.On("RegisterSafePath", "/tmp/a").Return().Once()
+		sm.On("RegisterSafePath", "/tmp/b").Return().Once()
+
+		var logBuf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+		loadPathsFromSettings(ctx, mockKV, "authorized_safe_paths", sm.RegisterSafePath, logger)
+
+		assert.Empty(t, logBuf.String())
+		sm.AssertCalled(t, "RegisterSafePath", "/tmp/a")
+		sm.AssertCalled(t, "RegisterSafePath", "/tmp/b")
+		sm.AssertExpectations(t)
+		mockKV.AssertExpectations(t)
+	})
 }
 
 func TestGetSuggestionService(t *testing.T) {
@@ -1097,6 +1141,88 @@ func TestBypassConfirmationPriority(t *testing.T) {
 	}
 }
 
+func TestHandleNewSession_RetentionDays(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	simulatedErr := errors.New("rotate failed")
+
+	tests := []struct {
+		name              string
+		kvValue           string
+		kvErr             error
+		expectedRetention int
+	}{
+		{
+			name:              "KV Get error falls back to default 30",
+			kvValue:           "",
+			kvErr:             errors.New("db error"),
+			expectedRetention: 30,
+		},
+		{
+			name:              "KV returns empty string falls back to default 30",
+			kvValue:           "",
+			kvErr:             nil,
+			expectedRetention: 30,
+		},
+		{
+			name:              "KV returns valid integer parses correctly",
+			kvValue:           "7",
+			kvErr:             nil,
+			expectedRetention: 7,
+		},
+		{
+			name:              "KV returns non-integer falls back to default 30",
+			kvValue:           "not-a-number",
+			kvErr:             nil,
+			expectedRetention: 30,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockKV := new(mockKVStore)
+			mockKV.On("Get", mock.Anything, "backup_retention_days").Return(tt.kvValue, tt.kvErr)
+
+			sm := new(mockConfigurableSecurityManager)
+			sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
+
+			var capturedRetention int
+			rotateCalled := make(chan int, 1)
+			rotateFunc := func(ctx context.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
+				rotateCalled <- retentionDays
+				return simulatedErr
+			}
+
+			factory := &defaultSessionFactory{
+				HomeDir:       tempDir,
+				FileSystem:    &infra_persistence.OSFileSystem{},
+				SM:            sm,
+				Stdout:        io.Discard,
+				Stderr:        io.Discard,
+				Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+				RotateSession: rotateFunc,
+			}
+
+			paths := &persistence.Paths{
+				LogPath: filepath.Join(tempDir, "test.log"),
+			}
+			cfg := &config.Config{Mode: "assistant", Model: "test-model"}
+
+			_ = factory.handleNewSession(ctx, paths, cfg, nil, mockKV)
+
+			select {
+			case capturedRetention = <-rotateCalled:
+			default:
+				t.Fatal("RotateSession was not called")
+			}
+
+			assert.Equal(t, tt.expectedRetention, capturedRetention)
+			mockKV.AssertExpectations(t)
+			_ = capturedRetention
+		})
+	}
+}
+
 func TestBootstrapper_Getters(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := new(mockConfigurableSecurityManager)
@@ -1107,4 +1233,43 @@ func TestBootstrapper_Getters(t *testing.T) {
 	assert.NotNil(t, b.GetHistoryBrowser())
 	assert.NotNil(t, b.GetUIRenderer())
 	assert.NotNil(t, b.GetHistoryRenderer())
+}
+
+func TestGetUnifiedHistoryProvider_SuccessPath(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	cfg := &config.Config{Mode: "assistant"}
+
+	// Build a real HistoryManager first (exercises BuildHistoryManager success)
+	hManager, err := b.GetHistoryManager(ctx, cfg)
+	require.NoError(t, err)
+	require.NotNil(t, hManager)
+
+	// Exercise BuildUnifiedHistoryProvider success path (gap 1)
+	provider, err := b.GetUnifiedHistoryProvider(ctx, cfg, hManager)
+	assert.NoError(t, err)
+	assert.NotNil(t, provider)
+
+	// Exercise BuildRegistry success path (gap 2) through a full session build
+	// This tests the real defaultToolchainFactory.BuildRegistry return reg, nil
+	client := new(mockLLMClient)
+	b.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return client, nil
+	}
+	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Once()
+	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
+
+	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	require.NoError(t, err)
+	defer func() { _ = cleanup(ctx) }()
+
+	// Trigger lazy registry init → exercises real BuildRegistry
+	reg, err := deps.GetRegistry()
+	assert.NoError(t, err)
+	assert.NotNil(t, reg)
 }

@@ -207,3 +207,142 @@ func TestRepository_BulkInsert(t *testing.T) {
 		t.Errorf("Expected 500 tasks, got %d", count)
 	}
 }
+
+// =============================================================================
+// Additional error-path tests
+// =============================================================================
+
+func TestInitSQLiteDB_PragmaFailure(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	// Create a regular file to use as a "parent" — sql.Open will succeed
+	// because it's lazy, but the first ExecContext (pragma) will fail because
+	// SQLite cannot create a DB file inside a path where a component is a
+	// regular file, not a directory.
+	blocker := filepath.Join(tmpDir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	badPath := filepath.Join(blocker, "sub", "test.db")
+
+	_, err := initSQLiteDB(context.Background(), badPath)
+	if err == nil {
+		t.Error("expected error for invalid db path, got nil")
+	}
+}
+
+func TestCreateTables_SecondQueryFailure(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	// Create the DB file by running one query, then close to force
+	// ExecContext failure on the subsequent createTables call.
+	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS dummy (id INTEGER);"); err != nil {
+		t.Fatalf("failed to create dummy table: %v", err)
+	}
+	_ = db.Close()
+
+	err = createTables(context.Background(), db)
+	if err == nil {
+		t.Error("expected error from createTables with closed DB, got nil")
+	}
+}
+
+func TestMigrateFromJSON_CountQueryFailure(t *testing.T) {
+	t.Parallel()
+
+	fs := NewOSFileSystem()
+	tmpDir := t.TempDir()
+	tasksPath := filepath.Join(tmpDir, "tasks.json")
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create a valid tasks file so the count query is the only blocker.
+	if err := fs.WriteFile(context.Background(), tasksPath, []byte("[]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	_ = db.Close() // Close immediately to force query failure.
+
+	err = migrateFromJSON(context.Background(), db, fs, tasksPath, slog.Default())
+	if err == nil {
+		t.Error("expected error from count query on closed DB, got nil")
+	}
+}
+
+func TestMigrateTasks_TxBeginFailure(t *testing.T) {
+	t.Parallel()
+
+	fs := NewOSFileSystem()
+	tmpDir := t.TempDir()
+	tasksPath := filepath.Join(tmpDir, "tasks.json")
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Write valid tasks so ReadAll succeeds.
+	tasksJSON := `[{"id": 1, "content": "Test", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}]`
+	if err := fs.WriteFile(context.Background(), tasksPath, []byte(tasksJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	_ = db.Close() // Close to force BeginTx failure.
+
+	err = migrateTasks(context.Background(), db, fs, tasksPath, slog.Default())
+	if err == nil {
+		t.Error("expected error from BeginTx on closed DB, got nil")
+	}
+}
+
+func TestExecuteBatchInsert_PartialFailure(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	// Create the tasks table.
+	if _, err := db.Exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);"); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("BeginTx failed: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Create more than 200 rows to trigger multi-batch execution.
+	rows := make([]taskRow, 250)
+	for i := range rows {
+		rows[i] = taskRow{
+			ID:        int64(i + 1),
+			Content:   fmt.Sprintf("Task %d", i+1),
+			Status:    "pending",
+			CreatedAt: "2025-01-01T00:00:00Z",
+		}
+	}
+
+	// Cancel the context to trigger ExecContext failure during batch insert.
+	// This exercises the error return path inside the batch loop.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = executeBatchInsert(ctx, tx, rows)
+	if err == nil {
+		t.Error("expected error from cancelled context during batch insert, got nil")
+	}
+}

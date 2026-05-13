@@ -9,25 +9,31 @@ import (
 	"time"
 
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // InternalTools provides tool wrappers that interact with agent services.
 type InternalTools struct {
-	ctxManager *sessctx.Manager
+	ctxManager                 *sessctx.Manager
+	logger                     ports.Logger
+	testEmitHeartbeatsPanic    func() // nil in production; see ADR-032 §Fault-Injection Exception
+	testEmitHeartbeatsTickHook func() // nil in production; see ADR-032
 }
 
 // NewInternalTools creates a new InternalTools provider.
-func NewInternalTools(cm *sessctx.Manager) *InternalTools {
-	return &InternalTools{ctxManager: cm}
+func NewInternalTools(cm *sessctx.Manager, logger ports.Logger) *InternalTools {
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
+	return &InternalTools{ctxManager: cm, logger: logger}
 }
 
 // emitHeartbeats sends periodic heartbeats until the done channel is closed.
-func emitHeartbeats(done <-chan struct{}, hb chan<- struct{}) {
+func (t *InternalTools) emitHeartbeats(done <-chan struct{}, hb chan<- struct{}) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Prevent crashing the tool execution silently
-			fmt.Printf("panic in summarize history background drainer: %v\n", r)
+			t.logger.Error("panic in summarize history background drainer: %v", r)
 		}
 	}()
 	ticker := time.NewTicker(2 * time.Second)
@@ -37,6 +43,12 @@ func emitHeartbeats(done <-chan struct{}, hb chan<- struct{}) {
 		case <-done:
 			return
 		case <-ticker.C:
+			if t.testEmitHeartbeatsPanic != nil {
+				t.testEmitHeartbeatsPanic()
+			}
+			if t.testEmitHeartbeatsTickHook != nil {
+				t.testEmitHeartbeatsTickHook()
+			}
 			if hb != nil {
 				select {
 				case hb <- struct{}{}:
@@ -65,7 +77,7 @@ func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]in
 	// Emit heartbeat while waiting for the slow summarization process
 	done := make(chan struct{})
 	defer close(done)
-	go emitHeartbeats(done, hb)
+	go t.emitHeartbeats(done, hb)
 
 	res, metrics, err := t.ctxManager.SummarizeRange(ctx, targetTurns, params.Focus)
 	if err != nil {
@@ -115,8 +127,8 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 }
 
 // RegisterInternal registers the internal tools with the provided registrar.
-func RegisterInternal(r tools.ToolRegistrar, cm *sessctx.Manager) error {
-	it := NewInternalTools(cm)
+func RegisterInternal(r tools.ToolRegistrar, cm *sessctx.Manager, logger ports.Logger) error {
+	it := NewInternalTools(cm, logger)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "summarize_history",

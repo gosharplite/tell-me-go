@@ -50,7 +50,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := orchestratortest.CreateProcessorForPhase(tt.phase)
-			Turn := orchestratortest.SetupTransitionTurn(tt.hasTools, tt.phase)
+			Turn := orchestratortest.SetupTransitionTurn(tt.hasTools, tt.phase, nil)
 
 			res, _ := p.Process(context.Background(), Turn)
 			if res.NextPhase != tt.expected {
