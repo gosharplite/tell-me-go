@@ -19,10 +19,11 @@ import (
 )
 
 type healthManager struct {
-	SP     security.PolicyEvaluator
-	Exec   tools.CommandExecutor
-	Runner AnalysisGoRunner
-	Ana    *analysisManager
+	SP         security.PolicyEvaluator
+	Exec       tools.CommandExecutor
+	Runner     AnalysisGoRunner
+	complexity complexityAnalyzer
+	deadCode   deadCodeAnalyzer
 }
 
 type healthResult struct {
@@ -225,7 +226,7 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 
 func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
 	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
-	complexities, err := m.Ana.Complexity.GatherComplexities(ctx, ".", hb)
+	complexities, err := m.complexity.GatherComplexities(ctx, ".", hb)
 	if err != nil {
 		return "ERROR", err.Error(), nil
 	}
@@ -250,7 +251,7 @@ func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{})
 }
 
 func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (string, string) {
-	reports, err := m.Ana.deadCode.GatherOrphanReports(ctx, ".", hb)
+	reports, err := m.deadCode.GatherOrphanReports(ctx, ".", hb)
 	if err != nil {
 		return "ERROR", err.Error()
 	}
