@@ -74,9 +74,6 @@ type analysisManager struct {
 	// Project Health & Architecture
 	health *healthManager
 	arch   *architectureManager
-
-	// EventBus for progress reporting
-	events events.EventBus
 }
 
 func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy, dc deadCodeAnalyzer) *analysisManager {
@@ -93,7 +90,6 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp},
 		search:   &searchManager{SP: sp, FS: fs, Policy: wp},
 		arch:     &architectureManager{SP: sp, Runner: runner, idx: idx},
-		events:   bus,
 	}
 
 	m.health = &healthManager{
