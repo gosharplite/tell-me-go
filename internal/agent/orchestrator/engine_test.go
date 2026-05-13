@@ -250,6 +250,126 @@ func TestEngine_PrepareNextTurn(t *testing.T) {
 	assert.Nil(t, turn.State.ToolReasons)
 }
 
+func TestExecutePhase_UnknownProcessor(t *testing.T) {
+	t.Parallel()
+
+	// Engine with no processors registered — simulates a programmer error
+	// where the processor map was never populated (should not happen, but
+	// the defensive branch in executePhase must be tested per ADR-022).
+	e := &Engine{processors: make(map[TurnPhase]TurnProcessor)}
+
+	turn := &Turn{
+		State: &TurnState{Phase: PhaseGuard},
+	}
+
+	res, err := e.executePhase(context.Background(), turn)
+
+	// Assert error
+	if err == nil {
+		t.Fatal("expected error for unknown processor, got nil")
+	}
+	if !strings.Contains(err.Error(), "no processor for phase") {
+		t.Errorf("expected error to contain %q, got %q", "no processor for phase", err.Error())
+	}
+	if !errors.Is(err, ErrLogic) {
+		t.Errorf("expected errors.Is(err, ErrLogic) to be true, got false")
+	}
+
+	// Assert ProcessResult is zero-value
+	if res.NextPhase != "" {
+		t.Errorf("expected empty ProcessResult, got NextPhase=%q", res.NextPhase)
+	}
+	if res.Recovery || res.Stop {
+		t.Errorf("expected zero-value ProcessResult, got Recovery=%v Stop=%v", res.Recovery, res.Stop)
+	}
+
+	// Assert Turn.State.Phase set to PhaseComplete (defensive guard)
+	// Per executePhase: when a processor is missing, the phase is forced to
+	// PhaseComplete to prevent an infinite loop in runPhaseLoop.
+	if turn.State.Phase != PhaseComplete {
+		t.Errorf("expected Turn.State.Phase = %s, got %s", PhaseComplete, turn.State.Phase)
+	}
+}
+
+func TestEmergencySave(t *testing.T) {
+	t.Parallel()
+
+	t.Run("persists response when processor exists", func(t *testing.T) {
+		t.Parallel()
+		var called bool
+
+		e := &Engine{
+			processors: map[TurnPhase]TurnProcessor{
+				PhasePersisting: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+					called = true
+					return ProcessResult{NextPhase: PhaseComplete}, nil
+				}),
+			},
+		}
+
+		turn := &Turn{
+			State: &TurnState{
+				Response: &llm.Content{
+					Role:  "model",
+					Parts: []*llm.Part{{Text: "partial response"}},
+				},
+			},
+		}
+
+		e.emergencySave(turn)
+
+		if !called {
+			t.Error("expected emergencySave to invoke PhasePersisting processor")
+		}
+	})
+
+	t.Run("no-op when Response is nil", func(t *testing.T) {
+		t.Parallel()
+		var called bool
+
+		e := &Engine{
+			processors: map[TurnPhase]TurnProcessor{
+				PhasePersisting: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+					called = true
+					return ProcessResult{NextPhase: PhaseComplete}, nil
+				}),
+			},
+		}
+
+		turn := &Turn{
+			State: &TurnState{Response: nil},
+		}
+
+		e.emergencySave(turn)
+
+		if called {
+			t.Error("expected emergencySave to be no-op when Response is nil")
+		}
+	})
+
+	t.Run("no-op when processor not registered", func(t *testing.T) {
+		t.Parallel()
+
+		e := &Engine{
+			processors: make(map[TurnPhase]TurnProcessor),
+		}
+
+		turn := &Turn{
+			State: &TurnState{
+				Response: &llm.Content{
+					Role:  "model",
+					Parts: []*llm.Part{{Text: "partial response"}},
+				},
+			},
+		}
+
+		// Must not panic when PhasePersisting processor is missing
+		assert.NotPanics(t, func() {
+			e.emergencySave(turn)
+		})
+	})
+}
+
 func TestExecutionStep_Process(t *testing.T) {
 	step := &ExecutionStep{}
 	ctx := context.Background()

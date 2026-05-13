@@ -79,7 +79,10 @@ func CreateProcessorForPhase(phase orchestrator.TurnPhase) orchestrator.TurnProc
 	return nil
 }
 
-func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestrator.Turn {
+// SetupTransitionTurn creates a Turn for phase transition testing.
+// execErr, if non-nil, is returned by the mock executor's Execute call,
+// enabling tests to exercise tool execution error paths.
+func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase, execErr error) *orchestrator.Turn {
 	mockGw := &agenttest.MockGateway{}
 	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
@@ -106,6 +109,9 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 		Gateway: mockGw,
 		Executor: &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turnIdx int, maxToolTurns int) (*llm.Content, error) {
+				if execErr != nil {
+					return nil, execErr
+				}
 				return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
 			},
 		},
@@ -196,11 +202,14 @@ func (c *costCapturer) AssertTaskCost(t interface{ Errorf(string, ...any) }, exp
 }
 
 func (c *costCapturer) AssertTurnCosts(t interface{ Errorf(string, ...any) }, expected []float64) {
+	if tt, ok := t.(interface{ Helper() }); ok {
+		tt.Helper()
+	}
 	_ = c.Bus.Flush(context.Background())
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 	if len(c.TurnCosts) != len(expected) {
-		t.Errorf("expected %d Turn costs, got %d", len(expected), len(c.TurnCosts))
+		t.Errorf("expected %d Turn costs, got %d\n  expected: %v\n  got:      %v", len(expected), len(c.TurnCosts), expected, c.TurnCosts)
 		return
 	}
 	for i, v := range expected {
