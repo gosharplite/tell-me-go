@@ -31,7 +31,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				Name:        "verify_architecture",
 				Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
 			},
-			handler: m.Arch.VerifyArchitecture,
+			handler: m.arch.VerifyArchitecture,
 			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
@@ -39,7 +39,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				Name:        "get_code_health",
 				Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
 			},
-			handler: m.Health.GetCodeHealth,
+			handler: m.health.GetCodeHealth,
 			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
@@ -54,7 +54,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Required: []string{"path"},
 				},
 			},
-			handler: m.Health.GetDetailedCoverage,
+			handler: m.health.GetDetailedCoverage,
 			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
@@ -137,7 +137,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				Name:        "get_project_summary",
 				Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
 			},
-			handler: m.Info.GetProjectSummary,
+			handler: m.info.GetProjectSummary,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -151,7 +151,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Required: []string{"filepath"},
 				},
 			},
-			handler: m.Info.GetFileSkeleton,
+			handler: m.info.GetFileSkeleton,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -167,7 +167,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Required: []string{"query"},
 				},
 			},
-			handler: m.Search.SearchUsagesGlobally,
+			handler: m.search.SearchUsagesGlobally,
 			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
@@ -200,7 +200,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Required: []string{"old_name", "new_name", "reason"},
 				},
 			},
-			handler: m.Refactor.RenameSymbol,
+			handler: m.refactor.RenameSymbol,
 			opts:    &tools.ToolOptions{Serial: true, LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
@@ -214,7 +214,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					},
 				},
 			},
-			handler: m.Search.ListTodos,
+			handler: m.search.ListTodos,
 			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
@@ -229,7 +229,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Required: []string{"symbol"},
 				},
 			},
-			handler: m.Info.GoDoc,
+			handler: m.info.GoDoc,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -308,7 +308,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Required: []string{"symbol", "src_file", "dst_file", "reason"},
 				},
 			},
-			handler: m.Refactor.MoveDefinition,
+			handler: m.refactor.MoveDefinition,
 			opts:    &tools.ToolOptions{Serial: true},
 		},
 		{
@@ -339,5 +339,5 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 		}
 	}
 
-	return m.Arch.VerifyArchitecture, nil
+	return m.arch.VerifyArchitecture, nil
 }

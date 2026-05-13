@@ -57,50 +57,51 @@ type AnalysisGoRunner interface {
 
 // analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
 type analysisManager struct {
-	Complexity complexityAnalyzer
-	Dependency dependencyAnalyzer
-	Sequence   sequenceAnalyzer
-	Change     changeAnalyzer
-	Types      typeManager
+	complexity complexityAnalyzer
+	dependency dependencyAnalyzer
+	sequence   sequenceAnalyzer
+	change     changeAnalyzer
+	types      typeManager
 	deadCode   deadCodeAnalyzer
 
 	// Refactoring
-	Refactor *refactorManager
+	refactor *refactorManager
 
 	// Information & Search
-	Info   *infoManager
-	Search *searchManager
+	info   *infoManager
+	search *searchManager
 
 	// Project Health & Architecture
-	Health *healthManager
-	Arch   *architectureManager
+	health *healthManager
+	arch   *architectureManager
 
 	// EventBus for progress reporting
-	Events events.EventBus
+	events events.EventBus
 }
 
 func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy, dc deadCodeAnalyzer) *analysisManager {
 	runner := toolchain.NewGoRunner(executor)
 	m := &analysisManager{
-		Complexity: newComplexityAnalyzer(cache, sp),
-		Dependency: newDependencyAnalyzer(runner, sp, bus, wp),
-		Sequence:   newSequenceAnalyzer(executor, sp, idx),
-		Change:     newChangeAnalyzer(cache, executor),
-		Types:      newTypeManager(idx, cache, sp),
+		complexity: newComplexityAnalyzer(cache, sp),
+		dependency: newDependencyAnalyzer(runner, sp, bus, wp),
+		sequence:   newSequenceAnalyzer(executor, sp, idx),
+		change:     newChangeAnalyzer(cache, executor),
+		types:      newTypeManager(idx, cache, sp),
 		deadCode:   dc,
 
-		Refactor: newRefactorManager(sp),
-		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp},
-		Search:   &searchManager{SP: sp, FS: fs, Policy: wp},
-		Arch:     &architectureManager{SP: sp, Runner: runner, idx: idx},
-		Events:   bus,
+		refactor: newRefactorManager(sp),
+		info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp},
+		search:   &searchManager{SP: sp, FS: fs, Policy: wp},
+		arch:     &architectureManager{SP: sp, Runner: runner, idx: idx},
+		events:   bus,
 	}
 
-	m.Health = &healthManager{
-		SP:     sp,
-		Ana:    m,
-		Exec:   executor,
-		Runner: runner,
+	m.health = &healthManager{
+		SP:         sp,
+		complexity: m.complexity,
+		deadCode:   m.deadCode,
+		Exec:       executor,
+		Runner:     runner,
 	}
 
 	return m
@@ -113,37 +114,37 @@ func (m *analysisManager) FindOrphanedSymbols(ctx context.Context, args map[stri
 }
 
 func (m *analysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Complexity.Analyze(ctx, args, hb)
+	return m.complexity.Analyze(ctx, args, hb)
 }
 
 func (m *analysisManager) GetPackageGraph(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Dependency.GetPackageGraph(ctx, args, hb)
+	return m.dependency.GetPackageGraph(ctx, args, hb)
 }
 
 func (m *analysisManager) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Sequence.AnalyzeSequenceFlow(ctx, args, hb)
+	return m.sequence.AnalyzeSequenceFlow(ctx, args, hb)
 }
 
 func (m *analysisManager) SemanticDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Change.SemanticDiff(ctx, args, hb)
+	return m.change.SemanticDiff(ctx, args, hb)
 }
 
 func (m *analysisManager) ListImplementations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Types.ListImplementations(ctx, args, hb)
+	return m.types.ListImplementations(ctx, args, hb)
 }
 
 func (m *analysisManager) FindUsages(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Types.FindUsages(ctx, args, hb)
+	return m.types.FindUsages(ctx, args, hb)
 }
 
 func (m *analysisManager) ListSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Types.ListSymbols(ctx, args, hb)
+	return m.types.ListSymbols(ctx, args, hb)
 }
 
 func (m *analysisManager) GetTypeInfo(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Types.GetTypeInfo(ctx, args, hb)
+	return m.types.GetTypeInfo(ctx, args, hb)
 }
 
 func (m *analysisManager) FindDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return m.Types.FindDefinitions(ctx, args, hb)
+	return m.types.FindDefinitions(ctx, args, hb)
 }
