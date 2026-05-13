@@ -68,7 +68,8 @@ type indexer struct {
 	implementations map[string][]string // interface method id -> concrete method ids
 	lastRefresh     time.Time
 	refreshMu       sync.Mutex         // For serializing Refresh calls
-	sfGroup         singleflight.Group // de-dupes concurrent computeImplementations calls
+	sfGroup                       singleflight.Group // de-dupes concurrent computeImplementations calls
+	testComputeImplementationsHook func()             // Test hook: nil in production (ADR-032)
 }
 
 const refreshTTL = 5 * time.Second
