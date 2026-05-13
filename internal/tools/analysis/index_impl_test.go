@@ -6,6 +6,7 @@ package analysis
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -54,13 +55,21 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 	}
 	require.NotEmpty(t, queryID, "expected a non-empty interface-method ID")
 
+	// Wire the ADR-032 test hook: a local atomic counter that increments
+	// each time computeImplementations is entered. The hook is nil-checked
+	// in production (zero overhead) and set only in this test.
+	var computeCount atomic.Int64
+	idx.testComputeImplementationsHook = func() {
+		computeCount.Add(1)
+	}
+
 	// Step 3: Simulate a post-refresh state by directly invalidating the
 	// implementations cache and resetting the compute counter.
 	// This mimics what Refresh does (sets implementations to nil in updateState).
 	idx.mu.Lock()
 	idx.implementations = nil
 	idx.mu.Unlock()
-	idx.computeCount.Store(0)
+	computeCount.Store(0)
 
 	// Step 4: Fire N concurrent GetImplementations calls after the cache
 	// invalidation. Singleflight must coalesce all of them into exactly
@@ -85,7 +94,7 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 	// Step 5: Assertions.
 
 	// (a) computeImplementations was called exactly once.
-	assert.Equal(t, int64(1), idx.computeCount.Load(),
+	assert.Equal(t, int64(1), computeCount.Load(),
 		"singleflight must coalesce N concurrent calls into exactly 1 compute")
 
 	// (b) All N goroutines received a non-nil result.

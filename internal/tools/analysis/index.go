@@ -8,7 +8,6 @@ import (
 	"go/token"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -69,8 +68,8 @@ type indexer struct {
 	implementations map[string][]string // interface method id -> concrete method ids
 	lastRefresh     time.Time
 	refreshMu       sync.Mutex         // For serializing Refresh calls
-	sfGroup         singleflight.Group // de-dupes concurrent computeImplementations calls
-	computeCount    atomic.Int64       // test-observable: count of computeImplementations calls (ADR-029)
+	sfGroup                       singleflight.Group // de-dupes concurrent computeImplementations calls
+	testComputeImplementationsHook func()             // Test hook: nil in production (ADR-032)
 }
 
 const refreshTTL = 5 * time.Second

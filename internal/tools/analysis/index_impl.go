@@ -97,7 +97,9 @@ func (idx *indexer) recordInterfaceImplementation(impls map[string][]string, nam
 }
 
 func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string][]string {
-	idx.computeCount.Add(1) // observable for TestGetImplementations_SingleflightCoalescing
+	if idx.testComputeImplementationsHook != nil {
+		idx.testComputeImplementationsHook()
+	}
 	impls := make(map[string][]string)
 	ifaces := idx.collectInterfaces(pkgs)
 
