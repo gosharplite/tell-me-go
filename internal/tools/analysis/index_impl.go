@@ -43,6 +43,11 @@ func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
 
 func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
 	for _, itf := range interfaces {
+		// Pre-filter: concrete type lacks enough methods — impossible to satisfy.
+		if named.NumMethods() < itf.NumMethods() {
+			continue
+		}
+
 		implements := types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf)
 
 		if !implements {
