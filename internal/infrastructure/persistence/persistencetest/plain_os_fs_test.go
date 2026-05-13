@@ -468,7 +468,7 @@ func TestPlainOSFileSystem_OpenFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OpenFile failed: %v", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		buf := make([]byte, len(data))
 		n, err := f.Read(buf)

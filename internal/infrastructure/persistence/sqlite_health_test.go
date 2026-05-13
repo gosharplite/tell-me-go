@@ -190,7 +190,7 @@ func TestSQLiteHealthChecker_DirNotWritable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	checker := newSQLiteHealthChecker(db, dbPath)
 	report, _ := checker.Check(context.Background())
