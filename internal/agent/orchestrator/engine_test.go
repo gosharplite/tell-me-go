@@ -265,30 +265,13 @@ func TestExecutePhase_UnknownProcessor(t *testing.T) {
 	res, err := e.executePhase(context.Background(), turn)
 
 	// Assert error
-	if err == nil {
-		t.Fatal("expected error for unknown processor, got nil")
-	}
-	if !strings.Contains(err.Error(), "no processor for phase") {
-		t.Errorf("expected error to contain %q, got %q", "no processor for phase", err.Error())
-	}
-	if !errors.Is(err, ErrLogic) {
-		t.Errorf("expected errors.Is(err, ErrLogic) to be true, got false")
-	}
+	assert.ErrorContains(t, err, "no processor for phase")
+	assert.ErrorIs(t, err, ErrLogic)
 
-	// Assert ProcessResult is zero-value
-	if res.NextPhase != "" {
-		t.Errorf("expected empty ProcessResult, got NextPhase=%q", res.NextPhase)
-	}
-	if res.Recovery || res.Stop {
-		t.Errorf("expected zero-value ProcessResult, got Recovery=%v Stop=%v", res.Recovery, res.Stop)
-	}
-
-	// Assert Turn.State.Phase set to PhaseComplete (defensive guard)
-	// Per executePhase: when a processor is missing, the phase is forced to
-	// PhaseComplete to prevent an infinite loop in runPhaseLoop.
-	if turn.State.Phase != PhaseComplete {
-		t.Errorf("expected Turn.State.Phase = %s, got %s", PhaseComplete, turn.State.Phase)
-	}
+	// Assert ProcessResult is zero-value and phase was forced to PhaseComplete
+	// (defensive guard prevents infinite loop in runPhaseLoop)
+	assert.Equal(t, ProcessResult{}, res)
+	assert.Equal(t, PhaseComplete, turn.State.Phase)
 }
 
 func TestEmergencySave(t *testing.T) {
@@ -318,9 +301,7 @@ func TestEmergencySave(t *testing.T) {
 
 		e.emergencySave(turn)
 
-		if !called {
-			t.Error("expected emergencySave to invoke PhasePersisting processor")
-		}
+		assert.True(t, called, "expected emergencySave to invoke PhasePersisting processor")
 	})
 
 	t.Run("no-op when Response is nil", func(t *testing.T) {
@@ -342,9 +323,7 @@ func TestEmergencySave(t *testing.T) {
 
 		e.emergencySave(turn)
 
-		if called {
-			t.Error("expected emergencySave to be no-op when Response is nil")
-		}
+		assert.False(t, called, "expected emergencySave to be no-op when Response is nil")
 	})
 
 	t.Run("no-op when processor not registered", func(t *testing.T) {
