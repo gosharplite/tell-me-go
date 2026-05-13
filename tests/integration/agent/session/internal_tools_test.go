@@ -14,6 +14,7 @@ import (
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -32,7 +33,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "M2"}}})
 
 	cm := sessctx.NewManager(nil, hManager, nil, nil)
-	it := session.NewInternalTools(cm)
+	it := session.NewInternalTools(cm, &ports.NoOpLogger{})
 
 	tests := []struct {
 		name        string
@@ -99,7 +100,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 func TestRegisterInternal(t *testing.T) {
 	registry := &agenttest.MockToolRegistry{}
 	cm := sessctx.NewManager(nil, nil, nil, nil)
-	if err := session.RegisterInternal(registry, cm); err != nil {
+	if err := session.RegisterInternal(registry, cm, &ports.NoOpLogger{}); err != nil {
 		t.Fatalf("RegisterInternal failed: %v", err)
 	}
 
@@ -172,7 +173,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
 	})
 	cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hManager, &eventstest.MockEventBus{}, factory)
-	it := session.NewInternalTools(cm)
+	it := session.NewInternalTools(cm, &ports.NoOpLogger{})
 
 	ctx := context.Background()
 
@@ -234,7 +235,7 @@ func TestRegisterInternal_ErrorPath(t *testing.T) {
 			registry.SetRegisterErr(fmt.Errorf("registry error"))
 			registry.SetFailAfter(tt.failAfter)
 			cm := sessctx.NewManager(nil, nil, nil, nil)
-			err := session.RegisterInternal(registry, cm)
+			err := session.RegisterInternal(registry, cm, &ports.NoOpLogger{})
 			if err == nil {
 				t.Fatalf("expected initialization to fail when registry returns an error (failAfter=%d)", tt.failAfter)
 			}
