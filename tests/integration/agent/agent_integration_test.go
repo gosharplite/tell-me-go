@@ -328,7 +328,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	agentinternal.AsAgentInternal(a).GetCtxManager().SetPipeline(agentinternal.AsAgentInternal(a).GetCtxManager().Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	err = session.RegisterInternal(reg, agentinternal.AsAgentInternal(a).GetCtxManager())
+	err = session.RegisterInternal(reg, agentinternal.AsAgentInternal(a).GetCtxManager(), &ports.NoOpLogger{})
 	require.NoError(t, err)
 
 	// Verify that at least one transformer has the registry
@@ -342,7 +342,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 		defer cancel()
 		_ = a.Shutdown(shutdownCtx)
 	})
-	it := session.NewInternalTools(agentinternal.AsAgentInternal(a).GetCtxManager())
+	it := session.NewInternalTools(agentinternal.AsAgentInternal(a).GetCtxManager(), &ports.NoOpLogger{})
 
 	t.Run("PinTurn", func(t *testing.T) {
 		verifyPinAction(t, it, h, ctx, "pin", 0)

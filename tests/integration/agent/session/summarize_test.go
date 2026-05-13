@@ -176,7 +176,7 @@ func setupInternalTools(t *testing.T, client *gemini.Client, h ports.HistoryMana
 		Events:     bus,
 	}
 	cm := sessctx.NewManager(strategy, h, bus, factory)
-	return session.NewInternalTools(cm)
+	return session.NewInternalTools(cm, &ports.NoOpLogger{})
 }
 
 func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolResult, err error, h ports.HistoryManager) {

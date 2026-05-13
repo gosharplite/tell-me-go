@@ -6,8 +6,7 @@ package session
 import (
 	"context"
 	"errors"
-	"io"
-	"os"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,6 +17,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/require"
 )
+
+// mockLogger is a test spy that captures Error calls for assertion.
+type mockLogger struct {
+	ports.NoOpLogger    // safe default for unused log methods
+	errors []string
+}
+
+func (m *mockLogger) Error(msg string, args ...any) {
+	m.errors = append(m.errors, fmt.Sprintf(msg, args...))
+}
 
 // setPinnedFailingHM wraps a MockHistoryManager and overrides SetPinned to return an error.
 type setPinnedFailingHM struct {
@@ -36,7 +45,7 @@ func TestManageHistory_SetPinnedError(t *testing.T) {
 	}
 
 	cm := &sessctx.Manager{History: failingHM}
-	tools := NewInternalTools(cm)
+	tools := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"action": "pin",
@@ -56,7 +65,7 @@ func TestManageHistory_SetPinnedError_Unpin(t *testing.T) {
 	}
 
 	cm := &sessctx.Manager{History: failingHM}
-	tools := NewInternalTools(cm)
+	tools := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"action": "unpin",
@@ -75,7 +84,7 @@ func TestSummarizeHistory_SummarizeRangeError(t *testing.T) {
 		History:  &failingHMBase{},
 		Strategy: sessctx.NewStrategy(&mockTokenCounter{}),
 	}
-	tools := NewInternalTools(cm)
+	tools := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"turns": float64(3),
@@ -144,7 +153,7 @@ func TestRegisterInternal_RegisterWithOptionsError(t *testing.T) {
 		registerWithOptionsErr: errors.New("register with options failed"),
 	}
 
-	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
+	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "register with options failed")
 }
@@ -154,20 +163,20 @@ func TestRegisterInternal_RegisterError(t *testing.T) {
 		registerErr: errors.New("register failed"),
 	}
 
-	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
+	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "register failed")
 }
 
 func TestRegisterInternal_Success(t *testing.T) {
 	reg := &mockToolRegistrar{} // zero value: both error fields nil → both registrations succeed
-	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}})
+	err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
 	require.NoError(t, err)
 }
 
 func TestManageHistory_NegativeIndex(t *testing.T) {
 	cm := &sessctx.Manager{History: &failingHMBase{}}
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"action": "pin",
@@ -186,9 +195,11 @@ func TestEmitHeartbeats(t *testing.T) {
 		close(done)
 		hb := make(chan struct{})
 
+		it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
+
 		returned := make(chan struct{})
 		go func() {
-			emitHeartbeats(done, hb)
+			it.emitHeartbeats(done, hb)
 			close(returned)
 		}()
 
@@ -203,8 +214,10 @@ func TestEmitHeartbeats(t *testing.T) {
 		done := make(chan struct{})
 		close(done)
 
+		it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
+
 		// Should return cleanly without panic
-		emitHeartbeats(done, nil)
+		it.emitHeartbeats(done, nil)
 	})
 
 	t.Run("does not block when heartbeat channel is full", func(t *testing.T) {
@@ -216,9 +229,11 @@ func TestEmitHeartbeats(t *testing.T) {
 			close(done)
 		}()
 
+		it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
+
 		returned := make(chan struct{})
 		go func() {
-			emitHeartbeats(done, hb)
+			it.emitHeartbeats(done, hb)
 			close(returned)
 		}()
 
@@ -232,7 +247,7 @@ func TestEmitHeartbeats(t *testing.T) {
 
 func TestSummarizeHistory_UnmarshalArgsError(t *testing.T) {
 	cm := &sessctx.Manager{History: &failingHMBase{}}
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"turns": "not-a-number",
@@ -255,7 +270,7 @@ func TestSummarizeHistory_InvalidTurns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cm := &sessctx.Manager{History: &failingHMBase{}}
-			it := NewInternalTools(cm)
+			it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 			args := map[string]interface{}{
 				"turns": tt.turns,
@@ -271,7 +286,7 @@ func TestSummarizeHistory_InvalidTurns(t *testing.T) {
 
 func TestSummarizeHistory_LargeTurns(t *testing.T) {
 	cm := &sessctx.Manager{History: &failingHMBase{}}
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"turns": float64(1e20),
@@ -300,7 +315,7 @@ func TestSummarizeHistory_Success(t *testing.T) {
 	})
 	cm.Summarizer = mockSum
 
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"turns": float64(1),
@@ -316,7 +331,7 @@ func TestSummarizeHistory_Success(t *testing.T) {
 
 func TestManageHistory_UnsupportedAction(t *testing.T) {
 	cm := &sessctx.Manager{History: &failingHMBase{}}
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"action": "delete",
@@ -335,7 +350,7 @@ func TestManageHistory_OutOfBoundsIndex(t *testing.T) {
 		err:            errors.New("index out of range"),
 	}
 	cm := &sessctx.Manager{History: failingHM}
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"action": "pin",
@@ -350,7 +365,7 @@ func TestManageHistory_OutOfBoundsIndex(t *testing.T) {
 
 func TestManageHistory_UnmarshalArgsError(t *testing.T) {
 	cm := &sessctx.Manager{History: &failingHMBase{}}
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	// Type mismatch: "action" is a number, but params.Action expects a string
 	args := map[string]interface{}{
@@ -365,7 +380,7 @@ func TestManageHistory_UnmarshalArgsError(t *testing.T) {
 
 func TestManageHistory_Success(t *testing.T) {
 	cm := &sessctx.Manager{History: &failingHMBase{}}
-	it := NewInternalTools(cm)
+	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	t.Run("pin", func(t *testing.T) {
 		args := map[string]interface{}{
@@ -389,18 +404,14 @@ func TestManageHistory_Success(t *testing.T) {
 }
 
 func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
-	// 1. Capture os.Stdout via pipe to observe panic recovery output.
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
+	// 1. Create InternalTools with a mockLogger to capture the Error call.
+	logger := &mockLogger{}
+	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, logger)
 
-	// 2. Install the test-only panic hook, reset on cleanup.
-	testEmitHeartbeatsPanic = func() {
+	// 2. Install the test-only panic hook on the struct field.
+	it.testEmitHeartbeatsPanic = func() {
 		panic("injected test panic")
 	}
-	defer func() { testEmitHeartbeatsPanic = nil }()
 
 	// 3. Start emitHeartbeats in a background goroutine.
 	done := make(chan struct{})
@@ -408,12 +419,12 @@ func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
 
 	returned := make(chan struct{})
 	go func() {
-		emitHeartbeats(done, hb)
+		it.emitHeartbeats(done, hb)
 		close(returned)
 	}()
 
 	// 4. Wait for the goroutine to exit. The panic fires on the first tick
-	//    (2s interval), recover catches it, and the function returns cleanly.
+	//    (2s interval), recover catches it, and the method returns cleanly.
 	select {
 	case <-returned:
 		// goroutine exited as expected
@@ -424,18 +435,14 @@ func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
 	// Cleanup: close done channel (no-op since goroutine already exited).
 	close(done)
 
-	// 5. Close the write end so the read doesn't block.
-	_ = w.Close()
-
-	// 6. Read captured stdout and verify the panic message was printed.
-	output, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.Contains(t, string(output),
+	// 5. Verify the logger captured the panic message.
+	require.NotEmpty(t, logger.errors)
+	require.Contains(t, logger.errors[0],
 		"panic in summarize history background drainer: injected test panic")
 }
 
 func TestEmitHeartbeats_TickerPaths(t *testing.T) {
-	// These subtests share the global testEmitHeartbeatsTickHook and must
+	// These subtests set a tick hook on the InternalTools instance and must
 	// not run in parallel.
 
 	tests := []struct {
@@ -462,21 +469,22 @@ func TestEmitHeartbeats_TickerPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
+
 			// Install an idempotent tick hook that signals once.
 			ticked := make(chan struct{}, 1)
-			testEmitHeartbeatsTickHook = func() {
+			it.testEmitHeartbeatsTickHook = func() {
 				select {
 				case ticked <- struct{}{}:
 				default:
 				}
 			}
-			defer func() { testEmitHeartbeatsTickHook = nil }()
 
 			done := make(chan struct{})
 
 			returned := make(chan struct{})
 			go func() {
-				emitHeartbeats(done, tt.hb)
+				it.emitHeartbeats(done, tt.hb)
 				close(returned)
 			}()
 
