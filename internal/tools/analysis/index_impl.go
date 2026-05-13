@@ -95,11 +95,33 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 	return impls
 }
 
+func (idx *indexer) computeImplementationsLazy() map[string][]string {
+	idx.mu.RLock()
+	pkgs := idx.pkgs
+	idx.mu.RUnlock()
+
+	impls := idx.computeImplementations(pkgs)
+
+	idx.mu.Lock()
+	if idx.implementations == nil {
+		idx.implementations = impls
+	}
+	idx.mu.Unlock()
+
+	return idx.implementations
+}
+
 func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
 	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil
 	}
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-	return idx.implementations[interfaceMethodId]
+	impls := idx.implementations
+	idx.mu.RUnlock()
+
+	if impls == nil {
+		impls = idx.computeImplementationsLazy()
+	}
+
+	return impls[interfaceMethodId]
 }

@@ -145,6 +145,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	mockExec := &mockHealthExecutor{}
 	mockRunner := &mockGoRunner{}
 	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, persistencetest.NewPlainOSFileSystem(), infra_persistence.NewWorkspacePolicy())
+	ana.DeadCode = &mockDeadCodeAnalyzer{}
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
 
 	ctx := context.Background()

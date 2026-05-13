@@ -232,15 +232,13 @@ func (idx *indexer) discoverModulePath(ctx context.Context, fset *token.FileSet)
 }
 
 func (idx *indexer) updateState(pkgs []*packages.Package, symbolsByPath map[string][]symbolLocation, usagesByName map[string][]location, fset *token.FileSet) {
-	impls := idx.computeImplementations(pkgs)
-
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	idx.pkgs = pkgs
 	idx.fset = fset
 	idx.symbolsByPath = symbolsByPath
 	idx.usagesByName = usagesByName
-	idx.implementations = impls
+	idx.implementations = nil // invalidated; will be lazily recomputed
 	idx.lastRefresh = time.Now()
 }
 
