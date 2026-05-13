@@ -42,17 +42,19 @@ func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
 }
 
 func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
-	// Compute both value and pointer method sets. The value type may have
-	// zero methods when all are on the pointer receiver (e.g., NoOpLogger
-	// struct{} with *NoOpLogger methods). The pre-filter must account for
-	// both since types.Implements checks both named and *named below.
-	valueMethodSetLen := types.NewMethodSet(named).Len()
+	// Compute pointer method set length for the pre-filter below.
+	// The value method set is also computed purely for cache warming:
+	// calling types.NewMethodSet(named) primes the go/types internal
+	// cache, which accelerates the subsequent types.Implements(named, itf)
+	// check. Since *T's method set is always a superset of T's, only the
+	// pointer method set needs to be checked in the pre-filter.
+	_ = types.NewMethodSet(named).Len() // cache warming (see comment above)
 	ptrMethodSetLen := types.NewMethodSet(types.NewPointer(named)).Len()
 
 	for _, itf := range interfaces {
-		// Pre-filter: neither value nor pointer type has enough total
-		// methods to satisfy the interface — satisfaction is impossible.
-		if valueMethodSetLen < itf.NumMethods() && ptrMethodSetLen < itf.NumMethods() {
+		// Pre-filter: if the pointer type doesn't have enough methods
+		// to satisfy the interface, satisfaction is impossible.
+		if ptrMethodSetLen < itf.NumMethods() {
 			continue
 		}
 
