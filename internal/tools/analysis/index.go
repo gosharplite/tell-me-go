@@ -240,7 +240,7 @@ func (idx *indexer) updateState(pkgs []*packages.Package, symbolsByPath map[stri
 	idx.fset = fset
 	idx.symbolsByPath = symbolsByPath
 	idx.usagesByName = usagesByName
-	idx.implementations = nil // invalidated; will be lazily recomputed
+	idx.implementations = nil // invalidated; lazily recomputed by GetImplementations (ADR-029)
 	idx.lastRefresh = time.Now()
 }
 
