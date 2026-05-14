@@ -742,3 +742,56 @@ func TestGetSymbolType(t *testing.T) {
 		})
 	}
 }
+
+func TestNewDeadCodeAnalyzerForCLI(t *testing.T) {
+	t.Parallel()
+	sp := &deadCodeSecurityProvider{tempDir: t.TempDir()}
+	analyzer := NewDeadCodeAnalyzerForCLI(sp)
+	if analyzer == nil {
+		t.Error("NewDeadCodeAnalyzerForCLI returned nil")
+	}
+}
+
+func TestGatherOrphanReports(t *testing.T) {
+	t.Parallel()
+	tests := getFindOrphanedSymbolsTestCases()
+	rootTmpDir, sharedModule := setupSharedWorkspace(t, tests)
+
+	idx, err := newIndexer(rootTmpDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+	err = idx.Refresh(ctx, nil)
+	require.NoError(t, err)
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			safeName := getSafeName(tt.name)
+			caseDir := filepath.Join(rootTmpDir, safeName)
+
+			analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
+
+			reports, err := analyzer.GatherOrphanReports(ctx, caseDir, nil)
+			require.NoError(t, err)
+
+			// Verify that all expected orphan reports are found.
+			// Note: GatherOrphanReports may return additional findings beyond the
+			// expected minimum (e.g., transitive private detections).
+			for _, exp := range tt.expected {
+				expectedPkg := strings.ReplaceAll(exp.Pkg, "example.com/test", sharedModule+"/"+safeName)
+				found := false
+				for _, r := range reports {
+					if r.Symbol == exp.Symbol && r.Pkg == expectedPkg && r.Severity == exp.Severity {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected report for symbol %s in package %s with severity %s, not found in %v",
+						exp.Symbol, expectedPkg, exp.Severity, reports)
+				}
+			}
+		})
+	}
+}

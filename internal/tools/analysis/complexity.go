@@ -127,7 +127,11 @@ func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *se
 		}
 	}
 
-	fileComplexities := a.analyzeFile(path)
+	fileComplexities, err := a.analyzeFile(path)
+	if err != nil {
+		// Soft-fail: individual file parse errors do not stop the entire analysis.
+		return nil
+	}
 	if len(fileComplexities) > 0 {
 		mu.Lock()
 		*complexities = append(*complexities, fileComplexities...)
@@ -136,10 +140,10 @@ func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *se
 	return nil
 }
 
-func (a *defaultComplexityAnalyzer) analyzeFile(filePath string) []funcComplexity {
+func (a *defaultComplexityAnalyzer) analyzeFile(filePath string) ([]funcComplexity, error) {
 	f, fset, err := a.Cache.Get(filePath)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("analyzeFile %s: %w", filePath, err)
 	}
 
 	var fileComplexities []funcComplexity
@@ -159,7 +163,7 @@ func (a *defaultComplexityAnalyzer) analyzeFile(filePath string) []funcComplexit
 			})
 		}
 	}
-	return fileComplexities
+	return fileComplexities, nil
 }
 
 func (a *defaultComplexityAnalyzer) formatResults(complexities []funcComplexity) string {

@@ -60,3 +60,80 @@ func verifyPackageGraphResults(t *testing.T, output, module string) {
 		t.Errorf("Expected pkg2 as dependency")
 	}
 }
+
+func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil hb does not panic", func(t *testing.T) {
+		t.Parallel()
+		analyzer := newDependencyAnalyzer(nil, nil, nil, nil)
+		done := make(chan struct{})
+		close(done)
+		analyzer.startHeartbeat(nil, done)
+	})
+
+	t.Run("non-nil hb with done", func(t *testing.T) {
+		t.Parallel()
+		analyzer := newDependencyAnalyzer(nil, nil, nil, nil)
+		done := make(chan struct{})
+		hb := make(chan struct{}, 1)
+		go analyzer.startHeartbeat(hb, done)
+		// Wait briefly then close done to stop
+		close(done)
+		// No assertions needed — just verify no panic/goroutine leak
+	})
+}
+
+func TestContainsGoFiles(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	t.Run("directory with go files", func(t *testing.T) {
+		t.Parallel()
+		dir := filepath.Join(tmpDir, "withgo")
+		_ = os.MkdirAll(dir, 0755)
+		_ = os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
+		ok, err := containsGoFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Error("expected true for directory with .go files")
+		}
+	})
+
+	t.Run("directory without go files", func(t *testing.T) {
+		t.Parallel()
+		dir := filepath.Join(tmpDir, "nogofiles")
+		_ = os.MkdirAll(dir, 0755)
+		_ = os.WriteFile(filepath.Join(dir, "README.md"), []byte("# docs"), 0644)
+		ok, err := containsGoFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Error("expected false for directory without .go files")
+		}
+	})
+
+	t.Run("empty directory", func(t *testing.T) {
+		t.Parallel()
+		dir := filepath.Join(tmpDir, "empty")
+		_ = os.MkdirAll(dir, 0755)
+		ok, err := containsGoFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Error("expected false for empty directory")
+		}
+	})
+
+	t.Run("non-existent directory", func(t *testing.T) {
+		t.Parallel()
+		_, err := containsGoFiles("/nonexistent/path")
+		if err == nil {
+			t.Error("expected error for non-existent directory")
+		}
+	})
+}
