@@ -66,11 +66,8 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 	}
 
 	hash := params.Hash
-	// Defense-in-depth presence guard. The central validateRequiredArgs in
-	// registry.Execute catches missing required params before this handler
-	// runs in production. We keep this guard for direct invocation paths
-	// (unit tests, embedding, in-process callers). See writeFile's comment
-	// for the full rationale.
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if hash == "" {
 		return tools.ToolResult{}, fmt.Errorf("hash argument is required")
 	}
@@ -95,7 +92,8 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 	}
 
 	path := params.FilePath
-	// Defense-in-depth presence guard — see getGitCommit hash guard for rationale.
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if path == "" {
 		return tools.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
@@ -119,7 +117,8 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{},
 	}
 
 	message := params.Message
-	// Defense-in-depth presence guard — see getGitCommit hash guard for rationale.
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if message == "" {
 		return tools.ToolResult{}, fmt.Errorf("message is required")
 	}
@@ -146,7 +145,8 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 	}
 
 	name := params.Name
-	// Defense-in-depth presence guard — see getGitCommit hash guard for rationale.
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if name == "" {
 		return tools.ToolResult{}, fmt.Errorf("branch name is required")
 	}

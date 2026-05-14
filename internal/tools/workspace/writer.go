@@ -34,8 +34,8 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{},
 	//   (b) Future callers (other registries, embedding scenarios,
 	//       in-process tool invocation by tests/scripts) get the same
 	//       safety without depending on the registry's behavior.
-	// The two layers cannot disagree because both check key-presence
-	// (not value-zero-ness) on the same args map.
+	// The registry checks key-presence (is the param in the map?); this
+	// handler additionally validates the value itself is non-empty.
 	if _, ok := args["content"]; !ok {
 		return tools.ToolResult{}, fmt.Errorf("required parameter 'content' is missing (to write an empty file, pass content=\"\" explicitly)")
 	}
