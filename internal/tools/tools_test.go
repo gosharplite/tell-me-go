@@ -189,6 +189,39 @@ func (m *MockRegistry) IsLongRunning(name string) bool { return false }
 func TestRegisterAll_Errors(t *testing.T) {
 	t.Parallel()
 
+	t.Run("nil Registry returns error", func(t *testing.T) {
+		t.Parallel()
+		err := tools.RegisterAll(tools.ToolRegistrationParams{
+			Registry:        nil,
+			SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
+			WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Registry is required")
+	})
+
+	t.Run("nil SecurityManager returns error", func(t *testing.T) {
+		t.Parallel()
+		err := tools.RegisterAll(tools.ToolRegistrationParams{
+			Registry:        new(MockRegistry),
+			SecurityManager: nil,
+			WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "SecurityManager is required")
+	})
+
+	t.Run("nil WorkspacePolicy returns error", func(t *testing.T) {
+		t.Parallel()
+		err := tools.RegisterAll(tools.ToolRegistrationParams{
+			Registry:        new(MockRegistry),
+			SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
+			WorkspacePolicy: nil,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "WorkspacePolicy is required")
+	})
+
 	tests := []struct {
 		name      string
 		failAfter int
@@ -236,6 +269,7 @@ func TestRegisterAll_Errors(t *testing.T) {
 			params := tools.ToolRegistrationParams{
 				HealthManager:   nil,
 				Registry:        mockReg,
+				SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
 				WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
 			}
 			if tt.setup != nil {
