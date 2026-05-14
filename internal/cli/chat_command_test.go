@@ -728,3 +728,34 @@ func TestChatCommand_NilInteractorRef_DoesNotPanic(t *testing.T) {
 		t.Fatalf("unexpected error with nil InteractorRef: %v", err)
 	}
 }
+
+func TestChatCommand_CleanupErrorPropagation(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	closeErr := errors.New("capturer close failed")
+	mb.ExpectedCalls = nil
+	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)
+	mb.On("GetSuggestionService", mock.Anything, mock.Anything).
+		Return(&mockSuggestionService{closeErr: closeErr}, nil)
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader("test prompt\n"),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		HomeDir:      t.TempDir(),
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"--interactive"})
+	require.NoError(t, err, "chat command should not fail on cleanup error")
+	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
+	require.Contains(t, stderr.String(), "capturer close failed")
+}
