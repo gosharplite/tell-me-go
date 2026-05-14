@@ -44,6 +44,7 @@ type readRequest struct {
 	delim byte  // For ReadString
 	limit int64 // For ReadAll (use maxPromptSize)
 	resCh chan ioResult
+	ctx   context.Context // Context to allow cancellation
 }
 
 type ioResult struct {
@@ -97,17 +98,37 @@ func (c *capturer) startWorker() {
 		defer close(c.done)
 		for req := range reqChan {
 			var res ioResult
-			switch req.op {
-			case opReadByte:
-				b, err := c.reader.ReadByte()
-				res = ioResult{data: b, err: err}
-			case opReadString:
-				s, err := c.reader.ReadString(req.delim)
-				res = ioResult{data: s, err: err}
-			case opReadAll:
-				bytes, err := io.ReadAll(io.LimitReader(c.reader, req.limit))
-				res = ioResult{data: bytes, err: err}
+			
+			// Race context against the blocking read operation.
+			readDone := make(chan ioResult, 1)
+			go func(req readRequest) {
+				var localRes ioResult
+				switch req.op {
+				case opReadByte:
+					b, err := c.reader.ReadByte()
+					localRes = ioResult{data: b, err: err}
+				case opReadString:
+					s, err := c.reader.ReadString(req.delim)
+					localRes = ioResult{data: s, err: err}
+				case opReadAll:
+					bytes, err := io.ReadAll(io.LimitReader(c.reader, req.limit))
+					localRes = ioResult{data: bytes, err: err}
+				}
+				readDone <- localRes
+			}(req)
+
+			if req.ctx != nil {
+				select {
+				case res = <-readDone:
+				case <-req.ctx.Done():
+					res = ioResult{err: req.ctx.Err()}
+					req.resCh <- res
+					return // Exit worker to prevent data races on c.reader from leaked read goroutine
+				}
+			} else {
+				res = <-readDone
 			}
+
 			req.resCh <- res
 		}
 	}()
@@ -219,7 +240,7 @@ func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, 
 		return "", err
 	}
 
-	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1), ctx: ctx}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
@@ -243,7 +264,7 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 
 	c.printFeedback(c.Stdout, useColor, colorYellow, multiLineEOFHint)
 
-	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1), ctx: ctx}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
@@ -365,7 +386,7 @@ func (c *capturer) readByteFallback(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	req := readRequest{op: opReadByte, resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadByte, resCh: make(chan ioResult, 1), ctx: ctx}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
@@ -386,7 +407,7 @@ func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	req := readRequest{op: opReadString, delim: '\n', resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadString, delim: '\n', resCh: make(chan ioResult, 1), ctx: ctx}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
