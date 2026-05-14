@@ -121,43 +121,51 @@ func TestRegister(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// failingRegistry — mock that injects failures at a specific call index
+// failingRegistry — mock that injects failures for a specific tool by name
 // ---------------------------------------------------------------------------
 
 type failingRegistry struct {
 	*mockToolRegistry
-	failAt    int
-	callCount int
+	failOnTool string
+	failErr    error
 }
 
 func (f *failingRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	f.callCount++
-	if f.callCount == f.failAt {
-		return fmt.Errorf("injected failure at call %d", f.callCount)
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
 	}
 	return f.mockToolRegistry.Register(def, handler)
 }
 
 func (f *failingRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	f.callCount++
-	if f.callCount == f.failAt {
-		return fmt.Errorf("injected failure at call %d", f.callCount)
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
 	}
 	return f.mockToolRegistry.RegisterWithOptions(def, handler, opts)
 }
 
 func (f *failingRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	f.callCount++
-	if f.callCount == f.failAt {
-		return fmt.Errorf("injected failure at call %d", f.callCount)
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
 	}
 	return f.mockToolRegistry.RegisterToToolkit(toolkit, def, handler)
 }
 
 func (f *failingRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	f.callCount++
-	if f.callCount == f.failAt {
-		return fmt.Errorf("injected failure at call %d", f.callCount)
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
 	}
 	return f.mockToolRegistry.RegisterToToolkitWithOptions(toolkit, def, handler, opts)
 }
@@ -169,7 +177,7 @@ func (f *failingRegistry) RegisterToToolkitWithOptions(toolkit string, def *tool
 func TestRegisterFiles_PartialFailure(t *testing.T) {
 	registry := &failingRegistry{
 		mockToolRegistry: &mockToolRegistry{},
-		failAt:           5, // fail on the 5th tool (search_files)
+		failOnTool:       "replace_text",
 	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	exec := &toolstest.MockExecutor{}
@@ -183,10 +191,8 @@ func TestRegisterFiles_PartialFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "injected failure") {
 		t.Errorf("expected 'injected failure' in error, got %q", err.Error())
 	}
-
-	// Verify that tools before the failure were registered (callCount should be 5)
-	if registry.callCount != 5 {
-		t.Errorf("expected 5 registration calls before failure, got %d", registry.callCount)
+	if !strings.Contains(err.Error(), "replace_text") {
+		t.Errorf("expected 'replace_text' in error, got %q", err.Error())
 	}
 }
 
@@ -197,7 +203,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 	t.Run("execute_command fails", func(t *testing.T) {
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           1,
+			failOnTool:       "execute_command",
 		}
 		err := registerSystem(registry, sm, validator, nil)
 		if err == nil {
@@ -211,7 +217,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 	t.Run("pipe_commands fails", func(t *testing.T) {
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           2,
+			failOnTool:       "pipe_commands",
 		}
 		err := registerSystem(registry, sm, validator, nil)
 		if err == nil {
@@ -225,7 +231,7 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 	t.Run("ask_user fails", func(t *testing.T) {
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           3,
+			failOnTool:       "ask_user",
 		}
 		err := registerSystem(registry, sm, validator, nil)
 		if err == nil {
@@ -244,7 +250,7 @@ func TestRegisterGit_PartialFailure(t *testing.T) {
 	t.Run("first RegisterToToolkit fails", func(t *testing.T) {
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           1, // get_git_status
+			failOnTool:       "get_git_status",
 		}
 		err := registerGit(registry, sm, exec)
 		if err == nil {
@@ -258,7 +264,7 @@ func TestRegisterGit_PartialFailure(t *testing.T) {
 	t.Run("mid RegisterToToolkit fails", func(t *testing.T) {
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           4, // get_git_blame
+			failOnTool:       "get_git_blame",
 		}
 		err := registerGit(registry, sm, exec)
 		if err == nil {
@@ -272,7 +278,7 @@ func TestRegisterGit_PartialFailure(t *testing.T) {
 	t.Run("RegisterToToolkitWithOptions fails", func(t *testing.T) {
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           6, // git_commit (first RegisterToToolkitWithOptions)
+			failOnTool:       "git_commit",
 		}
 		err := registerGit(registry, sm, exec)
 		if err == nil {
@@ -296,10 +302,9 @@ func TestRegister_PartialFailure(t *testing.T) {
 	wp := infra_persistence.NewWorkspacePolicy()
 
 	t.Run("registerSystem fails", func(t *testing.T) {
-		// 13 file tools succeed, then system fails on call 14 (execute_command)
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           14,
+			failOnTool:       "execute_command",
 		}
 		err := Register(registry, sm, exec, validator, fs, wp, nil)
 		if err == nil {
@@ -311,10 +316,9 @@ func TestRegister_PartialFailure(t *testing.T) {
 	})
 
 	t.Run("registerGit fails", func(t *testing.T) {
-		// 13 file tools + 3 system tools = 16, then git fails on call 17 (get_git_status)
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
-			failAt:           17,
+			failOnTool:       "get_git_status",
 		}
 		err := Register(registry, sm, exec, validator, fs, wp, nil)
 		if err == nil {

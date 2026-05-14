@@ -578,10 +578,11 @@ func TestValidateDiffPrerequisites(t *testing.T) {
 // buildTree ReadDir error test
 // ---------------------------------------------------------------------------
 
-// errorReadDirFS implements persistence.FileSystem, returning a configurable
-// error from ReadDir. All other methods are no-ops since buildTree only calls
-// ReadDir (and recursively on subdirectories).
+// errorReadDirFS overrides ReadDir on an otherwise real persistence.FileSystem.
+// The embedded interface satisfies all methods automatically; only ReadDir is
+// intercepted to return a configurable error.
 type errorReadDirFS struct {
+	persistence.FileSystem
 	err error
 }
 
@@ -589,50 +590,13 @@ func (e *errorReadDirFS) ReadDir(ctx context.Context, name string) ([]os.DirEntr
 	return nil, e.err
 }
 
-func (e *errorReadDirFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
-	return nil, nil
-}
-
-func (e *errorReadDirFS) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
-	return nil
-}
-
-func (e *errorReadDirFS) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
-	return nil
-}
-
-func (e *errorReadDirFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
-	return nil
-}
-
-func (e *errorReadDirFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
-	return nil, nil
-}
-
-func (e *errorReadDirFS) Open(ctx context.Context, name string) (persistence.File, error) {
-	return nil, nil
-}
-
-func (e *errorReadDirFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
-	return nil, nil
-}
-
-func (e *errorReadDirFS) Remove(ctx context.Context, name string) error {
-	return nil
-}
-
-func (e *errorReadDirFS) RemoveAll(ctx context.Context, path string) error {
-	return nil
-}
-
-func (e *errorReadDirFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
-	return nil
-}
-
 func TestBuildTree_ReadDirError(t *testing.T) {
 	t.Run("ReadDir error propagated", func(t *testing.T) {
 		expectedErr := fmt.Errorf("mock readdir failure")
-		fs := &errorReadDirFS{err: expectedErr}
+		fs := &errorReadDirFS{
+			FileSystem: persistencetest.NewPlainOSFileSystem(),
+			err:        expectedErr,
+		}
 
 		var sb strings.Builder
 		ctx := context.Background()
