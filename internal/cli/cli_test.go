@@ -193,6 +193,128 @@ func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer { re
 func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser   { return nil }
 func (m *simpleMockBootstrapper) GetChatService() agent.ChatService         { return nil }
 
+// mockSMWithTracking extends mockSM with Close() call tracking for shutdown tests.
+type mockSMWithTracking struct {
+	mockSM
+	closeCalled bool
+	closeErr    error
+}
+
+func (m *mockSMWithTracking) Close() error {
+	m.closeCalled = true
+	return m.closeErr
+}
+
+func TestApp_Run_SMCloseOnShutdown(t *testing.T) {
+	sm := &mockSMWithTracking{}
+
+	deps := defaultTestDeps()
+	deps.SM = sm
+	app, err := New(deps, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	err = app.Run(stdctx.Background(), []string{"tell-me-go", "--version"})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !sm.closeCalled {
+		t.Error("expected SM.Close() to be called on shutdown")
+	}
+}
+
+func TestApp_Run_SMCloseError(t *testing.T) {
+	sm := &mockSMWithTracking{
+		closeErr: errors.New("close failed"),
+	}
+
+	deps := defaultTestDeps()
+	deps.SM = sm
+	app, err := New(deps, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	// Should not panic even when SM.Close() returns an error
+	err = app.Run(stdctx.Background(), []string{"tell-me-go", "--version"})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !sm.closeCalled {
+		t.Error("expected SM.Close() to be called even when it returns an error")
+	}
+}
+
+func TestApp_Run_SMCloseOnContextCancel(t *testing.T) {
+	sm := &mockSMWithTracking{}
+
+	mService := &mockChatService{}
+	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(stdctx.Canceled).Maybe()
+
+	deps := defaultTestDeps()
+	deps.SM = sm
+	deps.ChatService = mService
+	app, err := New(deps, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	ctx, cancel := stdctx.WithCancel(stdctx.Background())
+	cancel()
+
+	err = app.Run(ctx, []string{"tell-me-go", "test prompt"})
+	if err != nil {
+		t.Errorf("expected nil error on context cancellation, got %v", err)
+	}
+
+	if !sm.closeCalled {
+		t.Error("expected SM.Close() to be called on context cancellation")
+	}
+}
+
+func TestNew_NilIOFallback(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func(deps *AppDependencies)
+		checkNil func(*App) bool // returns true if the field should be os.*
+	}{
+		{
+			name:     "nil stdin falls back to os.Stdin",
+			setup:    func(deps *AppDependencies) { deps.Stdin = nil },
+			checkNil: func(a *App) bool { return a.Stdin == nil },
+		},
+		{
+			name:     "nil stdout falls back to os.Stdout",
+			setup:    func(deps *AppDependencies) { deps.Stdout = nil },
+			checkNil: func(a *App) bool { return a.Stdout == nil },
+		},
+		{
+			name:     "nil stderr falls back to os.Stderr",
+			setup:    func(deps *AppDependencies) { deps.Stderr = nil },
+			checkNil: func(a *App) bool { return a.Stderr == nil },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deps := defaultTestDeps()
+			tt.setup(&deps)
+
+			app, err := New(deps, func(string) string { return "" })
+			if err != nil {
+				t.Fatalf("New failed: %v", err)
+			}
+
+			if tt.checkNil(app) {
+				t.Error("expected non-nil fallback to os.*, got nil")
+			}
+		})
+	}
+}
+
 func TestSanitizeArgs(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -243,6 +365,21 @@ func TestSanitizeArgs(t *testing.T) {
 			name:     "last flag equal sign",
 			args:     []string{"tell-me-go", "-l=5", "-r"},
 			expected: []string{"tell-me-go", "-l=5", "-r"},
+		},
+		{
+			name:     "single arg no sanitization needed",
+			args:     []string{"tell-me-go"},
+			expected: []string{"tell-me-go"},
+		},
+		{
+			name:     "long back flag without value",
+			args:     []string{"tell-me-go", "--back", "hello"},
+			expected: []string{"tell-me-go", "--back=1", "hello"},
+		},
+		{
+			name:     "long back flag with value",
+			args:     []string{"tell-me-go", "--back", "3", "hello"},
+			expected: []string{"tell-me-go", "--back=3", "hello"},
 		},
 	}
 

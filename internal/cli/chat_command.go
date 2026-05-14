@@ -214,6 +214,9 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
+			// Defensive: untestable without DI for NewCapturer.
+			// The concrete type returned by ui.NewCapturer always implements
+			// both BaseCapturer and CapturerInteractor in practice.
 			// Fallback: use the base capturer directly if it's an interactor
 			if ci, ok := capturerInterface.(agent.CapturerInteractor); ok {
 				return ci, func(ctx stdctx.Context) error {
@@ -252,13 +255,21 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 
 func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
 	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
+	// Defensive: untestable without DI for NewCapturer.
+	// The concrete type returned by ui.NewCapturer always implements
+	// CapturerInteractor in practice. This guard is a safety net against
+	// future regressions where the interface contract changes.
 	capturer, ok := capturerInterface.(agent.CapturerInteractor)
 	if !ok {
 		return nil, func(stdctx.Context) error { return nil }
 	}
 	c.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
-		return capturer.Close(ctx)
+		if err := capturer.Close(ctx); err != nil {
+			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+			return err
+		}
+		return nil
 	}
 }
 
