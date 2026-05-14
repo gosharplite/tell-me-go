@@ -2,6 +2,8 @@
 
 How to communicate with AI roles (Architect, Coder, Tester, Reviewer) in the tell-me-go agent loop.
 
+> **Platform**: All examples assume **Linux bash**. Not compatible with Windows PowerShell.
+
 ## Quick Reference
 
 ```bash
