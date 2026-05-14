@@ -51,8 +51,10 @@ func (a *auditor) SetLogFile(path string) {
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		if ui := a.interactor(); ui != nil {
-			ui.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
+		if a.interactor != nil {
+			if ui := a.interactor(); ui != nil {
+				ui.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
+			}
 		}
 		return
 	}
