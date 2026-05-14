@@ -42,7 +42,7 @@ This SOP defines the end-to-end process for resolving a GitHub issue using the *
 
 | Role | Access | Responsibility |
 |------|--------|----------------|
-| **Orchestrator** (you) | Read files, run commands, `tell-me-go` | Issue analysis, prompt writing, retrieval, verification, PR creation. Relays tasks and results between Architect and Coder. **Never modifies Go source files.** |
+| **Orchestrator** (you) | Read files, run commands, `tell-me-go` | Issue analysis, prompt writing, retrieval, verification, PR creation. Relays tasks and results between Architect and Coder. Monitors token consumption of both roles via `tell-me-go -t`. **Never modifies Go source files.** |
 | **Architect** | Read-only via `tell-me-go -r` | **Phase 1:** structural analysis, risk assessment, implementation sequencing, `[ARCHITECTURAL BLOCKER]` / `[TECHNICAL DEBT]` / `[REFACTOR]` categorization. **Phase 2:** dispatches one task at a time to Coder, reviews each result, issues the next task or revision. Stays in a single session (no `--new`) across all of Phase 2. |
 | **Coder** | **Write** via `tell-me-go -r` (the only role with file write access) | Implementation: receives one focused task per session (`--new` each time), TDD, table-driven tests, reports result. No memory of prior tasks — each session is self-contained. |
 
@@ -146,6 +146,20 @@ the Architect continuous visibility — no big surprises at the end.
 |------|---------|-----|
 | Architect | **Single session** (no `--new` after Phase 1) | Maintains full implementation context across all tasks |
 | Coder | **New session per task** (`--new` every time) | Each task is self-contained; no context drift |
+
+> ⛔ **Orchestrator: watch the token limit.** The Architect's single session
+> grows with every task dispatch and review. Use `tell-me-go -t -c
+> ${ARCHITECT_CONFIG}` to check token consumption after every 3–4
+> task cycles. When the Architect's token count exceeds ~80% of the
+> model's limit, the model will silently drop early messages — the
+> Architect will appear to forget earlier tasks. At that point, you
+> must either: (a) wrap up and proceed to Phase 3 if close to
+> completion, or (b) start a new Architect session with `--new`,
+> summarizing the implementation state so far.
+>
+> Coder sessions are naturally protected by `--new`, but verify
+> periodically with `tell-me-go -t -c ${CODER_CONFIG}` to confirm
+> no stale session is accumulating tokens.
 
 **Loop:**
 
@@ -329,14 +343,16 @@ gh pr create \
 | Coder hits an error it cannot resolve | Send the error to Architect (no `--new`); Architect diagnoses and issues a corrected task |
 | `make check-full` fails | Failure output → Architect (no `--new`) for diagnosis; Architect issues fix task → Coder (`--new`) |
 | Coverage target not met | Remaining gaps → Architect for coverage plan → Coder (`--new`) for additional tests |
-| Coder times out or produces no output | Check `tell-me-go -t` for errors; re-send task with fresh `--new` session |
-| Architect appears to have forgotten context | Check `tell-me-go -t` for token consumption; if >80% of model limit, start next major phase with `--new` |
+| Coder times out or produces no output | Check `tell-me-go -t -c ${CODER_CONFIG}` for errors; re-send task with fresh `--new` session |
+| Architect appears to have forgotten context | Check `tell-me-go -t -c ${ARCHITECT_CONFIG}` for token consumption; if >80% of model limit, summarize progress and restart Architect with `--new` |
+| Architect token count exceeds ~80% of model limit (proactive check) | Assess: if near completion → finish the current task then proceed to Phase 3; if mid-implementation → summarize state, restart Architect with `--new`, continue |
 
 ---
 
 ### 7. Completion Checklist
 
 - [ ] Chat protocol complied with: no inline heredocs, `timeout: 1800` on all `tell-me-go` calls, `--new` only for first messages, retrieval via `-l N`, prompts via `write_file` → `mktemp` + `cp`
+- [ ] Token limits monitored: Architect checked via `-t` during Phase 2, Coder verified per-session, no silent context truncation
 - [ ] Feature branch created from `dev`
 - [ ] Architect analysis retrieved and actionable
 - [ ] Coder implementation completed (all gaps addressed)
