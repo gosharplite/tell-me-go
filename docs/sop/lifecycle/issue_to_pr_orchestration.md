@@ -67,12 +67,15 @@ to locate the config_dir, then list that directory for *.yaml files.
 If none are found there, fall back to the ARCHITECT_CONFIG and
 CODER_CONFIG environment variables — echo them and verify the paths
 exist before proceeding.
+
+When you call ask_user for the issue number, include the resolved
+config paths in the question so I can see and confirm them at a glance.
 ```
 
 This prompt is **self-discovering**: it does not require the user to
 hardcode config paths or the issue number. The orchestrator locates
-configs from the session environment and prompts for any missing
-information via `ask_user`.
+configs from the session environment and surfaces them in the `ask_user`
+prompt for easy review.
 
 ---
 
