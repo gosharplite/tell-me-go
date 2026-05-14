@@ -47,9 +47,9 @@ func newBackupManager(sm domain_security.PathValidator, fs domain_persistence.Fi
 
 // snapshot records the current state of a file before it is modified.
 func (b *backupManager) snapshot(ctx context.Context, path string, action string) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
+	// Resolve path and read file content OUTSIDE the critical section.
+	// Holding the mutex across synchronous disk I/O would cause thread
+	// starvation for concurrent callers.
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("snapshot: resolve path %s: %w", path, err)
@@ -71,6 +71,10 @@ func (b *backupManager) snapshot(ctx context.Context, path string, action string
 		Content:   content,
 		Action:    action,
 	}
+
+	// Lock ONLY for the in-memory state mutation.
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	b.backups = append(b.backups, snap)
 	if len(b.backups) > b.maxStored {
