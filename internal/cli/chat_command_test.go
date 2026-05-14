@@ -31,7 +31,7 @@ type mockChatService struct {
 func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
 	m.chatCalled = true
 	m.lastParams = cmd
-	args := m.Called(ctx, cfg, cmd, capturer)
+	args := m.Called(ctx, cfg, cmd)
 	return args.Error(0)
 }
 
@@ -165,7 +165,7 @@ func setupMocks() (*mockBootstrapper, *chatMockLoader, *mockChatService) {
 	ml.On("Load", mock.Anything).Return(&config.Config{}, nil).Maybe()
 	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(&mockSuggestionService{}, nil).Maybe()
-	ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	ms.On("GetLastUserMessage", mock.Anything, mock.Anything).Return("retry test", 1, nil).Maybe()
 	return mb, ml, ms
 }
@@ -311,7 +311,7 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	mService.ExpectedCalls = nil
 	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.MatchedBy(func(cmd agent.ChatCommand) bool {
 		return cmd.Retry
-	}), mock.Anything).Return(nil)
+	})).Return(nil)
 
 	cmdCtx := &context{
 		Version:      "1.0.0",
@@ -555,7 +555,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 			mb := &mockBootstrapper{}
 			sm := &mockSM{}
 			ms := &mockChatService{}
-			ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 			tt.setupMocks(ml, mb, ms)
 
 			var stdout, stderr strings.Builder
