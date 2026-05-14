@@ -403,6 +403,45 @@ func TestParseCoverageProfile(t *testing.T) {
 	}
 }
 
+// TestParseCoverageProfile_MatchesRawCount validates that parseCoverageProfile
+// counts exactly the same number of uncovered blocks as raw awk filtering.
+// Regression guard for #391 / #377 — prevents parsing changes from silently
+// corrupting coverage counts.
+func TestParseCoverageProfile_MatchesRawCount(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/test/mod", nil
+		},
+	}
+
+	// Golden profile: 5 data lines, 3 uncovered (count==0), 2 covered (count>0)
+	profile := "mode: set\n" +
+		"github.com/test/mod/pkg/a.go:1.0,2.0 2 0\n" +
+		"github.com/test/mod/pkg/a.go:3.0,4.0 1 1\n" +
+		"github.com/test/mod/pkg/b.go:1.0,3.0 3 0\n" +
+		"github.com/test/mod/pkg/b.go:4.0,5.0 1 2\n" +
+		"github.com/test/mod/pkg/c.go:1.0,2.0 1 0\n"
+
+	const wantUncovered = 3
+
+	blocks, err := parseCoverageProfile(ctx, strings.NewReader(profile), mock)
+	if err != nil {
+		t.Fatalf("parseCoverageProfile failed: %v", err)
+	}
+
+	if len(blocks) != wantUncovered {
+		t.Errorf("got %d uncovered blocks, want %d — parsing regression detected", len(blocks), wantUncovered)
+	}
+
+	// Also verify the blocks have expected properties (not just count)
+	if blocks[0].File != "pkg/a.go" || blocks[0].Stmts != 2 {
+		t.Errorf("block 0: got file=%s stmts=%d, want pkg/a.go stmts=2", blocks[0].File, blocks[0].Stmts)
+	}
+}
+
 func TestGetDetailedCoverageReport(t *testing.T) {
 	t.Parallel()
 	// This test is harder because it runs 'go test' and reads from FS.
