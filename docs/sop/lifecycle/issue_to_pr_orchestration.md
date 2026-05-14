@@ -59,9 +59,18 @@ Communication is **asynchronous and turn-based**. The Orchestrator is the hub â€
 **Example prompt to the AI orchestrator:**
 ```
 Execute the Issue-to-PR SOP for issue #378.
-Architect config: /path-to/architect.yaml
-Coder config: /path-to/coder.yaml
+
+Find the Architect and Coder config files. They are YAML files
+co-located with this session's config directory. Use get_session_info
+to locate the config_dir, then list that directory for *.yaml files.
+If none are found there, fall back to the ARCHITECT_CONFIG and
+CODER_CONFIG environment variables â€” echo them and verify the paths
+exist before proceeding.
 ```
+
+This prompt is **self-discovering**: it does not require the user to
+hardcode config paths that may be stale or incorrect. The orchestrator
+locates the configs from the session environment.
 
 ---
 
