@@ -192,3 +192,33 @@ func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 		t.Errorf("expected result containing %q, got %q", tc.wantResSubstr, res)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// newBackupManager normalization tests
+// ---------------------------------------------------------------------------
+
+func TestNewBackupManager_Normalization(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	fs := persistencetest.NewPlainOSFileSystem()
+
+	t.Run("zero normalized", func(t *testing.T) {
+		bm := newBackupManager(sm, fs, 0)
+		if bm.maxStored != 10 {
+			t.Errorf("expected maxStored=10 for input 0, got %d", bm.maxStored)
+		}
+	})
+
+	t.Run("negative normalized", func(t *testing.T) {
+		bm := newBackupManager(sm, fs, -5)
+		if bm.maxStored != 10 {
+			t.Errorf("expected maxStored=10 for input -5, got %d", bm.maxStored)
+		}
+	})
+
+	t.Run("positive preserved", func(t *testing.T) {
+		bm := newBackupManager(sm, fs, 3)
+		if bm.maxStored != 3 {
+			t.Errorf("expected maxStored=3 for input 3, got %d", bm.maxStored)
+		}
+	})
+}

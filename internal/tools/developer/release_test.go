@@ -7,8 +7,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -306,6 +308,70 @@ func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
 	})
 }
 
+func TestSecretScanner_ScanFile_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	// Create a real temp file to get a non-directory os.FileInfo.
+	tmpFile, err := os.CreateTemp(t.TempDir(), "test-*.go")
+	require.NoError(t, err)
+	fileInfo, err := os.Stat(tmpFile.Name())
+	require.NoError(t, err)
+
+	// Create a real temp dir to get a directory os.FileInfo.
+	tmpDir := t.TempDir()
+	dirInfo, err := os.Stat(tmpDir)
+	require.NoError(t, err)
+
+	acc := &scanAccumulator{}
+	patterns := []*regexp.Regexp{regexp.MustCompile(`sk-[a-zA-Z0-9]{32,}`)}
+
+	tests := []struct {
+		name    string
+		path    string
+		info    os.FileInfo
+		walkErr error
+	}{
+		{
+			name:    "Walk passes an error",
+			path:    "secret.go",
+			info:    fileInfo,
+			walkErr: os.ErrPermission,
+		},
+		{
+			name: "Path is a directory",
+			path: tmpDir,
+			info: dirInfo,
+		},
+		{
+			name: "Path is ignored",
+			path: ".git/config",
+			info: fileInfo,
+		},
+		{
+			name: "ReadFile fails",
+			path: "/test/nonexistent.go",
+			info: fileInfo,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := &secretScanner{
+				root:   "/test",
+				fs:     persistence.NewMockFileSystem(),
+				policy: infra_persistence.NewWorkspacePolicy(),
+			}
+
+			err := s.scanFile(context.Background(), tt.path, tt.info, tt.walkErr, patterns, acc)
+			assert.NoError(t, err, "scanFile should not propagate errors")
+			assert.False(t, acc.secretsFound, "should not have found secrets")
+			assert.Empty(t, acc.findings, "should have no findings")
+		})
+	}
+}
 func TestSecretScanner_IsIgnored(t *testing.T) {
 	s := &secretScanner{policy: infra_persistence.NewWorkspacePolicy()}
 	tests := []struct {
@@ -324,4 +390,133 @@ func TestSecretScanner_IsIgnored(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStartHeartbeat_Release(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		hb   chan<- struct{}
+	}{
+		{name: "Done channel close exits goroutine", hb: make(chan struct{}, 1)},
+		{name: "Nil hb channel does not panic", hb: nil},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &releaseManager{}
+			done := make(chan struct{})
+
+			go m.startHeartbeat(tt.hb, done)
+
+			close(done)
+			time.Sleep(50 * time.Millisecond)
+			// Test passes if no panic and no deadlock
+		})
+	}
+}
+func TestHandleLinterResult(t *testing.T) {
+	t.Parallel()
+	c := &linterChecker{}
+
+	tests := []struct {
+		name     string
+		out      []byte
+		err      error
+		wantOK   bool
+		contains string
+	}{
+		{
+			name:     `Success with "0 issues." string`,
+			out:      []byte("0 issues."),
+			err:      nil,
+			wantOK:   true,
+			contains: "passed",
+		},
+		{
+			name:     "Success with empty output",
+			out:      []byte(""),
+			err:      nil,
+			wantOK:   true,
+			contains: "passed",
+		},
+		{
+			name:     `err == "exit status 1" but output says "0 issues."`,
+			out:      []byte("0 issues."),
+			err:      fmt.Errorf("exit status 1"),
+			wantOK:   true,
+			contains: "passed",
+		},
+		{
+			name:     "Generic linter crash (non-exit-status-1)",
+			out:      []byte("panic: runtime error"),
+			err:      fmt.Errorf("exec failed"),
+			wantOK:   false,
+			contains: "failed:",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := c.handleLinterResult(tt.out, tt.err, "golangci-lint")
+			if result.OK != tt.wantOK {
+				t.Errorf("OK = %v, want %v", result.OK, tt.wantOK)
+			}
+			if !strings.Contains(result.Message, tt.contains) {
+				t.Errorf("Message = %q, want contains %q", result.Message, tt.contains)
+			}
+		})
+	}
+}
+func TestSecretScanner_ScanFile_BinaryContent(t *testing.T) {
+	t.Parallel()
+	fs := persistence.NewMockFileSystem()
+	ctx := context.Background()
+	require.NoError(t, fs.WriteFile(ctx, "/test/binary.bin", []byte{0x00, 0x01, 0x02}, 0644))
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "test-*")
+	require.NoError(t, err)
+	fileInfo, err := os.Stat(tmpFile.Name())
+	require.NoError(t, err)
+
+	s := &secretScanner{
+		root:   "/test",
+		fs:     fs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	acc := &scanAccumulator{}
+	patterns := []*regexp.Regexp{regexp.MustCompile(`sk-[a-zA-Z0-9]{32,}`)}
+
+	err = s.scanFile(ctx, "/test/binary.bin", fileInfo, nil, patterns, acc)
+	assert.NoError(t, err)
+	assert.False(t, acc.secretsFound, "binary files should not trigger secret detection")
+	assert.Empty(t, acc.findings)
+}
+
+func TestScanContent_ShortSecret(t *testing.T) {
+	t.Parallel()
+	s := &secretScanner{}
+	patterns := []*regexp.Regexp{regexp.MustCompile(`sk-.{3,}`)}
+	matches := s.scanContent([]byte("sk-abc"), "/test/file.go", patterns)
+
+	require.Len(t, matches, 1)
+	assert.Contains(t, matches[0], "****", "short secrets (<=8 chars) should be masked as ****")
+}
+func TestVerifyReleaseReadiness_PathError(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("sandbox error")
+	}
+	m := &releaseManager{
+		policy: infra_persistence.NewWorkspacePolicy(),
+		sm:     sm,
+	}
+	_, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "security error")
 }

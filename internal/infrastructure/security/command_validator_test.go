@@ -40,6 +40,14 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 	t.Parallel()
 	v := NewCommandValidator(nil, nil)
 
+	// Empty parts should return nil
+	if err := v.ValidateStructure(nil); err != nil {
+		t.Errorf("ValidateStructure(nil) error = %v; want nil", err)
+	}
+	if err := v.ValidateStructure([]string{}); err != nil {
+		t.Errorf("ValidateStructure([]) error = %v; want nil", err)
+	}
+
 	tests := []struct {
 		cmd     string
 		wantErr bool
@@ -452,6 +460,13 @@ func TestCommandValidator_ShellHeuristics(t *testing.T) {
 		{"Binary git-lfs", "git-lfs", "windows", false},
 		{"Binary apt-get", "apt-get", "linux", false},
 		{"Binary docker-compose", "docker-compose", "linux", false},
+		{"Binary npm-check (exclude list)", "npm-check", "linux", false},
+
+		// Path-like before dash (not a cmdlet)
+		{"Path slash before dash", "./foo-bar/baz", "linux", false},
+
+		// Short verb before dash (not a cmdlet)
+		{"Single char before dash (not a cmdlet)", "a-thing", "linux", false},
 
 		// Windows built-ins
 		{"Windows dir", "dir", "windows", true},
@@ -472,6 +487,175 @@ func TestCommandValidator_ShellHeuristics(t *testing.T) {
 			got := v.HasShellFeatures(parts)
 			if got != tt.want {
 				t.Errorf("HasShellFeatures(%q) on %s = %v, want %v", tt.cmd, tt.goos, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommandValidator_isSafeGh(t *testing.T) {
+	t.Parallel()
+	v := NewCommandValidator(nil, nil)
+	cv := v.(*commandValidator) // type-assert to access unexported method
+
+	tests := []struct {
+		name       string
+		parts      []string
+		wantSafe   bool
+		wantReason string
+	}{
+		{
+			name:       "empty subcommand",
+			parts:      []string{"gh"},
+			wantSafe:   false,
+			wantReason: "missing gh subcommand",
+		},
+		{
+			name:       "known safe: issue",
+			parts:      []string{"gh", "issue", "list"},
+			wantSafe:   true,
+			wantReason: "",
+		},
+		{
+			name:       "known safe: pr",
+			parts:      []string{"gh", "pr", "view"},
+			wantSafe:   true,
+			wantReason: "",
+		},
+		{
+			name:       "known unsafe: delete",
+			parts:      []string{"gh", "delete", "repo"},
+			wantSafe:   false,
+			wantReason: "not in the safe whitelist",
+		},
+		{
+			name:       "unknown subcommand",
+			parts:      []string{"gh", "nonexistent123"},
+			wantSafe:   false,
+			wantReason: "not in the safe whitelist",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			safe, reason := cv.isSafeGh(tt.parts)
+			if safe != tt.wantSafe {
+				t.Errorf("isSafeGh(%v) safe = %v; want %v", tt.parts, safe, tt.wantSafe)
+			}
+			if !strings.Contains(reason, tt.wantReason) {
+				t.Errorf("isSafeGh(%v) reason = %q; want containing %q", tt.parts, reason, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestCommandValidator_isSafeAz(t *testing.T) {
+	t.Parallel()
+	v := NewCommandValidator(nil, nil)
+	cv := v.(*commandValidator) // type-assert to access unexported method
+
+	tests := []struct {
+		name       string
+		parts      []string
+		wantSafe   bool
+		wantReason string
+	}{
+		{
+			name:       "empty subcommand",
+			parts:      []string{"az"},
+			wantSafe:   false,
+			wantReason: "missing az subcommand",
+		},
+		{
+			name:       "known safe: devops",
+			parts:      []string{"az", "devops", "list"},
+			wantSafe:   true,
+			wantReason: "",
+		},
+		{
+			name:       "known safe: repos",
+			parts:      []string{"az", "repos", "show"},
+			wantSafe:   true,
+			wantReason: "",
+		},
+		{
+			name:       "known unsafe: vm",
+			parts:      []string{"az", "vm", "create"},
+			wantSafe:   false,
+			wantReason: "not in the safe whitelist",
+		},
+		{
+			name:       "unknown subcommand",
+			parts:      []string{"az", "nonexistent123"},
+			wantSafe:   false,
+			wantReason: "not in the safe whitelist",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			safe, reason := cv.isSafeAz(tt.parts)
+			if safe != tt.wantSafe {
+				t.Errorf("isSafeAz(%v) safe = %v; want %v", tt.parts, safe, tt.wantSafe)
+			}
+			if !strings.Contains(reason, tt.wantReason) {
+				t.Errorf("isSafeAz(%v) reason = %q; want containing %q", tt.parts, reason, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestCleanPathArgument(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		arg  string
+		want string
+	}{
+		{"empty string", "", ""},
+		{"simple flag -la", "-la", ""},
+		{"flag with equals --file=/tmp/x", "--file=/tmp/x", "/tmp/x"},
+		{"equals in middle key=val", "key=val", "val"},
+		{"plain path", "/usr/bin/go", "/usr/bin/go"},
+		{"relative path", "./foo/bar", "./foo/bar"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanPathArgument(tt.arg)
+			if got != tt.want {
+				t.Errorf("cleanPathArgument(%q) = %q; want %q", tt.arg, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommandValidator_validateSubcommandSpecifics(t *testing.T) {
+	t.Parallel()
+	v := NewCommandValidator(nil, nil)
+	cv := v.(*commandValidator)
+
+	tests := []struct {
+		name      string
+		parts     []string
+		wantSafe  bool
+		wantEmpty bool // whether reason should be empty
+	}{
+		{"git status", []string{"git", "status"}, true, true},
+		{"go version", []string{"go", "version"}, true, true},
+		{"gh issue", []string{"gh", "issue"}, true, true},
+		{"az devops", []string{"az", "devops"}, true, true},
+		{"default fallthrough (echo)", []string{"echo", "hello"}, true, true},
+		{"default fallthrough (ls)", []string{"ls", "-la"}, true, true},
+		{"unsafe git push", []string{"git", "push"}, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			safe, reason := cv.validateSubcommandSpecifics(tt.parts)
+			if safe != tt.wantSafe {
+				t.Errorf("validateSubcommandSpecifics(%v) safe = %v; want %v", tt.parts, safe, tt.wantSafe)
+			}
+			if tt.wantEmpty && reason != "" {
+				t.Errorf("validateSubcommandSpecifics(%v) reason = %q; want empty", tt.parts, reason)
 			}
 		})
 	}

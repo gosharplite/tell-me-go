@@ -5,6 +5,7 @@ package ado
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -346,6 +347,26 @@ func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
+
+	t.Run("Fetch Log Content - processLogContent error (scanner.Err)", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Return a single line larger than the scanner's max buffer (1MB)
+			// to trigger bufio.ErrTooLong wrapped as "log stream interrupted"
+			w.WriteHeader(http.StatusOK)
+			tooLong := make([]byte, 1*1024*1024+1)
+			for i := range tooLong {
+				tooLong[i] = 'A'
+			}
+			_, _ = w.Write(tooLong)
+		}))
+		t.Cleanup(ts.Close)
+
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
+		_, err := m.getPipelineLogContent(context.Background(), args, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to process log content")
+	})
 }
 
 func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
@@ -625,4 +646,26 @@ func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
 		assert.True(t, res.Cancelled)
 		assert.Equal(t, 1, res.DefinitionID)
 	})
+}
+
+func TestBuildVariablesUpdatePayload_NonMapVariables(t *testing.T) {
+	// When existingDef["variables"] exists but is not a map[string]interface{},
+	// the function should replace it with an empty map and proceed.
+	existingDef := map[string]interface{}{
+		"variables": "not-a-map", // wrong type
+	}
+	inputVars := map[string]adoVariable{
+		"MY_VAR": {Value: "x", IsSecret: false},
+	}
+
+	body, err := buildVariablesUpdatePayload(existingDef, inputVars)
+	assert.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(body, &result)
+	assert.NoError(t, err)
+
+	vars, ok := result["variables"].(map[string]interface{})
+	assert.True(t, ok, "variables should be a map after buildVariablesUpdatePayload")
+	assert.Contains(t, vars, "MY_VAR")
 }

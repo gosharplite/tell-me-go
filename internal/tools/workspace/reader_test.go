@@ -5,12 +5,14 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
@@ -489,4 +491,159 @@ func TestReadFiles_Limit(t *testing.T) {
 	if !strings.Contains(err.Error(), "requested too many files") {
 		t.Errorf("expected limit error message, got %q", err.Error())
 	}
+}
+
+// ---------------------------------------------------------------------------
+// validateDiffPrerequisites tests
+// ---------------------------------------------------------------------------
+
+type noDiffExecutor struct {
+	*processExecutor
+}
+
+func (m *noDiffExecutor) LookPath(name string) (string, error) {
+	if name == "diff" {
+		return "", fmt.Errorf("diff not found in PATH")
+	}
+	return m.processExecutor.LookPath(name)
+}
+
+func (m *noDiffExecutor) RunCommand(ctx context.Context, parts []string, config executionConfig) (executionResult, error) {
+	return m.processExecutor.RunCommand(ctx, parts, config)
+}
+
+func TestValidateDiffPrerequisites(t *testing.T) {
+	tempDir := t.TempDir()
+	validFile := filepath.Join(tempDir, "valid.txt")
+	if err := os.WriteFile(validFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	ctx := context.Background()
+
+	t.Run("file1 missing", func(t *testing.T) {
+		r := &fileReader{
+			sm:       sm,
+			fs:       persistencetest.NewPlainOSFileSystem(),
+			policy:   infra_persistence.NewWorkspacePolicy(),
+			executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+		}
+		err := r.validateDiffPrerequisites(ctx, "nonexistent_file1_xyz.txt", validFile)
+		if err == nil {
+			t.Fatal("expected error for missing file1")
+		}
+		if !strings.Contains(err.Error(), "file1") {
+			t.Errorf("expected 'file1' in error, got %q", err.Error())
+		}
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("expected 'not found' in error, got %q", err.Error())
+		}
+	})
+
+	t.Run("executor nil", func(t *testing.T) {
+		r := &fileReader{
+			sm:       sm,
+			fs:       persistencetest.NewPlainOSFileSystem(),
+			policy:   infra_persistence.NewWorkspacePolicy(),
+			executor: nil,
+		}
+		err := r.validateDiffPrerequisites(ctx, validFile, validFile)
+		if err == nil {
+			t.Fatal("expected error for nil executor")
+		}
+		if !strings.Contains(err.Error(), "no command executor") {
+			t.Errorf("expected 'no command executor' in error, got %q", err.Error())
+		}
+	})
+
+	t.Run("diff not in path", func(t *testing.T) {
+		r := &fileReader{
+			sm:       sm,
+			fs:       persistencetest.NewPlainOSFileSystem(),
+			policy:   infra_persistence.NewWorkspacePolicy(),
+			executor: &noDiffExecutor{processExecutor: newprocessExecutor()},
+		}
+		err := r.validateDiffPrerequisites(ctx, validFile, validFile)
+		if err == nil {
+			t.Fatal("expected error for missing diff")
+		}
+		if !strings.Contains(err.Error(), "'diff' command not found") {
+			t.Errorf("expected 'diff' command not found in error, got %q", err.Error())
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// buildTree ReadDir error test
+// ---------------------------------------------------------------------------
+
+// errorReadDirFS overrides ReadDir on an otherwise real persistence.FileSystem.
+// The embedded interface satisfies all methods automatically; only ReadDir is
+// intercepted to return a configurable error.
+type errorReadDirFS struct {
+	persistence.FileSystem
+	err error
+}
+
+func (e *errorReadDirFS) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
+	return nil, e.err
+}
+
+func TestBuildTree_ReadDirError(t *testing.T) {
+	t.Run("ReadDir error propagated", func(t *testing.T) {
+		expectedErr := fmt.Errorf("mock readdir failure")
+		fs := &errorReadDirFS{
+			FileSystem: persistencetest.NewPlainOSFileSystem(),
+			err:        expectedErr,
+		}
+
+		var sb strings.Builder
+		ctx := context.Background()
+
+		err := buildTree(ctx, fs, "/tmp", "", 0, 2, &sb, nil)
+		if err == nil {
+			t.Fatal("expected error from ReadDir")
+		}
+		if !strings.Contains(err.Error(), "mock readdir failure") {
+			t.Errorf("expected 'mock readdir failure' in error, got %q", err.Error())
+		}
+	})
+
+	t.Run("cancelled context returns immediately", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // immediately cancel
+
+		fs := &errorReadDirFS{err: fmt.Errorf("should not be reached")}
+		var sb strings.Builder
+
+		err := buildTree(ctx, fs, "/tmp", "", 0, 2, &sb, nil)
+		if err == nil {
+			t.Fatal("expected error from cancelled context")
+		}
+		if !strings.Contains(err.Error(), "context") && !strings.Contains(err.Error(), "canceled") {
+			t.Errorf("expected context cancellation error, got %q", err.Error())
+		}
+	})
+
+	t.Run("heartbeat sent when hb is non-nil", func(t *testing.T) {
+		fs := persistence.NewMockFileSystem()
+		hb := make(chan struct{}, 1)
+		var sb strings.Builder
+		ctx := context.Background()
+
+		// buildTree sends a heartbeat then calls ReadDir (which returns empty).
+		// We verify the heartbeat was sent.
+		err := buildTree(ctx, fs, ".", "", 0, 2, &sb, hb)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		select {
+		case <-hb:
+			// heartbeat received — success
+		default:
+			t.Error("expected heartbeat to be sent on hb channel")
+		}
+	})
 }

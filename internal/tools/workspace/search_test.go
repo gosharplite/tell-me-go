@@ -246,3 +246,98 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 		t.Errorf("expected at least 100 results before truncation, got %d", len(lines))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// createSearchMatcher tests
+// ---------------------------------------------------------------------------
+
+func TestCreateSearchMatcher(t *testing.T) {
+	s := &fileSearcher{}
+
+	t.Run("literal match", func(t *testing.T) {
+		matcher, err := s.createSearchMatcher("hello", false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if matcher == nil {
+			t.Fatal("expected non-nil matcher")
+		}
+		_, ok := matcher("ignored-path.txt", "hello world")
+		if !ok {
+			t.Error("expected true for line containing 'hello'")
+		}
+	})
+
+	t.Run("literal no match", func(t *testing.T) {
+		matcher, err := s.createSearchMatcher("hello", false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		_, ok := matcher("ignored-path.txt", "goodbye world")
+		if ok {
+			t.Error("expected false for line not containing 'hello'")
+		}
+	})
+
+	t.Run("regex valid match", func(t *testing.T) {
+		matcher, err := s.createSearchMatcher("^func", true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if matcher == nil {
+			t.Fatal("expected non-nil matcher")
+		}
+		_, ok := matcher("ignored.go", "func main() {}")
+		if !ok {
+			t.Error("expected true for line starting with 'func'")
+		}
+	})
+
+	t.Run("regex valid no match", func(t *testing.T) {
+		matcher, err := s.createSearchMatcher("^func", true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		_, ok := matcher("ignored.go", "var x = 1")
+		if ok {
+			t.Error("expected false for line not starting with 'func'")
+		}
+	})
+
+	t.Run("regex invalid", func(t *testing.T) {
+		matcher, err := s.createSearchMatcher("[invalid", true)
+		if err == nil {
+			t.Fatal("expected error for invalid regex")
+		}
+		if matcher != nil {
+			t.Error("expected nil matcher for invalid regex")
+		}
+		if !strings.Contains(err.Error(), "invalid regex") {
+			t.Errorf("expected 'invalid regex' in error, got %q", err.Error())
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// checkConcurrentSearchError tests
+// ---------------------------------------------------------------------------
+
+func TestCheckConcurrentSearchError(t *testing.T) {
+	s := &fileSearcher{}
+
+	t.Run("no error pending", func(t *testing.T) {
+		errChan := make(chan error, 1)
+		if err := s.checkConcurrentSearchError(errChan); err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	})
+
+	t.Run("error present", func(t *testing.T) {
+		errChan := make(chan error, 1)
+		expectedErr := fmt.Errorf("search failed")
+		errChan <- expectedErr
+		if err := s.checkConcurrentSearchError(errChan); err != expectedErr {
+			t.Errorf("expected %v, got %v", expectedErr, err)
+		}
+	})
+}

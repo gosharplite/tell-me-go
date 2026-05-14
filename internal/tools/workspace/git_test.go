@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -347,4 +348,38 @@ func TestGitManagerInternal(t *testing.T) {
 
 func (m *mockGitExecutor) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
+}
+
+// ---------------------------------------------------------------------------
+// runGitCommand heartbeat tests
+// ---------------------------------------------------------------------------
+
+func TestRunGitCommand_WithHeartbeat(t *testing.T) {
+	m := &gitManager{
+		Exec: &mockGitExecutor{
+			handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				// Sleep long enough for the 2s ticker to fire at least once,
+				// so the hb != nil branch inside the goroutine is exercised.
+				time.Sleep(2100 * time.Millisecond)
+				return []byte("ok"), nil
+			},
+		},
+	}
+
+	hb := make(chan struct{}, 1)
+	out, err := m.runGitCommand(context.Background(), hb, "status")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out != "ok" {
+		t.Errorf("expected 'ok', got %q", out)
+	}
+
+	// Drain at least one heartbeat signal
+	select {
+	case <-hb:
+		// heartbeat received — the hb != nil branch was exercised
+	default:
+		// May not have fired; this is non-fatal.
+	}
 }

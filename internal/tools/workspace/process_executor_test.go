@@ -4,8 +4,11 @@
 package workspace
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -882,4 +885,367 @@ func TestProcessExecutor_CaptureError(t *testing.T) {
 	if !strings.Contains(sb.String(), "mock read error") {
 		t.Errorf("expected warning in output, got %q", sb.String())
 	}
+}
+
+// ---------------------------------------------------------------------------
+// LookPath tests
+// ---------------------------------------------------------------------------
+
+func TestProcessExecutor_LookPath(t *testing.T) {
+	e := newprocessExecutor()
+
+	t.Run("existing command", func(t *testing.T) {
+		path, err := e.LookPath("go")
+		if path == "" && err != nil {
+			// On some constrained Windows environments "go" may not be on PATH.
+			// This is fine — the important thing is we exercised the code path.
+			t.Skipf("go not found on PATH (non-fatal): %v", err)
+		}
+		if err != nil {
+			t.Fatalf("LookPath(\"go\") unexpected error: %v", err)
+		}
+		if path == "" {
+			t.Error("LookPath(\"go\") returned empty path")
+		}
+	})
+
+	t.Run("nonexistent command", func(t *testing.T) {
+		path, err := e.LookPath("nonexistent-command-xyz-12345")
+		if err == nil {
+			t.Errorf("LookPath(nonexistent) expected error, got path=%q", path)
+		}
+		if path != "" {
+			t.Errorf("LookPath(nonexistent) expected empty path, got %q", path)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// streamProcessor.appendErr tests
+// ---------------------------------------------------------------------------
+
+func TestStreamProcessor_appendErr(t *testing.T) {
+	tests := []struct {
+		name          string
+		totalCaptured int
+		maxCapture    int
+		err           error
+		wantContains  string
+		wantTruncated bool
+		wantEmptySB   bool
+	}{
+		{
+			name:          "nil error — no-op",
+			totalCaptured: 0,
+			maxCapture:    500,
+			err:           nil,
+			wantContains:  "",
+			wantTruncated: false,
+			wantEmptySB:   true,
+		},
+		{
+			name:          "ErrTooLong — warning without error detail",
+			totalCaptured: 0,
+			maxCapture:    500,
+			err:           bufio.ErrTooLong,
+			wantContains:  "[Warning] Output line too long",
+			wantTruncated: false,
+		},
+		{
+			name:          "generic error — warning with error text",
+			totalCaptured: 0,
+			maxCapture:    500,
+			err:           fmt.Errorf("mock read error"),
+			wantContains:  "[Warning] Output read error: mock read error",
+			wantTruncated: false,
+		},
+		{
+			name:          "truncated by remaining capacity",
+			totalCaptured: 490,
+			maxCapture:    500,
+			err:           fmt.Errorf("some error"),
+			wantContains:  "\n[Warning]",
+			wantTruncated: true,
+			// Only 10 remaining bytes; the full warning + newline exceeds it,
+			// so truncated.Store(true) is set AND truncateToValidUTF8
+			// cuts to the first 10 valid UTF-8 bytes: "\n[Warning]".
+		},
+		{
+			name:          "already at max — truncated flag set, nothing written",
+			totalCaptured: 500,
+			maxCapture:    500,
+			err:           fmt.Errorf("some error"),
+			wantContains:  "",
+			wantTruncated: true,
+			wantEmptySB:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			totalCaptured := tt.totalCaptured
+			sp := &streamProcessor{
+				mu:            &sync.Mutex{},
+				truncated:     &atomic.Bool{},
+				totalCaptured: &totalCaptured,
+				maxCapture:    tt.maxCapture,
+				feedback:      nil, // no feedback writer for these cases
+			}
+
+			var sb strings.Builder
+			sp.appendErr(&sb, tt.err)
+
+			got := sb.String()
+			if tt.wantEmptySB && got != "" {
+				t.Errorf("expected empty sb, got %q", got)
+			}
+			if tt.wantContains != "" && !strings.Contains(got, tt.wantContains) {
+				t.Errorf("expected sb to contain %q, got %q", tt.wantContains, got)
+			}
+			if sp.truncated.Load() != tt.wantTruncated {
+				t.Errorf("truncated = %v, want %v", sp.truncated.Load(), tt.wantTruncated)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// writeTracker.Write tests
+// ---------------------------------------------------------------------------
+
+type failingWriter struct{}
+
+func (f *failingWriter) Write(p []byte) (int, error) {
+	return 0, fmt.Errorf("disk full")
+}
+
+func TestWriteTracker_Write(t *testing.T) {
+	t.Run("normal write", func(t *testing.T) {
+		feedback := &bytes.Buffer{}
+		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+		var w bytes.Buffer
+
+		wt.Write(&w, []byte("data"))
+
+		if w.String() != "data" {
+			t.Errorf("expected 'data', got %q", w.String())
+		}
+		if feedback.Len() != 0 {
+			t.Errorf("expected no feedback, got %q", feedback.String())
+		}
+		if wt.failed.Load() {
+			t.Error("expected failed=false")
+		}
+	})
+
+	t.Run("write failure — warning emitted once", func(t *testing.T) {
+		feedback := &bytes.Buffer{}
+		wt := &writeTracker{feedback: feedback, filePath: "important.txt"}
+
+		wt.Write(&failingWriter{}, []byte("data"))
+
+		if !wt.failed.Load() {
+			t.Error("expected failed=true after write error")
+		}
+		fb := feedback.String()
+		if !strings.Contains(fb, "[Warning] Failed to write to output file") {
+			t.Errorf("expected warning in feedback, got %q", fb)
+		}
+		if !strings.Contains(fb, "important.txt") {
+			t.Errorf("expected file path in warning, got %q", fb)
+		}
+		if !strings.Contains(fb, "disk full") {
+			t.Errorf("expected error cause in warning, got %q", fb)
+		}
+	})
+
+	t.Run("already failed — second write silently skipped", func(t *testing.T) {
+		feedback := &bytes.Buffer{}
+		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+		wt.failed.Store(true) // precondition: already failed
+
+		wt.Write(&failingWriter{}, []byte("more data"))
+
+		// Feedback must not grow — the write should be skipped entirely.
+		if feedback.Len() != 0 {
+			t.Errorf("expected no new feedback, got %q", feedback.String())
+		}
+	})
+
+	t.Run("typed nil *os.File — skipped", func(t *testing.T) {
+		feedback := &bytes.Buffer{}
+		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+
+		var f *os.File = nil
+		var w io.Writer = f // typed nil: interface is non-nil, concrete is nil
+		wt.Write(w, []byte("data"))
+
+		if wt.failed.Load() {
+			t.Error("expected failed=false for typed nil")
+		}
+		if feedback.Len() != 0 {
+			t.Errorf("expected no feedback, got %q", feedback.String())
+		}
+	})
+
+	t.Run("nil interface — skipped", func(t *testing.T) {
+		feedback := &bytes.Buffer{}
+		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+
+		wt.Write(nil, []byte("data"))
+
+		if wt.failed.Load() {
+			t.Error("expected failed=false for nil interface")
+		}
+		if feedback.Len() != 0 {
+			t.Errorf("expected no feedback, got %q", feedback.String())
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// newPipelineCmd tests
+// ---------------------------------------------------------------------------
+
+func TestProcessExecutor_newPipelineCmd(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+
+	t.Run("empty parts — index 0", func(t *testing.T) {
+		_, err := e.newPipelineCmd(ctx, []string{}, 0, executionConfig{})
+		if err == nil {
+			t.Fatal("expected error for empty parts")
+		}
+		if !strings.Contains(err.Error(), "empty command at index 0") {
+			t.Errorf("expected 'empty command at index 0', got %q", err.Error())
+		}
+	})
+
+	t.Run("empty parts — index 2", func(t *testing.T) {
+		_, err := e.newPipelineCmd(ctx, []string{}, 2, executionConfig{})
+		if err == nil {
+			t.Fatal("expected error for empty parts")
+		}
+		if !strings.Contains(err.Error(), "empty command at index 2") {
+			t.Errorf("expected 'empty command at index 2', got %q", err.Error())
+		}
+	})
+
+	t.Run("valid parts — returns *exec.Cmd", func(t *testing.T) {
+		cmd, err := e.newPipelineCmd(ctx, []string{"echo", "hello"}, 0, executionConfig{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cmd == nil {
+			t.Fatal("expected non-nil *exec.Cmd")
+		}
+		if cmd.Args[0] != "echo" {
+			t.Errorf("expected cmd.Args[0] == 'echo', got %q", cmd.Args[0])
+		}
+	})
+
+	t.Run("with env — cmd.Env includes custom var", func(t *testing.T) {
+		config := executionConfig{
+			Env: map[string]string{"GOOS": "linux", "CUSTOM_VAR": "testval"},
+		}
+		cmd, err := e.newPipelineCmd(ctx, []string{"go", "version"}, 0, config)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cmd == nil {
+			t.Fatal("expected non-nil *exec.Cmd")
+		}
+		if len(cmd.Env) == 0 {
+			t.Fatal("expected cmd.Env to be non-empty")
+		}
+		foundGOOS := false
+		foundCustom := false
+		for _, e := range cmd.Env {
+			if e == "GOOS=linux" {
+				foundGOOS = true
+			}
+			if e == "CUSTOM_VAR=testval" {
+				foundCustom = true
+			}
+		}
+		if !foundGOOS {
+			t.Error("cmd.Env missing GOOS=linux")
+		}
+		if !foundCustom {
+			t.Error("cmd.Env missing CUSTOM_VAR=testval")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// handleCaptureError tests
+// ---------------------------------------------------------------------------
+
+func TestProcessExecutor_handleCaptureError(t *testing.T) {
+	e := newprocessExecutor()
+
+	t.Run("nil error — no-op", func(t *testing.T) {
+		var sb strings.Builder
+		var mu sync.Mutex
+		truncated := &atomic.Bool{}
+
+		e.handleCaptureError(nil, &sb, &mu, executionConfig{}, truncated, 100)
+
+		if sb.String() != "" {
+			t.Errorf("expected empty sb, got %q", sb.String())
+		}
+		if truncated.Load() {
+			t.Error("expected truncated=false")
+		}
+	})
+
+	t.Run("ErrTooLong with capacity — warning written", func(t *testing.T) {
+		var sb strings.Builder
+		var mu sync.Mutex
+		truncated := &atomic.Bool{}
+
+		e.handleCaptureError(bufio.ErrTooLong, &sb, &mu, executionConfig{}, truncated, 500)
+
+		got := sb.String()
+		if !strings.Contains(got, "[Warning] Output line too long") {
+			t.Errorf("expected 'too long' warning, got %q", got)
+		}
+		if truncated.Load() {
+			t.Error("expected truncated=false when capacity remains")
+		}
+	})
+
+	t.Run("ErrTooLong no capacity — truncated flag set, sb unchanged", func(t *testing.T) {
+		var sb strings.Builder
+		sb.WriteString("12345") // pre-fill exactly 5 bytes
+		var mu sync.Mutex
+		truncated := &atomic.Bool{}
+
+		e.handleCaptureError(bufio.ErrTooLong, &sb, &mu, executionConfig{}, truncated, 5)
+
+		if sb.String() != "12345" {
+			t.Errorf("expected sb unchanged %q, got %q", "12345", sb.String())
+		}
+		if !truncated.Load() {
+			t.Error("expected truncated=true when at max capacity")
+		}
+	})
+
+	t.Run("error with feedback writer", func(t *testing.T) {
+		var sb strings.Builder
+		var mu sync.Mutex
+		truncated := &atomic.Bool{}
+		feedback := &bytes.Buffer{}
+		config := executionConfig{Feedback: feedback}
+
+		e.handleCaptureError(fmt.Errorf("test error"), &sb, &mu, config, truncated, 500)
+
+		if !strings.Contains(sb.String(), "[Warning] Output read error: test error") {
+			t.Errorf("expected error warning in sb, got %q", sb.String())
+		}
+		fb := feedback.String()
+		if !strings.Contains(fb, "[Warning] Output read error: test error") {
+			t.Errorf("expected warning in feedback, got %q", fb)
+		}
+	})
 }

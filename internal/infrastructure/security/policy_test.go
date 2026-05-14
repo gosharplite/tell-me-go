@@ -5,6 +5,7 @@ package security
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -80,6 +81,43 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 		}
 	})
 
+	t.Run("Register Safe Path persist error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("persist failed"))
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		path := filepath.Join(t.TempDir(), "safe-persist-err")
+		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "failed to persist") {
+			t.Errorf("Expected persist error message, got %q", res.Text)
+		}
+	})
+
+	t.Run("Register Safe Path confirm error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mi := &mockInteractor{Answer: "y", Err: fmt.Errorf("confirm failed")}
+		sm := NewSecurityManager(func() domain.UserInteractor { return mi })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		_, err = p.RegisterSafePath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "safe-confirm-err"), "reason": "test"}, nil)
+		if err == nil {
+			t.Error("expected error from confirm failure")
+		}
+	})
+
 	t.Run("List Safe Paths", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
@@ -89,6 +127,15 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 		res, _ := p.ListSafePaths(ctx, nil, nil)
 		if !strings.Contains(res.Text, "authorized safe paths") {
 			t.Error("Expected safe paths in list")
+		}
+	})
+
+	t.Run("List Safe Paths empty", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		res, _ := p.ListSafePaths(ctx, nil, nil)
+		if !strings.Contains(res.Text, "No additional safe paths") {
+			t.Errorf("Expected empty message, got %q", res.Text)
 		}
 	})
 
@@ -109,6 +156,45 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 		}
 		if found {
 			t.Errorf("path still in safe list after removal")
+		}
+	})
+
+	t.Run("Remove Safe Path not found", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		path := filepath.Join(t.TempDir(), "nonexistent_to_remove")
+		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "Error:") && !strings.Contains(res.Text, "not found") {
+			t.Errorf("Expected not-found error message, got %q", res.Text)
+		}
+	})
+
+	t.Run("Remove Safe Path persist error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("persist failed")).Once()
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		path := filepath.Join(t.TempDir(), "safe-rm-persist")
+		_, err = p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "failed to update persistence") {
+			t.Errorf("Expected persist error message, got %q", res.Text)
 		}
 	})
 }
@@ -134,6 +220,54 @@ func TestPolicyTool_ReadPathManagement(t *testing.T) {
 		res, _ = p.ListReadPaths(ctx, nil, nil)
 		if strings.Contains(res.Text, absPath) {
 			t.Errorf("Did not expect read-only path %q in list after removal", absPath)
+		}
+	})
+
+	t.Run("Register Read Path persist error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("persist failed"))
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		path := filepath.Join(t.TempDir(), "ro-persist-err")
+		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "failed to persist") {
+			t.Errorf("Expected persist error message, got %q", res.Text)
+		}
+	})
+
+	t.Run("Remove Read Path persist error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		// First Set: during RegisterReadPath → succeed
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+		// Second Set: during RemoveReadPath → fail
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("persist failed")).Once()
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		path := filepath.Join(t.TempDir(), "ro-rm-persist")
+		_, err = p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "failed to update persistence") {
+			t.Errorf("Expected persist error message, got %q", res.Text)
 		}
 	})
 
@@ -196,6 +330,78 @@ func TestPolicyTool_SessionSettings(t *testing.T) {
 		mockKV.AssertExpectations(t)
 	})
 
+	t.Run("Update Session Setting missing key", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		_, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
+			"value": "test_val",
+		}, nil)
+		if err == nil {
+			t.Error("expected error for missing key")
+		}
+	})
+
+	t.Run("Update Session Setting denied", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "n"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		res, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
+			"key":   "some_key",
+			"value": "some_val",
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "denied") {
+			t.Errorf("Expected denied message, got %q", res.Text)
+		}
+	})
+
+	t.Run("Update Session Setting confirm error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mi := &mockInteractor{Answer: "y", Err: fmt.Errorf("confirm failed")}
+		sm := NewSecurityManager(func() domain.UserInteractor { return mi })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		_, err = p.UpdateSessionSetting(ctx, map[string]interface{}{
+			"key":   "some_key",
+			"value": "some_val",
+		}, nil)
+		if err == nil {
+			t.Error("expected error from confirm failure")
+		}
+	})
+
+	t.Run("Update Session Setting Set error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("persist failed"))
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		_, err = p.UpdateSessionSetting(ctx, map[string]interface{}{
+			"key":   "some_key",
+			"value": "some_val",
+		}, nil)
+		if err == nil {
+			t.Error("expected error from Set failure")
+		}
+	})
+
 	t.Run("List Session Settings", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
@@ -208,6 +414,35 @@ func TestPolicyTool_SessionSettings(t *testing.T) {
 		}
 		if !strings.Contains(res.Text, "k1") || !strings.Contains(res.Text, "v2") {
 			t.Error("Expected settings k1 and v2 in list")
+		}
+		mockKV.AssertExpectations(t)
+	})
+
+	t.Run("List Session Settings empty", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		mockKV := p.kv.(*mockKVStore)
+		mockKV.On("GetAll", ctx).Return(map[string]string{}, nil)
+
+		res, err := p.ListSessionSettings(ctx, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "No persistent session settings") {
+			t.Errorf("Expected empty message, got %q", res.Text)
+		}
+		mockKV.AssertExpectations(t)
+	})
+
+	t.Run("List Session Settings error", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		mockKV := p.kv.(*mockKVStore)
+		mockKV.On("GetAll", ctx).Return(map[string]string(nil), fmt.Errorf("storage error"))
+
+		_, err := p.ListSessionSettings(ctx, nil, nil)
+		if err == nil {
+			t.Error("expected error from GetAll")
 		}
 		mockKV.AssertExpectations(t)
 	})
@@ -240,6 +475,23 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 		_, err := p.RegisterReadPath(ctx, map[string]interface{}{"reason": "test"}, nil)
 		if err == nil {
 			t.Error("Expected error for missing path")
+		}
+	})
+
+	t.Run("RegisterReadPath confirm error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mi := &mockInteractor{Answer: "y", Err: fmt.Errorf("confirm failed")}
+		sm := NewSecurityManager(func() domain.UserInteractor { return mi })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		_, err = p.RegisterReadPath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "ro-confirm-err"), "reason": "test"}, nil)
+		if err == nil {
+			t.Error("expected error from confirm failure")
 		}
 	})
 
@@ -294,6 +546,51 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 			t.Errorf("Expected denied message, got %q", res.Text)
 		}
 	})
+
+	t.Run("BypassConfirmation already active", func(t *testing.T) {
+		t.Parallel()
+		sm, p, ctx := setupPolicyTest(t)
+		sm.SetBypassActive(true)
+		res, err := p.BypassConfirmation(ctx, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "already enabled") {
+			t.Errorf("Expected 'already enabled', got %q", res.Text)
+		}
+	})
+
+	t.Run("BypassConfirmation Set error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("persist failed"))
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		_, err = p.BypassConfirmation(ctx, nil, nil)
+		if err == nil {
+			t.Error("expected error from Set failure in BypassConfirmation")
+		}
+	})
+
+	t.Run("RevokeBypass Set error", func(t *testing.T) {
+		t.Parallel()
+		mockKV := new(mockKVStore)
+		mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("persist failed"))
+		sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+		p, err := newPolicyTool(sm, mockKV)
+		if err != nil {
+			t.Fatalf("failed to create policyTool: %v", err)
+		}
+		ctx := context.Background()
+		_, err = p.RevokeBypass(ctx, nil, nil)
+		if err == nil {
+			t.Error("expected error from Set failure in RevokeBypass")
+		}
+	})
 }
 
 func assertBypassSuccess(t *testing.T, res tools.ToolResult, err error) {
@@ -339,4 +636,29 @@ func TestPolicy_Register(t *testing.T) {
 	if err := sm.RegisterPolicyTools(r, p.kv); err != nil {
 		t.Fatalf("RegisterPolicyTools failed: %v", err)
 	}
+}
+
+func TestNewPolicyTool_ValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil SecurityManager", func(t *testing.T) {
+		_, err := newPolicyTool(nil, new(mockKVStore))
+		if err == nil {
+			t.Error("expected error for nil SecurityManager")
+		}
+		if !strings.Contains(err.Error(), "SecurityManager") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("nil KVStore", func(t *testing.T) {
+		sm := NewSecurityManager(nil)
+		_, err := newPolicyTool(sm, nil)
+		if err == nil {
+			t.Error("expected error for nil KVStore")
+		}
+		if !strings.Contains(err.Error(), "KVStore") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
 }

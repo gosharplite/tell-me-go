@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
@@ -179,4 +180,24 @@ func TestNewTeamsManager_DefaultClient(t *testing.T) {
 	if m.client == nil {
 		t.Error("Expected default client to be initialized")
 	}
+}
+
+func TestRegisterTeams_ErrorPaths(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	client := &mockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("OK"))}, nil
+		},
+	}
+
+	t.Run("RegisterToToolkitWithOptions fails", func(t *testing.T) {
+		r := newFaultyRegistry(registry.New(), 0)
+		err := registerTeams(r, sm, client)
+		if err == nil {
+			t.Fatal("expected error on registration failure")
+		}
+		if !strings.Contains(err.Error(), "simulated registration failure") {
+			t.Errorf("expected simulated error, got: %v", err)
+		}
+	})
 }

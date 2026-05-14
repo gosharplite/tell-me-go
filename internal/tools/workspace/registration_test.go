@@ -5,6 +5,8 @@ package workspace
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -115,5 +117,215 @@ func TestRegister(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "tool check_system_health should be registered when health manager is provided")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// failingRegistry — mock that injects failures for a specific tool by name
+// ---------------------------------------------------------------------------
+
+type failingRegistry struct {
+	*mockToolRegistry
+	failOnTool string
+	failErr    error
+}
+
+func (f *failingRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
+	}
+	return f.mockToolRegistry.Register(def, handler)
+}
+
+func (f *failingRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
+	}
+	return f.mockToolRegistry.RegisterWithOptions(def, handler, opts)
+}
+
+func (f *failingRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
+	}
+	return f.mockToolRegistry.RegisterToToolkit(toolkit, def, handler)
+}
+
+func (f *failingRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	if def.Name == f.failOnTool {
+		if f.failErr != nil {
+			return f.failErr
+		}
+		return fmt.Errorf("injected failure for tool %s", def.Name)
+	}
+	return f.mockToolRegistry.RegisterToToolkitWithOptions(toolkit, def, handler, opts)
+}
+
+// ---------------------------------------------------------------------------
+// Partial-failure tests
+// ---------------------------------------------------------------------------
+
+func TestRegisterFiles_PartialFailure(t *testing.T) {
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "replace_text",
+	}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	fs := persistencetest.NewPlainOSFileSystem()
+	wp := infra_persistence.NewWorkspacePolicy()
+
+	err := registerFiles(registry, sm, fs, exec, wp)
+	if err == nil {
+		t.Fatal("expected error from registerFiles partial failure")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure' in error, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "replace_text") {
+		t.Errorf("expected 'replace_text' in error, got %q", err.Error())
+	}
+}
+
+func TestRegisterSystem_PartialFailure(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	validator := &toolstest.MockCommandValidator{}
+
+	t.Run("execute_command fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "execute_command",
+		}
+		err := registerSystem(registry, sm, validator, nil)
+		if err == nil {
+			t.Fatal("expected error from registerSystem")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("pipe_commands fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "pipe_commands",
+		}
+		err := registerSystem(registry, sm, validator, nil)
+		if err == nil {
+			t.Fatal("expected error from registerSystem")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("ask_user fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "ask_user",
+		}
+		err := registerSystem(registry, sm, validator, nil)
+		if err == nil {
+			t.Fatal("expected error from registerSystem")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+}
+
+func TestRegisterGit_PartialFailure(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+
+	t.Run("first RegisterToToolkit fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "get_git_status",
+		}
+		err := registerGit(registry, sm, exec)
+		if err == nil {
+			t.Fatal("expected error from registerGit")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("mid RegisterToToolkit fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "get_git_blame",
+		}
+		err := registerGit(registry, sm, exec)
+		if err == nil {
+			t.Fatal("expected error from registerGit")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("RegisterToToolkitWithOptions fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "git_commit",
+		}
+		err := registerGit(registry, sm, exec)
+		if err == nil {
+			t.Fatal("expected error from registerGit")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Register top-level partial-failure tests
+// ---------------------------------------------------------------------------
+
+func TestRegister_PartialFailure(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	validator := &toolstest.MockCommandValidator{}
+	fs := persistencetest.NewPlainOSFileSystem()
+	wp := infra_persistence.NewWorkspacePolicy()
+
+	t.Run("registerSystem fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "execute_command",
+		}
+		err := Register(registry, sm, exec, validator, fs, wp, nil)
+		if err == nil {
+			t.Fatal("expected error from Register when registerSystem fails")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("registerGit fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "get_git_status",
+		}
+		err := Register(registry, sm, exec, validator, fs, wp, nil)
+		if err == nil {
+			t.Fatal("expected error from Register when registerGit fails")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
 	})
 }

@@ -245,3 +245,67 @@ func TestAtlassianProvider_Constructor_FailsWhenMissingURL(t *testing.T) {
 	require.Nil(t, p)
 	assert.Contains(t, err.Error(), "missing required environment variable: ATLASSIAN_BASE_URL")
 }
+
+func TestAtlassianProvider_GetWaitTime_EdgeCases(t *testing.T) {
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "token")
+
+	t.Run("BaseDelay zero defaults to 1 second", func(t *testing.T) {
+		p, err := NewAtlassianProvider()
+		require.NoError(t, err)
+		p.BaseDelay = 0 // trigger the BaseDelay == 0 branch
+
+		resp := &http.Response{Header: make(http.Header)}
+		wait := p.GetWaitTime(resp, 0)
+		assert.Equal(t, 1*time.Second, wait)
+	})
+
+	t.Run("invalid Retry-After falls back to exponential backoff", func(t *testing.T) {
+		p, err := NewAtlassianProvider()
+		require.NoError(t, err)
+		p.BaseDelay = 1 * time.Second
+
+		headers := make(http.Header)
+		headers.Set("Retry-After", "not-a-number")
+		resp := &http.Response{Header: headers}
+
+		wait := p.GetWaitTime(resp, 1)
+		// Falls back to BaseDelay * 2^1 = 2 seconds
+		assert.Equal(t, 2*time.Second, wait)
+	})
+}
+
+func TestAtlassianProvider_Do_ResetBodyError(t *testing.T) {
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "token")
+
+	t.Run("GetBody error on retry propagates", func(t *testing.T) {
+		p, err := NewAtlassianProvider()
+		require.NoError(t, err)
+		p.BaseDelay = 0
+
+		mockClient := new(mockRetryClient)
+		bodyText := "hello"
+		req, _ := http.NewRequest(http.MethodPut, "https://test.com", strings.NewReader(bodyText))
+		// Set GetBody to a function that returns an error
+		req.GetBody = func() (io.ReadCloser, error) {
+			return nil, assert.AnError
+		}
+
+		// First attempt: 429, body consumed
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("throttled")),
+		}, nil).Once()
+
+		// The retry should try to reset the body and fail
+		// No second Do call should happen
+		_, err = p.Do(context.Background(), mockClient, req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to reset request body")
+		mockClient.AssertExpectations(t)
+	})
+}
