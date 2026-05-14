@@ -101,12 +101,13 @@ func TestBrowseCommand_SetupCapturer(t *testing.T) {
 
 	c := &browseCommand{ctx: cmdCtx}
 
-	capturer, cleanup := c.setupCapturer()
+	capturer, cleanup, err := c.setupCapturer()
+	require.NoError(t, err, "setupCapturer should not error in normal conditions")
 	require.NotNil(t, capturer, "expected non-nil capturer from setupCapturer")
 	require.NotNil(t, cleanup, "expected non-nil cleanup from setupCapturer")
 
 	// Verify cleanup does not panic
-	err := cleanup(stdctx.Background())
+	err = cleanup(stdctx.Background())
 	require.NoError(t, err, "cleanup should not error")
 }
 

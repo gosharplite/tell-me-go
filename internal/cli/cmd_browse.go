@@ -36,7 +36,10 @@ func newBrowseCommand(ctx *context) *cobra.Command {
 
 // runBrowse launches the interactive history browser.
 func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
-	capturer, cleanup := c.setupCapturer()
+	capturer, cleanup, err := c.setupCapturer()
+	if err != nil {
+		return err
+	}
 	defer func() {
 		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
 		defer cancel()
@@ -66,14 +69,14 @@ func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 	return c.ctx.ChatService.BrowseHistory(ctx, provider, hManager)
 }
 
-func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
+func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
 	capturerInterface := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false)
 	capturer, ok := capturerInterface.(agent.CapturerInteractor)
 	if !ok {
-		return nil, func(stdctx.Context) error { return nil }
+		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an agent.CapturerInteractor")
 	}
 	c.ctx.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		return capturer.Close(ctx)
-	}
+	}, nil
 }
