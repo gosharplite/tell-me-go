@@ -88,3 +88,31 @@ func TestDiagnosticTool_CheckSystemHealth(t *testing.T) {
 		}
 	})
 }
+
+func TestDiagnosticTool_CheckSystemHealth_MarshalFailure(t *testing.T) {
+	ctx := context.Background()
+
+	// Put a non-serializable value (channel) in Details to trigger marshal error
+	report := &ports.HealthReport{
+		OverallStatus: ports.StatusHealthy,
+		Components: map[ports.Component]ports.ComponentReport{
+			ports.CompPersistence: {
+				Component: ports.CompPersistence,
+				Status:    ports.StatusHealthy,
+				Message:   "db ok",
+				Details:   make(chan struct{}), // channels are not JSON-serializable
+			},
+		},
+		Timestamp: time.Now(),
+	}
+	mock := &mockHealthCheckManager{report: report}
+	tool := newDiagnosticTool(mock)
+
+	_, err := tool.checkSystemHealth(ctx, nil, nil)
+	if err == nil {
+		t.Fatal("expected marshal error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to serialize health report") {
+		t.Errorf("expected 'failed to serialize health report' in error, got: %v", err)
+	}
+}

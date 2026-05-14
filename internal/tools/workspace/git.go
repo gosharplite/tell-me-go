@@ -66,6 +66,8 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 	}
 
 	hash := params.Hash
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if hash == "" {
 		return tools.ToolResult{}, fmt.Errorf("hash argument is required")
 	}
@@ -90,6 +92,8 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 	}
 
 	path := params.FilePath
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if path == "" {
 		return tools.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
@@ -113,6 +117,8 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{},
 	}
 
 	message := params.Message
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if message == "" {
 		return tools.ToolResult{}, fmt.Errorf("message is required")
 	}
@@ -121,10 +127,10 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{},
 	if err != nil {
 		// If git failed and the output indicates no staged changes, return an actionable error
 		if strings.Contains(res, "nothing to commit") || strings.Contains(res, "no changes added to commit") {
-			return tools.ToolResult{Text: res}, fmt.Errorf("no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing")
+			return tools.ToolResult{Text: "Error: no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing"}, nil
 		}
-		// Otherwise, return the generic error with the raw output
-		return tools.ToolResult{Text: res}, err
+		// Otherwise, return the generic error as an infrastructure fault
+		return tools.ToolResult{}, fmt.Errorf("git commit failed: %w", err)
 	}
 	return tools.ToolResult{Text: res}, nil
 }
@@ -139,6 +145,8 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 	}
 
 	name := params.Name
+	// Per ADR-022: handler-level guard for direct invocation (tests,
+	// embedding) where registry validateRequiredArgs is bypassed.
 	if name == "" {
 		return tools.ToolResult{}, fmt.Errorf("branch name is required")
 	}

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
@@ -301,9 +302,12 @@ func TestUndoFileChange_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("no backups", func(t *testing.T) {
-		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1}, nil)
-		if err == nil || !strings.Contains(err.Error(), "no history found") {
-			t.Errorf("expected 'no history found' error, got %v", err)
+		res, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1}, nil)
+		if err != nil {
+			t.Fatalf("expected domain outcome (nil error), got: %v", err)
+		}
+		if !strings.Contains(res.Text, "Error: no history found") {
+			t.Errorf("expected 'Error: no history found' in result text, got %q", res.Text)
 		}
 	})
 
@@ -778,5 +782,425 @@ func TestAppendText_MissingContent(t *testing.T) {
 	got, _ = os.ReadFile(path)
 	if string(got) != "original" {
 		t.Errorf("explicit empty append must be a no-op; got %q, want %q", string(got), "original")
+	}
+}
+
+func TestCreateDirectory_MkdirAllFailure(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath("/mock")
+
+	mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+	ctx := context.Background()
+
+	_, err := w.createDirectory(ctx, map[string]interface{}{
+		"path":   "/mock/new_dir",
+		"reason": "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Errorf("expected 'disk full' error, got %v", err)
+	}
+}
+
+func TestDeletePath_StatErrorStillDeletes(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "stat_error_file.txt")
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock FS where Stat returns an error, but Remove succeeds
+	mfs := &mockFS_StatError{FileSystem: persistencetest.NewPlainOSFileSystem(), statErr: fmt.Errorf("stat error")}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+	ctx := context.Background()
+
+	_, err := w.deletePath(ctx, map[string]interface{}{
+		"path":      path,
+		"recursive": false,
+		"reason":    "testing stat error",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("file should have been deleted despite stat error")
+	}
+}
+
+type mockFS_StatError struct {
+	persistence.FileSystem
+	statErr error
+}
+
+func (m *mockFS_StatError) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	return nil, m.statErr
+}
+
+func TestAppendText_SyncCloseError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "append_sync.txt")
+	if err := os.WriteFile(path, []byte("init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	// Mock FS that returns a file whose Close always errors
+	mfs := &mockFS_CloseError{FileSystem: persistencetest.NewPlainOSFileSystem(), closeErr: fmt.Errorf("close failed")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+
+	_, err := w.appendText(context.Background(), map[string]interface{}{
+		"filepath": path,
+		"content":  "test",
+		"reason":   "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to close file") {
+		t.Errorf("expected 'failed to close file' error, got: %v", err)
+	}
+}
+
+type mockFS_CloseError struct {
+	persistence.FileSystem
+	closeErr error
+}
+
+func (m *mockFS_CloseError) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
+	f, err := os.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return &mockFileCloseErr{File: f, closeErr: m.closeErr}, nil
+}
+
+type mockFileCloseErr struct {
+	*os.File
+	closeErr error
+}
+
+func (m *mockFileCloseErr) Close() error {
+	_ = m.File.Close()
+	return m.closeErr
+}
+
+func (m *mockFileCloseErr) ReadDir(n int) ([]os.DirEntry, error) {
+	return nil, fmt.Errorf("not a directory")
+}
+
+func TestWriteFile_SecurityError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsWritableFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("security violation")
+	}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.writeFile(ctx, map[string]interface{}{
+		"filepath": "/etc/passwd",
+		"content":  "malicious",
+		"reason":   "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "security violation") {
+		t.Errorf("expected 'security violation' error, got: %v", err)
+	}
+}
+
+func TestReplaceText_SecurityError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsWritableFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("security violation")
+	}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.replaceText(ctx, map[string]interface{}{
+		"filepath": "/etc/passwd",
+		"old_text": "old",
+		"new_text": "new",
+		"reason":   "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "security violation") {
+		t.Errorf("expected 'security violation' error, got: %v", err)
+	}
+}
+
+func TestAppendText_SecurityError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsWritableFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("security violation")
+	}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.appendText(ctx, map[string]interface{}{
+		"filepath": "/etc/passwd",
+		"content":  "malicious",
+		"reason":   "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "security violation") {
+		t.Errorf("expected 'security violation' error, got: %v", err)
+	}
+}
+
+func TestDeletePath_SecurityError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsWritableFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("security violation")
+	}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.deletePath(ctx, map[string]interface{}{
+		"path":   "/etc/passwd",
+		"reason": "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "security violation") {
+		t.Errorf("expected 'security violation' error, got: %v", err)
+	}
+}
+
+func TestCreateDirectory_SecurityError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsWritableFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("security violation")
+	}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.createDirectory(ctx, map[string]interface{}{
+		"path":   "/etc/new_dir",
+		"reason": "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "security violation") {
+		t.Errorf("expected 'security violation' error, got: %v", err)
+	}
+}
+
+func TestDeletePath_RecursiveAuthorizationError(t *testing.T) {
+	tempDir := t.TempDir()
+	dir := filepath.Join(tempDir, "auth_err")
+	_ = os.MkdirAll(dir, 0755)
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(false)
+	sm.RegisterSafePath(tempDir)
+	sm.AuthorizeFunc = func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+		return false, fmt.Errorf("authorization service down")
+	}
+
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.deletePath(ctx, map[string]interface{}{
+		"path":      dir,
+		"recursive": true,
+		"reason":    "testing auth error",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "authorization failed") {
+		t.Errorf("expected 'authorization failed' error, got: %v", err)
+	}
+}
+
+func TestDeletePath_RecursiveRemoveAllError(t *testing.T) {
+	tempDir := t.TempDir()
+	dir := filepath.Join(tempDir, "rm_error")
+	_ = os.MkdirAll(dir, 0755)
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	mfs := &mockFS_RemoveAllError{FileSystem: persistencetest.NewPlainOSFileSystem(), rmErr: fmt.Errorf("device busy")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+	ctx := context.Background()
+
+	_, err := w.deletePath(ctx, map[string]interface{}{
+		"path":      dir,
+		"recursive": true,
+		"reason":    "testing rm error",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to delete path recursively") {
+		t.Errorf("expected 'failed to delete path recursively' error, got: %v", err)
+	}
+}
+
+type mockFS_RemoveAllError struct {
+	persistence.FileSystem
+	rmErr error
+}
+
+func (m *mockFS_RemoveAllError) RemoveAll(ctx context.Context, path string) error {
+	return m.rmErr
+}
+
+func TestReplaceText_WriteError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("old content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	mfs := &mockFS{FileSystem: persistencetest.NewPlainOSFileSystem(), writeErr: fmt.Errorf("write failure")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+	ctx := context.Background()
+
+	_, err := w.replaceText(ctx, map[string]interface{}{
+		"filepath": path,
+		"old_text": "old content",
+		"new_text": "new content",
+		"reason":   "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "write failure") {
+		t.Errorf("expected 'write failure' error, got: %v", err)
+	}
+}
+
+func TestPerformSingleDelete_RemoveError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "remove_err.txt")
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	mfs := &mockFS_RemoveError{FileSystem: persistencetest.NewPlainOSFileSystem(), rmErr: fmt.Errorf("remove failure")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+	ctx := context.Background()
+
+	_, err := w.performSingleDelete(ctx, path)
+	if err == nil || !strings.Contains(err.Error(), "failed to delete path") {
+		t.Errorf("expected 'failed to delete path' error, got: %v", err)
+	}
+}
+
+type mockFS_RemoveError struct {
+	persistence.FileSystem
+	rmErr error
+}
+
+func (m *mockFS_RemoveError) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	return m.FileSystem.Stat(ctx, name)
+}
+
+func (m *mockFS_RemoveError) Remove(ctx context.Context, name string) error {
+	return m.rmErr
+}
+
+func TestUndoFileChange_UndoError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "undo_err.txt")
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	// Add a snapshot with a path that will fail at security check
+	if err := bm.snapshot(context.Background(), path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
+	// Now block the path — must disable both AllowAll and BypassActive
+	sm.AllowAll = false
+	sm.SetBypassActive(false)
+	sm.IsWritableFunc = func(p string) (string, error) {
+		return "", fmt.Errorf("security block")
+	}
+
+	w := &fileWriter{sm: sm, bm: bm, fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1}, nil)
+	if err == nil {
+		t.Fatal("expected undo error from security block")
+	}
+	if !strings.Contains(err.Error(), "security block") {
+		t.Errorf("expected 'security block' error, got: %v", err)
+	}
+}
+
+func TestUndo_NormalizeN(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "file.txt")
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
+
+	// n=0 should normalize to 1 and undo the single snapshot
+	res, err := bm.undo(ctx, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res, "Undo successful") {
+		t.Errorf("expected 'Undo successful', got %q", res)
+	}
+}
+
+func TestWriteFile_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.writeFile(ctx, map[string]interface{}{"content": "test"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for missing filepath")
+	}
+}
+
+func TestReplaceText_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.replaceText(ctx, map[string]interface{}{}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for missing args")
+	}
+}
+
+func TestFindFile_InvalidArgs(t *testing.T) {
+	r := &fileReader{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	_, err := r.findFile(context.Background(), map[string]interface{}{"path": 123, "pattern": "*.go", "reason": "test"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error")
+	}
+}
+
+func TestListFiles_InvalidArgs(t *testing.T) {
+	r := &fileReader{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	_, err := r.listFiles(context.Background(), map[string]interface{}{"path": 123, "reason": "test"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error")
 	}
 }
