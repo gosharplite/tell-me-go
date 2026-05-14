@@ -50,23 +50,40 @@ Each `.yaml` file defines the role's behavior, model, and system prompt.
 
 ## Sending Prompts
 
-### Basic Pattern
+### Basic Pattern (for AI Assistants)
 
-Always create a unique temp file with `mktemp`, write your prompt, verify it, then send:
+When calling `tell-me-go` via the `execute_command` tool, use a **two-step** process:
+
+**Step 1 — Write the prompt** with the `write_file` tool:
+
+```
+write_file → /tmp/tell-me-go-prompt.txt
+    "Please review the following diff and identify architectural concerns."
+```
+
+**Step 2 — Send** via `execute_command`:
 
 ```bash
-# 1. Create a unique temp file (prevents collisions with parallel sessions)
-PROMPT_FILE=$(mktemp)
+PROMPT_FILE=$(mktemp) && \
+cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
+tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
+```
 
-# 2. Write the prompt to the file
+> **Why `write_file` + `mktemp` + `cp`?** Two reasons:
+> 1. `cat << 'EOF'` heredocs **break** inside `execute_command` — the shell parser chokes on quoted delimiters. Use `write_file` to create prompt content reliably.
+> 2. `mktemp` still guards against collisions at send time (parallel sessions won't share the same temp file).
+
+### Basic Pattern (in a real terminal)
+
+If you are typing directly into a bash shell (not through an AI tool), the simpler heredoc pattern works fine:
+
+```bash
+PROMPT_FILE=$(mktemp)
 cat > "$PROMPT_FILE" << 'EOF'
 Please review the following diff and identify architectural concerns.
 EOF
-
-# 3. Verify the file is non-empty before sending
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; }
-
-# 4. Send to the role
 tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
 
@@ -87,6 +104,8 @@ Never use a hardcoded path like `/tmp/prompt.txt`:
 - Avoids shell quoting and escaping issues that occur when piping `echo` or heredocs directly.
 - Lets you inspect and verify the prompt content before sending.
 - Handles multi-line content, special characters, and code blocks reliably.
+
+**For AI Assistants**: Create prompts with the `write_file` tool, not inline heredocs in `execute_command`. The `execute_command` shell parser cannot handle quoted heredoc delimiters (`<< 'EOF'`). Use `write_file` → `mktemp` + `cp` → `tell-me-go` as shown above.
 
 ### First message vs. continuation
 
@@ -153,25 +172,29 @@ Payload: ~19856/1000000 tokens
 ## Complete Workflow Example
 
 ```bash
-PROMPT_FILE=$(mktemp)
-
-# ── Step 1: Send a question to the Architect ──
-cat > "$PROMPT_FILE" << 'EOF'
-How should we reduce cyclomatic complexity in internal/handler/auth.go?
-EOF
+# ── Step 1: Write prompt + send to Architect ──
+# 1a. write_file → /tmp/tell-me-go-prompt.txt
+#     "How should we reduce cyclomatic complexity in internal/handler/auth.go?"
+# 1b. Send:
+PROMPT_FILE=$(mktemp) && \
+cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
 tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 
 # ── Step 2: Retrieve the Architect's answer ──
 tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
 
-# ── Step 3: Ask for detailed Coder instructions (continuation — no --new) ──
-cat > "$PROMPT_FILE" << 'EOF'
-Provide step-by-step instructions for the Coder to implement your recommendation.
-EOF
+# ── Step 3: Write follow-up + send (continuation — no --new) ──
+# 3a. write_file → /tmp/tell-me-go-prompt.txt
+#     "Provide step-by-step instructions for the Coder to implement your recommendation."
+# 3b. Send:
+PROMPT_FILE=$(mktemp) && \
+cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
 tell-me-go -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 
 # ── Step 4: Retrieve instructions and forward to Coder ──
-tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG} > "$PROMPT_FILE"
+tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG} > /tmp/tell-me-go-prompt.txt
+PROMPT_FILE=$(mktemp) && \
+cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
 tell-me-go --new -r -c ${CODER_CONFIG} < "$PROMPT_FILE" &> /dev/null
 
 # ── Step 5: Retrieve Coder's result ──
@@ -182,6 +205,8 @@ tell-me-go -l 1 -r -c ${CODER_CONFIG}
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
+| `unknown shorthand flag: 'n' in -new` | `-new` parsed as `-n -e -w` (single-dash = shorthand) | Use `--new` (double-dash) for multi-character flags. |
+| `EOF found when expecting closing quote` | Heredoc with quoted delimiter (`<< 'EOF'`) inside `execute_command` | Use `write_file` tool to create the prompt, then `mktemp` + `cp` in `execute_command`. |
 | Sub-agent times out with no output | `execute_command` defaulted to 15s | Set `timeout: 1800` on every `tell-me-go` call. |
 | Role seems unresponsive or returns nothing | Prompt file is empty or was not written | Run `test -s "$PROMPT_FILE"` before sending. |
 | Role gives an irrelevant or confusing answer | Wrong config file (`-c` pointing to a different role) | Double-check `echo ${ROLE_CONFIG}` and the flag. |
