@@ -11,7 +11,21 @@ This SOP defines the end-to-end process for resolving a GitHub issue using the *
 ---
 
 ### Prerequisites
-- **Read and understand** [`docs/steps/chatting-with-ai.md`](../../steps/chatting-with-ai.md) — the tell-me-go protocol. This SOP uses `write_file` → `mktemp` + `cp` → `tell-me-go` patterns, `--new` vs. continuation rules, `-l N` retrieval, `-t` transcript debugging, and the mandatory `timeout: 1800` requirement. You cannot follow this SOP without knowing those patterns.
+
+> ⛔ **CRITICAL — HARD GATE**: You **MUST** read and understand
+> [`docs/steps/chatting-with-ai.md`](../../steps/chatting-with-ai.md) before
+> executing this SOP. Every phase depends on the tell-me-go protocol.
+> **Stop here if you cannot answer all of these:**
+>
+> 1. Why is `write_file` → `mktemp` + `cp` required instead of inline heredocs?
+> 2. When do you use `--new` vs. omit it?
+> 3. What flag retrieves the last response? What flag shows the full transcript?
+> 4. What `timeout` value is **mandatory** for every `tell-me-go` call?
+> 5. Why is `&> /dev/null` used on send, and how do you retrieve output afterward?
+>
+> If any answer is unclear, **stop** and re-read the protocol document **now**.
+> This SOP cannot be executed without that knowledge.
+
 - A GitHub issue with clear scope, acceptance criteria, and a Definition of Done.
 - Two role config files exported as environment variables:
   ```bash
@@ -37,6 +51,10 @@ Communication is **asynchronous and turn-based**. The Orchestrator is the hub �
 ---
 
 ## Quick Start
+
+> ⛔ Before issuing the prompt below, confirm the orchestrator has passed the
+> [Prerequisites hard gate](#prerequisites). The orchestrator **must** have read
+> [`docs/steps/chatting-with-ai.md`](../../steps/chatting-with-ai.md).
 
 **Example prompt to the AI orchestrator:**
 ```
@@ -238,6 +256,7 @@ gh pr create \
 
 ### 7. Completion Checklist
 
+- [ ] Chat protocol complied with: no inline heredocs, `timeout: 1800` on all `tell-me-go` calls, `--new` only for first messages, retrieval via `-l N`, prompts via `write_file` → `mktemp` + `cp`
 - [ ] Feature branch created from `dev`
 - [ ] Architect analysis retrieved and actionable
 - [ ] Coder implementation completed (all gaps addressed)
