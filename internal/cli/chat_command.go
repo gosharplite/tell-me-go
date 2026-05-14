@@ -120,7 +120,10 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 	}
 
 	// 4. Setup chat session (TUI logic + capturer setup)
-	capturer, cleanup := c.setupChatSession(ctx, cfg, opts, args)
+	capturer, cleanup, err := c.setupChatSession(ctx, cfg, opts, args)
+	if err != nil {
+		return err
+	}
 	defer func() {
 		timeout := ports.DefaultShutdownTimeout
 		if !opts.tuiPrompt {
@@ -151,7 +154,7 @@ func (c *chatCommand) noOtherActionsRequested(opts *cliOptions, args []string) b
 	return len(args) == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry
 }
 
-func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) (agent.CapturerInteractor, func(stdctx.Context) error) {
+func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
 	// Apply TUI overrides and state detection
 	if opts.tuiPrompt {
 		cfg.UseTUIPrompt = true
@@ -195,7 +198,7 @@ func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerIn
 	return prompt, nil
 }
 
-func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error) {
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
 	if opts.tuiPrompt {
 		// Try to get at least the last user message for the trie
 		hManager, _ := c.Bootstrapper.GetHistoryManager(ctx, cfg)
@@ -214,13 +217,16 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
+			// Defensive: untestable without DI for NewCapturer.
+			// The concrete type returned by ui.NewCapturer always implements
+			// both BaseCapturer and CapturerInteractor in practice.
 			// Fallback: use the base capturer directly if it's an interactor
 			if ci, ok := capturerInterface.(agent.CapturerInteractor); ok {
 				return ci, func(ctx stdctx.Context) error {
 					return ci.Close(ctx)
-				}
+				}, nil
 			}
-			return nil, func(stdctx.Context) error { return nil }
+			return nil, nil, fmt.Errorf("ui.NewCapturer did not return a tui.BaseCapturer or agent.CapturerInteractor")
 		}
 
 		var capturer agent.CapturerInteractor
@@ -245,21 +251,33 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 		}
 
 		c.Interactor.set(capturer)
-		return capturer, cleanup
+		return capturer, cleanup, nil
 	}
-	return c.setupCapturer()
+	capturer, cleanup, err := c.setupCapturer()
+	if err != nil {
+		return nil, nil, err
+	}
+	return capturer, cleanup, nil
 }
 
-func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
+func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
 	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
+	// Defensive: untestable without DI for NewCapturer.
+	// The concrete type returned by ui.NewCapturer always implements
+	// CapturerInteractor in practice. This guard is a safety net against
+	// future regressions where the interface contract changes.
 	capturer, ok := capturerInterface.(agent.CapturerInteractor)
 	if !ok {
-		return nil, func(stdctx.Context) error { return nil }
+		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an agent.CapturerInteractor")
 	}
 	c.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
-		return capturer.Close(ctx)
-	}
+		if err := capturer.Close(ctx); err != nil {
+			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+			return err
+		}
+		return nil
+	}, nil
 }
 
 func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOption {
