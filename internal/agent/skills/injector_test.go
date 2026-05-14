@@ -107,6 +107,33 @@ func TestSkillInjector_Transform(t *testing.T) {
 			},
 		},
 		{
+			name: "InjectsSkillsIntoExistingSystem",
+			selector: &mockSkillSelector{
+				selected: []skills.Skill{
+					{Name: "test-skill", Content: "Use testing."},
+				},
+			},
+			req: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "system",
+						Parts: []*llm.Part{
+							{Text: "You are a helpful assistant."},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, req *ports.ContextRequest) {
+				require.Len(t, req.History, 1, "should not prepend new message")
+				require.Len(t, req.History[0].Parts, 2, "should append injection part")
+				assert.Equal(t, "You are a helpful assistant.", req.History[0].Parts[0].Text)
+				assert.Contains(t, req.History[0].Parts[1].Text, "test-skill")
+				assert.Contains(t, req.History[0].Parts[1].Text, "Use testing.")
+				assert.True(t, req.History[0].Pinned, "system message must be pinned after injection")
+				assert.True(t, req.PersistHistory, "PersistHistory must be set after injection")
+			},
+		},
+		{
 			name:     "HandlesEmptyHistory",
 			selector: &mockSkillSelector{},
 			req:      &ports.ContextRequest{History: []*llm.Content{}},
@@ -145,6 +172,21 @@ func TestSkillInjector_Transform(t *testing.T) {
 				assert.Equal(t, "skill selection failed; proceeding without injected skills", errLogger.warns[0].msg)
 			},
 		},
+		{
+			name: "SelectSkillsReturnsEmpty",
+			selector: &mockSkillSelector{
+				selected: []skills.Skill{}, // empty, no error
+			},
+			req: &ports.ContextRequest{
+				History: []*llm.Content{
+					{Role: "user", Parts: []*llm.Part{{Text: "some task"}}},
+				},
+			},
+			validate: func(t *testing.T, req *ports.ContextRequest) {
+				assert.Len(t, req.History, 1, "history should be unchanged")
+				assert.False(t, req.PersistHistory, "PersistHistory should not be set")
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -172,4 +214,82 @@ func TestSkillInjector_PriorityContract(t *testing.T) {
 	if got != want {
 		t.Errorf("SkillInjector.Priority() = %d; want %d. This value is part of a critical orchestration sequence contract.", got, want)
 	}
+}
+
+func TestSkillInjector_IsAlreadyInjected(t *testing.T) {
+	t.Parallel()
+	injector := &skillInjector{}
+
+	tests := []struct {
+		name    string
+		content *llm.Content
+		want    bool
+	}{
+		{
+			name: "ReturnsFalseWhenMarkerAbsent",
+			content: &llm.Content{
+				Role: "system",
+				Parts: []*llm.Part{
+					{Text: "You are a helpful assistant."},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "ReturnsFalseWhenPartsEmpty",
+			content: &llm.Content{
+				Role:  "system",
+				Parts: []*llm.Part{},
+			},
+			want: false,
+		},
+		{
+			name: "ReturnsTrueWhenMarkerPresent",
+			content: &llm.Content{
+				Role: "system",
+				Parts: []*llm.Part{
+					{Text: "## Relevant Go Development Skills\n\n..."},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "ReturnsTrueWhenMarkerInLaterPart",
+			content: &llm.Content{
+				Role: "system",
+				Parts: []*llm.Part{
+					{Text: "You are a helpful assistant."},
+					{Text: "## Relevant Go Development Skills\n\n..."},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := injector.isAlreadyInjected(tt.content)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNewSkillInjector(t *testing.T) {
+	t.Parallel()
+	selector := &mockSkillSelector{}
+	logger := &mockLogger{}
+
+	transformer := NewSkillInjector(selector, logger)
+
+	require.NotNil(t, transformer, "NewSkillInjector must return a non-nil transformer")
+
+	// Verify Priority contract through the interface
+	assert.Equal(t, 10, transformer.Priority())
+
+	// Verify basic usability (no panic on empty history)
+	req := &ports.ContextRequest{History: []*llm.Content{}}
+	err := transformer.Transform(context.Background(), req)
+	require.NoError(t, err)
 }
