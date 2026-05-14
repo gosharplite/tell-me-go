@@ -378,11 +378,12 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath str
 	}()
 	_ = f.Close()
 
-	if err := m.runCoverageTest(ctx, packagePath, tempPath, hb); err != nil {
-		return nil, fmt.Errorf("coverage test execution failed (profile may be incomplete): %w", err)
-	}
+	testErr := m.runCoverageTest(ctx, packagePath, tempPath, hb)
 
 	if err := validateProfile(tempPath); err != nil {
+		if testErr != nil {
+			return nil, fmt.Errorf("test execution failed and no valid profile was generated: %w", testErr)
+		}
 		return nil, err
 	}
 
@@ -394,17 +395,30 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath str
 		_ = cf.Close()
 	}()
 
-	return parseDetailedCoverage(ctx, cf, m.Runner, os.ReadFile)
+	blocks, err := parseDetailedCoverage(ctx, cf, m.Runner, os.ReadFile)
+	if err != nil {
+		return nil, err
+	}
+
+	if testErr != nil {
+		return blocks, fmt.Errorf("coverage test failed (profile may be incomplete): %w", testErr)
+	}
+	return blocks, nil
 }
 
 // getDetailedCoverageReport generates a formatted report optimized for LLM consumption.
 func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePath string, hb chan<- struct{}) (string, error) {
 	blocks, err := m.getDetailedCoverage(ctx, packagePath, hb)
-	if err != nil {
+	if err != nil && len(blocks) == 0 {
 		return "", err
 	}
 
-	return formatDetailedCoverageReport(packagePath, blocks), nil
+	report := formatDetailedCoverageReport(packagePath, blocks)
+	if err != nil {
+		report = "⚠️ WARNING: test execution failed, profile may be incomplete\n\n" + report
+	}
+
+	return report, nil
 }
 
 func formatDetailedCoverageReport(packagePath string, blocks []uncoveredBlock) string {
@@ -483,11 +497,20 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 // getDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
 func (m *healthManager) getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, hb chan<- struct{}) (string, error) {
 	blocks, err := m.getDetailedCoverage(ctx, packagePath, hb)
-	if err != nil {
+	if err != nil && len(blocks) == 0 {
 		return "", err
 	}
 
-	return formatDetailedCoverageJSON(blocks, minPriority)
+	jsonStr, jsonErr := formatDetailedCoverageJSON(blocks, minPriority)
+	if jsonErr != nil {
+		return "", jsonErr
+	}
+
+	// Return JSON data even when testErr is present; caller wraps both in ToolResult
+	if err != nil {
+		return jsonStr, fmt.Errorf("coverage test failed (profile may be incomplete): %w", err)
+	}
+	return jsonStr, nil
 }
 
 func formatDetailedCoverageJSON(blocks []uncoveredBlock, minPriority string) (string, error) {
