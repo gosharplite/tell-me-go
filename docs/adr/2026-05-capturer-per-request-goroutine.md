@@ -61,7 +61,7 @@ Replace the persistent worker goroutine + `requestChan` architecture with a
 ```
 sendRequest(ctx, req):
   1. c.closed.Load() → return errCapturerClosed if closed (atomic, no lock)
-  2. c.readerMu.Lock(); reader := c.reader; c.readerMu.Unlock()
+  2. reader := c.reader  (pointer is immutable, no lock needed)
   3. go func():
        c.readerMu.Lock()
        defer c.readerMu.Unlock()

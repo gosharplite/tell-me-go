@@ -110,9 +110,8 @@ func (c *capturer) sendRequest(ctx context.Context, req readRequest) (ioResult, 
 		return ioResult{}, errCapturerClosed
 	}
 
-	c.readerMu.Lock()
+	// c.reader is immutable after construction — no lock needed to read the pointer
 	reader := c.reader
-	c.readerMu.Unlock()
 
 	// 2. Spawn a goroutine to perform the blocking read
 	// This goroutine holds readerMu for the entire read to serialize access
