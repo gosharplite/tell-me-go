@@ -130,6 +130,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 		lookPathErr  error
 		executeOut   string
 		executeErr   error
+		decline      bool
 		wantSubstr   string
 		wantErr      bool
 		wantAuthFail bool
@@ -158,17 +159,36 @@ func TestCheckVulnerabilities(t *testing.T) {
 			wantSubstr: "Govulncheck execution failed",
 			wantErr:    true,
 		},
+		{
+			name:       "user declined",
+			decline:    true,
+			wantSubstr: "Action denied by user.",
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, executor, _ := setupDevManager(t)
-			m.runner.(*mockGoRunner).checkGovulncheckFunc = func(ctx context.Context) error {
-				return tt.lookPathErr
-			}
-			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte(tt.executeOut), tt.executeErr
+			m, executor, sm := setupDevManager(t)
+			if tt.decline {
+				sm.AllowAll = false
+				m.validator = &mockValidator{
+					CommandValidator: m.validator,
+					isSafeFunc: func(command string) (bool, string) {
+						if strings.Contains(command, "vulncheck") {
+							return false, "forced prompt for test"
+						}
+						return true, ""
+					},
+				}
+			} else {
+				m.runner.(*mockGoRunner).checkGovulncheckFunc = func(ctx context.Context) error {
+					return tt.lookPathErr
+				}
+				executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+					return []byte(tt.executeOut), tt.executeErr
+				}
 			}
 
 			res, err := m.checkVulnerabilities(context.Background(), nil, nil)
@@ -215,6 +235,7 @@ func TestGetCoverage(t *testing.T) {
 		summaryOut string
 		tempErr    error
 		noGoFiles  bool
+		decline    bool
 		wantSubstr string
 		wantErr    bool
 	}{
@@ -240,13 +261,32 @@ func TestGetCoverage(t *testing.T) {
 			wantSubstr: "0.0% coverage (No Go files found in target path to test)",
 			wantErr:    false,
 		},
+		{
+			name:       "user declined",
+			decline:    true,
+			wantSubstr: "declined",
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, _, _ := setupDevManager(t)
-			setupCoverageMock(t, m, tt.executeErr, tt.summaryOut, tt.tempErr, tt.noGoFiles)
+			m, _, sm := setupDevManager(t)
+			if tt.decline {
+				sm.AllowAll = false
+				m.validator = &mockValidator{
+					CommandValidator: m.validator,
+					isSafeFunc: func(command string) (bool, string) {
+						if strings.Contains(command, "coverage") {
+							return false, "forced prompt for test"
+						}
+						return true, ""
+					},
+				}
+			} else {
+				setupCoverageMock(t, m, tt.executeErr, tt.summaryOut, tt.tempErr, tt.noGoFiles)
+			}
 
 			res, err := m.getCoverage(context.Background(), nil, nil)
 			actualErr := err
@@ -384,6 +424,7 @@ func TestGoTidy_Errors(t *testing.T) {
 		name       string
 		executeErr error
 		cmdFail    string
+		decline    bool
 	}{
 		{
 			name:       "go mod tidy fails",
@@ -395,25 +436,65 @@ func TestGoTidy_Errors(t *testing.T) {
 			executeErr: errors.New("fmt error"),
 			cmdFail:    "fmt",
 		},
+		{
+			name:    "user declined",
+			decline: true,
+		},
+		{
+			name:       "error with empty output",
+			executeErr: errors.New("tidy error"),
+			cmdFail:    "tidy",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, _, _ := setupDevManager(t)
-			runner := m.runner.(*mockGoRunner)
-
-			if tt.cmdFail == "tidy" {
-				runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
-					return []byte("failed"), tt.executeErr
+			m, _, sm := setupDevManager(t)
+			if tt.decline {
+				sm.AllowAll = false
+				m.validator = &mockValidator{
+					CommandValidator: m.validator,
+					isSafeFunc: func(command string) (bool, string) {
+						if strings.Contains(command, "tidy") {
+							return false, "forced prompt for test"
+						}
+						return true, ""
+					},
 				}
 			} else {
-				runner.formatCodeFunc = func(ctx context.Context, path string) ([]byte, error) {
-					return []byte("failed"), tt.executeErr
+				runner := m.runner.(*mockGoRunner)
+				if tt.cmdFail == "tidy" {
+					runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
+						// Return empty output when testing the error+empty path
+						if tt.name == "error with empty output" {
+							return nil, tt.executeErr
+						}
+						return []byte("failed"), tt.executeErr
+					}
+				} else {
+					runner.formatCodeFunc = func(ctx context.Context, path string) ([]byte, error) {
+						return []byte("failed"), tt.executeErr
+					}
 				}
 			}
 
 			res, err := m.goTidy(context.Background(), nil, nil)
+			if tt.name == "error with empty output" {
+				if err == nil {
+					t.Error("expected error for empty output, got nil")
+				}
+				return
+			}
+			if tt.decline {
+				if err == nil {
+					t.Error("expected error for user declined, got nil")
+				}
+				if !strings.Contains(res.Text, "Action denied by user.") {
+					t.Errorf("expected 'Action denied by user.', got %q", res.Text)
+				}
+				return
+			}
 			if err != nil {
 				t.Errorf("expected nil error for %s, got %v", tt.name, err)
 			}
@@ -431,6 +512,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 		name       string
 		executeOut string
 		executeErr error
+		decline    bool
 		wantSubstr string
 		wantErr    bool
 	}{
@@ -448,14 +530,33 @@ func TestRunBenchmark_Error(t *testing.T) {
 			wantSubstr: "No Go files found in target path to benchmark",
 			wantErr:    false,
 		},
+		{
+			name:       "user declined",
+			decline:    true,
+			wantSubstr: "declined",
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, _, _ := setupDevManager(t)
-			m.runner.(*mockGoRunner).runBenchmarksFunc = func(ctx context.Context, path string, benchRegex string) (string, error) {
-				return tt.executeOut, tt.executeErr
+			m, _, sm := setupDevManager(t)
+			if tt.decline {
+				sm.AllowAll = false
+				m.validator = &mockValidator{
+					CommandValidator: m.validator,
+					isSafeFunc: func(command string) (bool, string) {
+						if strings.Contains(command, "benchmark") {
+							return false, "forced prompt for test"
+						}
+						return true, ""
+					},
+				}
+			} else {
+				m.runner.(*mockGoRunner).runBenchmarksFunc = func(ctx context.Context, path string, benchRegex string) (string, error) {
+					return tt.executeOut, tt.executeErr
+				}
 			}
 
 			res, err := m.runBenchmark(context.Background(), nil, nil)
@@ -510,12 +611,20 @@ func TestRunTests_Violations(t *testing.T) {
 			name:    "Invalid command structure",
 			command: "go test ; rm -rf /",
 		},
+		{
+			name:    "Allowed script run_tests.sh",
+			command: "./run_tests.sh",
+		},
+		{
+			name:    "Allowed tool make",
+			command: "make test",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, _, _ := setupDevManager(t)
+			m, executor, _ := setupDevManager(t)
 			if tt.name == "Path safety violation" {
 				m.validator.(*toolstest.MockCommandValidator).CheckPathSafetyFunc = func(parts []string) (bool, string) {
 					return false, "forced violation"
@@ -525,6 +634,17 @@ func TestRunTests_Violations(t *testing.T) {
 				m.validator.(*toolstest.MockCommandValidator).ValidateStructureFunc = func(parts []string) error {
 					return errors.New("forced structure error")
 				}
+			}
+			// For allowed commands, set up a successful executor
+			if tt.name == "Allowed script run_tests.sh" || tt.name == "Allowed tool make" {
+				executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+					return []byte("PASS"), nil
+				}
+				_, err := m.runTests(context.Background(), map[string]interface{}{"command": tt.command}, nil)
+				if err != nil {
+					t.Errorf("expected no error for %s, got %v", tt.name, err)
+				}
+				return
 			}
 			_, err := m.runTests(context.Background(), map[string]interface{}{"command": tt.command}, nil)
 			if err == nil {
@@ -550,6 +670,25 @@ func TestRunTests_Failure(t *testing.T) {
 	}
 }
 
+func TestRunTests_Decline(t *testing.T) {
+	t.Parallel()
+	m, _, sm := setupDevManager(t)
+	sm.AllowAll = false
+	m.validator = &mockValidator{
+		CommandValidator: m.validator,
+		isSafeFunc: func(command string) (bool, string) {
+			if strings.Contains(command, "test") {
+				return false, "forced prompt for test"
+			}
+			return true, ""
+		},
+	}
+
+	res, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
+	require.Error(t, err)
+	assert.Contains(t, res.Text, "Action denied by user.")
+}
+
 func TestNewDevManager(t *testing.T) {
 	t.Parallel()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
@@ -562,11 +701,65 @@ func TestNewDevManager(t *testing.T) {
 
 func TestAuthorizeAction_Error(t *testing.T) {
 	t.Parallel()
-	_, _, sm := setupDevManager(t)
-	sm.AllowAll = false
-	// We need to make sm.Authorize return an error.
-	// But our mock always returns true, nil.
-	// Let's just skip this for now or improve MockSecurityManager.
+	tests := []struct {
+		name          string
+		authorizeFunc func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
+		wantApproved  bool
+		wantErr       bool
+		errContains   string
+	}{
+		{
+			name: "Auth backend error",
+			authorizeFunc: func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+				return false, fmt.Errorf("timeout")
+			},
+			wantApproved: false,
+			wantErr:      true,
+			errContains:  "authorization error: timeout",
+		},
+		{
+			name: "User declines",
+			authorizeFunc: func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+				return false, nil
+			},
+			wantApproved: false,
+			wantErr:      false,
+		},
+		{
+			name: "User approves",
+			authorizeFunc: func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+				return true, nil
+			},
+			wantApproved: true,
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, _, sm := setupDevManager(t)
+			sm.AllowAll = false
+			sm.AuthorizeFunc = tt.authorizeFunc
+
+			approved, err := m.authorizeAction(context.Background(), "test_action", "echo hello", "Run a test command")
+
+			if approved != tt.wantApproved {
+				t.Errorf("approved = %v, want %v", approved, tt.wantApproved)
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error = %v, want contains %q", err, tt.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
 }
 
 func TestFormatExecutionResult(t *testing.T) {
@@ -682,6 +875,59 @@ func TestExecuteWithHeartbeat_Telemetry(t *testing.T) {
 
 	close(wait) // Let the executor finish
 	<-done
+}
+
+func TestRunWithHeartbeat_Resilience(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Channel full does not block fn", func(t *testing.T) {
+		t.Parallel()
+		m, _, _ := setupDevManager(t)
+		m.heartbeatInterval = 1 * time.Millisecond
+
+		// Buffer of 1, pre-fill it so subsequent heartbeats hit default:
+		hb := make(chan struct{}, 1)
+		hb <- struct{}{}
+
+		var fnCalled bool
+		err := m.runWithHeartbeat(context.Background(), hb, "test", "cmd", "reason", func() error {
+			time.Sleep(50 * time.Millisecond) // Let several ticks fire into full channel
+			fnCalled = true
+			return nil
+		})
+
+		assert.NoError(t, err)
+		assert.True(t, fnCalled, "fn should have been called despite full heartbeat channel")
+	})
+
+	t.Run("Fn error propagated through heartbeat", func(t *testing.T) {
+		t.Parallel()
+		m, _, _ := setupDevManager(t)
+		m.heartbeatInterval = 1 * time.Millisecond
+		hb := make(chan struct{}, 10)
+
+		expectedErr := errors.New("fn failed")
+		err := m.runWithHeartbeat(context.Background(), hb, "test", "cmd", "reason", func() error {
+			return expectedErr
+		})
+
+		assert.ErrorIs(t, err, expectedErr)
+	})
+
+	t.Run("Nil hb runs fn successfully", func(t *testing.T) {
+		t.Parallel()
+		m, _, _ := setupDevManager(t)
+		m.heartbeatInterval = 1 * time.Millisecond
+
+		var fnCalled bool
+		err := m.runWithHeartbeat(context.Background(), nil, "test", "cmd", "reason", func() error {
+			fnCalled = true
+			return nil
+		})
+
+		assert.NoError(t, err)
+		assert.True(t, fnCalled, "fn should have been called with nil hb")
+	})
 }
 
 func TestSecurityRemediation(t *testing.T) {
