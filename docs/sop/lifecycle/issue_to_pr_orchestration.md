@@ -36,6 +36,17 @@ Communication is **asynchronous and turn-based**. The Orchestrator is the hub â€
 
 ---
 
+## Quick Start
+
+**Example prompt to the AI orchestrator:**
+```
+Execute the Issue-to-PR SOP for issue #378.
+Architect config: /path-to/architect.yaml
+Coder config: /path-to/coder.yaml
+```
+
+---
+
 ### 1. Branch Creation
 
 Before any work begins, create a feature branch from `dev`:
