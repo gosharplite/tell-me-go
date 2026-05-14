@@ -58,7 +58,8 @@ Communication is **asynchronous and turn-based**. The Orchestrator is the hub â€
 
 **Example prompt to the AI orchestrator:**
 ```
-Execute the Issue-to-PR SOP for issue #378.
+Execute the Issue-to-PR SOP.
+Ask me for the GitHub issue number if I haven't provided one.
 
 Find the Architect and Coder config files. They are YAML files
 co-located with this session's config directory. Use get_session_info
@@ -69,8 +70,9 @@ exist before proceeding.
 ```
 
 This prompt is **self-discovering**: it does not require the user to
-hardcode config paths that may be stale or incorrect. The orchestrator
-locates the configs from the session environment.
+hardcode config paths or the issue number. The orchestrator locates
+configs from the session environment and prompts for any missing
+information via `ask_user`.
 
 ---
 
