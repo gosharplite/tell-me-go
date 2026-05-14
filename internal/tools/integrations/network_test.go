@@ -653,3 +653,31 @@ Loop:
 		// OK
 	}
 }
+
+func TestRegisterNetwork_ErrorPaths(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	t.Run("first RegisterToToolkitWithOptions fails", func(t *testing.T) {
+		r := newFaultyRegistry(registry.New(), 0)
+		tool := newnetworkTool(sm, nil)
+		err := registerNetwork(r, tool)
+		if err == nil {
+			t.Fatal("expected error on first registration failure")
+		}
+		if !strings.Contains(err.Error(), "simulated registration failure") {
+			t.Errorf("expected simulated error, got: %v", err)
+		}
+	})
+
+	t.Run("second RegisterToToolkitWithOptions fails", func(t *testing.T) {
+		r := newFaultyRegistry(registry.New(), 1)
+		tool := newnetworkTool(sm, nil)
+		err := registerNetwork(r, tool)
+		if err == nil {
+			t.Fatal("expected error on second registration failure")
+		}
+		if !strings.Contains(err.Error(), "simulated registration failure") {
+			t.Errorf("expected simulated error, got: %v", err)
+		}
+	})
+}
