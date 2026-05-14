@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -43,7 +44,6 @@ type readRequest struct {
 	op    readOp
 	delim byte  // For ReadString
 	limit int64 // For ReadAll (use maxPromptSize)
-	resCh chan ioResult
 }
 
 type ioResult struct {
@@ -53,17 +53,17 @@ type ioResult struct {
 
 // capturer handles capturing user input from TTY or pipes.
 type capturer struct {
-	Stdin       io.Reader
-	Stdout      io.Writer
-	Stderr      io.Writer
-	SM          domain_security.Manager
-	Clock       clock.Clock
-	reader      *bufio.Reader
-	requestChan chan readRequest
-	done        chan struct{}
-	readerMu    sync.Mutex // Protects requestChan state during shutdown
-	mockPrompt  string
-	mockAnswer  string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	SM         domain_security.Manager
+	Clock      clock.Clock
+	reader     *bufio.Reader
+	closed     atomic.Bool
+	readerMu   sync.Mutex  // Serializes access to reader (bufio.Reader is not concurrency-safe)
+	needsReset atomic.Bool // Set when a read is cancelled; reader is reset before next read
+	mockPrompt string
+	mockAnswer string
 
 	isTTYOverride          *bool // For testing color logic
 	disableEscapeSequences bool
@@ -81,36 +81,11 @@ func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.M
 		SM:                     sm,
 		Clock:                  clk,
 		reader:                 bufio.NewReader(stdin),
-		requestChan:            make(chan readRequest),
-		done:                   make(chan struct{}),
 		mockPrompt:             mockPrompt,
 		mockAnswer:             mockAnswer,
 		disableEscapeSequences: disableEscapeSequences,
 	}
-	c.startWorker()
 	return c
-}
-
-func (c *capturer) startWorker() {
-	reqChan := c.requestChan
-	go func() {
-		defer close(c.done)
-		for req := range reqChan {
-			var res ioResult
-			switch req.op {
-			case opReadByte:
-				b, err := c.reader.ReadByte()
-				res = ioResult{data: b, err: err}
-			case opReadString:
-				s, err := c.reader.ReadString(req.delim)
-				res = ioResult{data: s, err: err}
-			case opReadAll:
-				bytes, err := io.ReadAll(io.LimitReader(c.reader, req.limit))
-				res = ioResult{data: bytes, err: err}
-			}
-			req.resCh <- res
-		}
-	}()
 }
 
 // IsTTY returns true if the value (usually an *os.File) is a terminal.
@@ -124,27 +99,59 @@ func (c *capturer) IsTTY(v any) bool {
 	return false
 }
 
-// sendRequest enqueues a readRequest to the background worker and waits for
-// the result, respecting context cancellation at both the send and receive stages.
+// sendRequest spawns a per-request goroutine to perform a blocking read on
+// c.reader. Access is serialized via readerMu. When the caller's context
+// cancels, sendRequest returns immediately while the read goroutine drains
+// naturally — the next sendRequest will block on readerMu until it finishes,
+// making the system self-healing.
 func (c *capturer) sendRequest(ctx context.Context, req readRequest) (ioResult, error) {
-	c.readerMu.Lock()
-	if c.requestChan == nil {
-		c.readerMu.Unlock()
+	// 1. Check if capturer is closed (atomic, no lock needed)
+	if c.closed.Load() {
 		return ioResult{}, errCapturerClosed
 	}
-	select {
-	case c.requestChan <- req:
-		c.readerMu.Unlock()
-	case <-ctx.Done():
-		c.readerMu.Unlock()
-		return ioResult{}, ctx.Err()
-	}
 
+	// c.reader is immutable after construction — no lock needed to read the pointer
+	reader := c.reader
+
+	// 2. Spawn a goroutine to perform the blocking read
+	// This goroutine holds readerMu for the entire read to serialize access
+	readDone := make(chan ioResult, 1)
+	go func() {
+		c.readerMu.Lock()
+		defer c.readerMu.Unlock()
+
+		// Discard any buffered data from a previously cancelled read
+		if c.needsReset.Swap(false) {
+			reader.Reset(c.Stdin)
+		}
+
+		var localRes ioResult
+		switch req.op {
+		case opReadByte:
+			b, err := reader.ReadByte()
+			localRes = ioResult{data: b, err: err}
+		case opReadString:
+			s, err := reader.ReadString(req.delim)
+			localRes = ioResult{data: s, err: err}
+		case opReadAll:
+			bytes, err := io.ReadAll(io.LimitReader(reader, req.limit))
+			localRes = ioResult{data: bytes, err: err}
+		}
+		readDone <- localRes
+	}()
+
+	// 3. Race: read completion vs caller cancellation
 	select {
-	case <-ctx.Done():
-		return ioResult{}, ctx.Err()
-	case res := <-req.resCh:
+	case res := <-readDone:
 		return res, nil
+	case <-ctx.Done():
+		// The read goroutine is still running, holding readerMu.
+		// It will finish when the underlying io.Reader syscall returns
+		// (data arrives, EOF, or Close() is called on Stdin).
+		// Mark that the reader needs resetting to discard any buffered
+		// data from the cancelled read. The next goroutine will reset it.
+		c.needsReset.Store(true)
+		return ioResult{}, ctx.Err()
 	}
 }
 
@@ -219,7 +226,7 @@ func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, 
 		return "", err
 	}
 
-	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadAll, limit: maxPromptSize}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
@@ -243,7 +250,7 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 
 	c.printFeedback(c.Stdout, useColor, colorYellow, multiLineEOFHint)
 
-	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadAll, limit: maxPromptSize}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
@@ -365,7 +372,7 @@ func (c *capturer) readByteFallback(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	req := readRequest{op: opReadByte, resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadByte}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
@@ -386,7 +393,7 @@ func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	req := readRequest{op: opReadString, delim: '\n', resCh: make(chan ioResult, 1)}
+	req := readRequest{op: opReadString, delim: '\n'}
 	res, err := c.sendRequest(ctx, req)
 	if err != nil {
 		return "", err
@@ -404,21 +411,18 @@ func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 	return res.data.(string), nil
 }
 
-// Close gracefully stops the background worker.
+// Close gracefully stops the capturer. Safe for concurrent use.
 func (c *capturer) Close(ctx context.Context) error {
-	c.readerMu.Lock()
-	if c.requestChan == nil {
-		c.readerMu.Unlock()
+	// Swap returns previous value; if already true, Close is idempotent.
+	if c.closed.Swap(true) {
 		return nil
 	}
-	close(c.requestChan)
-	c.requestChan = nil
-	c.readerMu.Unlock()
 
-	select {
-	case <-c.done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	// Force interrupt any blocking reads by closing the underlying file.
+	// This unblocks any in-flight read goroutine holding readerMu.
+	if closer, ok := c.Stdin.(io.Closer); ok {
+		_ = closer.Close()
 	}
+
+	return nil
 }

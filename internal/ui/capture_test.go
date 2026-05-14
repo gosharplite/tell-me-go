@@ -810,8 +810,8 @@ func TestCapturer_ReadLine_ContextCancelled_BlockingSend(t *testing.T) {
 		}
 	})
 
-	// Action 1: Start a ReadLine call that will block in the worker
-	// The worker will be busy reading from 'pr'.
+	// Action 1: Start a ReadLine call that will block on the pipe.
+	// The first goroutine acquires readerMu and blocks on ReadString.
 	go func() {
 		_, _ = c.ReadLine(context.Background())
 	}()
@@ -846,7 +846,9 @@ func TestCapturer_Close_Idempotent(t *testing.T) {
 
 func TestCapturer_Close_ContextCancelled(t *testing.T) {
 	t.Parallel()
-	// Using a pipe that is never closed by the worker because it's stuck reading.
+	// Using a pipe with an active read goroutine. Close must succeed
+	// immediately without blocking, even with a cancelled context,
+	// because there is no worker goroutine to drain.
 	pr, pw := io.Pipe()
 	t.Cleanup(func() {
 		if err := pw.Close(); err != nil {
@@ -859,22 +861,21 @@ func TestCapturer_Close_ContextCancelled(t *testing.T) {
 
 	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
 
-	// Action: Start a ReadLine call that will block in the worker
+	// Start a ReadLine call that will block on the pipe
 	go func() {
 		_, _ = c.ReadLine(context.Background())
 	}()
 
-	// Give the goroutine a moment to send the request and start reading
+	// Give the goroutine a moment to acquire readerMu and start reading
 	time.Sleep(50 * time.Millisecond)
 
-	// Now try to close with a pre-cancelled context.
-	// Close will close requestChan, but the worker is stuck in ReadString and won't see the close until it finishes the read.
+	// Close with a pre-cancelled context. Close must not block on readerMu.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	err := c.Close(ctx)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled, got %v", err)
+	if err != nil {
+		t.Errorf("expected nil, got %v", err)
 	}
 }
 
@@ -938,7 +939,7 @@ func TestCapturer_ReadSingleKey_ContextCancelled_BlockingSend(t *testing.T) {
 		}
 	})
 
-	// Block the worker
+	// Start a ReadLine that acquires readerMu, blocking the next sendRequest
 	go func() {
 		_, _ = c.ReadLine(context.Background())
 	}()
@@ -1007,5 +1008,60 @@ func TestPrompt_InteractiveEmpty(t *testing.T) {
 	}
 	if prompt != "" {
 		t.Errorf("expected empty prompt, got %q", prompt)
+	}
+}
+
+// TestCapturer_ReadAfterCancellation verifies that the capturer remains
+// functional after a context-cancelled read. This is the regression test
+// for Issue #385: the old worker-based model would permanently break
+// after the first cancellation.
+func TestCapturer_ReadAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	pr, pw := io.Pipe()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		_ = pw.Close()
+		_ = pr.Close()
+	})
+
+	// Step 1: Issue a read with a short timeout that will cancel while
+	// the read goroutine is blocked on the empty pipe.
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	_, err := c.ReadLine(ctx1)
+	cancel1()
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first read: expected DeadlineExceeded, got %v", err)
+	}
+
+	// Step 2: The cancelled read goroutine is still draining (blocked on
+	// the pipe). Write data to unblock it — this data will be consumed
+	// by the drained goroutine and discarded. Then write fresh data for
+	// the second read.
+	go func() {
+		time.Sleep(20 * time.Millisecond) // Let the drain settle
+		_, _ = pw.Write([]byte("junk\n")) // Unblocks and feeds the drained goroutine
+		time.Sleep(50 * time.Millisecond) // Let the drained goroutine finish and release readerMu
+		_, _ = pw.Write([]byte("hello\n"))
+	}()
+
+	// Step 3: Issue a second read. This must block on readerMu until
+	// the drained goroutine finishes, then proceed normally.
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel2()
+
+	line, err := c.ReadLine(ctx2)
+	if err != nil {
+		t.Fatalf("second read: unexpected error: %v", err)
+	}
+	if line != "hello\n" {
+		t.Errorf("second read: got %q, want %q", line, "hello\n")
 	}
 }
