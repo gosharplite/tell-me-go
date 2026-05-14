@@ -124,7 +124,7 @@ func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 	case "clear":
 		return t.clearTasks(ctx)
 	default:
-		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
+		return tools.ToolResult{Text: fmt.Sprintf("Error: unknown action: %s", params.Action)}, nil
 	}
 }
 

@@ -46,19 +46,23 @@ func newBackupManager(sm domain_security.PathValidator, fs domain_persistence.Fi
 }
 
 // snapshot records the current state of a file before it is modified.
-func (b *backupManager) snapshot(ctx context.Context, path string, action string) {
+func (b *backupManager) snapshot(ctx context.Context, path string, action string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return
+		return fmt.Errorf("snapshot: resolve path %s: %w", path, err)
 	}
 
 	content, err := b.fs.ReadFile(ctx, absPath)
 	if err != nil {
-		// If file doesn't exist, we store nil content to represent "new file"
-		content = nil
+		if os.IsNotExist(err) {
+			// Genuinely new file — store nil content to represent "new file"
+			content = nil
+		} else {
+			return fmt.Errorf("snapshot: read %s: %w", absPath, err)
+		}
 	}
 
 	snap := fileSnapshot{
@@ -72,6 +76,7 @@ func (b *backupManager) snapshot(ctx context.Context, path string, action string
 	if len(b.backups) > b.maxStored {
 		b.backups = b.backups[1:]
 	}
+	return nil
 }
 
 // undo reverts the last N changes.

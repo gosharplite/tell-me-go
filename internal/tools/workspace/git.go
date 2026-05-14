@@ -66,6 +66,11 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 	}
 
 	hash := params.Hash
+	// Defense-in-depth presence guard. The central validateRequiredArgs in
+	// registry.Execute catches missing required params before this handler
+	// runs in production. We keep this guard for direct invocation paths
+	// (unit tests, embedding, in-process callers). See writeFile's comment
+	// for the full rationale.
 	if hash == "" {
 		return tools.ToolResult{}, fmt.Errorf("hash argument is required")
 	}
@@ -90,6 +95,7 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 	}
 
 	path := params.FilePath
+	// Defense-in-depth presence guard — see getGitCommit hash guard for rationale.
 	if path == "" {
 		return tools.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
@@ -113,6 +119,7 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{},
 	}
 
 	message := params.Message
+	// Defense-in-depth presence guard — see getGitCommit hash guard for rationale.
 	if message == "" {
 		return tools.ToolResult{}, fmt.Errorf("message is required")
 	}
@@ -121,10 +128,10 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{},
 	if err != nil {
 		// If git failed and the output indicates no staged changes, return an actionable error
 		if strings.Contains(res, "nothing to commit") || strings.Contains(res, "no changes added to commit") {
-			return tools.ToolResult{Text: res}, fmt.Errorf("no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing")
+			return tools.ToolResult{Text: "Error: no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing"}, nil
 		}
-		// Otherwise, return the generic error with the raw output
-		return tools.ToolResult{Text: res}, err
+		// Otherwise, return the generic error as an infrastructure fault
+		return tools.ToolResult{}, fmt.Errorf("git commit failed: %w", err)
 	}
 	return tools.ToolResult{Text: res}, nil
 }
@@ -139,6 +146,7 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 	}
 
 	name := params.Name
+	// Defense-in-depth presence guard — see getGitCommit hash guard for rationale.
 	if name == "" {
 		return tools.ToolResult{}, fmt.Errorf("branch name is required")
 	}

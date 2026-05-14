@@ -224,7 +224,7 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{},
 
 	const maxFilesPerCall = 50
 	if len(params.FilePaths) > maxFilesPerCall {
-		return tools.ToolResult{}, fmt.Errorf("requested too many files (%d). Maximum allowed per call is %d", len(params.FilePaths), maxFilesPerCall)
+		return tools.ToolResult{Text: fmt.Sprintf("Error: requested too many files (%d). Maximum is %d files per call.", len(params.FilePaths), maxFilesPerCall)}, nil
 	}
 
 	var sb strings.Builder
@@ -339,7 +339,7 @@ func (r *fileReader) interpretDiffResult(res executionResult, runErr error) (too
 	}
 
 	if res.ExitCode != 0 && res.ExitCode != 1 { // 1 is normal for diff finding differences
-		return tools.ToolResult{Text: res.Output}, fmt.Errorf("diff process failed with exit code %d", res.ExitCode)
+		return tools.ToolResult{Text: fmt.Sprintf("Error: diff failed with exit code %d: %s", res.ExitCode, res.Output)}, nil
 	}
 
 	return tools.ToolResult{Text: res.Output}, nil

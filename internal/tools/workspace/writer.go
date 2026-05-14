@@ -59,7 +59,9 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{},
 
 	// Confirmation Gate
 
-	w.bm.snapshot(ctx, resolvedPath, "WRITE")
+	if err := w.bm.snapshot(ctx, resolvedPath, "WRITE"); err != nil {
+		return tools.ToolResult{}, err
+	}
 
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(resolvedPath)
@@ -97,7 +99,9 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 
 	// Confirmation Gate
 
-	w.bm.snapshot(ctx, resolvedPath, "REPLACE")
+	if err := w.bm.snapshot(ctx, resolvedPath, "REPLACE"); err != nil {
+		return tools.ToolResult{}, err
+	}
 
 	contentBytes, err := w.fs.ReadFile(ctx, resolvedPath)
 	if err != nil {
@@ -150,7 +154,9 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 
 	// Confirmation Gate
 
-	w.bm.snapshot(ctx, resolvedPath, "APPEND")
+	if err := w.bm.snapshot(ctx, resolvedPath, "APPEND"); err != nil {
+		return tools.ToolResult{}, err
+	}
 
 	// Use OpenFile with O_APPEND
 	f, oerr := w.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -187,7 +193,7 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 
 	res, err := w.bm.undo(ctx, n)
 	if err == nil && strings.Contains(res, "No snapshots available") {
-		return tools.ToolResult{Text: res}, fmt.Errorf("no history found")
+		return tools.ToolResult{Text: "Error: no history found"}, nil
 	}
 
 	return tools.ToolResult{Text: res}, err
@@ -247,7 +253,9 @@ func (w *fileWriter) performSingleDelete(ctx context.Context, path string) (tool
 
 	// Only snapshot if it is a file and not a directory
 	if statErr == nil && !info.IsDir() {
-		w.bm.snapshot(ctx, path, "DELETE")
+		if err := w.bm.snapshot(ctx, path, "DELETE"); err != nil {
+			return tools.ToolResult{}, err
+		}
 	}
 
 	if err := w.fs.Remove(ctx, path); err != nil {
