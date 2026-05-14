@@ -98,7 +98,7 @@ func (c *capturer) startWorker() {
 		defer close(c.done)
 		for req := range reqChan {
 			var res ioResult
-			
+
 			// Race context against the blocking read operation.
 			readDone := make(chan ioResult, 1)
 			go func(req readRequest) {
