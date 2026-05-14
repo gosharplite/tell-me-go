@@ -94,8 +94,9 @@ Never use a hardcoded path like `/tmp/prompt.txt`:
 |----------|------|--------|
 | Starting a brand-new task | `-new` | Resets the role's context; previous conversation is discarded. |
 | Following up on the same task | *omit* `-new` | Preserves conversation history so the role remembers prior exchanges. |
+| Session approaching **token limit** | `-new` | Reset before the context window overflows — otherwise the role silently loses early messages with no warning. |
 
-Using `-new` when you meant to continue will cause the role to lose all context. Double-check before sending.
+Use `-t` to check current token consumption (see below). When it climbs past ~80% of the model's limit, start the next task with `-new`.
 
 ### Output suppression
 
@@ -128,8 +129,26 @@ Use this when:
 - A role's response is unexpected and you need to trace the full conversation.
 - You suspect the role misunderstood earlier context.
 - You need to audit the complete interaction for compliance or review.
+- **You want to check token consumption** before deciding whether to use `-new`.
 
 The `-t` flag does **not** require `-r`.
+
+#### Reading token usage from `-t` output
+
+Each turn includes a `Payload` line:
+
+```
+Payload: ~19856/1000000 tokens
+```
+
+| Element | Meaning |
+|---------|---------|
+| `~` prefix | **Estimated** token count (pre-flight, before the API call). |
+| No `~` prefix | **Actual** token count (measured after the response). |
+| `19856` | Current tokens in the context window. |
+| `1000000` | Model's maximum context limit. |
+
+**Rule of thumb**: when the current count exceeds ~80% of max, start the next task with `-new`. Otherwise the model will silently drop the earliest messages from its context, and the role's answers will degrade without warning.
 
 ## Complete Workflow Example
 
