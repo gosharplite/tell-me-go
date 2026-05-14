@@ -175,7 +175,11 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 	}
 
 	if startPkg == nil || startFunc == nil {
-		return nil, fmt.Errorf("start symbol not found: %s", startSymbol)
+		hint := ""
+		if strings.Contains(startSymbol, "/") {
+			hint = " (use the full Go import path with dots, e.g. 'github.com/foo/bar/pkg.Type.Method')"
+		}
+		return nil, fmt.Errorf("start symbol not found: %s%s", startSymbol, hint)
 	}
 
 	collector := &frameCollector{}
