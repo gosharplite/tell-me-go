@@ -378,8 +378,9 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath str
 	}()
 	_ = f.Close()
 
-	// Execute coverage test (ignores error as original code did, allowing partial profiles)
-	_ = m.runCoverageTest(ctx, packagePath, tempPath, hb)
+	if err := m.runCoverageTest(ctx, packagePath, tempPath, hb); err != nil {
+		return nil, fmt.Errorf("coverage test execution failed (profile may be incomplete): %w", err)
+	}
 
 	if err := validateProfile(tempPath); err != nil {
 		return nil, err
