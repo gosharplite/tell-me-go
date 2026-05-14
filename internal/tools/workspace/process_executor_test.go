@@ -926,13 +926,13 @@ func TestProcessExecutor_LookPath(t *testing.T) {
 
 func TestStreamProcessor_appendErr(t *testing.T) {
 	tests := []struct {
-		name            string
-		totalCaptured   int
-		maxCapture      int
-		err             error
-		wantContains    string
-		wantTruncated   bool
-		wantEmptySB     bool
+		name          string
+		totalCaptured int
+		maxCapture    int
+		err           error
+		wantContains  string
+		wantTruncated bool
+		wantEmptySB   bool
 	}{
 		{
 			name:          "nil error — no-op",
@@ -1217,7 +1217,7 @@ func TestProcessExecutor_handleCaptureError(t *testing.T) {
 
 	t.Run("ErrTooLong no capacity — truncated flag set, sb unchanged", func(t *testing.T) {
 		var sb strings.Builder
-		sb.WriteString("12345")                 // pre-fill exactly 5 bytes
+		sb.WriteString("12345") // pre-fill exactly 5 bytes
 		var mu sync.Mutex
 		truncated := &atomic.Bool{}
 

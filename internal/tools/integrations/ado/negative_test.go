@@ -357,7 +357,7 @@ func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
 			for i := range tooLong {
 				tooLong[i] = 'A'
 			}
-			w.Write(tooLong)
+			_, _ = w.Write(tooLong)
 		}))
 		t.Cleanup(ts.Close)
 
