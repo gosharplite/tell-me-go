@@ -42,9 +42,9 @@ This SOP defines the end-to-end process for resolving a GitHub issue using the *
 
 | Role | Access | Responsibility |
 |------|--------|----------------|
-| **Orchestrator** (you) | Read files, run commands, `tell-me-go` | Issue analysis, prompt writing, retrieval, verification, PR creation. **Never modifies Go source files.** |
-| **Architect** | Read-only via `tell-me-go -r` | Structural analysis, risk assessment, implementation sequencing, `[ARCHITECTURAL BLOCKER]` / `[TECHNICAL DEBT]` / `[REFACTOR]` categorization. |
-| **Coder** | **Write** via `tell-me-go -r` (the only role with file write access) | Implementation: TDD, table-driven tests, code changes, self-review. |
+| **Orchestrator** (you) | Read files, run commands, `tell-me-go` | Issue analysis, prompt writing, retrieval, verification, PR creation. Relays tasks and results between Architect and Coder. **Never modifies Go source files.** |
+| **Architect** | Read-only via `tell-me-go -r` | **Phase 1:** structural analysis, risk assessment, implementation sequencing, `[ARCHITECTURAL BLOCKER]` / `[TECHNICAL DEBT]` / `[REFACTOR]` categorization. **Phase 2:** dispatches one task at a time to Coder, reviews each result, issues the next task or revision. Stays in a single session (no `--new`) across all of Phase 2. |
+| **Coder** | **Write** via `tell-me-go -r` (the only role with file write access) | Implementation: receives one focused task per session (`--new` each time), TDD, table-driven tests, reports result. No memory of prior tasks — each session is self-contained. |
 
 Communication is **asynchronous and turn-based**. The Orchestrator is the hub — Architect and Coder never talk directly.
 
@@ -111,6 +111,7 @@ The prompt must include:
 - The full issue body (scope, gap distribution, key code locations, DoD).
 - A request for: risk assessment, prioritized implementation sequence, test strategy, and pattern guidance.
 - An explicit instruction to categorize findings per the Architect SOP.
+- Phase 2 setup: *"After your analysis, you will dispatch tasks to the Coder one at a time. Tell Coder what to do with details — do not do it yourself. Output exactly one task per response, since Coder starts a new session for each task and has no prior memory. Be as clear as possible. You will review Coder's result before issuing the next task."*
 
 #### 2b. Send to Architect
 
@@ -133,21 +134,63 @@ Verify the response is actionable before proceeding. If the Architect asks a que
 
 ---
 
-### 3. Phase 2 — Implementation
+### 3. Phase 2 — Implementation (Architect-Driven Task Dispatch)
 
-#### 3a. Write the Coder prompt
+The Architect drives implementation **one task at a time**. This keeps
+Coder sessions short (low token count, minimal hallucination) and gives
+the Architect continuous visibility — no big surprises at the end.
+
+**Session model:**
+
+| Role | Session | Why |
+|------|---------|-----|
+| Architect | **Single session** (no `--new` after Phase 1) | Maintains full implementation context across all tasks |
+| Coder | **New session per task** (`--new` every time) | Each task is self-contained; no context drift |
+
+**Loop:**
+
+```
+Architect outputs Task N
+    → Orchestrator sends to Coder (--new)
+        → Coder implements, runs tests, reports result
+            → Orchestrator retrieves result, sends to Architect for review
+                → Architect reviews → outputs Task N+1 or revision
+                    → ... repeat until Architect declares completion
+```
+
+#### 3a. Prime the Architect for task dispatch
+
+After retrieving the Phase 1 analysis (`-l 1`), send a follow-up prompt
+to the Architect (**no `--new`** — continues the same session):
 
 ```
 write_file → /tmp/tell-me-go-prompt.txt
+
+Prompt content:
+  "Tell Coder what to do with details. Do not do it yourself.
+   Output one task at a time, since Coder will start a new session
+   for each of your tasks. Coder has no previous memory — be as
+   clear and self-contained as possible. Include exact file paths,
+   function signatures, and test expectations. You will review
+   Coder's new code after each task before issuing the next one."
 ```
 
-The prompt must include:
-- The Architect's full prioritized sequence and test strategy.
-- The specific code locations from the issue.
-- A directive: implement one gap at a time, run tests after each, report progress.
-- The Definition of Done from the issue.
+Send:
+```bash
+PROMPT_FILE=$(mktemp) && \
+cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
+tell-me-go -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
+```
 
-#### 3b. Send to Coder (new session)
+Retrieve the Architect's first task:
+```bash
+tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
+```
+
+#### 3b. Send one task to Coder
+
+Each task runs in a **fresh** Coder session (`--new`):
 
 ```bash
 PROMPT_FILE=$(mktemp) && \
@@ -156,20 +199,38 @@ test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
 tell-me-go --new -r -c ${CODER_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
 
-#### 3c. Retrieve the Coder's response
-
+Retrieve:
 ```bash
 tell-me-go -l 1 -r -c ${CODER_CONFIG}
 ```
 
-#### 3d. Handle mid-implementation questions
+#### 3c. Send Coder's result back to Architect for review
 
-If the Coder asks a question or hits a blocker:
+Forward the Coder's output to the Architect (**no `--new`** — Architect
+is still in the same session):
 
-1. Read the question from the Coder's output.
-2. **Option A**: Answer directly — `write_file` a follow-up, re-send with `tell-me-go -r -c ${CODER_CONFIG}` (no `--new`).
-3. **Option B**: Escalate to Architect — `write_file` the question to Architect, send with `tell-me-go -r -c ${ARCHITECT_CONFIG}` (no `--new`), retrieve answer, forward to Coder.
-4. Repeat until the Coder reports completion.
+```bash
+PROMPT_FILE=$(mktemp) && \
+cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
+tell-me-go -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
+```
+
+The Architect will respond with one of:
+- **Next task** — proceed to 3b with the new task.
+- **Revision** — the Coder's output needs adjustment; Architect provides corrected instructions. Send to Coder (`--new`) and re-review.
+- **Completion** — all tasks done. Proceed to Phase 3 (Verification).
+
+#### 3d. Loop until Architect declares completion
+
+Repeat 3b → 3c for each task. Key rules:
+
+| Rule | Rationale |
+|------|-----------|
+| Coder always gets `--new` | Each task is self-contained; no token bloat, no hallucination from stale context |
+| Architect never gets `--new` during Phase 2 | Must remember all prior tasks to maintain coherent implementation |
+| One task at a time | Architect reviews each result; no big surprises |
+| Tasks must be self-contained | Include exact file paths, signatures, test expectations — Coder has no memory of prior tasks |
 
 ---
 
@@ -200,9 +261,11 @@ This executes, in order:
 
 1. Capture the failure output.
 2. `write_file` a prompt with the failure details.
-3. Send to Coder: `tell-me-go -r -c ${CODER_CONFIG}` (no `--new`).
-4. Retrieve response, re-run `make check-full`.
-5. Repeat until all checks pass.
+3. Send to Architect: `tell-me-go -r -c ${ARCHITECT_CONFIG}` (no `--new`) for diagnosis.
+4. Architect issues a fix task → send to Coder (`--new`).
+5. Retrieve Coder's result → forward to Architect for review.
+6. Re-run `make check-full`.
+7. Repeat until all checks pass.
 
 **If the target is a specific package** (e.g., `internal/cli/`), also verify the coverage target was met:
 ```bash
@@ -261,10 +324,13 @@ gh pr create \
 | Situation | Action |
 |-----------|--------|
 | Architect response is vague or incomplete | Follow-up to Architect (no `--new`) asking for specifics |
-| Coder hits a blocker mid-implementation | Assess: if architectural question → escalate to Architect; if clarification → answer directly |
-| `make check-full` fails | Failure output → Coder (no `--new`) for fix |
-| Coverage target not met | Remaining gaps → Coder (no `--new`) for additional tests |
-| Coder times out or produces no output | Check `tell-me-go -t` for errors; re-send with `--new` if session corrupted |
+| Architect issues a task that is too large or ambiguous | Ask Architect to break it down further before forwarding to Coder |
+| Coder produces incorrect or incomplete output | Send Coder's output to Architect for review; Architect will issue a revision task |
+| Coder hits an error it cannot resolve | Send the error to Architect (no `--new`); Architect diagnoses and issues a corrected task |
+| `make check-full` fails | Failure output → Architect (no `--new`) for diagnosis; Architect issues fix task → Coder (`--new`) |
+| Coverage target not met | Remaining gaps → Architect for coverage plan → Coder (`--new`) for additional tests |
+| Coder times out or produces no output | Check `tell-me-go -t` for errors; re-send task with fresh `--new` session |
+| Architect appears to have forgotten context | Check `tell-me-go -t` for token consumption; if >80% of model limit, start next major phase with `--new` |
 
 ---
 
