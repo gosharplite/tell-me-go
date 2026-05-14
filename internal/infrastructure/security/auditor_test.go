@@ -12,84 +12,171 @@ import (
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
-func TestAuditor_LogAudit(t *testing.T) {
-	t.Parallel()
-	tmpDir := t.TempDir()
-	logFile := filepath.Join(tmpDir, "audit.log")
-	a := newAuditor(nil)
-	a.SetLogFile(logFile)
-
-	a.LogAudit("TEST_ACTION", "Action", "Test", "Detail", "Something")
-
-	// Must close to flush and release lock on Windows
-	_ = a.Close()
-
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
-	}
-
-	content := string(data)
-	if !strings.Contains(content, "AUDIT: TEST_ACTION") {
-		t.Error("Log missing AUDIT: TEST_ACTION")
-	}
-	if !strings.Contains(content, "Action=Test") {
-		t.Error("Log missing Action=Test")
-	}
-	if !strings.Contains(content, "Detail=Something") {
-		t.Error("Log missing Detail=Something")
-	}
-}
-
-func TestAuditor_NoLogFile(t *testing.T) {
-	t.Parallel()
-	a := newAuditor(nil)
-	// Should not panic or fail when logFile is empty
-	a.LogAudit("TEST", "Action", "Test")
-}
-
-func TestAuditor_SetLogFileError(t *testing.T) {
-	t.Parallel()
-	mock := &mockInteractor{}
-	a := newAuditor(func() domain.UserInteractor { return mock })
-
-	// Try to open a path that shouldn't be writable or is a directory
-	tmpDir := t.TempDir()
-	invalidPath := filepath.Join(tmpDir, "nonexistent_dir", "audit.log")
-
-	a.SetLogFile(invalidPath)
-
-	mock.mu.Lock()
-	defer mock.mu.Unlock()
-	if len(mock.Warns) == 0 {
-		t.Error("Expected warning message, got none")
-	} else if !strings.Contains(mock.Warns[0], "Failed to open command log file") {
-		t.Errorf("Unexpected warning message: %s", mock.Warns[0])
-	}
-}
-
 func TestAuditor_Close(t *testing.T) {
-	t.Run("closes open file successfully", func(t *testing.T) {
+	t.Run("nil auditor (no file)", func(t *testing.T) {
 		a := newAuditor(nil)
-
-		// Use t.TempDir() for guaranteed isolated cleanup
-		logFile := filepath.Join(t.TempDir(), "audit.log")
-		a.SetLogFile(logFile)
-
 		if err := a.Close(); err != nil {
-			t.Fatalf("unexpected error closing auditor: %v", err)
-		}
-
-		// Verify internal state is explicitly cleared
-		if a.file != nil || a.logger != nil {
-			t.Errorf("expected file and logger to be nil after Close()")
+			t.Errorf("Close() on nil-file auditor: %v", err)
 		}
 	})
 
-	t.Run("safe to call on uninitialized file", func(t *testing.T) {
+	t.Run("normal close", func(t *testing.T) {
 		a := newAuditor(nil)
+		tmp := filepath.Join(t.TempDir(), "audit.log")
+		a.SetLogFile(tmp)
 		if err := a.Close(); err != nil {
-			t.Fatalf("expected nil error when closing uninitialized auditor, got %v", err)
+			t.Errorf("Close() error: %v", err)
+		}
+	})
+
+	t.Run("double close (idempotent)", func(t *testing.T) {
+		a := newAuditor(nil)
+		tmp := filepath.Join(t.TempDir(), "audit.log")
+		a.SetLogFile(tmp)
+		if err := a.Close(); err != nil {
+			t.Errorf("first Close() error: %v", err)
+		}
+		if err := a.Close(); err != nil {
+			t.Errorf("second Close() error: %v", err)
+		}
+	})
+
+	t.Run("close after SetLogFile with empty path", func(t *testing.T) {
+		a := newAuditor(nil)
+		a.SetLogFile("")
+		if err := a.Close(); err != nil {
+			t.Errorf("Close() after empty SetLogFile: %v", err)
+		}
+	})
+
+	t.Run("write error during close (file already closed)", func(t *testing.T) {
+		a := newAuditor(nil)
+		tmp := filepath.Join(t.TempDir(), "audit.log")
+		a.SetLogFile(tmp)
+
+		// Close the underlying file manually to force auditor.Close to hit an error
+		if err := a.file.Close(); err != nil {
+			t.Fatalf("failed to pre-close file: %v", err)
+		}
+
+		err := a.Close()
+		if err == nil {
+			t.Error("expected error from Close() when file already closed")
+		}
+	})
+}
+
+func TestAuditor_SetLogFile(t *testing.T) {
+	t.Run("empty path", func(t *testing.T) {
+		a := newAuditor(nil)
+		a.SetLogFile("")
+		if a.logger != nil {
+			t.Error("expected nil logger after SetLogFile(\"\")")
+		}
+		if a.file != nil {
+			t.Error("expected nil file after SetLogFile(\"\")")
+		}
+	})
+
+	t.Run("valid path creates file", func(t *testing.T) {
+		a := newAuditor(nil)
+		tmp := filepath.Join(t.TempDir(), "audit.log")
+		a.SetLogFile(tmp)
+
+		if a.logger == nil {
+			t.Error("expected non-nil logger after SetLogFile with valid path")
+		}
+		if a.file == nil {
+			t.Error("expected non-nil file after SetLogFile with valid path")
+		}
+
+		// Verify file exists on disk
+		if _, err := os.Stat(tmp); os.IsNotExist(err) {
+			t.Errorf("expected file %s to exist on disk", tmp)
+		}
+
+		// Cleanup
+		_ = a.Close()
+	})
+
+	t.Run("overwrite existing file", func(t *testing.T) {
+		a := newAuditor(nil)
+		dir := t.TempDir()
+		pathA := filepath.Join(dir, "audit-a.log")
+		pathB := filepath.Join(dir, "audit-b.log")
+
+		a.SetLogFile(pathA)
+		if a.file == nil {
+			t.Fatal("expected non-nil file after first SetLogFile")
+		}
+
+		a.SetLogFile(pathB) // This should close pathA and open pathB
+		if a.file == nil {
+			t.Fatal("expected non-nil file after second SetLogFile")
+		}
+
+		// Verify new file exists on disk
+		if _, err := os.Stat(pathB); os.IsNotExist(err) {
+			t.Errorf("expected file %s to exist on disk", pathB)
+		}
+
+		_ = a.Close()
+	})
+
+	t.Run("invalid path warns", func(t *testing.T) {
+		mock := &mockInteractor{}
+		a := newAuditor(func() domain.UserInteractor { return mock })
+		a.SetLogFile("/nonexistent_dir_xyz_should_not_exist/audit.log")
+
+		if a.logger != nil {
+			t.Error("expected nil logger after failed open")
+		}
+		if len(mock.Warns) != 1 {
+			t.Errorf("expected 1 warning, got %d: %v", len(mock.Warns), mock.Warns)
+		}
+		if len(mock.Warns) >= 1 && !strings.Contains(mock.Warns[0], "Failed to open command log file") {
+			t.Errorf("warning does not contain expected message: %q", mock.Warns[0])
+		}
+	})
+
+	t.Run("invalid path with nil interactor (no panic)", func(t *testing.T) {
+		a := newAuditor(nil) // interactor provider returns nil
+		// Must not panic when interactor() returns nil
+		a.SetLogFile("/nonexistent_dir_xyz_should_not_exist/audit.log")
+		if a.logger != nil {
+			t.Error("expected nil logger after failed open")
+		}
+	})
+}
+
+func TestAuditor_LogAudit(t *testing.T) {
+	t.Run("no-op with nil logger", func(t *testing.T) {
+		a := newAuditor(nil)
+		// Must not panic
+		a.LogAudit("test", "key", "val")
+	})
+
+	t.Run("writes to file", func(t *testing.T) {
+		a := newAuditor(nil)
+		tmp := filepath.Join(t.TempDir(), "audit.log")
+		a.SetLogFile(tmp)
+
+		a.LogAudit("test", "key", "val")
+		if err := a.Close(); err != nil {
+			t.Fatalf("Close() error: %v", err)
+		}
+
+		data, err := os.ReadFile(tmp)
+		if err != nil {
+			t.Fatalf("ReadFile error: %v", err)
+		}
+
+		content := string(data)
+		if !strings.Contains(content, "AUDIT: test") {
+			t.Errorf("expected log to contain 'AUDIT: test', got: %s", content)
+		}
+		if !strings.Contains(content, "key=val") {
+			t.Errorf("expected log to contain 'key=val', got: %s", content)
 		}
 	})
 }
