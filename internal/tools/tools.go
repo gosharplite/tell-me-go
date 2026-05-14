@@ -44,6 +44,12 @@ type ToolRegistrationParams struct {
 
 // RegisterAll registers all available tools into the registry.
 func RegisterAll(params ToolRegistrationParams) error {
+	if params.Registry == nil {
+		return fmt.Errorf("RegisterAll: Registry is required and must not be nil")
+	}
+	if params.SecurityManager == nil {
+		return fmt.Errorf("RegisterAll: SecurityManager is required and must not be nil")
+	}
 	if params.WorkspacePolicy == nil {
 		return fmt.Errorf("RegisterAll: WorkspacePolicy is required and must not be nil")
 	}

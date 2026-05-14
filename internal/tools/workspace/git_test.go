@@ -215,15 +215,13 @@ func TestGitDestructiveActions(t *testing.T) {
 			expected: "[main abc] feat: test",
 		},
 		{
-			name:        "git_commit nothing to commit",
-			toolName:    "git_commit",
-			args:        map[string]interface{}{"message": "feat: test", "reason": "ship it"},
-			approved:    true,
-			mockOut:     "On branch main\nnothing to commit, working tree clean",
-			mockErr:     fmt.Errorf("exit status 1"),
-			expected:    "On branch main\nnothing to commit, working tree clean",
-			expectedErr: "no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing",
-			wantErr:     true,
+			name:     "git_commit nothing to commit",
+			toolName: "git_commit",
+			args:     map[string]interface{}{"message": "feat: test", "reason": "ship it"},
+			approved: true,
+			mockOut:  "On branch main\nnothing to commit, working tree clean",
+			mockErr:  fmt.Errorf("exit status 1"),
+			expected: "Error: no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing",
 		},
 		{
 			name:     "git_create_branch approved",
@@ -381,5 +379,84 @@ func TestRunGitCommand_WithHeartbeat(t *testing.T) {
 		// heartbeat received — the hb != nil branch was exercised
 	default:
 		// May not have fired; this is non-fatal.
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Direct invocation tests (bypass registry, exercise defense-in-depth guards)
+// ---------------------------------------------------------------------------
+
+func TestGitManager_DirectInvocation_MissingArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	executor := &mockGitExecutor{
+		handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("ok"), nil
+		},
+	}
+
+	m := &gitManager{sm: sm, Exec: executor}
+	ctx := context.Background()
+
+	t.Run("getGitBlame empty filepath", func(t *testing.T) {
+		_, err := m.getGitBlame(ctx, map[string]interface{}{}, nil)
+		if err == nil {
+			t.Fatal("expected error for empty filepath")
+		}
+		if !strings.Contains(err.Error(), "filepath argument is required") {
+			t.Errorf("expected 'filepath argument is required', got: %v", err)
+		}
+	})
+
+	t.Run("getGitCommit empty hash", func(t *testing.T) {
+		_, err := m.getGitCommit(ctx, map[string]interface{}{}, nil)
+		if err == nil {
+			t.Fatal("expected error for empty hash")
+		}
+		if !strings.Contains(err.Error(), "hash argument is required") {
+			t.Errorf("expected 'hash argument is required', got: %v", err)
+		}
+	})
+
+	t.Run("gitCommit empty message", func(t *testing.T) {
+		_, err := m.gitCommit(ctx, map[string]interface{}{}, nil)
+		if err == nil {
+			t.Fatal("expected error for empty message")
+		}
+		if !strings.Contains(err.Error(), "message is required") {
+			t.Errorf("expected 'message is required', got: %v", err)
+		}
+	})
+
+	t.Run("gitCreateBranch empty name", func(t *testing.T) {
+		_, err := m.gitCreateBranch(ctx, map[string]interface{}{}, nil)
+		if err == nil {
+			t.Fatal("expected error for empty name")
+		}
+		if !strings.Contains(err.Error(), "branch name is required") {
+			t.Errorf("expected 'branch name is required', got: %v", err)
+		}
+	})
+}
+
+func TestGitCommit_GenericError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	// Simulate a generic git error (not "nothing to commit")
+	executor := &mockGitExecutor{
+		handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("fatal: not a git repository"), fmt.Errorf("exit status 128")
+		},
+	}
+
+	m := &gitManager{sm: sm, Exec: executor}
+	ctx := context.Background()
+
+	_, err := m.gitCommit(ctx, map[string]interface{}{"message": "test", "reason": "test"}, nil)
+	if err == nil {
+		t.Fatal("expected error for generic git failure")
+	}
+	if !strings.Contains(err.Error(), "git commit failed") {
+		t.Errorf("expected 'git commit failed' in error, got: %v", err)
 	}
 }

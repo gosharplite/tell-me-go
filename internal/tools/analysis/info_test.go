@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -259,4 +260,120 @@ func TestInfoManager_GoDoc(t *testing.T) {
 	if res.Text != "GoDoc output" {
 		t.Errorf("expected 'GoDoc output', got %q", res.Text)
 	}
+}
+
+func TestInfoManager_SendHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil channel does not panic", func(t *testing.T) {
+		t.Parallel()
+		m := &infoManager{}
+		m.sendHeartbeat(nil, 50)
+	})
+
+	t.Run("not divisible by 50", func(t *testing.T) {
+		t.Parallel()
+		m := &infoManager{}
+		hb := make(chan struct{}, 1)
+		m.sendHeartbeat(hb, 49)
+		select {
+		case <-hb:
+			t.Error("expected no heartbeat for count=49")
+		default:
+		}
+	})
+
+	t.Run("divisible by 50 sends heartbeat", func(t *testing.T) {
+		t.Parallel()
+		m := &infoManager{}
+		hb := make(chan struct{}, 1)
+		m.sendHeartbeat(hb, 50)
+		select {
+		case <-hb:
+		default:
+			t.Error("expected heartbeat for count=50")
+		}
+	})
+}
+
+func TestInfoManager_GetFileSkeleton(t *testing.T) {
+	t.Parallel()
+
+	t.Run("go file skeleton", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		m := &infoManager{
+			SP:     &mockSecurityProvider{},
+			FS:     persistence.NewMockFileSystem(),
+			Cache:  newASTCache(tmpDir),
+			Policy: infra_persistence.NewWorkspacePolicy(),
+		}
+		ctx := context.Background()
+
+		srcPath := tmpDir + "/test.go"
+		if err := os.WriteFile(srcPath, []byte("package test\n\ntype Exported struct {\n\tField int\n}\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		res, err := m.GetFileSkeleton(ctx, map[string]interface{}{"filepath": srcPath}, nil)
+		if err != nil {
+			t.Fatalf("GetFileSkeleton failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "type Exported struct") {
+			t.Errorf("expected 'type Exported struct' in skeleton, got: %s", res.Text)
+		}
+		if !strings.Contains(res.Text, "SYSTEM HINT") {
+			t.Error("expected SYSTEM HINT in output")
+		}
+	})
+
+	t.Run("non-go file generic skeleton", func(t *testing.T) {
+		t.Parallel()
+		fs := persistence.NewMockFileSystem()
+		m := &infoManager{
+			SP:     &mockSecurityProvider{},
+			FS:     fs,
+			Policy: infra_persistence.NewWorkspacePolicy(),
+		}
+		ctx := context.Background()
+		_ = fs.WriteFile(ctx, "/test.py", []byte("def my_func(): pass"), 0644)
+
+		res, err := m.GetFileSkeleton(ctx, map[string]interface{}{"filepath": "/test.py"}, nil)
+		if err != nil {
+			t.Fatalf("GetFileSkeleton failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "def my_func():") {
+			t.Errorf("expected 'def my_func():' in output, got: %s", res.Text)
+		}
+	})
+
+	t.Run("go file parse failure falls back to generic", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		fs := persistence.NewMockFileSystem()
+		m := &infoManager{
+			SP:     &mockSecurityProvider{},
+			FS:     fs,
+			Cache:  newASTCache(tmpDir),
+			Policy: infra_persistence.NewWorkspacePolicy(),
+		}
+		ctx := context.Background()
+
+		invalidPath := tmpDir + "/broken.go"
+		invalidContent := "not valid go"
+		// Write to real disk for AST cache (will fail parse), and to mock FS for fallback
+		if err := os.WriteFile(invalidPath, []byte(invalidContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+		_ = fs.WriteFile(ctx, invalidPath, []byte(invalidContent), 0644)
+
+		res, err := m.GetFileSkeleton(ctx, map[string]interface{}{"filepath": invalidPath}, nil)
+		if err != nil {
+			t.Fatalf("GetFileSkeleton failed: %v", err)
+		}
+		// Should fall back to generic skeleton extraction
+		if !strings.Contains(res.Text, "SYSTEM HINT") {
+			t.Error("expected SYSTEM HINT in output even for unparseable go file")
+		}
+	})
 }

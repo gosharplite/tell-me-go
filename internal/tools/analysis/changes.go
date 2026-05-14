@@ -52,8 +52,13 @@ func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[strin
 			}
 		}
 		if a.isGoFile(relPath) {
-			changes, _ := a.analyzeFileChange(ctx, params.Target, relPath, fset)
-			a.renderChanges(&sb, relPath, changes)
+			changes, changeErr := a.analyzeFileChange(ctx, params.Target, relPath, fset)
+			if changeErr != nil {
+				// Soft-fail: include error in output but continue
+				a.renderChanges(&sb, relPath, []string{"(analysis error: " + changeErr.Error() + ")"})
+			} else {
+				a.renderChanges(&sb, relPath, changes)
+			}
 		}
 	}
 
@@ -61,18 +66,27 @@ func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[strin
 }
 
 func (a *defaultChangeAnalyzer) getDiffMetadata(ctx context.Context, target string) (string, []string, error) {
-	statOut, _ := a.Exec.CombinedOutput(ctx, "git", "diff", "--stat", target)
-	summaryOut, _ := a.Exec.CombinedOutput(ctx, "git", "diff", "--summary", target)
-
 	var sb strings.Builder
+
+	statOut, statErr := a.Exec.CombinedOutput(ctx, "git", "diff", "--stat", target)
 	sb.WriteString("File Statistics:\n")
-	sb.WriteString(string(statOut))
+	if statErr != nil {
+		fmt.Fprintf(&sb, "(stat failed: %s)\n", statErr.Error())
+	} else {
+		sb.WriteString(string(statOut))
+	}
+
+	summaryOut, summaryErr := a.Exec.CombinedOutput(ctx, "git", "diff", "--summary", target)
 	sb.WriteString("\nChange Summary:\n")
-	sb.WriteString(string(summaryOut))
+	if summaryErr != nil {
+		fmt.Fprintf(&sb, "(summary failed: %s)\n", summaryErr.Error())
+	} else {
+		sb.WriteString(string(summaryOut))
+	}
 
 	filesOut, err := a.Exec.CombinedOutput(ctx, "git", "diff", "--name-only", target)
 	if err != nil {
-		return sb.String(), nil, err
+		return sb.String(), nil, fmt.Errorf("getDiffMetadata --name-only: %w", err)
 	}
 
 	filesRaw := strings.TrimSpace(string(filesOut))
@@ -88,25 +102,29 @@ func (a *defaultChangeAnalyzer) analyzeFileChange(ctx context.Context, target, r
 	// Get current AST
 	currAST, _, err := a.Cache.Get(relPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("analyzeFileChange %s: %w", relPath, err)
 	}
 
 	// Get target AST (base)
 	var baseAST *ast.File
-	baseContent, err := a.Exec.Output(ctx, "git", "show", target+":"+relPath)
-	if err == nil {
-		baseAST, _ = parser.ParseFile(fset, relPath, baseContent, parser.ParseComments)
+	var baseParseErr error
+	baseContent, gitErr := a.Exec.Output(ctx, "git", "show", target+":"+relPath)
+	if gitErr == nil {
+		baseAST, baseParseErr = parser.ParseFile(fset, relPath, baseContent, parser.ParseComments)
 	}
 
 	var changes []string
-	if baseAST == nil {
-		// Entirely new file
+	if gitErr != nil {
+		// File didn't exist in target — entirely new file
 		for _, d := range currAST.Decls {
 			key := getDeclKey(d)
 			if key != "unknown" {
 				changes = append(changes, "Added: "+key)
 			}
 		}
+	} else if baseParseErr != nil {
+		// Could not parse base file — treat as unanalyzable
+		return nil, fmt.Errorf("could not analyze base version of %s: %w", relPath, baseParseErr)
 	} else {
 		changes = compareASTs(baseAST, currAST)
 	}

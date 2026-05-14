@@ -6,12 +6,14 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
@@ -26,13 +28,17 @@ func TestBackupManager_Undo(t *testing.T) {
 	path := filepath.Join(tempDir, "test.txt")
 
 	// 1. Snapshot new file creation
-	bm.snapshot(ctx, path, "WRITE")
+	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Snapshot modification
-	bm.snapshot(ctx, path, "REPLACE")
+	if err := bm.snapshot(ctx, path, "REPLACE"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte("v2"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +79,7 @@ type undoErrorTestCase struct {
 	snapshotOp    string
 	wantErrSubstr string
 	wantResSubstr string
+	mockFS        persistence.FileSystem // optional: override FS for snapshot (e.g. to simulate ReadFile returning os.ErrNotExist)
 }
 
 func TestBackupManager_Undo_Errors(t *testing.T) {
@@ -118,6 +125,9 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 			snapshotPath:  "is_a_dir",
 			snapshotOp:    "WRITE",
 			wantErrSubstr: "failed to remove new file",
+			// Mock FS reports os.ErrNotExist for ReadFile so snapshot stores nil content,
+			// causing undoOne to call Remove on the non-empty directory which fails.
+			mockFS: &mockFS_NotExist{FileSystem: persistencetest.NewPlainOSFileSystem()},
 		},
 		{
 			name: "AtomicWriteFailed",
@@ -162,7 +172,11 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 	tempDir := t.TempDir()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	fs := tc.mockFS
+	if fs == nil {
+		fs = persistencetest.NewPlainOSFileSystem()
+	}
+	bm := newBackupManager(sm, fs, 10)
 	ctx := context.Background()
 
 	cleanup := tc.setup(t, tempDir, sm)
@@ -173,7 +187,9 @@ func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 		if !filepath.IsAbs(fullPath) {
 			fullPath = filepath.Join(tempDir, fullPath)
 		}
-		bm.snapshot(ctx, fullPath, tc.snapshotOp)
+		if err := bm.snapshot(ctx, fullPath, tc.snapshotOp); err != nil {
+			t.Fatalf("unexpected snapshot error: %v", err)
+		}
 	}
 
 	res, err := bm.undo(ctx, 1)
@@ -221,4 +237,154 @@ func TestNewBackupManager_Normalization(t *testing.T) {
 			t.Errorf("expected maxStored=3 for input 3, got %d", bm.maxStored)
 		}
 	})
+}
+
+// mockFS_NotExist is a FileSystem decorator that returns os.ErrNotExist
+// from ReadFile. Used to test undo paths that need a nil-content snapshot
+// on a path that actually exists as a directory.
+type mockFS_NotExist struct {
+	persistence.FileSystem
+}
+
+func (m *mockFS_NotExist) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	return nil, os.ErrNotExist
+}
+
+// ---------------------------------------------------------------------------
+// snapshot error path tests (Phase 3+4)
+// ---------------------------------------------------------------------------
+
+// mockFS_ReadError is a FileSystem decorator that returns a non-IsNotExist
+// error from ReadFile.
+type mockFS_ReadError struct {
+	persistence.FileSystem
+	err error
+}
+
+func (m *mockFS_ReadError) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	return nil, m.err
+}
+
+func TestSnapshot_ReadFileIOError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	expectedErr := errors.New("disk failure")
+	fs := &mockFS_ReadError{FileSystem: persistencetest.NewPlainOSFileSystem(), err: expectedErr}
+	bm := newBackupManager(sm, fs, 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+
+	err := bm.snapshot(ctx, path, "WRITE")
+	if err == nil {
+		t.Fatal("expected error from ReadFile I/O failure")
+	}
+	if !strings.Contains(err.Error(), "snapshot: read") {
+		t.Errorf("expected 'snapshot: read' in error, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "disk failure") {
+		t.Errorf("expected 'disk failure' in error, got %q", err.Error())
+	}
+}
+
+func TestSnapshot_ReadFileNotExist(t *testing.T) {
+	// Verifies os.ErrNotExist is treated as new-file (nil content, no error)
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "nonexistent.txt")
+
+	err := bm.snapshot(ctx, path, "WRITE")
+	if err != nil {
+		t.Fatalf("expected no error for non-existent file, got: %v", err)
+	}
+
+	// Verify a snapshot was stored
+	res, undoErr := bm.undo(ctx, 1)
+	if undoErr != nil {
+		t.Fatalf("unexpected undo error: %v", undoErr)
+	}
+	if !strings.Contains(res, "Removed") {
+		t.Errorf("expected 'Removed' for new-file undo, got %q", res)
+	}
+}
+
+func TestSnapshot_RingBufferEviction(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	maxStored := 3
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), maxStored)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+
+	// Create 5 snapshots (exceeds maxStored=3)
+	for i := 0; i < 5; i++ {
+		path := filepath.Join(tempDir, fmt.Sprintf("file%d.txt", i))
+		if err := os.WriteFile(path, []byte(fmt.Sprintf("v%d", i)), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// undo with n=3 should restore the 3 most recent files
+	res, err := bm.undo(ctx, 3)
+	if err != nil {
+		t.Fatalf("unexpected undo error: %v", err)
+	}
+	if !strings.Contains(res, "Undo successful") {
+		t.Errorf("expected successful undo, got %q", res)
+	}
+
+	// After undoing 3, there should be 0 left (since 5 snapshots - 3 undone = 2,
+	// but ring-buffer evicted the first 2, so only 3 were stored)
+	// Actually, we stored 5 but maxStored=3 so only last 3 kept. Undo 3 leaves 0.
+	_, err = bm.undo(ctx, 1)
+	if err != nil {
+		t.Fatalf("unexpected undo error: %v", err)
+	}
+	// Third undo should show "No snapshots available"
+	res, err = bm.undo(ctx, 1)
+	if err != nil {
+		t.Fatalf("expected no error for empty undo, got: %v", err)
+	}
+	if !strings.Contains(res, "No snapshots available") {
+		t.Errorf("expected 'No snapshots available', got %q", res)
+	}
+}
+
+func TestUndo_NExceedingSnapshotCount(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "single.txt")
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Request more undos than available snapshots
+	res, err := bm.undo(ctx, 5)
+	if err != nil {
+		t.Fatalf("unexpected undo error: %v", err)
+	}
+	if !strings.Contains(res, "Undo successful") {
+		t.Errorf("expected 'Undo successful', got %q", res)
+	}
+
+	// All snapshots should be consumed
+	res, err = bm.undo(ctx, 1)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(res, "No snapshots available") {
+		t.Errorf("expected 'No snapshots available', got %q", res)
+	}
 }

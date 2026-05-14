@@ -204,9 +204,9 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			expectedResult: "All tasks cleared",
 		},
 		{
-			name:        "Error on unknown action",
-			args:        map[string]interface{}{"action": "unknown"},
-			expectError: true,
+			name:           "Error on unknown action",
+			args:           map[string]interface{}{"action": "unknown"},
+			expectedResult: "Error: unknown action: unknown",
 		},
 	}
 
@@ -336,4 +336,102 @@ func TestPersistenceTools_Errors(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for non-existent task in deleteTask")
 	}
+}
+
+func TestNewPersistenceTools_InterfaceNilPointer(t *testing.T) {
+	// Create a typed nil pointer stored in an interface variable:
+	// the interface itself is non-nil, but the underlying pointer is nil.
+	var nilProvider *mockSessionProvider = nil
+	var sp ports.SessionProvider = nilProvider // non-nil interface wrapping nil ptr
+
+	pt := newpersistenceTools(sp, nil)
+	if pt.state != nil {
+		t.Error("Expected nil state when interface wraps nil pointer")
+	}
+
+	// Verify no panic and no tools registered
+	reg := registry.New()
+	if err := pt.Register(reg); err != nil {
+		t.Errorf("Register should not fail for interface-nil-pointer: %v", err)
+	}
+	if len(reg.GetDeclarations()) != 0 {
+		t.Error("Expected no tools registered for interface-nil-pointer")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// mockToolRegistrar — minimal ToolRegistrar for testing Register error paths
+// ---------------------------------------------------------------------------
+
+type mockToolRegistrar struct {
+	failOn  string
+	failErr error
+	called  []string
+}
+
+func (m *mockToolRegistrar) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	m.called = append(m.called, def.Name)
+	if def.Name == m.failOn {
+		if m.failErr != nil {
+			return m.failErr
+		}
+		return fmt.Errorf("injected failure for %s", def.Name)
+	}
+	return nil
+}
+
+func (m *mockToolRegistrar) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	m.called = append(m.called, def.Name)
+	if def.Name == m.failOn {
+		if m.failErr != nil {
+			return m.failErr
+		}
+		return fmt.Errorf("injected failure for %s", def.Name)
+	}
+	return nil
+}
+
+func (m *mockToolRegistrar) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *mockToolRegistrar) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
+func TestPersistenceTools_Register_ErrorPaths(t *testing.T) {
+	pt, _ := setupPersistenceTools()
+
+	t.Run("get_session_info Register fails", func(t *testing.T) {
+		reg := &mockToolRegistrar{failOn: "get_session_info"}
+		err := pt.Register(reg)
+		if err == nil {
+			t.Fatal("expected error from Register")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("load_toolkit RegisterWithOptions fails", func(t *testing.T) {
+		reg := &mockToolRegistrar{failOn: "load_toolkit"}
+		err := pt.Register(reg)
+		if err == nil {
+			t.Fatal("expected error from Register")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("manage_tasks RegisterWithOptions fails", func(t *testing.T) {
+		reg := &mockToolRegistrar{failOn: "manage_tasks"}
+		err := pt.Register(reg)
+		if err == nil {
+			t.Fatal("expected error from Register")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
 }

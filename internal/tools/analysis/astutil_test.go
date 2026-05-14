@@ -477,3 +477,273 @@ func TestASTCache_DeterministicEviction(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleFuncDeclKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		code string
+		want string
+	}{
+		{
+			name: "bare function",
+			code: "package p; func F() {}",
+			want: "func F",
+		},
+		{
+			name: "pointer receiver",
+			code: "package p; type S struct{}; func (s *S) M() {}",
+			want: "func (*S) M",
+		},
+		{
+			name: "value receiver",
+			code: "package p; type S struct{}; func (s S) M() {}",
+			want: "func (S) M",
+		},
+		{
+			name: "no receiver",
+			code: "package p; func NoRecv() {}",
+			want: "func NoRecv",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, "test.go", tt.code, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, decl := range f.Decls {
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					got := handleFuncDeclKey(fd)
+					if got != tt.want {
+						t.Errorf("handleFuncDeclKey() = %q, want %q", got, tt.want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestHandleGenDeclKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		code string
+		want string
+	}{
+		{
+			name: "type spec",
+			code: "package p; type T int",
+			want: "type T",
+		},
+		{
+			name: "const block",
+			code: "package p; const ( C = 1 )",
+			want: "const block",
+		},
+		{
+			name: "var block",
+			code: "package p; var ( V = 1 )",
+			want: "var block",
+		},
+		{
+			name: "type with multiple specs",
+			code: "package p; type ( T1 int; T2 string )",
+			want: "type T1",
+		},
+		{
+			name: "import block returns unknown",
+			code: "package p; import ( \"fmt\" )",
+			want: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, "test.go", tt.code, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, decl := range f.Decls {
+				if gd, ok := decl.(*ast.GenDecl); ok {
+					got := handleGenDeclKey(gd)
+					if got != tt.want {
+						t.Errorf("handleGenDeclKey() = %q, want %q", got, tt.want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestIsDeclEqual(t *testing.T) {
+	t.Parallel()
+
+	t.Run("identical decls", func(t *testing.T) {
+		t.Parallel()
+		fset := token.NewFileSet()
+		code := "package p; type T int"
+		f1, _ := parser.ParseFile(fset, "a.go", code, 0)
+		f2, _ := parser.ParseFile(fset, "b.go", code, 0)
+		if !isDeclEqual(f1.Decls[0], f2.Decls[0]) {
+			t.Error("expected identical decls to be equal")
+		}
+	})
+
+	t.Run("different decls", func(t *testing.T) {
+		t.Parallel()
+		fset := token.NewFileSet()
+		f1, _ := parser.ParseFile(fset, "a.go", "package p; type T int", 0)
+		f2, _ := parser.ParseFile(fset, "b.go", "package p; type T string", 0)
+		if isDeclEqual(f1.Decls[0], f2.Decls[0]) {
+			t.Error("expected different decls to not be equal")
+		}
+	})
+
+	t.Run("malformed decl returns false", func(t *testing.T) {
+		t.Parallel()
+		// Two different empty-node decls: BadDecl produces empty output from format.Node,
+		// so comparing two BadDecls returns true. Test with different AST decls instead.
+		fset := token.NewFileSet()
+		f1, _ := parser.ParseFile(fset, "a.go", "package p; type T int", 0)
+		// Intentionally mismatched: GenDecl vs FuncDecl
+		f2, _ := parser.ParseFile(fset, "b.go", "package p; func F() {}", 0)
+		if isDeclEqual(f1.Decls[0], f2.Decls[0]) {
+			t.Error("expected different decl types to not be equal")
+		}
+	})
+}
+
+func TestGetValidEntry_NonExistent(t *testing.T) {
+	t.Parallel()
+	cache := newASTCache(".")
+	entry, ok := cache.getValidEntry("/nonexistent/path/that/really/does/not/exist.go")
+	if ok {
+		t.Error("expected false for non-existent path")
+	}
+	if entry.file != nil || entry.fset != nil {
+		t.Error("expected zero-value cachedFile for non-existent path")
+	}
+}
+
+func TestGetFileSkeletonGo_ErrorPath(t *testing.T) {
+	t.Parallel()
+	cache := newASTCache(".")
+	_, err := cache.GetFileSkeletonGo("/nonexistent/path/file.go")
+	if err == nil {
+		t.Error("expected error for non-existent file path")
+	}
+}
+
+func TestGetFileSkeletonGo_UnexportedFiltering(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "mixed.go")
+	code := `package test
+type ExportedType struct {
+	ExportedField   int
+	unexportedField string
+}
+func ExportedFunc(a int) string { return "" }
+func unexportedFunc()           {}
+
+type unexportedType int
+
+var ExportedVar = 1
+var unexportedVar = 2
+
+const ExportedConst = 1
+const unexportedConst = 2
+`
+	if err := os.WriteFile(path, []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cache := newASTCache(".")
+	skeleton, err := cache.GetFileSkeletonGo(path)
+	if err != nil {
+		t.Fatalf("GetFileSkeletonGo failed: %v", err)
+	}
+
+	// Should have exported type with all its fields
+	if !strings.Contains(skeleton, "type ExportedType struct") {
+		t.Error("missing ExportedType")
+	}
+	// Should have exported function
+	if !strings.Contains(skeleton, "func ExportedFunc(") {
+		t.Error("missing ExportedFunc")
+	}
+	// Should NOT have unexported type name
+	if strings.Contains(skeleton, "unexportedType") {
+		t.Errorf("skeleton should not contain unexportedType, got:\n%s", skeleton)
+	}
+	// Should NOT have unexported function
+	if strings.Contains(skeleton, "func unexportedFunc") {
+		t.Errorf("skeleton should not contain unexportedFunc, got:\n%s", skeleton)
+	}
+	// writeGenDeclSkeleton only writes TYPE GenDecls, not VAR or CONST
+}
+
+func TestASTCache_AbsPath(t *testing.T) {
+	t.Parallel()
+
+	t.Run("absolute path passes through", func(t *testing.T) {
+		t.Parallel()
+		cache := newASTCache("/base")
+		abs := cache.absPath("/absolute/path/file.go")
+		if abs != "/absolute/path/file.go" {
+			t.Errorf("expected /absolute/path/file.go, got %s", abs)
+		}
+	})
+
+	t.Run("relative path joins base", func(t *testing.T) {
+		t.Parallel()
+		cache := newASTCache("/base")
+		abs := cache.absPath("relative/file.go")
+		if abs != filepath.Join("/base", "relative/file.go") {
+			t.Errorf("expected joined path, got %s", abs)
+		}
+	})
+
+	t.Run("empty base dir", func(t *testing.T) {
+		t.Parallel()
+		cache := newASTCache("")
+		abs := cache.absPath("relative/file.go")
+		if abs != "relative/file.go" {
+			t.Errorf("expected relative/file.go, got %s", abs)
+		}
+	})
+}
+
+func TestWriteGenDeclSkeleton_NonTypeGenDecl(t *testing.T) {
+	t.Parallel()
+	cache := newASTCache(".")
+	// writeGenDeclSkeleton should skip non-TYPE GenDecls
+	var sb strings.Builder
+	gd := &ast.GenDecl{Tok: token.CONST}
+	cache.writeGenDeclSkeleton(&sb, token.NewFileSet(), gd)
+	if sb.Len() != 0 {
+		t.Errorf("expected empty output for CONST GenDecl, got %q", sb.String())
+	}
+}
+
+func TestWriteFuncDeclSkeleton_Unexported(t *testing.T) {
+	t.Parallel()
+	cache := newASTCache(".")
+	var sb strings.Builder
+	fd := &ast.FuncDecl{
+		Name: &ast.Ident{Name: "unexported"},
+		Type: &ast.FuncType{Params: &ast.FieldList{}},
+	}
+	cache.writeFuncDeclSkeleton(&sb, token.NewFileSet(), fd)
+	if sb.Len() != 0 {
+		t.Errorf("expected empty output for unexported func, got %q", sb.String())
+	}
+}

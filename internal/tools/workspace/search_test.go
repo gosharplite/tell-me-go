@@ -341,3 +341,254 @@ func TestCheckConcurrentSearchError(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// getPathOrDefault tests
+// ---------------------------------------------------------------------------
+
+func TestGetPathOrDefault(t *testing.T) {
+	s := &fileSearcher{}
+
+	t.Run("empty path returns dot", func(t *testing.T) {
+		got := s.getPathOrDefault("")
+		if got != "." {
+			t.Errorf("expected '.', got %q", got)
+		}
+	})
+
+	t.Run("non-empty path preserved", func(t *testing.T) {
+		got := s.getPathOrDefault("/some/path")
+		if got != "/some/path" {
+			t.Errorf("expected '/some/path', got %q", got)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// grepDefinitions with concurrent search error
+// ---------------------------------------------------------------------------
+
+// mockFS_WalkError overrides Walk to return an error, triggering errChan
+type mockFS_WalkError struct {
+	persistence.FileSystem
+	walkErr error
+}
+
+func (m *mockFS_WalkError) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	return m.walkErr
+}
+
+func TestGrepDefinitions_ConcurrentSearchError(t *testing.T) {
+	expectedErr := fmt.Errorf("walk failure")
+	fs := &mockFS_WalkError{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		walkErr:    expectedErr,
+	}
+
+	s := &fileSearcher{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     fs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	_, err := s.grepDefinitions(context.Background(), map[string]interface{}{"reason": "testing"}, nil)
+	if err == nil {
+		t.Fatal("expected error from concurrent search")
+	}
+	if !strings.Contains(err.Error(), "walk failure") {
+		t.Errorf("expected 'walk failure' in error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// searchFiles comprehensive tests
+// ---------------------------------------------------------------------------
+
+func TestSearchFiles_RegexMode(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tempDir, "test.txt"), []byte("hello world"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	t.Run("regex match", func(t *testing.T) {
+		res, err := s.searchFiles(ctx, map[string]interface{}{
+			"path":     tempDir,
+			"query":    "^hello",
+			"is_regex": true,
+			"reason":   "testing",
+		}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(res.Text, "hello world") {
+			t.Errorf("expected match, got: %q", res.Text)
+		}
+	})
+
+	t.Run("regex no match", func(t *testing.T) {
+		res, err := s.searchFiles(ctx, map[string]interface{}{
+			"path":     tempDir,
+			"query":    "^goodbye",
+			"is_regex": true,
+			"reason":   "testing",
+		}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(res.Text, "0 matches found") {
+			t.Errorf("expected '0 matches found', got: %q", res.Text)
+		}
+	})
+
+	t.Run("invalid regex", func(t *testing.T) {
+		_, err := s.searchFiles(ctx, map[string]interface{}{
+			"path":     tempDir,
+			"query":    "[invalid",
+			"is_regex": true,
+			"reason":   "testing",
+		}, nil)
+		if err == nil {
+			t.Fatal("expected error for invalid regex")
+		}
+		if !strings.Contains(err.Error(), "invalid regex") {
+			t.Errorf("expected 'invalid regex', got: %v", err)
+		}
+	})
+}
+
+func TestSearchFiles_NoResults(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tempDir, "test.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	s := &fileSearcher{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	res, err := s.searchFiles(ctx, map[string]interface{}{
+		"path":   tempDir,
+		"query":  "xyznonexistent",
+		"reason": "testing",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "0 matches found") {
+		t.Errorf("expected '0 matches found', got: %q", res.Text)
+	}
+}
+
+func TestSearchFiles_ConcurrentSearchError(t *testing.T) {
+	fs := &mockFS_WalkError{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		walkErr:    fmt.Errorf("walk failure"),
+	}
+
+	s := &fileSearcher{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     fs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	ctx := context.Background()
+
+	_, err := s.searchFiles(ctx, map[string]interface{}{
+		"path":   ".",
+		"query":  "hello",
+		"reason": "testing",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error from concurrent search walk failure")
+	}
+	if !strings.Contains(err.Error(), "walk failure") {
+		t.Errorf("expected 'walk failure', got: %v", err)
+	}
+}
+
+func TestGetTree_DeepRecursion(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "a/b/c"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "a/b/c/d.txt"), []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	t.Run("depth 1 shows two levels", func(t *testing.T) {
+		res, err := r.getTree(ctx, map[string]interface{}{"path": tempDir, "max_depth": 1, "reason": "testing"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// At maxDepth=1 we see depth 0 entries and depth 1 children
+		if !strings.Contains(res.Text, "a") {
+			t.Errorf("expected 'a' directory in output, got: %s", res.Text)
+		}
+	})
+
+	t.Run("path default", func(t *testing.T) {
+		// When path is empty, it defaults to current dir
+		_, err := r.getTree(ctx, map[string]interface{}{"reason": "testing"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Should not error
+	})
+}
+
+func TestFindFile_WalkError(t *testing.T) {
+	fs := &mockFS_WalkError{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		walkErr:    fmt.Errorf("walk failure"),
+	}
+
+	r := &fileReader{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     fs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	ctx := context.Background()
+
+	_, err := r.findFile(ctx, map[string]interface{}{
+		"path":    ".",
+		"pattern": "*.go",
+		"reason":  "testing",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected walk error")
+	}
+	if !strings.Contains(err.Error(), "walk failure") {
+		t.Errorf("expected 'walk failure', got: %v", err)
+	}
+}
+
+func TestReplaceText_ReadError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+
+	// Use mock FS that fails ReadFile
+	mfs := &mockFS_ReadError{FileSystem: persistencetest.NewPlainOSFileSystem(), err: fmt.Errorf("read failure")}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+	ctx := context.Background()
+
+	_, err := w.replaceText(ctx, map[string]interface{}{
+		"filepath": path,
+		"old_text": "old",
+		"new_text": "new",
+		"reason":   "testing",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to read file") {
+		t.Errorf("expected 'failed to read file' error, got: %v", err)
+	}
+}

@@ -190,6 +190,14 @@ func TestArchitectureManager_Shorten(t *testing.T) {
 		{"github.com/org/repo/internal/domain", "internal/domain"},
 		{"github.com/org/repo/cmd/app", "cmd/app"},
 		{"other/pkg", "other/pkg"},
+		// Additional edge cases for coverage
+		{"", ""},                    // empty string
+		{"github.com/org/repo", ""}, // module root → empty after trim
+		{"github.com/org/repo/internal", "internal"},   // bare internal
+		{"github.com/org/repo/cmd", "cmd"},             // bare cmd
+		{"pkg/foo", "pkg/foo"},                         // no internal/ or cmd/
+		{"internal/standalone", "internal/standalone"}, // path with internal but no module prefix
+		{"cmd/standalone", "cmd/standalone"},           // path with cmd but no module prefix
 	}
 
 	for _, tt := range tests {
@@ -200,6 +208,159 @@ func TestArchitectureManager_Shorten(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestArchitectureManager_Shorten_NoModulePath(t *testing.T) {
+	t.Parallel()
+	// Test shorten when ModulePath is empty (falls back to internal/ / cmd/ detection)
+	m := &architectureManager{ModulePath: ""}
+	tests := []struct {
+		pkg  string
+		want string
+	}{
+		{"github.com/org/repo/internal/domain", "internal/domain"},
+		{"github.com/org/repo/cmd/app", "cmd/app"},
+		{"pkg/foo", "pkg/foo"},                                                   // no match
+		{"github.com/org/repo/pkg/external", "github.com/org/repo/pkg/external"}, // no internal/ or cmd/
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pkg, func(t *testing.T) {
+			t.Parallel()
+			if got := m.shorten(tt.pkg); got != tt.want {
+				t.Errorf("shorten(%q) = %v, want %v", tt.pkg, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSendHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil channel does not panic", func(t *testing.T) {
+		t.Parallel()
+		m := &architectureManager{}
+		// Should not panic
+		m.sendHeartbeat(nil)
+	})
+
+	t.Run("non-nil unbuffered channel does not block", func(t *testing.T) {
+		t.Parallel()
+		m := &architectureManager{}
+		hb := make(chan struct{})
+		// Read in background to prevent block
+		go func() { <-hb }()
+		m.sendHeartbeat(hb)
+		close(hb)
+	})
+
+	t.Run("buffered channel", func(t *testing.T) {
+		t.Parallel()
+		m := &architectureManager{}
+		hb := make(chan struct{}, 1)
+		m.sendHeartbeat(hb)
+		select {
+		case <-hb:
+			// OK
+		default:
+			t.Error("expected heartbeat on buffered channel")
+		}
+	})
+}
+
+func TestIsAlreadyReported(t *testing.T) {
+	t.Parallel()
+
+	v := violation{pkg: "pkg/a", target: "cmd/app"}
+	existing := []violation{
+		{pkg: "pkg/b", target: "cmd/other"},
+		{pkg: "pkg/a", target: "cmd/app"}, // duplicate
+	}
+
+	t.Run("duplicate found", func(t *testing.T) {
+		t.Parallel()
+		if !isAlreadyReported(v, existing) {
+			t.Error("expected duplicate to be found")
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		t.Parallel()
+		if isAlreadyReported(violation{pkg: "pkg/new", target: "cmd/new"}, existing) {
+			t.Error("expected no duplicate")
+		}
+	})
+
+	t.Run("empty list", func(t *testing.T) {
+		t.Parallel()
+		if isAlreadyReported(v, nil) {
+			t.Error("expected no duplicate in empty list")
+		}
+	})
+}
+
+func TestRunHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("stops on done signal", func(t *testing.T) {
+		t.Parallel()
+		m := &architectureManager{}
+		hb := make(chan struct{}, 10)
+		done := make(chan struct{})
+		close(done) // already done
+		m.runHeartbeat(hb, done)
+		// Should exit immediately without sending heartbeat
+	})
+
+	t.Run("sends heartbeats then stops", func(t *testing.T) {
+		t.Parallel()
+		m := &architectureManager{}
+		hb := make(chan struct{}, 10)
+		done := make(chan struct{})
+		go m.runHeartbeat(hb, done)
+		// Wait for at least one tick (2s interval)
+		select {
+		case <-hb:
+			// Got heartbeat
+		case <-done:
+			// Done triggered - this is also fine
+		}
+		close(done)
+	})
+}
+
+func TestCheckGeneralCmdImport_NonInternal(t *testing.T) {
+	t.Parallel()
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
+
+	t.Run("non-internal package returns nil", func(t *testing.T) {
+		t.Parallel()
+		// external/pkg does not contain "internal/"
+		result := m.checkGeneralCmdImport("github.com/org/repo/pkg/external", []string{"github.com/org/repo/cmd/app"}, nil)
+		if result != nil {
+			t.Errorf("expected nil for non-internal package, got %v", result)
+		}
+	})
+
+	t.Run("internal package importing cmd", func(t *testing.T) {
+		t.Parallel()
+		// internal package with cmd import should report violation
+		result := m.checkGeneralCmdImport("github.com/org/repo/internal/tools", []string{"github.com/org/repo/cmd/app"}, nil)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 violation, got %d", len(result))
+		}
+		if result[0].category != "[LAYER VIOLATION]" {
+			t.Errorf("expected LAYER VIOLATION category, got %s", result[0].category)
+		}
+	})
+
+	t.Run("internal package without cmd import", func(t *testing.T) {
+		t.Parallel()
+		result := m.checkGeneralCmdImport("github.com/org/repo/internal/tools", []string{"github.com/org/repo/internal/other"}, nil)
+		if len(result) != 0 {
+			t.Errorf("expected 0 violations, got %d", len(result))
+		}
+	})
 }
 
 func TestArchitectureManager_CheckLayerViolations(t *testing.T) {

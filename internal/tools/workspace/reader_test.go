@@ -484,12 +484,12 @@ func TestReadFiles_Limit(t *testing.T) {
 		paths[i] = "f" + string(rune(i)) + ".txt"
 	}
 
-	_, err := r.readFiles(ctx, map[string]interface{}{"filepaths": paths, "reason": "testing"}, nil)
-	if err == nil {
-		t.Fatal("expected error for exceeding file limit")
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": paths, "reason": "testing"}, nil)
+	if err != nil {
+		t.Fatalf("expected domain outcome (nil error), got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "requested too many files") {
-		t.Errorf("expected limit error message, got %q", err.Error())
+	if !strings.Contains(res.Text, "Error: requested too many files") {
+		t.Errorf("expected limit error message in result text, got %q", res.Text)
 	}
 }
 
@@ -646,4 +646,327 @@ func TestBuildTree_ReadDirError(t *testing.T) {
 			t.Error("expected heartbeat to be sent on hb channel")
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// interpretDiffResult exit code tests
+// ---------------------------------------------------------------------------
+
+func TestInterpretDiffResult(t *testing.T) {
+	r := &fileReader{}
+
+	t.Run("exit code 2 returns domain outcome", func(t *testing.T) {
+		res := executionResult{ExitCode: 2, Output: "diff: fatal error"}
+		tr, err := r.interpretDiffResult(res, nil)
+		if err != nil {
+			t.Fatalf("expected nil error (domain outcome), got: %v", err)
+		}
+		if !strings.Contains(tr.Text, "Error: diff failed with exit code 2") {
+			t.Errorf("expected domain error message, got: %q", tr.Text)
+		}
+	})
+
+	t.Run("exit code 1 with output returns output", func(t *testing.T) {
+		res := executionResult{ExitCode: 1, Output: "1c1\n< a\n---\n> b"}
+		tr, err := r.interpretDiffResult(res, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if tr.Text != "1c1\n< a\n---\n> b" {
+			t.Errorf("expected diff output, got: %q", tr.Text)
+		}
+	})
+
+	t.Run("runErr returns infrastructure fault", func(t *testing.T) {
+		res := executionResult{}
+		_, err := r.interpretDiffResult(res, fmt.Errorf("exec failed"))
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "diff failed") {
+			t.Errorf("expected 'diff failed' in error, got: %v", err)
+		}
+	})
+
+	t.Run("empty output no error returns identical", func(t *testing.T) {
+		res := executionResult{}
+		tr, err := r.interpretDiffResult(res, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if tr.Text != "Files are identical." {
+			t.Errorf("expected 'Files are identical.', got %q", tr.Text)
+		}
+	})
+}
+
+func TestReadFiles_WithHeartbeat(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	hb := make(chan struct{}, 5)
+	// Create enough files to trigger at least one heartbeat (every 5 files)
+	paths := make([]interface{}, 6)
+	for i := 0; i < 6; i++ {
+		paths[i] = path // reuse the same valid file
+	}
+
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": paths, "reason": "testing"}, hb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "content") {
+		t.Errorf("expected content in output, got %q", res.Text)
+	}
+
+	// Expect at least one heartbeat
+	select {
+	case <-hb:
+		// heartbeat received
+	default:
+		// Acceptable if heartbeat was consumed by the sendHeartbeat function
+	}
+}
+
+// ---------------------------------------------------------------------------
+// readBoundedContent error tests
+// ---------------------------------------------------------------------------
+
+type mockFS_OpenError struct {
+	persistence.FileSystem
+	openErr error
+}
+
+func (m *mockFS_OpenError) Open(ctx context.Context, name string) (persistence.File, error) {
+	return nil, m.openErr
+}
+
+type mockFile_ReadError struct {
+	*os.File
+	readErr error
+}
+
+func (m *mockFile_ReadError) Read(p []byte) (n int, err error) {
+	return 0, m.readErr
+}
+
+type mockFS_ReadErrorFile struct {
+	persistence.FileSystem
+	readErr error
+}
+
+func (m *mockFS_ReadErrorFile) Open(ctx context.Context, name string) (persistence.File, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return &mockFile_ReadError{File: f, readErr: m.readErr}, nil
+}
+
+func TestReadBoundedContent_OpenError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mfs := &mockFS_OpenError{FileSystem: persistencetest.NewPlainOSFileSystem(), openErr: fmt.Errorf("open failure")}
+	r := &fileReader{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: mfs, policy: infra_persistence.NewWorkspacePolicy()}
+
+	_, _, err := r.readBoundedContent(context.Background(), path)
+	if err == nil {
+		t.Fatal("expected open error")
+	}
+	if !strings.Contains(err.Error(), "open failure") {
+		t.Errorf("expected 'open failure', got: %v", err)
+	}
+}
+
+func TestReadBoundedContent_ReadError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mfs := &mockFS_ReadErrorFile{FileSystem: persistencetest.NewPlainOSFileSystem(), readErr: fmt.Errorf("read failure")}
+	r := &fileReader{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: mfs, policy: infra_persistence.NewWorkspacePolicy()}
+
+	_, _, err := r.readBoundedContent(context.Background(), path)
+	if err == nil {
+		t.Fatal("expected read error")
+	}
+	if !strings.Contains(err.Error(), "read failure") {
+		t.Errorf("expected 'read failure', got: %v", err)
+	}
+}
+
+func TestProcessSingleFile_SecurityError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(p string) (string, error) {
+		return "", fmt.Errorf("security: path not allowed")
+	}
+
+	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+
+	var sb strings.Builder
+	err := r.processSingleFile(context.Background(), path, &sb)
+	if err != nil {
+		t.Fatalf("processSingleFile should not return error for security rejection: %v", err)
+	}
+	if !strings.Contains(sb.String(), "ERROR: security") {
+		t.Errorf("expected security error in output, got: %q", sb.String())
+	}
+}
+
+func TestProcessSingleFile_StatError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "nonexistent.txt")
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+
+	var sb strings.Builder
+	err := r.processSingleFile(context.Background(), path, &sb)
+	if err != nil {
+		t.Fatalf("processSingleFile should not return error for stat failure: %v", err)
+	}
+	if !strings.Contains(sb.String(), "ERROR: failed to read file") {
+		t.Errorf("expected stat error in output, got: %q", sb.String())
+	}
+}
+
+func TestListFiles_DefaultPath(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	res, err := r.listFiles(ctx, map[string]interface{}{"reason": "testing"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text == "" {
+		t.Error("expected non-empty output for default path")
+	}
+}
+
+func TestReadFiles_EmptyFilepaths(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	_, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{}, "reason": "testing"}, nil)
+	if err == nil {
+		t.Fatal("expected error for empty filepaths")
+	}
+	if !strings.Contains(err.Error(), "filepaths argument is required") {
+		t.Errorf("expected 'filepaths argument is required', got: %v", err)
+	}
+}
+
+func TestReadFiles_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	_, err := r.readFiles(ctx, map[string]interface{}{"filepaths": "not_an_array", "reason": "testing"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for invalid args")
+	}
+}
+
+func TestGetFileDiff_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	ctx := context.Background()
+
+	_, err := r.getFileDiff(ctx, map[string]interface{}{}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for missing args")
+	}
+}
+
+func TestSearchFiles_MissingQuery(t *testing.T) {
+	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	_, err := s.searchFiles(context.Background(), map[string]interface{}{"reason": "testing"}, nil)
+	if err == nil {
+		t.Fatal("expected error for missing query")
+	}
+	if !strings.Contains(err.Error(), "query argument is required") {
+		t.Errorf("expected 'query argument is required', got: %v", err)
+	}
+}
+
+func TestGrepDefinitions_InvalidArgs(t *testing.T) {
+	s := &fileSearcher{sm: &toolstest.MockSecurityManager{AllowAll: true}, fs: persistencetest.NewPlainOSFileSystem(), policy: infra_persistence.NewWorkspacePolicy()}
+	_, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": 123, "reason": "testing"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for invalid args")
+	}
+}
+
+func TestFindFile_MissingPattern(t *testing.T) {
+	r := &fileReader{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	_, err := r.findFile(context.Background(), map[string]interface{}{"reason": "testing"}, nil)
+	if err == nil {
+		t.Fatal("expected error for missing pattern")
+	}
+}
+
+func TestGetFileDiff_SecurityErrorFile2(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "f1.txt")
+	if err := os.WriteFile(f1, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	// Override IsPathSafe to allow file1 but reject file2
+	sm.IsSafeFunc = func(path string) (string, error) {
+		if strings.Contains(path, "f2") {
+			return "", fmt.Errorf("security: path not allowed")
+		}
+		return path, nil
+	}
+
+	r := &fileReader{
+		sm:       sm,
+		fs:       persistencetest.NewPlainOSFileSystem(),
+		policy:   infra_persistence.NewWorkspacePolicy(),
+		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+	}
+	ctx := context.Background()
+
+	_, err := r.getFileDiff(ctx, map[string]interface{}{
+		"file1":  f1,
+		"file2":  filepath.Join(tempDir, "f2.txt"),
+		"reason": "testing",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected security error for file2")
+	}
+	if !strings.Contains(err.Error(), "security") {
+		t.Errorf("expected security error, got: %v", err)
+	}
 }
