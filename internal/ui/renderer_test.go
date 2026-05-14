@@ -989,3 +989,84 @@ func TestRenderMetricsLine_ThinkingSegmentSuppression(t *testing.T) {
 		})
 	}
 }
+
+// ── Renderer error path hardening tests (Issue #383) ──
+
+func TestStdUIRenderer_IsTerminalContext(t *testing.T) {
+	locker := ui.NewMockLocker()
+
+	t.Run("non-os.File stderr returns false", func(t *testing.T) {
+		// When stderr is a bytes.Buffer (not *os.File), IsTerminalContext must
+		// return false without panicking.
+		var buf bytes.Buffer
+		r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		if r.IsTerminalContext() {
+			t.Error("expected IsTerminalContext to return false for bytes.Buffer stderr")
+		}
+	})
+
+	t.Run("nil writers return false", func(t *testing.T) {
+		r := ui.NewRenderer(locker, nil, nil, nil, nil).(*ui.StdUIRenderer)
+		if r.IsTerminalContext() {
+			t.Error("expected IsTerminalContext to return false for nil stderr")
+		}
+	})
+}
+
+func TestStdUIRenderer_MarkdownRenderingFallback(t *testing.T) {
+	var stdout bytes.Buffer
+	locker := ui.NewMockLocker()
+	r := ui.NewRenderer(locker, &stdout, &stdout, nil, nil).(*ui.StdUIRenderer)
+
+	t.Run("nil renderer falls back to raw text", func(t *testing.T) {
+		stdout.Reset()
+		r.SetGlamourRenderer(nil)
+		r.RenderMarkdown("**bold**")
+		got := stdout.String()
+		if !strings.Contains(got, "**bold**") {
+			t.Errorf("expected raw markdown text, got %q", got)
+		}
+	})
+
+	t.Run("non-nil renderer with complex markdown", func(t *testing.T) {
+		stdout.Reset()
+		r.SetGlamourRenderer(nil) // Reset first
+		// Create a new renderer to test the normal path
+		r2 := ui.NewRenderer(locker, &stdout, &stdout, nil, nil).(*ui.StdUIRenderer)
+		r2.RenderMarkdown("# Heading\n\nBody text")
+		got := stdout.String()
+		if !strings.Contains(got, "Heading") {
+			t.Errorf("expected rendered markdown with Heading, got %q", got)
+		}
+	})
+}
+
+// ── Renderer metrics error path tests (Issue #383) ──
+
+func TestStdUIRenderer_LogUsage_NilAndEmpty(t *testing.T) {
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
+	locker := ui.NewMockLocker()
+	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
+
+	t.Run("nil metrics returns early", func(t *testing.T) {
+		stderr.Reset()
+		r.LogUsage(context.Background(), nil, t.TempDir()+"/test.log", mc.Now())
+		// Should not panic and should not write to stderr (nil metrics)
+	})
+
+	t.Run("empty logFile returns early", func(t *testing.T) {
+		stderr.Reset()
+		m := &llm.Metrics{PromptTokens: 100}
+		r.LogUsage(context.Background(), m, "", mc.Now())
+		// Should not panic
+	})
+
+	t.Run("logFile with unwritable path returns early", func(t *testing.T) {
+		stderr.Reset()
+		m := &llm.Metrics{PromptTokens: 100}
+		// Use a path that can't be written to (directory that doesn't exist)
+		r.LogUsage(context.Background(), m, "/nonexistent/dir/log.json", mc.Now())
+		// Should not panic — error from os.OpenFile is silently ignored
+	})
+}

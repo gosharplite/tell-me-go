@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -195,5 +197,95 @@ func TestPromptCapturer_CapturePrompt_TUI_Empty(t *testing.T) {
 	_, err := capturer.CapturePrompt(context.Background(), nil, ports.WithTUIPrompt(true))
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled for empty TUI prompt, got %v", err)
+	}
+}
+
+// ── runTUI error path hardening tests (Issue #383) ──
+
+// errorReader always returns an error on Read, which can cause
+// bubble tea's input goroutine to fail and propagate an error through p.Run().
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("injected read error")
+}
+
+func TestRunTUI_ProgramError(t *testing.T) {
+	svc := &mockSuggestionService{}
+	capturer := &promptCapturer{
+		base: &mockBaseCapturerWithTTY{isTTY: true},
+		svc:  svc,
+		programOpts: []tea.ProgramOption{
+			tea.WithInput(&errorReader{}),
+			tea.WithOutput(io.Discard),
+		},
+	}
+
+	// The broken reader may cause bubble tea to either error or exit cleanly.
+	// Either way, runTUI should not panic and should return a result.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	result, err := capturer.runTUI(ctx)
+	if err != nil {
+		// When Run() returns an error, verify the error wrapping format
+		if !strings.Contains(err.Error(), "tui prompt error") {
+			t.Errorf("expected error to be wrapped with 'tui prompt error', got: %v", err)
+		}
+		t.Logf("runTUI returned expected error (wrapped): %v", err)
+	} else {
+		t.Logf("runTUI completed without error: result=%q", result)
+	}
+	_ = result
+}
+
+func TestRunTUI_AbortedModel(t *testing.T) {
+	// Send Ctrl+C immediately to abort the model. This tests the
+	// Aborted() check path in runTUI.
+	svc := &mockSuggestionService{}
+
+	var in bytes.Buffer
+	in.WriteByte(3) // Ctrl+C (ETX)
+
+	capturer := &promptCapturer{
+		base: &mockBaseCapturerWithTTY{isTTY: true},
+		svc:  svc,
+		programOpts: []tea.ProgramOption{
+			tea.WithInput(&in),
+			tea.WithOutput(io.Discard),
+		},
+	}
+
+	result, err := capturer.runTUI(context.Background())
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled for aborted model, got result=%q, err=%v", result, err)
+	}
+	if result != "" {
+		t.Errorf("expected empty result for aborted model, got %q", result)
+	}
+}
+
+func TestRunTUI_ProvidesFeedback(t *testing.T) {
+	// Successful input should be captured and returned.
+	svc := &mockSuggestionService{}
+
+	var in bytes.Buffer
+	in.WriteString("test prompt\x13") // Type prompt then Ctrl+S to submit
+
+	capturer := &promptCapturer{
+		base: &mockBaseCapturerWithTTY{isTTY: true},
+		svc:  svc,
+		programOpts: []tea.ProgramOption{
+			tea.WithInput(&in),
+			tea.WithOutput(io.Discard),
+		},
+	}
+
+	result, err := capturer.runTUI(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "test prompt" {
+		t.Errorf("expected 'test prompt', got %q", result)
 	}
 }
