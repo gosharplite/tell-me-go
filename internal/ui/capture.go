@@ -415,6 +415,12 @@ func (c *capturer) Close(ctx context.Context) error {
 	c.requestChan = nil
 	c.readerMu.Unlock()
 
+	// Force interrupt any blocking reads by closing the underlying file.
+	// This ensures the worker goroutine wakes up from the read() syscall.
+	if closer, ok := c.Stdin.(io.Closer); ok {
+		_ = closer.Close()
+	}
+
 	select {
 	case <-c.done:
 		return nil
