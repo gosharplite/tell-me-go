@@ -80,14 +80,14 @@ To request action from a role, use `tell‑me‑go`. The basic pattern is:
 
 ```bash
 # Request action from Architect (output discarded; see note below)
-tell-me-go -new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
+tell-me-go --new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 ```
 
 **Notes:**
 - **CRITICAL:** When using the `execute_command` tool to run `tell-me-go`, you MUST set the `timeout` parameter to `1800` (1800 seconds / 30 minutes) to ensure the sub-agent has sufficient time to complete its task. If the `timeout` parameter is not explicitly set, `execute_command` will default to a 15-second hard limit, which is typically not enough for complex AI sub-tasks and will result in premature cancellation.
 - **Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then use input redirection (`<`) to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check /tmp/prompt.txt before sending it to tell-me-go.
 - The `&> /dev/null` discards stdout and stderr to keep the terminal clean. If you need to review what happened or debug a failure, run `tell-me-go -t -c ${ROLE_CONFIG}` (e.g. `${ARCHITECT_CONFIG}`) to output the session's execution log.
-- Use `-new` when you first chat with a role. For a continuous conversation, omit `-new`.
+- Use `--new` when you first chat with a role. For a continuous conversation, omit `--new`.
 
 To retrieve the last responses from a role:
 
@@ -119,7 +119,7 @@ Repeat steps 1-8 for each iteration until the overall task goal meets the projec
 ```bash
 # 1. Identify an opportunity
 echo "Reduce dead_code_graph alerts." > /tmp/prompt.txt
-tell-me-go -new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
+tell-me-go --new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 
 # 2. Get detailed instructions
 echo "Provide step‑by‑step instructions to reduce dead_code_graph." > /tmp/prompt.txt
@@ -129,7 +129,7 @@ tell-me-go -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG} > /tmp/instructions.txt
 
 # 4. Give instructions to Coder
-tell-me-go -new -r -c ${CODER_CONFIG} < /tmp/instructions.txt &> /dev/null
+tell-me-go --new -r -c ${CODER_CONFIG} < /tmp/instructions.txt &> /dev/null
 
 # 5. Review (Architect, Tester, Reviewer) …
 ```
