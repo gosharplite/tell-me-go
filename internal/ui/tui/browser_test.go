@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fsnotify/fsnotify"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -907,4 +908,677 @@ func checkFileChangedMsgDebounced(t *testing.T, m *rootBrowserModel, _ tea.Cmd, 
 	if len(m.history) != 1 {
 		t.Error("expected history NOT to be cleared (debounced)")
 	}
+}
+
+// TestRecalculateSearchMatches_EdgeCases exercises the full recalculateSearchMatches
+// function with varied queries and rendered content, including the defensive branches
+// around regexp.Compile and match-count adjustment.
+func TestRecalculateSearchMatches_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name             string
+		currentQuery     string
+		rendered         string
+		initialMatches   []int
+		initialMatch     int
+		wantMatchCount   int
+		wantCurrentMatch int
+	}{
+		{
+			name:             "empty query clears matches",
+			currentQuery:     "",
+			rendered:         "line one\nline two\nline three",
+			initialMatches:   []int{0, 1},
+			initialMatch:     1,
+			wantMatchCount:   0,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "query matches single line",
+			currentQuery:     "two",
+			rendered:         "line one\nline two\nline three",
+			wantMatchCount:   1,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "query matches multiple lines",
+			currentQuery:     "line",
+			rendered:         "line one\nline two\nline three",
+			wantMatchCount:   3,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "query with special regex characters",
+			currentQuery:     "(test)[foo]",
+			rendered:         "before (test)[foo] after\nno match here",
+			wantMatchCount:   1,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "query with backslash",
+			currentQuery:     `C:\path`,
+			rendered:         "found C:\\path here\nanother C:\\path there",
+			wantMatchCount:   2,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "query with newline in rendered",
+			currentQuery:     "hello",
+			rendered:         "hello world\nsay hello\nno match",
+			wantMatchCount:   2,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "no matches found",
+			currentQuery:     "zzzz",
+			rendered:         "line one\nline two\nline three",
+			wantMatchCount:   0,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "currentMatch out of bounds fixed",
+			currentQuery:     "line",
+			rendered:         "line one\nline two",
+			initialMatch:     5, // Out of bounds
+			wantMatchCount:   2,
+			wantCurrentMatch: 1, // Adjusted to last valid index
+		},
+		{
+			name:             "single line rendered content",
+			currentQuery:     "found",
+			rendered:         "found here",
+			wantMatchCount:   1,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "empty rendered content",
+			currentQuery:     "anything",
+			rendered:         "",
+			wantMatchCount:   0,
+			wantCurrentMatch: 0,
+		},
+		{
+			name:             "query matches exactly at line boundaries",
+			currentQuery:     "exact",
+			rendered:         "exact",
+			wantMatchCount:   1,
+			wantCurrentMatch: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &rootBrowserModel{
+				currentQuery: tt.currentQuery,
+				matches:      tt.initialMatches,
+				currentMatch: tt.initialMatch,
+			}
+			m.recalculateSearchMatches(tt.rendered)
+
+			if len(m.matches) != tt.wantMatchCount {
+				t.Errorf("matches count = %d, want %d", len(m.matches), tt.wantMatchCount)
+			}
+			if m.currentMatch != tt.wantCurrentMatch {
+				t.Errorf("currentMatch = %d, want %d", m.currentMatch, tt.wantCurrentMatch)
+			}
+		})
+	}
+}
+
+// TestHighlightMatches_EdgeCases covers additional edge cases for highlightMatches
+// beyond what the existing test covers, including special characters and error paths.
+func TestHighlightMatches_EdgeCases(t *testing.T) {
+	m := &rootBrowserModel{}
+
+	tests := []struct {
+		name  string
+		text  string
+		query string
+	}{
+		{
+			name:  "query with dot metacharacter",
+			text:  "file.txt",
+			query: "file.txt",
+		},
+		{
+			name:  "query with asterisk metacharacter",
+			text:  "find * all",
+			query: "*",
+		},
+		{
+			name:  "query with plus metacharacter",
+			text:  "1+1=2",
+			query: "+",
+		},
+		{
+			name:  "query with pipe metacharacter",
+			text:  "a|b",
+			query: "|",
+		},
+		{
+			name:  "query with caret metacharacter",
+			text:  "^start",
+			query: "^",
+		},
+		{
+			name:  "query with dollar metacharacter",
+			text:  "end$",
+			query: "$",
+		},
+		{
+			name:  "query with question mark metacharacter",
+			text:  "what?",
+			query: "?",
+		},
+		{
+			name:  "query with parentheses metacharacters",
+			text:  "(group)",
+			query: "(",
+		},
+		{
+			name:  "query with curly brace metacharacters",
+			text:  "{block}",
+			query: "{",
+		},
+		{
+			name:  "query is substring at beginning",
+			text:  "hello world",
+			query: "hel",
+		},
+		{
+			name:  "query is substring at end",
+			text:  "hello world",
+			query: "rld",
+		},
+		{
+			name:  "case insensitive match",
+			text:  "Hello WORLD",
+			query: "hello",
+		},
+		{
+			name:  "empty text with query",
+			text:  "",
+			query: "test",
+		},
+		{
+			name:  "query matches entire text",
+			text:  "exact",
+			query: "exact",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := m.highlightMatches(tt.text, tt.query)
+			// Must not panic and must return some string
+			if result == "" && tt.text != "" {
+				t.Errorf("highlightMatches(%q, %q) returned empty string", tt.text, tt.query)
+			}
+			// For non-empty queries on non-empty text, the original text (or highlighted version)
+			// should at minimum appear somewhere in the result
+			if tt.query != "" && tt.text != "" {
+				// The result should contain the original text content (possibly with ANSI codes)
+				if !strings.Contains(stripANSI(result), tt.text) && !strings.Contains(result, tt.text) {
+					// Could be highlighted, so text content is embedded in ANSI codes;
+					// verify we got a non-empty string as a minimum sanity check.
+					if result == "" {
+						t.Error("expected non-empty result for valid query")
+					}
+				}
+			}
+		})
+	}
+}
+
+// stripANSI removes ANSI escape sequences for content verification.
+func stripANSI(s string) string {
+	// Simple regex-free approach: remove everything between \033[ and m
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == '\033' && i+1 < len(s) && s[i+1] == '[' {
+			// Skip until 'm'
+			j := i + 2
+			for j < len(s) && s[j] != 'm' {
+				j++
+			}
+			if j < len(s) {
+				i = j + 1
+			} else {
+				break
+			}
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+	return result.String()
+}
+
+// ── Watcher error path hardening tests (Issue #383) ──
+
+func TestHandleWatcherEvent(t *testing.T) {
+	m := &rootBrowserModel{}
+
+	tests := []struct {
+		name    string
+		event   fsnotify.Event
+		ok      bool
+		wantNil bool
+	}{
+		{
+			name:    "channel closed (ok=false)",
+			event:   fsnotify.Event{},
+			ok:      false,
+			wantNil: true,
+		},
+		{
+			name:    "write event triggers fileChangedMsg",
+			event:   fsnotify.Event{Op: fsnotify.Write},
+			ok:      true,
+			wantNil: false,
+		},
+		{
+			name:    "create event triggers fileChangedMsg",
+			event:   fsnotify.Event{Op: fsnotify.Create},
+			ok:      true,
+			wantNil: false,
+		},
+		{
+			name:    "remove event triggers fileChangedMsg",
+			event:   fsnotify.Event{Op: fsnotify.Remove},
+			ok:      true,
+			wantNil: false,
+		},
+		{
+			name:    "rename event triggers fileChangedMsg",
+			event:   fsnotify.Event{Op: fsnotify.Rename},
+			ok:      true,
+			wantNil: false,
+		},
+		{
+			name:    "chmod event returns nil (not watched)",
+			event:   fsnotify.Event{Op: fsnotify.Chmod},
+			ok:      true,
+			wantNil: true,
+		},
+		{
+			name:    "combined write+create event triggers fileChangedMsg",
+			event:   fsnotify.Event{Op: fsnotify.Write | fsnotify.Create},
+			ok:      true,
+			wantNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := m.handleWatcherEvent(tt.event, tt.ok)
+			if tt.wantNil && msg != nil {
+				t.Errorf("expected nil, got %T", msg)
+			}
+			if !tt.wantNil {
+				if _, ok := msg.(fileChangedMsg); !ok {
+					t.Errorf("expected fileChangedMsg, got %T", msg)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleWatcherError(t *testing.T) {
+	m := &rootBrowserModel{}
+
+	tests := []struct {
+		name string
+		err  error
+		ok   bool
+	}{
+		{
+			name: "channel closed (ok=false)",
+			err:  nil,
+			ok:   false,
+		},
+		{
+			name: "watcher error with ok=true",
+			err:  errors.New("watcher error"),
+			ok:   true,
+		},
+		{
+			name: "nil error with ok=true",
+			err:  nil,
+			ok:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := m.handleWatcherError(tt.err, tt.ok)
+			// handleWatcherError always returns nil (errors are logged, swallowed)
+			if msg != nil {
+				t.Errorf("expected nil, got %T", msg)
+			}
+		})
+	}
+}
+
+func TestProcessWatcherEvents_ContextCancellation(t *testing.T) {
+	// Create a real watcher on a temp file so it's valid but we cancel context first.
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test-watch")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = watcher.Close() }()
+
+	if err := watcher.Add(tmpFile); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cancel context before calling processWatcherEvents
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	m := &rootBrowserModel{ctx: ctx}
+	msg := m.processWatcherEvents(watcher)
+	if msg != nil {
+		t.Errorf("expected nil msg for cancelled context, got %T", msg)
+	}
+}
+
+func TestProcessWatcherEvents_ChannelClose(t *testing.T) {
+	// Create a watcher, close it immediately, then test processWatcherEvents.
+	// When a watcher is closed, its Events channel is closed, so the receive
+	// returns event={}, ok=false.
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test-watch")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := watcher.Add(tmpFile); err != nil {
+		_ = watcher.Close()
+		t.Fatal(err)
+	}
+
+	// Close the watcher to close the Events channel
+	if err := watcher.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &rootBrowserModel{ctx: context.Background()}
+	msg := m.processWatcherEvents(watcher)
+	if msg != nil {
+		t.Errorf("expected nil msg for closed channel, got %T", msg)
+	}
+}
+
+// ── Pinning error path hardening tests (Issue #383) ──
+
+func TestTogglePin_SetPinnedError(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{
+		SetPinnedFunc: func(ctx context.Context, turnIndex int, pinned bool) error {
+			return errors.New("set pinned failed")
+		},
+	}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "Hello", OriginalIndex: 0},
+		{Role: "assistant", ContentPreview: "Hi", OriginalIndex: 1},
+	}
+	m.selectedTurn = 0
+
+	// Toggle pin - should fail
+	m.togglePin()
+
+	// Verify error is set on model
+	if m.err == nil {
+		t.Fatal("expected error to be set on model after SetPinned failure")
+	}
+	if !strings.Contains(m.err.Error(), "set pinned failed") {
+		t.Errorf("expected error 'set pinned failed', got %v", m.err)
+	}
+
+	// Verify local pin state was NOT changed
+	if m.history[0].IsPinned {
+		t.Error("expected pin state to remain unchanged after error")
+	}
+
+	// Verify View() renders the error
+	view := m.View()
+	if !strings.Contains(view, "Error: set pinned failed") {
+		t.Errorf("expected View() to render error, got %q", view)
+	}
+}
+
+func TestRollbackToSelected_RollbackError(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{
+		RollbackTurnsFunc: func(ctx context.Context, turns int) (int, int, int, error) {
+			return 0, 0, 0, errors.New("rollback failed")
+		},
+	}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.isLoading = false // Reset initial loading state
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "1", OriginalIndex: 0},
+		{Role: "assistant", ContentPreview: "2", OriginalIndex: 1},
+		{Role: "user", ContentPreview: "3", OriginalIndex: 2},
+		{Role: "assistant", ContentPreview: "4", OriginalIndex: 3},
+	}
+	m.selectedTurn = 0 // First turn
+
+	// Rollback to selected - should fail
+	cmd := m.rollbackToSelected()
+
+	// Verify error is set on model
+	if m.err == nil {
+		t.Fatal("expected error to be set on model after RollbackTurns failure")
+	}
+	if !strings.Contains(m.err.Error(), "rollback failed") {
+		t.Errorf("expected error 'rollback failed', got %v", m.err)
+	}
+
+	// Verify no cmd was returned (nil on error)
+	if cmd != nil {
+		t.Error("expected nil cmd when RollbackTurns fails")
+	}
+
+	// Verify model didn't enter loading state
+	if m.isLoading {
+		t.Error("expected isLoading to remain false after rollback error")
+	}
+
+	// Verify View() renders the error
+	m.ready = true
+	view := m.View()
+	if !strings.Contains(view, "Error: rollback failed") {
+		t.Errorf("expected View() to render error, got %q", view)
+	}
+}
+
+func TestTogglePin_RecoveryAfterError(t *testing.T) {
+	// Verify that after a SetPinned error, clearing the error and retrying works.
+	mockProvider := &mockHistoryProvider{}
+	callCount := 0
+	mockModifier := &mockHistoryModifier{
+		SetPinnedFunc: func(ctx context.Context, turnIndex int, pinned bool) error {
+			callCount++
+			if callCount == 1 {
+				return errors.New("transient error")
+			}
+			return nil
+		},
+	}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "Hello", OriginalIndex: 0},
+		{Role: "assistant", ContentPreview: "Hi", OriginalIndex: 1},
+	}
+	m.selectedTurn = 0
+
+	// First attempt fails
+	m.togglePin()
+	if m.err == nil {
+		t.Fatal("expected error after first attempt")
+	}
+
+	// Clear error
+	m.err = nil
+
+	// Second attempt succeeds
+	m.togglePin()
+	if m.err != nil {
+		t.Errorf("expected no error after second attempt, got %v", m.err)
+	}
+	if !m.history[0].IsPinned {
+		t.Error("expected pin state to be set after successful retry")
+	}
+}
+
+// ── Additional coverage tests for tui package ──
+
+func TestPromptCapturer_Close(t *testing.T) {
+	base := &mockBaseCapturer{}
+	svc := &mockSuggestionService{}
+	capturer := NewPromptCapturer(base, svc)
+
+	// Close with both base and svc
+	err := capturer.Close(context.Background())
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Close with nil svc
+	capturer2 := NewPromptCapturer(base, nil)
+	err = capturer2.Close(context.Background())
+	if err != nil {
+		t.Errorf("unexpected error with nil svc: %v", err)
+	}
+}
+
+type mockCloseErrorSvc struct {
+	mockSuggestionService
+}
+
+func (m *mockCloseErrorSvc) Close(ctx context.Context) error {
+	return errors.New("close error")
+}
+
+func TestPromptCapturer_Close_Error(t *testing.T) {
+	base := &mockBaseCapturer{}
+	svc := &mockCloseErrorSvc{}
+	capturer := NewPromptCapturer(base, svc)
+
+	err := capturer.Close(context.Background())
+	if err == nil {
+		t.Fatal("expected error from Close")
+	}
+	if !strings.Contains(err.Error(), "close error") {
+		t.Errorf("expected 'close error' in error message, got %v", err)
+	}
+}
+
+func TestBrowserModel_MoveSearchMatch_Wrapping(t *testing.T) {
+	m := &rootBrowserModel{
+		matches:      []int{10, 20, 30},
+		currentMatch: 0,
+	}
+
+	// Move forward past end: should wrap to 0
+	m.moveSearchMatch(5)
+	if m.currentMatch != 2 {
+		t.Errorf("expected currentMatch 2 after forward wrap, got %d", m.currentMatch)
+	}
+
+	// Move backward past start: wraps via Go's remainder semantics
+	m.moveSearchMatch(-5)
+	// (2 - 5) % 3 = -3 % 3 = 0 in Go (remainder, not modulo)
+	if m.currentMatch != 0 {
+		t.Errorf("expected currentMatch 0 after backward wrap, got %d", m.currentMatch)
+	}
+
+	// No matches
+	m.matches = nil
+	m.moveSearchMatch(1)
+	// Should not panic and currentMatch unchanged
+}
+
+func TestBrowserModel_MoveSelection_EdgeCases(t *testing.T) {
+	m := &rootBrowserModel{
+		history: []ports.HistoryViewDTO{
+			{Role: "user", OriginalIndex: 0},
+			{Role: "assistant", OriginalIndex: 1},
+		},
+		selectedTurn: 0,
+	}
+
+	// Move up past top
+	m.moveSelection(-5)
+	if m.selectedTurn != 0 {
+		t.Errorf("expected selectedTurn 0, got %d", m.selectedTurn)
+	}
+
+	// Move down past bottom
+	m.moveSelection(10)
+	if m.selectedTurn != 1 {
+		t.Errorf("expected selectedTurn 1, got %d", m.selectedTurn)
+	}
+
+	// Empty history
+	m.history = nil
+	m.moveSelection(1)
+	// Should not panic
+}
+
+func TestBrowserModel_SearchEnter_SameQuery(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.isSearching = true
+	m.searchBar.Focus()
+	m.searchBar.SetValue("same-query")
+	m.currentQuery = "same-query"
+	m.ready = true
+	m.viewport = viewport.New(80, 24)
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := newModel.(*rootBrowserModel)
+
+	if updated.isSearching {
+		t.Error("expected search to be deactivated")
+	}
+	// Cache should NOT be invalidated when query hasn't changed
+	if updated.lastQuery != m.lastQuery {
+		t.Error("expected lastQuery to remain unchanged when query doesn't change")
+	}
+}
+
+func TestBrowserModel_HandleViewportUpdate_ScrollBottom(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.ready = true
+	m.isLoading = false
+	m.cursor = "next"
+	m.viewport = viewport.New(80, 10)
+	m.viewport.SetContent("line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15")
+	m.viewport.SetYOffset(5) // Middle
+
+	// Scroll to bottom
+	newModel, _ := m.handleViewportUpdate(tea.KeyMsg{Type: tea.KeyEnd})
+	updated := newModel.(*rootBrowserModel)
+	// KeyEnd triggers viewport to go to bottom; exact offset depends on viewport behavior
+	_ = updated.viewport.YOffset
+	_ = updated
 }

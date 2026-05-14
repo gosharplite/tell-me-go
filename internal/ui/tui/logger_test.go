@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -41,4 +42,31 @@ func TestInitLogger(t *testing.T) {
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Errorf("Expected log file at %s, but it was not found", expectedPath)
 	}
+}
+
+// TestInitLogger_ErrorPath verifies InitLogger returns an error when the
+// log file cannot be created (e.g., when TMPDIR points to a file, not a directory).
+func TestInitLogger_ErrorPath(t *testing.T) {
+	// Create a regular file and set it as TMPDIR. Since it's a file
+	// and not a directory, tea.LogToFile will fail trying to create
+	// a log file inside it.
+	tmpFile := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(tmpFile, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", tmpFile)
+
+	closer, err := InitLogger()
+	if err == nil {
+		if closer != nil {
+			_ = closer.Close()
+		}
+		t.Fatal("expected error when TMPDIR is a file, got nil")
+	}
+	if closer != nil {
+		t.Error("expected nil closer on error, got non-nil")
+	}
+	// Verify the returned type matches io.Closer interface expectation
+	var _ io.Closer = nil // compile-time check that nil satisfies io.Closer
+	_ = closer
 }

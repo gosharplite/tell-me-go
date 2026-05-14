@@ -555,3 +555,85 @@ func TestPromptModel_Integration_SuggestionsAreRendered(t *testing.T) {
 		t.Errorf("CRITICAL REGRESSION: The TUI failed to render the suggestion.")
 	}
 }
+
+// ── Suggestion service error path hardening tests (Issue #383) ──
+
+// errorSuggestionSvc returns errors from GetSuggestions for testing error paths.
+type errorSuggestionSvc struct {
+	err error
+}
+
+func (m *errorSuggestionSvc) GetSuggestions(ctx context.Context, prefix string) ([]string, error) {
+	return nil, m.err
+}
+
+func (m *errorSuggestionSvc) RecordPrompt(ctx context.Context, prompt string) error {
+	return nil
+}
+
+func (m *errorSuggestionSvc) Close(ctx context.Context) error {
+	return nil
+}
+
+func TestModel_GetSuggestions_Error(t *testing.T) {
+	t.Run("service error returns nil message", func(t *testing.T) {
+		svc := &errorSuggestionSvc{err: errors.New("service unavailable")}
+		m := NewModel(svc, 1*time.Millisecond).(*promptModel)
+		defer m.Destroy()
+
+		cmd := m.getSuggestions(context.Background(), "test")
+		msg := cmd()
+
+		// Error should produce nil (not crash)
+		if msg != nil {
+			t.Errorf("expected nil msg for service error, got %T: %v", msg, msg)
+		}
+	})
+
+	t.Run("context cancellation returns nil silently", func(t *testing.T) {
+		svc := &errorSuggestionSvc{err: errors.New("service unavailable")}
+		m := NewModel(svc, 1*time.Millisecond).(*promptModel)
+		defer m.Destroy()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel before the call
+
+		cmd := m.getSuggestions(ctx, "test")
+		msg := cmd()
+
+		// When context is cancelled, the returned message should be nil
+		// (the ctx.Err() check in getSuggestions catches this)
+		if msg != nil {
+			t.Errorf("expected nil msg for cancelled context, got %T", msg)
+		}
+	})
+}
+
+func TestModel_GetSuggestions_ContextCancelledDuringFetch(t *testing.T) {
+	// This tests the context cancellation path where the service
+	// returns an error AND ctx.Err() is non-nil.
+	svc := &errorSuggestionSvc{err: context.Canceled}
+	m := NewModel(svc, 1*time.Millisecond).(*promptModel)
+	defer m.Destroy()
+
+	// When the error matches context.Canceled, the ctx.Err() check
+	// returns true and the function returns nil (silently ignored).
+	cmd := m.getSuggestions(context.Background(), "test")
+	msg := cmd()
+
+	if msg != nil {
+		t.Errorf("expected nil msg for cancelled-context error, got %T", msg)
+	}
+}
+
+func TestModel_Destroy(t *testing.T) {
+	m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+	m.Destroy()
+
+	// After Destroy, the model should be aborted and have cancelled context
+	if m.Aborted() {
+		t.Error("Destroy should not set aborted=true")
+	}
+	// Calling Destroy multiple times should not panic
+	m.Destroy()
+}
