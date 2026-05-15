@@ -11,13 +11,12 @@ This SOP defines the end-to-end process for resolving a GitHub issue using the *
 ---
 
 ### Prerequisites
-
 > ⛔ **CRITICAL — HARD GATE**: You **MUST** read and understand
 > [`docs/steps/chatting-with-ai.md`](../../steps/chatting-with-ai.md) before
 > executing this SOP. Every phase depends on the tell-me-go protocol.
 > **Stop here if you cannot answer all of these:**
 >
-> 1. Why is `write_file` → `mktemp` + `cp` required instead of inline heredocs?
+> 1. Why is `mktemp` → `write_file` → `mktemp` + `cp` required instead of inline heredocs?
 > 2. When do you use `--new` vs. omit it?
 > 3. What flag retrieves the last response? What flag shows the full transcript?
 > 4. What `timeout` value is **mandatory** for every `tell-me-go` call?
@@ -25,7 +24,6 @@ This SOP defines the end-to-end process for resolving a GitHub issue using the *
 >
 > If any answer is unclear, **stop** and re-read the protocol document **now**.
 > This SOP cannot be executed without that knowledge.
-
 - A GitHub issue with clear scope, acceptance criteria, and a Definition of Done.
 - Two role config files exported as environment variables:
   ```bash
@@ -121,10 +119,18 @@ git branch --show-current
 
 #### 2a. Write the Architect prompt
 
-Use `write_file` to create the prompt (never inline heredocs in `execute_command`):
+First, create a unique staging file:
+
+```bash
+mktemp /tmp/tell-me-go-prompt.XXXXXX
+# Example output: /tmp/tell-me-go-prompt.9HzLqL
+```
+
+Then use `write_file` with that path (never inline heredocs in `execute_command`):
 
 ```
-write_file → /tmp/tell-me-go-prompt.txt
+write_file → /tmp/tell-me-go-prompt.9HzLqL
+   ...
 ```
 
 The prompt must include:
@@ -137,8 +143,9 @@ The prompt must include:
 #### 2b. Send to Architect
 
 ```bash
+STAGING=/tmp/tell-me-go-prompt.9HzLqL && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$STAGING" "$PROMPT_FILE" && \
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
 tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
@@ -208,8 +215,17 @@ Architect outputs Task N
 After retrieving the Phase 1 analysis (`-l 1`), send a follow-up prompt
 to the Architect (**no `--new`** — continues the same session):
 
+First, create a unique staging file:
+
+```bash
+mktemp /tmp/tell-me-go-prompt.XXXXXX
+# Example output: /tmp/tell-me-go-prompt.MnOpQr
 ```
-write_file → /tmp/tell-me-go-prompt.txt
+
+Then use `write_file` with that path:
+
+```
+write_file → /tmp/tell-me-go-prompt.MnOpQr
 
 Prompt content:
   "Begin. Output your first task.
@@ -227,8 +243,9 @@ repeat them here — it wastes tokens.
 
 Send:
 ```bash
+STAGING=/tmp/tell-me-go-prompt.MnOpQr && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$STAGING" "$PROMPT_FILE" && \
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
 tell-me-go -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
@@ -243,14 +260,24 @@ tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
 The Architect's task output **is** the Coder's prompt. Save it, then
 send it in a fresh session.
 
-```bash
-# Step 1: Save the Architect's task output to the prompt file
-write_file → /tmp/tell-me-go-prompt.txt
-    <paste the Architect's exact task output here>
+First, create a unique staging file and write the Architect's task to it:
 
-# Step 2: Send to Coder (--new = fresh session, no prior memory)
+```bash
+mktemp /tmp/tell-me-go-prompt.XXXXXX
+# Example output: /tmp/tell-me-go-prompt.StUvWx
+```
+
+```
+write_file → /tmp/tell-me-go-prompt.StUvWx
+    <paste the Architect's exact task output here>
+```
+
+Then send to Coder (`--new` = fresh session, no prior memory):
+
+```bash
+STAGING=/tmp/tell-me-go-prompt.StUvWx && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$STAGING" "$PROMPT_FILE" && \
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
 tell-me-go --new -r -c ${CODER_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
@@ -265,14 +292,24 @@ tell-me-go -l 1 -r -c ${CODER_CONFIG}
 Save the Coder's retrieved output to the prompt file, then forward to
 the Architect (**no `--new`** — Architect is still in the same session):
 
-```bash
-# Step 1: Save Coder's output to the prompt file
-write_file → /tmp/tell-me-go-prompt.txt
-    <paste the Coder's exact output here>
+First, create a unique staging file and write the Coder's output to it:
 
-# Step 2: Send to Architect for review
+```bash
+mktemp /tmp/tell-me-go-prompt.XXXXXX
+# Example output: /tmp/tell-me-go-prompt.YzAbCd
+```
+
+```
+write_file → /tmp/tell-me-go-prompt.YzAbCd
+    <paste the Coder's exact output here>
+```
+
+Then send to Architect for review:
+
+```bash
+STAGING=/tmp/tell-me-go-prompt.YzAbCd && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$STAGING" "$PROMPT_FILE" && \
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
 tell-me-go -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
@@ -468,7 +505,7 @@ gh pr create \
 
 ### 7. Completion Checklist
 
-- [ ] Chat protocol complied with: no inline heredocs, `timeout: 1800` on all `tell-me-go` calls, `--new` only for first messages, retrieval via `-l N`, prompts via `write_file` → `mktemp` + `cp`
+- [ ] Chat protocol complied with: no inline heredocs, `timeout: 1800` on all `tell-me-go` calls, `--new` only for first messages, retrieval via `-l N`, prompts via `mktemp` → `write_file` → `mktemp` + `cp`
 - [ ] Token limits monitored: Architect checked via `-t` during Phase 2 and before Phase 3 fix loop, Coder verified per-session, no silent context truncation
 - [ ] Feature branch created from `dev`
 - [ ] Architect Phase 1 analysis: structured sections present, actionable per 2c criteria
