@@ -40,9 +40,9 @@ func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRuns
 
 	params.OriginalTop = params.Top
 	if params.OriginalTop <= 0 {
-		params.OriginalTop = 10
+		params.OriginalTop = 10 // ADO pipeline runs API default; 10 keeps list responses compact.
 	} else if params.OriginalTop > 1000 {
-		params.OriginalTop = 1000 // Defensive upper bound
+		params.OriginalTop = 1000 // ADO REST API 7.1 rejects $top > 1000; clamp defensively.
 	}
 
 	params.FetchTop = params.OriginalTop
@@ -218,9 +218,9 @@ func parseGetBuildChangesArgs(args map[string]interface{}) (adoGetBuildChangesPa
 	}
 
 	if params.Top <= 0 {
-		params.Top = 50
+		params.Top = 50 // ADO build/changes API default; 50 balances completeness with response size.
 	} else if params.Top > 1000 {
-		params.Top = 1000 // Defensive upper bound
+		params.Top = 1000 // ADO REST API 7.0 rejects $top > 1000; clamp defensively.
 	}
 
 	return params, nil

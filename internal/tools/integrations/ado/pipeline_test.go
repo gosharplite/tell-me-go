@@ -678,36 +678,6 @@ func TestBuildListPipelineRunsURL(t *testing.T) {
 			wantURLContains: []string{"definitions=1", "%24top=20", "api-version=7.1"},
 		},
 		{
-			name:            "Top zero defaults to 10",
-			baseURL:         "http://example.com",
-			org:             "o",
-			project:         "p",
-			pipelineID:      1,
-			top:             0,
-			wantErr:         false,
-			wantURLContains: []string{"%24top=10"},
-		},
-		{
-			name:            "Top negative defaults to 10",
-			baseURL:         "http://example.com",
-			org:             "o",
-			project:         "p",
-			pipelineID:      1,
-			top:             -5,
-			wantErr:         false,
-			wantURLContains: []string{"%24top=10"},
-		},
-		{
-			name:            "Top exceeds 1000 clamps to 1000",
-			baseURL:         "http://example.com",
-			org:             "o",
-			project:         "p",
-			pipelineID:      1,
-			top:             2000,
-			wantErr:         false,
-			wantURLContains: []string{"%24top=1000"},
-		},
-		{
 			name:        "Malformed BaseURL causes parse error",
 			baseURL:     "://invalid-url",
 			org:         "o",
@@ -743,6 +713,10 @@ func TestBuildListPipelineRunsURL(t *testing.T) {
 func TestBuildGetBuildChangesURL(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	// NOTE: Clamping of Top (≤0 → 50, >1000 → 1000) is tested in
+	// TestParseGetBuildChangesArgs. buildGetBuildChangesURL trusts the
+	// pre-clamped value and therefore does not re-clamp.
 
 	tests := []struct {
 		name            string
