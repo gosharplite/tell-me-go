@@ -324,6 +324,7 @@ func TestBuildApp_GetwdError(t *testing.T) {
 	}
 	cleanup()
 }
+
 func TestInitTracer_ResourceError(t *testing.T) {
 	// 1. Save and defer restoration of the resource constructor
 	origResource := newResourceFn
