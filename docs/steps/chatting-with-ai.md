@@ -52,27 +52,36 @@ Each `.yaml` file defines the role's behavior, model, and system prompt.
 
 ### Basic Pattern (for AI Assistants)
 
-When calling `tell-me-go` via the `execute_command` tool, use a **two-step** process:
+When calling `tell-me-go` via the `execute_command` tool, use a **three-step** process:
 
-**Step 1 — Write the prompt** with the `write_file` tool:
+**Step 1 — Create a unique staging file** via `execute_command`:
+
+```bash
+mktemp /tmp/tell-me-go-prompt.XXXXXX
+# Example output: /tmp/tell-me-go-prompt.9HzLqL
+```
+
+**Step 2 — Write the prompt** with the `write_file` tool, using the path from Step 1:
 
 ```
-write_file → /tmp/tell-me-go-prompt.txt
+write_file → /tmp/tell-me-go-prompt.9HzLqL
     "Please review the following diff and identify architectural concerns."
 ```
 
-**Step 2 — Send** via `execute_command`:
+**Step 3 — Send** via `execute_command`:
 
 ```bash
+STAGING=/tmp/tell-me-go-prompt.9HzLqL && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$STAGING" "$PROMPT_FILE" && \
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
 tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
 
-> **Why `write_file` + `mktemp` + `cp`?** Two reasons:
+> **Why three steps?**
 > 1. `cat << 'EOF'` heredocs **break** inside `execute_command` — the shell parser chokes on quoted delimiters. Use `write_file` to create prompt content reliably.
-> 2. `mktemp` still guards against collisions at send time (parallel sessions won't share the same temp file).
+> 2. A hardcoded staging path (e.g., `/tmp/tell-me-go-prompt.txt`) is a **race condition**: two parallel Orchestrators would overwrite each other's prompt. `mktemp` in Step 1 guarantees a unique staging file.
+> 3. `mktemp` in Step 3 guards the send file separately — parallel sessions never share the same file at any point in the pipeline.
 
 ### Basic Pattern (in a real terminal)
 
@@ -89,15 +98,15 @@ tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 
 ### Why `mktemp`?
 
-Never use a hardcoded path like `/tmp/prompt.txt`:
+Never use a hardcoded path like `/tmp/tell-me-go-prompt.txt` — at any stage:
 
 | Risk | Explanation |
 |------|-------------|
-| **Collisions** | Two parallel tell-me-go sessions will overwrite each other's prompt. |
+| **Collisions** | Two parallel tell-me-go sessions (or two Orchestrators) will overwrite each other's prompt. |
 | **Stale data** | A crashed previous run leaves behind an old prompt — you might re-send it unknowingly. |
 | **Predictability** | A fixed filename is a minor information-leak vector on multi-user systems. |
 
-`mktemp` creates a file with a unique random suffix (e.g., `/tmp/tmp.9HzLqL`) — each invocation is guaranteed collision-free.
+`mktemp` creates a file with a unique random suffix (e.g., `/tmp/tmp.9HzLqL`) — each invocation is guaranteed collision-free. Both the staging file (where `write_file` writes) and the send file (what `tell-me-go` reads) must use `mktemp`.
 
 ### Why file redirection?
 
@@ -105,7 +114,7 @@ Never use a hardcoded path like `/tmp/prompt.txt`:
 - Lets you inspect and verify the prompt content before sending.
 - Handles multi-line content, special characters, and code blocks reliably.
 
-**For AI Assistants**: Create prompts with the `write_file` tool, not inline heredocs in `execute_command`. The `execute_command` shell parser cannot handle quoted heredoc delimiters (`<< 'EOF'`). Use `write_file` → `mktemp` + `cp` → `tell-me-go` as shown above.
+**For AI Assistants**: Create prompts with the `write_file` tool, not inline heredocs in `execute_command`. The `execute_command` shell parser cannot handle quoted heredoc delimiters (`<< 'EOF'`). Use the three-step pattern: `mktemp` → `write_file` → `mktemp` + `cp` → `tell-me-go` as shown above.
 
 ### First message vs. continuation
 
@@ -172,29 +181,34 @@ Payload: ~19856/1000000 tokens
 ## Complete Workflow Example
 
 ```bash
-# ── Step 1: Write prompt + send to Architect ──
-# 1a. write_file → /tmp/tell-me-go-prompt.txt
+# ── Step 1: Create staging file + write prompt + send to Architect ──
+# 1a. mktemp /tmp/tell-me-go-prompt.XXXXXX  →  /tmp/tell-me-go-prompt.aBcDeF
+# 1b. write_file → /tmp/tell-me-go-prompt.aBcDeF
 #     "How should we reduce cyclomatic complexity in internal/handler/auth.go?"
-# 1b. Send:
+# 1c. Send:
+STAGING=/tmp/tell-me-go-prompt.aBcDeF && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$STAGING" "$PROMPT_FILE" && \
 tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 
 # ── Step 2: Retrieve the Architect's answer ──
 tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
 
-# ── Step 3: Write follow-up + send (continuation — no --new) ──
-# 3a. write_file → /tmp/tell-me-go-prompt.txt
+# ── Step 3: Create staging file + write follow-up + send (continuation — no --new) ──
+# 3a. mktemp /tmp/tell-me-go-prompt.XXXXXX  →  /tmp/tell-me-go-prompt.GhIjKl
+# 3b. write_file → /tmp/tell-me-go-prompt.GhIjKl
 #     "Provide step-by-step instructions for the Coder to implement your recommendation."
-# 3b. Send:
+# 3c. Send:
+STAGING=/tmp/tell-me-go-prompt.GhIjKl && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$STAGING" "$PROMPT_FILE" && \
 tell-me-go -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 
 # ── Step 4: Retrieve instructions and forward to Coder ──
-tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG} > /tmp/tell-me-go-prompt.txt
+FORWARD_FILE=$(mktemp /tmp/tell-me-go-forward.XXXXXX) && \
+tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG} > "$FORWARD_FILE" && \
 PROMPT_FILE=$(mktemp) && \
-cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
+cp "$FORWARD_FILE" "$PROMPT_FILE" && \
 tell-me-go --new -r -c ${CODER_CONFIG} < "$PROMPT_FILE" &> /dev/null
 
 # ── Step 5: Retrieve Coder's result ──
