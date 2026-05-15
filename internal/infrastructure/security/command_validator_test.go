@@ -6,6 +6,8 @@ package security
 import (
 	"strings"
 	"testing"
+
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 func TestCommandValidator(t *testing.T) {
@@ -659,4 +661,33 @@ func TestCommandValidator_validateSubcommandSpecifics(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateSinglePath_WarnBranches(t *testing.T) {
+	t.Run("sm != nil → sm.Warn called", func(t *testing.T) {
+		mi := &mockInteractor{Answer: "n"}
+		sm := NewSecurityManager(func() domain.UserInteractor { return mi })
+		v := NewCommandValidator(sm, nil)
+		cv := v.(*commandValidator)
+
+		safe, reason := cv.validateSinglePath("/etc/passwd")
+		if safe {
+			t.Error("expected false for unsafe path")
+		}
+		if !strings.Contains(reason, "path safety check failed") {
+			t.Errorf("reason should contain 'path safety check failed', got: %s", reason)
+		}
+
+		found := false
+		for _, w := range mi.Warns {
+			if strings.Contains(w, "[Safety]") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected Warns to contain '[Safety]', got: %v", mi.Warns)
+		}
+	})
+
 }
