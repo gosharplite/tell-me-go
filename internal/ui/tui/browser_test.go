@@ -820,6 +820,15 @@ func systemTestCases() []updateTestCase {
 			msg:   fileChangedMsg{},
 			check: checkFileChangedMsgDebounced,
 		},
+		{
+			name: "watcherErrorMsg sets error on model",
+			msg:  watcherErrorMsg{err: errors.New("watch failed")},
+			check: func(t *testing.T, m *rootBrowserModel, _ tea.Cmd, _ *mockHistoryModifier) {
+				if m.err == nil || m.err.Error() != "watch failed" {
+					t.Errorf("expected err 'watch failed', got %v", m.err)
+				}
+			},
+		},
 	}
 }
 
@@ -1260,6 +1269,107 @@ func TestHandleWatcherError(t *testing.T) {
 	}
 }
 
+// ── Watcher error message hardening (Issue #433) ──
+
+func TestWatchHistoryFileCmd_WatcherCreateError(t *testing.T) {
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), nil, mockModifier)
+	m.watcherFactory = func() (*fsnotify.Watcher, error) {
+		return nil, errors.New("inotify instance limit reached")
+	}
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test-watch")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mockModifier.GetFilePathFunc = func() string { return tmpFile }
+	cmd := m.watchHistoryFileCmd()
+	msg := cmd()
+
+	werr, ok := msg.(watcherErrorMsg)
+	if !ok {
+		t.Fatalf("expected watcherErrorMsg, got %T (value: %v)", msg, msg)
+	}
+	if !strings.Contains(werr.err.Error(), "create watcher") {
+		t.Errorf("expected error wrapping 'create watcher', got: %v", werr.err)
+	}
+}
+
+func TestWatchHistoryFileCmd_WatcherAddError(t *testing.T) {
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), nil, mockModifier)
+
+	// Use a factory that returns a real watcher, then close it so Add fails.
+	m.watcherFactory = func() (*fsnotify.Watcher, error) {
+		w, err := fsnotify.NewWatcher()
+		if err != nil {
+			return nil, err
+		}
+		_ = w.Close() // Close immediately so Add fails
+		return w, nil
+	}
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test-watch")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mockModifier.GetFilePathFunc = func() string { return tmpFile }
+	cmd := m.watchHistoryFileCmd()
+	msg := cmd()
+
+	werr, ok := msg.(watcherErrorMsg)
+	if !ok {
+		t.Fatalf("expected watcherErrorMsg, got %T (value: %v)", msg, msg)
+	}
+	if !strings.Contains(werr.err.Error(), "add watcher") {
+		t.Errorf("expected error wrapping 'add watcher', got: %v", werr.err)
+	}
+}
+
+func TestProcessWatcherEvents_WatcherErrorsChannel(t *testing.T) {
+	// Create a watcher and close it so the Errors channel returns (zero, false).
+	// This exercises the case err, ok := <-watcher.Errors where ok=false.
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = watcher.Close()
+
+	m := &rootBrowserModel{ctx: context.Background()}
+	msg := m.processWatcherEvents(watcher)
+	// handleWatcherError(nil, false) returns nil
+	if msg != nil {
+		t.Errorf("expected nil msg from closed watcher, got %T", msg)
+	}
+}
+
+func TestWatcherErrorMsg_Handling(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+
+	newModel, cmd := m.Update(watcherErrorMsg{err: errors.New("watcher failed")})
+	updated := newModel.(*rootBrowserModel)
+
+	if updated.err == nil || updated.err.Error() != "watcher failed" {
+		t.Errorf("expected err='watcher failed', got %v", updated.err)
+	}
+	if cmd == nil {
+		t.Error("expected non-nil cmd from watcherErrorMsg handling")
+	}
+
+	// Verify View() renders the error
+	updated.ready = true
+	view := updated.View()
+	if !strings.Contains(view, "Error: watcher failed") {
+		t.Errorf("expected View() to contain error, got %q", view)
+	}
+}
+
 func TestProcessWatcherEvents_ContextCancellation(t *testing.T) {
 	// Create a real watcher on a temp file so it's valid but we cancel context first.
 	tmpDir := t.TempDir()
@@ -1581,4 +1691,284 @@ func TestBrowserModel_HandleViewportUpdate_ScrollBottom(t *testing.T) {
 	// KeyEnd triggers viewport to go to bottom; exact offset depends on viewport behavior
 	_ = updated.viewport.YOffset
 	_ = updated
+}
+
+// ── Viewport/footer edge case tests (Issue #433) ──
+
+func TestBrowserModel_UpdateViewportHeight_NotReady(t *testing.T) {
+	m := &rootBrowserModel{ready: false}
+	m.updateViewportHeight()
+	if m.viewport.Height != 0 {
+		t.Errorf("expected viewport height 0 when not ready, got %d", m.viewport.Height)
+	}
+}
+
+func TestBrowserModel_GetTurnLabelSuffix_ArchivedAndSystem(t *testing.T) {
+	m := &rootBrowserModel{
+		history: []ports.HistoryViewDTO{
+			{Role: "system", ContentPreview: "sys", OriginalIndex: 0},
+			{Role: "user", ContentPreview: "u1", OriginalIndex: 1},
+		},
+	}
+
+	// Archived DTO returns ""
+	archivedDto := ports.HistoryViewDTO{IsArchived: true}
+	if got := m.getTurnLabelSuffix(archivedDto); got != "" {
+		t.Errorf("expected empty suffix for archived DTO, got %q", got)
+	}
+
+	// System DTO (turnIdx < 0) returns ""
+	systemDto := m.history[0]
+	if got := m.getTurnLabelSuffix(systemDto); got != "" {
+		t.Errorf("expected empty suffix for system DTO, got %q", got)
+	}
+}
+
+func TestBrowserModel_RenderFooter_Loading(t *testing.T) {
+	m := &rootBrowserModel{isLoading: true}
+	got := m.renderFooter()
+	if !strings.Contains(got, "LOADING") {
+		t.Errorf("expected LOADING in footer, got %q", got)
+	}
+}
+
+func TestBrowserModel_RenderHistoryStatus_EOF(t *testing.T) {
+	m := &rootBrowserModel{
+		history: []ports.HistoryViewDTO{{Role: "user"}},
+		cursor:  "EOF",
+	}
+	var sb strings.Builder
+	m.renderHistoryStatus(&sb)
+	got := sb.String()
+	if !strings.Contains(got, "Start of History") {
+		t.Errorf("expected 'Start of History', got %q", got)
+	}
+}
+
+func TestBrowserModel_RenderEmptyState_NoHistory(t *testing.T) {
+	m := &rootBrowserModel{isLoading: false, cursor: "some-cursor"}
+	got := m.renderEmptyState()
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+}
+
+func TestBrowserModel_HighPinningPressure_CalculateFooterHeight(t *testing.T) {
+	m := &rootBrowserModel{
+		history: []ports.HistoryViewDTO{
+			{Role: "user", OriginalIndex: 0, IsPinned: true},
+			{Role: "assistant", OriginalIndex: 1, IsPinned: true},
+			{Role: "user", OriginalIndex: 2, IsPinned: true},
+			{Role: "assistant", OriginalIndex: 3, IsPinned: true},
+			{Role: "user", OriginalIndex: 4, IsPinned: true},
+			{Role: "assistant", OriginalIndex: 5, IsPinned: true},
+		},
+	}
+	h := m.calculateFooterHeight()
+	if h != 2 {
+		t.Errorf("expected footer height 2 for high pinning pressure, got %d", h)
+	}
+}
+
+// ── Final coverage push tests (Issue #433) ──
+
+func TestBrowserModel_RenderTurn_ThoughtsHidden(t *testing.T) {
+	m := &rootBrowserModel{
+		history: []ports.HistoryViewDTO{
+			{Role: "user", ContentPreview: "hello", ThoughtProcess: "thinking...", OriginalIndex: 0},
+		},
+		showThoughts: false,
+	}
+	var sb strings.Builder
+	m.renderTurn(&sb, 0, m.history[0])
+	got := sb.String()
+	if strings.Contains(got, "THOUGHTS") {
+		t.Errorf("expected no thoughts when showThoughts=false, got %q", got)
+	}
+}
+
+func TestBrowserModel_PreRenderThought_SmallWidth(t *testing.T) {
+	m := &rootBrowserModel{
+		width:          10,
+		showThoughts:   true,
+		cachedThoughts: make(map[string]string),
+	}
+	dto := ports.HistoryViewDTO{ID: "small", ThoughtProcess: "A short thought"}
+	result := m.preRenderThought(dto)
+	if result == "" {
+		t.Error("expected non-empty pre-rendered thought")
+	}
+}
+
+func TestBrowserModel_RenderFooter_ThoughtsOff(t *testing.T) {
+	m := &rootBrowserModel{showThoughts: false}
+	got := m.renderFooter()
+	if !strings.Contains(got, "[OFF]") {
+		t.Errorf("expected 'Thoughts [OFF]' in footer, got %q", got)
+	}
+}
+
+func TestBrowserModel_RenderContent_QueryHighlight_MultiLine(t *testing.T) {
+	m := &rootBrowserModel{currentQuery: "hello"}
+	dto := ports.HistoryViewDTO{ContentPreview: "hello world\nsecond line\nhello again"}
+	result := m.renderContent(dto, "  ")
+	if !strings.Contains(result, "hello") {
+		t.Errorf("expected highlighted content, got %q", result)
+	}
+}
+
+func TestBrowserModel_HandleViewportUpdate_NoPagination(t *testing.T) {
+	m := &rootBrowserModel{
+		ready:    true,
+		viewport: viewport.New(80, 10),
+	}
+	m.viewport.SetContent("line1\nline2\nline3\nline4\nline5")
+	m.viewport.SetYOffset(2)
+
+	_, _ = m.handleViewportUpdate(tea.WindowSizeMsg{Width: 80, Height: 10})
+	// Pagination should NOT be triggered (YOffset > 0).
+	// WindowSizeMsg on viewport may return nil cmd — that's valid.
+	if m.isLoading {
+		t.Error("expected no pagination trigger when not at YOffset 0")
+	}
+}
+
+func TestBrowserModel_UpdateViewportContent_CacheInvalidate(t *testing.T) {
+	m := &rootBrowserModel{
+		ready:          true,
+		width:          100,
+		lastWidth:      80,
+		cachedThoughts: map[string]string{"old": "cached"},
+		showThoughts:   true,
+	}
+	m.updateViewportContent()
+	if len(m.cachedThoughts) != 0 {
+		t.Errorf("expected cache to be cleared after width change, got %d entries", len(m.cachedThoughts))
+	}
+}
+
+// ── Final 8 uncovered branch tests (Issue #433) ──
+
+func TestSyncViewportToSelectedTurn_BelowViewport(t *testing.T) {
+	m := &rootBrowserModel{
+		selectedTurn: 2,
+		turnOffsets:  []int{0, 5, 50, 55},
+		viewport:     viewport.New(80, 10),
+	}
+	// Need enough content lines to support YOffset >= 41
+	lines := make([]string, 60)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	m.viewport.SetContent(strings.Join(lines, "\n"))
+	m.viewport.SetYOffset(0)
+	m.syncViewportToSelectedTurn()
+	// targetLine=50, viewport.YOffset=0, viewport.Height=10
+	// 50 >= 0+10 → should set YOffset to 50-10+1 = 41
+	if m.viewport.YOffset == 0 {
+		t.Error("expected YOffset to be adjusted, got 0")
+	}
+}
+
+func TestGetTurnIndex_SystemDto(t *testing.T) {
+	m := &rootBrowserModel{
+		history: []ports.HistoryViewDTO{
+			{Role: "system", OriginalIndex: 0},
+		},
+	}
+	turnIdx := m.getTurnIndex(m.history[0])
+	if turnIdx != -1 {
+		t.Errorf("expected -1 for system DTO, got %d", turnIdx)
+	}
+}
+
+func TestHandleHistoryLoadedMsg_EmptyDtos(t *testing.T) {
+	m := &rootBrowserModel{
+		isLoading:    true,
+		selectedTurn: -1,
+		history:      []ports.HistoryViewDTO{{Role: "user", OriginalIndex: 0}},
+	}
+	newModel, cmd := m.handleHistoryLoadedMsg(historyLoadedMsg{
+		dtos:       nil,
+		nextCursor: "EOF",
+	})
+	updated := newModel.(*rootBrowserModel)
+	if updated.isLoading {
+		t.Error("expected isLoading to be false")
+	}
+	if updated.cursor != "EOF" {
+		t.Errorf("expected cursor 'EOF', got %q", updated.cursor)
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd for empty dtos")
+	}
+}
+
+func TestRenderThoughts_CacheMiss(t *testing.T) {
+	m := &rootBrowserModel{
+		width:          80,
+		showThoughts:   true,
+		cachedThoughts: map[string]string{},
+	}
+	dto := ports.HistoryViewDTO{ID: "miss1", ThoughtProcess: "uncached thought"}
+	result := m.renderThoughts(dto, "  ")
+	if !strings.Contains(result, "uncached thought") {
+		t.Errorf("expected thought content in render, got %q", result)
+	}
+	if _, ok := m.cachedThoughts["miss1"]; ok {
+		t.Error("renderThoughts should not populate cache")
+	}
+}
+
+func TestRenderHistory_SingleElement(t *testing.T) {
+	m := &rootBrowserModel{
+		history:      []ports.HistoryViewDTO{{Role: "user", ContentPreview: "only message", OriginalIndex: 0}},
+		selectedTurn: 0,
+		showThoughts: false,
+		width:        80,
+	}
+	rendered, offsets := m.renderHistory()
+	if !strings.Contains(rendered, "only message") {
+		t.Errorf("expected content in render, got %q", rendered)
+	}
+	if len(offsets) != 1 {
+		t.Errorf("expected 1 offset, got %d", len(offsets))
+	}
+}
+
+func TestGetTurnForPinning_OutOfBounds(t *testing.T) {
+	m := &rootBrowserModel{
+		history:      []ports.HistoryViewDTO{{Role: "user", OriginalIndex: 0}},
+		selectedTurn: 5,
+	}
+	_, _, ok := m.getTurnForPinning()
+	if ok {
+		t.Error("expected ok=false for out of bounds selectedTurn")
+	}
+
+	m.selectedTurn = -1
+	_, _, ok = m.getTurnForPinning()
+	if ok {
+		t.Error("expected ok=false for selectedTurn=-1")
+	}
+}
+
+func TestRenderFooter_QueryNoMatches(t *testing.T) {
+	m := &rootBrowserModel{
+		currentQuery: "zzzzz",
+		matches:      nil,
+		currentMatch: 0,
+	}
+	got := m.renderFooter()
+	if !strings.Contains(got, "no matches") {
+		t.Errorf("expected 'no matches' in footer, got %q", got)
+	}
+}
+
+func TestMoveSelection_EmptyHistory(t *testing.T) {
+	m := &rootBrowserModel{selectedTurn: -1}
+	m.moveSelection(1)
+	if m.selectedTurn != -1 {
+		t.Errorf("expected selectedTurn -1, got %d", m.selectedTurn)
+	}
 }

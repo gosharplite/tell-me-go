@@ -514,6 +514,38 @@ func (r *faultyRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler
 	return r.Registry.RegisterWithOptions(def, handler, opts)
 }
 
+// ── RegisterAll error propagation tests (Issue #433) ──
+
+func TestRegisterAll_ErrorPropagation(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	fs := &mockFileSystem{}
+	client := &mockLLMClient{}
+
+	// Step 1 (registerMedia first call) fails immediately
+	t.Run("media registration fails", func(t *testing.T) {
+		r := newFaultyRegistry(registry.New(), 0)
+		err := RegisterAll(r, fs, sm, client, t.TempDir())
+		if err == nil {
+			t.Fatal("expected error from RegisterAll when media registration fails")
+		}
+		if !strings.Contains(err.Error(), "simulated registration failure") {
+			t.Errorf("expected simulated error, got: %v", err)
+		}
+	})
+
+	// registerMedia succeeds (2 calls), registerNetwork first call fails (call #3)
+	t.Run("network registration fails", func(t *testing.T) {
+		r := newFaultyRegistry(registry.New(), 2)
+		err := RegisterAll(r, fs, sm, client, t.TempDir())
+		if err == nil {
+			t.Fatal("expected error from RegisterAll when network registration fails")
+		}
+		if !strings.Contains(err.Error(), "simulated registration failure") {
+			t.Errorf("expected simulated error, got: %v", err)
+		}
+	})
+}
+
 func TestRegisterMedia_ErrorPaths(t *testing.T) {
 	sm := newMediaMockSecurityManager()
 	fs := &mockFileSystem{}
