@@ -39,6 +39,10 @@ type historyLoadedMsg struct {
 
 type fileChangedMsg struct{}
 
+type watcherErrorMsg struct {
+	err error
+}
+
 // rootBrowserModel implements the tea.Model interface for the history browser.
 type rootBrowserModel struct {
 	ctx              context.Context
@@ -66,6 +70,9 @@ type rootBrowserModel struct {
 	cachedThoughts map[string]string
 	lastWidth      int
 	lastQuery      string
+
+	// watcherFactory allows tests to inject a failing watcher constructor.
+	watcherFactory func() (*fsnotify.Watcher, error)
 }
 
 // NewRootBrowserModel creates a new history browser root model.
@@ -83,6 +90,7 @@ func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvi
 		showThoughts:   true,
 		selectedTurn:   -1,
 		cachedThoughts: make(map[string]string),
+		watcherFactory: fsnotify.NewWatcher,
 	}
 }
 
@@ -106,16 +114,16 @@ func (m *rootBrowserModel) watchHistoryFileCmd() tea.Cmd {
 			return nil
 		}
 
-		watcher, err := fsnotify.NewWatcher()
+		watcher, err := m.watcherFactory()
 		if err != nil {
 			log.Printf("failed to create history file watcher: %v", err)
-			return nil
+			return watcherErrorMsg{err: fmt.Errorf("create watcher: %w", err)}
 		}
 		defer func() { _ = watcher.Close() }()
 
 		if err := watcher.Add(filepath); err != nil {
 			log.Printf("failed to add history file to watcher: %v", err)
-			return nil
+			return watcherErrorMsg{err: fmt.Errorf("add watcher: %w", err)}
 		}
 
 		return m.processWatcherEvents(watcher)
@@ -162,6 +170,9 @@ func (m *rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleHistoryLoadedMsg(msg)
 	case fileChangedMsg:
 		return m.handleFileChangedMsg(msg)
+	case watcherErrorMsg:
+		m.err = msg.err
+		return m, nil
 	}
 
 	return m.handleViewportUpdate(msg)
