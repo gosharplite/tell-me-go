@@ -31,8 +31,9 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	lockPath := historyPath + ".lock"
 
 	// 1. Acquire simple file-based lock (with stale lock protection)
-	lock, err := m.acquireLedgerLock(lockPath)
+	lock, err := acquireLedgerLock(lockPath)
 	if err != nil {
+		log.Printf("Warning: Failed to acquire ledger lock (contention) for %s: %v", lockPath, err)
 		return
 	}
 	defer func() {
@@ -42,19 +43,6 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 
 	// 2. Update history
 	m.updateLedgerHistory(ctx, historyPath, globalDir, outputDir, record)
-}
-
-func (m *metricsManager) acquireLedgerLock(lockPath string) (*os.File, error) {
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil && os.IsExist(err) {
-		if isStale(lockPath) {
-			if err := os.Remove(lockPath); err != nil {
-				log.Printf("Warning: Failed to remove stale lock %s: %v", lockPath, err)
-			}
-			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-		}
-	}
-	return lock, err
 }
 
 func (m *metricsManager) loadHistory(ctx context.Context, historyPath, globalDir string) []sessionCostRecord {

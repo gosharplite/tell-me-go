@@ -320,3 +320,31 @@ func TestGetPricing(t *testing.T) {
 		}
 	})
 }
+
+func TestProcessLogLine_SkipsSummaryLine(t *testing.T) {
+	t.Parallel()
+
+	pricing := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
+			"gpt-4": {Miss: 10.0, Comp: 30.0},
+		},
+	}
+
+	state := &parseState{}
+
+	// Construct a JSON line with is_summary=true and non-zero tokens.
+	summaryJSON := `{"model":"gpt-4","prompt_tokens":100,"response_tokens":50,"is_summary":true}`
+
+	err := processLogLine([]byte(summaryJSON), state, pricing, "gpt-4")
+	if err != nil {
+		t.Fatalf("processLogLine returned unexpected error: %v", err)
+	}
+
+	// The line should be skipped entirely — no accumulation.
+	if state.stats.PromptTokens != 0 {
+		t.Errorf("expected 0 prompt tokens (line skipped), got %d", state.stats.PromptTokens)
+	}
+	if state.totalCost != 0 {
+		t.Errorf("expected 0 total cost (line skipped), got %f", state.totalCost)
+	}
+}
