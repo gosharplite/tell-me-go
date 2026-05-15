@@ -4,12 +4,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/cli"
+
+	"go.opentelemetry.io/otel/sdk/resource"
 )
 
 func TestMain_Execution(t *testing.T) {
@@ -170,4 +177,203 @@ func TestBuildApp_Smoke(t *testing.T) {
 		t.Fatal("buildApp returned nil cleanup function")
 	}
 	defer cleanup()
+}
+
+func TestBuildApp_CleanupError(t *testing.T) {
+	// 1. Save and defer restoration of the tracer function
+	origTracer := initTracerFn
+	t.Cleanup(func() { initTracerFn = origTracer })
+
+	// 2. Inject a tracer that returns a shutdown which always fails
+	shutdownErr := errors.New("injected shutdown failure")
+	initTracerFn = func(ctx context.Context) func(context.Context) error {
+		return func(_ context.Context) error {
+			return shutdownErr
+		}
+	}
+
+	// 3. Capture stderr
+	var stderrBuf strings.Builder
+
+	// 4. Build the app (stderr is captured; env is isolated)
+	t.Setenv("TELL_ME_HOME", t.TempDir())
+	app, cleanup, err := buildApp("test-version", strings.NewReader(""), io.Discard, &stderrBuf)
+	if err != nil {
+		t.Fatalf("buildApp failed: %v", err)
+	}
+	if app == nil {
+		t.Fatal("buildApp returned nil app")
+	}
+	if cleanup == nil {
+		t.Fatal("buildApp returned nil cleanup function")
+	}
+
+	// 5. Invoke cleanup — this should trigger the error path
+	cleanup()
+
+	// 6. Assert the stderr output contains the expected error message
+	stderrOutput := stderrBuf.String()
+	if !strings.Contains(stderrOutput, "Error shutting down tracer") {
+		t.Errorf("expected stderr to contain 'Error shutting down tracer', got: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, shutdownErr.Error()) {
+		t.Errorf("expected stderr to contain %q, got: %q", shutdownErr.Error(), stderrOutput)
+	}
+}
+
+func TestRun_BuildError(t *testing.T) {
+	// 1. Save and defer restoration of buildApp function
+	origBuildApp := buildAppFn
+	t.Cleanup(func() { buildAppFn = origBuildApp })
+
+	// 2. Save and defer restoration of os.Args
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	// 3. Inject a buildApp that returns an error
+	buildErr := errors.New("injected build failure")
+	buildAppFn = func(_ string, _ io.Reader, _, _ io.Writer) (*cli.App, func(), error) {
+		return nil, nil, buildErr
+	}
+
+	// 4. Set safe args
+	os.Args = []string{"tell-me-go", "-v"}
+
+	// 5. Redirect stderr for capture
+	oldStderr := os.Stderr
+	t.Cleanup(func() { os.Stderr = oldStderr })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	os.Stderr = w
+
+	// 6. Call run()
+	exitCode := run()
+
+	// 7. Close writer and read captured stderr
+	if err := w.Close(); err != nil {
+		t.Logf("closing stderr pipe writer: %v", err)
+	}
+	var stderrBuf bytes.Buffer
+	_, _ = io.Copy(&stderrBuf, r)
+	stderrOutput := stderrBuf.String()
+
+	// 8. Assert exit code
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", exitCode)
+	}
+
+	// 9. Assert error message on stderr
+	if !strings.Contains(stderrOutput, "Error initializing application") {
+		t.Errorf("expected stderr to contain 'Error initializing application', got: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, buildErr.Error()) {
+		t.Errorf("expected stderr to contain %q, got: %q", buildErr.Error(), stderrOutput)
+	}
+}
+
+func TestBuildApp_GetwdError(t *testing.T) {
+	// This test is only safe on Linux.
+	// On other platforms, os.Chdir into a deleted directory has
+	// undefined behavior and may panic.
+	if runtime.GOOS != "linux" {
+		t.Skip("skipping os.Getwd failure test on non-Linux platform")
+	}
+
+	// 1. Save current working directory
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get current working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
+	})
+
+	// 2. Create a temp directory and chdir into it
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("failed to chdir into temp dir: %v", err)
+	}
+
+	// 3. Remove the directory we're currently in.
+	// On Linux, the kernel keeps the directory alive until we chdir out.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("failed to remove temp dir: %v", err)
+	}
+
+	// 4. Now os.Getwd() should fail.
+	// Verify the precondition:
+	if _, err := os.Getwd(); err == nil {
+		t.Skip("os.Getwd() succeeded after removing CWD; kernel may have cached the path")
+	}
+
+	// 5. buildApp must handle the Getwd error gracefully
+	t.Setenv("TELL_ME_HOME", oldWd)
+	app, cleanup, err := buildApp("test-version", strings.NewReader(""), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("buildApp failed: %v", err)
+	}
+	if app == nil {
+		t.Fatal("buildApp returned nil app despite Getwd error")
+	}
+	if cleanup == nil {
+		t.Fatal("buildApp returned nil cleanup function")
+	}
+	cleanup()
+}
+func TestInitTracer_ResourceError(t *testing.T) {
+	// 1. Save and defer restoration of the resource constructor
+	origResource := newResourceFn
+	t.Cleanup(func() { newResourceFn = origResource })
+
+	// 2. Inject a failing resource.New
+	resourceErr := errors.New("injected resource failure")
+	newResourceFn = func(_ context.Context, _ ...resource.Option) (*resource.Resource, error) {
+		return nil, resourceErr
+	}
+
+	// 3. Set a valid endpoint so we enter the resource creation path
+	t.Setenv("TELL_ME_TRACE_ENDPOINT", "http://localhost:4318")
+
+	// 4. Capture stderr
+	oldStderr := os.Stderr
+	t.Cleanup(func() { os.Stderr = oldStderr })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	os.Stderr = w
+
+	// 5. Call the REAL initTracer (not via initTracerFn) so the injected
+	//    newResourceFn is exercised through the actual error path.
+	shutdown := initTracer(context.Background())
+
+	// 6. Close writer and read captured stderr
+	if err := w.Close(); err != nil {
+		t.Logf("closing stderr pipe writer: %v", err)
+	}
+	var stderrBuf bytes.Buffer
+	_, _ = io.Copy(&stderrBuf, r)
+	stderrOutput := stderrBuf.String()
+
+	// 7. initTracer must return a non-nil shutdown even on error
+	if shutdown == nil {
+		t.Fatal("initTracer returned nil shutdown on resource error")
+	}
+
+	// 8. The fallback shutdown must not error (noop tracer)
+	if err := shutdown(context.Background()); err != nil {
+		t.Errorf("expected nil error from fallback shutdown, got %v", err)
+	}
+
+	// 9. Assert warning message on stderr
+	if !strings.Contains(stderrOutput, "Warning: failed to create OTel resource") {
+		t.Errorf("expected stderr to contain 'Warning: failed to create OTel resource', got: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, resourceErr.Error()) {
+		t.Errorf("expected stderr to contain %q, got: %q", resourceErr.Error(), stderrOutput)
+	}
 }
