@@ -4,6 +4,9 @@
 package ado
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -116,4 +119,91 @@ func TestNewLogFilterState(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStreamFunctions_ContextCancellation(t *testing.T) {
+	t.Run("streamTail - context cancelled", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := streamTail(ctx, strings.NewReader("a\nb\n"), 10, nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("streamPagination - context cancelled", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := streamPagination(ctx, strings.NewReader("a\nb\n"), 1, 10, nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("streamRegexFilter - context cancelled", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		opts := logFilterOptions{MaxLines: 100, ContextLines: 0}
+		_, err := streamRegexFilter(ctx, strings.NewReader("a\nb\n"), "a", opts, nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("streamTail - buffer overflow", func(t *testing.T) {
+		t.Parallel()
+		tooLong := strings.NewReader(strings.Repeat("A", 1<<20+1) + "\n")
+		_, err := streamTail(context.Background(), tooLong, 10, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log stream interrupted")
+	})
+
+	t.Run("streamPagination - buffer overflow", func(t *testing.T) {
+		t.Parallel()
+		tooLong := strings.NewReader(strings.Repeat("A", 1<<20+1) + "\n")
+		_, err := streamPagination(context.Background(), tooLong, 1, 10, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log stream interrupted")
+	})
+
+	t.Run("streamRegexFilter - buffer overflow", func(t *testing.T) {
+		t.Parallel()
+		tooLong := strings.NewReader(strings.Repeat("A", 1<<20+1) + "\n")
+		opts := logFilterOptions{MaxLines: 100, ContextLines: 0}
+		_, err := streamRegexFilter(context.Background(), tooLong, "A", opts, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log stream interrupted")
+	})
+}
+
+func TestStreamFunctions_EdgeCases(t *testing.T) {
+	t.Run("streamRegexFilter - invalid regex", func(t *testing.T) {
+		t.Parallel()
+		opts := logFilterOptions{MaxLines: 100, ContextLines: 0}
+		_, err := streamRegexFilter(context.Background(), strings.NewReader("data"), "[", opts, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid filter_query regex")
+	})
+
+	t.Run("streamTail - n is zero", func(t *testing.T) {
+		t.Parallel()
+		result, err := streamTail(context.Background(), strings.NewReader("data"), 0, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "", result.Content)
+	})
+
+	t.Run("streamTail - empty reader", func(t *testing.T) {
+		t.Parallel()
+		result, err := streamTail(context.Background(), strings.NewReader(""), 10, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "", result.Content)
+	})
+
+	t.Run("scanLog - processFn error", func(t *testing.T) {
+		t.Parallel()
+		expectedErr := fmt.Errorf("process error")
+		count, err := scanLog(context.Background(), strings.NewReader("line1\nline2\n"), nil, func(line string) (bool, error) {
+			return false, expectedErr
+		})
+		assert.Error(t, err)
+		assert.Equal(t, expectedErr, err)
+		assert.Equal(t, 1, count) // first line triggers error
+	})
 }
