@@ -158,6 +158,25 @@ func TestRegistry_Toolkits(t *testing.T) {
 		assert.True(t, tks["git"])
 		assert.True(t, tks["k8s"])
 	})
+
+	t.Run("GetDeclarationsByToolkits - core explicitly requested", func(t *testing.T) {
+		// Explicitly requesting "core" should not double-add core tools.
+		decls := r.GetDeclarationsByToolkits([]string{"core"})
+		assert.Len(t, decls, 1)
+		assert.Equal(t, "core1", decls[0].Name)
+
+		// Requesting "core" alongside "git" should still dedupe correctly.
+		decls = r.GetDeclarationsByToolkits([]string{"core", "git"})
+		assert.Len(t, decls, 3)
+
+		freq := make(map[string]int)
+		for _, d := range decls {
+			freq[d.Name]++
+		}
+		for name, count := range freq {
+			assert.Equal(t, 1, count, "tool %q appeared %d times; expected exactly once", name, count)
+		}
+	})
 }
 
 func TestRegistry_RegisterToToolkitWithOptions(t *testing.T) {
@@ -178,4 +197,147 @@ func TestRegistry_RegisterToToolkitWithOptions(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "git_serial should be in git toolkit")
+}
+
+func TestRegistry_GetOptions(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true}); err != nil {
+		t.Fatalf("failed to register serial_tool: %v", err)
+	}
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_tool"}, nil, registry.ToolOptions{LongRunning: true}); err != nil {
+		t.Fatalf("failed to register long_tool: %v", err)
+	}
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "both_tool"}, nil, registry.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		t.Fatalf("failed to register both_tool: %v", err)
+	}
+
+	t.Run("serial tool", func(t *testing.T) {
+		t.Parallel()
+		got := r.GetOptions("serial_tool")
+		if !got.Serial {
+			t.Errorf("expected serial_tool to have Serial=true, got %+v", got)
+		}
+	})
+
+	t.Run("long-running tool", func(t *testing.T) {
+		t.Parallel()
+		got := r.GetOptions("long_tool")
+		if !got.LongRunning {
+			t.Errorf("expected long_tool to have LongRunning=true, got %+v", got)
+		}
+	})
+
+	t.Run("tool with both options", func(t *testing.T) {
+		t.Parallel()
+		got := r.GetOptions("both_tool")
+		if !got.Serial {
+			t.Errorf("expected both_tool to have Serial=true, got %+v", got)
+		}
+		if !got.LongRunning {
+			t.Errorf("expected both_tool to have LongRunning=true, got %+v", got)
+		}
+	})
+
+	t.Run("nonexistent tool", func(t *testing.T) {
+		t.Parallel()
+		got := r.GetOptions("no_such_tool")
+		if got != (registry.ToolOptions{}) {
+			t.Errorf("expected zero-value ToolOptions for nonexistent tool, got %+v", got)
+		}
+	})
+
+	t.Run("empty name", func(t *testing.T) {
+		t.Parallel()
+		got := r.GetOptions("")
+		if got != (registry.ToolOptions{}) {
+			t.Errorf("expected zero-value ToolOptions for empty name, got %+v", got)
+		}
+	})
+}
+
+func TestRegistry_RegisterToToolkit_EmptyDefaultsToCore(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+
+	t.Run("RegisterToToolkit(\"\", def, handler) succeeds", func(t *testing.T) {
+		err := r.RegisterToToolkit("", &tools.ToolDeclaration{Name: "empty_tk_tool"}, nil)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		decls := r.GetCoreDeclarations()
+		found := false
+		for _, d := range decls {
+			if d.Name == "empty_tk_tool" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'empty_tk_tool' in core declarations")
+		}
+	})
+
+	t.Run("RegisterToToolkitWithOptions(\"\", def, handler, opts) also defaults to core", func(t *testing.T) {
+		err := r.RegisterToToolkitWithOptions("", &tools.ToolDeclaration{Name: "empty_tk_serial"}, nil, registry.ToolOptions{Serial: true})
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if !r.IsSerial("empty_tk_serial") {
+			t.Error("expected empty_tk_serial to be serial")
+		}
+
+		decls := r.GetCoreDeclarations()
+		found := false
+		for _, d := range decls {
+			if d.Name == "empty_tk_serial" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'empty_tk_serial' in core declarations")
+		}
+
+		toolkits := r.ListAvailableToolkits()
+		for _, tk := range toolkits {
+			if tk == "" {
+				t.Errorf("expected empty string not to appear in available toolkits, got: %v", toolkits)
+			}
+		}
+	})
+
+	t.Run("multiple empty-toolkit registrations all go to core", func(t *testing.T) {
+		for _, name := range []string{"multi1", "multi2", "multi3"} {
+			if err := r.RegisterToToolkit("", &tools.ToolDeclaration{Name: name}, nil); err != nil {
+				t.Fatalf("failed to register %s: %v", name, err)
+			}
+		}
+
+		decls := r.GetCoreDeclarations()
+		// Expect 5 total: empty_tk_tool + empty_tk_serial + multi1 + multi2 + multi3
+		if len(decls) != 5 {
+			t.Errorf("expected 5 declarations, got %d", len(decls))
+		}
+
+		names := make(map[string]bool)
+		for _, d := range decls {
+			names[d.Name] = true
+		}
+		for _, name := range []string{"multi1", "multi2", "multi3"} {
+			if !names[name] {
+				t.Errorf("expected %q in core declarations", name)
+			}
+		}
+
+		toolkits := r.ListAvailableToolkits()
+		for _, tk := range toolkits {
+			if tk == "" {
+				t.Errorf("expected empty string not to appear in available toolkits, got: %v", toolkits)
+			}
+		}
+	})
 }
