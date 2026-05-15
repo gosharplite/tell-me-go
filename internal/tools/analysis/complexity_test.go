@@ -220,7 +220,7 @@ func TestGatherComplexities_InvalidPath(t *testing.T) {
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	_, err := analyzer.GatherComplexities(context.Background(), "/nonexistent/path/that/does/not/exist", nil)
+	_, _, err := analyzer.GatherComplexities(context.Background(), "/nonexistent/path/that/does/not/exist", nil)
 	if err == nil {
 		t.Error("expected error for nonexistent path")
 	}
@@ -344,7 +344,7 @@ func TestGatherComplexities_WalkError(t *testing.T) {
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	_, err := analyzer.GatherComplexities(context.Background(), unreadableDir, nil)
+	_, _, err := analyzer.GatherComplexities(context.Background(), unreadableDir, nil)
 	if err == nil {
 		t.Error("expected permission error for unreadable directory")
 	}
@@ -367,7 +367,7 @@ func TestGatherComplexities_WithHeartbeat(t *testing.T) {
 	analyzer := newComplexityAnalyzer(cache, sp)
 
 	hb := make(chan struct{}, 10)
-	complexities, err := analyzer.GatherComplexities(context.Background(), tmpDir, hb)
+	complexities, _, err := analyzer.GatherComplexities(context.Background(), tmpDir, hb)
 	if err != nil {
 		t.Fatalf("GatherComplexities failed: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestGatherComplexities_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately, before GatherComplexities starts
 
-	_, err := analyzer.GatherComplexities(ctx, tmpDir, nil)
+	_, _, err := analyzer.GatherComplexities(ctx, tmpDir, nil)
 	require.Error(t, err)
 	// errgroup wraps context errors; check for context.Canceled
 	assert.True(t, errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context canceled"),
@@ -467,7 +467,7 @@ func TestGatherComplexities_ContextCancelledDuringProcessing(t *testing.T) {
 	}
 	ch := make(chan result, 1)
 	go func() {
-		c, e := analyzer.GatherComplexities(ctx, tmpDir, nil)
+		c, _, e := analyzer.GatherComplexities(ctx, tmpDir, nil)
 		ch <- result{complexities: c, err: e}
 	}()
 
