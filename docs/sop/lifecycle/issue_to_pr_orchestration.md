@@ -79,9 +79,29 @@ prompt for easy review.
 
 ---
 
+### 0. Issue Retrieval
+
+Once you have the issue number, fetch the full issue body:
+
+```bash
+gh issue view <number> --json title,body,state
+```
+
+Save the output — you will need the issue body for the Architect prompt
+(2a), the acceptance criteria checklist for cross-check (3e), and the
+title for the branch name (1).
+
+> If `gh issue view` fails (wrong number, no access), **stop** and
+> report the error to the user with `ask_user`. Do not proceed.
+
+---
+
 ### 1. Branch Creation
 
-Before any work begins, create a feature branch from `dev`:
+Before any work begins, create a feature branch from `dev`.
+
+Derive `<short-description>` from the issue title: lowercase,
+hyphenate, keep it under ~40 characters.
 
 ```bash
 git checkout dev
@@ -192,7 +212,13 @@ to the Architect (**no `--new`** — continues the same session):
 write_file → /tmp/tell-me-go-prompt.txt
 
 Prompt content:
-  "Begin. Output your first task."
+  "Begin. Output your first task.
+   Prefix every response with exactly one of:
+     TASK: <description>    — a new task for Coder
+     REVISION: <correction> — Coder's last output needs adjustment
+     DONE.                  — all tasks complete, no more work
+   The prefix must be the first word(s) of your response so the
+   Orchestrator can route it without parsing ambiguity."
 ```
 
 The dispatch rules (one task at a time, Coder has no memory, review
@@ -256,14 +282,18 @@ Retrieve the Architect's verdict:
 tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
 ```
 
-The Architect will respond with one of:
-- **Next task** — the Coder's output is accepted. Save the new task to
-  the prompt file and go to 3b.
-- **Revision** — the Coder's output needs adjustment. The Architect's
-  response **is** the corrected task. Save that text to the prompt file
-  and send to Coder (`--new`) as in 3b, then re-review via 3c.
-- **Completion** — all tasks done. Proceed to 3e (cross-check) before
+The Architect will respond with one of these prefixes:
+- **`TASK:`** — the Coder's output is accepted. The text after `TASK:`
+  is the next task. Save it to the prompt file and go to 3b.
+- **`REVISION:`** — the Coder's output needs adjustment. The text after
+  `REVISION:` **is** the corrected task. Save it to the prompt file and
+  send to Coder (`--new`) as in 3b, then re-review via 3c.
+- **`DONE.`** — all tasks complete. Proceed to 3e (cross-check) before
   entering Phase 3.
+
+If the Architect's response does **not** start with one of these
+prefixes, treat it as ambiguous — send a follow-up (no `--new`)
+asking the Architect to re-state with the correct prefix.
 
 #### 3d. Loop rules
 
@@ -351,22 +381,35 @@ go test -cover ./internal/cli/...
 
 ### 5. Phase 4 — PR Creation
 
-#### 5a. Pre-flight diff review
+#### 5a. Discover and review changed paths
 
+First, discover what changed:
+
+```bash
+git diff dev --name-only
+```
+
+Use this output as `<changed-paths>` for the commands below.
+
+Review the delta:
 ```bash
 git diff dev -- <changed-paths>
 ```
 
-Sanity-check the delta:
+Sanity-check:
 - Only intended files changed.
 - No hardcoded secrets, no unintended production code changes.
 - Test naming follows existing conventions.
 
 #### 5b. Stage and commit
 
+Derive `<scope>` from the primary package path affected (e.g.,
+`internal/cli/` → `cli`, `internal/handler/` → `handler`). If
+multiple packages are affected, use the most significant one.
+
 ```bash
 git add <changed-paths>
-git commit -m "fix(<scope>): close N error handling gaps (#<issue-number>)"
+git commit -m "fix(<scope>): <description> (#<issue-number>)"
 ```
 
 The commit message must follow the [Git Workflow](../standards/git_workflow.md) convention.
@@ -405,6 +448,7 @@ gh pr create \
 | `make check-full` fails | Failure output → Architect (no `--new`) for diagnosis; Architect issues fix task → Coder (`--new`) |
 | Coverage target not met | Remaining gaps → Architect for coverage plan → Coder (`--new`) for additional tests |
 | Coder times out or produces no output | Check `tell-me-go -t -c ${CODER_CONFIG} \| tail -5` for errors; re-send task with fresh `--new` session |
+| Architect times out or produces no output during Phase 2 dispatch | Check `tell-me-go -t -c ${ARCHITECT_CONFIG} \| tail -5` for errors; re-send the last prompt with same session (no `--new`); if it happens twice, restart Architect with `--new` and a summary of current state |
 | Same task fails 3 consecutive times | **Stop.** Escalate to user with `ask_user` — do not loop indefinitely |
 | Architect appears to have forgotten context | Check `tell-me-go -t -c ${ARCHITECT_CONFIG} \| tail -5` for token consumption; if >80% of model limit, summarize progress and restart Architect with `--new` |
 | Architect token count exceeds ~80% of model limit (proactive check) | Assess: if near completion → finish the current task then proceed to Phase 3; if mid-implementation → summarize state, restart Architect with `--new`, continue |
