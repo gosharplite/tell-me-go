@@ -59,12 +59,18 @@ Communication is **asynchronous and turn-based**. The Orchestrator is the hub �
 Execute the Issue-to-PR SOP.
 Ask me for the GitHub issue number if I haven't provided one.
 
-Find the Architect and Coder config files. They are YAML files
-co-located with this session's config directory. Use get_session_info
-to locate the config_dir, then list that directory for *.yaml files.
-If none are found there, fall back to the ARCHITECT_CONFIG and
-CODER_CONFIG environment variables — echo them and verify the paths
-exist before proceeding.
+Find the Architect and Coder config files. Try these paths, in order:
+
+  1. This session's config directory. Use get_session_info to locate
+     the config_dir, then list that directory for *.yaml files.
+
+  2. The toby.sh convention: echo $TELL_ME_HOME. If set, check
+     $TELL_ME_HOME/configs/ for architect.yaml and coder.yaml.
+
+  3. The ARCHITECT_CONFIG and CODER_CONFIG environment variables —
+     echo them and verify the paths exist before proceeding.
+
+Stop at the first path that yields both config files.
 
 When you call ask_user for the issue number, include the resolved
 config paths in the question so I can see and confirm them at a glance.
