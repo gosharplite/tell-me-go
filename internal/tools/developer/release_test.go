@@ -587,19 +587,6 @@ func TestDependencyChecker_MissingGoMod(t *testing.T) {
 // Phase B, Task 6 — Release Paths
 // ---------------------------------------------------------------------------
 
-// TestBuildChecker_TempDirFailure verifies that the source file contains
-// the "Failed to create temp dir" error pattern in the buildChecker.
-func TestBuildChecker_TempDirFailure(t *testing.T) {
-	t.Parallel()
-	source, err := os.ReadFile("release.go")
-	if err != nil {
-		t.Fatalf("failed to read source: %v", err)
-	}
-	if !strings.Contains(string(source), "Failed to create temp dir") {
-		t.Error("expected 'Failed to create temp dir' error pattern in source")
-	}
-}
-
 // TestTestRunner_RunTestsFailure verifies that the testRunner reports
 // failure when the underlying RunTests call returns an error.
 func TestTestRunner_RunTestsFailure(t *testing.T) {

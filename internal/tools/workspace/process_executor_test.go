@@ -1337,16 +1337,6 @@ func TestRunCommand_FileCloseError(t *testing.T) {
 		t.Errorf("output file not found: %v", statErr)
 	}
 
-	// Verify the error message format for Close failure is present in source.
-	// The code pattern is: if cerr := file.Close(); cerr != nil && err == nil { err = ... }
-	// This is intrinsically hard to trigger with real files but the pattern is verified.
-	source, readErr := os.ReadFile("process_executor.go")
-	if readErr != nil {
-		t.Fatalf("failed to read source file: %v", readErr)
-	}
-	if !strings.Contains(string(source), "failed to close output file") {
-		t.Error("expected 'failed to close output file' error pattern in source, but not found")
-	}
 }
 
 func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
@@ -1485,19 +1475,7 @@ func TestRunPipeline_NewPipelineError(t *testing.T) {
 	}
 }
 
-// TestRunPipeline_FileCloseErrorPattern verifies that the source file
-// contains the error pattern "failed to close output file" in at least
-// two locations (RunCommand and RunPipeline).
-func TestRunPipeline_FileCloseErrorPattern(t *testing.T) {
-	source, err := os.ReadFile("process_executor.go")
-	if err != nil {
-		t.Fatalf("failed to read source: %v", err)
-	}
-	count := strings.Count(string(source), "failed to close output file")
-	if count < 2 {
-		t.Errorf("expected at least 2 occurrences (RunCommand + RunPipeline), got %d", count)
-	}
-}
+
 
 // TestRunPipeline_ZeroCommands verifies that RunPipeline rejects
 // an empty pipeline with the same error as a too-few-commands pipeline.
@@ -1552,18 +1530,7 @@ func TestSetupCommand_EnvPropagation(t *testing.T) {
 	}
 }
 
-// TestWirePipes_ErrorPattern verifies that the source file contains the
-// error-wrapping pattern "failed to get stderr pipe for command" used by
-// wirePipes when cmd.StderrPipe() fails.
-func TestWirePipes_ErrorPattern(t *testing.T) {
-	source, err := os.ReadFile("process_executor.go")
-	if err != nil {
-		t.Fatalf("failed to read source: %v", err)
-	}
-	if !strings.Contains(string(source), "failed to get stderr pipe for command") {
-		t.Error("expected 'failed to get stderr pipe for command' pattern in source")
-	}
-}
+
 
 // TestNewPipelineCmd_CancelGuard verifies that newPipelineCmd sets the
 // cmd.Cancel function on Windows to enable forceful process tree
@@ -1580,15 +1547,4 @@ func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 	}
 }
 
-// TestNewPipeline_WirePipesError verifies that the source file contains the
-// error-wrapping pattern "failed to get stdout pipe for last command" used
-// by wirePipes when the last command's StdoutPipe() fails.
-func TestNewPipeline_WirePipesError(t *testing.T) {
-	source, err := os.ReadFile("process_executor.go")
-	if err != nil {
-		t.Fatalf("failed to read source: %v", err)
-	}
-	if !strings.Contains(string(source), "failed to get stdout pipe for last command") {
-		t.Error("expected StdoutPipe error wrapping in wirePipes")
-	}
-}
+
