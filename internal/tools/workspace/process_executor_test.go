@@ -1475,8 +1475,6 @@ func TestRunPipeline_NewPipelineError(t *testing.T) {
 	}
 }
 
-
-
 // TestRunPipeline_ZeroCommands verifies that RunPipeline rejects
 // an empty pipeline with the same error as a too-few-commands pipeline.
 func TestRunPipeline_ZeroCommands(t *testing.T) {
@@ -1530,8 +1528,6 @@ func TestSetupCommand_EnvPropagation(t *testing.T) {
 	}
 }
 
-
-
 // TestNewPipelineCmd_CancelGuard verifies that newPipelineCmd sets the
 // cmd.Cancel function on Windows to enable forceful process tree
 // termination via taskkill.
@@ -1546,5 +1542,3 @@ func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 		t.Error("expected cmd.Cancel to be set on Windows")
 	}
 }
-
-
