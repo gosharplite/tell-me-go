@@ -647,6 +647,8 @@ func TestIsDeclEqual(t *testing.T) {
 			t.Errorf("expected error to contain 'format', got: %v", err)
 		}
 	})
+
+
 }
 
 func TestGetValidEntry_NonExistent(t *testing.T) {

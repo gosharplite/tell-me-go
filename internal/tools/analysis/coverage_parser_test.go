@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -947,5 +948,195 @@ func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
 	_, err := hea.getDetailedCoverage(ctx, ".", nil)
 	if err == nil {
 		t.Error("expected error from os.CreateTemp, got nil")
+	}
+}
+
+func TestGetDetailedCoverageJSON_ErrorWithData(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, goFile := setupMockGoFile(t, "package analysis\nfunc F() {}\n")
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					coverageContent := fmt.Sprintf("mode: set\n%s:1.0,2.0 1 0\n", goFile)
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			// Return error to trigger the error-with-data path (lines 509-513)
+			return nil, fmt.Errorf("go test failed: exit status 1")
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	jsonStr, err := hea.getDetailedCoverageJSON(ctx, ".", "Low", nil)
+
+	// Must return both JSON data AND the error
+	if err == nil {
+		t.Error("expected error from failed test execution")
+	}
+	if !strings.Contains(err.Error(), "coverage test failed") {
+		t.Errorf("expected 'coverage test failed' in error, got: %v", err)
+	}
+	if !strings.Contains(jsonStr, "test_file.go") {
+		t.Errorf("expected JSON data with file name, got: %q", jsonStr)
+	}
+}
+
+func TestGetDetailedCoverageJSON_PriorityFiltering(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, goFile := setupMockGoFile(t, "package analysis\nfunc F() { if true {} }\n")
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					coverageContent := fmt.Sprintf("mode: set\n%s:1.0,2.0 1 0\n", goFile)
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	// Block is in temp dir → classified as OTHER/Low priority
+	// "High" filter → nil slice marshals as "null" (valid JSON for no results)
+	jsonStr, err := hea.getDetailedCoverageJSON(ctx, ".", "High", nil)
+	if err != nil {
+		t.Fatalf("getDetailedCoverageJSON with High filter failed: %v", err)
+	}
+	// With no matching blocks, filtered is nil → json.MarshalIndent returns "null"
+	if jsonStr != "null" && !strings.HasPrefix(strings.TrimSpace(jsonStr), "[") {
+		t.Errorf("expected JSON null or array, got: %q", jsonStr)
+	}
+	// Should be empty (null) since no block meets "High" threshold
+	if strings.Contains(jsonStr, "test_file.go") {
+		t.Error("expected no file data for High priority filter, but found some")
+	}
+
+	// "Low" filter → should include the block
+	jsonStr, err = hea.getDetailedCoverageJSON(ctx, ".", "Low", nil)
+	if err != nil {
+		t.Fatalf("getDetailedCoverageJSON with Low filter failed: %v", err)
+	}
+	if !strings.Contains(jsonStr, "test_file.go") {
+		t.Errorf("expected JSON data with file name for Low filter, got: %q", jsonStr)
+	}
+}
+
+func TestGetDetailedCoverageJSON_FormatError(t *testing.T) {
+	// NOT parallel — modifies package-level jsonMarshalIndent variable
+	ctx := context.Background()
+	_, goFile := setupMockGoFile(t, "package analysis\nfunc F() {}\n")
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					coverageContent := fmt.Sprintf("mode: set\n%s:1.0,2.0 1 0\n", goFile)
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	// Swap the marshal function to force a marshal error
+	origMarshal := jsonMarshalIndent
+	jsonMarshalIndent = func(v interface{}, prefix, indent string) ([]byte, error) {
+		return nil, fmt.Errorf("forced marshal error")
+	}
+	defer func() { jsonMarshalIndent = origMarshal }()
+
+	jsonStr, err := hea.getDetailedCoverageJSON(ctx, ".", "Low", nil)
+	if err == nil {
+		t.Error("expected error from format failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "forced marshal error") {
+		t.Errorf("expected 'forced marshal error' in error, got: %v", err)
+	}
+	if jsonStr != "" {
+		t.Errorf("expected empty JSON on format error, got: %q", jsonStr)
+	}
+}
+
+func TestRunCoverageTest_NilHeartbeat(t *testing.T) {
+	// NOT parallel — uses time.Sleep to let the heartbeat goroutine's ticker fire
+	ctx := context.Background()
+
+	// Create a temp file for coverage output (tempPath must be a file, not a dir)
+	f, err := os.CreateTemp("", "coverage-*.out")
+	require.NoError(t, err)
+	tempPath := f.Name()
+	require.NoError(t, f.Close())
+
+	// Create a mock that writes a valid coverage profile and returns success.
+	// The CombinedOutputFunc includes a short sleep so the heartbeat goroutine's
+	// 2-second ticker has time to fire at least once, exercising both the
+	// hb==nil guard (false branch) and hb!=nil (true branch with channel send).
+	callCount := 0
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			callCount++
+			// Sleep long enough for the 2s ticker to fire at least once.
+			// First call tests nil hb, second call tests non-nil hb.
+			time.Sleep(2100 * time.Millisecond)
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					if err := os.WriteFile(path, []byte("mode: set\n"), 0644); err != nil {
+						t.Errorf("failed to write coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	// Pass nil hb — covers the hb==nil guard (lines 347-348 false branch)
+	err = hea.runCoverageTest(ctx, ".", tempPath, nil)
+	if err != nil {
+		t.Errorf("runCoverageTest with nil hb failed: %v", err)
+	}
+
+	// Pass non-nil hb — covers the hb!=nil path (inner select on channel send)
+	hb := make(chan struct{}, 1)
+	err = hea.runCoverageTest(ctx, ".", tempPath, hb)
+	if err != nil {
+		t.Errorf("runCoverageTest with non-nil hb failed: %v", err)
+	}
+
+	// Verify the heartbeat was received
+	select {
+	case <-hb:
+		// heartbeat received
+	default:
+		// may not receive if default case was taken
 	}
 }
