@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -561,5 +562,79 @@ func TestGetCostSummary_GroupByDateModel(t *testing.T) {
 	expected3 := "| 2023-10-26 | gemini-1.5-pro | 1500 | 500 | 400 | 25.0% | $2.0000 |"
 	if !strings.Contains(summary, expected3) {
 		t.Errorf("summary missing expected row: %s", expected3)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ensureLedgerReady extended tests (Phase 6)
+// ---------------------------------------------------------------------------
+
+func TestEnsureLedgerReady_RecoveryInProgress(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	// Need an outputDir structure so ensureLedgerReady can compute paths.
+	outputDir := filepath.Join(tempDir, "mode")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	historyPath := filepath.Join(tempDir, "global_costs.json")
+	// Pre-create a valid ledger so we don't hit the "missing" branch first.
+	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate recovery in progress.
+	recoveryInProgress.Store(historyPath, true)
+	t.Cleanup(func() { recoveryInProgress.Delete(historyPath) })
+
+	m := &metricsManager{
+		logFile: filepath.Join(outputDir, "tokens.log"),
+	}
+	_, status, err := m.ensureLedgerReady(context.Background(), historyPath, tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status == "" {
+		t.Fatal("expected non-empty status when recovery is in progress")
+	}
+	if !strings.Contains(status, "recovery is currently in progress") {
+		t.Errorf("unexpected status: %s", status)
+	}
+}
+
+func TestEnsureLedgerReady_ReadFileError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows: os.Chmod(0000) does not prevent reading for the owner.")
+	}
+	// NOT parallel — chmod cleanup sensitive.
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "mode")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	historyPath := filepath.Join(tempDir, "global_costs.json")
+	// Create file with mode 0000 so os.ReadFile fails with permission denied.
+	if err := os.WriteFile(historyPath, []byte("valid json"), 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(historyPath, 0644) })
+
+	m := &metricsManager{
+		logFile: filepath.Join(outputDir, "tokens.log"),
+	}
+	_, status, err := m.ensureLedgerReady(context.Background(), historyPath, tempDir)
+
+	// Should not error — the function catches ReadFile errors and returns a status.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status == "" {
+		t.Fatal("expected non-empty status for unreadable ledger file")
+	}
+	if !strings.Contains(status, "No cost history found") {
+		t.Errorf("unexpected status: %s", status)
 	}
 }
