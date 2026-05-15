@@ -827,6 +827,13 @@ func TestFormatExecutionResult(t *testing.T) {
 			truncate:   0,
 			wantSubstr: strings.Repeat("a", 200),
 		},
+		{
+			name:       "Error with single char output",
+			toolName:   "TestRunner",
+			out:        []byte("X"),
+			execErr:    errors.New("fail"),
+			wantSubstr: "TestRunner failed or found issues:\nX",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1009,4 +1016,211 @@ func TestRunTests_Timeout(t *testing.T) {
 	// formatExecutionResult will catch the context error
 	assert.NoError(t, err)
 	assert.Contains(t, res.Text, "context deadline exceeded")
+}
+
+func TestRunTests_FormatExecutionError_NonContext(t *testing.T) {
+	t.Parallel()
+	m, executor, _ := setupDevManager(t)
+
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("exec format error")
+	}
+
+	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
+	if err == nil {
+		t.Fatal("expected error from formatExecutionResult when output is empty and error is non-context")
+	}
+	if !strings.Contains(err.Error(), "execution failed") {
+		t.Errorf("expected 'execution failed' in error, got: %v", err)
+	}
+}
+
+func TestRunTests_EmptyCommand(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+
+	_, err := m.runTests(context.Background(), map[string]interface{}{}, nil)
+	if err == nil {
+		t.Fatal("expected error for empty command")
+	}
+	if !strings.Contains(err.Error(), "command argument is required") {
+		t.Errorf("expected 'command argument is required', got: %v", err)
+	}
+}
+
+func TestRunTests_UnmarshalError(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+
+	_, err := m.runTests(context.Background(), map[string]interface{}{"command": 123}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+func TestCheckVulnerabilities_GovulncheckError(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+
+	m.runner.(*mockGoRunner).checkGovulncheckFunc = func(ctx context.Context) error {
+		return fmt.Errorf("govulncheck internal error")
+	}
+
+	_, err := m.checkVulnerabilities(context.Background(), nil, nil)
+	if err == nil {
+		t.Fatal("expected error from CheckGovulncheck failure")
+	}
+	if !strings.Contains(err.Error(), "govulncheck internal error") {
+		t.Errorf("expected 'govulncheck internal error' in error, got: %v", err)
+	}
+}
+
+func TestGoTidy_ModTidySuccessFormatFail(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	runner := m.runner.(*mockGoRunner)
+
+	runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
+		return []byte("tidy output"), nil
+	}
+	runner.formatCodeFunc = func(ctx context.Context, path string) ([]byte, error) {
+		return nil, fmt.Errorf("format failure")
+	}
+
+	_, err := m.goTidy(context.Background(), nil, nil)
+	if err == nil {
+		t.Fatal("expected Go error when FormatCode fails with nil output")
+	}
+	if !strings.Contains(err.Error(), "Go mod tidy/fmt execution failed") {
+		t.Errorf("expected 'Go mod tidy/fmt execution failed' in error, got: %v", err)
+	}
+}
+
+func TestGoTidy_ModTidyFailsEmptyOutput(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	runner := m.runner.(*mockGoRunner)
+
+	runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
+		return nil, fmt.Errorf("mod tidy crash")
+	}
+
+	_, err := m.goTidy(context.Background(), nil, nil)
+	if err == nil {
+		t.Fatal("expected Go error when RunModTidy fails with nil output")
+	}
+	if !strings.Contains(err.Error(), "Go mod tidy/fmt execution failed") {
+		t.Errorf("expected 'Go mod tidy/fmt execution failed' in error, got: %v", err)
+	}
+}
+
+func TestRunTests_ValidateStructureError(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	m.validator.(*toolstest.MockCommandValidator).ValidateStructureFunc = func(parts []string) error {
+		return fmt.Errorf("forbidden shell operator")
+	}
+
+	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
+	if err == nil {
+		t.Fatal("expected error from ValidateStructure failure")
+	}
+	if !strings.Contains(err.Error(), "forbidden shell operator") {
+		t.Errorf("expected 'forbidden shell operator' in error, got: %v", err)
+	}
+}
+
+func TestGetCoverage_UnmarshalError(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	_, err := m.getCoverage(context.Background(), map[string]interface{}{"path": 123}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+func TestRunBenchmark_UnmarshalError(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	_, err := m.runBenchmark(context.Background(), map[string]interface{}{"bench": 123}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+func TestRunBenchmark_FormatExecutionResult_NoError(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	runner := m.runner.(*mockGoRunner)
+	runner.runBenchmarksFunc = func(ctx context.Context, path string, benchRegex string) (string, error) {
+		return "bench results", nil
+	}
+
+	res, err := m.runBenchmark(context.Background(), map[string]interface{}{
+		"path":  "./...",
+		"bench": "BenchmarkFoo",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Error != nil {
+		t.Errorf("unexpected res.Error: %v", res.Error)
+	}
+	if !strings.Contains(res.Text, "bench results") {
+		t.Errorf("expected 'bench results' in Text, got: %q", res.Text)
+	}
+}
+
+func TestGetCoverage_AuthorizationError(t *testing.T) {
+	t.Parallel()
+	m, _, sm := setupDevManager(t)
+	sm.AllowAll = false
+	sm.AuthorizeFunc = func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+		return false, fmt.Errorf("auth backend timeout")
+	}
+
+	_, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "./..."}, nil)
+	if err == nil {
+		t.Fatal("expected error from authorization failure")
+	}
+	if !strings.Contains(err.Error(), "auth backend timeout") {
+		t.Errorf("expected 'auth backend timeout' in error, got: %v", err)
+	}
+}
+
+func TestRunBenchmark_AuthorizationError(t *testing.T) {
+	t.Parallel()
+	m, _, sm := setupDevManager(t)
+	sm.AllowAll = false
+	sm.AuthorizeFunc = func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+		return false, fmt.Errorf("auth backend timeout")
+	}
+
+	_, err := m.runBenchmark(context.Background(), map[string]interface{}{
+		"path":  "./...",
+		"bench": ".",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error from authorization failure")
+	}
+	if !strings.Contains(err.Error(), "auth backend timeout") {
+		t.Errorf("expected 'auth backend timeout' in error, got: %v", err)
+	}
+}
+
+func TestRunLinter_AuthorizationError(t *testing.T) {
+	t.Parallel()
+	m, _, sm := setupDevManager(t)
+	sm.AllowAll = false
+	sm.AuthorizeFunc = func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+		return false, fmt.Errorf("auth backend timeout")
+	}
+
+	_, err := m.runLinter(context.Background(), nil, nil)
+	if err == nil {
+		t.Fatal("expected error from authorization failure")
+	}
+	if !strings.Contains(err.Error(), "auth backend timeout") {
+		t.Errorf("expected 'auth backend timeout' in error, got: %v", err)
+	}
 }
