@@ -172,7 +172,7 @@ func (m *rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFileChangedMsg(msg)
 	case watcherErrorMsg:
 		m.err = msg.err
-		return m, m.watchHistoryFileCmd()
+		return m, nil
 	}
 
 	return m.handleViewportUpdate(msg)

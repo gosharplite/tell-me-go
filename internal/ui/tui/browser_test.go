@@ -1358,8 +1358,8 @@ func TestWatcherErrorMsg_Handling(t *testing.T) {
 	if updated.err == nil || updated.err.Error() != "watcher failed" {
 		t.Errorf("expected err='watcher failed', got %v", updated.err)
 	}
-	if cmd == nil {
-		t.Error("expected non-nil cmd from watcherErrorMsg handling")
+	if cmd != nil {
+		t.Error("expected nil cmd from watcherErrorMsg handling to prevent hot loop")
 	}
 
 	// Verify View() renders the error
