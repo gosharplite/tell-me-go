@@ -460,3 +460,73 @@ func TestGitCommit_GenericError(t *testing.T) {
 		t.Errorf("expected 'git commit failed' in error, got: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Direct invocation unmarshal error tests (Phase A, Task 2)
+// ---------------------------------------------------------------------------
+
+func TestGitDiff_DirectInvocation_UnmarshalError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	m := &gitManager{sm: sm, Exec: &mockGitExecutor{}}
+	ctx := context.Background()
+
+	// Pass "staged" as a non-bool value to trigger UnmarshalArgs failure
+	_, err := m.getGitDiff(ctx, map[string]interface{}{"staged": "not_a_bool"}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+func TestGitLog_DirectInvocation_UnmarshalError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	m := &gitManager{sm: sm, Exec: &mockGitExecutor{}}
+	ctx := context.Background()
+
+	// Pass "limit" as a non-int value to trigger UnmarshalArgs failure
+	_, err := m.getGitLog(ctx, map[string]interface{}{"limit": "not_a_number"}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+func TestGitShow_DirectInvocation_UnmarshalError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	executor := &mockGitExecutor{
+		handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("ok"), nil
+		},
+	}
+	m := &gitManager{sm: sm, Exec: executor}
+	ctx := context.Background()
+
+	// Pass hash as an int to trigger UnmarshalArgs failure
+	_, err := m.getGitCommit(ctx, map[string]interface{}{"hash": 123}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+func TestGitBlame_DirectInvocation_UnmarshalError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	m := &gitManager{sm: sm, Exec: &mockGitExecutor{}}
+	ctx := context.Background()
+
+	// Pass filepath as an int to trigger UnmarshalArgs failure
+	_, err := m.getGitBlame(ctx, map[string]interface{}{"filepath": 123}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+// TestGitCommit_DirectInvocation_UnmarshalError verifies that passing a
+// non-string "message" triggers an UnmarshalArgs failure in gitCommit,
+// exercising the error path for malformed arguments.
+func TestGitCommit_DirectInvocation_UnmarshalError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	m := &gitManager{sm: sm, Exec: &mockGitExecutor{}}
+	ctx := context.Background()
+	_, err := m.gitCommit(ctx, map[string]interface{}{"message": 123, "reason": "test"}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}

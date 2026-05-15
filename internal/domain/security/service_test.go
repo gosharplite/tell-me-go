@@ -172,3 +172,71 @@ func TestSafetyService_IsSafeGoSubcommand(t *testing.T) {
 		})
 	}
 }
+
+func TestSafetyService_IsSafeGhSubcommand(t *testing.T) {
+	t.Parallel()
+	s := NewSafetyService(DefaultPolicy())
+	tests := []struct {
+		name string
+		sub  string
+		want bool
+	}{
+		{"auth", "auth", true},
+		{"pr", "pr", true},
+		{"push", "push", false},
+		{"unknown-subcommand", "unknown-subcommand", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := s.IsSafeGhSubcommand(tt.sub); got != tt.want {
+				t.Errorf("IsSafeGhSubcommand(%q) = %v, want %v", tt.sub, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("all_default_safe_subcommands", func(t *testing.T) {
+		t.Parallel()
+		for k := range DefaultPolicy().SafeGhSubcommands {
+			if !s.IsSafeGhSubcommand(k) {
+				t.Errorf("IsSafeGhSubcommand(%q) = false, want true", k)
+			}
+		}
+	})
+}
+
+func TestSafetyService_IsSafeAzSubcommand(t *testing.T) {
+	t.Parallel()
+	s := NewSafetyService(DefaultPolicy())
+	tests := []struct {
+		name string
+		sub  string
+		want bool
+	}{
+		{"devops", "devops", true},
+		{"account", "account", true},
+		{"vm", "vm", false},
+		{"unknown-subcommand", "unknown-subcommand", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := s.IsSafeAzSubcommand(tt.sub); got != tt.want {
+				t.Errorf("IsSafeAzSubcommand(%q) = %v, want %v", tt.sub, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("all_default_safe_subcommands", func(t *testing.T) {
+		t.Parallel()
+		for k := range DefaultPolicy().SafeAzSubcommands {
+			if !s.IsSafeAzSubcommand(k) {
+				t.Errorf("IsSafeAzSubcommand(%q) = false, want true", k)
+			}
+		}
+	})
+}

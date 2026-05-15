@@ -435,3 +435,15 @@ func TestPersistenceTools_Register_ErrorPaths(t *testing.T) {
 		}
 	})
 }
+
+// TestManageTasks_UnmarshalError verifies that passing a non-string "action"
+// triggers an UnmarshalArgs failure in ManageTasks, exercising the error path
+// at line 111-113 in persistence_tools.go.
+func TestManageTasks_UnmarshalError(t *testing.T) {
+	pt, _ := setupPersistenceTools()
+	ctx := context.Background()
+	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": 123}, nil)
+	if err == nil {
+		t.Fatal("expected error from unmarshal args")
+	}
+}

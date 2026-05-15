@@ -935,6 +935,10 @@ func TestValidateProfile_MissingFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "coverage profile was not generated")
 }
 
+// NOTE: The os.Open error path in getDetailedCoverage (L395-397) is
+// untestable in unit tests — the temp file is created immediately before
+// opening with no injection point. The error wrapping is correct by
+// inspection. Covered indirectly by integration/OS-level tests.
 func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
 	ctx := context.Background()
 	mock := &mockExecutor{}
@@ -987,6 +991,46 @@ func TestGetDetailedCoverageJSON_ErrorWithData(t *testing.T) {
 	}
 	if !strings.Contains(jsonStr, "test_file.go") {
 		t.Errorf("expected JSON data with file name, got: %q", jsonStr)
+	}
+}
+
+func TestGetDetailedCoverageReport_ErrorWithData(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, goFile := setupMockGoFile(t, "package analysis\nfunc F() {}\n")
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					coverageContent := fmt.Sprintf("mode: set\n%s:1.0,2.0 1 0\n", goFile)
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			// Return error to trigger the warning-prepend path
+			return nil, fmt.Errorf("go test failed: exit status 1")
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	report, err := hea.getDetailedCoverageReport(ctx, ".", nil)
+	// Should return BOTH report content AND nil error (error is embedded in report)
+	if err != nil {
+		t.Errorf("expected nil error (warning in report), got: %v", err)
+	}
+	// Report must contain the warning
+	if !strings.Contains(report, "⚠️ WARNING: test execution failed") {
+		t.Errorf("expected warning in report, got: %q", report)
+	}
+	// Report must also contain the coverage data
+	if !strings.Contains(report, "Detailed Coverage Report") {
+		t.Errorf("expected coverage data in report, got: %q", report)
 	}
 }
 

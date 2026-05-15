@@ -6,6 +6,7 @@ package ado
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,6 +80,80 @@ func TestAdoManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAdoManager_ConfirmationErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	t.Run("createPipeline - confirmation error", func(t *testing.T) {
+		t.Parallel()
+		// Server returns pipelines list (so checkPipelineExists succeeds with no match)
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"other"}]}`))
+		}))
+		t.Cleanup(ts.Close)
+
+		sm := &toolstest.MockSecurityManager{
+			ConfirmFunc: func(ctx context.Context, msg string) (bool, error) {
+				return false, fmt.Errorf("confirm I/O failure")
+			},
+		}
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+
+		args := map[string]interface{}{
+			"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
+		}
+		_, err := m.createPipeline(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "confirmation error")
+	})
+
+	t.Run("runPipeline - confirmation error", func(t *testing.T) {
+		t.Parallel()
+		sm := &toolstest.MockSecurityManager{
+			ConfirmFunc: func(ctx context.Context, msg string) (bool, error) {
+				return false, fmt.Errorf("confirm I/O failure")
+			},
+		}
+		m := NewADOManager(sm, WithToken("test-pat"))
+
+		args := map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": 1,
+		}
+		_, err := m.runPipeline(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "confirmation error")
+	})
+
+	t.Run("UpdateBuildDefinitionVariables - confirmation error", func(t *testing.T) {
+		t.Parallel()
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// GET returns valid definition
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":1,"variables":{}}`))
+		}))
+		t.Cleanup(ts.Close)
+
+		sm := &toolstest.MockSecurityManager{
+			ConfirmFunc: func(ctx context.Context, msg string) (bool, error) {
+				return false, fmt.Errorf("confirm I/O failure")
+			},
+		}
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"definition_id": 1,
+			"variables": map[string]interface{}{
+				"TEST": map[string]interface{}{"value": "val"},
+			},
+		}
+		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "confirmation error")
+	})
 }
 
 func TestAdoManager_ExecuteRequest_NetworkError(t *testing.T) {
@@ -190,6 +265,19 @@ func TestAdoManager_ResolvePipelineID_Errors(t *testing.T) {
 		_, err := m.resolvePipelineID(context.Background(), "org", "proj", "missing")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("Fetch Pipelines - JSON Decode Error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{invalid json`))
+		}))
+		t.Cleanup(ts.Close)
+
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		_, err := m.resolvePipelineID(context.Background(), "org", "proj", "name")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
 	})
 }
 
@@ -668,4 +756,182 @@ func TestBuildVariablesUpdatePayload_NonMapVariables(t *testing.T) {
 	vars, ok := result["variables"].(map[string]interface{})
 	assert.True(t, ok, "variables should be a map after buildVariablesUpdatePayload")
 	assert.Contains(t, vars, "MY_VAR")
+}
+
+func TestAdoManager_UnmarshalArgsErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	t.Run("ListPipelineRuns - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, _, err := m.ListPipelineRuns(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": "not-an-int",
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing list pipeline runs args")
+	})
+
+	t.Run("GetPipelineRun - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, err := m.GetPipelineRun(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": "not-an-int", "run_id": 1,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing get pipeline run args")
+	})
+
+	t.Run("getPipelineLogContent - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, err := m.getPipelineLogContent(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": "not-an-int", "run_id": 1, "log_id": 1,
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing get pipeline log content args")
+	})
+}
+
+func TestAdoManager_RepositoryTools_Errors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	t.Run("adoGetFileContent - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(sm, WithToken("test-pat"))
+		_, err := m.adoGetFileContent(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": "r", "path": 123, // should be string
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing get file content args")
+	})
+
+	t.Run("adoGetFileContent - build URL error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(sm, WithBaseURL("http://x\ny"), WithToken("test-pat"))
+		_, err := m.adoGetFileContent(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": "r", "path": "/f",
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse base URL")
+	})
+
+	t.Run("AdoListRepositoryItems - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(sm, WithToken("test-pat"))
+		_, err := m.AdoListRepositoryItems(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": 456, // should be string
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing list repository items args")
+	})
+
+	t.Run("AdoListRepositoryItems - build URL error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(sm, WithBaseURL("http://x\ny"), WithToken("test-pat"))
+		_, err := m.AdoListRepositoryItems(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": "r",
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "building list repository items URL")
+	})
+}
+
+func TestAdoManager_PipelineInfra_Errors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	// Gap 1: GetPipelineDefinition — tools.UnmarshalArgs fails when pipeline_id is not an int.
+	// No HTTP server required; the error surfaces before any network call.
+	t.Run("GetPipelineDefinition - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, err := m.GetPipelineDefinition(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": "not-an-int",
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing get pipeline definition args")
+	})
+
+	// Gap 2: getBuildChanges — buildGetBuildChangesURL fails when url.Parse rejects a
+	// BaseURL containing a newline control character. No HTTP server required.
+	t.Run("getBuildChanges - build URL error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithBaseURL("http://x\ny"), WithToken("test-pat"))
+		_, err := m.getBuildChanges(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "build_id": 1,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse base URL")
+	})
+
+	// Gap 3: ListPipelineRuns — when pipeline_name is provided but no pipeline matches,
+	// resolvePipelineID returns "pipeline with name 'X' not found".
+	t.Run("ListPipelineRuns - resolvePipelineID error", func(t *testing.T) {
+		t.Parallel()
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"other-pipeline"}]}`))
+		}))
+		t.Cleanup(ts.Close)
+
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		_, _, err := m.ListPipelineRuns(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_name": "nonexistent",
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "resolving pipeline ID")
+	})
+
+	// Gap 4: GetBuildTimeline — tools.UnmarshalArgs fails when build_id is not an int.
+	// No HTTP server required.
+	t.Run("GetBuildTimeline - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, err := m.GetBuildTimeline(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "build_id": "not-an-int",
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing get build timeline args")
+	})
+}
+
+func TestAdoManager_FinalErrorPaths(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	// Gap 1: GetPipelineRun — validation error when run_id is missing/zero.
+	// No HTTP server needed; fails before any network call.
+	t.Run("GetPipelineRun - missing run_id", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, err := m.GetPipelineRun(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": 1,
+			// run_id intentionally omitted — defaults to 0
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "run_id are required")
+	})
+
+	// Gap 2: ListPipelineLogs — tools.UnmarshalArgs fails on type mismatch.
+	// No HTTP server needed; fails before any network call.
+	t.Run("ListPipelineLogs - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, _, err := m.ListPipelineLogs(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": "not-an-int", "run_id": 1,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing list pipeline logs args")
+	})
+
+	// Gap 3: AdoGetPrStatuses — tools.UnmarshalArgs fails on type mismatch.
+	// No HTTP server needed; fails before any network call.
+	t.Run("AdoGetPrStatuses - unmarshal error", func(t *testing.T) {
+		t.Parallel()
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, err := m.AdoGetPrStatuses(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": "r", "pull_request_id": "not-an-int",
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing get pr statuses args")
+	})
 }

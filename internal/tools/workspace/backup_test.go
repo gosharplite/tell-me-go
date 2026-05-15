@@ -388,3 +388,55 @@ func TestUndo_NExceedingSnapshotCount(t *testing.T) {
 		t.Errorf("expected 'No snapshots available', got %q", res)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// undo N normalization tests (Phase A, Task 2)
+// ---------------------------------------------------------------------------
+
+func TestUndo_NZeroNormalized(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
+
+	// n=0 should be normalized to 1
+	res, err := bm.undo(ctx, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res, "Undo successful") {
+		t.Errorf("expected successful undo, got: %q", res)
+	}
+}
+
+func TestUndo_NegativeNNormalized(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
+
+	// n=-1 should be normalized to 1
+	res, err := bm.undo(ctx, -1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res, "Undo successful") {
+		t.Errorf("expected successful undo, got: %q", res)
+	}
+}

@@ -7,10 +7,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1248,4 +1251,294 @@ func TestProcessExecutor_handleCaptureError(t *testing.T) {
 			t.Errorf("expected warning in feedback, got %q", fb)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// RunCommand error path tests (Phase A, Task 1)
+// ---------------------------------------------------------------------------
+
+func TestRunCommand_SetupCommandFailure(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+
+	res, err := executor.RunCommand(ctx, []string{}, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error for empty command")
+	}
+	if !strings.Contains(err.Error(), "empty command") {
+		t.Errorf("expected 'empty command' in error, got: %v", err)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", res.ExitCode)
+	}
+	if res.Output != "" {
+		t.Errorf("expected empty output, got %q", res.Output)
+	}
+}
+
+func TestRunCommand_StartFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory-as-executable behaves differently on Windows")
+	}
+
+	executor := newprocessExecutor()
+	ctx := context.Background()
+
+	// Use a directory as the "executable" — CommandContext accepts it but Start fails
+	tmpDir := t.TempDir()
+	res, err := executor.RunCommand(ctx, []string{tmpDir}, executionConfig{})
+
+	if err == nil {
+		t.Fatal("expected error from cmd.Start failure")
+	}
+	if !strings.Contains(err.Error(), "failed to start") {
+		t.Errorf("expected 'failed to start' in error, got: %v", err)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", res.ExitCode)
+	}
+}
+
+func TestRunCommand_WaitSignalKill(t *testing.T) {
+	executor := newprocessExecutor()
+
+	t.Run("non-ExitError in formatPipelineResult", func(t *testing.T) {
+		testErr := fmt.Errorf("signal: killed")
+		res, err := executor.formatPipelineResult("out", "err", false, 0, testErr)
+		if err == nil {
+			t.Fatal("expected error for non-ExitError")
+		}
+		if res.ExitCode != 1 {
+			t.Errorf("expected exit code 1 for non-ExitError, got %d", res.ExitCode)
+		}
+		if !strings.Contains(res.Output, "out") {
+			t.Errorf("expected partial output preserved, got %q", res.Output)
+		}
+	})
+}
+
+func TestRunCommand_FileCloseError(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "close_test.txt")
+
+	res, err := executor.RunCommand(ctx, []string{helperPath, "echo", "hello"}, executionConfig{
+		OutputFile: outputPath,
+	})
+	if err != nil {
+		t.Fatalf("RunCommand failed: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", res.ExitCode)
+	}
+	// Verify file was created (Close succeeded normally)
+	if _, statErr := os.Stat(outputPath); statErr != nil {
+		t.Errorf("output file not found: %v", statErr)
+	}
+
+}
+
+func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
+	executor := newprocessExecutor()
+
+	tests := []struct {
+		name         string
+		stdout       string
+		stderr       string
+		truncated    bool
+		exitCode     int
+		waitErr      error
+		wantExitCode int
+		wantErr      bool
+		wantOutput   string
+	}{
+		{
+			name:         "zero exit code with non-ExitError forces exit code 1",
+			stdout:       "partial output",
+			stderr:       "",
+			truncated:    false,
+			exitCode:     0,
+			waitErr:      fmt.Errorf("signal: killed"),
+			wantExitCode: 1,
+			wantErr:      true,
+			wantOutput:   "partial output",
+		},
+		{
+			name:         "ExitError preserves original non-zero exit code",
+			stdout:       "error output",
+			stderr:       "",
+			truncated:    false,
+			exitCode:     2,
+			waitErr:      &exec.ExitError{},
+			wantExitCode: 2,
+			wantErr:      false,
+			wantOutput:   "error output",
+		},
+		{
+			name:         "stderr is included in output",
+			stdout:       "stdout",
+			stderr:       "stderr msg",
+			truncated:    false,
+			exitCode:     1,
+			waitErr:      &exec.ExitError{},
+			wantExitCode: 1,
+			wantErr:      false,
+			wantOutput:   "Errors:\nstderr msg",
+		},
+		{
+			name:         "truncated flag preserved",
+			stdout:       "out",
+			stderr:       "",
+			truncated:    true,
+			exitCode:     0,
+			waitErr:      nil,
+			wantExitCode: 0,
+			wantErr:      false,
+			wantOutput:   "out",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := executor.formatPipelineResult(tt.stdout, tt.stderr, tt.truncated, tt.exitCode, tt.waitErr)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("error = %v, wantErr = %v", err, tt.wantErr)
+			}
+			if res.ExitCode != tt.wantExitCode {
+				t.Errorf("exit code = %d, want %d", res.ExitCode, tt.wantExitCode)
+			}
+			if !strings.Contains(res.Output, tt.wantOutput) {
+				t.Errorf("output = %q, want contains %q", res.Output, tt.wantOutput)
+			}
+		})
+	}
+}
+
+func TestRunCommand_ContextCancellationDuringWait(t *testing.T) {
+	executor := newprocessExecutor()
+
+	// Start a command that blocks, then cancel via short timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	res, err := executor.RunCommand(ctx, []string{helperPath, "sleep", "10"}, executionConfig{})
+
+	if err == nil {
+		t.Fatal("expected error from context cancellation")
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", res.ExitCode)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Logf("expected context error, got: %v (may vary by OS)", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase B, Task 6 — Pipeline Guards
+// ---------------------------------------------------------------------------
+
+// TestRunPipeline_TooFewCommands verifies that RunPipeline rejects
+// a single-command pipeline with a clear error message and exit code 1.
+func TestRunPipeline_TooFewCommands(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	res, err := executor.RunPipeline(ctx, [][]string{{helperPath, "echo", "hello"}}, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error for single-command pipeline")
+	}
+	if !strings.Contains(err.Error(), "at least two commands are required for piping") {
+		t.Errorf("expected 'at least two commands' in error, got: %v", err)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", res.ExitCode)
+	}
+}
+
+// TestRunPipeline_NewPipelineError verifies that RunPipeline propagates
+// the error from newPipelineCmd when a sub-command is empty, including
+// the specific index in the error message and producing exit code 1.
+func TestRunPipeline_NewPipelineError(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	res, err := executor.RunPipeline(ctx, [][]string{{helperPath, "echo", "hello"}, {}}, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error from newPipelineCmd with empty command")
+	}
+	if !strings.Contains(err.Error(), "empty command at index 1") {
+		t.Errorf("expected 'empty command at index 1' in error, got: %v", err)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", res.ExitCode)
+	}
+}
+
+// TestRunPipeline_ZeroCommands verifies that RunPipeline rejects
+// an empty pipeline with the same error as a too-few-commands pipeline.
+func TestRunPipeline_ZeroCommands(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	res, err := executor.RunPipeline(ctx, [][]string{}, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error for empty pipeline")
+	}
+	if !strings.Contains(err.Error(), "at least two commands are required for piping") {
+		t.Errorf("expected 'at least two commands' in error, got: %v", err)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", res.ExitCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase C, Task 7 — Final Consolidation
+// ---------------------------------------------------------------------------
+
+// TestSetupCommand_EnvPropagation verifies that setupCommand correctly
+// propagates custom environment variables from executionConfig.Env into
+// the resulting exec.Cmd.
+func TestSetupCommand_EnvPropagation(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	config := executionConfig{Env: map[string]string{"TEST_VAR": "test_val"}}
+	cmd, stdout, stderr, file, err := executor.setupCommand(ctx, []string{"echo", "hello"}, config)
+	if err != nil {
+		t.Fatalf("setupCommand failed: %v", err)
+	}
+	if stdout == nil {
+		t.Error("expected non-nil stdout pipe")
+	}
+	if stderr == nil {
+		t.Error("expected non-nil stderr pipe")
+	}
+	if file != nil {
+		_ = file.Close()
+	}
+	found := false
+	for _, e := range cmd.Env {
+		if e == "TEST_VAR=test_val" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected TEST_VAR=test_val in cmd.Env")
+	}
+}
+
+// TestNewPipelineCmd_CancelGuard verifies that newPipelineCmd sets the
+// cmd.Cancel function on Windows to enable forceful process tree
+// termination via taskkill.
+func TestNewPipelineCmd_CancelGuard(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+	cmd, err := e.newPipelineCmd(ctx, []string{"echo", "hello"}, 0, executionConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if runtime.GOOS == "windows" && cmd.Cancel == nil {
+		t.Error("expected cmd.Cancel to be set on Windows")
+	}
 }

@@ -535,6 +535,8 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {
 type mockSymbolIndex struct {
 	GetImplementationsFunc func(ctx context.Context, id string) []string
 	PackagesFunc           func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error)
+	GetUsagesFunc          func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error)
+	IsSymbolUsedFunc       func(ctx context.Context, name string, hb chan<- struct{}) bool
 }
 
 func (m *mockSymbolIndex) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
@@ -547,9 +549,15 @@ func (m *mockSymbolIndex) SearchSymbols(ctx context.Context, path string, query 
 	return nil, nil
 }
 func (m *mockSymbolIndex) GetUsages(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+	if m.GetUsagesFunc != nil {
+		return m.GetUsagesFunc(ctx, symbol, path, hb)
+	}
 	return nil, nil
 }
 func (m *mockSymbolIndex) IsSymbolUsed(ctx context.Context, name string, hb chan<- struct{}) bool {
+	if m.IsSymbolUsedFunc != nil {
+		return m.IsSymbolUsedFunc(ctx, name, hb)
+	}
 	return false
 }
 func (m *mockSymbolIndex) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
@@ -969,4 +977,110 @@ func TestFindOrphanedSymbols_UnmarshalArgsError(t *testing.T) {
 	_, err = analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": ch}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported type")
+}
+
+func TestTrackExternalUsages_GetUsagesError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	state := &scanState{
+		targetModule: "example.com/test",
+		declarations: map[string]*symMeta{
+			"example.com/test/pkg.Foo": {
+				id:      "example.com/test/pkg.Foo",
+				pkgPath: "example.com/test/pkg",
+				name:    "Foo",
+				symType: "Function",
+			},
+		},
+		totalUses:    make(map[string]int),
+		externalUses: make(map[string]int),
+	}
+	fileToPkg := map[string]string{}
+
+	sentinelErr := fmt.Errorf("index corruption")
+	mockIdx := &mockSymbolIndex{
+		IsSymbolUsedFunc: func(ctx context.Context, name string, hb chan<- struct{}) bool {
+			return true // Enter the GetUsages call
+		},
+		GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+			return nil, sentinelErr
+		},
+	}
+
+	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+	err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
+		state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+
+	if err == nil {
+		t.Fatal("expected error from trackExternalUsages, got nil")
+	}
+	if !strings.Contains(err.Error(), "get usages for") {
+		t.Errorf("expected error to contain 'get usages for', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), sentinelErr.Error()) {
+		t.Errorf("expected error to wrap sentinelErr, got: %v", err)
+	}
+}
+
+func TestIdentifyModule_NoGoFilesError(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+
+	// Package with "no Go files" error but NOT "does not contain main module".
+	// This exercises the skip-continue path in identifyModule.
+	pkgs := []*packages.Package{
+		{
+			PkgPath: "example.com/empty",
+			Errors: []packages.Error{
+				{Msg: "no Go files in /some/dir"},
+			},
+			Module: nil, // no module from the empty package
+		},
+		{
+			PkgPath: "example.com/valid",
+			Errors:  nil,
+			Module: &packages.Module{
+				Path: "example.com/testmodule",
+			},
+		},
+	}
+
+	modulePath, err := analyzer.identifyModule(pkgs)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if modulePath != "example.com/testmodule" {
+		t.Errorf("expected module path 'example.com/testmodule', got: %q", modulePath)
+	}
+}
+
+func TestHasTextMatchOutsidePackage_ReadFileError(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+
+	// Create state with a package that has a non-existent GoFile.
+	// hasTextMatchOutsidePackage should handle the os.ReadFile error
+	// gracefully and return false (not panic).
+	state := &scanState{
+		pkgs: []*packages.Package{
+			{
+				PkgPath: "example.com/owner",
+				GoFiles: []string{"real.go"},
+			},
+			{
+				PkgPath: "example.com/other",
+				GoFiles: []string{"/nonexistent/path/that/does/not/exist.go"},
+			},
+		},
+	}
+
+	// Should not panic and should return false since the only other package
+	// has a file that can't be read.
+	got := analyzer.hasTextMatchOutsidePackage(state, "SomeSymbol", "example.com/owner")
+	if got {
+		t.Error("expected false when ReadFile fails on all files in other packages")
+	}
 }

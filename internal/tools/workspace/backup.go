@@ -26,11 +26,12 @@ type fileSnapshot struct {
 
 // backupManager handles the snapshotting and restoration of files.
 type backupManager struct {
-	mu        sync.Mutex
-	backups   []fileSnapshot
-	maxStored int
-	sm        domain_security.PathValidator
-	fs        domain_persistence.FileSystem
+	mu          sync.Mutex
+	backups     []fileSnapshot
+	maxStored   int
+	sm          domain_security.PathValidator
+	fs          domain_persistence.FileSystem
+	resolvePath func(string) (string, error)
 }
 
 // newBackupManager creates a new backupManager.
@@ -39,9 +40,10 @@ func newBackupManager(sm domain_security.PathValidator, fs domain_persistence.Fi
 		maxStored = 10
 	}
 	return &backupManager{
-		maxStored: maxStored,
-		sm:        sm,
-		fs:        fs,
+		maxStored:   maxStored,
+		sm:          sm,
+		fs:          fs,
+		resolvePath: filepath.Abs,
 	}
 }
 
@@ -50,7 +52,7 @@ func (b *backupManager) snapshot(ctx context.Context, path string, action string
 	// Resolve path and read file content OUTSIDE the critical section.
 	// Holding the mutex across synchronous disk I/O would cause thread
 	// starvation for concurrent callers.
-	absPath, err := filepath.Abs(path)
+	absPath, err := b.resolvePath(path)
 	if err != nil {
 		return fmt.Errorf("snapshot: resolve path %s: %w", path, err)
 	}

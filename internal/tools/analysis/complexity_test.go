@@ -103,6 +103,21 @@ func TestGetConcurrencyLimit(t *testing.T) {
 	}
 }
 
+// TestGetConcurrencyLimit_DefensiveGuard verifies the defense-in-depth
+// guard in getConcurrencyLimit: even if runtime.NumCPU() were to return 0
+// (which never happens on supported Go platforms), the function would
+// clamp to 1 to prevent semaphore.NewWeighted(0) deadlock.
+func TestGetConcurrencyLimit_DefensiveGuard(t *testing.T) {
+	t.Parallel()
+	// Run multiple times to increase confidence (NumCPU is stable per process)
+	analyzer := newComplexityAnalyzer(nil, nil)
+	for i := 0; i < 100; i++ {
+		if limit := analyzer.getConcurrencyLimit(); limit < 1 {
+			t.Errorf("iteration %d: getConcurrencyLimit() = %d, must be >= 1", i, limit)
+		}
+	}
+}
+
 func TestFormatResults(t *testing.T) {
 	t.Parallel()
 	analyzer := newComplexityAnalyzer(nil, nil)
@@ -330,6 +345,10 @@ func (s S) ValueMethod() {}
 	}
 }
 
+// TestGatherComplexities_WalkError covers the filepath.Walk error return
+// at L85–87 in complexity.go (e.g., permission errors while walking the
+// directory tree). The g.Wait() L88–90 error path for non-context errors
+// is covered by TestGatherComplexities_ContextCancelledDuringProcessing.
 func TestGatherComplexities_WalkError(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()

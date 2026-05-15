@@ -6,12 +6,14 @@ package cli
 import (
 	"bytes"
 	stdctx "context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
@@ -129,4 +131,31 @@ func TestEnvCommand_Execute(t *testing.T) {
 			}
 		})
 	}
+}
+
+// failingWriter is an io.Writer that always returns a configured error.
+type failingWriter struct {
+	err error
+}
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	return 0, w.err
+}
+
+// TestEnvCommand_Execute_WriteError verifies that when the output writer
+// fails, execute propagates the write error.
+func TestEnvCommand_Execute_WriteError(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("disk full")
+	stdout := &failingWriter{err: writeErr}
+	loader := &mockLoader{Config: domain_config.Config{Mode: "test"}}
+
+	c := &envCommand{
+		Stdout: stdout,
+		Loader: loader,
+	}
+
+	err := c.execute(stdctx.Background(), "")
+	require.ErrorIs(t, err, writeErr)
 }

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 type mockpackageProvider struct {
@@ -513,5 +515,62 @@ func TestArchitectureManager_Classify(t *testing.T) {
 				t.Errorf("classify(%q) = %q, want %q", tt.pkg, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIndexedPackageProvider_LoadPackages_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		packagesFn func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error)
+		wantErr    string
+	}{
+		{
+			name: "Packages returns error",
+			packagesFn: func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+				return nil, fmt.Errorf("index scan failed")
+			},
+			wantErr: "failed to load architecture packages",
+		},
+		{
+			name: "Packages returns empty slice",
+			packagesFn: func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+				return []*packages.Package{}, nil
+			},
+			wantErr: "no packages found in index",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockIdx := &mockSymbolIndex{
+				PackagesFunc: tt.packagesFn,
+			}
+			m := &architectureManager{ModulePath: "example.com/mod"}
+			provider := &indexedPackageProvider{m: m, idx: mockIdx}
+			_, err := provider.LoadPackages(context.Background())
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestReportCycle_NoPathFound(t *testing.T) {
+	t.Parallel()
+	m := &architectureManager{ModulePath: "example.com/mod"}
+	d := &circularDetector{
+		m:       m,
+		path:    []string{"pkg/A", "pkg/B"},
+		visited: map[string]bool{"pkg/A": true, "pkg/B": true},
+	}
+	// v="pkg/C" is NOT in d.path, so cycleStart == -1
+	d.reportCycle("pkg/B", "pkg/C")
+	// Must not panic; no violation should be added
+	if len(d.violations) != 0 {
+		t.Errorf("expected 0 violations, got %d", len(d.violations))
 	}
 }
