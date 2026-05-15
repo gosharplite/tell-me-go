@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -797,6 +798,60 @@ func TestChatCommand_SetupCapturer_CleanupError(t *testing.T) {
 	require.Contains(t, stderr.String(), "capturer close exploded")
 }
 
+// TestChatCommand_SetupCapturer_OverrideCloseSuccess verifies that when
+// capturerOverride is set and Close succeeds, setupCapturer's cleanup
+// returns nil and writes nothing to stderr.
+func TestChatCommand_SetupCapturer_OverrideCloseSuccess(t *testing.T) {
+	t.Parallel()
+
+	mockCap := &mockCapturerInteractor{} // closeFn nil → Close returns nil
+
+	var stderr strings.Builder
+	c := &chatCommand{
+		Stderr:           &stderr,
+		capturerOverride: mockCap,
+	}
+
+	capturer, cleanup, err := c.setupCapturer()
+	require.NoError(t, err)
+	require.NotNil(t, capturer)
+	require.NotNil(t, cleanup)
+
+	err = cleanup(stdctx.Background())
+	require.NoError(t, err, "cleanup should not error when Close succeeds")
+	require.Empty(t, stderr.String(), "stderr should be empty when Close succeeds")
+}
+
+// TestChatCommand_SetupCapturer_NonOverrideCloseError verifies that when
+// capturerOverride is nil and the factory returns a capturer whose Close
+// fails, the cleanup propagates the error and writes a warning to stderr.
+func TestChatCommand_SetupCapturer_NonOverrideCloseError(t *testing.T) {
+	t.Parallel()
+
+	closeErr := errors.New("non-override close exploded")
+	mockCap := &mockCapturerInteractor{
+		closeFn: func(ctx stdctx.Context) error { return closeErr },
+	}
+
+	var stderr strings.Builder
+	c := &chatCommand{
+		Stderr: &stderr,
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return mockCap
+		},
+	}
+
+	capturer, cleanup, err := c.setupCapturer()
+	require.NoError(t, err, "setupCapturer should not error when factory returns valid capturer")
+	require.NotNil(t, capturer)
+	require.NotNil(t, cleanup)
+
+	err = cleanup(stdctx.Background())
+	require.ErrorIs(t, err, closeErr, "cleanup should propagate Close error from factory-provided capturer")
+	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
+	require.Contains(t, stderr.String(), "non-override close exploded")
+}
+
 func TestChatCommand_PrepareCaptureOptions_RawFlag(t *testing.T) {
 	t.Parallel()
 
@@ -825,4 +880,140 @@ func TestChatCommand_PrepareCaptureOptions_RawFlag(t *testing.T) {
 	err = executeChatCommand(cmdCtx, []string{"-r", "hello"})
 	require.NoError(t, err)
 	require.True(t, mService.lastParams.RawOutput)
+}
+
+// TestChatCommand_GetCapturer_OverrideCloseError verifies that when
+// capturerOverride is set, getCapturer returns a cleanup function that
+// propagates Close errors and writes a warning to stderr.
+func TestChatCommand_GetCapturer_OverrideCloseError(t *testing.T) {
+	t.Parallel()
+
+	closeErr := errors.New("getCapturer close exploded")
+	mockCap := &mockCapturerInteractor{
+		closeFn: func(ctx stdctx.Context) error { return closeErr },
+	}
+
+	var stderr strings.Builder
+	c := &chatCommand{
+		Stderr:           &stderr,
+		capturerOverride: mockCap,
+	}
+
+	capturer, cleanup, err := c.getCapturer(stdctx.Background(), nil, nil)
+	require.NoError(t, err, "getCapturer should not error when override is set")
+	require.NotNil(t, capturer, "expected non-nil capturer from getCapturer override path")
+	require.NotNil(t, cleanup, "expected non-nil cleanup from getCapturer override path")
+
+	// Trigger the cleanup — should propagate error AND write warning
+	err = cleanup(stdctx.Background())
+	require.ErrorIs(t, err, closeErr, "cleanup should propagate the Close error")
+	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
+	require.Contains(t, stderr.String(), "getCapturer close exploded")
+}
+
+// TestChatCommand_GetCapturer_OverrideCloseSuccess verifies that when
+// capturerOverride is set and Close succeeds, the cleanup returns nil
+// and writes nothing to stderr.
+func TestChatCommand_GetCapturer_OverrideCloseSuccess(t *testing.T) {
+	t.Parallel()
+
+	mockCap := &mockCapturerInteractor{} // closeFn nil → Close returns nil
+
+	var stderr strings.Builder
+	c := &chatCommand{
+		Stderr:           &stderr,
+		capturerOverride: mockCap,
+	}
+
+	capturer, cleanup, err := c.getCapturer(stdctx.Background(), nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, capturer)
+	require.NotNil(t, cleanup)
+
+	err = cleanup(stdctx.Background())
+	require.NoError(t, err, "cleanup should not error when Close succeeds")
+	require.Empty(t, stderr.String(), "stderr should be empty when Close succeeds")
+}
+
+// TestChatCommand_SetupCapturer_NonCapturerInteractor verifies that
+// when the capturerFactory returns a value implementing UserInteractor
+// but NOT agent.CapturerInteractor, setupCapturer returns an error.
+func TestChatCommand_SetupCapturer_NonCapturerInteractor(t *testing.T) {
+	t.Parallel()
+
+	// stubInteractor implements domain_security.UserInteractor but
+	// lacks CapturePrompt, IsTTY, and Close — so it does NOT satisfy
+	// agent.CapturerInteractor, triggering the !ok assertion.
+	nonCapturer := &stubInteractor{id: 1}
+
+	var stderr strings.Builder
+	c := &chatCommand{
+		Stderr: &stderr,
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return nonCapturer
+		},
+	}
+
+	capturer, cleanup, err := c.setupCapturer()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Nil(t, capturer)
+	require.Nil(t, cleanup)
+}
+
+// TestChatCommand_BuildCapturer_NonTUI_SetupCapturerError verifies that
+// when tuiPrompt is false and setupCapturer returns an error (via
+// capturerFactory returning a non-CapturerInteractor), buildCapturer
+// propagates the error as (nil, nil, err).
+func TestChatCommand_BuildCapturer_NonTUI_SetupCapturerError(t *testing.T) {
+	t.Parallel()
+
+	nonCapturer := &stubInteractor{id: 3}
+
+	c := &chatCommand{
+		Stdin:  strings.NewReader(""),
+		Stdout: new(strings.Builder),
+		Stderr: new(strings.Builder),
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return nonCapturer
+		},
+	}
+
+	opts := &cliOptions{tuiPrompt: false} // non-TUI path
+	capturer, cleanup, err := c.buildCapturer(stdctx.Background(), nil, opts)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Nil(t, capturer)
+	require.Nil(t, cleanup)
+}
+
+// TestChatCommand_ExecuteChat_SetupSessionError verifies that when
+// setupChatSession → getCapturer → buildCapturer → setupCapturer fails
+// (because the factory returns a non-CapturerInteractor), executeChat
+// returns the error without calling processChatRequest.
+func TestChatCommand_ExecuteChat_SetupSessionError(t *testing.T) {
+	t.Parallel()
+
+	nonCapturer := &stubInteractor{id: 4}
+
+	var stdout, stderr strings.Builder
+	ml := &chatMockLoader{}
+	ml.On("Load", mock.Anything).Return(&config.Config{}, nil)
+
+	c := &chatCommand{
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Loader: ml,
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return nonCapturer
+		},
+	}
+
+	opts := &cliOptions{} // tuiPrompt defaults to false → non-TUI path
+	err := c.executeChat(stdctx.Background(), opts, []string{"hello"})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
 }

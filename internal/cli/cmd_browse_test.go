@@ -6,10 +6,13 @@ package cli
 import (
 	stdctx "context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/mock"
@@ -283,4 +286,137 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBrowseCommand_GetCapturer_OverrideCloseError verifies that when
+// capturerOverride is set, getCapturer returns a cleanup function that
+// propagates Close errors and writes a warning to stderr.
+func TestBrowseCommand_GetCapturer_OverrideCloseError(t *testing.T) {
+	t.Parallel()
+
+	closeErr := errors.New("browse getCapturer close exploded")
+	mockCap := &mockCapturerInteractor{
+		closeFn: func(ctx stdctx.Context) error { return closeErr },
+	}
+
+	var stderr strings.Builder
+	cmdCtx := &context{Stderr: &stderr}
+	c := &browseCommand{
+		ctx:              cmdCtx,
+		capturerOverride: mockCap,
+	}
+
+	capturer, cleanup, err := c.getCapturer()
+	require.NoError(t, err, "getCapturer should not error when override is set")
+	require.NotNil(t, capturer, "expected non-nil capturer from getCapturer override path")
+	require.NotNil(t, cleanup, "expected non-nil cleanup from getCapturer override path")
+
+	err = cleanup(stdctx.Background())
+	require.ErrorIs(t, err, closeErr, "cleanup should propagate the Close error")
+	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
+	require.Contains(t, stderr.String(), "browse getCapturer close exploded")
+}
+
+// TestBrowseCommand_GetCapturer_OverrideCloseSuccess verifies that when
+// capturerOverride is set and Close succeeds, the cleanup returns nil
+// and writes nothing to stderr.
+func TestBrowseCommand_GetCapturer_OverrideCloseSuccess(t *testing.T) {
+	t.Parallel()
+
+	mockCap := &mockCapturerInteractor{} // closeFn nil → Close returns nil
+
+	var stderr strings.Builder
+	cmdCtx := &context{Stderr: &stderr}
+	c := &browseCommand{
+		ctx:              cmdCtx,
+		capturerOverride: mockCap,
+	}
+
+	capturer, cleanup, err := c.getCapturer()
+	require.NoError(t, err)
+	require.NotNil(t, capturer)
+	require.NotNil(t, cleanup)
+
+	err = cleanup(stdctx.Background())
+	require.NoError(t, err, "cleanup should not error when Close succeeds")
+	require.Empty(t, stderr.String(), "stderr should be empty when Close succeeds")
+}
+
+// TestBrowseCommand_SetupCapturer_NonCapturerInteractor verifies that
+// when the capturerFactory returns a value implementing UserInteractor
+// but NOT agent.CapturerInteractor, setupCapturer returns an error.
+func TestBrowseCommand_SetupCapturer_NonCapturerInteractor(t *testing.T) {
+	t.Parallel()
+
+	nonCapturer := &stubInteractor{id: 2}
+
+	var stderr strings.Builder
+	cmdCtx := &context{Stderr: &stderr}
+	c := &browseCommand{
+		ctx: cmdCtx,
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return nonCapturer
+		},
+	}
+
+	capturer, cleanup, err := c.setupCapturer()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
+	require.Nil(t, capturer)
+	require.Nil(t, cleanup)
+}
+
+// TestBrowseCommand_SetupCapturer_NonOverrideCloseError verifies that when
+// capturerOverride is nil and the factory returns a capturer whose Close
+// fails, the cleanup propagates the error and writes a warning to stderr.
+func TestBrowseCommand_SetupCapturer_NonOverrideCloseError(t *testing.T) {
+	t.Parallel()
+
+	closeErr := errors.New("browse non-override close exploded")
+	mockCap := &mockCapturerInteractor{
+		closeFn: func(ctx stdctx.Context) error { return closeErr },
+	}
+
+	var stderr strings.Builder
+	cmdCtx := &context{Stderr: &stderr}
+	c := &browseCommand{
+		ctx: cmdCtx,
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return mockCap
+		},
+	}
+
+	capturer, cleanup, err := c.setupCapturer()
+	require.NoError(t, err, "setupCapturer should not error when factory returns valid capturer")
+	require.NotNil(t, capturer)
+	require.NotNil(t, cleanup)
+
+	err = cleanup(stdctx.Background())
+	require.ErrorIs(t, err, closeErr, "cleanup should propagate Close error from factory-provided capturer")
+	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
+	require.Contains(t, stderr.String(), "browse non-override close exploded")
+}
+
+// TestBrowseCommand_RunBrowse_GetCapturerError verifies that when
+// getCapturer → setupCapturer fails (because the factory returns a
+// non-CapturerInteractor), runBrowse returns the error before reaching
+// the TTY check or any config/history loading.
+func TestBrowseCommand_RunBrowse_GetCapturerError(t *testing.T) {
+	t.Parallel()
+
+	nonCapturer := &stubInteractor{id: 5}
+
+	var stderr strings.Builder
+	cmdCtx := &context{Stderr: &stderr}
+	c := &browseCommand{
+		ctx: cmdCtx,
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return nonCapturer
+		},
+	}
+
+	err := c.runBrowse(stdctx.Background(), "any-config.yaml")
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
 }

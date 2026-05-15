@@ -35,7 +35,16 @@ type chatCommand struct {
 	MockPrompt       string
 	MockAnswer       string
 	Interactor       *InteractorRef
-	capturerOverride agent.CapturerInteractor // test-only injection
+	capturerOverride agent.CapturerInteractor                                                                                                                                                                // test-only injection
+	capturerFactory  func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor // test-only injection; defaults to ui.NewCapturer
+}
+
+// newCapturer calls the injected factory or falls back to ui.NewCapturer.
+func (c *chatCommand) newCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+	if c.capturerFactory != nil {
+		return c.capturerFactory(stdin, stdout, stderr, sm, clk, mockPrompt, mockAnswer, disableEscapeSequences)
+	}
+	return ui.NewCapturer(stdin, stdout, stderr, sm, clk, mockPrompt, mockAnswer, disableEscapeSequences)
 }
 
 type cliOptions struct {
@@ -81,6 +90,7 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 		MockAnswer:   ctx.MockAnswer,
 		Interactor:   ctx.Interactor,
 	}
+	c.capturerFactory = ui.NewCapturer
 
 	if opts == nil {
 		opts = &cliOptions{}
@@ -230,7 +240,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 
 		svc, err := c.Bootstrapper.GetSuggestionService(ctx, recentHistory)
 
-		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
+		capturerInterface := c.newCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
 			// Defensive: untestable without DI for NewCapturer.
@@ -287,7 +297,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 		}, nil
 	}
 
-	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
+	capturerInterface := c.newCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 	capturer, ok := capturerInterface.(agent.CapturerInteractor)
 	if !ok {
 		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an agent.CapturerInteractor")
