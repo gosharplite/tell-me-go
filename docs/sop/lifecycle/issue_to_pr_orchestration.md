@@ -314,18 +314,22 @@ escalate to the user with `ask_user`. Do not loop indefinitely.
 #### 3e. Cross-check completion against the issue
 
 When the Architect declares completion, do **not** trust it blindly.
-Cross-check the issue's numbered acceptance criteria checklist against
-what was implemented:
+Cross-check the issue's acceptance criteria against what was implemented.
 
 1. Read the issue body to extract the checklist (e.g., `- [ ] Fix error handling in auth.go`).
-2. Run `git diff dev --stat` to see all changed files.
-3. Verify each checklist item maps to at least one changed file or
-   Coder-reported result.
-4. If any checklist item has **no** corresponding change, send a
-   follow-up to the Architect (no `--new`): *"The issue checklist
-   item 'X' has no coverage. Was this addressed? If not, issue a
-   task for it."*
-5. Repeat until all checklist items are accounted for.
+2. **If no `- [ ]` checklist items exist**, treat the issue title and
+   body description as the sole acceptance criterion — verify it maps
+   to at least one changed file. If there is no clear criterion at
+   all, use `ask_user`: *"The issue has no explicit checklist. Here
+   is what was implemented: <summary>. Does this satisfy the
+   requirements?"*
+3. Run `git diff dev --stat` to see all changed files.
+4. Verify each checklist item (or the sole criterion) maps to at
+   least one changed file or Coder-reported result.
+5. If any item has **no** corresponding change, send a follow-up to
+   the Architect (no `--new`): *"The issue checklist item 'X' has
+   no coverage. Was this addressed? If not, issue a task for it."*
+6. Repeat until all items are accounted for.
 
 Only then proceed to Phase 3.
 
@@ -367,7 +371,10 @@ This executes, in order:
 1. Capture the failure output.
 2. `write_file` a prompt with the failure details.
 3. Send to Architect: `tell-me-go -r -c ${ARCHITECT_CONFIG}` (no `--new`) for diagnosis.
-4. Architect issues a fix task → send to Coder (`--new`).
+4. Retrieve the Architect's response. It will use the same
+   `TASK:`/`REVISION:` prefix convention from Phase 2 — route
+   accordingly (TASK → Coder via `--new`, REVISION → Coder via
+   `--new`, ambiguous → follow-up).
 5. Retrieve Coder's result → forward to Architect for review.
 6. Re-run `make check-full`.
 7. Repeat until all checks pass.
@@ -406,6 +413,10 @@ Sanity-check:
 Derive `<scope>` from the primary package path affected (e.g.,
 `internal/cli/` → `cli`, `internal/handler/` → `handler`). If
 multiple packages are affected, use the most significant one.
+
+Derive `<description>` from the issue title or the main change: a
+short imperative summary (~50–72 characters), e.g., `add error
+wrapping in CLI parser`.
 
 ```bash
 git add <changed-paths>
