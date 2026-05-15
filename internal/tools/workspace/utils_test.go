@@ -79,3 +79,21 @@ func TestWalkAndProcess(t *testing.T) {
 		}
 	})
 }
+
+func TestSendHeartbeat_DefaultCase(t *testing.T) {
+	// Create an unbuffered channel with no reader — the send will block and fall to default
+	hb := make(chan struct{})
+	ctx := context.Background()
+
+	// This should not panic; the default case prevents blocking
+	sendHeartbeat(ctx, hb)
+
+	// Verify no panic occurred (implicit — reaching here is success)
+}
+
+func TestSendHeartbeat_NilChannel(t *testing.T) {
+	ctx := context.Background()
+	// Nil channel — should return immediately
+	sendHeartbeat(ctx, nil)
+	// No panic == success
+}

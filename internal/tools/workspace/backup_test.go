@@ -311,6 +311,31 @@ func TestSnapshot_ReadFileNotExist(t *testing.T) {
 	}
 }
 
+func TestSnapshot_ResolvePathError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	fs := persistencetest.NewPlainOSFileSystem()
+	bm := newBackupManager(sm, fs, 10)
+
+	// Inject a failing resolvePath
+	resolveErr := errors.New("path resolution failed")
+	bm.resolvePath = func(path string) (string, error) {
+		return "", resolveErr
+	}
+
+	ctx := context.Background()
+	err := bm.snapshot(ctx, "/any/path", "WRITE")
+
+	if err == nil {
+		t.Fatal("expected error from resolvePath failure")
+	}
+	if !strings.Contains(err.Error(), "snapshot: resolve path") {
+		t.Errorf("expected 'snapshot: resolve path' in error, got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), resolveErr.Error()) {
+		t.Errorf("expected %q in error, got: %q", resolveErr.Error(), err.Error())
+	}
+}
+
 func TestSnapshot_RingBufferEviction(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	maxStored := 3

@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/cli"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 
 	"go.opentelemetry.io/otel/sdk/resource"
 )
@@ -322,6 +324,65 @@ func TestBuildApp_GetwdError(t *testing.T) {
 	if cleanup == nil {
 		t.Fatal("buildApp returned nil cleanup function")
 	}
+	cleanup()
+}
+
+func TestBuildApp_CLINewError(t *testing.T) {
+	// 1. Save and defer restoration of overrides
+	origCLINew := cliNewFn
+	origNewSM := newSecurityManagerFn
+	t.Cleanup(func() {
+		cliNewFn = origCLINew
+		newSecurityManagerFn = origNewSM
+	})
+
+	// 2. Capture the interactorProvider closure when newSecurityManagerFn is called
+	var capturedProvider func() domain_security.UserInteractor
+	newSecurityManagerFn = func(ip func() domain_security.UserInteractor) *security.SecurityManager {
+		capturedProvider = ip
+		return security.NewSecurityManager(ip)
+	}
+
+	// 3. Inject a cliNewFn that returns an error
+	cliNewErr := errors.New("injected cli.New failure")
+	cliNewFn = func(deps cli.AppDependencies, getenv func(string) string) (*cli.App, error) {
+		return nil, cliNewErr
+	}
+
+	// 4. Isolate environment
+	t.Setenv("TELL_ME_HOME", t.TempDir())
+
+	// 5. Call buildApp directly — cliNewFn should fail
+	app, cleanup, err := buildApp("test-version", strings.NewReader(""), io.Discard, io.Discard)
+
+	// 6. Assert: error must be non-nil (cli.New failure)
+	if err == nil {
+		t.Fatal("expected error from buildApp due to cli.New failure, got nil")
+	}
+	if !errors.Is(err, cliNewErr) {
+		t.Errorf("expected error %v, got %v", cliNewErr, err)
+	}
+
+	// 7. Assert: cleanup must be non-nil even on error (contract)
+	if cleanup == nil {
+		t.Fatal("expected non-nil cleanup function even on error")
+	}
+
+	// 8. Assert: app must be nil on error
+	if app != nil {
+		t.Error("expected nil app on error")
+	}
+
+	// 9. Exercise the interactorProvider closure to cover its body
+	if capturedProvider == nil {
+		t.Fatal("expected captured interactorProvider, got nil")
+	}
+	interactor := capturedProvider()
+	if interactor == nil {
+		t.Fatal("expected non-nil interactor from provider")
+	}
+
+	// 10. Run cleanup (must not panic)
 	cleanup()
 }
 

@@ -1246,3 +1246,66 @@ func TestReplaceText_ReadFileError(t *testing.T) {
 		t.Fatal("expected error from replaceText on nonexistent path")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// createDirectory: unmarshal error and mkdir failure with security bypass
+// ---------------------------------------------------------------------------
+
+func TestCreateDirectory_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.createDirectory(ctx, map[string]interface{}{"path": 123, "reason": "test"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for invalid path type")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// performSingleDelete: snapshot error path (ReadFile fails for existing file)
+// ---------------------------------------------------------------------------
+
+type mockFS_ReadFileError struct {
+	persistence.FileSystem
+	readFileErr error
+}
+
+func (m *mockFS_ReadFileError) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	return nil, m.readFileErr
+}
+
+func (m *mockFS_ReadFileError) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	return m.FileSystem.Stat(ctx, name)
+}
+
+func TestPerformSingleDelete_SnapshotError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "snapshot_err.txt")
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	// Backup manager uses a mock FS that fails ReadFile
+	bm := newBackupManager(sm, &mockFS_ReadFileError{
+		FileSystem:  persistencetest.NewPlainOSFileSystem(),
+		readFileErr: fmt.Errorf("read failure"),
+	}, 10)
+
+	// fileWriter uses a real FS for Stat and Remove
+	w := &fileWriter{sm: sm, bm: bm, fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.performSingleDelete(ctx, path)
+	if err == nil {
+		t.Fatal("expected snapshot error from ReadFile failure")
+	}
+	if !strings.Contains(err.Error(), "read failure") {
+		t.Errorf("expected 'read failure' in error, got: %v", err)
+	}
+}
