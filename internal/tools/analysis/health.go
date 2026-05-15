@@ -226,7 +226,7 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 
 func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
 	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
-	complexities, err := m.complexity.GatherComplexities(ctx, ".", hb)
+	complexities, _, err := m.complexity.GatherComplexities(ctx, ".", hb)
 	if err != nil {
 		return "ERROR", err.Error(), nil
 	}

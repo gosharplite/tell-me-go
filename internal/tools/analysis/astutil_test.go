@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
@@ -592,7 +593,11 @@ func TestIsDeclEqual(t *testing.T) {
 		code := "package p; type T int"
 		f1, _ := parser.ParseFile(fset, "a.go", code, 0)
 		f2, _ := parser.ParseFile(fset, "b.go", code, 0)
-		if !isDeclEqual(f1.Decls[0], f2.Decls[0]) {
+		equal, err := isDeclEqual(f1.Decls[0], f2.Decls[0])
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !equal {
 			t.Error("expected identical decls to be equal")
 		}
 	})
@@ -602,7 +607,11 @@ func TestIsDeclEqual(t *testing.T) {
 		fset := token.NewFileSet()
 		f1, _ := parser.ParseFile(fset, "a.go", "package p; type T int", 0)
 		f2, _ := parser.ParseFile(fset, "b.go", "package p; type T string", 0)
-		if isDeclEqual(f1.Decls[0], f2.Decls[0]) {
+		equal, err := isDeclEqual(f1.Decls[0], f2.Decls[0])
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if equal {
 			t.Error("expected different decls to not be equal")
 		}
 	})
@@ -615,8 +624,27 @@ func TestIsDeclEqual(t *testing.T) {
 		f1, _ := parser.ParseFile(fset, "a.go", "package p; type T int", 0)
 		// Intentionally mismatched: GenDecl vs FuncDecl
 		f2, _ := parser.ParseFile(fset, "b.go", "package p; func F() {}", 0)
-		if isDeclEqual(f1.Decls[0], f2.Decls[0]) {
+		equal, err := isDeclEqual(f1.Decls[0], f2.Decls[0])
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if equal {
 			t.Error("expected different decl types to not be equal")
+		}
+	})
+
+	t.Run("format error returns error", func(t *testing.T) {
+		t.Parallel()
+		// nil ast.Decl causes format.Node to return "unsupported node type <nil>"
+		equal, err := isDeclEqual(nil, nil)
+		if err == nil {
+			t.Fatal("expected error for nil ast.Decl, got nil")
+		}
+		if equal {
+			t.Error("expected false when format error occurs")
+		}
+		if !strings.Contains(err.Error(), "format") {
+			t.Errorf("expected error to contain 'format', got: %v", err)
 		}
 	})
 }
@@ -746,4 +774,72 @@ func TestWriteFuncDeclSkeleton_Unexported(t *testing.T) {
 	if sb.Len() != 0 {
 		t.Errorf("expected empty output for unexported func, got %q", sb.String())
 	}
+}
+
+// TestWriteSkeletonDecl_FormatError documents the intentional silent-skip
+// behavior of writeGenDeclSkeleton and writeFuncDeclSkeleton when
+// format.Node fails. This is the same silent-swallow pattern that was
+// fixed in isDeclEqual (SILENT-1), but here the impact is lower: skeleton
+// rendering is diagnostic, not critical to correctness.
+//
+// The "skip on format error" path is purely defensive. format.Node only
+// returns errors for truly unsupported node types (e.g., nil), and these
+// functions always construct valid AST nodes from parsed sources. Invalid
+// constructions such as a nil TypeSpec.Type or nil FuncDecl.Type cause
+// panics in the printer — not errors — and are not reachable from parsed
+// Go source code.
+//
+// This test verifies the normal path (format succeeds for valid nodes)
+// and independently tests the format.Node error contract with nil.
+func TestWriteSkeletonDecl_FormatError(t *testing.T) {
+	t.Parallel()
+	cache := newASTCache(".")
+	fset := token.NewFileSet()
+
+	t.Run("writeGenDeclSkeleton produces output for valid type spec", func(t *testing.T) {
+		t.Parallel()
+		var sb strings.Builder
+		gd := &ast.GenDecl{
+			Tok: token.TYPE,
+			Specs: []ast.Spec{
+				&ast.TypeSpec{Name: &ast.Ident{Name: "Exported"}, Type: &ast.Ident{Name: "int"}},
+			},
+		}
+		// Must not panic
+		cache.writeGenDeclSkeleton(&sb, fset, gd)
+		// Valid GenDecl produces skeleton output
+		if sb.Len() == 0 {
+			t.Error("expected non-empty skeleton output for valid GenDecl")
+		}
+	})
+
+	t.Run("writeFuncDeclSkeleton produces output for valid func decl", func(t *testing.T) {
+		t.Parallel()
+		var sb strings.Builder
+		fd := &ast.FuncDecl{
+			Name: &ast.Ident{Name: "ExportedFunc"},
+			Type: &ast.FuncType{Params: &ast.FieldList{}},
+		}
+		// Must not panic
+		cache.writeFuncDeclSkeleton(&sb, fset, fd)
+		// Valid FuncDecl produces skeleton output
+		if sb.Len() == 0 {
+			t.Error("expected non-empty skeleton output for valid FuncDecl")
+		}
+	})
+
+	t.Run("format.Node returns error for nil node, no panic", func(t *testing.T) {
+		t.Parallel()
+		var sb strings.Builder
+		// format.Node(nil node) returns an error, does not panic.
+		// This is the error path the skeleton functions' silent-skip
+		// pattern is designed for.
+		err := format.Node(&sb, token.NewFileSet(), nil)
+		if err == nil {
+			t.Fatal("expected error from format.Node with nil node")
+		}
+		if sb.Len() != 0 {
+			t.Errorf("expected empty output on format error, got %q", sb.String())
+		}
+	})
 }

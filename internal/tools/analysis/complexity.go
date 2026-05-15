@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -49,36 +50,46 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 		return tools.ToolResult{}, err
 	}
 
-	complexities, err := a.GatherComplexities(ctx, resolvedPath, hb)
+	complexities, skippedErrs, err := a.GatherComplexities(ctx, resolvedPath, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
+	var text string
 	if len(complexities) == 0 {
-		return tools.ToolResult{Text: "No Go functions found to analyze."}, nil
+		text = "No Go functions found to analyze."
+	} else {
+		text = a.formatResults(complexities)
 	}
 
-	return tools.ToolResult{Text: a.formatResults(complexities)}, nil
+	if len(skippedErrs) > 0 {
+		text += "\n\n⚠️ Skipped " + strconv.Itoa(len(skippedErrs)) +
+			" file(s) due to parse errors:\n" + strings.Join(skippedErrs, "\n")
+	}
+
+	return tools.ToolResult{Text: text}, nil
 }
 
-func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, error) {
+func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, []string, error) {
 	g, gCtx := errgroup.WithContext(ctx)
 	sem := semaphore.NewWeighted(a.getConcurrencyLimit())
 
 	var complexities []funcComplexity
 	var mu sync.Mutex
+	var skippedErrs []string
+	var skippedMu sync.Mutex
 	count := 0
 
-	walkFn := a.makeWalkFunc(g, gCtx, sem, hb, &complexities, &mu, &count)
+	walkFn := a.makeWalkFunc(g, gCtx, sem, hb, &complexities, &mu, &skippedErrs, &skippedMu, &count)
 	if err := filepath.Walk(root, walkFn); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return complexities, nil
+	return complexities, skippedErrs, nil
 }
 
 func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
@@ -89,7 +100,7 @@ func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
 	return limit
 }
 
-func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, count *int) filepath.WalkFunc {
+func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex, count *int) filepath.WalkFunc {
 	return func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -108,13 +119,13 @@ func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.
 		path := filePath
 
 		g.Go(func() error {
-			return a.processFileTask(ctx, sem, path, hb, counter, complexities, mu)
+			return a.processFileTask(ctx, sem, path, hb, counter, complexities, mu, skippedErrs, skippedMu)
 		})
 		return nil
 	}
 }
 
-func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *semaphore.Weighted, path string, hb chan<- struct{}, counter int, complexities *[]funcComplexity, mu *sync.Mutex) error {
+func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *semaphore.Weighted, path string, hb chan<- struct{}, counter int, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex) error {
 	if err := sem.Acquire(ctx, 1); err != nil {
 		return err
 	}
@@ -129,8 +140,10 @@ func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *se
 
 	fileComplexities, err := a.analyzeFile(path)
 	if err != nil {
-		// Soft-fail: individual file parse errors do not stop the entire analysis.
-		return nil
+		skippedMu.Lock()
+		*skippedErrs = append(*skippedErrs, fmt.Sprintf("%s: %v", path, err))
+		skippedMu.Unlock()
+		return nil // soft-fail: individual file errors don't stop the entire analysis
 	}
 	if len(fileComplexities) > 0 {
 		mu.Lock()

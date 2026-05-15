@@ -17,7 +17,7 @@ import (
 // Analyzer interfaces for segregation and testing
 type complexityAnalyzer interface {
 	Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
-	GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, error)
+	GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, []string, error)
 }
 
 type dependencyAnalyzer interface {

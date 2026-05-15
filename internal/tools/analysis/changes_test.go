@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChangeAnalyzer_SemanticDiff(t *testing.T) {
@@ -312,5 +315,44 @@ func TestGetDiffMetadata_StatError(t *testing.T) {
 	}
 	if len(changedFiles) != 1 {
 		t.Errorf("expected 1 changed file, got %d", len(changedFiles))
+	}
+}
+
+func TestSemanticDiff_UnmarshalArgsError(t *testing.T) {
+	t.Parallel()
+	// Use a no-op analyzer — UnmarshalArgs fails before cache/exec are touched
+	analyzer := newChangeAnalyzer(nil, nil)
+
+	tests := []struct {
+		name    string
+		args    map[string]interface{}
+		wantErr string
+	}{
+		{
+			name:    "nil args",
+			args:    nil,
+			wantErr: "", // any error is acceptable
+		},
+		{
+			name:    "missing target",
+			args:    map[string]interface{}{},
+			wantErr: "target",
+		},
+		{
+			name:    "target wrong type",
+			args:    map[string]interface{}{"target": 42},
+			wantErr: "", // any error is acceptable
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := analyzer.SemanticDiff(context.Background(), tt.args, nil)
+			require.Error(t, err, "expected error for args: %v", tt.args)
+			if tt.wantErr != "" {
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
