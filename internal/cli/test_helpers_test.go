@@ -24,11 +24,13 @@ func (m *mockCapturerInteractor) IsTTY(v any) bool { return m.isTTY }
 func (m *mockCapturerInteractor) CapturePrompt(ctx stdctx.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	return "", nil
 }
-func (m *mockCapturerInteractor) Confirm(ctx stdctx.Context, msg string) (bool, error) { return true, nil }
-func (m *mockCapturerInteractor) Warn(msg string)                                      {}
-func (m *mockCapturerInteractor) Prompt(msg string)                                    {}
-func (m *mockCapturerInteractor) ReadLine(ctx stdctx.Context) (string, error)          { return "", nil }
-func (m *mockCapturerInteractor) ReadSingleKey(ctx stdctx.Context) (string, error)     { return "", nil }
+func (m *mockCapturerInteractor) Confirm(ctx stdctx.Context, msg string) (bool, error) {
+	return true, nil
+}
+func (m *mockCapturerInteractor) Warn(msg string)                                  {}
+func (m *mockCapturerInteractor) Prompt(msg string)                                {}
+func (m *mockCapturerInteractor) ReadLine(ctx stdctx.Context) (string, error)      { return "", nil }
+func (m *mockCapturerInteractor) ReadSingleKey(ctx stdctx.Context) (string, error) { return "", nil }
 func (m *mockCapturerInteractor) Close(ctx stdctx.Context) error {
 	if m.closeFn != nil {
 		return m.closeFn(ctx)

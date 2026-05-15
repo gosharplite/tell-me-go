@@ -78,9 +78,9 @@ func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler t
 // failingRegistry extends mockRegistry with optional error injection fields
 // for testing RegisterMetrics error paths.
 type failingRegistry struct {
-	*mockRegistry           // POINTER embedding
-	registerErr error
-	failOn      string
+	*mockRegistry // POINTER embedding
+	registerErr   error
+	failOn        string
 }
 
 func (f *failingRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {

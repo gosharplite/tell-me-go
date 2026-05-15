@@ -648,7 +648,6 @@ func TestIsDeclEqual(t *testing.T) {
 		}
 	})
 
-
 }
 
 func TestGetValidEntry_NonExistent(t *testing.T) {
