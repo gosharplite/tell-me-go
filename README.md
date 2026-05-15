@@ -306,7 +306,7 @@ function b-install {
 }
 ```
 
-For advanced usage with piped multi-agent workflows and role-based review checklists, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md), [docs/steps/review-by-roles.md](docs/steps/review-by-roles.md), and [docs/steps/reduce-cyclomatic-complexity.md](docs/steps/reduce-cyclomatic-complexity.md).
+For advanced usage with piped multi-agent workflows and role-based review checklists, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md), [docs/steps/review-by-roles.md](docs/steps/review-by-roles.md), and [docs/steps/reduce-cyclomatic-complexity.md](docs/steps/reduce-cyclomatic-complexity.md). For the fully-automated Architect + Coder Issue-to-PR pipeline, see [docs/sop/lifecycle/issue_to_pr_orchestration.md](docs/sop/lifecycle/issue_to_pr_orchestration.md).
 
 ### Advanced Environment Management with Toby
 
