@@ -62,6 +62,20 @@ func isStale(path string) bool {
 	return false
 }
 
+// acquireLedgerLock attempts to create an exclusive lock file with stale-lock recovery.
+func acquireLedgerLock(lockPath string) (*os.File, error) {
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil && os.IsExist(err) {
+		if isStale(lockPath) {
+			if err := os.Remove(lockPath); err != nil {
+				log.Printf("Warning: Failed to remove stale lock %s: %v", lockPath, err)
+			}
+			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+		}
+	}
+	return f, err
+}
+
 // recoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
 func (ls *ledgerStore) recoverLedger(ctx context.Context, globalDir string) {
 	historyPath := filepath.Join(globalDir, "global_costs.json")
@@ -226,8 +240,9 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
 
-	f, err := ls.acquireLedgerLock(historyPath)
+	f, err := acquireLedgerLock(historyPath + ".lock")
 	if err != nil {
+		log.Printf("Warning: Failed to acquire ledger lock (contention) for %s: %v", historyPath, err)
 		return
 	}
 	defer ls.releaseLedgerLock(historyPath, f)
@@ -240,20 +255,6 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 			log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
 		}
 	}
-}
-
-func (ls *ledgerStore) acquireLedgerLock(historyPath string) (*os.File, error) {
-	lockPath := historyPath + ".lock"
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil && os.IsExist(err) {
-		if isStale(lockPath) {
-			if err := os.Remove(lockPath); err != nil {
-				log.Printf("Warning: Failed to remove stale lock %s: %v", lockPath, err)
-			}
-			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-		}
-	}
-	return f, err
 }
 
 func (ls *ledgerStore) releaseLedgerLock(historyPath string, f *os.File) {

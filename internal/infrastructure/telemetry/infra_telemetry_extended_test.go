@@ -78,9 +78,9 @@ func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler t
 // failingRegistry extends mockRegistry with optional error injection fields
 // for testing RegisterMetrics error paths.
 type failingRegistry struct {
-	mockRegistry
-	registerErr error  // if set, RegisterWithOptions returns this error for ALL registrations
-	failOn      string // if set, RegisterWithOptions returns error only when def.Name == failOn
+	*mockRegistry           // POINTER embedding
+	registerErr error
+	failOn      string
 }
 
 func (f *failingRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
@@ -315,13 +315,13 @@ func TestLedger_Extended(t *testing.T) {
 		historyPath := filepath.Join(tempDir, "global_costs.json")
 
 		ls := &ledgerStore{}
-		f, err := ls.acquireLedgerLock(historyPath)
+		f, err := acquireLedgerLock(historyPath + ".lock")
 		if err != nil {
 			t.Fatalf("Failed to acquire lock: %v", err)
 		}
 
 		// Try to acquire again
-		f2, err := ls.acquireLedgerLock(historyPath)
+		f2, err := acquireLedgerLock(historyPath + ".lock")
 		if err == nil {
 			_ = f2.Close()
 			t.Error("Should not be able to acquire lock again")
@@ -330,7 +330,7 @@ func TestLedger_Extended(t *testing.T) {
 		ls.releaseLedgerLock(historyPath, f)
 
 		// Should be able to acquire now
-		f3, err := ls.acquireLedgerLock(historyPath)
+		f3, err := acquireLedgerLock(historyPath + ".lock")
 		if err != nil {
 			t.Errorf("Failed to acquire lock after release: %v", err)
 		}
@@ -1062,7 +1062,8 @@ func TestRegisterMetrics_FirstRegistrationFails(t *testing.T) {
 	t.Parallel()
 
 	reg := &failingRegistry{
-		registerErr: errors.New("injected"),
+		mockRegistry: &mockRegistry{},
+		registerErr:  errors.New("injected"),
 	}
 	sm := &mockSM{}
 
@@ -1094,7 +1095,8 @@ func TestRegisterMetrics_SecondRegistrationFails(t *testing.T) {
 	t.Parallel()
 
 	reg := &failingRegistry{
-		failOn: "get_cost_summary",
+		mockRegistry: &mockRegistry{},
+		failOn:       "get_cost_summary",
 	}
 	sm := &mockSM{}
 
