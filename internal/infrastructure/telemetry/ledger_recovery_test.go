@@ -230,3 +230,56 @@ func TestLoadExistingSessionIDs_ValidJSON(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// mergeRecords duplicate key test (Phase 7)
+// ---------------------------------------------------------------------------
+
+func TestMergeRecords_DuplicateKey(t *testing.T) {
+	t.Parallel()
+
+	ls := &ledgerStore{}
+
+	history := []sessionCostRecord{
+		{Session: "unique-old", TotalCost: 0.5},
+		{Session: "same-session", TotalCost: 1.0},
+	}
+
+	newRecords := []sessionCostRecord{
+		{Session: "same-session", TotalCost: 2.0},
+	}
+
+	merged := ls.mergeRecords(history, newRecords)
+
+	if len(merged) != 2 {
+		t.Errorf("expected 2 merged records, got %d", len(merged))
+	}
+
+	// Find the "same-session" record and verify new wins.
+	found := false
+	for _, r := range merged {
+		if r.Session == "same-session" {
+			found = true
+			if r.TotalCost != 2.0 {
+				t.Errorf("expected TotalCost 2.0 for same-session (new wins), got %f", r.TotalCost)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'same-session' in merged result")
+	}
+
+	// Verify unique-old is still there.
+	foundOld := false
+	for _, r := range merged {
+		if r.Session == "unique-old" {
+			foundOld = true
+			if r.TotalCost != 0.5 {
+				t.Errorf("expected TotalCost 0.5 for unique-old, got %f", r.TotalCost)
+			}
+		}
+	}
+	if !foundOld {
+		t.Error("expected 'unique-old' in merged result")
+	}
+}

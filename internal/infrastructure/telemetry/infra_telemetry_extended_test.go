@@ -6,6 +6,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,24 @@ func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler t
 	}
 	m.handlers[def.Name] = handler
 	return nil
+}
+
+// failingRegistry extends mockRegistry with optional error injection fields
+// for testing RegisterMetrics error paths.
+type failingRegistry struct {
+	mockRegistry
+	registerErr error  // if set, RegisterWithOptions returns this error for ALL registrations
+	failOn      string // if set, RegisterWithOptions returns error only when def.Name == failOn
+}
+
+func (f *failingRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	if f.registerErr != nil {
+		return f.registerErr
+	}
+	if f.failOn != "" && def.Name == f.failOn {
+		return errors.New("injected failure for " + def.Name)
+	}
+	return f.mockRegistry.RegisterWithOptions(def, handler, opts)
 }
 
 func TestSessionCostTracker_Extended(t *testing.T) {
@@ -1030,5 +1049,220 @@ func TestFindLogFiles_NonExistentRoot(t *testing.T) {
 	}
 	if len(files) != 0 {
 		t.Errorf("expected empty files for non-existent root, got %d entries", len(files))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RegisterMetrics error-path tests (Phase 7)
+// ---------------------------------------------------------------------------
+
+// TestRegisterMetrics_FirstRegistrationFails covers the error return path
+// when estimate_cost registration fails (line 52-63 of metrics.go).
+func TestRegisterMetrics_FirstRegistrationFails(t *testing.T) {
+	t.Parallel()
+
+	reg := &failingRegistry{
+		registerErr: errors.New("injected"),
+	}
+	sm := &mockSM{}
+
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "output")
+	_ = os.Mkdir(outputDir, 0755)
+	logFile := filepath.Join(outputDir, "test.log")
+	traceFile := filepath.Join(outputDir, "test.trace.jsonl")
+
+	err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil, nil)
+	if err == nil {
+		t.Fatal("expected error from first registration, got nil")
+	}
+	if !strings.Contains(err.Error(), "injected") {
+		t.Errorf("error should contain 'injected', got: %v", err)
+	}
+
+	// Verify NO handlers were registered.
+	if len(reg.handlers) != 0 {
+		t.Errorf("expected no handlers, got %d: %v", len(reg.handlers), reg.handlers)
+	}
+}
+
+// TestRegisterMetrics_SecondRegistrationFails covers the error return path
+// when get_cost_summary registration fails after estimate_cost succeeded
+// (line 65-117 of metrics.go). This locks in the current partial-state
+// behavior: estimate_cost IS registered but get_cost_summary is NOT.
+func TestRegisterMetrics_SecondRegistrationFails(t *testing.T) {
+	t.Parallel()
+
+	reg := &failingRegistry{
+		failOn: "get_cost_summary",
+	}
+	sm := &mockSM{}
+
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "output")
+	_ = os.Mkdir(outputDir, 0755)
+	logFile := filepath.Join(outputDir, "test.log")
+	traceFile := filepath.Join(outputDir, "test.trace.jsonl")
+
+	err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil, nil)
+	if err == nil {
+		t.Fatal("expected error from second registration, got nil")
+	}
+	if !strings.Contains(err.Error(), "injected failure for get_cost_summary") {
+		t.Errorf("error should mention get_cost_summary failure, got: %v", err)
+	}
+
+	// Verify partial state: estimate_cost IS registered.
+	if _, ok := reg.handlers["estimate_cost"]; !ok {
+		t.Error("estimate_cost should be registered (first registration succeeded)")
+	}
+
+	// Verify partial state: get_cost_summary is NOT registered.
+	if _, ok := reg.handlers["get_cost_summary"]; ok {
+		t.Error("get_cost_summary should NOT be registered (second registration failed)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RegisterMetrics handler closure coverage (Phase 8)
+// ---------------------------------------------------------------------------
+
+// TestRegisterMetrics_UnmarshalArgsErrorUnreachable documents that the
+// UnmarshalArgs error paths inside the RegisterMetrics closures are unreachable
+// because both estimateCostArgs and costSummaryArgs are empty structs.
+// json.Marshal of any map[string]interface{} always succeeds and json.Unmarshal
+// into an empty struct always succeeds regardless of JSON content — unknown
+// fields are silently ignored. No test can trigger this branch without
+// violating the Go type system.
+func TestRegisterMetrics_UnmarshalArgsErrorUnreachable(t *testing.T) {
+	t.Parallel()
+
+	// Prove estimateCostArgs{} always unmarshals cleanly.
+	var eArgs estimateCostArgs
+	for _, args := range []map[string]interface{}{
+		nil,
+		{},
+		{"unknown": "value"},
+		{"nested": map[string]interface{}{"deep": 42}},
+		{"array": []interface{}{1, 2, 3}},
+		{"billing": true, "start_date": "2026-01-01"},
+	} {
+		if err := tools.UnmarshalArgs(args, &eArgs); err != nil {
+			t.Fatalf("unexpected error for estimateCostArgs with %v: %v", args, err)
+		}
+	}
+
+	// Prove costSummaryArgs always unmarshals cleanly.
+	// Extra/unknown fields are silently ignored by encoding/json.
+	for _, args := range []map[string]interface{}{
+		nil,
+		{},
+		{"billing": true},
+		{"start_date": "2026-01-01", "end_date": "2026-01-31", "interval": "day", "group_by": "model"},
+		{"unknown_field": 123, "billing": false},
+		{"interval": "hour", "group_by": "date,model", "billing": true},
+	} {
+		var sArgs costSummaryArgs
+		if err := tools.UnmarshalArgs(args, &sArgs); err != nil {
+			t.Fatalf("unexpected error for costSummaryArgs with %v: %v", args, err)
+		}
+	}
+
+	// Verify that costSummaryArgs correctly captures known fields.
+	var sArgs costSummaryArgs
+	_ = tools.UnmarshalArgs(map[string]interface{}{
+		"billing":    true,
+		"start_date": "2026-06-01",
+		"end_date":   "2026-06-30",
+		"interval":   "hour",
+		"group_by":   "model",
+	}, &sArgs)
+	if !sArgs.Billing || sArgs.Interval != "hour" || sArgs.GroupBy != "model" {
+		t.Errorf("costSummaryArgs fields not populated correctly: %+v", sArgs)
+	}
+}
+
+// TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError exercises the
+// get_cost_summary handler closure body (metrics.go:69-116), specifically
+// the log.Printf warning path (lines 83-85) when EstimateCost fails with
+// a non-NotExist error. We make parseUsage fail by placing the logFile inside
+// a no-permission directory so os.Open returns EACCES.
+//
+// NOT parallel — uses chmod on a temp directory.
+func TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping chmod-based test in short mode")
+	}
+	// NOT parallel: chmod on temp dirs can interfere.
+
+	reg := &mockRegistry{}
+	sm := &mockSM{}
+
+	tmpDir := t.TempDir()
+
+	// Create a writable parent directory so global_costs.json can be placed
+	// at the correct location for getCostSummary to find.
+	parentDir := filepath.Join(tmpDir, "parent")
+	if err := os.Mkdir(parentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a no-permission subdirectory. Setting logFile inside this dir
+	// causes os.Open (inside parseUsage) to fail with EACCES, which is NOT
+	// os.IsNotExist. EstimateCost returns a non-nil error, triggering the
+	// log.Printf("Warning: Failed to record cost before summary: %v", err)
+	// branch in the get_cost_summary handler closure.
+	noAccessDir := filepath.Join(parentDir, "noaccess")
+	if err := os.Mkdir(noAccessDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(noAccessDir, 0000); err != nil {
+		t.Skipf("cannot chmod (maybe root?): %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(noAccessDir, 0755) })
+
+	logFile := filepath.Join(noAccessDir, "session_tokens.log")
+	traceFile := filepath.Join(tmpDir, "trace.jsonl")
+
+	// Place global_costs.json where getCostSummary expects it:
+	//   outputDir = filepath.Dir(logFile)  = parentDir/noaccess
+	//   globalDir = filepath.Dir(outputDir) = parentDir
+	//   historyPath = parentDir/global_costs.json
+	historyPath := filepath.Join(parentDir, "global_costs.json")
+	records := []sessionCostRecord{
+		{Date: "2026-01-15", Session: "test-session", TotalCost: 1.5, Model: "test-model"},
+	}
+	data, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil, nil); err != nil {
+		t.Fatalf("RegisterMetrics failed: %v", err)
+	}
+
+	handler := reg.handlers["get_cost_summary"]
+	if handler == nil {
+		t.Fatal("get_cost_summary handler not registered")
+	}
+
+	// Call the handler. The silent update (EstimateCost) will fail because
+	// parseUsage cannot open logFile (EACCES on parent dir). The handler
+	// logs a warning but continues to getCostSummary, which reads the
+	// pre-created global_costs.json and returns a valid summary.
+	res, err := handler(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("get_cost_summary handler failed: %v", err)
+	}
+	if res.Text == "" {
+		t.Error("expected non-empty cost summary result despite silent update failure")
+	}
+	// The summary table (default date-grouped) shows cost data, not model name.
+	// Verify the cost from our test record appears.
+	if !strings.Contains(res.Text, "$1.5000") {
+		t.Errorf("summary should contain $1.5000, got: %s", res.Text)
 	}
 }

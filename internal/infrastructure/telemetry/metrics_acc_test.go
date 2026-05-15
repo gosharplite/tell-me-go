@@ -271,3 +271,42 @@ func TestSessionCostTracker_CacheWriteTokens(t *testing.T) {
 		t.Errorf("Expected 200 cache-write tokens in stats, got %d", stats.CacheWriteTokens)
 	}
 }
+
+func TestSessionCostTracker_AccumulateAndReturn_EmptyModel(t *testing.T) {
+	t.Parallel()
+
+	pricing := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
+			"default-model": {Hit: 1.0, Miss: 2.0, Comp: 3.0},
+		},
+	}
+
+	tracker := NewSessionCostTracker(nil, "", "test", "default-model", pricing.Models["default-model"], pricing)
+
+	// Call with no Model set — should fall back to "default-model" via slog.Debug branch.
+	cost := tracker.AccumulateAndReturn(llm.Metrics{
+		PromptTokens:   100,
+		ResponseTokens: 50,
+	})
+
+	// Verify cost was calculated using default-model pricing:
+	// Input: 100 * 2 / 1e6 = 0.0002
+	// Output: 50 * 3 / 1e6 = 0.00015
+	// Total: 0.00035
+	wantCost := (100.0*2.0 + 50.0*3.0) / 1e6
+	if cost < wantCost-1e-12 || cost > wantCost+1e-12 {
+		t.Errorf("expected turn cost %f, got %f", wantCost, cost)
+	}
+
+	// Verify stats were accumulated.
+	stats, totalCost := tracker.GetStats(context.Background())
+	if stats.PromptTokens != 100 {
+		t.Errorf("expected 100 prompt tokens in stats, got %d", stats.PromptTokens)
+	}
+	if stats.ResponseTokens != 50 {
+		t.Errorf("expected 50 response tokens in stats, got %d", stats.ResponseTokens)
+	}
+	if totalCost < wantCost-1e-12 || totalCost > wantCost+1e-12 {
+		t.Errorf("expected total cost %f, got %f", wantCost, totalCost)
+	}
+}

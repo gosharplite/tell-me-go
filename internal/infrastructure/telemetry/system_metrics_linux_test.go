@@ -141,3 +141,29 @@ func verifyMemoryPercent(t *testing.T, p *linuxMetricsProvider, tt linuxMetricsT
 		t.Errorf("GetMemoryPercent() = %f, want %f", mem, tt.wantMemPercent)
 	}
 }
+
+// TestGetRoot_DefaultAndCustom verifies getRoot returns the custom root when set
+// and the default "/" when root is empty (the uncovered branch at
+// system_metrics_linux.go:25-27).
+func TestGetRoot_DefaultAndCustom(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		root string
+		want string
+	}{
+		{"default root (empty)", "", "/"},
+		{"custom root", "/custom/proc", "/custom/proc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &linuxMetricsProvider{root: tt.root}
+			got := p.getRoot()
+			if got != tt.want {
+				t.Errorf("getRoot() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -638,3 +638,71 @@ func TestEnsureLedgerReady_ReadFileError(t *testing.T) {
 		t.Errorf("unexpected status: %s", status)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// resolveGroupingKey edge cases (Phase: pure-logic coverage gap)
+// ---------------------------------------------------------------------------
+
+func TestResolveGroupingKey(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+	loc := time.UTC
+	format := "2006-01-02"
+
+	tests := []struct {
+		name     string
+		r        sessionCostRecord
+		groupBy  string
+		expected string
+	}{
+		{
+			name:     "zero timestamp returns empty",
+			r:        sessionCostRecord{Timestamp: time.Time{}, Date: "invalid-date", Model: "m"},
+			groupBy:  "date",
+			expected: "",
+		},
+		{
+			name:     "model groupBy with empty model",
+			r:        sessionCostRecord{Timestamp: ts, Model: ""},
+			groupBy:  "model",
+			expected: "unknown",
+		},
+		{
+			name:     "model groupBy with valid model",
+			r:        sessionCostRecord{Timestamp: ts, Model: "gpt-4"},
+			groupBy:  "model",
+			expected: "gpt-4",
+		},
+		{
+			name:     "date,model groupBy with empty model",
+			r:        sessionCostRecord{Timestamp: ts, Model: ""},
+			groupBy:  "date,model",
+			expected: "2026-01-15 | unknown",
+		},
+		{
+			name:     "date,model groupBy with valid model",
+			r:        sessionCostRecord{Timestamp: ts, Model: "gpt-4"},
+			groupBy:  "date,model",
+			expected: "2026-01-15 | gpt-4",
+		},
+		{
+			name:     "default date groupBy with valid ts",
+			r:        sessionCostRecord{Timestamp: ts, Model: "m"},
+			groupBy:  "",
+			expected: "2026-01-15",
+		},
+	}
+
+	m := &metricsManager{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := m.resolveGroupingKey(tt.r, loc, format, tt.groupBy)
+			if got != tt.expected {
+				t.Errorf("resolveGroupingKey() = %q; want %q", got, tt.expected)
+			}
+		})
+	}
+}
