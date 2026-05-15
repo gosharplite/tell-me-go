@@ -5,6 +5,7 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -174,4 +175,58 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 		require.Contains(t, string(content), "mixed/tokens.log")
 		require.True(t, strings.Contains(string(content), "\"total_cost\":3") || strings.Contains(string(content), "\"total_cost\":3.0"))
 	})
+}
+
+// ---------------------------------------------------------------------------
+// loadExistingSessionIDs extended test (Phase 6)
+// ---------------------------------------------------------------------------
+
+func TestLoadExistingSessionIDs_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	historyPath := filepath.Join(tempDir, "global_costs.json")
+
+	// Write invalid JSON that cannot be unmarshalled.
+	if err := os.WriteFile(historyPath, []byte("this is not valid json {{{"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ls := &ledgerStore{}
+	seen := ls.loadExistingSessionIDs(historyPath)
+
+	if len(seen) != 0 {
+		t.Errorf("expected empty map for invalid JSON, got %d entries", len(seen))
+	}
+}
+
+func TestLoadExistingSessionIDs_ValidJSON(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	historyPath := filepath.Join(tempDir, "global_costs.json")
+
+	// Write valid JSON with multiple session records.
+	records := []sessionCostRecord{
+		{Session: "s1", TotalCost: 1.0},
+		{Session: "s2", TotalCost: 2.0},
+		{Session: "s3", TotalCost: 3.0},
+	}
+	data, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ls := &ledgerStore{}
+	seen := ls.loadExistingSessionIDs(historyPath)
+
+	if len(seen) != 3 {
+		t.Errorf("expected 3 entries, got %d", len(seen))
+	}
+	for _, r := range records {
+		if !seen[r.Session] {
+			t.Errorf("expected session %q to be in map", r.Session)
+		}
+	}
 }
