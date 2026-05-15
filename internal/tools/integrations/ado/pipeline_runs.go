@@ -54,12 +54,6 @@ func (m *AdoManager) ListPipelineRuns(ctx context.Context, args map[string]inter
 }
 
 func (m *AdoManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
-	if top <= 0 {
-		top = 10
-	} else if top > 1000 {
-		top = 1000 // Defensive upper bound
-	}
-
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds",
 		m.BaseURL, url.PathEscape(org), url.PathEscape(project)))
 	if err != nil {

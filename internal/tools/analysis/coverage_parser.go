@@ -77,6 +77,10 @@ var rules = []classificationRule{
 	adapterRule{},
 }
 
+// jsonMarshalIndent is the function used to marshal JSON. Exposed as a variable
+// to allow test injection of marshal failures for error-path coverage.
+var jsonMarshalIndent = json.MarshalIndent
+
 // Classify categorizes the block and assigns a priority based on heuristics.
 func (b *uncoveredBlock) Classify() {
 	b.Category = "OTHER"
@@ -528,6 +532,6 @@ func formatDetailedCoverageJSON(blocks []uncoveredBlock, minPriority string) (st
 		}
 	}
 
-	data, err := json.MarshalIndent(filtered, "", "  ")
+	data, err := jsonMarshalIndent(filtered, "", "  ")
 	return string(data), err
 }

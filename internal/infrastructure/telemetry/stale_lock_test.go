@@ -317,7 +317,7 @@ func TestLedgerStore_AcquireLedgerLock_StaleLock_RemoveSucceeds(t *testing.T) {
 	ls := newLedgerStore(nil, "test-model", nil)
 
 	// acquireLedgerLock should break the stale lock and re-acquire
-	f, err := ls.acquireLedgerLock(historyPath)
+	f, err := acquireLedgerLock(historyPath + ".lock")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -355,9 +355,7 @@ func TestLedgerStore_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ls := newLedgerStore(nil, "test-model", nil)
-
-	f, err := ls.acquireLedgerLock(historyPath)
+	f, err := acquireLedgerLock(historyPath + ".lock")
 
 	// Must return the original os.IsExist error
 	if !os.IsExist(err) {
@@ -409,9 +407,7 @@ func TestLedgerStore_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
 	}
 	defer func() { _ = os.Chmod(subDir, 0755) }() // restore for cleanup
 
-	ls := newLedgerStore(nil, "test-model", nil)
-
-	f, err := ls.acquireLedgerLock(historyPath)
+	f, err := acquireLedgerLock(historyPath + ".lock")
 
 	// The function should still attempt the second OpenFile even though Remove failed.
 	// In a read-only directory, the lock file still exists after Remove fails, so the
@@ -452,9 +448,7 @@ func TestMetricsManager_AcquireLedgerLock_StaleLock_RemoveSucceeds(t *testing.T)
 		t.Fatal(err)
 	}
 
-	m := &metricsManager{}
-
-	f, err := m.acquireLedgerLock(lockPath)
+	f, err := acquireLedgerLock(lockPath)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -496,9 +490,7 @@ func TestMetricsManager_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := &metricsManager{}
-
-	f, err := m.acquireLedgerLock(lockPath)
+	f, err := acquireLedgerLock(lockPath)
 
 	// Must return the original os.IsExist error
 	if !os.IsExist(err) {
@@ -549,9 +541,7 @@ func TestMetricsManager_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
 	}
 	defer func() { _ = os.Chmod(subDir, 0755) }() // restore for cleanup
 
-	m := &metricsManager{}
-
-	f, err := m.acquireLedgerLock(lockPath)
+	f, err := acquireLedgerLock(lockPath)
 
 	// The function should still attempt the second OpenFile even though Remove failed.
 	// In a read-only directory, the lock file still exists after Remove fails, so the

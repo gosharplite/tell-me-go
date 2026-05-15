@@ -196,6 +196,592 @@ func TestFormatBranchRef(t *testing.T) {
 	}
 }
 
+func TestParseGetBuildChangesArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        map[string]interface{}
+		wantErr     bool
+		errContains string
+		wantTop     int
+	}{
+		{
+			name:    "Success with explicit top",
+			args:    map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "top": 20},
+			wantErr: false,
+			wantTop: 20,
+		},
+		{
+			name:    "Top zero defaults to 50",
+			args:    map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "top": 0},
+			wantErr: false,
+			wantTop: 50,
+		},
+		{
+			name:    "Top negative defaults to 50",
+			args:    map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "top": -5},
+			wantErr: false,
+			wantTop: 50,
+		},
+		{
+			name:    "Top exceeds 1000 clamps to 1000",
+			args:    map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "top": 2000},
+			wantErr: false,
+			wantTop: 1000,
+		},
+		{
+			name:    "Top at boundary 1000",
+			args:    map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "top": 1000},
+			wantErr: false,
+			wantTop: 1000,
+		},
+		{
+			name:        "Missing organization",
+			args:        map[string]interface{}{"project": "p", "build_id": 1},
+			wantErr:     true,
+			errContains: "organization, project, and build_id are required",
+		},
+		{
+			name:        "Missing project",
+			args:        map[string]interface{}{"organization": "o", "build_id": 1},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Missing build_id",
+			args:        map[string]interface{}{"organization": "o", "project": "p"},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Build_id is zero",
+			args:        map[string]interface{}{"organization": "o", "project": "p", "build_id": 0},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Invalid type for organization",
+			args:        map[string]interface{}{"organization": 123, "project": "p", "build_id": 1},
+			wantErr:     true,
+			errContains: "cannot unmarshal",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			params, err := parseGetBuildChangesArgs(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantTop, params.Top)
+		})
+	}
+}
+
+func TestParseListPipelineRunsArgs(t *testing.T) {
+	tests := []struct {
+		name             string
+		args             map[string]interface{}
+		wantErr          bool
+		errContains      string
+		wantPipelineID   int
+		wantPipelineName string
+		wantOriginalTop  int
+		wantFetchTop     int
+	}{
+		{
+			name:            "Success with pipeline_id",
+			args:            map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 5},
+			wantErr:         false,
+			wantPipelineID:  5,
+			wantOriginalTop: 10,
+			wantFetchTop:    10,
+		},
+		{
+			name:             "Success with pipeline_name",
+			args:             map[string]interface{}{"organization": "o", "project": "p", "pipeline_name": "my-pipe"},
+			wantErr:          false,
+			wantPipelineID:   0,
+			wantPipelineName: "my-pipe",
+			wantOriginalTop:  10,
+			wantFetchTop:     10,
+		},
+		{
+			name:        "Neither pipeline_id nor pipeline_name",
+			args:        map[string]interface{}{"organization": "o", "project": "p"},
+			wantErr:     true,
+			errContains: "either pipeline_id or pipeline_name must be provided",
+		},
+		{
+			name:            "Top zero defaults to 10",
+			args:            map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 0},
+			wantErr:         false,
+			wantPipelineID:  1,
+			wantOriginalTop: 10,
+			wantFetchTop:    10,
+		},
+		{
+			name:            "Top negative defaults to 10",
+			args:            map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": -5},
+			wantErr:         false,
+			wantPipelineID:  1,
+			wantOriginalTop: 10,
+			wantFetchTop:    10,
+		},
+		{
+			name:            "Top exceeds 1000 clamps to 1000",
+			args:            map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 2000},
+			wantErr:         false,
+			wantPipelineID:  1,
+			wantOriginalTop: 1000,
+			wantFetchTop:    1000,
+		},
+		{
+			name:            "Top with repo filter sets FetchTop to 100",
+			args:            map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 20, "repository": "some-repo"},
+			wantErr:         false,
+			wantPipelineID:  1,
+			wantOriginalTop: 20,
+			wantFetchTop:    100,
+		},
+		{
+			name:            "Top at boundary 1000",
+			args:            map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 1000},
+			wantErr:         false,
+			wantPipelineID:  1,
+			wantOriginalTop: 1000,
+			wantFetchTop:    1000,
+		},
+		{
+			name:        "Missing organization",
+			args:        map[string]interface{}{"project": "p", "pipeline_id": 1},
+			wantErr:     true,
+			errContains: "organization and project are required",
+		},
+		{
+			name:        "Invalid type for organization",
+			args:        map[string]interface{}{"organization": 123, "project": "p", "pipeline_id": 1},
+			wantErr:     true,
+			errContains: "cannot unmarshal",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			params, err := parseListPipelineRunsArgs(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantPipelineID, params.PipelineId)
+			assert.Equal(t, tt.wantPipelineName, params.PipelineName)
+			assert.Equal(t, tt.wantOriginalTop, params.OriginalTop)
+			assert.Equal(t, tt.wantFetchTop, params.FetchTop)
+		})
+	}
+}
+
+func TestParseCreatePipelineArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        map[string]interface{}
+		wantErr     bool
+		errContains string
+		wantName    string
+	}{
+		{
+			name:     "Success",
+			args:     map[string]interface{}{"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y"},
+			wantErr:  false,
+			wantName: "n",
+		},
+		{
+			name:        "Missing organization",
+			args:        map[string]interface{}{"project": "p", "name": "n", "repository_id": "r", "yaml_path": "y"},
+			wantErr:     true,
+			errContains: "organization, project, name, repository_id, and yaml_path are required",
+		},
+		{
+			name:        "Missing project",
+			args:        map[string]interface{}{"organization": "o", "name": "n", "repository_id": "r", "yaml_path": "y"},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Missing name",
+			args:        map[string]interface{}{"organization": "o", "project": "p", "repository_id": "r", "yaml_path": "y"},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Missing repository_id",
+			args:        map[string]interface{}{"organization": "o", "project": "p", "name": "n", "yaml_path": "y"},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Missing yaml_path",
+			args:        map[string]interface{}{"organization": "o", "project": "p", "name": "n", "repository_id": "r"},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Invalid type for name",
+			args:        map[string]interface{}{"organization": "o", "project": "p", "name": 123, "repository_id": "r", "yaml_path": "y"},
+			wantErr:     true,
+			errContains: "cannot unmarshal",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			params, err := parseCreatePipelineArgs(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantName, params.Name)
+		})
+	}
+}
+
+func TestParseUpdateBuildDefArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        map[string]interface{}
+		wantErr     bool
+		errContains string
+		wantDefID   int
+	}{
+		{
+			name: "Success",
+			args: map[string]interface{}{
+				"organization":  "o",
+				"project":       "p",
+				"definition_id": 1,
+				"variables":     map[string]interface{}{"KEY": map[string]interface{}{"value": "v"}},
+			},
+			wantErr:   false,
+			wantDefID: 1,
+		},
+		{
+			name: "Missing organization",
+			args: map[string]interface{}{
+				"project":       "p",
+				"definition_id": 1,
+				"variables":     map[string]interface{}{"K": map[string]interface{}{"value": "v"}},
+			},
+			wantErr:     true,
+			errContains: "organization, project, definition_id, and non-empty variables are required",
+		},
+		{
+			name: "Missing project",
+			args: map[string]interface{}{
+				"organization":  "o",
+				"definition_id": 1,
+				"variables":     map[string]interface{}{"K": map[string]interface{}{"value": "v"}},
+			},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name: "Missing definition_id (zero)",
+			args: map[string]interface{}{
+				"organization": "o",
+				"project":      "p",
+				"variables":    map[string]interface{}{"K": map[string]interface{}{"value": "v"}},
+			},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name: "Empty variables",
+			args: map[string]interface{}{
+				"organization":  "o",
+				"project":       "p",
+				"definition_id": 1,
+				"variables":     map[string]interface{}{},
+			},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name: "Invalid type for definition_id",
+			args: map[string]interface{}{
+				"organization":  "o",
+				"project":       "p",
+				"definition_id": "not-an-int",
+				"variables":     map[string]interface{}{"K": map[string]interface{}{"value": "v"}},
+			},
+			wantErr:     true,
+			errContains: "cannot unmarshal",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			params, err := parseUpdateBuildDefArgs(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantDefID, params.DefinitionId)
+		})
+	}
+}
+
+func TestParseRunPipelineArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        map[string]interface{}
+		wantErr     bool
+		errContains string
+		wantPipeID  int
+		wantRefName string
+		wantBranch  string
+	}{
+		{
+			name: "Success",
+			args: map[string]interface{}{
+				"organization": "o",
+				"project":      "p",
+				"pipeline_id":  1,
+				"branch":       "main",
+				"_ref_name":    "refs/heads/main",
+			},
+			wantErr:     false,
+			wantPipeID:  1,
+			wantRefName: "refs/heads/main",
+			wantBranch:  "main",
+		},
+		{
+			name:        "Missing organization",
+			args:        map[string]interface{}{"project": "p", "pipeline_id": 1},
+			wantErr:     true,
+			errContains: "organization, project, and pipeline_id are required",
+		},
+		{
+			name:        "Missing project",
+			args:        map[string]interface{}{"organization": "o", "pipeline_id": 1},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Pipeline_id is zero",
+			args:        map[string]interface{}{"organization": "o", "project": "p"},
+			wantErr:     true,
+			errContains: "required",
+		},
+		{
+			name:        "Invalid type for pipeline_id",
+			args:        map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": "bad"},
+			wantErr:     true,
+			errContains: "cannot unmarshal",
+		},
+		{
+			name: "RefName fallback from Branch",
+			args: map[string]interface{}{
+				"organization": "o",
+				"project":      "p",
+				"pipeline_id":  1,
+				"branch":       "develop",
+			},
+			wantErr:     false,
+			wantPipeID:  1,
+			wantRefName: "develop",
+			wantBranch:  "develop",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			params, err := parseRunPipelineArgs(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantPipeID, params.PipelineId)
+			assert.Equal(t, tt.wantRefName, params.RefName)
+			assert.Equal(t, tt.wantBranch, params.Branch)
+		})
+	}
+
+	t.Run("Variables mapped to adoVariable", func(t *testing.T) {
+		params, err := parseRunPipelineArgs(map[string]interface{}{
+			"organization": "o",
+			"project":      "p",
+			"pipeline_id":  1,
+			"variables":    map[string]string{"KEY": "VAL"},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, params.MappedVariables)
+		v, ok := params.MappedVariables["KEY"]
+		assert.True(t, ok)
+		assert.Equal(t, "VAL", v.Value)
+		assert.False(t, v.IsSecret)
+	})
+}
+
+func TestBuildListPipelineRunsURL(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	tests := []struct {
+		name            string
+		baseURL         string
+		org             string
+		project         string
+		pipelineID      int
+		top             int
+		wantErr         bool
+		errContains     string
+		wantURLContains []string
+	}{
+		{
+			name:            "Success",
+			baseURL:         "http://example.com",
+			org:             "o",
+			project:         "p",
+			pipelineID:      1,
+			top:             20,
+			wantErr:         false,
+			wantURLContains: []string{"definitions=1", "%24top=20", "api-version=7.1"},
+		},
+		{
+			name:        "Malformed BaseURL causes parse error",
+			baseURL:     "://invalid-url",
+			org:         "o",
+			project:     "p",
+			pipelineID:  1,
+			top:         10,
+			wantErr:     true,
+			errContains: "failed to parse base URL",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewADOManager(sm, WithBaseURL(tt.baseURL), WithToken("test-pat"))
+			urlStr, err := m.buildListPipelineRunsURL(tt.org, tt.project, tt.pipelineID, tt.top)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+			assert.NoError(t, err)
+			for _, want := range tt.wantURLContains {
+				assert.Contains(t, urlStr, want)
+			}
+		})
+	}
+}
+
+func TestBuildGetBuildChangesURL(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	// NOTE: Clamping of Top (≤0 → 50, >1000 → 1000) is tested in
+	// TestParseGetBuildChangesArgs. buildGetBuildChangesURL trusts the
+	// pre-clamped value and therefore does not re-clamp.
+
+	tests := []struct {
+		name            string
+		baseURL         string
+		org             string
+		project         string
+		buildID         int
+		top             int
+		wantErr         bool
+		errContains     string
+		wantURLContains []string
+	}{
+		{
+			name:    "Success",
+			baseURL: "http://example.com",
+			org:     "o",
+			project: "p",
+			buildID: 1,
+			top:     20,
+			wantErr: false,
+			wantURLContains: []string{
+				"/_apis/build/builds/1/changes",
+				"%24top=20",
+				"api-version=7.0",
+			},
+		},
+		{
+			name:        "Malformed BaseURL causes parse error",
+			baseURL:     "://invalid-url",
+			org:         "o",
+			project:     "p",
+			buildID:     1,
+			top:         10,
+			wantErr:     true,
+			errContains: "failed to parse base URL",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewADOManager(sm, WithBaseURL(tt.baseURL), WithToken("test-pat"))
+			params := adoGetBuildChangesParams{
+				Organization: tt.org,
+				Project:      tt.project,
+				BuildId:      tt.buildID,
+				Top:          tt.top,
+			}
+			urlStr, err := m.buildGetBuildChangesURL(params)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+			assert.NoError(t, err)
+			for _, want := range tt.wantURLContains {
+				assert.Contains(t, urlStr, want)
+			}
+		})
+	}
+}
+
 func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 	server := setupMockPipelineServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var req adoCreatePipelineRequest

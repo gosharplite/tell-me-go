@@ -36,6 +36,17 @@ var _ cli.Bootstrapper = (*di.Bootstrapper)(nil)
 // -ldflags="-X 'main.version=vX.Y.Z'".
 var version = "dev"
 
+var (
+	// initTracerFn is the tracer initializer, overridable in tests for error injection.
+	initTracerFn = initTracer
+
+	// buildAppFn is the application builder, overridable in tests for error injection.
+	buildAppFn = buildApp
+
+	// newResourceFn is the resource constructor, overridable in tests for error injection.
+	newResourceFn = resource.New
+)
+
 func getVersion() string {
 	if version != "dev" {
 		return version
@@ -57,7 +68,7 @@ func initTracer(ctx context.Context) func(context.Context) error {
 		return func(context.Context) error { return nil }
 	}
 
-	res, err := resource.New(ctx,
+	res, err := newResourceFn(ctx,
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String("tell-me-go"),
 		),
@@ -92,7 +103,7 @@ func main() {
 
 func run() int {
 	appVersion := getVersion()
-	app, cleanup, err := buildApp(appVersion, os.Stdin, os.Stdout, os.Stderr)
+	app, cleanup, err := buildAppFn(appVersion, os.Stdin, os.Stdout, os.Stderr)
 
 	// Ensure cleanup runs if it was returned, regardless of error status
 	if cleanup != nil {
@@ -113,7 +124,7 @@ func run() int {
 
 func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cli.App, func(), error) {
 	ctx := context.Background()
-	shutdown := initTracer(ctx)
+	shutdown := initTracerFn(ctx)
 	cleanup := func() {
 		sCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()

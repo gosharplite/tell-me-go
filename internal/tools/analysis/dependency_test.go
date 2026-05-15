@@ -2,11 +2,15 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -64,23 +68,62 @@ func verifyPackageGraphResults(t *testing.T, output, module string) {
 func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 	t.Parallel()
 
-	t.Run("nil hb does not panic", func(t *testing.T) {
+	t.Run("nil hb, already-done channel", func(t *testing.T) {
 		t.Parallel()
-		analyzer := newDependencyAnalyzer(nil, nil, nil, nil)
+		a := newDependencyAnalyzer(nil, nil, nil, nil)
 		done := make(chan struct{})
-		close(done)
-		analyzer.startHeartbeat(nil, done)
+		close(done) // already done
+		// Must not panic, must return immediately
+		a.startHeartbeat(nil, done)
 	})
 
-	t.Run("non-nil hb with done", func(t *testing.T) {
+	t.Run("nil hb, open done channel then close", func(t *testing.T) {
 		t.Parallel()
-		analyzer := newDependencyAnalyzer(nil, nil, nil, nil)
+		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		done := make(chan struct{})
+		// Start heartbeat with nil hb — the `if hb != nil` guard at line 140
+		// must prevent send on nil channel. Close done after a tick would fire.
+		// Use a short timer to verify the goroutine doesn't panic, then close.
+		go func() {
+			a.startHeartbeat(nil, done)
+		}()
+		// Give it time to enter the loop and tick once
+		time.Sleep(10 * time.Millisecond)
+		close(done)
+	})
+
+	t.Run("buffered hb, receives heartbeat", func(t *testing.T) {
+		t.Parallel()
+		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		done := make(chan struct{})
+		hb := make(chan struct{}, 2)
+		go func() {
+			a.startHeartbeat(hb, done)
+		}()
+		// Wait for at least one heartbeat
+		select {
+		case <-hb:
+			// got heartbeat
+		case <-time.After(3 * time.Second):
+			t.Error("timed out waiting for heartbeat")
+		}
+		close(done)
+	})
+
+	t.Run("hb full, does not block", func(t *testing.T) {
+		t.Parallel()
+		a := newDependencyAnalyzer(nil, nil, nil, nil)
 		done := make(chan struct{})
 		hb := make(chan struct{}, 1)
-		go analyzer.startHeartbeat(hb, done)
-		// Wait briefly then close done to stop
+		// Fill the buffer
+		hb <- struct{}{}
+		go func() {
+			a.startHeartbeat(hb, done)
+		}()
+		// Wait a tick, then close — the `default:` at line 143 must prevent blocking
+		time.Sleep(10 * time.Millisecond)
 		close(done)
-		// No assertions needed — just verify no panic/goroutine leak
+		// Test passes if we reach here (no goroutine leak, no panic)
 	})
 }
 
@@ -135,5 +178,35 @@ func TestContainsGoFiles(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for non-existent directory")
 		}
+	})
+}
+
+func TestDependencyAnalyzer_PublishToolAction(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil EventBus returns silently", func(t *testing.T) {
+		t.Parallel()
+		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		// Must not panic
+		a.publishToolAction(context.Background(), "test message")
+	})
+
+	t.Run("non-nil EventBus with ErrBusNotInitialized", func(t *testing.T) {
+		t.Parallel()
+		bus := &eventstest.TestEventBus{}
+		bus.SetPublishErr(events.ErrBusNotInitialized)
+		a := newDependencyAnalyzer(nil, nil, bus, nil)
+		// ErrBusNotInitialized is silently swallowed (no log)
+		// Must not panic
+		a.publishToolAction(context.Background(), "test message")
+	})
+
+	t.Run("non-nil EventBus with generic error logs to slog", func(t *testing.T) {
+		t.Parallel()
+		bus := &eventstest.TestEventBus{}
+		bus.SetPublishErr(errors.New("generic publish error"))
+		a := newDependencyAnalyzer(nil, nil, bus, nil)
+		// error is logged via slog.Error — verify no panic
+		a.publishToolAction(context.Background(), "test message")
 	})
 }

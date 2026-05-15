@@ -23,18 +23,19 @@ import (
 
 // chatCommand implements the main chat command.
 type chatCommand struct {
-	Version      string
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
-	SM           domain_security.Manager
-	ChatService  agent.ChatService
-	Bootstrapper Bootstrapper
-	Loader       domain_config.ConfigLoader
-	HomeDir      string
-	MockPrompt   string
-	MockAnswer   string
-	Interactor   *InteractorRef
+	Version          string
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	SM               domain_security.Manager
+	ChatService      agent.ChatService
+	Bootstrapper     Bootstrapper
+	Loader           domain_config.ConfigLoader
+	HomeDir          string
+	MockPrompt       string
+	MockAnswer       string
+	Interactor       *InteractorRef
+	capturerOverride agent.CapturerInteractor // test-only injection
 }
 
 type cliOptions struct {
@@ -163,6 +164,21 @@ func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Co
 	if c.isTUIConfigured(cfg) && c.noOtherActionsRequested(opts, args) {
 		opts.tuiPrompt = true
 	}
+	return c.getCapturer(ctx, cfg, opts)
+}
+
+// getCapturer returns the override if set (test path), otherwise delegates
+// to buildCapturer for the production path.
+func (c *chatCommand) getCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+	if c.capturerOverride != nil {
+		return c.capturerOverride, func(shutdownCtx stdctx.Context) error {
+			if err := c.capturerOverride.Close(shutdownCtx); err != nil {
+				_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+				return err
+			}
+			return nil
+		}, nil
+	}
 	return c.buildCapturer(ctx, cfg, opts)
 }
 func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string, capturer agent.CapturerInteractor) error {
@@ -261,11 +277,17 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 }
 
 func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+	if c.capturerOverride != nil {
+		return c.capturerOverride, func(ctx stdctx.Context) error {
+			if err := c.capturerOverride.Close(ctx); err != nil {
+				_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+				return err
+			}
+			return nil
+		}, nil
+	}
+
 	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
-	// Defensive: untestable without DI for NewCapturer.
-	// The concrete type returned by ui.NewCapturer always implements
-	// CapturerInteractor in practice. This guard is a safety net against
-	// future regressions where the interface contract changes.
 	capturer, ok := capturerInterface.(agent.CapturerInteractor)
 	if !ok {
 		return nil, nil, fmt.Errorf("ui.NewCapturer did not return an agent.CapturerInteractor")

@@ -92,6 +92,11 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 	return complexities, skippedErrs, nil
 }
 
+// getConcurrencyLimit returns the number of goroutines to use for parallel
+// file analysis. The floor of 1 is defense-in-depth: runtime.NumCPU() never
+// returns 0 on any platform the Go runtime supports, but guarding against it
+// prevents a semaphore.NewWeighted(0) deadlock (which would block all Acquire
+// calls forever) if the runtime contract ever changes.
 func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
 	limit := int64(runtime.NumCPU())
 	if limit < 1 {

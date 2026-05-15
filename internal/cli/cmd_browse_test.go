@@ -5,11 +5,14 @@ package cli
 
 import (
 	stdctx "context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -187,4 +190,97 @@ func TestBrowseCommand_NilInteractorRef_DoesNotPanic(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "requires an interactive TTY")
 	// Should not panic with nil InteractorRef
+}
+
+func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		setupMocks  func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService)
+		wantErr     string
+		wantNoError bool
+	}{
+		{
+			name: "config load error",
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", "test-config.yaml").Return(nil, errors.New("config not found"))
+			},
+			wantErr: "error loading config",
+		},
+		{
+			name: "history manager error",
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, errors.New("hm failed"))
+			},
+			wantErr: "failed to get history manager",
+		},
+		{
+			name: "history provider error",
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(&stubHistoryManager{}, nil)
+				mb.On("GetUnifiedHistoryProvider", mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("provider failed"))
+			},
+			wantErr: "failed to get unified history provider",
+		},
+		{
+			name: "BrowseHistory error",
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(&stubHistoryManager{}, nil)
+				mb.On("GetUnifiedHistoryProvider", mock.Anything, mock.Anything, mock.Anything).Return(&stubUnifiedHistoryProvider{}, nil)
+				ms.On("BrowseHistory", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("browse crash"))
+			},
+			wantErr: "browse crash",
+		},
+		{
+			name: "success",
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(&stubHistoryManager{}, nil)
+				mb.On("GetUnifiedHistoryProvider", mock.Anything, mock.Anything, mock.Anything).Return(&stubUnifiedHistoryProvider{}, nil)
+				ms.On("BrowseHistory", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			},
+			wantNoError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr strings.Builder
+			sm := &mockSM{}
+			ml := &chatMockLoader{}
+			mb := &mockBootstrapper{}
+			ms := &mockChatService{}
+
+			tt.setupMocks(ml, mb, ms)
+
+			cmdCtx := &context{
+				Stdin:        strings.NewReader(""),
+				Stdout:       &stdout,
+				Stderr:       &stderr,
+				SM:           sm,
+				Bootstrapper: mb,
+				Loader:       ml,
+				ChatService:  ms,
+				Interactor:   NewInteractorRef(),
+			}
+
+			c := &browseCommand{
+				ctx:              cmdCtx,
+				capturerOverride: &mockCapturerInteractor{isTTY: true},
+			}
+
+			err := c.runBrowse(stdctx.Background(), "test-config.yaml")
+
+			if tt.wantNoError {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
 }
