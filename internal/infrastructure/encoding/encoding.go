@@ -22,10 +22,14 @@ func DecodeBytes(b []byte) []byte {
 	if len(b) == 0 || utf8.Valid(b) {
 		return b
 	}
-	r := WrapReader(bytes.NewReader(b))
+	return decodeFromReader(WrapReader(bytes.NewReader(b)), b)
+}
+
+// decodeFromReader reads all bytes from r, falling back to fallback on error.
+func decodeFromReader(r io.Reader, fallback []byte) []byte {
 	decoded, err := io.ReadAll(r)
 	if err != nil {
-		return b
+		return fallback
 	}
 	return decoded
 }

@@ -147,6 +147,65 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 	}
 }
 
+func TestCreateAuthenticator_Public(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    config.LLMProvider
+		wantErr     bool
+		wantAuthNil bool
+		wantType    string // "bearer", "vertex", or "" for nil
+	}{
+		{
+			name:        "Valid key returns BearerAuth",
+			provider:    config.LLMProvider{Type: "openai", APIKey: "secret"},
+			wantErr:     false,
+			wantAuthNil: false,
+			wantType:    "bearer",
+		},
+		{
+			name:        "Missing key returns error",
+			provider:    config.LLMProvider{Type: "anthropic", APIKey: ""},
+			wantErr:     true,
+			wantAuthNil: true,
+			wantType:    "",
+		},
+		{
+			name:        "Vertex fallback when no key",
+			provider:    config.LLMProvider{Type: "google", APIKey: ""},
+			wantErr:     false,
+			wantAuthNil: false,
+			wantType:    "vertex",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, err := CreateAuthenticator(&tt.provider)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CreateAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if (a == nil) != tt.wantAuthNil {
+				t.Errorf("CreateAuthenticator() auth = %v, wantAuthNil %v", a, tt.wantAuthNil)
+			}
+
+			if !tt.wantErr && a != nil {
+				switch tt.wantType {
+				case "bearer":
+					if _, ok := a.(*auth.BearerAuth); !ok {
+						t.Errorf("expected *auth.BearerAuth, got %T", a)
+					}
+				case "vertex":
+					if _, ok := a.(*auth.VertexAuth); !ok {
+						t.Errorf("expected *auth.VertexAuth, got %T", a)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestNewClient_FallbackToGemini(t *testing.T) {
 	t.Setenv("GOOGLE_API_KEY", "dummy")
 	cfg := &config.Config{

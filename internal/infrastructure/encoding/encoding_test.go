@@ -4,6 +4,8 @@
 package encoding
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"runtime"
 	"strings"
@@ -164,4 +166,32 @@ func TestDecodeBytes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDecodeBytes_ReadAllError(t *testing.T) {
+	t.Run("io.ReadAll error returns fallback", func(t *testing.T) {
+		fr := &faultyReader{}
+		fallback := []byte("fallback")
+		got := decodeFromReader(fr, fallback)
+		if string(got) != string(fallback) {
+			t.Errorf("got %q; want %q", got, fallback)
+		}
+	})
+
+	t.Run("successful read returns decoded bytes", func(t *testing.T) {
+		input := []byte("success")
+		fallback := []byte("fallback")
+		got := decodeFromReader(bytes.NewReader(input), fallback)
+		if string(got) != string(input) {
+			t.Errorf("got %q; want %q", got, input)
+		}
+	})
+}
+
+// faultyReader is an io.Reader that always returns an error, used for testing.
+type faultyReader struct{}
+
+// Read implements io.Reader for fault injection in tests.
+func (f *faultyReader) Read(p []byte) (int, error) {
+	return 0, errors.New("simulated read failure")
 }
