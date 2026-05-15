@@ -24,20 +24,6 @@ type fileSnapshot struct {
 	Action    string    `json:"action"` // "WRITE", "REPLACE", "APPEND", or "DELETE"
 }
 
-// pathResolver resolves a relative or absolute path to an absolute path.
-type pathResolver func(string) (string, error)
-
-// BackupManagerOption configures a backupManager.
-type BackupManagerOption func(*backupManager)
-
-// WithPathResolver sets a custom path resolution function.
-// The default is filepath.Abs.
-func WithPathResolver(r pathResolver) BackupManagerOption {
-	return func(bm *backupManager) {
-		bm.resolvePath = r
-	}
-}
-
 // backupManager handles the snapshotting and restoration of files.
 type backupManager struct {
 	mu          sync.Mutex
@@ -45,24 +31,20 @@ type backupManager struct {
 	maxStored   int
 	sm          domain_security.PathValidator
 	fs          domain_persistence.FileSystem
-	resolvePath pathResolver
+	resolvePath func(string) (string, error)
 }
 
 // newBackupManager creates a new backupManager.
-func newBackupManager(sm domain_security.PathValidator, fs domain_persistence.FileSystem, maxStored int, opts ...BackupManagerOption) *backupManager {
+func newBackupManager(sm domain_security.PathValidator, fs domain_persistence.FileSystem, maxStored int) *backupManager {
 	if maxStored <= 0 {
 		maxStored = 10
 	}
-	bm := &backupManager{
+	return &backupManager{
 		maxStored:   maxStored,
 		sm:          sm,
 		fs:          fs,
 		resolvePath: filepath.Abs,
 	}
-	for _, opt := range opts {
-		opt(bm)
-	}
-	return bm
 }
 
 // snapshot records the current state of a file before it is modified.

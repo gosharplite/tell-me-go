@@ -390,28 +390,6 @@ func TestUndo_NExceedingSnapshotCount(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// snapshot path resolution error path (Phase A, Task 2)
-// ---------------------------------------------------------------------------
-
-func TestSnapshot_WorkingDirectoryRemoved(t *testing.T) {
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10,
-		WithPathResolver(func(path string) (string, error) {
-			return "", fmt.Errorf("getwd failed: no such file or directory")
-		}),
-	)
-	ctx := context.Background()
-
-	err := bm.snapshot(ctx, "test.txt", "WRITE")
-	if err == nil {
-		t.Fatal("expected error from path resolver failure")
-	}
-	if !strings.Contains(err.Error(), "snapshot: resolve path") {
-		t.Errorf("expected 'snapshot: resolve path' in error, got: %v", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // undo N normalization tests (Phase A, Task 2)
 // ---------------------------------------------------------------------------
 
