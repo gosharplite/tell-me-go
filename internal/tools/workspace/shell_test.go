@@ -677,3 +677,47 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 		}
 	})
 }
+
+func TestShellTool_PipeCommands_UnmarshalError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	validator := &toolstest.MockCommandValidator{}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	res, err := tool.PipeCommands(ctx, map[string]interface{}{
+		"commands": "not_an_array",
+		"reason":   "test unmarshal",
+	}, nil)
+
+	if err != nil {
+		t.Errorf("expected nil Go error (domain outcome), got: %v", err)
+	}
+	if res.Error == nil {
+		t.Error("expected res.Error to be non-nil")
+	}
+	if !strings.Contains(res.Text, "Error:") {
+		t.Errorf("expected 'Error:' prefix in Text, got: %q", res.Text)
+	}
+}
+
+func TestShellTool_PipeCommands_TooFewCommands(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	validator := &toolstest.MockCommandValidator{}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	res, err := tool.PipeCommands(ctx, map[string]interface{}{
+		"commands": []interface{}{"ls"},
+		"reason":   "test single command",
+	}, nil)
+
+	if err != nil {
+		t.Errorf("expected nil Go error, got: %v", err)
+	}
+	if res.Error == nil {
+		t.Error("expected res.Error to be non-nil")
+	}
+	if !strings.Contains(res.Text, "at least two commands") {
+		t.Errorf("expected 'at least two commands' in Text, got: %q", res.Text)
+	}
+}

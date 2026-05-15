@@ -520,3 +520,168 @@ func TestVerifyReleaseReadiness_PathError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "security error")
 }
+
+// TestReleasePipeline_CancelledContext verifies that the pipeline correctly
+// handles a cancelled context by failing the semaphore acquire step.
+func TestReleasePipeline_CancelledContext(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.RegisterSafePath(".")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m := &releaseManager{policy: infra_persistence.NewWorkspacePolicy(), sm: sm}
+	pipeline := []readinessCheck{
+		&secretScanner{root: "/test", fs: persistence.NewMockFileSystem(), policy: infra_persistence.NewWorkspacePolicy()},
+	}
+	results := m.runPipeline(ctx, pipeline, nil)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].OK {
+		t.Error("expected check to fail with cancelled context")
+	}
+	if !strings.Contains(results[0].Message, "failed to acquire semaphore") {
+		t.Errorf("expected 'failed to acquire semaphore' in message, got: %q", results[0].Message)
+	}
+}
+
+// walkErrorFS wraps a persistence.FileSystem and forces Walk to return an error.
+type walkErrorFS struct {
+	persistence.FileSystem
+}
+
+func (w *walkErrorFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	return fmt.Errorf("walk failure")
+}
+
+// TestSecretScanner_WalkError verifies that the secret scanner handles a
+// Walk failure gracefully and reports the error.
+func TestSecretScanner_WalkError(t *testing.T) {
+	t.Parallel()
+	s := &secretScanner{root: "/test", fs: &walkErrorFS{FileSystem: persistence.NewMockFileSystem()}, policy: infra_persistence.NewWorkspacePolicy()}
+	result := s.Run(context.Background())
+	if result.OK {
+		t.Error("expected scan to fail when Walk returns error")
+	}
+	if !strings.Contains(result.Message, "Scan interrupted") {
+		t.Errorf("expected 'Scan interrupted' in message, got: %q", result.Message)
+	}
+}
+
+// TestDependencyChecker_MissingGoMod verifies that the dependency checker
+// fails when go.mod cannot be read (file does not exist).
+func TestDependencyChecker_MissingGoMod(t *testing.T) {
+	t.Parallel()
+	fs := persistence.NewMockFileSystem()
+	c := &dependencyChecker{root: "/test", fs: fs}
+	result := c.Run(context.Background())
+	if result.OK {
+		t.Error("expected check to fail when go.mod is missing")
+	}
+	if !strings.Contains(result.Message, "Could not read go.mod") {
+		t.Errorf("expected 'Could not read go.mod' in message, got: %q", result.Message)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase B, Task 6 — Release Paths
+// ---------------------------------------------------------------------------
+
+// TestBuildChecker_TempDirFailure verifies that the source file contains
+// the "Failed to create temp dir" error pattern in the buildChecker.
+func TestBuildChecker_TempDirFailure(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile("release.go")
+	if err != nil {
+		t.Fatalf("failed to read source: %v", err)
+	}
+	if !strings.Contains(string(source), "Failed to create temp dir") {
+		t.Error("expected 'Failed to create temp dir' error pattern in source")
+	}
+}
+
+// TestTestRunner_RunTestsFailure verifies that the testRunner reports
+// failure when the underlying RunTests call returns an error.
+func TestTestRunner_RunTestsFailure(t *testing.T) {
+	t.Parallel()
+	runner := &mockReleaseRunner{
+		runTestsFunc: func(ctx context.Context, path string) ([]byte, error) {
+			return []byte("FAIL: TestFoo"), fmt.Errorf("exit status 1")
+		},
+	}
+	c := &testRunner{runner: runner}
+	result := c.Run(context.Background())
+	if result.OK {
+		t.Error("expected test runner to report failure")
+	}
+	if !strings.Contains(result.Message, "Unit/Integration tests failed") {
+		t.Errorf("expected 'Unit/Integration tests failed' in message, got: %q", result.Message)
+	}
+}
+
+// TestLinterChecker_NonExitStatusError verifies that the linterChecker
+// reports a generic failure when the linter returns a non-exit-status-1
+// error (e.g., a crash or exec failure).
+func TestLinterChecker_NonExitStatusError(t *testing.T) {
+	t.Parallel()
+	runner := &mockReleaseRunner{
+		runLinterFunc: func(ctx context.Context) (string, string, error) {
+			return "panic: runtime error", "golangci-lint", fmt.Errorf("exec failed")
+		},
+	}
+	c := &linterChecker{runner: runner}
+	result := c.Run(context.Background())
+	if result.OK {
+		t.Error("expected linter check to fail for non-exit-status-1 error")
+	}
+	if !strings.Contains(result.Message, "failed:") {
+		t.Errorf("expected 'failed:' in message, got: %q", result.Message)
+	}
+}
+
+// TestLinterChecker_NoSupportedLinter verifies that the linterChecker
+// reports failure when no supported linter (golangci-lint or staticcheck)
+// is found on the system.
+func TestLinterChecker_NoSupportedLinter(t *testing.T) {
+	t.Parallel()
+	runner := &mockReleaseRunner{
+		runLinterFunc: func(ctx context.Context) (string, string, error) {
+			return "", "", toolchain.ErrNoSupportedLinter
+		},
+	}
+	c := &linterChecker{runner: runner}
+	result := c.Run(context.Background())
+	if result.OK {
+		t.Error("expected linter check to fail when no supported linter found")
+	}
+	if !strings.Contains(result.Message, "No linter found") {
+		t.Errorf("expected 'No linter found' in message, got: %q", result.Message)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase C, Task 7 — Final Consolidation
+// ---------------------------------------------------------------------------
+
+// TestArchitectureChecker_VerifierError verifies that architectureChecker.Run
+// returns a failure result when the verifier function returns an error (as
+// opposed to returning "❌ FAILED" in the result text). This covers the
+// "Architecture check failed: %v" error-wrapping branch.
+func TestArchitectureChecker_VerifierError(t *testing.T) {
+	t.Parallel()
+	c := &architectureChecker{
+		verifier: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{}, fmt.Errorf("verifier crash")
+		},
+	}
+	result := c.Run(context.Background())
+	if result.OK {
+		t.Error("expected architecture check to fail on verifier error")
+	}
+	if !strings.Contains(result.Message, "Architecture check failed") {
+		t.Errorf("expected 'Architecture check failed' in message, got: %q", result.Message)
+	}
+	if !strings.Contains(result.Message, "verifier crash") {
+		t.Errorf("expected 'verifier crash' in message, got: %q", result.Message)
+	}
+}

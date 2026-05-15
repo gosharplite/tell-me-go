@@ -1204,3 +1204,45 @@ func TestListFiles_InvalidArgs(t *testing.T) {
 		t.Fatal("expected unmarshal error")
 	}
 }
+
+// TestPerformSingleDelete_StatError verifies that performSingleDelete returns
+// an error when attempting to delete a nonexistent path. The Stat call fails
+// (path does not exist) and the subsequent Remove also fails.
+func TestPerformSingleDelete_StatError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.RegisterSafePath(t.TempDir())
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	fs := persistencetest.NewPlainOSFileSystem()
+	w := &fileWriter{sm: sm, bm: bm, fs: fs}
+	ctx := context.Background()
+	_, err := w.performSingleDelete(ctx, "/nonexistent/path/xyz")
+	if err == nil {
+		t.Fatal("expected error from Remove on nonexistent path")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase C, Task 7 — Final Consolidation
+// ---------------------------------------------------------------------------
+
+// TestReplaceText_ReadFileError verifies that replaceText returns an error
+// when the target file does not exist (ReadFile fails with a non-IsNotExist
+// or IsNotExist error after the security check passes). This covers the
+// "failed to read file: %w" error-wrapping branch.
+func TestReplaceText_ReadFileError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.RegisterSafePath(t.TempDir())
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	fs := persistencetest.NewPlainOSFileSystem()
+	w := &fileWriter{sm: sm, bm: bm, fs: fs}
+	ctx := context.Background()
+	_, err := w.replaceText(ctx, map[string]interface{}{
+		"filepath": "/nonexistent/file.txt",
+		"old_text": "old",
+		"new_text": "new",
+		"reason":   "test",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error from replaceText on nonexistent path")
+	}
+}

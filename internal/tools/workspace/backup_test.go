@@ -388,3 +388,97 @@ func TestUndo_NExceedingSnapshotCount(t *testing.T) {
 		t.Errorf("expected 'No snapshots available', got %q", res)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// snapshot path resolution error path (Phase A, Task 2)
+// ---------------------------------------------------------------------------
+
+func TestSnapshot_WorkingDirectoryRemoved(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	// Create a temp dir, chdir into it, then remove it
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(subDir); err != nil {
+		t.Fatal(err)
+	}
+	// Remove the directory we're in — this causes os.Getwd() to fail on next call
+	if err := os.Remove(subDir); err != nil {
+		// On some OSes, you can't remove the current working directory
+		t.Skipf("cannot remove current working directory on this OS: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
+
+	// Now filepath.Abs should fail because os.Getwd fails
+	err = bm.snapshot(ctx, "test.txt", "WRITE")
+	if err == nil {
+		t.Fatal("expected error from filepath.Abs when working directory is removed")
+	}
+	if !strings.Contains(err.Error(), "snapshot: resolve path") {
+		t.Errorf("expected 'snapshot: resolve path' in error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// undo N normalization tests (Phase A, Task 2)
+// ---------------------------------------------------------------------------
+
+func TestUndo_NZeroNormalized(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
+
+	// n=0 should be normalized to 1
+	res, err := bm.undo(ctx, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res, "Undo successful") {
+		t.Errorf("expected successful undo, got: %q", res)
+	}
+}
+
+func TestUndo_NegativeNNormalized(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
+		t.Fatal(err)
+	}
+
+	// n=-1 should be normalized to 1
+	res, err := bm.undo(ctx, -1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res, "Undo successful") {
+		t.Errorf("expected successful undo, got: %q", res)
+	}
+}
