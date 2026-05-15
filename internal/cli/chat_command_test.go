@@ -41,7 +41,8 @@ func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, hManager ports.
 }
 
 func (m *mockChatService) BrowseHistory(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
-	return nil
+	args := m.Called(ctx, provider, hManager)
+	return args.Error(0)
 }
 
 func (m *mockChatService) GetToolNames(ctx stdctx.Context, reg tools.Registry) ([]string, error) {
@@ -758,4 +759,70 @@ func TestChatCommand_CleanupErrorPropagation(t *testing.T) {
 	require.NoError(t, err, "chat command should not fail on cleanup error")
 	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
 	require.Contains(t, stderr.String(), "capturer close failed")
+}
+
+// TestChatCommand_SetupCapturer_CleanupError verifies that when the
+// capturerOverride path is taken, the cleanup function propagates
+// Close errors and writes a warning to stderr.
+//
+// Coverage note: setupCapturer is at 75% (architectural ceiling without
+// DI for ui.NewCapturer). The uncovered lines are:
+//  1. The !ok type-assertion fallback (lines 277-279) — defensive guard
+//     identical to buildCapturer's BaseCapturer fallback.
+//  2. The non-override cleanup error path (lines 282-285) — requires
+//     a mock capturer from ui.NewCapturer which is not injectable.
+//
+// Both require refactoring ui.NewCapturer to accept an interface factory.
+func TestChatCommand_SetupCapturer_CleanupError(t *testing.T) {
+	t.Parallel()
+
+	closeErr := errors.New("capturer close exploded")
+	mockCap := &mockBrowseCapturer{closeFn: func(ctx stdctx.Context) error { return closeErr }}
+
+	var stderr strings.Builder
+	c := &chatCommand{
+		Stderr:           &stderr,
+		capturerOverride: mockCap,
+	}
+
+	capturer, cleanup, err := c.setupCapturer()
+	require.NoError(t, err)
+	require.NotNil(t, capturer)
+	require.NotNil(t, cleanup)
+
+	// Trigger the cleanup — should propagate error AND write warning
+	err = cleanup(stdctx.Background())
+	require.ErrorIs(t, err, closeErr)
+	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
+	require.Contains(t, stderr.String(), "capturer close exploded")
+}
+
+func TestChatCommand_PrepareCaptureOptions_RawFlag(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		MockPrompt:   "hello",
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"--raw", "hello"})
+	require.NoError(t, err)
+	require.True(t, mService.chatCalled)
+	require.True(t, mService.lastParams.RawOutput, "expected RawOutput to be true when --raw flag is set")
+
+	// Also test short flag -r
+	err = executeChatCommand(cmdCtx, []string{"-r", "hello"})
+	require.NoError(t, err)
+	require.True(t, mService.lastParams.RawOutput)
 }

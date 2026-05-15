@@ -16,7 +16,18 @@ import (
 )
 
 type browseCommand struct {
-	ctx *context
+	ctx              *context
+	capturerOverride agent.CapturerInteractor // test-only injection point
+}
+
+// getCapturer returns the override if set (test path), otherwise creates a real capturer.
+func (c *browseCommand) getCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+	if c.capturerOverride != nil {
+		return c.capturerOverride, func(ctx stdctx.Context) error {
+			return c.capturerOverride.Close(ctx)
+		}, nil
+	}
+	return c.setupCapturer()
 }
 
 func newBrowseCommand(ctx *context) *cobra.Command {
@@ -36,7 +47,7 @@ func newBrowseCommand(ctx *context) *cobra.Command {
 
 // runBrowse launches the interactive history browser.
 func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
-	capturer, cleanup, err := c.setupCapturer()
+	capturer, cleanup, err := c.getCapturer()
 	if err != nil {
 		return err
 	}
