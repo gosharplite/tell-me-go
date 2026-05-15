@@ -56,7 +56,7 @@ Communication is **asynchronous and turn-based**. The Orchestrator is the hub â€
 
 **Example prompt to the AI orchestrator:**
 ```
-Execute the Issue-to-PR SOP.
+Execute the Issue-to-PR SOP as defined in docs/sop/lifecycle/issue_to_pr_orchestration.md.
 Ask me for the GitHub issue number if I haven't provided one.
 
 Find the Architect and Coder config files. Try these paths, in order:
