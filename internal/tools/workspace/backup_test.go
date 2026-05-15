@@ -413,13 +413,19 @@ func TestSnapshot_WorkingDirectoryRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Remove the directory we're in — this causes os.Getwd() to fail on next call
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
 	if err := os.Remove(subDir); err != nil {
 		// On some OSes, you can't remove the current working directory
 		t.Skipf("cannot remove current working directory on this OS: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldWd)
-	})
+	// On some OSes (macOS), removing the CWD succeeds but os.Getwd still
+	// resolves because the kernel holds a VFS reference to the unlinked
+	// directory. Skip if Getwd still works — the error path is not testable.
+	if _, err := os.Getwd(); err == nil {
+		t.Skip("os.Getwd still succeeds after CWD removal on this OS; error path not reachable")
+	}
 
 	// Now filepath.Abs should fail because os.Getwd fails
 	err = bm.snapshot(ctx, "test.txt", "WRITE")
