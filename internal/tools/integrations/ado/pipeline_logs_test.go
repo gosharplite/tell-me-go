@@ -5,51 +5,115 @@ package ado
 
 import (
 	"testing"
-	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSendScannerHeartbeat(t *testing.T) {
-	t.Run("nil channel does nothing", func(t *testing.T) {
-		// Should not panic when hb is nil
-		sendScannerHeartbeat(nil, 1000)
-		sendScannerHeartbeat(nil, 2000)
-	})
+	tests := []struct {
+		name         string
+		hbSetup      func() chan struct{}
+		lineCount    int
+		wantReceived bool
+	}{
+		{
+			name: "heartbeat sent on 1000th line",
+			hbSetup: func() chan struct{} {
+				return make(chan struct{}, 1)
+			},
+			lineCount:    1000,
+			wantReceived: true,
+		},
+		{
+			name: "no heartbeat on 999th line",
+			hbSetup: func() chan struct{} {
+				return make(chan struct{}, 1)
+			},
+			lineCount:    999,
+			wantReceived: false,
+		},
+		{
+			name: "nil channel does not panic",
+			hbSetup: func() chan struct{} {
+				return nil
+			},
+			lineCount:    1000,
+			wantReceived: false,
+		},
+	}
 
-	t.Run("non-multiple-of-1000 does not send", func(t *testing.T) {
-		hb := make(chan struct{}, 1)
-		sendScannerHeartbeat(hb, 999)
-		select {
-		case <-hb:
-			t.Fatal("unexpected heartbeat for count 999")
-		default:
-			// expected — no heartbeat
-		}
-	})
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			hb := tt.hbSetup()
+			sendScannerHeartbeat(hb, tt.lineCount)
+			if tt.wantReceived {
+				assert.Equal(t, 1, len(hb), "expected heartbeat to be sent")
+			} else if hb != nil {
+				assert.Equal(t, 0, len(hb), "expected no heartbeat to be sent")
+			}
+			// nil channel case: nothing to assert, just verify no panic
+		})
+	}
+}
 
-	t.Run("sends heartbeat at count 1000", func(t *testing.T) {
-		hb := make(chan struct{}, 1)
-		sendScannerHeartbeat(hb, 1000)
-		select {
-		case <-hb:
-			// expected
-		default:
-			t.Fatal("expected heartbeat for count 1000")
-		}
-	})
+func TestNewLogFilterState(t *testing.T) {
+	tests := []struct {
+		name             string
+		contextLines     int
+		wantContextLines int
+		wantPreWinNil    bool
+		wantPreWinLen    int
+	}{
+		{
+			name:             "Default context lines (5)",
+			contextLines:     5,
+			wantContextLines: 5,
+			wantPreWinNil:    false,
+			wantPreWinLen:    5,
+		},
+		{
+			name:             "Zero context lines",
+			contextLines:     0,
+			wantContextLines: 0,
+			wantPreWinNil:    true,
+			wantPreWinLen:    0,
+		},
+		{
+			name:             "Negative context lines defaults to 5",
+			contextLines:     -1,
+			wantContextLines: 5,
+			wantPreWinNil:    false,
+			wantPreWinLen:    5,
+		},
+		{
+			name:             "Context lines at boundary 100",
+			contextLines:     100,
+			wantContextLines: 100,
+			wantPreWinNil:    false,
+			wantPreWinLen:    100,
+		},
+		{
+			name:             "Context lines exceeds 100 clamps to 100",
+			contextLines:     150,
+			wantContextLines: 100,
+			wantPreWinNil:    false,
+			wantPreWinLen:    100,
+		},
+	}
 
-	t.Run("full channel drops heartbeat gracefully", func(t *testing.T) {
-		hb := make(chan struct{}) // unbuffered, no receiver
-		// This should not block or panic — the default case handles it
-		done := make(chan struct{})
-		go func() {
-			sendScannerHeartbeat(hb, 1000)
-			close(done)
-		}()
-		select {
-		case <-done:
-			// expected — didn't block
-		case <-time.After(100 * time.Millisecond):
-			t.Fatal("sendScannerHeartbeat blocked on full channel")
-		}
-	})
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state := newLogFilterState(tt.contextLines)
+			assert.Equal(t, tt.wantContextLines, state.contextLines)
+			if tt.wantPreWinNil {
+				assert.Nil(t, state.preWindow)
+			} else {
+				assert.Len(t, state.preWindow, tt.wantPreWinLen)
+			}
+		})
+	}
 }

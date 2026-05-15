@@ -113,10 +113,10 @@ type logFilterState struct {
 
 func newLogFilterState(contextLines int) *logFilterState {
 	if contextLines < 0 {
-		contextLines = 5
+		contextLines = 5 // Sensible default: enough context to understand a match without flooding output.
 	}
 	if contextLines > 100 {
-		contextLines = 100
+		contextLines = 100 // Safety cap: prevents unbounded preWindow allocation and massive response payloads.
 	}
 	var preWindow []string
 	if contextLines > 0 {
@@ -264,7 +264,7 @@ func streamTail(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}
 		return filterResult{}, nil
 	}
 	if n > 10000 {
-		n = 10000
+		n = 10000 // Safety cap: prevents unbounded ring-buffer allocation; 10k lines ~1MB.
 	}
 
 	ring := make([]string, n)
