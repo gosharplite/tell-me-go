@@ -648,14 +648,7 @@ func TestIsDeclEqual(t *testing.T) {
 		}
 	})
 
-	t.Run("second format error is defense-in-depth", func(t *testing.T) {
-		t.Parallel()
-		// Lines 335-337 mirror lines 330-332. Both decls come from parser.ParseFile
-		// which guarantees valid AST output. The second format.Node error path is
-		// therefore unreachable in production — but it mirrors the first as
-		// defense-in-depth against future changes that might construct AST nodes
-		// manually. This test documents the intentional coverage gap.
-	})
+
 }
 
 func TestGetValidEntry_NonExistent(t *testing.T) {
