@@ -5,6 +5,7 @@ package factory
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/require"
 )
 
 // mockSessionDeps is a field-based SessionDependencies used exclusively for
@@ -31,6 +33,7 @@ type mockSessionDeps struct {
 	gw              llm.LLMGateway
 	hManager        ports.HistoryManager
 	reg             tools.Registry
+	regErr          error // if non-nil, GetRegistry returns this error
 	sm              security.Manager
 	bus             events.EventBus
 	paths           *persistence.Paths
@@ -38,9 +41,14 @@ type mockSessionDeps struct {
 	sessionProvider ports.SessionProvider
 }
 
-func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
-func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
-func (d *mockSessionDeps) GetRegistry() (tools.Registry, error)                 { return d.reg, nil }
+func (d *mockSessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
+func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
+func (d *mockSessionDeps) GetRegistry() (tools.Registry, error) {
+	if d.regErr != nil {
+		return nil, d.regErr
+	}
+	return d.reg, nil
+}
 func (d *mockSessionDeps) GetSecurityManager() security.Manager                 { return d.sm }
 func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
 func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
@@ -189,6 +197,33 @@ func TestNewChatter(t *testing.T) {
 			t.Error("expected error due to nil registry, got nil")
 		}
 	})
+
+	t.Run("fails when skill repo cannot load", func(t *testing.T) {
+		deps2, cfg2 := setupNilDepTest(t)
+		// setupNilDepTest creates a docs/skills/ dir. Drop an unreadable
+		// .md file into it to cause NewFileSkillRepository to fail.
+		skillsDir := filepath.Join(filepath.Dir(filepath.Dir(deps2.paths.ModeDir)), "docs", "skills")
+		badFile := filepath.Join(skillsDir, "bad.md")
+		require.NoError(t, os.WriteFile(badFile,
+			[]byte("---\nname: Test\ndescription: Test\n---\nContent"), 0644))
+		require.NoError(t, os.Chmod(badFile, 0000))
+		t.Cleanup(func() { _ = os.Chmod(badFile, 0644) })
+
+		_, err := NewChatter(context.Background(), deps2, cfg2)
+		if err == nil || !strings.Contains(err.Error(), "failed to initialize skill repository") {
+			t.Errorf("expected 'failed to initialize skill repository' error, got: %v", err)
+		}
+	})
+
+	t.Run("fails when registry cannot be retrieved", func(t *testing.T) {
+		deps2, cfg2 := setupNilDepTest(t)
+		deps2.regErr = errors.New("registry unavailable")
+
+		_, err := NewChatter(context.Background(), deps2, cfg2)
+		if err == nil || !strings.Contains(err.Error(), "failed to retrieve tool registry") {
+			t.Errorf("expected 'failed to retrieve tool registry' error, got: %v", err)
+		}
+	})
 }
 
 // setupNilDepTest creates the temp directories and valid dependencies
@@ -317,5 +352,68 @@ func TestNewChatter_NilDependencyError(t *testing.T) {
 	t.Run("nil tracker", func(t *testing.T) {
 		deps, cfg := setupNilDepTest(t)
 		assertNilDepOptional(t, deps, cfg, func(d *mockSessionDeps) { d.tracker = nil }, "tracker")
+	})
+}
+
+// TestResolveSkillsDir exercises all three branches of resolveSkillsDir:
+// 1. Home-dir skills directory exists (happy path, already covered indirectly)
+// 2. Home-dir missing → CWD fallback succeeds
+// 3. Both missing → returns home path anyway
+//
+// The os.Getwd error branch (line 30) is intentionally left uncovered as
+// it guards against a theoretical OS failure that cannot be triggered on
+// a real operating system.
+func TestResolveSkillsDir(t *testing.T) {
+	t.Run("home dir skills exist", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		modeDir := filepath.Join(tmpDir, "modes", "dev")
+		require.NoError(t, os.MkdirAll(modeDir, 0755))
+		skillsDir := filepath.Join(tmpDir, "docs", "skills")
+		require.NoError(t, os.MkdirAll(skillsDir, 0755))
+
+		paths := &persistence.Paths{ModeDir: modeDir}
+		got := resolveSkillsDir(paths)
+		expected := filepath.Clean(skillsDir)
+		if got != expected {
+			t.Errorf("resolveSkillsDir() = %q, want %q", got, expected)
+		}
+	})
+
+	t.Run("cwd fallback when home dir missing", func(t *testing.T) {
+		// home tmp dir — no docs/skills/
+		homeTmp := t.TempDir()
+		modeDir := filepath.Join(homeTmp, "modes", "dev")
+		require.NoError(t, os.MkdirAll(modeDir, 0755))
+
+		// cwd tmp dir — HAS docs/skills/
+		cwdTmp := t.TempDir()
+		cwdSkills := filepath.Join(cwdTmp, "docs", "skills")
+		require.NoError(t, os.MkdirAll(cwdSkills, 0755))
+
+		// Switch CWD to cwdTmp. t.Chdir handles cleanup automatically.
+		t.Chdir(cwdTmp)
+
+		paths := &persistence.Paths{ModeDir: modeDir}
+		got := resolveSkillsDir(paths)
+		expected := filepath.Clean(cwdSkills)
+		if got != expected {
+			t.Errorf("resolveSkillsDir() = %q, want %q (cwd fallback)", got, expected)
+		}
+	})
+
+	t.Run("both missing returns home path anyway", func(t *testing.T) {
+		homeTmp := t.TempDir()
+		modeDir := filepath.Join(homeTmp, "modes", "dev")
+		require.NoError(t, os.MkdirAll(modeDir, 0755))
+
+		cwdTmp := t.TempDir()
+		t.Chdir(cwdTmp) // cwdTmp has no docs/skills/
+
+		paths := &persistence.Paths{ModeDir: modeDir}
+		got := resolveSkillsDir(paths)
+		expected := filepath.Clean(filepath.Join(homeTmp, "docs", "skills"))
+		if got != expected {
+			t.Errorf("resolveSkillsDir() = %q, want %q (home path fallback)", got, expected)
+		}
 	})
 }
