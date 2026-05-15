@@ -650,6 +650,66 @@ func TestIsDeclEqual(t *testing.T) {
 
 }
 
+// TestIsDeclEqual_SecondFormatError exercises the defense-in-depth second
+// format.Node error path on bufB (the equivalent of the bufA path). The
+// first error path is already covered by the "format error returns error"
+// subtest above (nil, nil). Here we pass a=valid, b=nil so that bufA
+// formats successfully but bufB fails. This path is unreachable with
+// parser-produced AST but guards against future AST construction bugs.
+func TestIsDeclEqual_SecondFormatError(t *testing.T) {
+	t.Parallel()
+
+	validDecl := &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.TypeSpec{Name: &ast.Ident{Name: "T"}, Type: &ast.Ident{Name: "int"}},
+		},
+	}
+
+	// a=valid, b=nil → first format succeeds, second fails (defense-in-depth path)
+	equal, err := isDeclEqual(validDecl, nil)
+	if err == nil {
+		t.Fatal("expected error from second format.Node (bufB)")
+	}
+	if equal {
+		t.Error("expected false when second format fails")
+	}
+	if !strings.Contains(err.Error(), "format") {
+		t.Errorf("expected error to contain 'format', got: %v", err)
+	}
+}
+
+// TestFindAddedAndModified_FormatError exercises the error-handling branch
+// in findAddedAndModified where isDeclEqual returns a format error (L268-270).
+// Passing nil as the currDecl value for a key that exists in baseDecls causes
+// isDeclEqual(baseDecl, nil) to fail on the second format.Node call.
+func TestFindAddedAndModified_FormatError(t *testing.T) {
+	t.Parallel()
+
+	validDecl := &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.TypeSpec{Name: &ast.Ident{Name: "T"}, Type: &ast.Ident{Name: "int"}},
+		},
+	}
+
+	baseDecls := map[string]ast.Decl{"type T": validDecl}
+	currDecls := map[string]ast.Decl{"type T": nil} // nil triggers format error in isDeclEqual
+
+	changes := findAddedAndModified(baseDecls, currDecls)
+
+	found := false
+	for _, c := range changes {
+		if strings.Contains(c, "Modified: type T (format error:") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected format error message in changes, got: %v", changes)
+	}
+}
+
 func TestGetValidEntry_NonExistent(t *testing.T) {
 	t.Parallel()
 	cache := newASTCache(".")

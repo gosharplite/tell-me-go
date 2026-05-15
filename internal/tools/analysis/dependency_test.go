@@ -3,11 +3,15 @@ package analysis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -209,4 +213,135 @@ func TestDependencyAnalyzer_PublishToolAction(t *testing.T) {
 		// error is logged via slog.Error — verify no panic
 		a.publishToolAction(context.Background(), "test message")
 	})
+}
+
+// ─────────────────────────────────────────────────────────
+// buildGraph error path tests (table-driven)
+// ─────────────────────────────────────────────────────────
+
+func TestBuildGraph_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	// setupWorkspace creates a temp directory with go.mod and at least one
+	// .go file so the happy-path preconditions are met before error injection.
+	setupWorkspace := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		pkgDir := filepath.Join(dir, "pkg")
+		require.NoError(t, os.MkdirAll(pkgDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "f.go"), []byte("package pkg"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mod"), 0644))
+		return dir
+	}
+
+	tests := []struct {
+		name            string
+		workspaceSetup  func(t *testing.T) (string, *mockAnalysisGoRunner)
+		wantErrContains string
+	}{
+		{
+			name: "resolveModulePrefix error",
+			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
+				dir := setupWorkspace(t)
+				return dir, &mockAnalysisGoRunner{
+					getModulePathFunc: func(ctx context.Context) (string, error) {
+						return "", fmt.Errorf("no go.mod")
+					},
+					getModuleDirFunc: func(ctx context.Context) (string, error) {
+						return dir, nil
+					},
+				}
+			},
+			wantErrContains: "getting module name",
+		},
+		{
+			name: "GetModuleDir error",
+			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
+				dir := setupWorkspace(t)
+				return dir, &mockAnalysisGoRunner{
+					getModulePathFunc: func(ctx context.Context) (string, error) {
+						return "example.com/mod", nil
+					},
+					getModuleDirFunc: func(ctx context.Context) (string, error) {
+						return "", fmt.Errorf("permission denied")
+					},
+				}
+			},
+			wantErrContains: "getting module root",
+		},
+		{
+			name: "listInternalPackages error (unreadable directory)",
+			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
+				dir := setupWorkspace(t)
+
+				// Create a subdirectory with 0000 permissions so that
+				// containsGoFiles fails when Walk reaches it.
+				unreadable := filepath.Join(dir, "unreadable")
+				require.NoError(t, os.MkdirAll(unreadable, 0000))
+				t.Cleanup(func() { _ = os.Chmod(unreadable, 0755) })
+
+				return dir, &mockAnalysisGoRunner{
+					getModulePathFunc: func(ctx context.Context) (string, error) {
+						return "example.com/mod", nil
+					},
+					getModuleDirFunc: func(ctx context.Context) (string, error) {
+						return dir, nil
+					},
+				}
+			},
+			wantErrContains: "listing packages",
+		},
+		{
+			name: "GetModuleDir returns empty string",
+			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
+				dir := setupWorkspace(t)
+				return dir, &mockAnalysisGoRunner{
+					getModulePathFunc: func(ctx context.Context) (string, error) {
+						return "example.com/mod", nil
+					},
+					getModuleDirFunc: func(ctx context.Context) (string, error) {
+						return "", nil // empty modRoot → listInternalPackages fails on Walk("")
+					},
+				}
+			},
+			wantErrContains: "listing packages",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, runner := tt.workspaceSetup(t)
+
+			a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
+				infra_persistence.NewWorkspacePolicy())
+
+			_, err := a.buildGraph(context.Background())
+			require.Error(t, err, "expected error from buildGraph")
+			assert.Contains(t, err.Error(), tt.wantErrContains,
+				"error message should contain %q", tt.wantErrContains)
+		})
+	}
+}
+
+// ─────────────────────────────────────────────────────────
+// getImports error path test
+// ─────────────────────────────────────────────────────────
+
+func TestGetImports_ErrorPath(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	pkgDir := filepath.Join(tmpDir, "pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "f.go"), []byte("package pkg"), 0644))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before call
+
+	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+	_, err := a.getImports(ctx, pkgDir, "example.com/mod")
+	require.Error(t, err, "expected error from cancelled context")
 }

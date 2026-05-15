@@ -388,3 +388,77 @@ func (m *mockHealthExecutor) LookPath(file string) (string, error) {
 func (m *coverageMockExecutor) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }
+
+// errorComplexityAnalyzer implements complexityAnalyzer and always returns
+// an error from GatherComplexities to exercise the error path in checkComplexity.
+type errorComplexityAnalyzer struct{}
+
+func (e *errorComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+func (e *errorComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, []string, error) {
+	return nil, nil, fmt.Errorf("complexity scan failed")
+}
+
+func TestCheckComplexity_ErrorPath(t *testing.T) {
+	t.Parallel()
+	m := &healthManager{
+		complexity: &errorComplexityAnalyzer{},
+	}
+	status, details, alerts := m.checkComplexity(context.Background(), nil)
+	if status != "ERROR" {
+		t.Errorf("expected ERROR status, got %q", status)
+	}
+	if !strings.Contains(details, "complexity scan failed") {
+		t.Errorf("expected error details, got %q", details)
+	}
+	if alerts != nil {
+		t.Errorf("expected nil alerts on error, got %v", alerts)
+	}
+}
+
+func TestRecommendCoverage_EdgeCases(t *testing.T) {
+	t.Parallel()
+	m := &healthManager{}
+	tests := []struct {
+		name string
+		cov  string
+		want string
+	}{
+		{"ERROR status", "ERROR", "Address issues preventing coverage analysis."},
+		{"TIMEOUT status", "TIMEOUT", "Address issues preventing coverage analysis."},
+		{"below threshold", "75.5%", "Coverage (75.5%) is below the 80% target."},
+		{"at threshold", "80.0%", ""},
+		{"above threshold", "92.0%", ""},
+		{"N/A", "N/A", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := m.recommendCoverage(tt.cov)
+			if got != tt.want {
+				t.Errorf("recommendCoverage(%q) = %q, want %q", tt.cov, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetDetailedCoverage_DefaultPath(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mock := &mockExecutor{
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, fmt.Errorf("no go files")
+		},
+	}
+	m := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	// No "path" key → defaults to "./..."
+	result, err := m.GetDetailedCoverage(ctx, map[string]interface{}{}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result.Text, "Error:") {
+		t.Errorf("expected error text in result, got: %s", result.Text)
+	}
+}
