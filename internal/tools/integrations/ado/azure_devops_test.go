@@ -1590,14 +1590,54 @@ func TestGetStatusEmoji(t *testing.T) {
 }
 
 func TestPolicyMatchesBranch_MissingScope(t *testing.T) {
-	m := &AdoManager{}
-	config := adoPolicyConfig{
-		Settings: map[string]interface{}{},
-	}
-	assert.False(t, m.policyMatchesBranch(config, "repo", "ref"))
+	t.Run("no scope key", func(t *testing.T) {
+		m := &AdoManager{}
+		config := adoPolicyConfig{
+			Settings: map[string]interface{}{},
+		}
+		assert.False(t, m.policyMatchesBranch(config, "repo", "ref"))
+	})
 
-	config.Settings["scope"] = "not a slice"
-	assert.False(t, m.policyMatchesBranch(config, "repo", "ref"))
+	t.Run("scope is not a slice", func(t *testing.T) {
+		m := &AdoManager{}
+		config := adoPolicyConfig{
+			Settings: map[string]interface{}{
+				"scope": "not a slice",
+			},
+		}
+		assert.False(t, m.policyMatchesBranch(config, "repo", "ref"))
+	})
+
+	t.Run("scope contains non-map entry", func(t *testing.T) {
+		m := &AdoManager{}
+		config := adoPolicyConfig{
+			Settings: map[string]interface{}{
+				"scope": []interface{}{
+					"this is a string, not a map",
+					map[string]interface{}{
+						"repositoryId": "repo-guid",
+						"refName":      "refs/heads/main",
+					},
+				},
+			},
+		}
+		// The first entry fails the type assertion and is skipped (continue),
+		// the second entry matches.
+		assert.True(t, m.policyMatchesBranch(config, "repo-guid", "refs/heads/main"))
+	})
+
+	t.Run("scope only contains non-map entries", func(t *testing.T) {
+		m := &AdoManager{}
+		config := adoPolicyConfig{
+			Settings: map[string]interface{}{
+				"scope": []interface{}{
+					"not-a-map",
+					12345,
+				},
+			},
+		}
+		assert.False(t, m.policyMatchesBranch(config, "repo-guid", "refs/heads/main"))
+	})
 }
 
 func TestListPipelineLogs_DetailedErrors(t *testing.T) {

@@ -1099,3 +1099,50 @@ func TestStreamRegexFilter_Truncation(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildURL_ParseErrors verifies that URL-building functions return the
+// expected wrapped error when url.Parse fails due to an invalid BaseURL
+// containing a control character (e.g., newline).
+func TestBuildURL_ParseErrors(t *testing.T) {
+	// BaseURL with newline causes url.Parse to fail with "invalid control character"
+	m := &AdoManager{BaseURL: "http://x\ny", httpClient: &http.Client{}}
+
+	t.Run("buildGetFileContentURL - parse error", func(t *testing.T) {
+		t.Parallel()
+		_, err := m.buildGetFileContentURL("org", "proj", "repo", "/path", "main")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse base URL")
+	})
+
+	t.Run("buildListRepositoryItemsURL - parse error", func(t *testing.T) {
+		t.Parallel()
+		_, err := m.buildListRepositoryItemsURL("org", "proj", "repo", "/", "main", "none")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse base URL")
+	})
+
+	t.Run("buildListPullRequestsURL - parse error", func(t *testing.T) {
+		t.Parallel()
+		_, err := m.buildListPullRequestsURL("org", "proj", "repo", "active", 50)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse base URL")
+	})
+
+	t.Run("fetchPrStatuses - URL parse error", func(t *testing.T) {
+		t.Parallel()
+		// fetchPrStatuses calls url.Parse before m.ExecuteRequest.
+		// With an invalid BaseURL, url.Parse fails before any HTTP call.
+		_, err := m.fetchPrStatuses(context.Background(), "org", "proj", "repo", 123)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse statuses base URL")
+	})
+
+	t.Run("fetchPolicyEvaluations - URL parse error", func(t *testing.T) {
+		t.Parallel()
+		// fetchPolicyEvaluations calls url.Parse before m.ExecuteRequest.
+		// With an invalid BaseURL, url.Parse fails before any HTTP call.
+		_, err := m.fetchPolicyEvaluations(context.Background(), "org", "proj", "artifact-id")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse policy base URL")
+	})
+}

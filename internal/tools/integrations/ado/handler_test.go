@@ -351,6 +351,22 @@ func TestNewGetPipelineLogsHandler(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
+
+	t.Run("Log content error propagates", func(t *testing.T) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}, nil)
+
+		f := newPipelineFormatter()
+		handler := newGetPipelineLogsHandler(m, f)
+		_, err := handler(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 5,
+		}, nil)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 500")
+	})
 }
 
 func TestNewCreatePipelineHandler(t *testing.T) {
@@ -410,6 +426,29 @@ func TestNewCreatePipelineHandler(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Successfully created pipeline")
 		assert.Contains(t, result.Text, "200")
+	})
+
+	t.Run("Error propagates", func(t *testing.T) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
+			// GET for checkPipelineExists succeeds with no matching pipeline
+			if r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"value":[{"id":1,"name":"other"}]}`))
+				return
+			}
+			// POST fails
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("internal error"))
+		}, nil)
+
+		handler := newCreatePipelineHandler(m)
+		_, err := handler(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "name": "new-pipe", "repository_id": "r", "yaml_path": "y",
+		}, nil)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 500")
 	})
 }
 
@@ -471,6 +510,22 @@ func TestNewRunPipelineHandler(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Successfully triggered pipeline run ID: 404")
+	})
+
+	t.Run("Error propagates", func(t *testing.T) {
+		t.Parallel()
+		m := setupADOServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}, nil)
+
+		f := newPipelineFormatter()
+		handler := newRunPipelineHandler(m, f)
+		_, err := handler(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "pipeline_id": 1,
+		}, nil)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 500")
 	})
 }
 
