@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/skills"
@@ -75,7 +76,6 @@ func TestNewFileSkillRepository(t *testing.T) {
 			name: "malformed skills",
 			files: map[string]string{
 				"no_sep.md":  "name: No Separator\ndescription: No Separator\nContent",
-				"no_name.md": "---\ndescription: No Name\n---\nContent",
 				"no_desc.md": "---\nname: No Desc\n---\nContent",
 				"partial.md": "---\nname: Partial\n",
 			},
@@ -167,4 +167,81 @@ func TestFileSkillRepository_GetAll(t *testing.T) {
 			t.Errorf("got name %q, want %q", skills[0].Name, "Test Skill")
 		}
 	}
+}
+
+func TestNewFileSkillRepository_ErrorPaths(t *testing.T) {
+	t.Run("unreadable skill file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		skillsDir := filepath.Join(tmpDir, "docs", "skills")
+		if err := os.MkdirAll(skillsDir, 0755); err != nil {
+			t.Fatalf("failed to create skills dir: %v", err)
+		}
+
+		badFile := filepath.Join(skillsDir, "bad.md")
+		if err := os.WriteFile(badFile, []byte("---\nname: Test\ndescription: Test\n---\nContent"), 0644); err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+		if err := os.Chmod(badFile, 0000); err != nil {
+			t.Fatalf("failed to chmod file: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(badFile, 0644) })
+
+		_, err := NewFileSkillRepository(skillsDir)
+		if err == nil || !strings.Contains(err.Error(), "read skill file") {
+			t.Errorf("expected 'read skill file' error, got: %v", err)
+		}
+	})
+
+	t.Run("parse error - missing name", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		skillsDir := filepath.Join(tmpDir, "docs", "skills")
+		if err := os.MkdirAll(skillsDir, 0755); err != nil {
+			t.Fatalf("failed to create skills dir: %v", err)
+		}
+
+		// Valid delimiters, has description, but no name → ErrInvalidFrontmatter
+		if err := os.WriteFile(
+			filepath.Join(skillsDir, "no_name.md"),
+			[]byte("---\ndescription: Has desc but no name\n---\nContent here"),
+			0644,
+		); err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+
+		_, err := NewFileSkillRepository(skillsDir)
+		if err == nil || !strings.Contains(err.Error(), "parse skill file") {
+			t.Errorf("expected 'parse skill file' error, got: %v", err)
+		}
+	})
+
+	t.Run("walk error - unreadable subdirectory", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		skillsDir := filepath.Join(tmpDir, "docs", "skills")
+		if err := os.MkdirAll(skillsDir, 0755); err != nil {
+			t.Fatalf("failed to create skills dir: %v", err)
+		}
+
+		// Create a subdirectory with no read permission
+		badSubdir := filepath.Join(skillsDir, "no_access")
+		if err := os.MkdirAll(badSubdir, 0755); err != nil {
+			t.Fatalf("failed to create subdir: %v", err)
+		}
+		// Place a valid skill file so the walk actually enters the directory
+		if err := os.WriteFile(
+			filepath.Join(badSubdir, "valid.md"),
+			[]byte("---\nname: Valid\ndescription: Valid\n---\nContent"),
+			0644,
+		); err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+		if err := os.Chmod(badSubdir, 0000); err != nil {
+			t.Fatalf("failed to chmod subdir: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(badSubdir, 0755) })
+
+		_, err := NewFileSkillRepository(skillsDir)
+		if err == nil || !strings.Contains(err.Error(), "load skills from") {
+			t.Errorf("expected 'load skills from' error, got: %v", err)
+		}
+	})
 }

@@ -87,6 +87,122 @@ func TestAsyncTurnsLogger_New_Error(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestAsyncTurnsLogger_NilLogger(t *testing.T) {
+	fs := &infra_persistence.OSFileSystem{}
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "nil_logger.log")
+	ctx := context.Background()
+
+	tl, err := NewAsyncTurnsLogger(ctx, fs, logFile, nil)
+	require.NoError(t, err)
+	require.NotNil(t, tl)
+
+	// Verify it's usable: start listener, send event, close
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return tl.Listen(ctx) })
+
+	tl.HandleEvent(ctx, events.SystemMessageEvent{Message: "hello", Level: "info"})
+
+	cancel()
+	_ = g.Wait()
+	require.NoError(t, tl.Close())
+}
+
+func TestAsyncTurnsLogger_ListenAfterClose(t *testing.T) {
+	fs := &infra_persistence.OSFileSystem{}
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "listen_after_close.log")
+	ctx := context.Background()
+
+	tl, err := NewAsyncTurnsLogger(ctx, fs, logFile, slog.Default())
+	require.NoError(t, err)
+
+	// Close first, then try to Listen
+	require.NoError(t, tl.Close())
+
+	// Listen after close must return nil (not panic, not error)
+	err = tl.Listen(context.Background())
+	require.NoError(t, err)
+}
+
+func TestAsyncTurnsLogger_ChannelCloseDuringListen(t *testing.T) {
+	fs := &infra_persistence.OSFileSystem{}
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "channel_close.log")
+	ctx := context.Background()
+
+	tl, err := NewAsyncTurnsLogger(ctx, fs, logFile, slog.Default())
+	require.NoError(t, err)
+
+	// Start listener
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return tl.Listen(ctx) })
+
+	// Send a message so the worker processes at least one item
+	tl.HandleEvent(ctx, events.SystemMessageEvent{Message: "hello", Level: "info"})
+
+	// Give the worker time to process
+	time.Sleep(10 * time.Millisecond)
+
+	// Close the logger (this closes the channel and sets closed=true)
+	require.NoError(t, tl.Close())
+
+	// Listen should exit cleanly — g.Wait() must not error
+	require.NoError(t, g.Wait())
+}
+
+func TestAsyncTurnsLogger_EmptyMessageGuard(t *testing.T) {
+	fs := &infra_persistence.OSFileSystem{}
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "empty_msg.log")
+	ctx := context.Background()
+
+	tl, err := NewAsyncTurnsLogger(ctx, fs, logFile, slog.Default())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return tl.Listen(ctx) })
+
+	// IsPostCall=true, Metrics=nil, IsFinal=false → formatTurnStatusForLog returns ""
+	tl.HandleEvent(ctx, events.TurnStatusEvent{
+		Status: events.TurnStatus{
+			IsPostCall: true,
+			Metrics:    nil,
+			IsFinal:    false,
+		},
+	})
+
+	cancel()
+	_ = g.Wait()
+	require.NoError(t, tl.Close())
+
+	// Verify file is empty (no message written since log() returned early)
+	content, err := os.ReadFile(logFile)
+	require.NoError(t, err)
+	require.Empty(t, string(content), "expected no output for empty message")
+}
+
+func TestAsyncTurnsLogger_HandleEventAfterClose(t *testing.T) {
+	fs := &infra_persistence.OSFileSystem{}
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "after_close.log")
+	ctx := context.Background()
+
+	tl, err := NewAsyncTurnsLogger(ctx, fs, logFile, slog.Default())
+	require.NoError(t, err)
+
+	require.NoError(t, tl.Close())
+
+	// Must not panic
+	tl.HandleEvent(ctx, events.SystemMessageEvent{Message: "should be dropped", Level: "info"})
+}
+
 func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 	fs := &infra_persistence.OSFileSystem{}
 	tmpDir := t.TempDir()
@@ -581,6 +697,70 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 				"1.23s",  // CumulativeToolDuration
 				"10.00s", // totalSessionDuration
 				"5.00",   // throughput (10s / 2 turns)
+			},
+		},
+		{
+			name: "metrics with zero start time",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				StartTime:        time.Time{}, // zero value → else branch
+				MaxHistoryTokens: 5000,
+				Metrics: &llm.Metrics{
+					PromptTokens:   1200,
+					CachedTokens:   800,
+					ResponseTokens: 300,
+					Duration:       5.5,
+					ToolDuration:   2.5,
+				},
+			},
+			contains: []string{
+				"[12:00:00] Payload: 1200/5000 tokens",
+				"8.00s (ΣT: 0.00s)", // simple format WITHOUT throughput suffix
+			},
+		},
+		{
+			name: "metrics with mode in render",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				MaxHistoryTokens: 5000,
+				Mode:             "architect",
+				Metrics: &llm.Metrics{
+					PromptTokens:   500,
+					CachedTokens:   200,
+					ResponseTokens: 100,
+					Duration:       2.0,
+					Model:          "gpt-4o",
+				},
+			},
+			contains: []string{
+				"[12:00:00] Payload: 500/5000 tokens - architect",
+			},
+		},
+		{
+			name: "metrics with start time and zero current turns",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				StartTime:        now.Add(-10 * time.Second),
+				CurrentTurns:     -1, // CurrentTurns+1 == 0 → inner else branch
+				MaxHistoryTokens: 5000,
+				Metrics: &llm.Metrics{
+					PromptTokens:           1200,
+					CachedTokens:           800,
+					ResponseTokens:         300,
+					Duration:               5.5,
+					ToolDuration:           2.5,
+					CumulativeToolDuration: 1.23,
+				},
+			},
+			contains: []string{
+				"[12:00:00] Payload: 1200/5000 tokens",
+				"8.00s",
+				"1.23s",
+				"10.00s",               // totalSessionDuration
+				"(ΣT: 1.23s) / 10.00s", // simple form WITHOUT throughput
 			},
 		},
 		{
