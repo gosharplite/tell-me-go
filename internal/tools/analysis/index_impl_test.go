@@ -4,7 +4,6 @@
 package analysis
 
 import (
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -76,30 +75,37 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 	idx.mu.Unlock()
 	computeCount.Store(0)
 
-	// Step 4: Pre-start all goroutines, have them block on a sync.WaitGroup
-	// that we control precisely. This eliminates the "close(barrier)"
-	// race where some goroutines may not have entered <-barrier yet.
+	// Step 4: Deterministic barrier — every goroutine signals readiness
+	// before any goroutine proceeds. This eliminates the time.Sleep
+	// heuristic that caused flakiness under coverage instrumentation
+	// (Issue #427).
 	const N = 12
-	var wg sync.WaitGroup
-	var start sync.WaitGroup
-	start.Add(1) // prime: all goroutines will wait for this
+	ready := make(chan struct{}, N) // buffered so goroutines never block on send
+	release := make(chan struct{})  // closed to release all goroutines simultaneously
+	done := make(chan struct{}, N)  // buffered so goroutines never block on send on completion
 
 	results := make([][]string, N)
 	for i := 0; i < N; i++ {
-		wg.Add(1)
 		go func(i int) {
-			defer wg.Done()
-			start.Wait() // block until all goroutines are ready
+			ready <- struct{}{} // signal: I've reached the barrier
+			<-release           // wait: until all N goroutines are present
 			results[i] = idx.computeImplementationsLazy()[queryID]
+			done <- struct{}{} // signal: I've completed
 		}(i)
 	}
 
-	// Give all goroutines time to reach start.Wait()
-	time.Sleep(50 * time.Millisecond)
+	// Collect N readiness signals — only after all N have reported
+	// are they guaranteed to be at the barrier.
+	for i := 0; i < N; i++ {
+		<-ready
+	}
+	// Release all goroutines simultaneously.
+	close(release)
 
-	// Release all goroutines simultaneously
-	start.Done()
-	wg.Wait()
+	// Wait for all goroutines to complete.
+	for i := 0; i < N; i++ {
+		<-done
+	}
 
 	// Step 5: Assertions — unchanged
 	assert.Equal(t, int64(1), computeCount.Load(),
