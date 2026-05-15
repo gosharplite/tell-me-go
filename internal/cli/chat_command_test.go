@@ -777,7 +777,7 @@ func TestChatCommand_SetupCapturer_CleanupError(t *testing.T) {
 	t.Parallel()
 
 	closeErr := errors.New("capturer close exploded")
-	mockCap := &mockBrowseCapturer{closeFn: func(ctx stdctx.Context) error { return closeErr }}
+	mockCap := &mockCapturerInteractor{closeFn: func(ctx stdctx.Context) error { return closeErr }}
 
 	var stderr strings.Builder
 	c := &chatCommand{

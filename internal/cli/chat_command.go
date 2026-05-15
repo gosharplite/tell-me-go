@@ -164,6 +164,21 @@ func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Co
 	if c.isTUIConfigured(cfg) && c.noOtherActionsRequested(opts, args) {
 		opts.tuiPrompt = true
 	}
+	return c.getCapturer(ctx, cfg, opts)
+}
+
+// getCapturer returns the override if set (test path), otherwise delegates
+// to buildCapturer for the production path.
+func (c *chatCommand) getCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+	if c.capturerOverride != nil {
+		return c.capturerOverride, func(shutdownCtx stdctx.Context) error {
+			if err := c.capturerOverride.Close(shutdownCtx); err != nil {
+				_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+				return err
+			}
+			return nil
+		}, nil
+	}
 	return c.buildCapturer(ctx, cfg, opts)
 }
 func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string, capturer agent.CapturerInteractor) error {

@@ -24,7 +24,11 @@ type browseCommand struct {
 func (c *browseCommand) getCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
 	if c.capturerOverride != nil {
 		return c.capturerOverride, func(ctx stdctx.Context) error {
-			return c.capturerOverride.Close(ctx)
+			if err := c.capturerOverride.Close(ctx); err != nil {
+				_, _ = fmt.Fprintf(c.ctx.Stderr, "Warning: failed to close capturer: %v\n", err)
+				return err
+			}
+			return nil
 		}, nil
 	}
 	return c.setupCapturer()
@@ -88,6 +92,10 @@ func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.C
 	}
 	c.ctx.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
-		return capturer.Close(ctx)
+		if err := capturer.Close(ctx); err != nil {
+			_, _ = fmt.Fprintf(c.ctx.Stderr, "Warning: failed to close capturer: %v\n", err)
+			return err
+		}
+		return nil
 	}, nil
 }
