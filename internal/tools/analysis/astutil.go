@@ -264,7 +264,10 @@ func findAddedAndModified(baseDecls, currDecls map[string]ast.Decl) []string {
 		if baseDecl, ok := baseDecls[k]; !ok {
 			changes = append(changes, "Added: "+k)
 		} else {
-			if !isDeclEqual(baseDecl, currDecl) {
+			equal, err := isDeclEqual(baseDecl, currDecl)
+			if err != nil {
+				changes = append(changes, "Modified: "+k+" (format error: "+err.Error()+")")
+			} else if !equal {
 				changes = append(changes, "Modified: "+k)
 			}
 		}
@@ -322,17 +325,17 @@ func handleGenDeclKey(d *ast.GenDecl) string {
 	return "unknown"
 }
 
-func isDeclEqual(a, b ast.Decl) bool {
+func isDeclEqual(a, b ast.Decl) (bool, error) {
 	// Crude but effective for semantic diff: compare formatted strings
 	fset := token.NewFileSet()
 	var bufA, bufB bytes.Buffer
 	if err := format.Node(&bufA, fset, a); err != nil {
-		return false
+		return false, fmt.Errorf("format decl: %w", err)
 	}
 	if err := format.Node(&bufB, fset, b); err != nil {
-		return false
+		return false, fmt.Errorf("format decl: %w", err)
 	}
-	return bufA.String() == bufB.String()
+	return bufA.String() == bufB.String(), nil
 }
 
 // findTypeSpec searches for a type specification by name in an AST file.

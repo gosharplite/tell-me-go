@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -18,8 +19,10 @@ import (
 )
 
 type defaultComplexityAnalyzer struct {
-	Cache *astCache
-	SP    security.PathValidator
+	Cache       *astCache
+	SP          security.PathValidator
+	skippedErrs []string // collects non-fatal errors from individual file processing
+	mu          sync.Mutex
 }
 
 func newComplexityAnalyzer(cache *astCache, sp security.PathValidator) *defaultComplexityAnalyzer {
@@ -49,16 +52,26 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 		return tools.ToolResult{}, err
 	}
 
+	a.skippedErrs = nil // reset from previous calls
+
 	complexities, err := a.GatherComplexities(ctx, resolvedPath, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
+	var text string
 	if len(complexities) == 0 {
-		return tools.ToolResult{Text: "No Go functions found to analyze."}, nil
+		text = "No Go functions found to analyze."
+	} else {
+		text = a.formatResults(complexities)
 	}
 
-	return tools.ToolResult{Text: a.formatResults(complexities)}, nil
+	if len(a.skippedErrs) > 0 {
+		text += "\n\n⚠️ Skipped " + strconv.Itoa(len(a.skippedErrs)) +
+			" file(s) due to parse errors:\n" + strings.Join(a.skippedErrs, "\n")
+	}
+
+	return tools.ToolResult{Text: text}, nil
 }
 
 func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, error) {
@@ -129,8 +142,10 @@ func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *se
 
 	fileComplexities, err := a.analyzeFile(path)
 	if err != nil {
-		// Soft-fail: individual file parse errors do not stop the entire analysis.
-		return nil
+		a.mu.Lock()
+		a.skippedErrs = append(a.skippedErrs, fmt.Sprintf("%s: %v", path, err))
+		a.mu.Unlock()
+		return nil // soft-fail: individual file errors don't stop the entire analysis
 	}
 	if len(fileComplexities) > 0 {
 		mu.Lock()
