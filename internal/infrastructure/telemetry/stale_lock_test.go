@@ -178,3 +178,393 @@ func TestRecoverLedger_DetectedModel(t *testing.T) {
 		t.Error("Recovered record has wrong model or was not found")
 	}
 }
+
+// =============================================================================
+// releaseLedgerLock error path tests
+// =============================================================================
+
+func TestReleaseLedgerLock_CloseError(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "release_lock_close_error_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	historyPath := filepath.Join(tmpDir, "global_costs.json")
+	lockPath := historyPath + ".lock"
+
+	// Create a real lock file
+	if err := os.WriteFile(lockPath, []byte("lock"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Open the lock file to get an *os.File handle
+	f, err := os.OpenFile(lockPath, os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the underlying file descriptor BEFORE calling releaseLedgerLock.
+	// The subsequent f.Close() inside releaseLedgerLock will return an error
+	// (double-close / use of closed file).
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ls := newLedgerStore(nil, "test-model", nil)
+
+	// releaseLedgerLock must not panic when Close returns an error,
+	// and os.Remove must still execute (lock file cleaned up).
+	ls.releaseLedgerLock(historyPath, f)
+
+	// Verify lock file was removed despite Close error
+	if _, err := os.Stat(lockPath); err == nil {
+		t.Error("lock file should have been removed even when Close fails")
+	}
+}
+
+func TestReleaseLedgerLock_RemoveError(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "release_lock_remove_error_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	historyPath := filepath.Join(tmpDir, "global_costs.json")
+	lockPath := historyPath + ".lock"
+
+	// Create a real lock file
+	if err := os.WriteFile(lockPath, []byte("lock"), 0644); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		t.Fatal(err)
+	}
+
+	// Open the lock file normally — Close will succeed
+	f, err := os.OpenFile(lockPath, os.O_RDWR, 0644)
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// Make the directory read-only so os.Remove fails with a permission error.
+	// Skip on Windows where Chmod doesn't work the same way.
+	if err := os.Chmod(tmpDir, 0555); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		t.Skipf("cannot chmod tmp dir (likely Windows): %v", err)
+	}
+
+	// Restore permissions for cleanup regardless of outcome
+	defer func() {
+		_ = os.Chmod(tmpDir, 0755)
+		_ = os.RemoveAll(tmpDir)
+	}()
+
+	ls := newLedgerStore(nil, "test-model", nil)
+
+	// releaseLedgerLock must not panic when os.Remove fails with a
+	// non-NotExist error (permission denied).
+	ls.releaseLedgerLock(historyPath, f)
+
+	// If we reach here without panic, the error path was handled correctly.
+}
+
+func TestReleaseLedgerLock_NilFile(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "release_lock_nil_file_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	historyPath := filepath.Join(tmpDir, "global_costs.json")
+
+	ls := newLedgerStore(nil, "test-model", nil)
+
+	// releaseLedgerLock must not panic when f is nil.
+	// The lock file may or may not exist — the test only asserts no panic.
+	ls.releaseLedgerLock(historyPath, nil)
+
+	// Additionally verify it doesn't panic when the lock file also doesn't exist
+	ls.releaseLedgerLock(historyPath, nil)
+}
+
+// =============================================================================
+// ledgerStore.acquireLedgerLock tests
+// =============================================================================
+
+func TestLedgerStore_AcquireLedgerLock_StaleLock_RemoveSucceeds(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "ls_acquire_stale_ok_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	historyPath := filepath.Join(tmpDir, "global_costs.json")
+	lockPath := historyPath + ".lock"
+
+	// Create a stale lock file
+	if err := os.WriteFile(lockPath, []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	ls := newLedgerStore(nil, "test-model", nil)
+
+	// acquireLedgerLock should break the stale lock and re-acquire
+	f, err := ls.acquireLedgerLock(historyPath)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if f == nil {
+		t.Fatal("expected non-nil file handle")
+	}
+
+	// Verify the lock file now exists (was re-created)
+	if _, statErr := os.Stat(lockPath); statErr != nil {
+		t.Errorf("lock file should exist after re-acquire: %v", statErr)
+	}
+
+	// Clean up
+	ls.releaseLedgerLock(historyPath, f)
+
+	// Verify lock was cleaned up
+	if _, statErr := os.Stat(lockPath); statErr == nil {
+		t.Error("lock file should be removed after release")
+	}
+}
+
+func TestLedgerStore_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "ls_acquire_fresh_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	historyPath := filepath.Join(tmpDir, "global_costs.json")
+	lockPath := historyPath + ".lock"
+
+	// Create a fresh lock file (just created, not stale)
+	if err := os.WriteFile(lockPath, []byte("fresh"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ls := newLedgerStore(nil, "test-model", nil)
+
+	f, err := ls.acquireLedgerLock(historyPath)
+
+	// Must return the original os.IsExist error
+	if !os.IsExist(err) {
+		t.Errorf("expected os.IsExist error, got: %v", err)
+	}
+	if f != nil {
+		t.Error("expected nil file handle for fresh lock conflict")
+	}
+
+	// Verify the lock file was NOT removed (it's still fresh/valid)
+	if _, statErr := os.Stat(lockPath); statErr != nil {
+		t.Errorf("fresh lock file should still exist: %v", statErr)
+	}
+}
+
+func TestLedgerStore_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
+	// Skip on Windows — chmod doesn't work the same way
+	if err := os.Chmod(t.TempDir(), 0755); err != nil {
+		t.Skipf("skipping on platform without chmod support: %v", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "ls_acquire_remove_fail_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create a subdirectory to hold the lock, so we can make it read-only
+	subDir := filepath.Join(tmpDir, "readonly")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	historyPath := filepath.Join(subDir, "global_costs.json")
+	lockPath := historyPath + ".lock"
+
+	// Create a stale lock file inside the subdirectory
+	if err := os.WriteFile(lockPath, []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the directory read-only so os.Remove fails with a permission error
+	if err := os.Chmod(subDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(subDir, 0755) }() // restore for cleanup
+
+	ls := newLedgerStore(nil, "test-model", nil)
+
+	f, err := ls.acquireLedgerLock(historyPath)
+
+	// The function should still attempt the second OpenFile even though Remove failed.
+	// In a read-only directory, the lock file still exists after Remove fails, so the
+	// second OpenFile also returns os.IsExist. The key coverage goal is executing the
+	// log.Printf inside the `if err := os.Remove(lockPath)` block (visible in test output).
+	// We verify the function returns without panicking and returns a non-nil error.
+	if err == nil {
+		t.Error("expected error when both Remove and second OpenFile fail")
+	}
+	if f != nil {
+		t.Error("expected nil file handle when acquisition fails")
+	}
+
+	// Restore permissions so cleanup can proceed
+	_ = os.Chmod(subDir, 0755)
+}
+
+// =============================================================================
+// metricsManager.acquireLedgerLock tests
+// =============================================================================
+
+func TestMetricsManager_AcquireLedgerLock_StaleLock_RemoveSucceeds(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "mm_acquire_stale_ok_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	lockPath := filepath.Join(tmpDir, "test.lock")
+
+	// Create a stale lock file
+	if err := os.WriteFile(lockPath, []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &metricsManager{}
+
+	f, err := m.acquireLedgerLock(lockPath)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if f == nil {
+		t.Fatal("expected non-nil file handle")
+	}
+
+	// Verify the lock file now exists (was re-created)
+	if _, statErr := os.Stat(lockPath); statErr != nil {
+		t.Errorf("lock file should exist after re-acquire: %v", statErr)
+	}
+
+	// Clean up
+	if closeErr := f.Close(); closeErr != nil {
+		t.Logf("close error (non-fatal): %v", closeErr)
+	}
+	if removeErr := os.Remove(lockPath); removeErr != nil {
+		t.Logf("remove error (non-fatal): %v", removeErr)
+	}
+
+	// Verify lock was cleaned up
+	if _, statErr := os.Stat(lockPath); statErr == nil {
+		t.Error("lock file should be removed after cleanup")
+	}
+}
+
+func TestMetricsManager_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "mm_acquire_fresh_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	lockPath := filepath.Join(tmpDir, "test.lock")
+
+	// Create a fresh lock file (just created, not stale)
+	if err := os.WriteFile(lockPath, []byte("fresh"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &metricsManager{}
+
+	f, err := m.acquireLedgerLock(lockPath)
+
+	// Must return the original os.IsExist error
+	if !os.IsExist(err) {
+		t.Errorf("expected os.IsExist error, got: %v", err)
+	}
+	if f != nil {
+		t.Error("expected nil file handle for fresh lock conflict")
+	}
+
+	// Verify the lock file was NOT removed (it's still fresh/valid)
+	if _, statErr := os.Stat(lockPath); statErr != nil {
+		t.Errorf("fresh lock file should still exist: %v", statErr)
+	}
+}
+
+func TestMetricsManager_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
+	// Skip on Windows — chmod doesn't work the same way
+	if err := os.Chmod(t.TempDir(), 0755); err != nil {
+		t.Skipf("skipping on platform without chmod support: %v", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "mm_acquire_remove_fail_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create a subdirectory to hold the lock, so we can make it read-only
+	subDir := filepath.Join(tmpDir, "readonly")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	lockPath := filepath.Join(subDir, "test.lock")
+
+	// Create a stale lock file inside the subdirectory
+	if err := os.WriteFile(lockPath, []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the directory read-only so os.Remove fails with a permission error
+	if err := os.Chmod(subDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(subDir, 0755) }() // restore for cleanup
+
+	m := &metricsManager{}
+
+	f, err := m.acquireLedgerLock(lockPath)
+
+	// The function should still attempt the second OpenFile even though Remove failed.
+	// In a read-only directory, the lock file still exists after Remove fails, so the
+	// second OpenFile also returns os.IsExist. The key coverage goal is executing the
+	// log.Printf inside the `if err := os.Remove(lockPath)` block (visible in test output).
+	// We verify the function returns without panicking and returns a non-nil error.
+	if err == nil {
+		t.Error("expected error when both Remove and second OpenFile fail")
+	}
+	if f != nil {
+		t.Error("expected nil file handle when acquisition fails")
+	}
+
+	// Restore permissions so cleanup can proceed
+	_ = os.Chmod(subDir, 0755)
+}

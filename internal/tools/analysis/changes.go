@@ -25,11 +25,19 @@ func newChangeAnalyzer(cache *astCache, exec tools.CommandExecutor) *defaultChan
 }
 
 func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	if args == nil {
+		return tools.ToolResult{}, fmt.Errorf("args must not be nil")
+	}
+
 	var params struct {
 		Target string `json:"target"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
+	}
+
+	if params.Target == "" {
+		return tools.ToolResult{}, fmt.Errorf("missing required argument: target")
 	}
 
 	metadata, changedFiles, err := a.getDiffMetadata(ctx, params.Target)

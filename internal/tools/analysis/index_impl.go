@@ -114,7 +114,24 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 }
 
 func (idx *indexer) computeImplementationsLazy() map[string][]string {
-	ch := idx.sfGroup.DoChan("implementations", func() (any, error) {
+	// Fast path: if the cache is already populated, return it immediately.
+	// This avoids the singleflight overhead and prevents a race where
+	// the singleflight function completes before all concurrent callers
+	// have registered their DoChan calls (the key is forgotten once the
+	// function returns, causing late callers to start a new execution
+	// instead of receiving the cached result).
+	idx.mu.RLock()
+	if impls := idx.implementations; impls != nil {
+		idx.mu.RUnlock()
+		return impls
+	}
+	idx.mu.RUnlock()
+
+	// Use Do (not DoChan) to guarantee that all concurrent callers
+	// block until the function completes. DoChan runs the function
+	// asynchronously; if it completes before all callers register,
+	// late callers start a redundant second execution.
+	v, err, _ := idx.sfGroup.Do("implementations", func() (any, error) {
 		idx.mu.RLock()
 		pkgs := idx.pkgs
 		idx.mu.RUnlock()
@@ -128,11 +145,10 @@ func (idx *indexer) computeImplementationsLazy() map[string][]string {
 		return impls, nil
 	})
 
-	result := <-ch
-	if result.Err != nil || result.Val == nil {
+	if err != nil || v == nil {
 		return nil
 	}
-	return result.Val.(map[string][]string)
+	return v.(map[string][]string)
 }
 
 func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {

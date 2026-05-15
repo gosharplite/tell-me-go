@@ -2,12 +2,26 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// denyingSecurityProvider wraps mockSecurityProvider but denies all path access.
+type denyingSecurityProvider struct {
+	mockSecurityProvider
+}
+
+func (d *denyingSecurityProvider) IsPathSafe(path string) (string, error) {
+	return "", errors.New("path not authorized")
+}
 
 func TestComplexityAnalyzer_Analyze(t *testing.T) {
 	t.Parallel()
@@ -206,7 +220,7 @@ func TestGatherComplexities_InvalidPath(t *testing.T) {
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	_, err := analyzer.GatherComplexities(context.Background(), "/nonexistent/path/that/does/not/exist", nil)
+	_, _, err := analyzer.GatherComplexities(context.Background(), "/nonexistent/path/that/does/not/exist", nil)
 	if err == nil {
 		t.Error("expected error for nonexistent path")
 	}
@@ -247,6 +261,17 @@ func TestAnalyze_UnsafePath(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for nonexistent path")
 	}
+}
+
+func TestAnalyze_IsPathSafeRejection(t *testing.T) {
+	t.Parallel()
+	cache := newASTCache(".")
+	denyingSP := &denyingSecurityProvider{}
+	analyzer := newComplexityAnalyzer(cache, denyingSP)
+
+	_, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": "/some/valid/path"}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path not authorized")
 }
 
 func TestAnalyze_NoFunctions(t *testing.T) {
@@ -319,7 +344,7 @@ func TestGatherComplexities_WalkError(t *testing.T) {
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	_, err := analyzer.GatherComplexities(context.Background(), unreadableDir, nil)
+	_, _, err := analyzer.GatherComplexities(context.Background(), unreadableDir, nil)
 	if err == nil {
 		t.Error("expected permission error for unreadable directory")
 	}
@@ -342,7 +367,7 @@ func TestGatherComplexities_WithHeartbeat(t *testing.T) {
 	analyzer := newComplexityAnalyzer(cache, sp)
 
 	hb := make(chan struct{}, 10)
-	complexities, err := analyzer.GatherComplexities(context.Background(), tmpDir, hb)
+	complexities, _, err := analyzer.GatherComplexities(context.Background(), tmpDir, hb)
 	if err != nil {
 		t.Fatalf("GatherComplexities failed: %v", err)
 	}
@@ -356,4 +381,104 @@ func TestGatherComplexities_WithHeartbeat(t *testing.T) {
 	default:
 		t.Error("expected at least one heartbeat")
 	}
+}
+
+func TestGatherComplexities_SoftFailOnParseError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	// Create one valid file
+	validPath := filepath.Join(tmpDir, "valid.go")
+	if err := os.WriteFile(validPath, []byte("package test\nfunc F() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Create one invalid file
+	invalidPath := filepath.Join(tmpDir, "bad.go")
+	if err := os.WriteFile(invalidPath, []byte("package test\nfunc broken {"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cache := newASTCache(".")
+	sp := &mockSecurityProvider{}
+	analyzer := newComplexityAnalyzer(cache, sp)
+
+	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+	// Valid file's function should appear
+	if !strings.Contains(res.Text, "F - Complexity: 1") {
+		t.Errorf("expected F - Complexity: 1 in output, got:\n%s", res.Text)
+	}
+	// Skipped file annotation should appear
+	if !strings.Contains(res.Text, "⚠️ Skipped 1 file(s)") {
+		t.Errorf("expected skipped-file annotation in output, got:\n%s", res.Text)
+	}
+	if !strings.Contains(res.Text, "bad.go") {
+		t.Errorf("expected bad.go in skipped list, got:\n%s", res.Text)
+	}
+}
+
+func TestGatherComplexities_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	// Create a few valid Go files so Walk has something to process
+	for i := 0; i < 5; i++ {
+		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
+		require.NoError(t, os.WriteFile(path, []byte("package test\nfunc F() {}\n"), 0644))
+	}
+
+	cache := newASTCache(".")
+	sp := &mockSecurityProvider{}
+	analyzer := newComplexityAnalyzer(cache, sp)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately, before GatherComplexities starts
+
+	_, _, err := analyzer.GatherComplexities(ctx, tmpDir, nil)
+	require.Error(t, err)
+	// errgroup wraps context errors; check for context.Canceled
+	assert.True(t, errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context canceled"),
+		"expected context.Canceled, got: %v", err)
+}
+
+func TestGatherComplexities_ContextCancelledDuringProcessing(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	// Create enough files to ensure goroutines are launched and some
+	// remain blocked on sem.Acquire when context cancellation happens.
+	// With NumCPU concurrent workers, we need more files than the
+	// concurrency limit so that sem.Acquire blocks for excess goroutines.
+	for i := 0; i < 500; i++ {
+		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
+		require.NoError(t, os.WriteFile(path, []byte("package test\nfunc F() {}\n"), 0644))
+	}
+
+	cache := newASTCache(".")
+	sp := &mockSecurityProvider{}
+	analyzer := newComplexityAnalyzer(cache, sp)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Launch GatherComplexities in a goroutine, cancel after a short delay
+	// so filepath.Walk launches goroutines that then block on sem.Acquire.
+	type result struct {
+		complexities []funcComplexity
+		err          error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		c, _, e := analyzer.GatherComplexities(ctx, tmpDir, nil)
+		ch <- result{complexities: c, err: e}
+	}()
+
+	// Give Walk time to launch goroutines. Even on fast machines,
+	// 500 files with limited concurrency will have goroutines still
+	// waiting on sem.Acquire when we cancel.
+	time.Sleep(5 * time.Millisecond)
+	cancel()
+
+	res := <-ch
+	require.Error(t, res.err)
+	assert.True(t, errors.Is(res.err, context.Canceled) || strings.Contains(res.err.Error(), "context canceled"),
+		"expected context.Canceled, got: %v", res.err)
 }

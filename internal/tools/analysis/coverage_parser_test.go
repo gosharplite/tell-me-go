@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
 
@@ -922,6 +925,13 @@ func TestGetModuleName_WithTrailingSlash(t *testing.T) {
 	if mod != "github.com/test/mod/" {
 		t.Errorf("expected github.com/test/mod/, got %q", mod)
 	}
+}
+
+func TestValidateProfile_MissingFile(t *testing.T) {
+	t.Parallel()
+	err := validateProfile("/tmp/nonexistent-coverage-profile-12345.out")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "coverage profile was not generated")
 }
 
 func TestGetDetailedCoverage_CreateTempError(t *testing.T) {

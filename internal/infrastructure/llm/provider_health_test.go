@@ -148,3 +148,170 @@ func TestLLMProviderHealthChecker_AnthropicHealthyFallback(t *testing.T) {
 		t.Errorf("expected StatusHealthy for Anthropic 404, got %s", report.Status)
 	}
 }
+
+func TestNewLLMProviderHealthChecker_BaseURLFallback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		providerName    string
+		expectedBaseURL string
+	}{
+		{
+			name:            "openai fallback",
+			providerName:    "openai",
+			expectedBaseURL: "https://api.openai.com/v1",
+		},
+		{
+			name:            "deepseek fallback",
+			providerName:    "deepseek",
+			expectedBaseURL: "https://api.openai.com/v1",
+		},
+		{
+			name:            "anthropic fallback",
+			providerName:    "anthropic",
+			expectedBaseURL: "https://api.anthropic.com/v1",
+		},
+		{
+			name:            "google fallback",
+			providerName:    "google",
+			expectedBaseURL: "https://generativelanguage.googleapis.com/v1beta",
+		},
+		{
+			name:            "gemini fallback",
+			providerName:    "gemini",
+			expectedBaseURL: "https://generativelanguage.googleapis.com/v1beta",
+		},
+		{
+			name:            "unknown provider no fallback",
+			providerName:    "unknown-provider",
+			expectedBaseURL: "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			checker := NewLLMProviderHealthChecker(tt.providerName, nil, "", nil)
+			report, err := checker.Check(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if report.Status != ports.StatusUnhealthy {
+				t.Errorf("expected StatusUnhealthy, got %s", report.Status)
+			}
+
+			if report.Message != "LLM API key is missing (no authenticator)" {
+				t.Errorf("unexpected message: %s", report.Message)
+			}
+
+			details, ok := report.Details.(map[string]any)
+			if !ok {
+				t.Fatalf("expected Details to be map[string]any, got %T", report.Details)
+			}
+
+			if details["endpoint_url"] != tt.expectedBaseURL {
+				t.Errorf("expected endpoint_url %q, got %q", tt.expectedBaseURL, details["endpoint_url"])
+			}
+		})
+	}
+}
+
+func TestLLMProviderHealthChecker_BuildRequestError(t *testing.T) {
+	t.Parallel()
+
+	authMock := &auth.BearerAuth{Token: "test-key"}
+	checker := NewLLMProviderHealthChecker("openai", authMock, "://invalid", nil)
+
+	report, err := checker.Check(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if report.Status != ports.StatusUnhealthy {
+		t.Errorf("expected StatusUnhealthy, got %s: %s", report.Status, report.Message)
+	}
+	if !strings.Contains(report.Message, "failed to create health check request") {
+		t.Errorf("expected message to contain 'failed to create health check request', got: %s", report.Message)
+	}
+	if report.Error == nil {
+		t.Error("expected report.Error to be non-nil")
+	}
+}
+
+func TestLLMProviderHealthChecker_NonTransientNonAuthError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	authMock := &auth.BearerAuth{Token: "test-key"}
+	checker := NewLLMProviderHealthChecker("openai", authMock, server.URL, nil)
+
+	report, err := checker.Check(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if report.Status != ports.StatusUnhealthy {
+		t.Errorf("expected StatusUnhealthy, got %s: %s", report.Status, report.Message)
+	}
+	if report.Message != "LLM provider returned error status: 400" {
+		t.Errorf("expected message 'LLM provider returned error status: 400', got: %s", report.Message)
+	}
+	if report.Error == nil {
+		t.Error("expected report.Error to be non-nil")
+	}
+}
+
+func TestLLMProviderHealthChecker_GeminiEndpointSelection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		providerName string
+		baseURL      string
+	}{
+		{
+			name:         "vertex aiplatform url",
+			providerName: "gemini",
+			baseURL:      "https://us-central1-aiplatform.googleapis.com/v1",
+		},
+		{
+			name:         "custom proxy url",
+			providerName: "gemini",
+			baseURL:      "https://my-proxy.example.com/v1",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			checker := NewLLMProviderHealthChecker(tt.providerName, nil, tt.baseURL, nil)
+			report, err := checker.Check(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if report.Status != ports.StatusUnhealthy {
+				t.Errorf("expected StatusUnhealthy, got %s: %s", report.Status, report.Message)
+			}
+
+			details, ok := report.Details.(map[string]any)
+			if !ok {
+				t.Fatalf("expected Details to be map[string]any, got %T", report.Details)
+			}
+
+			if details["endpoint_url"] != tt.baseURL {
+				t.Errorf("expected endpoint_url %q, got %q", tt.baseURL, details["endpoint_url"])
+			}
+		})
+	}
+}
