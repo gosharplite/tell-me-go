@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -354,5 +355,26 @@ func TestSemanticDiff_UnmarshalArgsError(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestSemanticDiff_InvalidTarget(t *testing.T) {
+	t.Parallel()
+	mockExec := &mockExecutor{
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, fmt.Errorf("fatal: ambiguous argument 'nonexistent-commit-hash-12345': unknown revision")
+		},
+	}
+	a := newChangeAnalyzer(nil, mockExec)
+	res, err := a.SemanticDiff(context.Background(), map[string]interface{}{
+		"target": "nonexistent-commit-hash-12345",
+	}, nil)
+	// SemanticDiff handles getDiffMetadata errors gracefully — returns a result
+	// with the error embedded in the text, not as a returned error.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Could not perform logical analysis") {
+		t.Errorf("expected soft-error message, got:\n%s", res.Text)
 	}
 }

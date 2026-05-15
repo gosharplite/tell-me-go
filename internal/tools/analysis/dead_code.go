@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"go/types"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -181,6 +182,7 @@ func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scan
 	}
 	sort.Strings(ids)
 
+	var collectedErr error
 	for i, id := range ids {
 		if i%20 == 0 && hb != nil {
 			select {
@@ -190,11 +192,19 @@ func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scan
 		}
 
 		meta := state.declarations[id]
-		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath, hb)
+		if err := a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath, hb); err != nil {
+			// soft-fail: collect error, continue processing remaining symbols
+			if collectedErr == nil {
+				collectedErr = err
+			}
+		}
 		if a.isInterfaceSymbol(meta) {
 			a.protectContractSymbol(state, id)
 		}
 		a.processImplementations(ctx, state, id, hb)
+	}
+	if collectedErr != nil {
+		slog.Warn("usage lookup errors occurred", "error", collectedErr)
 	}
 }
 
@@ -247,13 +257,16 @@ func (a *defaultDeadCodeAnalyzer) protectContractSymbol(state *scanState, id str
 	state.externalUses[id]++
 }
 
-func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state *scanState, id string, meta *symMeta, fileToPkg map[string]string, resolvedPath string, hb chan<- struct{}) {
+func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state *scanState, id string, meta *symMeta, fileToPkg map[string]string, resolvedPath string, hb chan<- struct{}) error {
 	if !a.idx.IsSymbolUsed(ctx, id, hb) {
-		return
+		return nil
 	}
 
 	state.totalUses[id] = 1
-	allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath, hb)
+	allUsages, err := a.idx.GetUsages(ctx, id, resolvedPath, hb)
+	if err != nil {
+		return fmt.Errorf("get usages for %s: %w", id, err)
+	}
 	objBase := getBasePkgPath(meta.pkgPath)
 
 	for _, loc := range allUsages {
@@ -270,6 +283,7 @@ func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state
 			state.externalUses[id]++
 		}
 	}
+	return nil
 }
 
 func (a *defaultDeadCodeAnalyzer) processImplementations(ctx context.Context, state *scanState, id string, hb chan<- struct{}) {
