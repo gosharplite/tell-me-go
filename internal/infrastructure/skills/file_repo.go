@@ -15,9 +15,9 @@ import (
 	domain "github.com/gosharplite/tell-me-go/internal/domain/skills"
 )
 
-// ErrInvalidFrontmatter is returned when a skill file has valid frontmatter
+// errInvalidFrontmatter is returned when a skill file has valid frontmatter
 // delimiters but is missing the required name field.
-var ErrInvalidFrontmatter = errors.New("invalid skill frontmatter: name required")
+var errInvalidFrontmatter = errors.New("invalid skill frontmatter: name required")
 
 // fileSkillRepository implements the domain.SkillRepository interface
 // by loading skill definitions from Markdown files on disk.
@@ -122,7 +122,7 @@ func parseSkill(data []byte) (*domain.Skill, error) {
 		return nil, nil
 	}
 	if name == "" {
-		return nil, ErrInvalidFrontmatter
+		return nil, errInvalidFrontmatter
 	}
 	if desc == "" {
 		return nil, nil
