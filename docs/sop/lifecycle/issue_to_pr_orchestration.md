@@ -42,7 +42,7 @@ This SOP defines the end-to-end process for resolving a GitHub issue using the *
 
 | Role | Access | Responsibility |
 |------|--------|----------------|
-| **Orchestrator** (you) | Read files, run commands, `tell-me-go` | Issue analysis, prompt writing, retrieval, verification, PR creation. Relays tasks and results between Architect and Coder. Monitors token consumption of both roles via `tell-me-go -t`. **Never modifies Go source files.** |
+| **Orchestrator** (you) | Read files, run commands, `tell-me-go` | Issue analysis, prompt writing, retrieval, verification, PR creation. Relays tasks and results between Architect and Coder. Monitors token consumption of both roles via `tell-me-go -t ... | tail -5`. **Never modifies Go source files.** |
 | **Architect** | Read-only via `tell-me-go -r` | **Phase 1:** structural analysis, risk assessment, implementation sequencing, `[ARCHITECTURAL BLOCKER]` / `[TECHNICAL DEBT]` / `[REFACTOR]` categorization. **Phase 2:** dispatches one task at a time to Coder, reviews each result, issues the next task or revision. Stays in a single session (no `--new`) across all of Phase 2. |
 | **Coder** | **Write** via `tell-me-go -r` (the only role with file write access) | Implementation: receives one focused task per session (`--new` each time), TDD, table-driven tests, reports result. No memory of prior tasks — each session is self-contained. |
 
@@ -159,17 +159,18 @@ the Architect continuous visibility — no big surprises at the end.
 
 > ⛔ **Orchestrator: watch the token limit.** The Architect's single session
 > grows with every task dispatch and review. Use `tell-me-go -t -c
-> ${ARCHITECT_CONFIG}` to check token consumption after every 3–4
-> task cycles. When the Architect's token count exceeds ~80% of the
-> model's limit, the model will silently drop early messages — the
+> ${ARCHITECT_CONFIG} | tail -5` to check token consumption after every
+> 3–4 task cycles. Only the last few lines are needed — the `Payload:`
+> line has the count. When the Architect's token count exceeds ~80% of
+> the model's limit, the model will silently drop early messages — the
 > Architect will appear to forget earlier tasks. At that point, you
 > must either: (a) wrap up and proceed to Phase 3 if close to
 > completion, or (b) start a new Architect session with `--new`,
 > summarizing the implementation state so far.
 >
 > Coder sessions are naturally protected by `--new`, but verify
-> periodically with `tell-me-go -t -c ${CODER_CONFIG}` to confirm
-> no stale session is accumulating tokens.
+> periodically with `tell-me-go -t -c ${CODER_CONFIG} | tail -5` to
+> confirm no stale session is accumulating tokens.
 
 **Loop:**
 
@@ -304,7 +305,7 @@ Only then proceed to Phase 3.
 
 > ⛔ Before entering any fix loop, check the Architect's token consumption:
 > ```bash
-> tell-me-go -t -c ${ARCHITECT_CONFIG}
+> tell-me-go -t -c ${ARCHITECT_CONFIG} | tail -5
 > ```
 > If >80% of the model limit, the Architect may silently drop context
 > mid-fix. Restart with `--new`, summarizing the current state and the
@@ -403,9 +404,9 @@ gh pr create \
 | Coder hits an error it cannot resolve | Send the error to Architect (no `--new`); Architect diagnoses and issues a corrected task |
 | `make check-full` fails | Failure output → Architect (no `--new`) for diagnosis; Architect issues fix task → Coder (`--new`) |
 | Coverage target not met | Remaining gaps → Architect for coverage plan → Coder (`--new`) for additional tests |
-| Coder times out or produces no output | Check `tell-me-go -t -c ${CODER_CONFIG}` for errors; re-send task with fresh `--new` session |
+| Coder times out or produces no output | Check `tell-me-go -t -c ${CODER_CONFIG} \| tail -5` for errors; re-send task with fresh `--new` session |
 | Same task fails 3 consecutive times | **Stop.** Escalate to user with `ask_user` — do not loop indefinitely |
-| Architect appears to have forgotten context | Check `tell-me-go -t -c ${ARCHITECT_CONFIG}` for token consumption; if >80% of model limit, summarize progress and restart Architect with `--new` |
+| Architect appears to have forgotten context | Check `tell-me-go -t -c ${ARCHITECT_CONFIG} \| tail -5` for token consumption; if >80% of model limit, summarize progress and restart Architect with `--new` |
 | Architect token count exceeds ~80% of model limit (proactive check) | Assess: if near completion → finish the current task then proceed to Phase 3; if mid-implementation → summarize state, restart Architect with `--new`, continue |
 
 ---
