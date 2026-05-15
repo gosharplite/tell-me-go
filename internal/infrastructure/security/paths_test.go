@@ -467,13 +467,15 @@ func TestCheckDefaultBoundaries_ExtraTempDirs(t *testing.T) {
 
 	// A file in /tmp should be permitted by checkDefaultBoundaries.
 	// Whether via os.TempDir() or getExtraTempDirs() depends on the platform.
-	ok, err := p.checkDefaultBoundaries("/tmp/test-extra-temp-file.txt", false)
+	path := p.resolveSymlinks("/tmp/test-extra-temp-file.txt")
+	ok, err := p.checkDefaultBoundaries(path, false)
 	require.NoError(t, err)
 	assert.True(t, ok, "path in /tmp should pass checkDefaultBoundaries (via os.TempDir or getExtraTempDirs)")
 
 	// macOS-specific: /private/tmp is also covered by getExtraTempDirs
 	if runtime.GOOS == "darwin" {
-		ok2, err2 := p.checkDefaultBoundaries("/private/tmp/test-extra-temp-file.txt", false)
+		path2 := p.resolveSymlinks("/private/tmp/test-extra-temp-file.txt")
+		ok2, err2 := p.checkDefaultBoundaries(path2, false)
 		require.NoError(t, err2)
 		assert.True(t, ok2, "path in /private/tmp should pass checkDefaultBoundaries on macOS")
 	}
@@ -497,6 +499,7 @@ func TestNewPathPolicy_ResolvedTempDir(t *testing.T) {
 
 	// Verify a file under the real OS temp dir is considered exempted
 	tempFile := filepath.Join(os.TempDir(), "test-exempted-file.txt")
+	tempFile = p.resolveSymlinks(tempFile)
 	exempted := p.isExemptedDirectory(tempFile)
 	assert.True(t, exempted, "path in os.TempDir() should be exempted by isExemptedDirectory")
 }
