@@ -1273,3 +1273,328 @@ func TestConfluenceManager_SecureURLConstruction(t *testing.T) {
 		assert.Contains(t, u.String(), "space-id=123%3F456%26789")
 	})
 }
+
+func TestConfluenceManager_HTTPStatusErrors(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	// ──────────────────────────────────────────────────────────
+	// Gap A: FetchSearchPage status codes (88.9% → 100%)
+	// ──────────────────────────────────────────────────────────
+
+	t.Run("FetchSearchPage_HTTP401", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     "401 Unauthorized",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		_, err = m.FetchSearchPage(context.Background(), "https://test.atlassian.net/wiki/api/v2/pages")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "confluence API returned status: 401 Unauthorized")
+	})
+
+	t.Run("FetchSearchPage_HTTP429", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Status:     "429 Too Many Requests",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		_, err = m.FetchSearchPage(context.Background(), "https://test.atlassian.net/wiki/api/v2/pages")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "confluence API returned status: 429 Too Many Requests")
+	})
+
+	t.Run("FetchSearchPage_HTTP503", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Status:     "503 Service Unavailable",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		_, err = m.FetchSearchPage(context.Background(), "https://test.atlassian.net/wiki/api/v2/pages")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "confluence API returned status: 503 Service Unavailable")
+	})
+
+	t.Run("FetchSearchPage_BodyReadError", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(&errorReader{err: fmt.Errorf("read error")}),
+		}, nil)
+
+		_, err = m.FetchSearchPage(context.Background(), "https://test.atlassian.net/wiki/api/v2/pages")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "confluence API returned status")
+		assert.Contains(t, err.Error(), "failed to read response body")
+	})
+
+	// ──────────────────────────────────────────────────────────
+	// Gap B: getCurrentPageVersion status codes (89.5% → 100%)
+	// ──────────────────────────────────────────────────────────
+
+	t.Run("getCurrentPageVersion_HTTP401", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     "401 Unauthorized",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		_, err = m.getCurrentPageVersion(context.Background(), "123")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch current version, status: 401 Unauthorized")
+	})
+
+	t.Run("getCurrentPageVersion_HTTP404", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Status:     "404 Not Found",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		_, err = m.getCurrentPageVersion(context.Background(), "123")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch current version, status: 404 Not Found")
+	})
+
+	t.Run("getCurrentPageVersion_HTTP500", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		_, err = m.getCurrentPageVersion(context.Background(), "123")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch current version, status: 500 Internal Server Error")
+	})
+
+	// ──────────────────────────────────────────────────────────
+	// Gap C: executeUpdate status codes (90.9% → 100%)
+	// ──────────────────────────────────────────────────────────
+
+	t.Run("executeUpdate_HTTP401", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     "401 Unauthorized",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		err = m.executeUpdate(context.Background(), "123", map[string]interface{}{"title": "test"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update failed with status: 401 Unauthorized")
+	})
+
+	t.Run("executeUpdate_HTTP403", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusForbidden,
+			Status:     "403 Forbidden",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		err = m.executeUpdate(context.Background(), "123", map[string]interface{}{"title": "test"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update failed with status: 403 Forbidden")
+	})
+
+	t.Run("executeUpdate_HTTP500", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		err = m.executeUpdate(context.Background(), "123", map[string]interface{}{"title": "test"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update failed with status: 500 Internal Server Error")
+	})
+
+	t.Run("executeUpdate_HTTP503", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Status:     "503 Service Unavailable",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		err = m.executeUpdate(context.Background(), "123", map[string]interface{}{"title": "test"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update failed with status: 503 Service Unavailable")
+	})
+
+	// ──────────────────────────────────────────────────────────
+	// Gap D: confluenceWrite error propagation (89.5% → 100%)
+	// ──────────────────────────────────────────────────────────
+
+	t.Run("confluenceWrite_VersionFetchError", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		// GET returns 500 → getCurrentPageVersion fails
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodGet
+		})).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id":          "123",
+			"markdown_content": "# Test",
+		}
+
+		_, err = m.confluenceWrite(context.Background(), args, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch current version, status: 500 Internal Server Error")
+	})
+
+	t.Run("confluenceWrite_UpdateNonConflictError", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		// GET returns 200 with version info
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodGet
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "123", "title": "Old Title", "version": {"number": 5}}`)),
+		}, nil)
+
+		// PUT returns 500 (not 409, so error propagates)
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodPut
+		})).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id":          "123",
+			"markdown_content": "# Test",
+		}
+
+		_, err = m.confluenceWrite(context.Background(), args, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update failed with status: 500 Internal Server Error")
+	})
+
+	// ──────────────────────────────────────────────────────────
+	// Additional gaps: decode error & validation
+	// ──────────────────────────────────────────────────────────
+
+	t.Run("FetchSearchPage_DecodeError", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m, err := NewConfluenceManager(nil, mockClient)
+		assert.NoError(t, err)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{ invalid json")),
+		}, nil)
+
+		_, err = m.FetchSearchPage(context.Background(), "https://test.atlassian.net/wiki/api/v2/pages")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+
+	t.Run("confluenceWrite_MissingPageID", func(t *testing.T) {
+		m, err := NewConfluenceManager(nil, nil)
+		assert.NoError(t, err)
+
+		args := map[string]interface{}{
+			"page_id":          "",
+			"markdown_content": "# Test",
+		}
+
+		_, err = m.confluenceWrite(context.Background(), args, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "page_id and markdown_content are required")
+	})
+
+	t.Run("confluenceWrite_MissingContent", func(t *testing.T) {
+		m, err := NewConfluenceManager(nil, nil)
+		assert.NoError(t, err)
+
+		args := map[string]interface{}{
+			"page_id":          "123",
+			"markdown_content": "",
+		}
+
+		_, err = m.confluenceWrite(context.Background(), args, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "page_id and markdown_content are required")
+	})
+}
+
+func TestConfluenceManager_RemainingErrorPaths(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	t.Run("fetchPageContent_InvalidBaseURL", func(t *testing.T) {
+		m, err := NewConfluenceManager(nil, nil)
+		require.NoError(t, err)
+		m.provider.baseURL = " ://broken"
+		_, err = m.fetchPageContent(context.Background(), "123")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid base url")
+	})
+
+	t.Run("ConfluenceRead_MissingPageID", func(t *testing.T) {
+		m, err := NewConfluenceManager(nil, nil)
+		require.NoError(t, err)
+		_, err = m.ConfluenceRead(context.Background(), map[string]interface{}{}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "page_id argument is required")
+	})
+}
