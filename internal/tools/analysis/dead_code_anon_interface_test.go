@@ -398,7 +398,7 @@ func TestCollectMethodNamesFromPackage_NonModuleInternal(t *testing.T) {
 		}
 	})
 
-	t.Run("module-internal package with nil targetModule returns immediately", func(t *testing.T) {
+	t.Run("empty targetModule still processes module-internal package", func(t *testing.T) {
 		t.Parallel()
 		names := make(map[string]struct{})
 		pkg := &packages.Package{
