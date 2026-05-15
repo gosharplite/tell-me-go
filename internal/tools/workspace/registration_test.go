@@ -468,3 +468,110 @@ func TestRegister_WithHealth(t *testing.T) {
 		t.Error("check_system_health should be registered when health is non-nil")
 	}
 }
+
+func TestRegisterSystem_HealthNil(t *testing.T) {
+	reg := registry.New()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	validator := &toolstest.MockCommandValidator{}
+
+	err := registerSystem(reg, sm, validator, nil)
+	if err != nil {
+		t.Fatalf("registerSystem with nil health failed: %v", err)
+	}
+
+	decls := reg.GetDeclarations()
+	names := make(map[string]bool)
+	for _, d := range decls {
+		names[d.Name] = true
+	}
+
+	required := []string{"execute_command", "pipe_commands", "ask_user"}
+	for _, name := range required {
+		if !names[name] {
+			t.Errorf("expected tool %q to be registered", name)
+		}
+	}
+	if names["check_system_health"] {
+		t.Error("check_system_health should NOT be registered when health is nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Register — registerFiles partial failure
+// ---------------------------------------------------------------------------
+
+func TestRegister_RegisterFilesFails(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	validator := &toolstest.MockCommandValidator{}
+	fs := persistencetest.NewPlainOSFileSystem()
+	wp := infra_persistence.NewWorkspacePolicy()
+
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "list_files",
+	}
+	err := Register(registry, sm, exec, validator, fs, wp, nil)
+	if err == nil {
+		t.Fatal("expected error from Register when registerFiles fails")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure' in error, got %q", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// registerFiles — non-processExecutor path
+// ---------------------------------------------------------------------------
+
+func TestRegisterFiles_NonProcessExecutor(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	fs := persistencetest.NewPlainOSFileSystem()
+	wp := infra_persistence.NewWorkspacePolicy()
+
+	// Use MockExecutor which does NOT implement *processExecutor
+	exec := &toolstest.MockExecutor{}
+
+	reg := &mockToolRegistry{}
+	err := registerFiles(reg, sm, fs, exec, wp)
+	if err != nil {
+		t.Fatalf("registerFiles with non-processExecutor failed: %v", err)
+	}
+
+	// Verify all expected file tools were registered
+	decls := reg.GetDeclarations()
+	names := make(map[string]bool)
+	for _, d := range decls {
+		names[d.Name] = true
+	}
+
+	expected := []string{"list_files", "get_tree", "read_files", "write_file", "replace_text",
+		"append_text", "get_file_diff", "undo_file_change", "delete_path", "create_directory",
+		"find_file", "search_files", "get_definitions"}
+	for _, name := range expected {
+		if !names[name] {
+			t.Errorf("expected tool %q to be registered", name)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// registerGit: get_git_show failure path
+// ---------------------------------------------------------------------------
+
+func TestRegisterGit_GetGitShowFails(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "get_git_show",
+	}
+	err := registerGit(registry, sm, exec)
+	if err == nil {
+		t.Fatal("expected error from registerGit when get_git_show fails")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure' in error, got %q", err.Error())
+	}
+}
