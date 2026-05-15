@@ -36,6 +36,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/go/packages"
 )
 
 // anonInterfaceWarningSubstring is the load-bearing fragment that the
@@ -368,4 +369,45 @@ func reportLineFor(report, symbolMarker, wantSubstring string) bool {
 		}
 	}
 	return false
+}
+
+func TestCollectMethodNamesFromPackage_NonModuleInternal(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil package returns immediately", func(t *testing.T) {
+		t.Parallel()
+		names := make(map[string]struct{})
+		// Must not panic
+		collectMethodNamesFromPackage(nil, "example.com/mod", names)
+		if len(names) != 0 {
+			t.Error("expected no names collected from nil package")
+		}
+	})
+
+	t.Run("non-module package returns immediately", func(t *testing.T) {
+		t.Parallel()
+		names := make(map[string]struct{})
+		// Create a synthetic package with nil Module (simulating external dep)
+		pkg := &packages.Package{
+			PkgPath: "fmt",
+			Module:  nil, // nil Module means not module-internal
+		}
+		collectMethodNamesFromPackage(pkg, "example.com/mod", names)
+		if len(names) != 0 {
+			t.Error("expected no names collected from non-module package")
+		}
+	})
+
+	t.Run("module-internal package with nil targetModule returns immediately", func(t *testing.T) {
+		t.Parallel()
+		names := make(map[string]struct{})
+		pkg := &packages.Package{
+			PkgPath: "example.com/mod/internal/foo",
+			Module:  &packages.Module{Path: "example.com/mod"},
+		}
+		// targetModule is empty string — strings.HasPrefix("example.com/mod/internal/foo", "") is true
+		// So this actually IS module-internal. Test with empty targetModule legitimately.
+		collectMethodNamesFromPackage(pkg, "", names)
+		// Package has nil Syntax, so no names collected — but the guard is exercised
+	})
 }

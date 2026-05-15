@@ -325,6 +325,11 @@ func handleGenDeclKey(d *ast.GenDecl) string {
 	return "unknown"
 }
 
+// isDeclEqual compares two AST declarations for structural equality by formatting
+// them to canonical Go source. Both decls should come from parser.ParseFile, which
+// guarantees valid AST — so format.Node failures are expected only for nil interface
+// values (which trigger the first error path). The second format.Node error path
+// (bufB) mirrors the first as defense-in-depth against future AST construction.
 func isDeclEqual(a, b ast.Decl) (bool, error) {
 	// Crude but effective for semantic diff: compare formatted strings
 	fset := token.NewFileSet()

@@ -534,6 +534,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {
 
 type mockSymbolIndex struct {
 	GetImplementationsFunc func(ctx context.Context, id string) []string
+	PackagesFunc           func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error)
 }
 
 func (m *mockSymbolIndex) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
@@ -558,6 +559,9 @@ func (m *mockSymbolIndex) GetImplementations(ctx context.Context, interfaceMetho
 	return nil
 }
 func (m *mockSymbolIndex) Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+	if m.PackagesFunc != nil {
+		return m.PackagesFunc(ctx, hb)
+	}
 	return nil, nil
 }
 func (m *mockSymbolIndex) Refresh(ctx context.Context, hb chan<- struct{}) error { return nil }
@@ -602,6 +606,16 @@ func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 			expectedTotal:    map[string]int{"InterfaceA": 1, "InterfaceB": 1},
 			expectedExternal: map[string]int{"InterfaceA": 1, "InterfaceB": 1},
 		},
+		{
+			name:            "nil heartbeat does not panic",
+			initialTotal:    map[string]int{"InterfaceA": 1},
+			initialExternal: map[string]int{"InterfaceA": 1},
+			implementations: map[string][]string{
+				"InterfaceA": {},
+			},
+			expectedTotal:    map[string]int{"InterfaceA": 1},
+			expectedExternal: map[string]int{"InterfaceA": 1},
+		},
 	}
 
 	for _, tt := range tests {
@@ -635,6 +649,40 @@ func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 				assert.Equal(t, count, state.externalUses[id], "External uses for %s mismatch", id)
 			}
 		})
+	}
+}
+
+func TestPropagateInterfaceUsages_WithHeartbeat(t *testing.T) {
+	// Verifies the hb != nil path: when a heartbeat channel is provided,
+	// it receives a signal without blocking or panicking.
+	t.Parallel()
+
+	ctx := context.Background()
+	state := &scanState{
+		declarations: make(map[string]*symMeta),
+		totalUses:    make(map[string]int),
+		externalUses: make(map[string]int),
+	}
+	state.totalUses["InterfaceA"] = 1
+	state.externalUses["InterfaceA"] = 1
+	state.declarations["InterfaceA"] = &symMeta{id: "InterfaceA"}
+
+	mockIdx := &mockSymbolIndex{
+		GetImplementationsFunc: func(ctx context.Context, id string) []string {
+			return nil
+		},
+	}
+	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+
+	hb := make(chan struct{}, 1)
+	analyzer.propagateInterfaceUsages(ctx, state, hb)
+
+	// Verify heartbeat was sent (i=0 hits i%20==0, hb != nil)
+	select {
+	case <-hb:
+		// received heartbeat
+	default:
+		t.Error("expected heartbeat on hb channel")
 	}
 }
 
@@ -794,4 +842,131 @@ func TestGatherOrphanReports(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGatherOrphanReports_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("security policy rejects path", func(t *testing.T) {
+		t.Parallel()
+		denyingSP := &denyingSecurityProvider{}
+		analyzer := newDeadCodeAnalyzer(denyingSP, &mockSymbolIndex{})
+
+		reports, err := analyzer.GatherOrphanReports(context.Background(), "/some/path", nil)
+		if err == nil {
+			t.Error("expected error from security policy rejection")
+		}
+		if reports != nil {
+			t.Error("expected nil reports on error")
+		}
+	})
+
+	t.Run("indexer returns zero packages", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		sp := &deadCodeSecurityProvider{tempDir: tmpDir}
+
+		mockIdx := &mockSymbolIndex{
+			PackagesFunc: func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+				return []*packages.Package{}, nil
+			},
+		}
+		analyzer := newDeadCodeAnalyzer(sp, mockIdx)
+
+		reports, err := analyzer.GatherOrphanReports(context.Background(), tmpDir, nil)
+		if err != nil {
+			t.Errorf("expected nil error for empty packages, got: %v", err)
+		}
+		if reports != nil {
+			t.Errorf("expected nil reports for empty packages, got: %v", reports)
+		}
+	})
+
+	t.Run("indexer Packages returns error", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		sp := &deadCodeSecurityProvider{tempDir: tmpDir}
+
+		mockIdx := &mockSymbolIndex{
+			PackagesFunc: func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+				return nil, fmt.Errorf("indexer failure")
+			},
+		}
+		analyzer := newDeadCodeAnalyzer(sp, mockIdx)
+
+		reports, err := analyzer.GatherOrphanReports(context.Background(), tmpDir, nil)
+		if err == nil {
+			t.Error("expected error from indexer failure")
+		}
+		if !strings.Contains(err.Error(), "indexer failure") {
+			t.Errorf("expected 'indexer failure' in error, got: %v", err)
+		}
+		if reports != nil {
+			t.Error("expected nil reports on error")
+		}
+	})
+}
+
+func TestFindOrphanedSymbols_NoPackages(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	sp := &deadCodeSecurityProvider{tempDir: tmpDir}
+
+	// Create go.mod but NO .go files → indexer will return empty packages
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module empty.test\n\ngo 1.25"), 0644))
+
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, idx.Refresh(ctx, nil))
+
+	analyzer := newDeadCodeAnalyzer(sp, idx)
+	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": tmpDir}, nil)
+	require.NoError(t, err)
+	assert.Contains(t, result.Text, "No packages found")
+}
+
+func TestFindOrphanedSymbols_NoOrphans(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	sp := &deadCodeSecurityProvider{tempDir: tmpDir}
+
+	// Minimal but valid Go project — everything is used, nothing is orphaned
+	files := map[string]string{
+		"go.mod":  "module noorphan.test\n\ngo 1.25",
+		"main.go": "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"hello\") }\n",
+	}
+	for path, content := range files {
+		full := filepath.Join(tmpDir, path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	}
+
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, idx.Refresh(ctx, nil))
+
+	analyzer := newDeadCodeAnalyzer(sp, idx)
+	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": tmpDir}, nil)
+	require.NoError(t, err)
+	assert.Contains(t, result.Text, "No dead or effectively private code found")
+}
+
+func TestFindOrphanedSymbols_UnmarshalArgsError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	sp := &deadCodeSecurityProvider{tempDir: tmpDir}
+
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	analyzer := newDeadCodeAnalyzer(sp, idx)
+
+	// Pass an unserializable value (channel) → json.Marshal fails
+	ch := make(chan int)
+	_, err = analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": ch}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported type")
 }
