@@ -111,6 +111,7 @@ The prompt must include:
 - The full issue body (scope, gap distribution, key code locations, DoD).
 - A request for: risk assessment, prioritized implementation sequence, test strategy, and pattern guidance.
 - An explicit instruction to categorize findings per the Architect SOP.
+- A format requirement: the Architect must output **structured sections** (e.g., `## Risk Assessment`, `## Prioritized Sequence`, `## Test Strategy`, `## Pattern Guidance`). The Orchestrator will reject unstructured output.
 - Phase 2 setup: *"After your analysis, you will dispatch tasks to the Coder one at a time. Tell Coder what to do with details — do not do it yourself. Output exactly one task per response, since Coder starts a new session for each task and has no prior memory. Be as clear as possible. You will review Coder's result before issuing the next task."*
 
 #### 2b. Send to Architect
@@ -130,7 +131,16 @@ tell-me-go --new -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
 ```
 
-Verify the response is actionable before proceeding. If the Architect asks a question, answer via a follow-up prompt (**no `--new`**) to preserve context.
+Verify the response is actionable before proceeding. **Actionable means:**
+
+- Has the required structured sections (`## Risk Assessment`, `## Prioritized Sequence`, `## Test Strategy`, `## Pattern Guidance`).
+- Each task in the sequence references specific file paths and/or function names.
+- The test strategy covers the issue's numbered acceptance criteria checklist.
+- Findings are categorized (`[ARCHITECTURAL BLOCKER]`, `[TECHNICAL DEBT]`, `[REFACTOR]`).
+
+If the response is unstructured or missing sections, send a follow-up
+(**no `--new`**) asking the Architect to reformat. If the Architect asks
+a question, answer via follow-up (**no `--new`**) to preserve context.
 
 ---
 
@@ -181,13 +191,12 @@ to the Architect (**no `--new`** — continues the same session):
 write_file → /tmp/tell-me-go-prompt.txt
 
 Prompt content:
-  "Tell Coder what to do with details. Do not do it yourself.
-   Output one task at a time, since Coder will start a new session
-   for each of your tasks. Coder has no previous memory — be as
-   clear and self-contained as possible. Include exact file paths,
-   function signatures, and test expectations. You will review
-   Coder's new code after each task before issuing the next one."
+  "Begin. Output your first task."
 ```
+
+The dispatch rules (one task at a time, Coder has no memory, review
+each result) were already given in the Phase 1 prompt (2a). Do not
+repeat them here — it wastes tokens.
 
 Send:
 ```bash
@@ -204,9 +213,15 @@ tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
 
 #### 3b. Send one task to Coder
 
-Each task runs in a **fresh** Coder session (`--new`):
+The Architect's task output **is** the Coder's prompt. Save it, then
+send it in a fresh session.
 
 ```bash
+# Step 1: Save the Architect's task output to the prompt file
+write_file → /tmp/tell-me-go-prompt.txt
+    <paste the Architect's exact task output here>
+
+# Step 2: Send to Coder (--new = fresh session, no prior memory)
 PROMPT_FILE=$(mktemp) && \
 cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
@@ -220,24 +235,38 @@ tell-me-go -l 1 -r -c ${CODER_CONFIG}
 
 #### 3c. Send Coder's result back to Architect for review
 
-Forward the Coder's output to the Architect (**no `--new`** — Architect
-is still in the same session):
+Save the Coder's retrieved output to the prompt file, then forward to
+the Architect (**no `--new`** — Architect is still in the same session):
 
 ```bash
+# Step 1: Save Coder's output to the prompt file
+write_file → /tmp/tell-me-go-prompt.txt
+    <paste the Coder's exact output here>
+
+# Step 2: Send to Architect for review
 PROMPT_FILE=$(mktemp) && \
 cp /tmp/tell-me-go-prompt.txt "$PROMPT_FILE" && \
 test -s "$PROMPT_FILE" || { echo "Prompt is empty — aborting."; exit 1; } && \
 tell-me-go -r -c ${ARCHITECT_CONFIG} < "$PROMPT_FILE" &> /dev/null
 ```
 
+Retrieve the Architect's verdict:
+```bash
+tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG}
+```
+
 The Architect will respond with one of:
-- **Next task** — proceed to 3b with the new task.
-- **Revision** — the Coder's output needs adjustment; Architect provides corrected instructions. Send to Coder (`--new`) and re-review.
-- **Completion** — all tasks done. Proceed to Phase 3 (Verification).
+- **Next task** — the Coder's output is accepted. Save the new task to
+  the prompt file and go to 3b.
+- **Revision** — the Coder's output needs adjustment. The Architect's
+  response **is** the corrected task. Save that text to the prompt file
+  and send to Coder (`--new`) as in 3b, then re-review via 3c.
+- **Completion** — all tasks done. Proceed to 3e (cross-check) before
+  entering Phase 3.
 
-#### 3d. Loop until Architect declares completion
+#### 3d. Loop rules
 
-Repeat 3b → 3c for each task. Key rules:
+Repeat 3b → 3c for each task.
 
 | Rule | Rationale |
 |------|-----------|
@@ -246,9 +275,40 @@ Repeat 3b → 3c for each task. Key rules:
 | One task at a time | Architect reviews each result; no big surprises |
 | Tasks must be self-contained | Include exact file paths, signatures, test expectations — Coder has no memory of prior tasks |
 
+**Escape hatch:** If the same task fails 3 consecutive times (Coder
+implements → Architect rejects → Coder re-implements → Architect
+rejects → Coder re-implements → Architect rejects), **stop** and
+escalate to the user with `ask_user`. Do not loop indefinitely.
+
+#### 3e. Cross-check completion against the issue
+
+When the Architect declares completion, do **not** trust it blindly.
+Cross-check the issue's numbered acceptance criteria checklist against
+what was implemented:
+
+1. Read the issue body to extract the checklist (e.g., `- [ ] Fix error handling in auth.go`).
+2. Run `git diff dev --stat` to see all changed files.
+3. Verify each checklist item maps to at least one changed file or
+   Coder-reported result.
+4. If any checklist item has **no** corresponding change, send a
+   follow-up to the Architect (no `--new`): *"The issue checklist
+   item 'X' has no coverage. Was this addressed? If not, issue a
+   task for it."*
+5. Repeat until all checklist items are accounted for.
+
+Only then proceed to Phase 3.
+
 ---
 
 ### 4. Phase 3 — Verification
+
+> ⛔ Before entering any fix loop, check the Architect's token consumption:
+> ```bash
+> tell-me-go -t -c ${ARCHITECT_CONFIG}
+> ```
+> If >80% of the model limit, the Architect may silently drop context
+> mid-fix. Restart with `--new`, summarizing the current state and the
+> failure output, before issuing the first fix task.
 
 Run the full quality pipeline:
 
@@ -344,6 +404,7 @@ gh pr create \
 | `make check-full` fails | Failure output → Architect (no `--new`) for diagnosis; Architect issues fix task → Coder (`--new`) |
 | Coverage target not met | Remaining gaps → Architect for coverage plan → Coder (`--new`) for additional tests |
 | Coder times out or produces no output | Check `tell-me-go -t -c ${CODER_CONFIG}` for errors; re-send task with fresh `--new` session |
+| Same task fails 3 consecutive times | **Stop.** Escalate to user with `ask_user` — do not loop indefinitely |
 | Architect appears to have forgotten context | Check `tell-me-go -t -c ${ARCHITECT_CONFIG}` for token consumption; if >80% of model limit, summarize progress and restart Architect with `--new` |
 | Architect token count exceeds ~80% of model limit (proactive check) | Assess: if near completion → finish the current task then proceed to Phase 3; if mid-implementation → summarize state, restart Architect with `--new`, continue |
 
@@ -352,10 +413,12 @@ gh pr create \
 ### 7. Completion Checklist
 
 - [ ] Chat protocol complied with: no inline heredocs, `timeout: 1800` on all `tell-me-go` calls, `--new` only for first messages, retrieval via `-l N`, prompts via `write_file` → `mktemp` + `cp`
-- [ ] Token limits monitored: Architect checked via `-t` during Phase 2, Coder verified per-session, no silent context truncation
+- [ ] Token limits monitored: Architect checked via `-t` during Phase 2 and before Phase 3 fix loop, Coder verified per-session, no silent context truncation
 - [ ] Feature branch created from `dev`
-- [ ] Architect analysis retrieved and actionable
+- [ ] Architect Phase 1 analysis: structured sections present, actionable per 2c criteria
 - [ ] Coder implementation completed (all gaps addressed)
+- [ ] Issue checklist cross-checked (3e): every acceptance criterion maps to a change
+- [ ] No task exceeded 3 consecutive retries without escalation
 - [ ] `make check-full` passes (all 10 steps)
 - [ ] Target coverage met (if package-specific)
 - [ ] `git diff dev` reviewed — only expected changes
