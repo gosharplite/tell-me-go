@@ -395,42 +395,16 @@ func TestUndo_NExceedingSnapshotCount(t *testing.T) {
 
 func TestSnapshot_WorkingDirectoryRemoved(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
-	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
+	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10,
+		WithPathResolver(func(path string) (string, error) {
+			return "", fmt.Errorf("getwd failed: no such file or directory")
+		}),
+	)
 	ctx := context.Background()
 
-	// Create a temp dir, chdir into it, then remove it
-	tmpDir := t.TempDir()
-	subDir := filepath.Join(tmpDir, "subdir")
-	if err := os.Mkdir(subDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(subDir); err != nil {
-		t.Fatal(err)
-	}
-	// Remove the directory we're in — this causes os.Getwd() to fail on next call
-	t.Cleanup(func() {
-		_ = os.Chdir(oldWd)
-	})
-	if err := os.Remove(subDir); err != nil {
-		// On some OSes, you can't remove the current working directory
-		t.Skipf("cannot remove current working directory on this OS: %v", err)
-	}
-	// On some OSes (macOS), removing the CWD succeeds but os.Getwd still
-	// resolves because the kernel holds a VFS reference to the unlinked
-	// directory. Skip if Getwd still works — the error path is not testable.
-	if _, err := os.Getwd(); err == nil {
-		t.Skip("os.Getwd still succeeds after CWD removal on this OS; error path not reachable")
-	}
-
-	// Now filepath.Abs should fail because os.Getwd fails
-	err = bm.snapshot(ctx, "test.txt", "WRITE")
+	err := bm.snapshot(ctx, "test.txt", "WRITE")
 	if err == nil {
-		t.Fatal("expected error from filepath.Abs when working directory is removed")
+		t.Fatal("expected error from path resolver failure")
 	}
 	if !strings.Contains(err.Error(), "snapshot: resolve path") {
 		t.Errorf("expected 'snapshot: resolve path' in error, got: %v", err)
