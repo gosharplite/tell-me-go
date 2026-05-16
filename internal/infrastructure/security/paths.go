@@ -5,6 +5,7 @@ package security
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,19 +54,29 @@ type pathRule func(absPath string, writable bool) (bool, error)
 func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error) {
 	cwd, err := os.Getwd()
 	if err == nil {
-		if ok, _ := p.checkBoundary(absPath, cwd); ok {
+		ok, err := p.checkBoundary(absPath, cwd)
+		if err != nil {
+			log.Printf("security: boundary check error for cwd against %s: %v", absPath, err)
+		}
+		if ok {
 			return true, nil
 		}
 	}
 
 	// Existing: user-specific temp directory
-	if ok, _ := p.checkBoundary(absPath, os.TempDir()); ok {
+	if ok, err := p.checkBoundary(absPath, os.TempDir()); ok {
 		return true, nil
+	} else if err != nil {
+		log.Printf("security: boundary check error for temp dir against %s: %v", absPath, err)
 	}
 
 	// Platform-specific extra temp boundaries (e.g., /tmp, /private/tmp for Unix)
 	for _, tmpDir := range getExtraTempDirs() {
-		if ok, _ := p.checkBoundary(absPath, tmpDir); ok {
+		ok, err := p.checkBoundary(absPath, tmpDir)
+		if err != nil {
+			log.Printf("security: boundary check error for extra temp dir %s against %s: %v", tmpDir, absPath, err)
+		}
+		if ok {
 			return true, nil
 		}
 	}
@@ -79,7 +90,11 @@ func (p *pathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
 	defer p.safePathsMu.RUnlock()
 
 	for sp := range p.safePaths {
-		if ok, _ := p.checkBoundary(absPath, sp); ok {
+		ok, err := p.checkBoundary(absPath, sp)
+		if err != nil {
+			log.Printf("security: boundary check error for safe path %s against %s: %v", sp, absPath, err)
+		}
+		if ok {
 			return true, nil
 		}
 	}
@@ -96,7 +111,11 @@ func (p *pathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, er
 	defer p.readOnlyPathsMu.RUnlock()
 
 	for rop := range p.readOnlyPaths {
-		if ok, _ := p.checkBoundary(absPath, rop); ok {
+		ok, err := p.checkBoundary(absPath, rop)
+		if err != nil {
+			log.Printf("security: boundary check error for read-only path %s against %s: %v", rop, absPath, err)
+		}
+		if ok {
 			return true, nil
 		}
 	}

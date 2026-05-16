@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -18,14 +19,17 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
+const maxConsecutiveWarnBeforeError = 5
+
 type asyncTurnsLogger struct {
-	file   infra_persistence.File
-	ch     chan string
-	wg     sync.WaitGroup
-	logger *slog.Logger
-	clock  clock.Clock
-	closed bool
-	mu     sync.RWMutex
+	file                infra_persistence.File
+	ch                  chan string
+	wg                  sync.WaitGroup
+	logger              *slog.Logger
+	clock               clock.Clock
+	closed              bool
+	mu                  sync.RWMutex
+	consecutiveFailures atomic.Int64
 }
 
 // NewAsyncTurnsLogger creates a new ports.TurnsLogger that writes to a file asynchronously.
@@ -80,13 +84,30 @@ func (l *asyncTurnsLogger) Listen(ctx context.Context) error {
 
 func (l *asyncTurnsLogger) processMessage(msg string) {
 	if _, err := l.file.Write([]byte(msg)); err != nil {
-		l.logger.Warn("failed to write to turns log", "error", err)
+		fails := l.consecutiveFailures.Add(1)
+		if fails >= maxConsecutiveWarnBeforeError {
+			l.logger.Error("failed to write to turns log after multiple retries",
+				"error", err,
+				"consecutive_failures", fails)
+		} else {
+			l.logger.Warn("failed to write to turns log", "error", err)
+		}
 		return
 	}
+	l.consecutiveFailures.Store(0)
 	// Smart batching: only fsync when the channel buffer is fully drained
 	if len(l.ch) == 0 {
 		if err := l.file.Sync(); err != nil {
-			l.logger.Warn("failed to sync turns log", "error", err)
+			fails := l.consecutiveFailures.Add(1)
+			if fails >= maxConsecutiveWarnBeforeError {
+				l.logger.Error("failed to sync turns log after multiple retries",
+					"error", err,
+					"consecutive_failures", fails)
+			} else {
+				l.logger.Warn("failed to sync turns log", "error", err)
+			}
+		} else {
+			l.consecutiveFailures.Store(0)
 		}
 	}
 }
@@ -96,12 +117,30 @@ func (l *asyncTurnsLogger) drainAndSync() {
 		select {
 		case msg := <-l.ch:
 			if _, err := l.file.Write([]byte(msg)); err != nil {
-				l.logger.Warn("failed to write to turns log on shutdown", "error", err)
+				fails := l.consecutiveFailures.Add(1)
+				if fails >= maxConsecutiveWarnBeforeError {
+					l.logger.Error("failed to write to turns log on shutdown after multiple retries",
+						"error", err,
+						"consecutive_failures", fails)
+				} else {
+					l.logger.Warn("failed to write to turns log on shutdown", "error", err)
+				}
+			} else {
+				l.consecutiveFailures.Store(0)
 			}
 		default:
 			// Ensure everything is persisted before exiting
 			if err := l.file.Sync(); err != nil {
-				l.logger.Warn("failed to sync turns log on shutdown", "error", err)
+				fails := l.consecutiveFailures.Add(1)
+				if fails >= maxConsecutiveWarnBeforeError {
+					l.logger.Error("failed to sync turns log on shutdown after multiple retries",
+						"error", err,
+						"consecutive_failures", fails)
+				} else {
+					l.logger.Warn("failed to sync turns log on shutdown", "error", err)
+				}
+			} else {
+				l.consecutiveFailures.Store(0)
 			}
 			return
 		}

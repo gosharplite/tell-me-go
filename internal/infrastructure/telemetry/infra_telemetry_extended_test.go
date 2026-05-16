@@ -1022,8 +1022,13 @@ func TestFindLogFiles_UnreadableSubdirectory_CallbackError(t *testing.T) {
 
 	ls := &ledgerStore{}
 	files, err := ls.findLogFiles(tempDir)
-	if err != nil {
-		t.Fatalf("findLogFiles returned error: %v", err)
+	// Walk errors are now collected and returned via errors.Join.
+	// Expect a non-nil error because of the permission-denied subdirectory.
+	if err == nil {
+		t.Fatal("findLogFiles should return an error for inaccessible subdirectory")
+	}
+	if !strings.Contains(err.Error(), "walk errors during recovery") {
+		t.Errorf("error should contain 'walk errors during recovery', got: %v", err)
 	}
 
 	found := false

@@ -143,7 +143,7 @@ func (f *defaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Con
 	}
 
 	if err := f.setupSecurity(paths, configPath); err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: security setup failed for paths %s, %s: %w", errInfraInit, paths.ModeDir, configPath, err)
+		return nil, nil, nil, fmt.Errorf("%w: security setup: %w", errInfraInit, err)
 	}
 
 	sessionProvider, cleanup, err := f.buildSessionProvider(ctx, paths, cfg)

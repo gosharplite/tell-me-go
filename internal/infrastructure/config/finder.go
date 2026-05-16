@@ -4,6 +4,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 
@@ -68,6 +69,7 @@ func (f *defaultConfigFinder) getBaseDir() string {
 	if wd, err := os.Getwd(); err == nil {
 		return wd
 	}
+	log.Printf("config: cannot resolve current working directory: falling back to '.'")
 	return "."
 }
 
@@ -90,6 +92,7 @@ func (f *defaultConfigFinder) findInLocalDir() (string, bool) {
 func (f *defaultConfigFinder) findInExecutableDir() (string, bool) {
 	exe, err := os.Executable()
 	if err != nil {
+		log.Printf("config: cannot resolve executable path: %v", err)
 		return "", false
 	}
 
@@ -138,6 +141,7 @@ func (f *defaultConfigFinder) findInParentDirs() (string, bool) {
 func (f *defaultConfigFinder) findInSystemPaths() (string, bool) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
+		log.Printf("config: cannot resolve user config directory: %v", err)
 		return "", false
 	}
 

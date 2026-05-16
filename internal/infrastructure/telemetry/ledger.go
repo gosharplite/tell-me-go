@@ -6,6 +6,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -89,7 +90,10 @@ func (ls *ledgerStore) recoverLedger(ctx context.Context, globalDir string) {
 
 	files, err := ls.findLogFiles(globalDir)
 	if err != nil {
-		log.Printf("Recovery: walk failed: %v\n", err)
+		log.Printf("Recovery: walk errors: %v\n", err)
+		if len(files) == 0 {
+			return // nothing to recover
+		}
 	}
 
 	discovered := ls.discoverNewRecords(ctx, files, globalDir, seen, pricing)
@@ -143,7 +147,11 @@ func (ls *ledgerStore) discoverNewRecords(ctx context.Context, files []string, g
 		}
 
 		// Prevent redundant parsing by checking sessionID first
-		sessionID := ls.getSessionID(path, globalDir)
+		sessionID, err := ls.getSessionID(path, globalDir)
+		if err != nil {
+			log.Printf("Recovery: skipping %s: %v\n", path, err)
+			continue
+		}
 		if seen[sessionID] {
 			continue
 		}
@@ -171,37 +179,44 @@ func (ls *ledgerStore) discoverNewRecords(ctx context.Context, files []string, g
 
 func (ls *ledgerStore) findLogFiles(globalDir string) ([]string, error) {
 	var files []string
+	var walkErrors []error
 	err := filepath.WalkDir(globalDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
 			}
-			log.Printf("Recovery: error accessing path %q: %v\n", path, err)
-			return nil
+			walkErrors = append(walkErrors, fmt.Errorf("access %s: %w", path, err))
+			return nil // continue walking; don't abort the entire recovery
 		}
 		if !d.IsDir() && strings.HasSuffix(d.Name(), "tokens.log") {
 			files = append(files, path)
 		}
 		return nil
 	})
+	if len(walkErrors) > 0 {
+		return files, fmt.Errorf("walk errors during recovery (%d): %w", len(walkErrors), errors.Join(walkErrors...))
+	}
 	return files, err
 }
 
-func (ls *ledgerStore) getSessionID(path, globalDir string) string {
+func (ls *ledgerStore) getSessionID(path, globalDir string) (string, error) {
 	rel, err := filepath.Rel(globalDir, path)
 	if err != nil {
-		return path // Fallback
+		return "", fmt.Errorf("resolving session ID for %s relative to %s: %w", path, globalDir, err)
 	}
 	rel = filepath.ToSlash(rel)
 	sessionID := rel
 	if strings.HasPrefix(rel, "backups/") {
 		sessionID = "backup/" + rel[len("backups/"):]
 	}
-	return sessionID
+	return sessionID, nil
 }
 
 func (ls *ledgerStore) processLogFile(path string, info os.FileInfo, globalDir string, pricing domain_pricing.PricingData) (*sessionCostRecord, error) {
-	sessionID := ls.getSessionID(path, globalDir)
+	sessionID, err := ls.getSessionID(path, globalDir)
+	if err != nil {
+		return nil, fmt.Errorf("processing log file %s: %w", path, err)
+	}
 
 	usage, totalCost, detectedModel, timestamp, err := parseUsage(path, pricing, ls.model)
 	if err != nil {

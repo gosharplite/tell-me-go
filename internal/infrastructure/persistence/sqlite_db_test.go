@@ -116,9 +116,12 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// Migration should log an error but not fail the boot process
+	// Corrupted data: the JSONL fallback in readAllInternal skips the
+	// unparseable line, returning 0 tasks with no error. migrateTasks sees
+	// len(tasks)==0 and returns nil. migrateFromJSON therefore returns nil
+	// — this is correct; corrupted data is gracefully handled as a no-op.
 	if err := migrateFromJSON(ctx, db, fs, tasksFile, slog.Default()); err != nil {
-		t.Fatalf("migrateFromJSON failed with invalid json: %v", err)
+		t.Fatalf("migrateFromJSON should handle corrupted data gracefully: %v", err)
 	}
 
 	// Verify table is empty but exists
@@ -313,10 +316,10 @@ func TestMigrateFromJSON_MigrateTasksError(t *testing.T) {
 
 	// migrateFromJSON: COUNT returns 0 → calls migrateTasks
 	// migrateTasks: Stat succeeds (file exists, IsDir=false) → ReadFile fails (EACCES)
-	// → migrateTasks returns error → migrateFromJSON logs it → returns nil
+	// → migrateTasks returns error → migrateFromJSON returns error
 	err = migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
-	if err != nil {
-		t.Fatalf("migrateFromJSON should return nil even when migrateTasks fails: %v", err)
+	if err == nil {
+		t.Fatal("migrateFromJSON should return error when migrateTasks fails")
 	}
 }
 
@@ -479,4 +482,206 @@ func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
 		err = executeBatchInsert(ctx, tx, rows)
 		require.Error(t, err)
 	})
+}
+
+// =============================================================================
+// Task 3: Migration failure escalation tests
+// =============================================================================
+
+func TestMigrateFromJSON_MigrationFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T) (db *sql.DB, fs persistence.FileSystem, tasksPath string)
+		wantErr string
+	}{
+		{
+			name: "no legacy file",
+			setup: func(t *testing.T) (*sql.DB, persistence.FileSystem, string) {
+				t.Helper()
+				dir := t.TempDir()
+				dbPath := filepath.Join(dir, "test.db")
+				db, err := sql.Open("sqlite", dbPath)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = db.Close() })
+
+				_, err = db.Exec("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);")
+				require.NoError(t, err)
+
+				return db, NewOSFileSystem(), filepath.Join(dir, "nonexistent.json")
+			},
+			wantErr: "", // nil is success — no-op
+		},
+		{
+			name: "already migrated",
+			setup: func(t *testing.T) (*sql.DB, persistence.FileSystem, string) {
+				t.Helper()
+				dir := t.TempDir()
+				dbPath := filepath.Join(dir, "test.db")
+				db, err := sql.Open("sqlite", dbPath)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = db.Close() })
+
+				_, err = db.Exec("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);")
+				require.NoError(t, err)
+				_, err = db.Exec("INSERT INTO tasks (id, content, status, created_at) VALUES (1, 'Existing', 'pending', '2025-01-01T00:00:00Z');")
+				require.NoError(t, err)
+
+				return db, NewOSFileSystem(), filepath.Join(dir, "irrelevant.json")
+			},
+			wantErr: "", // nil is success — skip
+		},
+		{
+			name: "migration fails mid-insert",
+			setup: func(t *testing.T) (*sql.DB, persistence.FileSystem, string) {
+				t.Helper()
+				dir := t.TempDir()
+				tasksPath := filepath.Join(dir, "tasks.json")
+				dbPath := filepath.Join(dir, "test.db")
+
+				// Write valid JSON that migrateTasks can parse.
+				tasksJSON := `[{"id": 1, "content": "Task", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}]`
+				require.NoError(t, os.WriteFile(tasksPath, []byte(tasksJSON), 0644))
+
+				db, err := sql.Open("sqlite", dbPath)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = db.Close() })
+
+				// Create tasks table missing the created_at column so the INSERT
+				// statement in executeBatchInsert fails with a column mismatch.
+				_, err = db.Exec("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL);")
+				require.NoError(t, err)
+
+				return db, NewOSFileSystem(), tasksPath
+			},
+			wantErr: "migrating legacy tasks",
+		},
+		{
+			name: "check count query fails",
+			setup: func(t *testing.T) (*sql.DB, persistence.FileSystem, string) {
+				t.Helper()
+				dir := t.TempDir()
+				dbPath := filepath.Join(dir, "test.db")
+				db, err := sql.Open("sqlite", dbPath)
+				require.NoError(t, err)
+				_ = db.Close() // closed DB forces query failure
+
+				return db, NewOSFileSystem(), filepath.Join(dir, "unused.json")
+			},
+			wantErr: "checking tasks table",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			db, fs, tasksPath := tt.setup(t)
+
+			err := migrateFromJSON(context.Background(), db, fs, tasksPath, slog.Default())
+
+			if tt.wantErr == "" {
+				assert.NoError(t, err, "expected no error")
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestMigrateTasks_RollbackOnError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("batch insert fails", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		fs := NewOSFileSystem()
+		dir := t.TempDir()
+		tasksPath := filepath.Join(dir, "tasks.json")
+		dbPath := filepath.Join(dir, "test.db")
+
+		// Write valid JSON — parse succeeds.
+		tasksJSON := `[{"id": 1, "content": "Task", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}]`
+		require.NoError(t, os.WriteFile(tasksPath, []byte(tasksJSON), 0644))
+
+		db, err := sql.Open("sqlite", dbPath)
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		// Deliberately skip CREATE TABLE tasks — the INSERT in
+		// executeBatchInsert will fail with "no such table: tasks".
+		err = migrateTasks(ctx, db, fs, tasksPath, slog.Default())
+		require.Error(t, err, "expected error from batch insert with missing table")
+
+		// Transaction should be rolled back.
+		// Now create the table and verify it's empty.
+		_, err = db.Exec("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);")
+		require.NoError(t, err)
+
+		var count int
+		err = db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tasks").Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 0, count, "expected 0 tasks after rollback")
+	})
+
+	t.Run("successful migration", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		fs := NewOSFileSystem()
+		dir := t.TempDir()
+		tasksPath := filepath.Join(dir, "tasks.json")
+		dbPath := filepath.Join(dir, "test.db")
+
+		tasksJSON := `[{"id": 1, "content": "Task", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}]`
+		require.NoError(t, os.WriteFile(tasksPath, []byte(tasksJSON), 0644))
+
+		db, err := sql.Open("sqlite", dbPath)
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		_, err = db.Exec("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);")
+		require.NoError(t, err)
+
+		err = migrateTasks(ctx, db, fs, tasksPath, slog.Default())
+		require.NoError(t, err)
+
+		// Transaction committed; DB should contain the task.
+		var count int
+		err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count, "expected 1 task after successful migration")
+	})
+}
+
+func TestExecuteBatchInsert_ErrorContext(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Deliberately skip CREATE TABLE — the INSERT will fail with
+	// "no such table: tasks", and the error message must include the batch range.
+	tx, err := db.BeginTx(context.Background(), nil)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+	// Create 250 rows to trigger multi-batch (batch 0-199, batch 200-249).
+	rows := make([]taskRow, 250)
+	for i := range rows {
+		rows[i] = taskRow{
+			ID:        int64(i + 1),
+			Content:   fmt.Sprintf("Task %d", i+1),
+			Status:    "pending",
+			CreatedAt: "2025-01-01T00:00:00Z",
+		}
+	}
+
+	err = executeBatchInsert(context.Background(), tx, rows)
+	require.Error(t, err, "expected error from batch insert with missing table")
+	assert.Contains(t, err.Error(), "batch 0-200", "error should mention batch range")
 }

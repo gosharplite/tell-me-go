@@ -171,7 +171,7 @@ func (a *defaultDependencyAnalyzer) listInternalPackages(root string) ([]string,
 		}
 		hasGo, err := containsGoFiles(path)
 		if err != nil {
-			return err
+			return fmt.Errorf("checking for Go files in %s: %w", path, err)
 		}
 		if hasGo {
 			pkgs = append(pkgs, path)

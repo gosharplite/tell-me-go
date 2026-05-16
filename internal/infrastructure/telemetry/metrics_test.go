@@ -4,7 +4,9 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -195,4 +197,49 @@ func TestAppendSummaryToLog_ErrorPaths(t *testing.T) {
 		err := appendSummaryToLog(filepath.Join(tmpDir, "sub", "log"), usage, 1.0, "model")
 		require.Error(t, err)
 	})
+}
+
+// =============================================================================
+// appendSummaryToLog happy-path test — verifying file content
+// =============================================================================
+
+// TestAppendSummaryToLog_WritesFile verifies that non-zero usage results in a
+// valid JSON summary line written to the log file with correct field values.
+func TestAppendSummaryToLog_WritesFile(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "tokens.log")
+
+	usage := domain_pricing.UsageStats{
+		PromptTokens:   100,
+		ResponseTokens: 50,
+	}
+	err := appendSummaryToLog(logPath, usage, 0.0015, "test-model")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+
+	var metrics llm.Metrics
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(data), &metrics))
+
+	if !metrics.IsSummary {
+		t.Error("expected IsSummary to be true")
+	}
+	if metrics.PromptTokens != 100 {
+		t.Errorf("expected 100 prompt tokens, got %d", metrics.PromptTokens)
+	}
+	if metrics.ResponseTokens != 50 {
+		t.Errorf("expected 50 response tokens, got %d", metrics.ResponseTokens)
+	}
+	if metrics.TotalTokens != 150 {
+		t.Errorf("expected 150 total tokens, got %d", metrics.TotalTokens)
+	}
+	if metrics.Model != "test-model" {
+		t.Errorf("expected model 'test-model', got %q", metrics.Model)
+	}
+	if metrics.Cost != 0.0015 {
+		t.Errorf("expected cost 0.0015, got %f", metrics.Cost)
+	}
 }
