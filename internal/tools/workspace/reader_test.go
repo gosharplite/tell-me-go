@@ -158,6 +158,25 @@ func (m *mockDiffExecutor) RunCommand(ctx context.Context, parts []string, confi
 	return m.processExecutor.RunCommand(ctx, parts, config)
 }
 
+type mockDiffRunErrorExecutor struct {
+	*processExecutor
+	runErr error
+}
+
+func (m *mockDiffRunErrorExecutor) RunCommand(ctx context.Context, parts []string, config executionConfig) (executionResult, error) {
+	if len(parts) > 0 && parts[0] == "diff" {
+		return executionResult{}, m.runErr
+	}
+	return m.processExecutor.RunCommand(ctx, parts, config)
+}
+
+func (m *mockDiffRunErrorExecutor) LookPath(name string) (string, error) {
+	if name == "diff" {
+		return "/usr/bin/diff", nil
+	}
+	return m.processExecutor.LookPath(name)
+}
+
 func TestGetFileDiff(t *testing.T) {
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
@@ -275,6 +294,48 @@ func TestGetFileDiff_Errors(t *testing.T) {
 		}
 		_, _ = r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": fbin, "reason": "testing"}, nil)
 	})
+}
+
+func TestGetFileDiff_RunCommandError(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "f1.txt")
+	f2 := filepath.Join(tempDir, "f2.txt")
+	if err := os.WriteFile(f1, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f2, []byte("line2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	runErr := fmt.Errorf("exec format error")
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+		executor: &mockDiffRunErrorExecutor{
+			processExecutor: newprocessExecutor(),
+			runErr:          runErr,
+		},
+	}
+	ctx := context.Background()
+
+	_, err := r.getFileDiff(ctx, map[string]interface{}{
+		"file1":  f1,
+		"file2":  f2,
+		"reason": "testing run error",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error from RunCommand failure")
+	}
+	if !strings.Contains(err.Error(), "diff failed") {
+		t.Errorf("expected 'diff failed' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "exec format error") {
+		t.Errorf("expected 'exec format error' in error, got: %v", err)
+	}
 }
 
 func TestReadFiles(t *testing.T) {
