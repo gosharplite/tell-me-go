@@ -234,14 +234,18 @@ func (h *harvester) handleIdent(d *ast.Ident) {
 		return
 	}
 
-	if _, isDef := h.info.Defs[d]; isDef {
-		return
-	}
-
 	obj, ok := h.info.Uses[d]
 	if !ok || obj == nil {
-		return
+		return // Not a usage of any symbol (e.g., pure definition with no simultaneous use)
 	}
+
+	// NOTE: An ident can be both a Def AND a Use simultaneously — the
+	// canonical example is a struct embed like `analysistest.MockSymbolIndex`
+	// where the Sel ident defines the embedded field while also referencing
+	// the type from another package. The previous code unconditionally
+	// returned on any Def match, which silently dropped all struct-embed
+	// usages. We now only gate on the Uses map; a pure Def (e.g., a func
+	// declaration name) has Uses[d] == nil and is correctly skipped above.
 
 	isExported, isMethod, isPackageLevel := h.classifyObject(obj)
 	if !isExported && !isMethod && !isPackageLevel {
