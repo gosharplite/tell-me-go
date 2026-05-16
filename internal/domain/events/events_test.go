@@ -969,6 +969,50 @@ func TestSimpleEventBus_ListenDefensive(t *testing.T) {
 		cancel()
 		<-listenDone
 	})
+
+	t.Run("SyncMode", func(t *testing.T) {
+		ctx := context.Background()
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+		eventstest.CleanupBus(t, bus)
+
+		// Listen on a sync-mode bus must return nil immediately
+		// and signal started so WaitStarted does not block.
+		err := bus.Listen(ctx)
+		if err != nil {
+			t.Errorf("Listen in sync mode should return nil, got %v", err)
+		}
+
+		// WaitStarted must return immediately — proves signalStarted was called.
+		// Use a channel + timeout to detect deadlock without hanging the test.
+		done := make(chan struct{})
+		go func() {
+			bus.WaitStarted()
+			close(done)
+		}()
+		select {
+		case <-done:
+			// OK — WaitStarted returned
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("WaitStarted blocked after sync-mode Listen — signalStarted was not called")
+		}
+
+		// Publish should still work after sync-mode Listen (bus is not closed).
+		received := make(chan events.Event, 1)
+		bus.Subscribe(func(ctx context.Context, e events.Event) {
+			received <- e
+		})
+		if err := bus.Publish(ctx, testEvent{val: "sync-mode"}); err != nil {
+			t.Fatalf("Publish after sync-mode Listen failed: %v", err)
+		}
+		select {
+		case got := <-received:
+			if got.(testEvent).val != "sync-mode" {
+				t.Errorf("expected 'sync-mode', got %v", got.(testEvent).val)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for event after sync-mode Listen")
+		}
+	})
 }
 
 func TestSimpleEventBus_NilAndClosedSubscriptions(t *testing.T) {

@@ -48,7 +48,7 @@ func (tx *transaction) Commit(ctx context.Context) error {
 			tx.rollback(writtenFiles)
 			return err
 		}
-		if err := format.Node(f, tx.fset, file); err != nil {
+		if err := tx.safeFormat(f, file); err != nil {
 			_ = f.Close()
 			_ = os.Remove(tmpPath)
 			tx.rollback(writtenFiles)
@@ -58,14 +58,30 @@ func (tx *transaction) Commit(ctx context.Context) error {
 		writtenFiles = append(writtenFiles, path)
 	}
 
-	for _, path := range writtenFiles {
+	for i, path := range writtenFiles {
 		if err := os.Rename(path+".tmp", path); err != nil {
-			// This is tricky if it fails mid-way, but Renaming is usually atomic on the same FS
+			// Clean up remaining .tmp files from this point onward
+			for _, p := range writtenFiles[i:] {
+				_ = os.Remove(p + ".tmp")
+			}
 			return fmt.Errorf("failed to finalize %s: %w", path, err)
 		}
 	}
 
 	return nil
+}
+
+// safeFormat calls format.Node with panic recovery to convert nil-deref
+// panics (e.g. from nil ast.File.Name) into errors.
+func (tx *transaction) safeFormat(w interface {
+	Write([]byte) (int, error)
+}, file *ast.File) (fmtErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmtErr = fmt.Errorf("format.Node panic: %v", r)
+		}
+	}()
+	return format.Node(w, tx.fset, file)
 }
 
 func (tx *transaction) rollback(writtenFiles []string) {

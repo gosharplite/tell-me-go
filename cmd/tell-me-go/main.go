@@ -51,13 +51,17 @@ var (
 
 	// newSecurityManagerFn is the security manager constructor, overridable in tests.
 	newSecurityManagerFn = security.NewSecurityManager
+
+	// readBuildInfoFn is the build info reader, overridable in tests for
+	// edge-case coverage in getVersion().
+	readBuildInfoFn = debug.ReadBuildInfo
 )
 
 func getVersion() string {
 	if version != "dev" {
 		return version
 	}
-	if info, ok := debug.ReadBuildInfo(); ok {
+	if info, ok := readBuildInfoFn(); ok {
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			return info.Main.Version
 		}

@@ -300,6 +300,90 @@ func TestMockFileSystem_Walk_Errors(t *testing.T) {
 			t.Errorf("Walk() error = %v, want %v", err, expectedErr)
 		}
 	})
+
+	t.Run("Walk root / normalisation", func(t *testing.T) {
+		fs := NewMockFileSystem()
+		_ = fs.WriteFile(ctx, "a.txt", []byte("a"), 0644)
+		_ = fs.WriteFile(ctx, "sub/b.txt", []byte("b"), 0644)
+
+		var seen []string
+		err := fs.Walk(ctx, "/", func(path string, info os.FileInfo, err error) error {
+			seen = append(seen, path)
+			return nil
+		})
+		require.NoError(t, err)
+		// rootClean normalisation: "/" → TrimSuffix → "" → "/"
+		// Stat("/") fails (no file key starts with "/"), but rootClean branch is entered.
+		// All files are visited because isUnderRoot normalises both sides.
+		require.Contains(t, seen, "a.txt")
+		require.Contains(t, seen, "sub")
+		require.Contains(t, seen, "sub/b.txt")
+	})
+
+	t.Run("Walk root error", func(t *testing.T) {
+		fs := NewMockFileSystem()
+		_ = fs.WriteFile(ctx, "root/a.txt", []byte("a"), 0644)
+		// Stat("root") succeeds because "root/a.txt" has prefix "root/".
+		// WalkFunc is called for "root" as a directory.
+
+		expectedErr := fmt.Errorf("root-notify-error")
+		err := fs.Walk(ctx, "root", func(path string, info os.FileInfo, err error) error {
+			if path == "root" {
+				return expectedErr
+			}
+			return nil
+		})
+		require.ErrorIs(t, err, expectedErr)
+	})
+
+	t.Run("Walk root SkipDir", func(t *testing.T) {
+		fs := NewMockFileSystem()
+		_ = fs.WriteFile(ctx, "root/a.txt", []byte("a"), 0644)
+		_ = fs.WriteFile(ctx, "root/sub/b.txt", []byte("b"), 0644)
+
+		var seen []string
+		err := fs.Walk(ctx, "root", func(path string, info os.FileInfo, err error) error {
+			seen = append(seen, path)
+			if path == "root" {
+				return filepath.SkipDir
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		// execute receives SkipDir from handleRoot and returns nil.
+		// No files should be visited after root.
+		require.Equal(t, []string{"root"}, seen)
+	})
+}
+
+// TestWalk_ProcessFile_MissingAfterSnapshot exercises the !ok branch in
+// processFile (mock_fs.go:293-295) where a file was present in the
+// directory snapshot but has been removed by the time processFile reads it.
+func TestWalk_ProcessFile_MissingAfterSnapshot(t *testing.T) {
+	ctx := context.Background()
+	fs := NewMockFileSystem()
+	// Write a file so it appears in the snapshot, then delete it from the
+	// underlying map before processing so processFile sees !ok.
+	_ = fs.WriteFile(ctx, "ghost.txt", []byte("data"), 0644)
+
+	s := &walkSession{
+		fs:        fs,
+		rootSlash: ".",
+		fn: func(path string, info os.FileInfo, err error) error {
+			return fmt.Errorf("should not be called for missing file")
+		},
+		dirsNotified: make(map[string]bool),
+		skippedDirs:  make(map[string]bool),
+	}
+
+	// Simulate: file existed at snapshot time but is now gone.
+	fs.mu.Lock()
+	delete(fs.Files, "ghost.txt")
+	fs.mu.Unlock()
+
+	// processFile should return nil silently for missing file.
+	err := s.processFile("ghost.txt")
+	require.NoError(t, err)
 }
 
 func TestMockFileSystem_TableDriven(t *testing.T) {
@@ -387,6 +471,41 @@ func TestMockFileSystem_WindowsPaths(t *testing.T) {
 			t.Errorf("expected to see %s in walk, got %v", expectedFile, seen)
 		}
 	})
+}
+
+// TestIsUnderRoot_EdgeCases exercises boundary conditions in isUnderRoot,
+// including the critical branch where root "/" → TrimSuffix → "" → returns true
+// (mock_fs.go:364-366).
+func TestIsUnderRoot_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		root     string
+		expected bool
+	}{
+		// Uncovered: root "/" → TrimSuffix → "" → returns true (lines 364-366)
+		{name: "root slash with file", path: "/a.txt", root: "/", expected: true},
+		{name: "root slash with nested", path: "/a/b/c.txt", root: "/", expected: true},
+
+		// Standard cases (already covered, included for regression safety)
+		{name: "path equals root", path: "/a", root: "/a", expected: true},
+		{name: "path under root", path: "/a/b.txt", root: "/a", expected: true},
+		{name: "path not under root", path: "/b/c.txt", root: "/a", expected: false},
+		{name: "root is dot", path: "anything", root: ".", expected: true},
+		{name: "root is empty", path: "anything", root: "", expected: true},
+
+		// Windows-style paths
+		{name: "windows under root", path: "C:/Users/test/file.go", root: "C:/Users/test", expected: true},
+		{name: "windows not under root", path: "C:/Users/other/file.go", root: "C:/Users/test", expected: false},
+		{name: "windows backslash", path: "C:\\Users\\test\\file.go", root: "C:\\Users\\test", expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isUnderRoot(tt.path, tt.root)
+			require.Equal(t, tt.expected, got)
+		})
+	}
 }
 
 func TestMockFile_ReadDir(t *testing.T) {

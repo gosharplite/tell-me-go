@@ -501,3 +501,84 @@ func TestGatherComplexities_ContextCancelledDuringProcessing(t *testing.T) {
 	assert.True(t, errors.Is(res.err, context.Canceled) || strings.Contains(res.err.Error(), "context canceled"),
 		"expected context.Canceled, got: %v", res.err)
 }
+
+// TestComplexityAnalyzer_ErrgroupError exercises the g.Wait() error return
+// path (L88–90 in complexity.go). The challenge is that walkFn checks the
+// derived context (gCtx) before launching each goroutine, so cancelling the
+// parent context usually causes Walk itself to return an error before
+// g.Wait() is ever reached. To hit g.Wait(), Walk must finish successfully
+// and goroutines must still be running when the context is cancelled.
+//
+// Strategy: create many files with complex contents so that goroutines take
+// measurable time to process. Walk (directory traversal) completes in
+// microseconds; then we cancel the context while goroutines are still
+// blocked on sem.Acquire or processing. g.Wait() then returns the
+// context.Canceled error from the first failing goroutine.
+func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// go.mod required by the AST cache for module-relative path resolution.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tmpDir, "go.mod"),
+		[]byte("module example.com/test\ngo 1.25"), 0644,
+	))
+
+	// Build a complex function body to make parsing + complexity analysis
+	// take measurable time per file.
+	complexBody := strings.Repeat("if true {\n", 20) +
+		"_ = 1\n" +
+		strings.Repeat("}\n", 20)
+
+	// Create files each with many complex functions. The total work must
+	// exceed what NumCPU workers can finish in the brief window before
+	// we cancel.
+	const numFiles = 500
+	const funcsPerFile = 100
+	var sb strings.Builder
+	for i := 0; i < numFiles; i++ {
+		sb.Reset()
+		sb.WriteString("package test\n")
+		for j := 0; j < funcsPerFile; j++ {
+			sb.WriteString("func F")
+			fmt.Fprintf(&sb, "%d_%d", i, j)
+			sb.WriteString("() {\n")
+			sb.WriteString(complexBody)
+			sb.WriteString("}\n")
+		}
+		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
+		require.NoError(t, os.WriteFile(path, []byte(sb.String()), 0644))
+	}
+
+	cache := newASTCache(".")
+	sp := &mockSecurityProvider{}
+	analyzer := newComplexityAnalyzer(cache, sp)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	type result struct {
+		complexities []funcComplexity
+		err          error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		c, _, e := analyzer.GatherComplexities(ctx, tmpDir, nil)
+		ch <- result{complexities: c, err: e}
+	}()
+
+	// Walk traverses directories very fast (microseconds even for 500
+	// entries). The goroutines, however, are parsing and analysing large
+	// files. Cancel after Walk has finished but while goroutines are
+	// still busy — this is the window that forces g.Wait() to surface
+	// the error.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	res := <-ch
+	require.Error(t, res.err)
+	assert.True(t, errors.Is(res.err, context.Canceled) || strings.Contains(res.err.Error(), "context canceled"),
+		"expected context.Canceled from g.Wait(), got: %v", res.err)
+}
