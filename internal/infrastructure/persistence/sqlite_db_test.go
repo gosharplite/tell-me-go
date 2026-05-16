@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -278,6 +279,45 @@ func TestMigrateFromJSON_CountQueryFailure(t *testing.T) {
 	}
 }
 
+func TestMigrateFromJSON_MigrateTasksError(t *testing.T) {
+	// Platform-sensitive: mode 0000 reliably causes ReadFile to fail with EACCES on Linux/macOS.
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission test not reliable on Windows")
+	}
+
+	ctx := context.Background()
+	fs := NewOSFileSystem()
+	tmpDir := t.TempDir()
+	tasksPath := filepath.Join(tmpDir, "tasks.json")
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create a valid-looking tasks file with mode 0000 — no read permission.
+	if err := os.WriteFile(tasksPath, []byte(`[{"id":1,"content":"T","status":"pending","created_at":"2025-01-01T00:00:00Z"}]`), 0000); err != nil {
+		t.Fatal(err)
+	}
+	// Restore permission at test end so TempDir cleanup works.
+	defer func() { _ = os.Chmod(tasksPath, 0644) }()
+
+	// Open DB and create tasks table — COUNT query must succeed (returns 0).
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if _, err := db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);"); err != nil {
+		t.Fatal(err)
+	}
+
+	// migrateFromJSON: COUNT returns 0 → calls migrateTasks
+	// migrateTasks: Stat succeeds (file exists, IsDir=false) → ReadFile fails (EACCES)
+	// → migrateTasks returns error → migrateFromJSON logs it → returns nil
+	err = migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
+	if err != nil {
+		t.Fatalf("migrateFromJSON should return nil even when migrateTasks fails: %v", err)
+	}
+}
+
 func TestMigrateTasks_TxBeginFailure(t *testing.T) {
 	t.Parallel()
 
@@ -344,5 +384,31 @@ func TestExecuteBatchInsert_PartialFailure(t *testing.T) {
 	err = executeBatchInsert(ctx, tx, rows)
 	if err == nil {
 		t.Error("expected error from cancelled context during batch insert, got nil")
+	}
+}
+
+func TestMigrateTasks_EmptyTasksArray(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := NewOSFileSystem()
+	tmpDir := t.TempDir()
+	tasksPath := filepath.Join(tmpDir, "empty_tasks.json")
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Write a valid JSON file containing an empty array
+	if err := fs.WriteFile(ctx, tasksPath, []byte("[]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	// migrateTasks reads the empty array, gets len(tasks)==0, returns nil early
+	err = migrateTasks(ctx, db, fs, tasksPath, slog.Default())
+	if err != nil {
+		t.Fatalf("migrateTasks with empty array returned error: %v", err)
 	}
 }
