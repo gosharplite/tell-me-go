@@ -1557,7 +1557,8 @@ func TestIsInterfaceMethod_NonFuncGuard(t *testing.T) {
 func TestRunAnalysisPipeline_EmptyPathDefaultsToDot(t *testing.T) {
 	// Not parallel: changes working directory so that "."
 	// resolves inside the security provider's allowed tempDir.
-	tmpDir := t.TempDir()
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	sp := &deadCodeSecurityProvider{tempDir: tmpDir}
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module empty.test\n\ngo 1.25"), 0644))
