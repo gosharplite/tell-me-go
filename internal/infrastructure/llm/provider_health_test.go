@@ -315,3 +315,183 @@ func TestLLMProviderHealthChecker_GeminiEndpointSelection(t *testing.T) {
 		})
 	}
 }
+
+func TestLLMProviderHealthChecker_UnknownProvider(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	authMock := &auth.BearerAuth{Token: "test-key"}
+	checker := NewLLMProviderHealthChecker("unknown-provider", authMock, server.URL, nil)
+
+	report, err := checker.Check(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Status != ports.StatusUnhealthy {
+		t.Errorf("expected StatusUnhealthy, got %s: %s", report.Status, report.Message)
+	}
+	if !strings.Contains(report.Message, "unknown provider type") {
+		t.Errorf("expected message to contain 'unknown provider type', got: %s", report.Message)
+	}
+}
+
+func TestLLMProviderHealthChecker_NilResponseNilError(t *testing.T) {
+	t.Parallel()
+	// Call handleHTTPResponse directly with (nil, nil) — this path is reachable
+	// if custom middleware or refactored code bypasses the stdlib's RoundTripper guard.
+	authMock := &auth.BearerAuth{Token: "test-key"}
+	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
+
+	details := make(map[string]any)
+	report := &ports.ComponentReport{
+		Component: ports.CompLLMProvider,
+		Status:    ports.StatusHealthy,
+		Message:   "before",
+	}
+
+	result := checker.handleHTTPResponse(nil, nil, report, details)
+	if result.Status != ports.StatusUnhealthy {
+		t.Errorf("expected StatusUnhealthy, got %s", result.Status)
+	}
+	if !strings.Contains(result.Message, "nil response") {
+		t.Errorf("expected message about nil response, got: %s", result.Message)
+	}
+	if result.Error == nil {
+		t.Error("expected report.Error to be non-nil")
+	}
+}
+
+func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		providerName    string
+		baseURL         string
+		useServer       bool
+		serverHandler   func(w http.ResponseWriter, r *http.Request)
+		cancelCtx       bool
+		authenticator   auth.Authenticator
+		wantStatus      ports.HealthStatus
+		wantMsgContains string
+	}{
+		// Gap 1: Pre-cancelled context — http.NewRequestWithContext succeeds in Go 1.26,
+		// but httpClient.Do fails immediately with "context canceled" → connectivity error.
+		{
+			name:            "pre-cancelled context",
+			providerName:    "openai",
+			baseURL:         "http://127.0.0.1:1",
+			cancelCtx:       true,
+			authenticator:   &auth.BearerAuth{Token: "test-key"},
+			wantStatus:      ports.StatusDegraded,
+			wantMsgContains: "connectivity issue",
+		},
+		// Gap 2: Google/Gemini without googleapis.com in URL — hits the false branch.
+		{
+			name:            "gemini without googleapis in URL",
+			providerName:    "gemini",
+			baseURL:         "http://127.0.0.1:1",
+			authenticator:   &auth.APIKeyAuth{APIKey: "test-key"},
+			wantStatus:      ports.StatusDegraded,
+			wantMsgContains: "connectivity issue",
+		},
+		// Gap 3: Google/Gemini WITH googleapis.com in URL — hits the true branch.
+		{
+			name:            "gemini with googleapis in URL",
+			providerName:    "google",
+			baseURL:         "http://127.0.0.1:1/googleapis.com",
+			authenticator:   &auth.APIKeyAuth{APIKey: "test-key"},
+			wantStatus:      ports.StatusDegraded,
+			wantMsgContains: "connectivity issue",
+		},
+		// Gap 5: 405 MethodNotAllowed → classifyErrorStatus returns StatusHealthy (same as 404).
+		{
+			name:         "method not allowed fallback",
+			providerName: "openai",
+			useServer:    true,
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			},
+			authenticator:   &auth.BearerAuth{Token: "test-key"},
+			wantStatus:      ports.StatusHealthy,
+			wantMsgContains: "provider reached",
+		},
+		// Gap 6a: 502 Bad Gateway → classified as transient → StatusDegraded.
+		{
+			name:         "bad gateway 502",
+			providerName: "openai",
+			useServer:    true,
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadGateway)
+			},
+			authenticator:   &auth.BearerAuth{Token: "test-key"},
+			wantStatus:      ports.StatusDegraded,
+			wantMsgContains: "transient",
+		},
+		// Gap 6b: 504 Gateway Timeout → classified as transient → StatusDegraded.
+		{
+			name:         "gateway timeout 504",
+			providerName: "openai",
+			useServer:    true,
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusGatewayTimeout)
+			},
+			authenticator:   &auth.BearerAuth{Token: "test-key"},
+			wantStatus:      ports.StatusDegraded,
+			wantMsgContains: "transient",
+		},
+		// Gap 9: 403 Forbidden → classified as terminal (not auth, not transient) →
+		// falls through to classifyErrorStatus → StatusUnhealthy.
+		{
+			name:         "forbidden 403",
+			providerName: "openai",
+			useServer:    true,
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+			},
+			authenticator:   &auth.BearerAuth{Token: "test-key"},
+			wantStatus:      ports.StatusUnhealthy,
+			wantMsgContains: "error status: 403",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var baseURL string
+			if tt.useServer {
+				server := httptest.NewServer(http.HandlerFunc(tt.serverHandler))
+				t.Cleanup(func() { server.Close() })
+				baseURL = server.URL
+			} else {
+				baseURL = tt.baseURL
+			}
+
+			checker := NewLLMProviderHealthChecker(tt.providerName, tt.authenticator, baseURL, nil)
+
+			ctx := context.Background()
+			if tt.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel() // immediately cancel
+			}
+
+			report, err := checker.Check(ctx)
+			if err != nil {
+				t.Fatalf("Check returned unexpected Go error: %v", err)
+			}
+			if report.Status != tt.wantStatus {
+				t.Errorf("expected status %s, got %s: %s", tt.wantStatus, report.Status, report.Message)
+			}
+			if tt.wantMsgContains != "" && !strings.Contains(report.Message, tt.wantMsgContains) {
+				t.Errorf("expected message to contain %q, got: %s", tt.wantMsgContains, report.Message)
+			}
+		})
+	}
+}

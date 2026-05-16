@@ -111,7 +111,10 @@ func (c *llmProviderHealthChecker) checkConfiguration(ctx context.Context, repor
 
 // buildRequest creates the HTTP request for health check
 func (c *llmProviderHealthChecker) buildRequest(ctx context.Context, authReq *auth.Request) (*http.Request, error) {
-	method, url := c.getPingEndpoint()
+	method, url, err := c.getPingEndpoint()
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, err
@@ -137,6 +140,15 @@ func (c *llmProviderHealthChecker) performConnectivityCheck(req *http.Request, d
 
 // handleHTTPResponse analyzes status codes, classifies errors, determines health status
 func (c *llmProviderHealthChecker) handleHTTPResponse(resp *http.Response, err error, report *ports.ComponentReport, details map[string]any) *ports.ComponentReport {
+	// Defensive: net/http guarantees at most one of (resp, err) is non-nil,
+	// but custom RoundTrippers or middleware may return (nil, nil).
+	if resp == nil && err == nil {
+		report.Status = ports.StatusUnhealthy
+		report.Message = "health check returned nil response and nil error"
+		report.Error = fmt.Errorf("health check: nil response and nil error")
+		return report
+	}
+
 	if err != nil {
 		// Transient Failures (DNS, Timeout, etc.)
 		report.Status = ports.StatusDegraded
@@ -165,11 +177,17 @@ func (c *llmProviderHealthChecker) handleHTTPResponse(resp *http.Response, err e
 	return report
 }
 
-// classifyErrorStatus handles provider-specific status code interpretation
+// classifyErrorStatus handles provider-specific status code interpretation.
+//
+// Some providers lack a standard GET ping endpoint. For those, the health
+// checker pings the base URL directly (see getPingEndpoint for routing).
+// A 404 or 405 from the base URL means the server is reachable but the
+// endpoint doesn't exist — this is a successful connectivity check, not a
+// failure. Currently only Anthropic relies on this path.
+//
+// All other 4xx codes indicate the provider returned a client error on a
+// known-good endpoint, which is treated as unhealthy.
 func (c *llmProviderHealthChecker) classifyErrorStatus(statusCode int, report *ports.ComponentReport) *ports.ComponentReport {
-	// For some endpoints, 404 or 405 might just mean the ping path is wrong but the server is up.
-	// However, for OpenAI/Gemini /models, we expect 200.
-	// For Anthropic, we might get 404 on the base URL.
 	if statusCode == http.StatusNotFound || statusCode == http.StatusMethodNotAllowed {
 		report.Status = ports.StatusHealthy
 		report.Message = fmt.Sprintf("%s provider reached (ping returned %d)", c.providerName, statusCode)
@@ -180,24 +198,29 @@ func (c *llmProviderHealthChecker) classifyErrorStatus(statusCode int, report *p
 	return report
 }
 
-func (c *llmProviderHealthChecker) getPingEndpoint() (string, string) {
+func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
 	p := strings.ToLower(c.providerName)
 	switch p {
 	case "openai", "deepseek":
-		return "GET", c.baseURL + "/models"
+		return "GET", c.baseURL + "/models", nil
 	case "google", "gemini":
 		// Gemini API often uses a different base for models or needs the key as a query param.
 		// But if we use the baseURL passed in (which usually includes the key or uses headers),
 		// we try a standard models list.
 		if strings.Contains(c.baseURL, "googleapis.com") {
-			return "GET", c.baseURL + "/models"
+			return "GET", c.baseURL + "/models", nil
 		}
-		return "GET", c.baseURL + "/models"
+		return "GET", c.baseURL + "/models", nil
 	case "anthropic":
-		// Anthropic doesn't have a standard GET /v1/models that works reliably for a ping.
-		// We use the base URL to verify connectivity.
-		return "GET", c.baseURL
+		// Anthropic's Messages API has no standard GET ping endpoint.
+		// GET /v1/messages returns 405; GET /v1/models is not a Messages endpoint.
+		// We ping the base URL directly. The expected response is 404 (Not Found)
+		// or 405 (Method Not Allowed), which classifyErrorStatus interprets as
+		// "provider reached" (StatusHealthy). This is intentional — the server
+		// responded, proving connectivity. See ADR-022 "fail loud" principle:
+		// we do NOT silently succeed; we explicitly document the workaround.
+		return "GET", c.baseURL, nil
 	default:
-		return "GET", c.baseURL
+		return "", "", fmt.Errorf("unknown provider type %q: cannot determine health check endpoint", c.providerName)
 	}
 }
