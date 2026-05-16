@@ -21,6 +21,9 @@ type location struct {
 	Column int    `json:"column"`
 }
 
+// Location is the exported alias for location, for use by sub-packages (e.g., analysistest).
+type Location = location
+
 // symbolLocation extends location with symbol metadata.
 type symbolLocation struct {
 	location
@@ -30,11 +33,17 @@ type symbolLocation struct {
 	Receiver  string `json:"receiver,omitempty"` // For methods
 }
 
+// SymbolLocation is the exported alias for symbolLocation.
+type SymbolLocation = symbolLocation
+
 // typeName represents a fully qualified type name.
 type typeName struct {
 	PkgPath string `json:"pkg_path"`
 	Name    string `json:"name"`
 }
+
+// TypeName is the exported alias for typeName.
+type TypeName = typeName
 
 // SymbolIndex provides methods to query symbols and their relationships in a Go workspace.
 type symbolIndex interface {
@@ -55,6 +64,9 @@ type symbolIndex interface {
 	// Refresh re-scans the workspace to update the index.
 	Refresh(ctx context.Context, hb chan<- struct{}) error
 }
+
+// SymbolIndex is the exported alias for symbolIndex, for use by sub-packages.
+type SymbolIndex = symbolIndex
 
 // Indexer implements SymbolIndex using go/packages and go/types.
 type indexer struct {
@@ -82,6 +94,12 @@ func newIndexer(dir string) (*indexer, error) {
 		usagesByName:    make(map[string][]location),
 		implementations: make(map[string][]string),
 	}, nil
+}
+
+// NewIndexer creates a new indexer for the given directory.
+// This is the exported constructor for use by sub-packages (e.g., analysistest).
+func NewIndexer(dir string) (*indexer, error) {
+	return newIndexer(dir)
 }
 
 // startHeartbeatTicker starts a background goroutine that periodically sends

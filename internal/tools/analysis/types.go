@@ -34,6 +34,12 @@ type fieldInfo struct {
 	Tag   string
 }
 
+// NewTypeManager creates a new defaultTypeManager.
+// This is the exported constructor for use by sub-packages (e.g., analysistest, analysis_test).
+func NewTypeManager(idx SymbolIndex, cache *astCache, sp security.PathValidator) *defaultTypeManager {
+	return newTypeManager(idx, cache, sp)
+}
+
 func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator) *defaultTypeManager {
 	return &defaultTypeManager{
 		Indexer: idx,
