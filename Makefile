@@ -120,6 +120,7 @@ ifeq ($(IS_POSIX),true)
 		| grep -v '_test\.go$$' \
 		| grep -v '^\./internal/domain/events/eventstest/' \
 		| grep -v '^\./internal/agent/agentinternal/' \
+		| grep -v '^\./internal/tools/analysis/analysistest/' \
 		| sort -u )"; \
 	if [ -n "$$VIOLATIONS" ]; then \
 		echo ""; \
@@ -146,6 +147,7 @@ else
 			$$_.Name -notlike '*_test.go' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/domain/events/eventstest/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'internal/agent/agentinternal/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/analysistest/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
 			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
 		} | ForEach-Object { \
