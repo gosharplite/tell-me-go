@@ -205,3 +205,65 @@ func runListConcurrency(t *testing.T, ctx context.Context) {
 	// Final read to ensure no panic or race
 	_, _ = store.ReadAll(ctx)
 }
+
+// =============================================================================
+// getID edge case — non-struct type falls back to 0
+// =============================================================================
+
+func TestMemoryListStore_GetID_NonStruct(t *testing.T) {
+	t.Parallel()
+
+	// getID on a non-struct type (string) should return 0
+	store := newMemoryListStore[string]()
+	id := store.getID("not-a-struct")
+	if id != 0 {
+		t.Errorf("expected 0 for non-struct type, got %v", id)
+	}
+}
+
+// =============================================================================
+// Update with non-existent ID — no-op, returns nil
+// =============================================================================
+
+func TestMemoryListStore_Update_NotFound(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newMemoryListStore[ports.Task]()
+
+	// Append one item, then try to update a non-existent ID
+	_ = store.Append(ctx, ports.Task{ID: 1, Content: "existing"})
+
+	err := store.Update(ctx, 999, ports.Task{ID: 999, Content: "not found"})
+	if err != nil {
+		t.Errorf("Update for non-existent ID should not error, got: %v", err)
+	}
+
+	// Verify existing data is unchanged
+	items, _ := store.ReadAll(ctx)
+	if len(items) != 1 || items[0].Content != "existing" {
+		t.Errorf("data was modified by failed update: %v", items)
+	}
+}
+
+// =============================================================================
+// Delete with non-existent ID — no-op, returns nil
+// =============================================================================
+
+func TestMemoryListStore_Delete_NotFound(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newMemoryListStore[ports.Task]()
+
+	_ = store.Append(ctx, ports.Task{ID: 1, Content: "existing"})
+
+	err := store.Delete(ctx, 999)
+	if err != nil {
+		t.Errorf("Delete for non-existent ID should not error, got: %v", err)
+	}
+
+	// Verify existing data is unchanged
+	items, _ := store.ReadAll(ctx)
+	if len(items) != 1 || items[0].Content != "existing" {
+		t.Errorf("data was lost during failed delete: %v", items)
+	}
+}

@@ -203,6 +203,61 @@ func TestSQLiteHealthChecker_DirNotWritable(t *testing.T) {
 	}
 }
 
+func TestSQLiteHealthChecker_DBFileStatFails(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	// Create a symlink to a path in a non-existent directory.
+	// The parent directory (tmpDir) exists and is writable, so the filesystem
+	// checks pass, but os.Stat follows the symlink and fails because the
+	// target directory does not exist → size_bytes = 0.
+	dbPath := filepath.Join(tmpDir, "dangling")
+	if err := os.Symlink("/nonexistent_dir/test.db", dbPath); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	checker := newSQLiteHealthChecker(db, dbPath)
+	report, _ := checker.Check(context.Background())
+
+	// os.Stat follows the dangling symlink and fails → size_bytes = 0.
+	// Then PingContext fails because SQLite cannot create the DB file
+	// in the non-existent directory.
+	if report.Status != ports.StatusUnhealthy {
+		t.Errorf("expected StatusUnhealthy, got %s: %s", report.Status, report.Message)
+	}
+
+	// Verify size_bytes was set to 0 (the else branch).
+	// Note: the untyped 0 literal in the production code is stored as int,
+	// not int64. We accept either representation.
+	details, ok := report.Details.(map[string]any)
+	if !ok {
+		t.Fatal("expected Details to be a map[string]any")
+	}
+	raw, exists := details["size_bytes"]
+	if !exists {
+		t.Fatal("expected size_bytes key in details")
+	}
+	var sizeBytes int64
+	switch v := raw.(type) {
+	case int64:
+		sizeBytes = v
+	case int:
+		sizeBytes = int64(v)
+	default:
+		t.Fatalf("expected size_bytes to be int or int64, got %T (%v)", raw, raw)
+	}
+	if sizeBytes != 0 {
+		t.Errorf("expected size_bytes = 0, got %d", sizeBytes)
+	}
+}
+
 func TestNoOpHealthChecker_Check(t *testing.T) {
 	t.Parallel()
 

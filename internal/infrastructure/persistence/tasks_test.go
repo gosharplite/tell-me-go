@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -133,4 +134,116 @@ func setupTaskRepoWithLogger(t *testing.T, logger *slog.Logger) (*taskRepository
 	tasksFile := filepath.Join(tempDir, "tasks.json")
 	repo := newTaskRepository(NewOSFileSystem(), tasksFile, logger)
 	return repo, ctx, tasksFile, tempDir
+}
+
+func TestTaskRepository_ReadFileError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Create a DIRECTORY at the tasks file path.
+	// Stat will succeed (directory exists), but ReadFile will fail.
+	tasksFile := filepath.Join(tempDir, "tasks_is_a_dir")
+	if err := os.MkdirAll(tasksFile, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := NewOSFileSystem()
+	repo := newTaskRepository(fs, tasksFile, nil)
+
+	_, err := repo.ReadAll(ctx)
+	if err == nil {
+		t.Fatal("expected error when reading a directory as a tasks file, got nil")
+	}
+	if !strings.Contains(err.Error(), "reading tasks file") {
+		t.Errorf("expected error to contain 'reading tasks file', got: %v", err)
+	}
+}
+
+func TestTaskRepository_EmptyFile(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	tasksFile := filepath.Join(tempDir, "tasks.json")
+	fs := NewOSFileSystem()
+
+	// Write an empty file
+	if err := fs.WriteFile(ctx, tasksFile, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := newTaskRepository(fs, tasksFile, nil)
+	tasks, err := repo.ReadAll(ctx)
+	if err != nil {
+		t.Fatalf("ReadAll should not error on empty file: %v", err)
+	}
+	if tasks != nil {
+		t.Errorf("expected nil tasks for empty file, got %v", tasks)
+	}
+}
+
+func TestTaskRepository_JSONArrayUnmarshalFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	tasksFile := filepath.Join(tempDir, "tasks.json")
+	fs := NewOSFileSystem()
+
+	// Content starts with '[' but is NOT valid JSON — not an array, not an object.
+	// This triggers the json.Unmarshal failure path, falling through to JSONL parsing.
+	content := `[this is not valid json at all`
+	if err := fs.WriteFile(ctx, tasksFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := newTaskRepository(fs, tasksFile, nil)
+	tasks, err := repo.ReadAll(ctx)
+	if err != nil {
+		t.Fatalf("ReadAll should not error on fallthrough to JSONL: %v", err)
+	}
+	// JSONL parsing finds zero valid lines, so result is empty.
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 tasks from invalid JSON array, got %d", len(tasks))
+	}
+}
+
+func TestParseJSONLTasks_BlankLine(t *testing.T) {
+	t.Parallel()
+
+	trimmed := `{"id": 1, "content": "Task 1"}
+
+{"id": 2, "content": "Task 2"}
+`
+	result := parseJSONLTasks(trimmed, "/test/tasks.json", slog.Default())
+	if len(result) != 2 {
+		t.Fatalf("expected 2 tasks (blank line skipped), got %d", len(result))
+	}
+}
+
+func TestParseJSONLTasks_CorruptedLineNoDebug(t *testing.T) {
+	// NOTE: t.Parallel() is incompatible with t.Setenv(); this test runs serially.
+
+	// Ensure TELL_ME_DEBUG does NOT contain "migration"
+	t.Setenv("TELL_ME_DEBUG", "")
+
+	var buf testfixtures.SyncWriter
+	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	trimmed := `{"id": 1, "content": "Task 1"}
+not valid json
+{"id": 2, "content": "Task 2"}
+`
+	result := parseJSONLTasks(trimmed, "/test/tasks.json", testLogger)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(result))
+	}
+
+	// Verify NO debug message was logged (since TELL_ME_DEBUG doesn't contain migration)
+	output := buf.String()
+	if strings.Contains(output, "corrupted task line during migration") {
+		t.Error("expected no debug log when TELL_ME_DEBUG does not contain 'migration'")
+	}
 }

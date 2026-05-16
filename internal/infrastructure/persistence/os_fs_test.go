@@ -257,3 +257,30 @@ func TestOSFileSystem_OpenFile(t *testing.T) {
 		t.Errorf("file should exist: %v", err)
 	}
 }
+
+func TestNewDomainFS(t *testing.T) {
+	t.Parallel()
+
+	fs := NewDomainFS(&OSFileSystem{})
+	if fs == nil {
+		t.Fatal("NewDomainFS returned nil")
+	}
+
+	// Quick smoke test: verify the returned FS works
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.txt")
+	data := []byte("hello")
+
+	if err := fs.WriteFile(ctx, path, data, 0644); err != nil {
+		t.Fatalf("WriteFile via NewDomainFS failed: %v", err)
+	}
+
+	got, err := fs.ReadFile(ctx, path)
+	if err != nil {
+		t.Fatalf("ReadFile via NewDomainFS failed: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Errorf("got %q, want %q", got, data)
+	}
+}
