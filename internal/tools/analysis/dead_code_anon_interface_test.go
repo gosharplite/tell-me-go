@@ -30,6 +30,9 @@ package analysis
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -409,5 +412,162 @@ func TestCollectMethodNamesFromPackage_NonModuleInternal(t *testing.T) {
 		// So this actually IS module-internal. Test with empty targetModule legitimately.
 		collectMethodNamesFromPackage(pkg, "", names)
 		// Package has nil Syntax, so no names collected — but the guard is exercised
+	})
+}
+
+// TestHasAnonymousInterfaceAssertionMatch_GuardClauses exercises the two
+// guard clauses that return false before the lazy-init/map-lookup path:
+// nil state and empty method name. Without these guards the method
+// would panic on a nil-pointer dereference or a meaningless map lookup.
+func TestHasAnonymousInterfaceAssertionMatch_GuardClauses(t *testing.T) {
+	t.Parallel()
+	analyzer := &defaultDeadCodeAnalyzer{}
+
+	t.Run("nil state returns false", func(t *testing.T) {
+		t.Parallel()
+		assert.False(t, analyzer.hasAnonymousInterfaceAssertionMatch(nil, "Foo"),
+			"nil state must return false to prevent nil-pointer dereference")
+	})
+
+	t.Run("empty method name returns false", func(t *testing.T) {
+		t.Parallel()
+		state := &scanState{
+			anonymousInterfaceAssertedMethodNames: map[string]struct{}{"Foo": {}},
+		}
+		assert.False(t, analyzer.hasAnonymousInterfaceAssertionMatch(state, ""),
+			"empty method name must return false (short-circuit before map lookup)")
+	})
+}
+
+// TestCollectAnonymousInterfaceAssertedMethodNames_NilState exercises the
+// state == nil guard. The function must return a non-nil empty map so
+// that a subsequent `state.anonymousInterfaceAssertedMethodNames == nil`
+// check correctly distinguishes "not yet populated" from "populated
+// but empty".
+func TestCollectAnonymousInterfaceAssertedMethodNames_NilState(t *testing.T) {
+	t.Parallel()
+
+	result := collectAnonymousInterfaceAssertedMethodNames(nil)
+	require.NotNil(t, result, "must return non-nil map even for nil state")
+	assert.Empty(t, result, "must return empty map for nil state")
+}
+
+// TestCollectNamesFromFile_GuardClauses exercises the nil-file guard
+// and the path through ast.Inspect where getAnonymousInterfaceMethods
+// returns nil for every node (file with no type assertions).
+func TestCollectNamesFromFile_GuardClauses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil file returns immediately", func(t *testing.T) {
+		t.Parallel()
+		names := make(map[string]struct{})
+		// Must not panic
+		collectNamesFromFile(nil, names)
+		assert.Empty(t, names, "nil file must collect no names")
+	})
+
+	t.Run("file with no type assertions collects nothing", func(t *testing.T) {
+		t.Parallel()
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "test.go", "package p; func f() { _ = 1 + 2 }", 0)
+		require.NoError(t, err)
+		names := make(map[string]struct{})
+		collectNamesFromFile(f, names)
+		assert.Empty(t, names, "file with no type assertions must collect no names")
+	})
+}
+
+// TestGetAnonymousInterfaceMethods_GuardClauses exercises all four
+// nil-return paths in getAnonymousInterfaceMethods:
+//  1. Node is not a *ast.TypeAssertExpr
+//  2. TypeAssertExpr has a nil asserted type
+//  3. Asserted type is not *ast.InterfaceType (e.g., a named type)
+//  4. InterfaceType has nil Methods field
+func TestGetAnonymousInterfaceMethods_GuardClauses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-TypeAssertExpr returns nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, getAnonymousInterfaceMethods(&ast.Ident{Name: "x"}),
+			"non-TypeAssertExpr node must return nil")
+	})
+
+	t.Run("nil asserted type returns nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, getAnonymousInterfaceMethods(&ast.TypeAssertExpr{
+			X:    &ast.Ident{Name: "x"},
+			Type: nil,
+		}), "TypeAssertExpr with nil Type must return nil")
+	})
+
+	t.Run("non-interface asserted type returns nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, getAnonymousInterfaceMethods(&ast.TypeAssertExpr{
+			X:    &ast.Ident{Name: "x"},
+			Type: &ast.Ident{Name: "T"},
+		}), "asserted type that is *ast.Ident (not *ast.InterfaceType) must return nil")
+	})
+
+	t.Run("nil methods returns nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, getAnonymousInterfaceMethods(&ast.TypeAssertExpr{
+			X:    &ast.Ident{Name: "x"},
+			Type: &ast.InterfaceType{Methods: nil},
+		}), "InterfaceType with nil Methods must return nil")
+	})
+}
+
+// TestCollectNamesFromInterfaceField_GuardClauses exercises the three
+// early-return paths and the nil-name skip in collectNamesFromInterfaceField:
+//  1. Zero names (embedded interface) → return early
+//  2. Non-func type (embedded interface via ident) → return early
+//  3. nil name entry in the Names slice → skip that entry
+//  4. Valid method name → collected into the map
+func TestCollectNamesFromInterfaceField_GuardClauses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("embedded interface (zero names) returns early", func(t *testing.T) {
+		t.Parallel()
+		field := &ast.Field{Names: nil, Type: &ast.FuncType{}}
+		names := make(map[string]struct{})
+		collectNamesFromInterfaceField(field, names)
+		assert.Empty(t, names, "zero-length Names (embedded interface) must collect nothing")
+	})
+
+	t.Run("embedded interface (non-func type) returns early", func(t *testing.T) {
+		t.Parallel()
+		field := &ast.Field{
+			Names: []*ast.Ident{{Name: "M"}},
+			Type:  &ast.Ident{Name: "io.Reader"},
+		}
+		names := make(map[string]struct{})
+		collectNamesFromInterfaceField(field, names)
+		assert.Empty(t, names, "field with non-FuncType Type (embedded ident) must collect nothing")
+	})
+
+	t.Run("nil name in names list skipped", func(t *testing.T) {
+		t.Parallel()
+		field := &ast.Field{
+			Names: []*ast.Ident{nil, {Name: "Valid"}},
+			Type:  &ast.FuncType{},
+		}
+		names := make(map[string]struct{})
+		collectNamesFromInterfaceField(field, names)
+		assert.Len(t, names, 1, "only the non-nil name must be collected")
+		_, ok := names["Valid"]
+		assert.True(t, ok, "Valid must be in the collected names")
+	})
+
+	t.Run("valid method name collected", func(t *testing.T) {
+		t.Parallel()
+		field := &ast.Field{
+			Names: []*ast.Ident{{Name: "Foo"}},
+			Type:  &ast.FuncType{},
+		}
+		names := make(map[string]struct{})
+		collectNamesFromInterfaceField(field, names)
+		assert.Len(t, names, 1, "the single valid name must be collected")
+		_, ok := names["Foo"]
+		assert.True(t, ok, "Foo must be in the collected names")
 	})
 }
