@@ -31,11 +31,12 @@ type releaseGoRunner interface {
 }
 
 type releaseManager struct {
-	sm           domain_security.PathValidator
-	fs           persistence.FileSystem
-	runner       releaseGoRunner
-	policy       services.WorkspacePolicy
-	archVerifier tools.ToolFunc
+	sm             domain_security.PathValidator
+	fs             persistence.FileSystem
+	runner         releaseGoRunner
+	policy         services.WorkspacePolicy
+	archVerifier   tools.ToolFunc
+	tickerInterval time.Duration
 }
 
 type readinessCheck interface {
@@ -130,7 +131,11 @@ func (m *releaseManager) generateReport(pipeline []readinessCheck, results []che
 }
 
 func (m *releaseManager) startHeartbeat(hb chan<- struct{}, done <-chan struct{}) {
-	ticker := time.NewTicker(2 * time.Second)
+	interval := m.tickerInterval
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -262,12 +267,17 @@ func (c *dependencyChecker) Run(ctx context.Context) checkResult {
 
 // buildChecker implementation
 type buildChecker struct {
-	runner releaseGoRunner
+	runner        releaseGoRunner
+	createTempDir func(dir, pattern string) (string, error)
 }
 
 func (c *buildChecker) Name() string { return "Clean Room Build Simulation" }
 func (c *buildChecker) Run(ctx context.Context) checkResult {
-	tmpDir, err := os.MkdirTemp("", "release-build-*")
+	mkdir := c.createTempDir
+	if mkdir == nil {
+		mkdir = os.MkdirTemp
+	}
+	tmpDir, err := mkdir("", "release-build-*")
 	if err != nil {
 		return checkResult{OK: false, Message: fmt.Sprintf("Failed to create temp dir: %v", err)}
 	}
