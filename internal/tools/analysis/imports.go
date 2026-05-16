@@ -13,6 +13,10 @@ import (
 
 type importCleanupTransform struct {
 	Path string
+
+	// testFormatNode, when non-nil, replaces format.Node during tests
+	// to exercise the format error path which is unreachable with bytes.Buffer.
+	testFormatNode func(buf *bytes.Buffer, fset *token.FileSet, file *ast.File) error
 }
 
 func newImportCleanupTransform(path string) *importCleanupTransform {
@@ -29,7 +33,11 @@ func (t *importCleanupTransform) Apply(ctx context.Context, fset *token.FileSet,
 	// Clean up imports using imports.Process
 	// We need to format the file to a buffer first because imports.Process works on bytes
 	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, file); err != nil {
+	if t.testFormatNode != nil {
+		if err := t.testFormatNode(&buf, fset, file); err != nil {
+			return err
+		}
+	} else if err := format.Node(&buf, fset, file); err != nil {
 		return err
 	}
 

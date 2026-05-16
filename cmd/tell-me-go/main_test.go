@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -162,6 +163,55 @@ func TestGetVersion(t *testing.T) {
 			t.Errorf("getVersion() = %v, want dev or (devel)", got)
 		}
 	})
+}
+
+func TestGetVersion_FromBuildInfo(t *testing.T) {
+	originalVersion := version
+	originalReadBuildInfo := readBuildInfoFn
+	t.Cleanup(func() {
+		version = originalVersion
+		readBuildInfoFn = originalReadBuildInfo
+	})
+	version = "dev"
+	readBuildInfoFn = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Version: "v2.0.0"}}, true
+	}
+	got := getVersion()
+	if got != "v2.0.0" {
+		t.Errorf("getVersion() = %q, want %q", got, "v2.0.0")
+	}
+}
+
+func TestGetVersion_ReadBuildInfoFails(t *testing.T) {
+	originalVersion := version
+	originalReadBuildInfo := readBuildInfoFn
+	t.Cleanup(func() {
+		version = originalVersion
+		readBuildInfoFn = originalReadBuildInfo
+	})
+	version = "dev"
+	readBuildInfoFn = func() (*debug.BuildInfo, bool) { return nil, false }
+	got := getVersion()
+	if got != "dev" {
+		t.Errorf("getVersion() = %q, want %q (fallback to dev)", got, "dev")
+	}
+}
+
+func TestGetVersion_DevelVersion(t *testing.T) {
+	originalVersion := version
+	originalReadBuildInfo := readBuildInfoFn
+	t.Cleanup(func() {
+		version = originalVersion
+		readBuildInfoFn = originalReadBuildInfo
+	})
+	version = "dev"
+	readBuildInfoFn = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true
+	}
+	got := getVersion()
+	if got != "dev" {
+		t.Errorf("getVersion() = %q, want %q (devel excluded)", got, "dev")
+	}
 }
 
 func TestBuildApp_Smoke(t *testing.T) {

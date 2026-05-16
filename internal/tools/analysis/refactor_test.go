@@ -9,7 +9,11 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockTransform struct {
@@ -82,4 +86,77 @@ func TestTransaction_LoadFile_Error(t *testing.T) {
 	if err == nil {
 		t.Error("expected error loading non-existent file")
 	}
+}
+
+func TestTransaction_Commit_ErrorPaths(t *testing.T) {
+	// Subtest A: format.Node fails mid-loop → rollback cleans .tmp, original unchanged
+	t.Run("format_Node_error_and_rollback", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
+
+		tx := newTransaction()
+		_, err := tx.LoadFile(path)
+		require.NoError(t, err)
+
+		// Corrupt AST so format.Node fails
+		tx.Add(&mockTransform{
+			applyFn: func(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
+				if f, ok := files[path]; ok {
+					f.Name = nil // causes format.Node error
+				}
+				return nil
+			},
+		})
+
+		err = tx.Commit(context.Background())
+		require.Error(t, err)
+
+		// No .tmp left (rollback cleaned)
+		_, statErr := os.Stat(path + ".tmp")
+		assert.True(t, os.IsNotExist(statErr))
+
+		// Original unchanged
+		data, _ := os.ReadFile(path)
+		assert.Contains(t, string(data), "func F()")
+	})
+
+	// Subtest B: os.Rename fails → error returned, .tmp cleaned
+	t.Run("rename_error", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod-based rename failure not reliable on Windows")
+		}
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
+
+		tx := newTransaction()
+		_, err := tx.LoadFile(path)
+		require.NoError(t, err)
+
+		tx.Add(&mockTransform{
+			applyFn: func(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
+				return nil
+			},
+		})
+
+		// Replace path with a directory so os.Rename fails
+		require.NoError(t, os.Remove(path))
+		require.NoError(t, os.Mkdir(path, 0755))
+		t.Cleanup(func() {
+			if err := os.RemoveAll(path); err != nil {
+				t.Logf("cleanup: remove %s: %v", path, err)
+			}
+		})
+
+		err = tx.Commit(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to finalize")
+
+		// .tmp cleaned (rollback)
+		_, statErr := os.Stat(path + ".tmp")
+		assert.True(t, os.IsNotExist(statErr))
+	})
 }

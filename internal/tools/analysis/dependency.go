@@ -20,6 +20,8 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+var filepathRelFn = filepath.Rel
+
 type defaultDependencyAnalyzer struct {
 	Runner    AnalysisGoRunner
 	SP        domain_security.PolicyEvaluator
@@ -83,7 +85,7 @@ func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string]
 				return err
 			}
 
-			rel, err := filepath.Rel(modRoot, path)
+			rel, err := filepathRelFn(modRoot, path)
 			if err != nil {
 				return err
 			}

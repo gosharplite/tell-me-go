@@ -6,6 +6,8 @@ package analysis
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGenerateMermaid(t *testing.T) {
@@ -84,4 +86,64 @@ func TestGenerateMermaidWithCycles(t *testing.T) {
 	if !strings.Contains(result, "stroke:#f00") {
 		t.Error("Expected result to contain red stroke for cycles")
 	}
+}
+
+func TestGenerateMermaid_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty graph", func(t *testing.T) {
+		t.Parallel()
+		result := generateMermaid(map[string][]string{})
+		assert.Contains(t, result, "graph TD")
+		assert.NotContains(t, result, "subgraph")
+		assert.NotContains(t, result, "-->")
+	})
+
+	t.Run("single node no edges", func(t *testing.T) {
+		t.Parallel()
+		result := generateMermaid(map[string][]string{"cmd/app": {}})
+		assert.Contains(t, result, "graph TD")
+		assert.Contains(t, result, "cmd_app")
+		assert.NotContains(t, result, "-->")
+	})
+
+	t.Run("disconnected nodes", func(t *testing.T) {
+		t.Parallel()
+		result := generateMermaid(map[string][]string{
+			"pkg/a": {}, "pkg/b": {}, "pkg/c": {},
+		})
+		assert.Contains(t, result, "graph TD")
+		assert.Contains(t, result, "pkg_a")
+		assert.Contains(t, result, "pkg_b")
+		assert.Contains(t, result, "pkg_c")
+		assert.NotContains(t, result, "-->")
+	})
+
+	t.Run("node with self-loop", func(t *testing.T) {
+		t.Parallel()
+		result := generateMermaid(map[string][]string{"pkg/a": {"pkg/a"}})
+		assert.Contains(t, result, "graph TD")
+		assert.Contains(t, result, "pkg_a --> pkg_a")
+	})
+}
+
+func TestMarkCycleEdges_NoCycles(t *testing.T) {
+	t.Parallel()
+	graph := map[string][]string{"a": {"b"}, "b": {"c"}}
+	result := markCycleEdges(graph)
+	assert.Empty(t, result)
+}
+
+func TestFindCycles_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single node", func(t *testing.T) {
+		assert.Nil(t, findCycles(map[string][]string{"a": {}}))
+	})
+	t.Run("empty graph", func(t *testing.T) {
+		assert.Nil(t, findCycles(map[string][]string{}))
+	})
+	t.Run("disconnected acyclic", func(t *testing.T) {
+		assert.Nil(t, findCycles(map[string][]string{"a": {"b"}, "c": {"d"}}))
+	})
 }

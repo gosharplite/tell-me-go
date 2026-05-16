@@ -17,9 +17,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// sqlOpenFn is a package-level variable for sql.Open, allowing tests to inject
+// failures into the database-open path without modifying the global driver registry.
+var sqlOpenFn = sql.Open
+
 // initSQLiteDB opens the SQLite database and runs migrations.
 func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sqlOpenFn("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
