@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,6 +62,47 @@ func TestVertexAuth_Invalidate(t *testing.T) {
 	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
 		t.Error("expected cache file to be deleted")
 	}
+}
+
+func TestVertexAuth_Invalidate_RemoveError(t *testing.T) {
+	t.Run("remove failure logs but clears token", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Chmod 0555 on directory not reliable on Windows")
+		}
+
+		tmpDir := t.TempDir()
+		cacheDir := filepath.Join(tmpDir, "cache")
+		auth := &VertexAuth{Token: "some-token", CacheDir: cacheDir}
+		cachePath := auth.getCachePath()
+
+		// Create cache directory and file
+		if err := os.MkdirAll(cacheDir, 0700); err != nil {
+			t.Fatalf("failed to create cache dir: %v", err)
+		}
+		if err := os.WriteFile(cachePath, []byte("token"), 0600); err != nil {
+			t.Fatalf("failed to write cache file: %v", err)
+		}
+
+		// Make parent directory read-only so os.Remove fails
+		if err := os.Chmod(cacheDir, 0555); err != nil {
+			t.Fatalf("failed to chmod cache dir: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = os.Chmod(cacheDir, 0700)
+		})
+
+		auth.Invalidate()
+
+		// Primary contract: in-memory token cleared even when file removal fails
+		if auth.Token != "" {
+			t.Error("expected Token to be cleared even when file removal fails")
+		}
+
+		// The cache file should still exist (removal silently failed)
+		if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+			t.Error("expected cache file to still exist when removal fails")
+		}
+	})
 }
 
 func TestVertexAuth_GetToken(t *testing.T) {
@@ -440,6 +482,24 @@ func TestVertexAuth_GetCachePath_UnixFallback(t *testing.T) {
 	}
 }
 
+func TestVertexAuth_GetCachePath_AllFallbacksEmpty(t *testing.T) {
+	originalGetUID := getUID
+	getUID = func() int { return -1 }
+	t.Cleanup(func() { getUID = originalGetUID })
+
+	t.Setenv("USERNAME", "")
+	t.Setenv("USER", "")
+
+	auth := &VertexAuth{}
+	path := auth.getCachePath()
+	if !strings.Contains(path, "tell-me-go-auth--1") {
+		t.Errorf("expected path to contain 'tell-me-go-auth--1', got %s", path)
+	}
+	if !strings.HasSuffix(path, "token.txt") {
+		t.Errorf("expected path to end with 'token.txt', got %s", path)
+	}
+}
+
 func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
 	ctx := context.Background()
 	auth := &VertexAuth{
@@ -571,6 +631,50 @@ func TestVertexAuth_CacheWriteFailure(t *testing.T) {
 	}
 }
 
+func TestVertexAuth_GetToken_AtomicWriteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Chmod 0555 not reliable on Windows")
+	}
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Compute the cache path to find the directory that needs to exist but be read-only
+	auth := &VertexAuth{CacheDir: tmpDir}
+	cachePath := auth.getCachePath()
+	cacheDir := filepath.Dir(cachePath)
+
+	// Create the cache directory
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		t.Fatalf("failed to create cache dir: %v", err)
+	}
+
+	// Make it read-only so that AtomicWrite (CreateTemp) fails inside
+	if err := os.Chmod(cacheDir, 0555); err != nil {
+		t.Fatalf("failed to chmod cache dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(cacheDir, 0700)
+	})
+
+	// Fresh VertexAuth — no preset Token, so code path goes:
+	// cache miss → gcloud → MkdirAll(succeeds) → AtomicWrite(fails)
+	auth2 := &VertexAuth{
+		CacheDir: tmpDir,
+		tokenCmdFunc: func() ([]byte, error) {
+			return []byte("resilient-token"), nil
+		},
+	}
+
+	token, err := auth2.getToken(ctx)
+	if err != nil {
+		t.Fatalf("getToken should return token despite AtomicWrite failure, got error: %v", err)
+	}
+	if token != "resilient-token" {
+		t.Errorf("got %q, want resilient-token", token)
+	}
+}
+
 func TestNewVertexAuth_DefaultTokenCmdFunc(t *testing.T) {
 	a := NewVertexAuth()
 	if a.tokenCmdFunc == nil {
@@ -596,4 +700,109 @@ func TestVertexAuth_NilTokenCmdFunc_ReturnsError(t *testing.T) {
 	if !strings.Contains(err.Error(), "NewVertexAuth") {
 		t.Errorf("error should mention NewVertexAuth, got: %v", err)
 	}
+}
+
+func TestServiceAccountAuth_EmptyKeyFilePath(t *testing.T) {
+	tests := []struct {
+		name string
+		auth *ServiceAccountAuth
+		want string // expected substring in error, empty means no error expected
+	}{
+		{
+			name: "empty KeyFilePath returns descriptive error",
+			auth: &ServiceAccountAuth{},
+			want: "KeyFilePath is empty",
+		},
+		{
+			name: "empty KeyFilePath with tokenSourceFunc still works",
+			auth: &ServiceAccountAuth{
+				tokenSourceFunc: func() (*oauth2.Token, error) {
+					return &oauth2.Token{
+						AccessToken: "mock-token",
+						Expiry:      time.Now().Add(1 * time.Hour),
+					}, nil
+				},
+			},
+			want: "", // no error expected
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token, err := tt.auth.getToken(context.Background())
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if token != "mock-token" {
+					t.Errorf("got %q, want %q", token, "mock-token")
+				}
+			} else {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.want) {
+					t.Errorf("expected error containing %q, got %q", tt.want, err.Error())
+				}
+			}
+		})
+	}
+}
+
+func TestVertexAuth_GetToken_CorruptCache(t *testing.T) {
+	t.Run("corrupt cache falls back to gcloud", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Chmod 0000 not reliable on Windows")
+		}
+
+		ctx := context.Background()
+		tmpDir := t.TempDir()
+
+		auth := &VertexAuth{
+			CacheDir: tmpDir,
+			tokenCmdFunc: func() ([]byte, error) {
+				return []byte("fresh-gcloud-token"), nil
+			},
+		}
+
+		cachePath := auth.getCachePath()
+		dir := filepath.Dir(cachePath)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatalf("failed to create cache dir: %v", err)
+		}
+		if err := os.WriteFile(cachePath, []byte("stale-token"), 0600); err != nil {
+			t.Fatalf("failed to write cache file: %v", err)
+		}
+
+		// Make the cache file unreadable to simulate corruption
+		if err := os.Chmod(cachePath, 0000); err != nil {
+			t.Fatalf("failed to chmod cache file: %v", err)
+		}
+
+		// Restore permissions so t.TempDir cleanup can remove the file
+		t.Cleanup(func() {
+			_ = os.Chmod(cachePath, 0600)
+		})
+
+		token, err := auth.getToken(ctx)
+		if err != nil {
+			t.Fatalf("getToken should fall back to gcloud, got error: %v", err)
+		}
+		if token != "fresh-gcloud-token" {
+			t.Errorf("got %q, want fresh-gcloud-token", token)
+		}
+
+		// Verify the corrupt cache was overwritten with the fresh token
+		// (restore readability first)
+		if err := os.Chmod(cachePath, 0600); err != nil {
+			t.Fatalf("failed to restore cache file permissions: %v", err)
+		}
+		content, err := os.ReadFile(cachePath)
+		if err != nil {
+			t.Fatalf("failed to read cache file after getToken: %v", err)
+		}
+		if strings.TrimSpace(string(content)) != "fresh-gcloud-token" {
+			t.Errorf("cache file contains %q, want fresh-gcloud-token", string(content))
+		}
+	})
 }
