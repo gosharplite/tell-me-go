@@ -9,7 +9,6 @@ import (
 	"go/token"
 	"go/types"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -101,7 +100,7 @@ func (idx *indexer) processPackage(ctx context.Context, fset *token.FileSet, pkg
 
 func (idx *indexer) processFile(fset *token.FileSet, file *ast.File, h *harvester) error {
 	filename := fset.File(file.Pos()).Name()
-	absPath, err := filepath.Abs(filename)
+	absPath, err := idx.resolvePath(filename)
 	if err != nil {
 		return err
 	}
