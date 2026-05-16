@@ -79,6 +79,9 @@ type indexer struct {
 	lastRefresh                    time.Time
 	refreshMu                      sync.Mutex // For serializing Refresh calls
 	testComputeImplementationsHook func()     // Test hook: nil in production (ADR-032)
+	// resolvePath resolves a filename to an absolute path. Override in tests
+	// to inject path-resolution errors without OS-specific hacks.
+	resolvePath func(string) (string, error)
 }
 
 // implCacheEntry bundles a sync.Once gate with its computed result.
@@ -98,6 +101,7 @@ func newIndexer(dir string) (*indexer, error) {
 		symbolsByPath: make(map[string][]symbolLocation),
 		usagesByName:  make(map[string][]location),
 		implsCache:    &implCacheEntry{},
+		resolvePath:   filepath.Abs,
 	}, nil
 }
 

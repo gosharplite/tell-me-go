@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -261,7 +262,7 @@ func TestShouldIndexFile(t *testing.T) {
 
 func TestProcessFile(t *testing.T) {
 	t.Parallel()
-	idx := &indexer{}
+	idx := &indexer{resolvePath: filepath.Abs}
 
 	// -------------------------------------------------------------------
 	// EC1: valid Go file, indexed
@@ -356,8 +357,9 @@ func TestProcessFile(t *testing.T) {
 }
 
 func TestProcessPackage(t *testing.T) {
-	// NOTE: Not parallel — EC3 mutates process-wide CWD via os.Chdir.
-	idx := &indexer{}
+	// All subtests are parallel-safe; DI-based resolvePath injection
+	// replaces the previous OS-level CWD manipulation.
+	idx := &indexer{resolvePath: filepath.Abs}
 
 	// -------------------------------------------------------------------
 	// EC5: empty package, no Syntax
@@ -417,54 +419,28 @@ func TestProcessPackage(t *testing.T) {
 	// -------------------------------------------------------------------
 	// EC3: processFile error propagation
 	//
-	// We make os.Getwd() fail by chdir-ing into a directory and then
-	// removing it.  A subsequent filepath.Abs("relative.go") will then
-	// fail because the CWD is unresolvable.  This must NOT be parallel
-	// since os.Chdir is process-wide.
+	// Inject a failing resolvePath via DI to verify that path-resolution
+	// errors from processFile propagate correctly through processPackage.
 	// -------------------------------------------------------------------
 	t.Run("processFile error propagation", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "pp-test-*")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = os.RemoveAll(tmpDir) }()
+		t.Parallel()
 
-		subDir := filepath.Join(tmpDir, "cwd")
-		if err := os.Mkdir(subDir, 0755); err != nil {
-			t.Fatal(err)
+		errInjected := errors.New("path resolution failed")
+		idx := &indexer{
+			resolvePath: func(string) (string, error) { return "", errInjected },
 		}
 
-		origDir, err := os.Getwd()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = os.Chdir(origDir) }()
-
-		if err := os.Chdir(subDir); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Remove(subDir); err != nil {
-			t.Fatal(err)
-		}
-
-		// Parse from source string (doesn't read disk), using a relative
-		// path so filepath.Abs calls os.Getwd which now fails.
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, "relative.go", "package test\nvar X = 1\n", 0)
+		file, err := parser.ParseFile(fset, "any.go", "package test\nvar X = 1\n", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		pkg := types.NewPackage("example.com/test", "test")
-		manualPkg := &packages.Package{
-			Types:     pkg,
-			TypesInfo: &types.Info{},
-			Syntax:    []*ast.File{file},
-		}
-
-		ctx := context.Background()
-		_, err = idx.processPackage(ctx, fset, manualPkg)
-		assert.Error(t, err)
+		h := newHarvester(fset)
+		err = idx.processFile(fset, file, h)
+		assert.ErrorIs(t, err, errInjected)
+		assert.Empty(t, h.symbolsByPath)
+		assert.Empty(t, h.currentPath)
 	})
 
 	// -------------------------------------------------------------------
@@ -536,7 +512,7 @@ func TestHarvestPackages(t *testing.T) {
 			t.Fatal("expected at least one package")
 		}
 
-		idx := &indexer{}
+		idx := &indexer{resolvePath: filepath.Abs}
 		ctx := context.Background()
 
 		symbols, usages, err := idx.harvestPackages(ctx, fset, pkgs, nil)
@@ -553,7 +529,7 @@ func TestHarvestPackages(t *testing.T) {
 	t.Run("empty package list", func(t *testing.T) {
 		t.Parallel()
 
-		idx := &indexer{}
+		idx := &indexer{resolvePath: filepath.Abs}
 		fset := token.NewFileSet()
 		ctx := context.Background()
 
@@ -595,7 +571,7 @@ func TestHarvestPackages(t *testing.T) {
 			t.Fatal("expected at least one package")
 		}
 
-		idx := &indexer{}
+		idx := &indexer{resolvePath: filepath.Abs}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
