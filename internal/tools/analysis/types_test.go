@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,4 +269,96 @@ func unexported() {}
 	if strings.Contains(res.Text, "unexported") {
 		t.Errorf("Did not expect unexported in output")
 	}
+}
+
+func TestTypeManager_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	// denyingSP rejects all paths
+	denyingSP := &denyingSecurityProvider{}
+
+	t.Run("FindUsages UnmarshalArgs error", func(t *testing.T) {
+		t.Parallel()
+		m := &defaultTypeManager{SP: &mockSecurityProvider{}}
+		_, err := m.FindUsages(context.Background(), map[string]interface{}{"query": make(chan int)}, nil)
+		if err == nil {
+			t.Error("expected error for unserializable args")
+		}
+	})
+
+	t.Run("FindUsages IsPathSafe error", func(t *testing.T) {
+		t.Parallel()
+		m := &defaultTypeManager{SP: denyingSP}
+		_, err := m.FindUsages(context.Background(), map[string]interface{}{"query": "Foo"}, nil)
+		if err == nil {
+			t.Error("expected error from IsPathSafe rejection")
+		}
+	})
+
+	t.Run("FindUsages GetUsages error", func(t *testing.T) {
+		t.Parallel()
+		mockIdx := &mockSymbolIndex{
+			GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+				return nil, fmt.Errorf("index lookup failed")
+			},
+		}
+		m := &defaultTypeManager{SP: &mockSecurityProvider{}, Indexer: mockIdx}
+		_, err := m.FindUsages(context.Background(), map[string]interface{}{"query": "Foo", "path": "."}, nil)
+		if err == nil {
+			t.Error("expected error from GetUsages")
+		}
+	})
+
+	t.Run("FindUsages no results", func(t *testing.T) {
+		t.Parallel()
+		mockIdx := &mockSymbolIndex{
+			GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+				return nil, nil
+			},
+		}
+		m := &defaultTypeManager{SP: &mockSecurityProvider{}, Indexer: mockIdx}
+		result, err := m.FindUsages(context.Background(), map[string]interface{}{"query": "Foo", "path": "."}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result.Text, "No usages found") {
+			t.Errorf("expected 'No usages found', got %q", result.Text)
+		}
+	})
+
+	t.Run("FindDefinitions UnmarshalArgs error", func(t *testing.T) {
+		t.Parallel()
+		m := &defaultTypeManager{SP: &mockSecurityProvider{}}
+		_, err := m.FindDefinitions(context.Background(), map[string]interface{}{"query": make(chan int)}, nil)
+		if err == nil {
+			t.Error("expected error for unserializable args")
+		}
+	})
+
+	t.Run("FindDefinitions resolvePath error", func(t *testing.T) {
+		t.Parallel()
+		m := &defaultTypeManager{SP: denyingSP}
+		_, err := m.FindDefinitions(context.Background(), map[string]interface{}{"query": "Foo"}, nil)
+		if err == nil {
+			t.Error("expected error from resolvePath rejection")
+		}
+	})
+
+	t.Run("ListSymbols UnmarshalArgs error", func(t *testing.T) {
+		t.Parallel()
+		m := &defaultTypeManager{SP: &mockSecurityProvider{}}
+		_, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": make(chan int)}, nil)
+		if err == nil {
+			t.Error("expected error for unserializable args")
+		}
+	})
+
+	t.Run("ListSymbols resolvePath error", func(t *testing.T) {
+		t.Parallel()
+		m := &defaultTypeManager{SP: denyingSP}
+		_, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": "/some/path"}, nil)
+		if err == nil {
+			t.Error("expected error from resolvePath rejection")
+		}
+	})
 }

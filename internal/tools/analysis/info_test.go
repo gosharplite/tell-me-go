@@ -377,3 +377,104 @@ func TestInfoManager_GetFileSkeleton(t *testing.T) {
 		}
 	})
 }
+
+// errorFileSystem implements persistence.FileSystem and always returns error from Walk and ReadFile.
+// Used to test error paths in GetProjectSummary and collectFileStats.
+type errorFileSystem struct {
+	persistence.FileSystem
+}
+
+func (e *errorFileSystem) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	return fmt.Errorf("walk error")
+}
+
+func (e *errorFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	return nil, fmt.Errorf("read error")
+}
+
+func TestGetFileSkeleton_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("UnmarshalArgs error", func(t *testing.T) {
+		t.Parallel()
+		m := &infoManager{SP: &mockSecurityProvider{}, Policy: infra_persistence.NewWorkspacePolicy()}
+		_, err := m.GetFileSkeleton(context.Background(), map[string]interface{}{"filepath": make(chan int)}, nil)
+		if err == nil {
+			t.Error("expected error for unserializable args")
+		}
+	})
+
+	t.Run("IsPathSafe error", func(t *testing.T) {
+		t.Parallel()
+		m := &infoManager{SP: &denyingSecurityProvider{}, Policy: infra_persistence.NewWorkspacePolicy()}
+		_, err := m.GetFileSkeleton(context.Background(), map[string]interface{}{"filepath": "/some/path"}, nil)
+		if err == nil {
+			t.Error("expected error from IsPathSafe rejection")
+		}
+	})
+
+	t.Run("non-go file with FS read error", func(t *testing.T) {
+		t.Parallel()
+		fs := persistence.NewMockFileSystem()
+		m := &infoManager{
+			SP:     &mockSecurityProvider{},
+			FS:     fs,
+			Policy: infra_persistence.NewWorkspacePolicy(),
+		}
+		// Don't write the file — FS.ReadFile will fail
+		_, err := m.GetFileSkeleton(context.Background(), map[string]interface{}{"filepath": "/nonexistent.py"}, nil)
+		if err == nil {
+			t.Error("expected error from FS.ReadFile failure for non-go file")
+		}
+	})
+
+	t.Run("go file fallback with FS read error", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		fs := persistence.NewMockFileSystem()
+		m := &infoManager{
+			SP:     &mockSecurityProvider{},
+			FS:     fs,
+			Cache:  newASTCache(tmpDir),
+			Policy: infra_persistence.NewWorkspacePolicy(),
+		}
+		// Path is .go; AST cache fails (file not on real disk), fallback to extractGenericSkeleton
+		// which also fails because the mock FS has no such file
+		_, err := m.GetFileSkeleton(context.Background(), map[string]interface{}{"filepath": tmpDir + "/nonexistent.go"}, nil)
+		if err == nil {
+			t.Error("expected error from FS.ReadFile failure in go fallback path")
+		}
+	})
+}
+
+func TestGetProjectSummary_ErrorPath(t *testing.T) {
+	t.Parallel()
+	// Use a mock FS that always returns an error from Walk
+	fs := &errorFileSystem{}
+	m := &infoManager{FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	_, err := m.GetProjectSummary(ctx, nil, nil)
+	if err == nil {
+		t.Error("expected error from FS.Walk failure")
+	}
+}
+
+func TestPublishGoDocEvent_NilEvents(t *testing.T) {
+	t.Parallel()
+	m := &infoManager{Events: nil, Policy: infra_persistence.NewWorkspacePolicy()}
+	// Must not panic
+	m.publishGoDocEvent(context.Background(), "fmt.Println")
+}
+
+func TestFormatDocOutput_Error(t *testing.T) {
+	t.Parallel()
+	m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+	result := m.formatDocOutput([]byte("partial output"), fmt.Errorf("go doc failed"))
+	if !strings.Contains(result.Text, "Error running go doc") {
+		t.Errorf("expected error message in output, got: %s", result.Text)
+	}
+	if !strings.Contains(result.Text, "partial output") {
+		t.Errorf("expected partial output in result, got: %s", result.Text)
+	}
+}

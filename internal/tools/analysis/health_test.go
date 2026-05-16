@@ -5,10 +5,13 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -461,4 +464,269 @@ func TestGetDetailedCoverage_DefaultPath(t *testing.T) {
 	if !strings.Contains(result.Text, "Error:") {
 		t.Errorf("expected error text in result, got: %s", result.Text)
 	}
+}
+
+func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		ctxFunc          func() (context.Context, func())
+		runnerFunc       func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+		wantTestStatus   string
+		wantTestContains string
+		wantCovStatus    string
+		wantCovContains  string
+	}{
+		{
+			name: "deadline exceeded",
+			ctxFunc: func() (context.Context, func()) {
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Hour))
+				return ctx, cancel
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{}, context.DeadlineExceeded
+			},
+			wantTestStatus:   "TIMEOUT",
+			wantTestContains: "timed out",
+			wantCovStatus:    "ERROR",
+			wantCovContains:  "Failed to generate coverage summary",
+		},
+		{
+			name: "context canceled",
+			ctxFunc: func() (context.Context, func()) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel() // ctx.Err() returns context.Canceled
+				return ctx, cancel
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{}, context.Canceled
+			},
+			wantTestStatus:   "CANCELLED",
+			wantTestContains: "cancelled",
+			wantCovStatus:    "ERROR",
+			wantCovContains:  "Failed to generate coverage summary",
+		},
+		{
+			name: "generic test failure",
+			ctxFunc: func() (context.Context, func()) {
+				return context.Background(), func() {}
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{}, errors.New("exit status 1")
+			},
+			wantTestStatus:   "FAIL",
+			wantTestContains: "failed",
+			wantCovStatus:    "ERROR",
+			wantCovContains:  "Failed to generate coverage summary",
+		},
+		{
+			name: "coverage N/A",
+			ctxFunc: func() (context.Context, func()) {
+				return context.Background(), func() {}
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{CoveragePct: "N/A", PassedCount: 3}, nil
+			},
+			wantTestStatus:   "PASS",
+			wantTestContains: "3 packages passed",
+			wantCovStatus:    "N/A",
+			wantCovContains:  "Could not parse coverage",
+		},
+		{
+			name: "no Go files",
+			ctxFunc: func() (context.Context, func()) {
+				return context.Background(), func() {}
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{NoGoFiles: true, PassedCount: 0}, nil
+			},
+			wantTestStatus:   "PASS",
+			wantTestContains: "0 packages passed",
+			wantCovStatus:    "ERROR",
+			wantCovContains:  "Failed to generate coverage summary",
+		},
+		{
+			name: "empty coverage",
+			ctxFunc: func() (context.Context, func()) {
+				return context.Background(), func() {}
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{CoveragePct: "", PassedCount: 1}, nil
+			},
+			wantTestStatus:   "PASS",
+			wantTestContains: "1 packages passed",
+			wantCovStatus:    "ERROR",
+			wantCovContains:  "Failed to generate coverage summary",
+		},
+		{
+			name: "coverage success",
+			ctxFunc: func() (context.Context, func()) {
+				return context.Background(), func() {}
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{CoveragePct: "85.0%", PassedCount: 5}, nil
+			},
+			wantTestStatus:   "PASS",
+			wantTestContains: "5 packages passed",
+			wantCovStatus:    "85.0%",
+			wantCovContains:  "Target: > 80%",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &healthManager{
+				Runner: &mockGoRunner{
+					runTestsWithCoverageFunc: tt.runnerFunc,
+				},
+			}
+			ctx, cleanup := tt.ctxFunc()
+			defer cleanup()
+			tStatus, tDetails, cStatus, cDetails := m.runTestsAndCoverage(ctx)
+			if tt.wantTestStatus != "" && tStatus != tt.wantTestStatus {
+				t.Errorf("test status: got %q, want %q", tStatus, tt.wantTestStatus)
+			}
+			if tt.wantTestContains != "" && !strings.Contains(strings.ToLower(tDetails), strings.ToLower(tt.wantTestContains)) {
+				t.Errorf("test details: got %q, want containing %q", tDetails, tt.wantTestContains)
+			}
+			if tt.wantCovStatus != "" && cStatus != tt.wantCovStatus {
+				t.Errorf("coverage status: got %q, want %q", cStatus, tt.wantCovStatus)
+			}
+			if tt.wantCovContains != "" && !strings.Contains(strings.ToLower(cDetails), strings.ToLower(tt.wantCovContains)) {
+				t.Errorf("coverage details: got %q, want containing %q", cDetails, tt.wantCovContains)
+			}
+		})
+	}
+}
+
+func TestRunLint_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		runLinterFn  func(ctx context.Context) (string, string, error)
+		wantStatus   string
+		wantContains string
+	}{
+		{
+			name: "no linter found",
+			runLinterFn: func(ctx context.Context) (string, string, error) {
+				return "", "", toolchain.ErrNoSupportedLinter
+			},
+			wantStatus:   "SKIP",
+			wantContains: "No linter found",
+		},
+		{
+			name: "generic error",
+			runLinterFn: func(ctx context.Context) (string, string, error) {
+				return "", "", errors.New("binary not found")
+			},
+			wantStatus:   "ERROR",
+			wantContains: "binary not found",
+		},
+		{
+			name: "exit error with issues",
+			runLinterFn: func(ctx context.Context) (string, string, error) {
+				return "file.go:10:5: warning", "staticcheck", &exec.ExitError{}
+			},
+			wantStatus:   "1 Issues",
+			wantContains: "Using staticcheck",
+		},
+		{
+			name: "exit error but no output",
+			runLinterFn: func(ctx context.Context) (string, string, error) {
+				return "", "golangci-lint", &exec.ExitError{}
+			},
+			wantStatus:   "CLEAN",
+			wantContains: "All checks passed",
+		},
+		{
+			name: "no issues no error",
+			runLinterFn: func(ctx context.Context) (string, string, error) {
+				return "", "golangci-lint", nil
+			},
+			wantStatus:   "CLEAN",
+			wantContains: "All checks passed",
+		},
+		{
+			name: "output but not issue lines",
+			runLinterFn: func(ctx context.Context) (string, string, error) {
+				return "just a warning message\nno colon numbers", "staticcheck", &exec.ExitError{}
+			},
+			wantStatus:   "CLEAN",
+			wantContains: "All checks passed",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &healthManager{
+				Runner: &mockGoRunner{
+					runLinterFunc: tt.runLinterFn,
+				},
+			}
+			status, details := m.runLint(context.Background())
+			if status != tt.wantStatus {
+				t.Errorf("status: got %q, want %q", status, tt.wantStatus)
+			}
+			if !strings.Contains(details, tt.wantContains) {
+				t.Errorf("details: got %q, want containing %q", details, tt.wantContains)
+			}
+		})
+	}
+}
+
+func TestHealthStartHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil hb, already-done channel", func(t *testing.T) {
+		t.Parallel()
+		m := &healthManager{}
+		done := make(chan struct{})
+		close(done)
+		m.startHeartbeat(done, nil) // must return immediately, no panic
+	})
+
+	t.Run("nil hb, open done channel then close", func(t *testing.T) {
+		t.Parallel()
+		m := &healthManager{}
+		done := make(chan struct{})
+		go func() {
+			m.startHeartbeat(done, nil)
+		}()
+		time.Sleep(10 * time.Millisecond)
+		close(done)
+	})
+
+	t.Run("buffered hb, receives heartbeat", func(t *testing.T) {
+		t.Parallel()
+		m := &healthManager{}
+		done := make(chan struct{})
+		hb := make(chan struct{}, 2)
+		go func() {
+			m.startHeartbeat(done, hb)
+		}()
+		select {
+		case <-hb:
+			// received
+		case <-time.After(3 * time.Second):
+			t.Error("timed out waiting for heartbeat")
+		}
+		close(done)
+	})
+
+	t.Run("hb full, does not block", func(t *testing.T) {
+		t.Parallel()
+		m := &healthManager{}
+		done := make(chan struct{})
+		hb := make(chan struct{}, 1)
+		hb <- struct{}{} // pre-fill buffer
+		go func() {
+			m.startHeartbeat(done, hb)
+		}()
+		time.Sleep(10 * time.Millisecond)
+		close(done)
+		// test passes if we reach here without deadlock/panic
+	})
 }

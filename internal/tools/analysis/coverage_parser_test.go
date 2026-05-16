@@ -955,6 +955,45 @@ func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
 	}
 }
 
+func TestGetDetailedCoverage_OpenError(t *testing.T) {
+	// NOT parallel — modifies package-level osOpenFile variable
+	ctx := context.Background()
+
+	// Create a mock that returns a valid coverage profile
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					if err := os.WriteFile(path, []byte("mode: set\n"), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	// Inject osOpenFile to return an error
+	origOpen := osOpenFile
+	osOpenFile = func(name string) (*os.File, error) {
+		return nil, fmt.Errorf("injected open error")
+	}
+	defer func() { osOpenFile = origOpen }()
+
+	_, err := hea.getDetailedCoverage(ctx, ".", nil)
+	if err == nil {
+		t.Error("expected error from injected osOpenFile failure")
+	}
+	if !strings.Contains(err.Error(), "injected open error") {
+		t.Errorf("expected 'injected open error' in error, got: %v", err)
+	}
+}
+
 func TestGetDetailedCoverageJSON_ErrorWithData(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
