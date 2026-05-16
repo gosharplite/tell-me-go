@@ -23,6 +23,8 @@ package analysis
 
 import (
 	"context"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"testing"
@@ -407,4 +409,187 @@ func TestConstructorPropagation_TypeAliasNotPropagated(t *testing.T) {
 			"alias resolution has been added — update the doc-comment "+
 			"and either remove this test or invert its expectation.\n"+
 			"Report was:\n%s", report)
+}
+
+// TestPropagateConstructorUsages_WithHeartbeat verifies the heartbeat path
+// in propagateConstructorUsagesToReturnTypes. When totalUses is empty there
+// are zero ids to iterate, so the loop body (including the i%20==0 heartbeat
+// send) never executes. The function must not panic and must not send a
+// spurious heartbeat on an empty dataset.
+func TestPropagateConstructorUsages_WithHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	state := &scanState{
+		declarations: map[string]*symMeta{},
+		totalUses:    make(map[string]int),
+		externalUses: make(map[string]int),
+	}
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+	hb := make(chan struct{}, 1)
+
+	// The function iterates over ids and sends heartbeat when i%20==0.
+	// With 0 ids, it should not panic and not send heartbeat.
+	analyzer.propagateConstructorUsagesToReturnTypes(state, hb)
+
+	// Verify no heartbeat was sent (no ids to process).
+	select {
+	case <-hb:
+		t.Error("unexpected heartbeat with 0 ids")
+	default:
+		// expected: no heartbeat
+	}
+}
+
+// TestProcessConstructorUsage_GuardClauses verifies the early-return guards
+// in processConstructorUsage: nil obj (L140) and non-func obj (L143).
+// Neither path should panic.
+func TestProcessConstructorUsage_GuardClauses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil obj returns early", func(t *testing.T) {
+		t.Parallel()
+		state := &scanState{
+			declarations: map[string]*symMeta{
+				"example.com/pkg.Func": {
+					id:      "example.com/pkg.Func",
+					pkgPath: "example.com/pkg",
+					name:    "Func",
+					symType: "Function",
+					obj:     nil, // nil obj — guard at L140
+				},
+			},
+			totalUses:    map[string]int{"example.com/pkg.Func": 1},
+			externalUses: map[string]int{"example.com/pkg.Func": 1},
+		}
+		analyzer := &defaultDeadCodeAnalyzer{}
+		// Should not panic
+		analyzer.processConstructorUsage("example.com/pkg.Func", 1, state)
+		// No assertion needed — the test passes if no panic
+	})
+
+	t.Run("non-func obj returns early", func(t *testing.T) {
+		t.Parallel()
+		pkg := types.NewPackage("example.com/pkg", "pkg")
+		varObj := types.NewVar(token.NoPos, pkg, "Var", types.Typ[types.Int])
+		state := &scanState{
+			declarations: map[string]*symMeta{
+				"example.com/pkg.Var": {
+					id:      "example.com/pkg.Var",
+					pkgPath: "example.com/pkg",
+					name:    "Var",
+					symType: "Variable",
+					obj:     varObj,
+				},
+			},
+			totalUses:    map[string]int{"example.com/pkg.Var": 1},
+			externalUses: map[string]int{"example.com/pkg.Var": 1},
+		}
+		analyzer := &defaultDeadCodeAnalyzer{}
+		analyzer.processConstructorUsage("example.com/pkg.Var", 1, state)
+		// No panic — guard at fn, ok := meta.obj.(*types.Func)
+	})
+}
+
+// TestMarkPropagated_GuardClauses verifies the four guard clauses in
+// markPropagated: zero return types, interface return types,
+// self-referential return types, and stdlib/basic return types not in
+// the declarations map.
+func TestMarkPropagated_GuardClauses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero return types skipped", func(t *testing.T) {
+		t.Parallel()
+		// Signature with no return values
+		sig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
+
+		state := &scanState{
+			declarations: make(map[string]*symMeta),
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+		analyzer := &defaultDeadCodeAnalyzer{}
+		analyzer.markPropagated("source.id", sig, 1, state)
+		// No panic — extractNamedReturnTypes returns nil, loop body never executes
+	})
+
+	t.Run("interface return type skipped", func(t *testing.T) {
+		t.Parallel()
+		iface := types.NewInterfaceType(nil, nil)
+		named := types.NewNamed(
+			types.NewTypeName(token.NoPos, types.NewPackage("example.com/pkg", "pkg"), "MyInterface", iface),
+			iface,
+			nil,
+		)
+		// Create signature returning the interface-named type
+		results := types.NewTuple(types.NewVar(token.NoPos, nil, "", named))
+		sig := types.NewSignatureType(nil, nil, nil, results, nil, false)
+
+		state := &scanState{
+			declarations: make(map[string]*symMeta),
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+		analyzer := &defaultDeadCodeAnalyzer{}
+		analyzer.markPropagated("source.id", sig, 1, state)
+		// No panic, no declarations added — interface types are skipped
+		if len(state.totalUses) != 0 {
+			t.Errorf("expected no totalUses entries for interface return type, got %d", len(state.totalUses))
+		}
+	})
+
+	t.Run("self-referential return type skipped", func(t *testing.T) {
+		t.Parallel()
+		pkg := types.NewPackage("example.com/pkg", "pkg")
+		structType := types.NewStruct(nil, nil)
+		named := types.NewNamed(
+			types.NewTypeName(token.NoPos, pkg, "SelfRef", structType),
+			structType,
+			nil,
+		)
+		results := types.NewTuple(types.NewVar(token.NoPos, nil, "", named))
+		sig := types.NewSignatureType(nil, nil, nil, results, nil, false)
+
+		state := &scanState{
+			declarations: map[string]*symMeta{
+				"example.com/pkg.SelfRef": {
+					id:      "example.com/pkg.SelfRef",
+					pkgPath: "example.com/pkg",
+					name:    "SelfRef",
+					symType: "Type",
+					obj:     named.Obj(),
+				},
+			},
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+		analyzer := &defaultDeadCodeAnalyzer{}
+
+		// Self-ref: sourceId is "example.com/pkg.SelfRef" and typeId is also
+		// "example.com/pkg.SelfRef" — the guard should skip it
+		analyzer.markPropagated("example.com/pkg.SelfRef", sig, 1, state)
+		// totalUses should NOT be bumped for self-ref
+		if state.totalUses["example.com/pkg.SelfRef"] != 0 {
+			t.Errorf("self-referential type should not bump totalUses, got %d",
+				state.totalUses["example.com/pkg.SelfRef"])
+		}
+	})
+
+	t.Run("stdlib return type skipped (not in declarations)", func(t *testing.T) {
+		t.Parallel()
+		// int is a basic type, not *types.Named → extractNamedReturnTypes skips it
+		results := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int]))
+		sig := types.NewSignatureType(nil, nil, nil, results, nil, false)
+
+		state := &scanState{
+			declarations: make(map[string]*symMeta),
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+		analyzer := &defaultDeadCodeAnalyzer{}
+		analyzer.markPropagated("source.id", sig, 1, state)
+		if len(state.totalUses) != 0 {
+			t.Errorf("basic type should not add to totalUses, got %d", len(state.totalUses))
+		}
+	})
 }

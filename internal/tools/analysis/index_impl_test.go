@@ -4,6 +4,9 @@
 package analysis
 
 import (
+	"context"
+	"go/token"
+	"go/types"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -115,5 +118,45 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 	}
 	for i := 1; i < N; i++ {
 		assert.ElementsMatch(t, results[0], results[i])
+	}
+}
+
+// TestSatisfiesGenericInterface_EmptyInterface verifies the defensive guard
+// that prevents a panic when an empty interface (NumMethods()==0) is passed
+// to satisfiesGenericInterface. This is defense-in-depth because
+// mapTypeToInterfaces pre-filters interfaces with ptrMethodSetLen < itf.NumMethods(),
+// which would reject empty interfaces (0 < 0 is false, but the loop body
+// would never execute for empty interfaces anyway). The guard at L74
+// ensures the function returns false immediately for empty interfaces.
+func TestSatisfiesGenericInterface_EmptyInterface(t *testing.T) {
+	t.Parallel()
+
+	idx := &indexer{}
+	emptyIface := types.NewInterfaceType(nil, nil) // NumMethods() == 0
+	named := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "MyType", types.NewStruct(nil, nil)),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	pkgTypes := types.NewPackage("example.com/pkg", "pkg")
+
+	got := idx.satisfiesGenericInterface(named, emptyIface, pkgTypes)
+	if got {
+		t.Error("satisfiesGenericInterface should return false for empty interface")
+	}
+}
+
+func TestGetImplementations_RefreshError(t *testing.T) {
+	t.Parallel()
+
+	// Create indexer pointing to a non-existent directory
+	idx, err := newIndexer("/nonexistent/directory/for/testing")
+	require.NoError(t, err)
+
+	// GetImplementations calls Refresh, which calls loadPackages,
+	// which fails because the directory doesn't exist
+	result := idx.GetImplementations(context.Background(), "some.Interface.Method", nil)
+	if result != nil {
+		t.Errorf("expected nil result on Refresh error, got %v", result)
 	}
 }

@@ -302,3 +302,139 @@ func TestRenameSymbol(t *testing.T) {
 		assert.Contains(t, err.Error(), "identical")
 	})
 }
+
+func TestMoveDefinition_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("UnmarshalArgs error", func(t *testing.T) {
+		t.Parallel()
+		sp := &refactorMockSecurityProvider{}
+		mgr := newRefactorManager(sp)
+		_, err := mgr.MoveDefinition(ctx, map[string]interface{}{"symbol": make(chan int)}, nil)
+		require.Error(t, err)
+	})
+
+	t.Run("dst IsPathWritable error", func(t *testing.T) {
+		t.Parallel()
+		callCount := 0
+		sp := &refactorMockSecurityProvider{
+			IsPathWritableFunc: func(path string) (string, error) {
+				callCount++
+				if callCount == 2 { // second call is for dst
+					return "", fmt.Errorf("dst not writable")
+				}
+				return path, nil
+			},
+		}
+		mgr := newRefactorManager(sp)
+		args := map[string]interface{}{
+			"symbol":   "MyFunc",
+			"src_file": "src.go",
+			"dst_file": "dst.go",
+			"reason":   "testing",
+		}
+		_, err := mgr.MoveDefinition(ctx, args, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "dst not writable")
+	})
+
+	t.Run("src file load error", func(t *testing.T) {
+		t.Parallel()
+		sp := &refactorMockSecurityProvider{}
+		mgr := newRefactorManager(sp)
+		args := map[string]interface{}{
+			"symbol":   "MyFunc",
+			"src_file": "/nonexistent/src.go",
+			"dst_file": "/tmp/dst.go",
+			"reason":   "testing",
+		}
+		_, err := mgr.MoveDefinition(ctx, args, nil)
+		require.Error(t, err)
+	})
+
+	t.Run("Commit error (symbol not found)", func(t *testing.T) {
+		t.Parallel()
+		mgr, tmpDir := setupMoveWorkspace(t, map[string]string{
+			"src.go": "package test\n\nfunc Foo() {}\n",
+			"dst.go": "package test\n",
+		})
+		args := map[string]interface{}{
+			"symbol":   "NonExistent",
+			"src_file": filepath.Join(tmpDir, "src.go"),
+			"dst_file": filepath.Join(tmpDir, "dst.go"),
+			"reason":   "testing",
+		}
+		_, err := mgr.MoveDefinition(ctx, args, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
+
+func TestRenameSymbol_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("UnmarshalArgs error", func(t *testing.T) {
+		t.Parallel()
+		sp := &refactorMockSecurityProvider{}
+		mgr := newRefactorManager(sp)
+		_, err := mgr.RenameSymbol(ctx, map[string]interface{}{"old_name": make(chan int)}, nil)
+		require.Error(t, err)
+	})
+
+	t.Run("IsPathWritable error", func(t *testing.T) {
+		t.Parallel()
+		sp := &refactorMockSecurityProvider{
+			IsPathWritableFunc: func(path string) (string, error) {
+				return "", fmt.Errorf("path not writable")
+			},
+		}
+		mgr := newRefactorManager(sp)
+		args := map[string]interface{}{
+			"old_name": "Foo",
+			"new_name": "Bar",
+			"path":     "/some/path",
+			"reason":   "testing",
+		}
+		_, err := mgr.RenameSymbol(ctx, args, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "path not writable")
+	})
+
+	t.Run("empty directory no go files", func(t *testing.T) {
+		t.Parallel()
+		emptyDir := t.TempDir()
+		sp := &refactorMockSecurityProvider{}
+		mgr := newRefactorManager(sp)
+		args := map[string]interface{}{
+			"old_name": "Foo",
+			"new_name": "Bar",
+			"path":     emptyDir,
+			"reason":   "testing",
+		}
+		_, err := mgr.RenameSymbol(ctx, args, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no .go files found")
+	})
+
+	t.Run("LoadFile error via invalid Go syntax", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// Create a .go file with invalid syntax so parser.ParseFile fails.
+		brokenPath := filepath.Join(dir, "broken.go")
+		require.NoError(t, os.WriteFile(brokenPath, []byte("package test\nfunc broken() {"), 0644))
+
+		sp := &refactorMockSecurityProvider{}
+		mgr := newRefactorManager(sp)
+		args := map[string]interface{}{
+			"old_name": "Foo",
+			"new_name": "Bar",
+			"path":     dir,
+			"reason":   "testing",
+		}
+		_, err := mgr.RenameSymbol(ctx, args, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "load broken.go:")
+	})
+}
