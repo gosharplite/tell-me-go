@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -143,9 +144,7 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 		return nil, err
 	}
 
-	a.pkgMu.RLock()
-	modName := a.modName
-	a.pkgMu.RUnlock()
+	var modName string
 
 	// Try exact match first
 	a.pkgMu.RLock()
@@ -162,14 +161,16 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 		// Fallback to legacy search
 		a.pkgMu.RLock()
 		pkgs := a.pkgs
+		modName = a.modName
 		a.pkgMu.RUnlock()
 
-		startPkg, remaining := a.findStartPackage(startSymbol, pkgs)
+		var rem string
+		startPkg, rem = a.findStartPackage(startSymbol, pkgs, modName)
 		if startPkg != nil {
 			var err error
-			startFunc, err = a.resolveStartFunc(startPkg, remaining)
+			startFunc, err = a.resolveStartFunc(startPkg, rem)
 			if err != nil {
-				return nil, fmt.Errorf("start symbol not found: %s", startSymbol)
+				return nil, fmt.Errorf("start symbol not found: %s: %w", startSymbol, err)
 			}
 		}
 	}
@@ -177,7 +178,14 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 	if startPkg == nil || startFunc == nil {
 		hint := ""
 		if strings.Contains(startSymbol, "/") {
-			hint = " (use the full Go import path with dots, e.g. 'github.com/foo/bar/pkg.Type.Method')"
+			// Only show the fully-qualified-path hint if the symbol already
+			// looks like a fully-qualified path that we couldn't resolve.
+			// For module-relative paths, suggest trying the package-local format.
+			if modName != "" && strings.HasPrefix(startSymbol, modName) {
+				hint = " (try 'pkg/path.(*Type).Method' for a method, or 'pkg/path.Func' for a function)"
+			} else {
+				hint = " (try the full module path, e.g. 'github.com/foo/bar/pkg.Func' or 'pkg/path.Func')"
+			}
 		}
 		return nil, fmt.Errorf("start symbol not found: %s%s", startSymbol, hint)
 	}
@@ -400,7 +408,10 @@ func (a *defaultSequenceAnalyzer) exprToString(expr ast.Expr) string {
 // matches package "github.com/foo/bar"). When multiple packages match, the
 // one with the longest import path wins. Returns the matched package and the
 // remaining portion of the symbol after the package path, or nil if no match.
-func (a *defaultSequenceAnalyzer) findByPrefix(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
+// When modName is non-empty, a second pass strips the module prefix
+// from each package path and retries, enabling resolution of
+// module-relative symbols like "internal/tools/analysis.Func".
+func (a *defaultSequenceAnalyzer) findByPrefix(symbol string, allPkgs []*packages.Package, modName string) (*packages.Package, string) {
 	var startPkg *packages.Package
 	var remaining string
 	for _, p := range allPkgs {
@@ -408,6 +419,24 @@ func (a *defaultSequenceAnalyzer) findByPrefix(symbol string, allPkgs []*package
 			if startPkg == nil || len(p.PkgPath) > len(startPkg.PkgPath) {
 				startPkg = p
 				remaining = symbol[len(p.PkgPath)+1:]
+			}
+		}
+	}
+	// Second pass: try module-relative matching. Strip the module prefix
+	// from each package path (e.g. "github.com/foo/bar/internal/pkg" →
+	// "internal/pkg") and retry the prefix check.
+	if modName != "" {
+		modPrefix := modName + "/"
+		for _, p := range allPkgs {
+			relPath := strings.TrimPrefix(p.PkgPath, modPrefix)
+			if relPath == p.PkgPath {
+				continue // trim had no effect; skip
+			}
+			if strings.HasPrefix(symbol, relPath+".") {
+				if startPkg == nil {
+					startPkg = p
+					remaining = symbol[len(relPath)+1:]
+				}
 			}
 		}
 	}
@@ -438,8 +467,8 @@ func (a *defaultSequenceAnalyzer) findBySuffix(symbol string, allPkgs []*package
 // a two-phase strategy: first a prefix match against full import paths, then
 // a suffix/equality fallback. Returns the package and the remaining symbol
 // portion (function name with optional receiver), or nil if unresolved.
-func (a *defaultSequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
-	if pkg, rem := a.findByPrefix(symbol, allPkgs); pkg != nil {
+func (a *defaultSequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.Package, modName string) (*packages.Package, string) {
+	if pkg, rem := a.findByPrefix(symbol, allPkgs, modName); pkg != nil {
 		return pkg, rem
 	}
 	return a.findBySuffix(symbol, allPkgs)
@@ -482,19 +511,41 @@ func (a *defaultSequenceAnalyzer) normalizeSymbolName(symbol string) string {
 	return funcName
 }
 
+// receiverPattern matches the receiver portion of a Go symbol string.
+// It captures:
+//
+//	(*Type).Method  →  recv="*Type", name="Method"
+//	(Type).Method   →  recv="Type",  name="Method"
+//	Type.Method     →  recv="Type",  name="Method"
+//	FuncName        →  no match (plain function)
+var receiverPattern = regexp.MustCompile(`^(?:\(\*?(\w+)\)|\*?(\w+))\.(\w+)$`)
+
 func (a *defaultSequenceAnalyzer) isMethodMatch(fd *ast.FuncDecl, remaining string) bool {
-	if !strings.Contains(remaining, ".") {
+	// remaining is the portion of the symbol after the package path,
+	// e.g. "(*indexer).computeImplementationsLazy" or "StartFunc".
+	matches := receiverPattern.FindStringSubmatch(remaining)
+	if matches == nil {
+		// No receiver notation found — must be a plain function.
 		return fd.Recv == nil
 	}
 
-	recvName := a.getReceiverTypeName(fd.Recv)
-	if recvName == "" {
-		return false
+	// Extract the receiver type name from the symbol.
+	// For "(*Type).Method":  matches[1] = "Type" (parens + optional star)
+	// For "Type.Method":     matches[2] = "Type" (no parens)
+	symbolRecv := matches[1]
+	if symbolRecv == "" {
+		symbolRecv = matches[2]
 	}
 
-	cleanRemaining := strings.TrimPrefix(remaining, "*")
-	cleanRecv := strings.TrimPrefix(recvName, "*")
-	return strings.Contains(cleanRemaining, cleanRecv)
+	// Get the receiver type name from the AST declaration.
+	declRecv := a.getReceiverTypeName(fd.Recv)
+	if declRecv == "" {
+		return false
+	}
+	// Strip pointer indicator from both sides for comparison.
+	declRecv = strings.TrimPrefix(declRecv, "*")
+
+	return symbolRecv == declRecv
 }
 
 func (v *sequenceVisitor) resolveIdentCall(id *ast.Ident) (string, string, string) {

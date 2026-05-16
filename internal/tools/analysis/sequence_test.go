@@ -9,8 +9,11 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -498,6 +501,107 @@ func (t *T) Method() {}
 			t.Error("expected method with receiver (bestMatch fallback), got plain function")
 		}
 	})
+}
+
+// TestFindStartPackage_ModuleRelativeAndUnexported verifies that the full
+// findStartPackage → resolveStartFunc pipeline resolves both module-relative
+// and fully-qualified paths to unexported methods on unexported types.
+// This is a regression test for Issue #450.
+func TestFindStartPackage_ModuleRelativeAndUnexported(t *testing.T) {
+	t.Parallel()
+
+	// --- Setup: create a real Go workspace with an unexported type+method ---
+	tmpDir := t.TempDir()
+
+	goMod := []byte("module example.com/test\n\ngo 1.25\n")
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), goMod, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	src := []byte(`package test
+
+type internalCounter struct{ count int }
+
+func logCount(n int) int { return n }
+
+func (c *internalCounter) incrementBy(n int) int {
+	c.count += n
+	logCount(c.count)
+	return c.count
+}
+
+func Start(n int) int {
+	c := &internalCounter{}
+	return c.incrementBy(n)
+}
+`)
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), src, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Build the indexer against the real workspace ---
+	idx, err := newIndexer(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := idx.Refresh(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := idx.Packages(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Build the analyzer ---
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
+	// Pre-populate the analyzer state so loadPackages is a no-op.
+	analyzer.pkgMu.Lock()
+	analyzer.pkgs = pkgs
+	analyzer.funcMap = analyzer.mapSymbols(pkgs)
+	analyzer.lastLoad = time.Now().Add(1 * time.Hour)
+	analyzer.pkgMu.Unlock()
+
+	tests := []struct {
+		name        string
+		startSymbol string
+		wantFunc    string // expected function name in the diagram
+	}{
+		{
+			name:        "module-relative unexported method",
+			startSymbol: "example.com/test.(*internalCounter).incrementBy",
+			wantFunc:    "logCount",
+		},
+		{
+			name:        "module-relative exported free function",
+			startSymbol: "example.com/test.Start",
+			wantFunc:    "incrementBy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res, err := analyzer.AnalyzeSequenceFlow(ctx, map[string]interface{}{
+				"start_symbol": tt.startSymbol,
+				"max_depth":    float64(3),
+			}, nil)
+			if err != nil {
+				t.Fatalf("AnalyzeSequenceFlow failed: %v", err)
+			}
+			if res.Text == "" {
+				t.Fatal("expected non-empty diagram output")
+			}
+			if strings.Contains(res.Text, "Error") {
+				t.Fatalf("unexpected error in output: %s", res.Text)
+			}
+			if !strings.Contains(res.Text, tt.wantFunc) {
+				t.Errorf("diagram missing expected function %q:\n%s", tt.wantFunc, res.Text)
+			}
+		})
+	}
 }
 
 // parseTestFile is a helper that parses Go source into an AST.
