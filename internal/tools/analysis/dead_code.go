@@ -69,12 +69,6 @@ func newDeadCodeAnalyzer(sp security.PathValidator, idx symbolIndex) *defaultDea
 	return &defaultDeadCodeAnalyzer{SP: sp, idx: idx}
 }
 
-// NewDeadCodeAnalyzer creates a dead code analyzer with the given security provider and indexer.
-// This is the exported constructor for use by sub-packages (e.g., analysistest).
-func NewDeadCodeAnalyzer(sp security.PathValidator, idx SymbolIndex) *defaultDeadCodeAnalyzer {
-	return newDeadCodeAnalyzer(sp, idx)
-}
-
 // NewDeadCodeAnalyzerForCLI creates a DeadCodeAnalyzer wired for CLI use.
 // It loads packages from the current working directory and is intended
 // for Makefile/CI integration, not the agent tool registry.

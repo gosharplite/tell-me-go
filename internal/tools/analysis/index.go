@@ -96,12 +96,6 @@ func newIndexer(dir string) (*indexer, error) {
 	}, nil
 }
 
-// NewIndexer creates a new indexer for the given directory.
-// This is the exported constructor for use by sub-packages (e.g., analysistest).
-func NewIndexer(dir string) (*indexer, error) {
-	return newIndexer(dir)
-}
-
 // startHeartbeatTicker starts a background goroutine that periodically sends
 // heartbeats on hb. It returns a stop function that must be called to clean up.
 func startHeartbeatTicker(hb chan<- struct{}) (stop func()) {
