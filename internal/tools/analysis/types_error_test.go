@@ -1,4 +1,4 @@
-package analysis
+package analysis_test
 
 import (
 	"context"
@@ -8,41 +8,23 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/packages"
+	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
+	"github.com/gosharplite/tell-me-go/internal/tools/analysis/analysistest"
 )
 
-// mockTypeIndex implements symbolIndex with configurable behavior.
-// All methods return safe zero values; override via LookupFunc for test control.
+// mockTypeIndex embeds analysistest.MockSymbolIndex to inherit all
+// symbolIndex method implementations, overriding only Lookup for
+// test-specific control.
 type mockTypeIndex struct {
-	LookupFunc func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error)
+	analysistest.MockSymbolIndex
+	LookupFunc func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error)
 }
 
-func (m *mockTypeIndex) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
+func (m *mockTypeIndex) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
 	if m.LookupFunc != nil {
 		return m.LookupFunc(ctx, symbol, hb)
 	}
 	return nil, nil
-}
-func (m *mockTypeIndex) FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]typeName, error) {
-	return nil, nil
-}
-func (m *mockTypeIndex) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool, hb chan<- struct{}) ([]symbolLocation, error) {
-	return nil, nil
-}
-func (m *mockTypeIndex) GetUsages(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
-	return nil, nil
-}
-func (m *mockTypeIndex) IsSymbolUsed(ctx context.Context, name string, hb chan<- struct{}) bool {
-	return false
-}
-func (m *mockTypeIndex) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
-	return nil
-}
-func (m *mockTypeIndex) Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
-	return nil, nil
-}
-func (m *mockTypeIndex) Refresh(ctx context.Context, hb chan<- struct{}) error {
-	return nil
 }
 
 // errSentinel is a sentinel error used to verify Lookup error propagation.
@@ -82,7 +64,7 @@ func (s *MyStruct) Foo() string { return "" }
 	type testCase struct {
 		name     string
 		args     map[string]interface{}
-		lookupFn func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error)
+		lookupFn func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error)
 		ctx      context.Context
 		wantErr  bool
 		wantText string // if non-empty, must appear in res.Text
@@ -109,7 +91,7 @@ func (s *MyStruct) Foo() string { return "" }
 		{
 			name: "path3_Lookup_error",
 			args: map[string]interface{}{"typename": "Foo"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
+			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
 				return nil, errSentinel
 			},
 			wantErr:  false,
@@ -119,7 +101,7 @@ func (s *MyStruct) Foo() string { return "" }
 		{
 			name: "path4_Lookup_empty",
 			args: map[string]interface{}{"typename": "Foo"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
+			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
 				return nil, nil
 			},
 			wantErr:  false,
@@ -130,8 +112,8 @@ func (s *MyStruct) Foo() string { return "" }
 		{
 			name: "path5_CacheGet_error",
 			args: map[string]interface{}{"typename": "Foo"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
-				return []location{{Path: filepath.Join(tmpDir, "does_not_exist.go"), Line: 1, Column: 1}}, nil
+			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+				return []analysis.Location{{Path: filepath.Join(tmpDir, "does_not_exist.go"), Line: 1, Column: 1}}, nil
 			},
 			wantErr: true,
 		},
@@ -140,8 +122,8 @@ func (s *MyStruct) Foo() string { return "" }
 		{
 			name: "path6_findTypeSpec_nil",
 			args: map[string]interface{}{"typename": "MissingType"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
-				return []location{{Path: mismatchFile, Line: 2, Column: 6}}, nil
+			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+				return []analysis.Location{{Path: mismatchFile, Line: 2, Column: 6}}, nil
 			},
 			wantErr:  false,
 			wantText: "Type not found.",
@@ -152,8 +134,8 @@ func (s *MyStruct) Foo() string { return "" }
 		{
 			name: "path7_findMethodsInPackage_error",
 			args: map[string]interface{}{"typename": "MyStruct"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
-				return []location{{Path: hasTypeFile, Line: 2, Column: 6}}, nil
+			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+				return []analysis.Location{{Path: hasTypeFile, Line: 2, Column: 6}}, nil
 			},
 			ctx:     cancelCtx,
 			wantErr: true,
@@ -175,7 +157,7 @@ func (s *MyStruct) Foo() string { return "" }
 				ctx = context.Background()
 			}
 
-			m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+			m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
 			res, err := m.GetTypeInfo(ctx, tc.args, nil)
 
 			if (err != nil) != tc.wantErr {
@@ -209,12 +191,12 @@ func TestGetTypeInfo_ShortCircuit(t *testing.T) {
 		t.Parallel()
 		var lookupCalled bool
 		idx := &mockTypeIndex{
-			LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
+			LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
 				lookupCalled = true
 				return nil, nil
 			},
 		}
-		m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
 
 		res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ""}, nil)
 		if err != nil {
@@ -231,7 +213,7 @@ func TestGetTypeInfo_ShortCircuit(t *testing.T) {
 	t.Run("missing typename key defaults to empty string", func(t *testing.T) {
 		t.Parallel()
 		idx := &mockTypeIndex{}
-		m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
 
 		res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{}, nil)
 		if err != nil {
@@ -244,7 +226,7 @@ func TestGetTypeInfo_ShortCircuit(t *testing.T) {
 
 	t.Run("UnmarshalArgs error returns zero ToolResult", func(t *testing.T) {
 		t.Parallel()
-		m := newTypeManager(&mockTypeIndex{}, newASTCache("."), &mockSecurityProvider{})
+		m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
 
 		ch := make(chan struct{})
 		res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ch}, nil)

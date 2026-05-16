@@ -37,6 +37,12 @@ type astCache struct {
 	maxSize int
 }
 
+// NewASTCache creates a new AST cache with the given base directory.
+// This is the exported constructor for use by sub-packages (e.g., analysistest, analysis_test).
+func NewASTCache(baseDir string) *astCache {
+	return newASTCache(baseDir)
+}
+
 func newASTCache(baseDir string) *astCache {
 	return &astCache{
 		baseDir: baseDir,
