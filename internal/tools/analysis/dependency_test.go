@@ -306,6 +306,26 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 			},
 			wantErrContains: "listing packages",
 		},
+		{
+			name: "filepath.Rel error in buildGraph goroutine",
+			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
+				dir := setupWorkspace(t)
+				origRel := filepathRelFn
+				t.Cleanup(func() { filepathRelFn = origRel })
+				filepathRelFn = func(basepath, targpath string) (string, error) {
+					return "", fmt.Errorf("injected Rel error")
+				}
+				return dir, &mockAnalysisGoRunner{
+					getModulePathFunc: func(ctx context.Context) (string, error) {
+						return "example.com/mod", nil
+					},
+					getModuleDirFunc: func(ctx context.Context) (string, error) {
+						return dir, nil
+					},
+				}
+			},
+			wantErrContains: "injected Rel error",
+		},
 	}
 
 	for _, tt := range tests {
@@ -362,6 +382,29 @@ func TestBuildGraph_GetImportsError(t *testing.T) {
 
 	_, err := a.buildGraph(ctx)
 	require.Error(t, err, "expected error from cancelled context in getImports")
+}
+
+// ─────────────────────────────────────────────────────────
+// listInternalPackages error path test
+// ─────────────────────────────────────────────────────────
+
+func TestListInternalPackages_ErrorPath(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	subdir := filepath.Join(tmpDir, "subdir")
+	require.NoError(t, os.MkdirAll(subdir, 0000))
+	t.Cleanup(func() {
+		if err := os.Chmod(subdir, 0755); err != nil {
+			t.Logf("cleanup: chmod %s: %v", subdir, err)
+		}
+	})
+
+	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	_, err := a.listInternalPackages(tmpDir)
+	require.Error(t, err)
 }
 
 // ─────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -378,8 +379,8 @@ func TestInfoManager_GetFileSkeleton(t *testing.T) {
 	})
 }
 
-// errorFileSystem implements persistence.FileSystem and always returns error from Walk and ReadFile.
-// Used to test error paths in GetProjectSummary and collectFileStats.
+// errorFileSystem implements persistence.FileSystem and always returns error from Walk, ReadFile, and Open.
+// Used to test error paths in GetProjectSummary, collectFileStats, and countLines.
 type errorFileSystem struct {
 	persistence.FileSystem
 }
@@ -391,6 +392,20 @@ func (e *errorFileSystem) Walk(ctx context.Context, root string, fn persistence.
 func (e *errorFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	return nil, fmt.Errorf("read error")
 }
+
+func (e *errorFileSystem) Open(ctx context.Context, name string) (persistence.File, error) {
+	return nil, fmt.Errorf("open error")
+}
+
+// fakeFileInfo implements os.FileInfo for use in tests that need a minimal FileInfo value.
+type fakeFileInfo struct{}
+
+func (f fakeFileInfo) Name() string       { return "test.go" }
+func (f fakeFileInfo) Size() int64        { return 100 }
+func (f fakeFileInfo) Mode() os.FileMode  { return 0644 }
+func (f fakeFileInfo) ModTime() time.Time { return time.Now() }
+func (f fakeFileInfo) IsDir() bool        { return false }
+func (f fakeFileInfo) Sys() interface{}   { return nil }
 
 func TestGetFileSkeleton_ErrorPaths(t *testing.T) {
 	t.Parallel()
@@ -477,4 +492,64 @@ func TestFormatDocOutput_Error(t *testing.T) {
 	if !strings.Contains(result.Text, "partial output") {
 		t.Errorf("expected partial output in result, got: %s", result.Text)
 	}
+}
+
+// TestInfoManager_RemainingErrorPaths covers error branches not exercised by other tests.
+//
+// Scenarios covered:
+//
+//	A. recordGoStats: countLines returns an error → silently ignored (totalLOC unchanged)
+//	B. makeWalkFunc: Walk passes non-nil err to WalkFunc → returns nil (silent skip)
+//	C. countLines: scanner.Err() after partial scan → defensive branch; untriggerable in unit
+//	   tests without a mock file that fails mid-read; covered by scanner contract.
+//	D. countLines: FS.Open returns an error → error propagated
+func TestInfoManager_RemainingErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("recordGoStats_countLines_error", func(t *testing.T) {
+		t.Parallel()
+		// Scenario A: cache miss + FS.Open error in countLines
+		fs := &errorFileSystem{}
+		m := &infoManager{
+			FS:     fs,
+			Policy: infra_persistence.NewWorkspacePolicy(),
+			Cache:  nil, // force cache miss
+		}
+		stats := &projectStats{
+			fileCounts: make(map[string]int),
+			packages:   make(map[string]bool),
+		}
+		m.recordGoStats(context.Background(), "test.go", fakeFileInfo{}, stats)
+		// Should not panic; totalLOC stays 0 (error silently ignored)
+		if stats.totalLOC != 0 {
+			t.Errorf("expected totalLOC=0 after countLines error, got %d", stats.totalLOC)
+		}
+	})
+
+	t.Run("makeWalkFunc_walk_error_param", func(t *testing.T) {
+		t.Parallel()
+		// Scenario B: Walk passes error to WalkFunc
+		m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+		stats := &projectStats{fileCounts: make(map[string]int), packages: make(map[string]bool)}
+		wf := m.makeWalkFunc(context.Background(), stats, nil)
+		err := wf("/some/path", fakeFileInfo{}, fmt.Errorf("permission denied"))
+		// Should return nil (silent skip)
+		if err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	})
+
+	t.Run("countLines_open_error", func(t *testing.T) {
+		t.Parallel()
+		// Scenario D: FS.Open returns error
+		fs := &errorFileSystem{}
+		m := &infoManager{FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
+		loc, err := m.countLines(context.Background(), "test.go")
+		if err == nil {
+			t.Error("expected error from FS.Open, got nil")
+		}
+		if loc != 0 {
+			t.Errorf("expected loc=0 on error, got %d", loc)
+		}
+	})
 }

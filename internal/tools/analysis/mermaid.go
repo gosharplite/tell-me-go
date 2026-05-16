@@ -144,6 +144,10 @@ func (d *cycleDetector) dfs(u string) {
 	// Sort deps for deterministic cycle detection if multiple exist
 	sort.Strings(deps)
 	for _, v := range deps {
+		if v == u {
+			// Self-loops are trivial; skip cycle marking
+			continue
+		}
 		if !d.visited[v] {
 			d.dfs(v)
 		} else if d.onStack[v] {

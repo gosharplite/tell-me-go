@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
 
@@ -411,4 +413,70 @@ func TestMigrateTasks_EmptyTasksArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrateTasks with empty array returned error: %v", err)
 	}
+}
+
+// =============================================================================
+// TestInitSQLiteDB_ErrorPaths — coverage for NewSQLiteDB constructor error branches
+// =============================================================================
+
+func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sqlOpen_failure", func(t *testing.T) {
+		t.Parallel()
+
+		origOpen := sqlOpenFn
+		t.Cleanup(func() { sqlOpenFn = origOpen })
+
+		sqlOpenFn = func(driverName, dsn string) (*sql.DB, error) {
+			return nil, fmt.Errorf("injected open failure")
+		}
+
+		_, err := initSQLiteDB(context.Background(), "/some/path")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to open sqlite db")
+		assert.Contains(t, err.Error(), "injected open failure")
+	})
+
+	t.Run("createTables_failure", func(t *testing.T) {
+		t.Parallel()
+
+		db, err := sql.Open("sqlite", ":memory:")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+
+		// Make the database read-only so that ExecContext calls fail.
+		_, err = db.Exec("PRAGMA query_only = 1")
+		require.NoError(t, err)
+
+		err = createTables(context.Background(), db)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "executing schema query")
+	})
+
+	t.Run("executeBatchInsert_failure", func(t *testing.T) {
+		t.Parallel()
+
+		db, err := sql.Open("sqlite", ":memory:")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+
+		// Create the tasks table so the INSERT statement itself is valid.
+		_, err = db.Exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);")
+		require.NoError(t, err)
+
+		tx, err := db.BeginTx(context.Background(), nil)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback() }()
+
+		rows := []taskRow{
+			{ID: 1, Content: "Test", Status: "pending", CreatedAt: "2025-01-01T00:00:00Z"},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err = executeBatchInsert(ctx, tx, rows)
+		require.Error(t, err)
+	})
 }
