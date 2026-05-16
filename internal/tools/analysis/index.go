@@ -6,12 +6,10 @@ package analysis
 import (
 	"context"
 	"go/token"
+	"golang.org/x/tools/go/packages"
 	"path/filepath"
 	"sync"
 	"time"
-
-	"golang.org/x/sync/singleflight"
-	"golang.org/x/tools/go/packages"
 )
 
 // location represents a position in a source file.
@@ -77,22 +75,29 @@ type indexer struct {
 
 	symbolsByPath                  map[string][]symbolLocation
 	usagesByName                   map[string][]location
-	implementations                map[string][]string // interface method id -> concrete method ids
+	implsCache                     *implCacheEntry // replaced on each Refresh; cycle-bound to prevent stale writeback
 	lastRefresh                    time.Time
-	refreshMu                      sync.Mutex         // For serializing Refresh calls
-	sfGroup                        singleflight.Group // de-dupes concurrent computeImplementations calls
-	testComputeImplementationsHook func()             // Test hook: nil in production (ADR-032)
+	refreshMu                      sync.Mutex // For serializing Refresh calls
+	testComputeImplementationsHook func()     // Test hook: nil in production (ADR-032)
+}
+
+// implCacheEntry bundles a sync.Once gate with its computed result.
+// Each Refresh cycle allocates a fresh entry, ensuring old computations
+// cannot poison the new cycle's cache (see Issue #449).
+type implCacheEntry struct {
+	once  sync.Once
+	impls map[string][]string
 }
 
 const refreshTTL = 5 * time.Second
 
 func newIndexer(dir string) (*indexer, error) {
 	return &indexer{
-		dir:             dir,
-		fset:            token.NewFileSet(),
-		symbolsByPath:   make(map[string][]symbolLocation),
-		usagesByName:    make(map[string][]location),
-		implementations: make(map[string][]string),
+		dir:           dir,
+		fset:          token.NewFileSet(),
+		symbolsByPath: make(map[string][]symbolLocation),
+		usagesByName:  make(map[string][]location),
+		implsCache:    &implCacheEntry{},
 	}, nil
 }
 
@@ -253,7 +258,7 @@ func (idx *indexer) updateState(pkgs []*packages.Package, symbolsByPath map[stri
 	idx.fset = fset
 	idx.symbolsByPath = symbolsByPath
 	idx.usagesByName = usagesByName
-	idx.implementations = nil // invalidated; lazily recomputed by GetImplementations (ADR-029)
+	idx.implsCache = &implCacheEntry{} // fresh cycle gate; old entry abandoned and GC'd (Issue #449)
 	idx.lastRefresh = time.Now()
 }
 
