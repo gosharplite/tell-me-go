@@ -114,57 +114,28 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 }
 
 func (idx *indexer) computeImplementationsLazy() map[string][]string {
-	// Fast path: if the cache is already populated, return it immediately.
-	// This avoids the singleflight overhead and prevents a race where
-	// the singleflight function completes before all concurrent callers
-	// have registered their DoChan calls (the key is forgotten once the
-	// function returns, causing late callers to start a new execution
-	// instead of receiving the cached result).
+	// Capture the cache entry and pkgs snapshot for this cycle under RLock.
+	// updateState replaces idx.implsCache under Lock, so this captured pointer
+	// is stable for the lifetime of this invocation — no data race.
 	idx.mu.RLock()
-	if impls := idx.implementations; impls != nil {
-		idx.mu.RUnlock()
-		return impls
-	}
+	cache := idx.implsCache
+	pkgs := idx.pkgs
 	idx.mu.RUnlock()
 
-	// Use Do (not DoChan) to guarantee that all concurrent callers
-	// block until the function completes. DoChan runs the function
-	// asynchronously; if it completes before all callers register,
-	// late callers start a redundant second execution.
-	v, err, _ := idx.sfGroup.Do("implementations", func() (any, error) {
-		idx.mu.RLock()
-		pkgs := idx.pkgs
-		idx.mu.RUnlock()
-
-		impls := idx.computeImplementations(pkgs)
-
-		idx.mu.Lock()
-		idx.implementations = impls
-		idx.mu.Unlock()
-
-		return impls, nil
+	// Execute exactly once per cache entry. All concurrent callers that
+	// captured the same cache pointer block here until the winner populates
+	// cache.impls. The sync.Once provides a happens-before edge, so the
+	// read of cache.impls below is safe without additional locking.
+	cache.once.Do(func() {
+		cache.impls = idx.computeImplementations(pkgs)
 	})
 
-	if err != nil || v == nil {
-		return nil
-	}
-	return v.(map[string][]string)
+	return cache.impls
 }
 
 func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
 	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil
 	}
-	idx.mu.RLock()
-	impls := idx.implementations
-	idx.mu.RUnlock()
-
-	// Lazy gate: Refresh() invalidates implementations (sets to nil).
-	// First caller after TTL expiry triggers the full O(N×M) computation
-	// via singleflight-guarded computeImplementationsLazy(). See ADR-029.
-	if impls == nil {
-		impls = idx.computeImplementationsLazy()
-	}
-
-	return impls[interfaceMethodId]
+	return idx.computeImplementationsLazy()[interfaceMethodId]
 }

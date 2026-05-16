@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestComputeImplementationsLazy_ErrorPath verifies that when the singleflight
-// callback panics (simulated via the ADR-032 test hook), computeImplementationsLazy
-// does not return a partially-computed result. The singleflight.Group.Do re-panics
-// when the callback panics, so we recover in the test and assert the result is nil.
-// After clearing the hook, normal operation is restored.
+// TestComputeImplementationsLazy_ErrorPath verifies that when computeImplementations
+// panics (simulated via the ADR-032 test hook), computeImplementationsLazy does not
+// return a partially-computed result. sync.Once propagates the panic to the caller
+// of Do, so we recover in the test and assert the result is nil. After clearing the
+// hook and creating a fresh cache entry, normal operation is restored.
 func TestComputeImplementationsLazy_ErrorPath(t *testing.T) {
 	t.Parallel()
 
@@ -46,31 +46,30 @@ func TestComputeImplementationsLazy_ErrorPath(t *testing.T) {
 	impls := idx.computeImplementationsLazy()
 	require.NotEmpty(t, impls, "expected at least one implementation in test workspace")
 
-	// Invalidate the cache so the next call enters the singleflight path.
+	// Invalidate the cache so the next call enters the lazy path.
 	idx.mu.Lock()
-	idx.implementations = nil
+	idx.implsCache = &implCacheEntry{}
 	idx.mu.Unlock()
 
 	// Wire the test hook to simulate a failure mid-computation.
-	// It sets a sentinel value into idx.implementations (simulating a partial
-	// write) and then panics. The singleflight.Group.Do catches the panic,
-	// wraps it as a *panicError, and re-panics to the caller.
+	// It sets a sentinel value into idx.implsCache.impls (simulating a partial
+	// write) and then panics.
 	sentinel := map[string][]string{"sentinel": {"value"}}
 	idx.testComputeImplementationsHook = func() {
 		idx.mu.Lock()
-		idx.implementations = sentinel
+		idx.implsCache.impls = sentinel
 		idx.mu.Unlock()
 		panic("test-induced panic in computeImplementations")
 	}
 
 	// Call computeImplementationsLazy with a recover barrier.
-	// The singleflight re-panics, so computeImplementationsLazy never
+	// sync.Once propagates the panic, so computeImplementationsLazy never
 	// returns normally — the result variable stays nil (zero value).
 	var result map[string][]string
 	func() {
 		defer func() {
 			r := recover()
-			require.NotNil(t, r, "expected panic to propagate from singleflight")
+			require.NotNil(t, r, "expected panic to propagate from sync.Once")
 		}()
 		result = idx.computeImplementationsLazy()
 	}()
@@ -81,7 +80,7 @@ func TestComputeImplementationsLazy_ErrorPath(t *testing.T) {
 	// (the sentinel was written by the hook before the panic).
 	idx.testComputeImplementationsHook = nil
 	idx.mu.Lock()
-	idx.implementations = nil
+	idx.implsCache = &implCacheEntry{}
 	idx.mu.Unlock()
 
 	// Third call: normal operation is restored, real implementations are computed.

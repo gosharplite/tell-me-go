@@ -45,7 +45,7 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 	// Step 2: Discover a valid interface-method ID by computing
 	// implementations directly. We use computeImplementationsLazy
 	// (same package) to get the full map and pick a key.
-	// This also primes the implementations cache (idx.implementations).
+	// This also primes the implementations cache (idx.implsCache.impls).
 	knownMap := idx.computeImplementationsLazy()
 	require.NotEmpty(t, knownMap, "expected at least one implementation from test workspace")
 
@@ -58,7 +58,7 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 
 	// Freeze the indexer state so subsequent GetImplementations calls
 	// do NOT invoke Refresh → loadPackages → packages.Load.
-	// This isolates the singleflight coalescing test from external
+	// This isolates the coalescing test from external
 	// package-load failures.
 	idx.mu.Lock()
 	idx.lastRefresh = time.Now().Add(1 * time.Hour)
@@ -74,7 +74,7 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 
 	// Step 3: Invalidate the cache and reset counter
 	idx.mu.Lock()
-	idx.implementations = nil
+	idx.implsCache = &implCacheEntry{}
 	idx.mu.Unlock()
 	computeCount.Store(0)
 
@@ -112,7 +112,7 @@ func (e EnglishGreeter) Greet() string { return "hello" }
 
 	// Step 5: Assertions — unchanged
 	assert.Equal(t, int64(1), computeCount.Load(),
-		"singleflight must coalesce N concurrent calls into exactly 1 compute")
+		"sync.Once must coalesce N concurrent calls into exactly 1 compute")
 	for i := 0; i < N; i++ {
 		assert.NotNil(t, results[i])
 	}
