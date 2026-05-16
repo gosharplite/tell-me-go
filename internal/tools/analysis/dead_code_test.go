@@ -1437,3 +1437,179 @@ func TestIsEligibleForHarvest_EdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildFileToPkgMap_CompiledGoFilesFallback(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+
+	t.Run("CompiledGoFiles duplicates GoFiles skipped", func(t *testing.T) {
+		t.Parallel()
+		pkgs := []*packages.Package{
+			{
+				PkgPath:         "example.com/pkg",
+				GoFiles:         []string{"/a/file.go"},
+				CompiledGoFiles: []string{"/a/file.go"},
+			},
+		}
+		got := analyzer.buildFileToPkgMap(pkgs)
+		assert.Len(t, got, 1)
+		assert.Equal(t, "example.com/pkg", got["/a/file.go"])
+	})
+
+	t.Run("CompiledGoFiles adds new file", func(t *testing.T) {
+		t.Parallel()
+		pkgs := []*packages.Package{
+			{
+				PkgPath:         "example.com/pkg",
+				GoFiles:         []string{"/a/file.go"},
+				CompiledGoFiles: []string{"/a/file.go", "/a/gen.go"},
+			},
+		}
+		got := analyzer.buildFileToPkgMap(pkgs)
+		assert.Len(t, got, 2)
+		assert.Equal(t, "example.com/pkg", got["/a/file.go"])
+		assert.Equal(t, "example.com/pkg", got["/a/gen.go"])
+	})
+}
+
+func TestTrackExternalUsages_SamePackageNoExternal(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("same package usage does not increment externalUses", func(t *testing.T) {
+		t.Parallel()
+		state := &scanState{
+			targetModule: "example.com/test",
+			declarations: map[string]*symMeta{
+				"example.com/test/pkg.Foo": {
+					id:      "example.com/test/pkg.Foo",
+					pkgPath: "example.com/test/pkg",
+					name:    "Foo",
+					symType: "Function",
+				},
+			},
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+		fileToPkg := map[string]string{"/tmp/file.go": "example.com/test/pkg"} // same package
+
+		mockIdx := &mockSymbolIndex{
+			IsSymbolUsedFunc: func(ctx context.Context, name string, hb chan<- struct{}) bool { return true },
+			GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+				return []location{{Path: "/tmp/file.go", Line: 1, Column: 1}}, nil
+			},
+		}
+
+		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, state.totalUses["example.com/test/pkg.Foo"])
+		assert.Equal(t, 0, state.externalUses["example.com/test/pkg.Foo"])
+	})
+
+	t.Run("usage file not in fileToPkg is skipped", func(t *testing.T) {
+		t.Parallel()
+		state := &scanState{
+			targetModule: "example.com/test",
+			declarations: map[string]*symMeta{
+				"example.com/test/pkg.Foo": {
+					id:      "example.com/test/pkg.Foo",
+					pkgPath: "example.com/test/pkg",
+					name:    "Foo",
+					symType: "Function",
+				},
+			},
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+		// fileToPkg does NOT contain the usage file path
+		fileToPkg := map[string]string{}
+
+		mockIdx := &mockSymbolIndex{
+			IsSymbolUsedFunc: func(ctx context.Context, name string, hb chan<- struct{}) bool { return true },
+			GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+				return []location{{Path: "/unknown/file.go", Line: 1, Column: 1}}, nil
+			},
+		}
+
+		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, state.totalUses["example.com/test/pkg.Foo"])
+		assert.Equal(t, 0, state.externalUses["example.com/test/pkg.Foo"])
+	})
+}
+
+func TestIsInterfaceMethod_NonFuncGuard(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+	obj := types.NewVar(token.NoPos, nil, "x", types.Typ[types.Int])
+	assert.False(t, analyzer.isInterfaceMethod(obj))
+}
+
+func TestRunAnalysisPipeline_EmptyPathDefaultsToDot(t *testing.T) {
+	// Not parallel: changes working directory so that "."
+	// resolves inside the security provider's allowed tempDir.
+	tmpDir := t.TempDir()
+	sp := &deadCodeSecurityProvider{tempDir: tmpDir}
+
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module empty.test\n\ngo 1.25"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}"), 0644))
+
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { require.NoError(t, os.Chdir(origDir)) }()
+
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
+	require.NoError(t, idx.Refresh(context.Background(), nil))
+
+	analyzer := newDeadCodeAnalyzer(sp, idx)
+	state, err := analyzer.runAnalysisPipeline(context.Background(), "", nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, state)
+}
+
+func TestAnalyzeUsages_Heartbeat(t *testing.T) {
+	t.Parallel()
+
+	state := &scanState{
+		targetModule: "example.com/test",
+		pkgs:         []*packages.Package{},
+		declarations: make(map[string]*symMeta),
+		totalUses:    make(map[string]int),
+		externalUses: make(map[string]int),
+	}
+	for i := 0; i < 21; i++ {
+		id := fmt.Sprintf("example.com/test/pkg.Symbol%d", i)
+		state.declarations[id] = &symMeta{
+			id:      id,
+			pkgPath: "example.com/test/pkg",
+			name:    fmt.Sprintf("Symbol%d", i),
+			symType: "Function",
+		}
+	}
+	mockIdx := &mockSymbolIndex{
+		IsSymbolUsedFunc:       func(ctx context.Context, name string, hb chan<- struct{}) bool { return false },
+		GetImplementationsFunc: func(ctx context.Context, id string) []string { return nil },
+	}
+
+	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+	hb := make(chan struct{}, 1)
+	analyzer.analyzeUsages(context.Background(), state, "/tmp/proj", hb)
+
+	select {
+	case <-hb:
+		// heartbeat received
+	default:
+		t.Error("expected heartbeat on hb channel")
+	}
+}
