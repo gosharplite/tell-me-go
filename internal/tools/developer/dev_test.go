@@ -1130,6 +1130,19 @@ func TestRunTests_ValidateStructureError(t *testing.T) {
 	}
 }
 
+func TestValidateTestCommand_SplitError(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	m.validator.(*toolstest.MockCommandValidator).SplitFunc = func(cmd string) ([]string, error) {
+		return nil, fmt.Errorf("unclosed quote in command")
+	}
+
+	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error parsing command")
+	assert.Contains(t, err.Error(), "unclosed quote in command")
+}
+
 func TestGetCoverage_UnmarshalError(t *testing.T) {
 	t.Parallel()
 	m, _, _ := setupDevManager(t)
@@ -1223,4 +1236,12 @@ func TestRunLinter_AuthorizationError(t *testing.T) {
 	if !strings.Contains(err.Error(), "auth backend timeout") {
 		t.Errorf("expected 'auth backend timeout' in error, got: %v", err)
 	}
+}
+
+func TestRealExecutor_Execute(t *testing.T) {
+	t.Parallel()
+	e := &realExecutor{}
+	out, err := e.Execute(context.Background(), "echo", "hello")
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "hello")
 }
