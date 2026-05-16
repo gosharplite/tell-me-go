@@ -2,9 +2,17 @@ package openai
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
+
+// errUnhandledBlockType is a sentinel for appendPartsFromBlock's default
+// case. Callers at the output-item level (not content-block level) ignore
+// this error because output-item types such as "call" and "message" are
+// not content-block types and are handled by fallback logic.
+var errUnhandledBlockType = errors.New("unhandled content block type")
 
 // ---------------------------------------------------------------------------
 // Responses API sink
@@ -98,7 +106,9 @@ func (c *client) fromResponsesAPIResponse(resp *responsesAPIResponse, duration f
 func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem) error {
 	if out.Message != nil {
 		for _, cb := range out.Message.Content {
-			c.appendPartsFromBlock(content, cb)
+			if err := c.appendPartsFromBlock(content, cb); err != nil {
+				return err
+			}
 		}
 		if err := c.parseResponseToolCalls(out.Message.ToolCalls, content); err != nil {
 			return err
@@ -114,11 +124,21 @@ func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem
 			Reasoning:  out.Reasoning,
 			Refusal:    out.Refusal,
 		}
-		c.appendPartsFromBlock(content, cb)
+		if err := c.appendPartsFromBlock(content, cb); err != nil {
+			// Output-item types (e.g., "call", "message") are not
+			// content-block types; they are handled by the fallback
+			// logic below. Only propagate errors that are not about
+			// unhandled block types at this level.
+			if !errors.Is(err, errUnhandledBlockType) {
+				return err
+			}
+		}
 
 		// Fallback for items that put blocks in a top-level array
 		for _, childCb := range out.Content {
-			c.appendPartsFromBlock(content, childCb)
+			if err := c.appendPartsFromBlock(content, childCb); err != nil {
+				return err
+			}
 		}
 
 		// Top-level tool calls in output item
@@ -134,7 +154,12 @@ func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem
 			targetArgs = out.Function.Arguments
 		}
 		if targetName != "" {
-			_ = c.appendToolCall(content, out.ID, targetName, targetArgs)
+			if out.ID == "" {
+				return fmt.Errorf("invalid tool payload: missing ID for top-level tool call '%s'", targetName)
+			}
+			if err := c.appendToolCall(content, out.ID, targetName, targetArgs); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -144,7 +169,7 @@ func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem
 // Content block handlers (Responses API)
 // ---------------------------------------------------------------------------
 
-func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) {
+func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) error {
 	switch cb.Type {
 	case "text", "output_text", "input_text":
 		c.handleTextBlock(content, cb)
@@ -155,8 +180,9 @@ func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) {
 	case "refusal":
 		c.handleRefusalBlock(content, cb)
 	default:
-		c.logger.Debug("unhandled content block type", "type", cb.Type)
+		return fmt.Errorf("%w %q: this provider API change must be addressed", errUnhandledBlockType, cb.Type)
 	}
+	return nil
 }
 
 func (c *client) handleTextBlock(content *llm.Content, cb contentBlock) {
