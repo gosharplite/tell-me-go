@@ -148,7 +148,11 @@ func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, fset *t
 
 	// Capture exported methods
 	if tn, ok := obj.(*types.TypeName); ok {
-		if named, ok := tn.Type().(*types.Named); ok {
+		t := tn.Type()
+		if alias, ok := t.(*types.Alias); ok {
+			t = types.Unalias(alias)
+		}
+		if named, ok := t.(*types.Named); ok {
 			a.harvestNamedMethods(named, fset, state)
 			if itf, ok := named.Underlying().(*types.Interface); ok {
 				a.harvestInterfaceMethods(itf, fset, state)

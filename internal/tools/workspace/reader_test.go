@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -968,5 +969,522 @@ func TestGetFileDiff_SecurityErrorFile2(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "security") {
 		t.Errorf("expected security error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Local mockFileInfo for reader tests
+// ---------------------------------------------------------------------------
+
+type mockFileInfo struct {
+	name  string
+	size  int64
+	isDir bool
+}
+
+func (m *mockFileInfo) Name() string       { return m.name }
+func (m *mockFileInfo) Size() int64        { return m.size }
+func (m *mockFileInfo) Mode() os.FileMode  { return 0 }
+func (m *mockFileInfo) ModTime() time.Time { return time.Time{} }
+func (m *mockFileInfo) IsDir() bool        { return m.isDir }
+func (m *mockFileInfo) Sys() interface{}   { return nil }
+
+// ---------------------------------------------------------------------------
+// mockFS_ReadDirError — fails ReadDir for getTree error-path coverage
+// ---------------------------------------------------------------------------
+
+type mockFS_ReadDirError struct {
+	persistence.FileSystem
+	readDirErr error
+}
+
+func (m *mockFS_ReadDirError) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
+	return nil, m.readDirErr
+}
+
+func (m *mockFS_ReadDirError) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	return &mockFileInfo{name: filepath.Base(name), isDir: true}, nil
+}
+
+func TestGetTree_ReadDirError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.RegisterSafePath(t.TempDir())
+
+	mfs := &mockFS_ReadDirError{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		readDirErr: fmt.Errorf("I/O error"),
+	}
+
+	r := &fileReader{
+		sm:     sm,
+		fs:     mfs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	ctx := context.Background()
+	_, err := r.getTree(ctx, map[string]interface{}{
+		"path":   "/tmp",
+		"reason": "test",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error from ReadDir failure")
+	}
+	if !strings.Contains(err.Error(), "I/O error") {
+		t.Errorf("expected 'I/O error', got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestReadFiles_TooManyFiles — exercises the > maxFilesPerCall path
+// ---------------------------------------------------------------------------
+
+func TestReadFiles_TooManyFiles(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	paths := make([]string, 51)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("/tmp/file%d.txt", i)
+	}
+
+	ctx := context.Background()
+	res, err := r.readFiles(ctx, map[string]interface{}{
+		"filepaths": paths,
+		"reason":    "test",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "requested too many files") {
+		t.Errorf("expected 'requested too many files', got: %q", res.Text)
+	}
+	if !strings.Contains(res.Text, "Maximum is 50") {
+		t.Errorf("expected 'Maximum is 50', got: %q", res.Text)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// mockFS_StatError_Reader — fails Stat for processSingleFile error-path coverage
+// ---------------------------------------------------------------------------
+
+type mockFS_StatError_Reader struct {
+	persistence.FileSystem
+	statErr error
+}
+
+func (m *mockFS_StatError_Reader) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	return nil, m.statErr
+}
+
+func TestProcessSingleFile_StatError_MockFS(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.RegisterSafePath(t.TempDir())
+
+	statErr := fmt.Errorf("stat failure")
+	mfs := &mockFS_StatError_Reader{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		statErr:    statErr,
+	}
+
+	r := &fileReader{
+		sm:     sm,
+		fs:     mfs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	var sb strings.Builder
+	err := r.processSingleFile(context.Background(), "/tmp/nonexistent.txt", &sb)
+	if err != nil {
+		t.Fatalf("unexpected error from processSingleFile: %v", err)
+	}
+
+	output := sb.String()
+	if !strings.Contains(output, "ERROR: failed to read file") {
+		t.Errorf("expected 'ERROR: failed to read file' in output, got: %q", output)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// getTree default path and maxDepth edge cases
+// ---------------------------------------------------------------------------
+
+func TestGetTree_DefaultPath(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	ctx := context.Background()
+
+	// No path provided — should default to "."
+	res, err := r.getTree(ctx, map[string]interface{}{
+		"reason": "test",
+	}, nil)
+	if err != nil {
+		t.Fatalf("getTree with default path failed: %v", err)
+	}
+	if res.Text == "" {
+		t.Error("expected non-empty output for default path")
+	}
+}
+
+func TestGetTree_DefaultMaxDepth(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "a/b/c"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "a/b/c/d.txt"), []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	ctx := context.Background()
+
+	// max_depth=0 should default to 2
+	res, err := r.getTree(ctx, map[string]interface{}{
+		"path":      tempDir,
+		"max_depth": 0,
+		"reason":    "test",
+	}, nil)
+	if err != nil {
+		t.Fatalf("getTree with max_depth=0 failed: %v", err)
+	}
+	// With default maxDepth=2, we should see dirs a, b, c but NOT file d (depth 3)
+	if !strings.Contains(res.Text, "a") {
+		t.Error("expected 'a' in output")
+	}
+	if !strings.Contains(res.Text, "b") {
+		t.Error("expected 'b' in output")
+	}
+	if strings.Contains(res.Text, "d.txt") {
+		t.Error("expected 'd.txt' NOT in output with maxDepth=2 (it is at depth 4)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildTree depth > maxDepth early return
+// ---------------------------------------------------------------------------
+
+func TestBuildTree_DepthExceedsMaxDepth(t *testing.T) {
+	fs := persistence.NewMockFileSystem()
+	if err := fs.WriteFile(context.Background(), "deep/file.txt", []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var sb strings.Builder
+	ctx := context.Background()
+
+	// depth (3) > maxDepth (2), should return immediately without error
+	err := buildTree(ctx, fs, ".", "", 3, 2, &sb, nil)
+	if err != nil {
+		t.Fatalf("expected nil when depth exceeds maxDepth, got: %v", err)
+	}
+	if sb.Len() != 0 {
+		t.Errorf("expected empty output when depth exceeds maxDepth, got: %q", sb.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// getFileDiff file1 security rejection
+// ---------------------------------------------------------------------------
+
+func TestGetFileDiff_SecurityErrorFile1(t *testing.T) {
+	tempDir := t.TempDir()
+	f2 := filepath.Join(tempDir, "f2.txt")
+	if err := os.WriteFile(f2, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		if strings.Contains(path, "f1") {
+			return "", fmt.Errorf("security: path not allowed")
+		}
+		return path, nil
+	}
+
+	r := &fileReader{
+		sm:       sm,
+		fs:       persistencetest.NewPlainOSFileSystem(),
+		policy:   infra_persistence.NewWorkspacePolicy(),
+		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+	}
+	ctx := context.Background()
+
+	_, err := r.getFileDiff(ctx, map[string]interface{}{
+		"file1":  filepath.Join(tempDir, "f1.txt"),
+		"file2":  f2,
+		"reason": "testing",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected security error for file1")
+	}
+	if !strings.Contains(err.Error(), "security") {
+		t.Errorf("expected security error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// getTree invalid args and security error
+// ---------------------------------------------------------------------------
+
+func TestGetTree_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	_, err := r.getTree(context.Background(), map[string]interface{}{
+		"path": 123, // wrong type
+	}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for invalid args")
+	}
+}
+
+func TestGetTree_SecurityError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("security: path not allowed")
+	}
+
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	_, err := r.getTree(context.Background(), map[string]interface{}{
+		"path":   "/tmp",
+		"reason": "test",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected security error")
+	}
+	if !strings.Contains(err.Error(), "security") {
+		t.Errorf("expected 'security' in error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildTree: writeTreeEntry error propagation (indirect via nested ReadDir failure)
+// ---------------------------------------------------------------------------
+
+type mockFS_NestedReadDirError struct {
+	persistence.FileSystem
+	failAfter int
+	callCount int
+}
+
+func (m *mockFS_NestedReadDirError) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
+	m.callCount++
+	if m.callCount > m.failAfter {
+		return nil, fmt.Errorf("nested I/O error")
+	}
+	// Delegate to the real FS
+	return m.FileSystem.ReadDir(ctx, name)
+}
+
+func TestBuildTree_WriteTreeEntryError(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, "sub/nested"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "sub/nested/f.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fail ReadDir after the first successful call (root read succeeds, sub read fails)
+	mfs := &mockFS_NestedReadDirError{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		failAfter:  1,
+	}
+
+	var sb strings.Builder
+	ctx := context.Background()
+	err := buildTree(ctx, mfs, tempDir, "", 0, 2, &sb, nil)
+	if err == nil {
+		t.Fatal("expected error from nested ReadDir failure")
+	}
+	if !strings.Contains(err.Error(), "nested I/O error") {
+		t.Errorf("expected 'nested I/O error', got: %v", err)
+	}
+	// The root entry should have been written before the error
+	if !strings.Contains(sb.String(), "sub") {
+		t.Errorf("expected 'sub' in output before error, got: %q", sb.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// processSingleFile: readBoundedContent error path (Open failure after Stat success)
+// ---------------------------------------------------------------------------
+
+type mockFS_OpenErrorAfterStat struct {
+	persistence.FileSystem
+	openErr error
+}
+
+func (m *mockFS_OpenErrorAfterStat) Open(ctx context.Context, name string) (persistence.File, error) {
+	return nil, m.openErr
+}
+
+func TestProcessSingleFile_ReadError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.RegisterSafePath(tempDir)
+
+	mfs := &mockFS_OpenErrorAfterStat{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		openErr:    fmt.Errorf("open failure"),
+	}
+
+	r := &fileReader{
+		sm:     sm,
+		fs:     mfs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	var sb strings.Builder
+	err := r.processSingleFile(context.Background(), path, &sb)
+	if err != nil {
+		t.Fatalf("processSingleFile should not return error: %v", err)
+	}
+
+	output := sb.String()
+	if !strings.Contains(output, "ERROR: failed to read file") {
+		t.Errorf("expected 'ERROR: failed to read file' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "open failure") {
+		t.Errorf("expected 'open failure' in output, got: %q", output)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// listFiles: ReadDir error path
+// ---------------------------------------------------------------------------
+
+func TestListFiles_ReadDirError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	mfs := &mockFS_ReadDirError{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		readDirErr: fmt.Errorf("I/O error"),
+	}
+
+	r := &fileReader{
+		sm:     sm,
+		fs:     mfs,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	ctx := context.Background()
+	_, err := r.listFiles(ctx, map[string]interface{}{
+		"path":   "/tmp",
+		"reason": "test",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error from ReadDir failure")
+	}
+	if !strings.Contains(err.Error(), "failed to list directory") {
+		t.Errorf("expected 'failed to list directory', got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// findFile: filepath.Match error with malformed pattern
+// ---------------------------------------------------------------------------
+
+func TestFindFile_MalformedPattern(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tempDir, "test.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	// [unclosed is a malformed pattern that causes filepath.Match to return an error
+	_, err := r.findFile(context.Background(), map[string]interface{}{
+		"path":    tempDir,
+		"pattern": "[unclosed",
+		"reason":  "test",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error from malformed pattern")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// getFileDiff: unmarshal error with type-mismatched args
+// ---------------------------------------------------------------------------
+
+func TestGetFileDiff_UnmarshalError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	// file1 must be a string; passing an int triggers unmarshal error
+	_, err := r.getFileDiff(context.Background(), map[string]interface{}{
+		"file1":  123,
+		"file2":  "/tmp/f2.txt",
+		"reason": "test",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for type mismatch")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// listFiles: IsPathSafe error path
+// ---------------------------------------------------------------------------
+
+func TestListFiles_SecurityError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("security: path not allowed")
+	}
+
+	r := &fileReader{
+		sm:     sm,
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	_, err := r.listFiles(context.Background(), map[string]interface{}{
+		"path":   "/tmp",
+		"reason": "test",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected security error")
+	}
+	if !strings.Contains(err.Error(), "security") {
+		t.Errorf("expected 'security' in error, got: %v", err)
 	}
 }

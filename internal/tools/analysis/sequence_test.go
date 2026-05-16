@@ -9,8 +9,11 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -313,4 +316,301 @@ func TestSequenceAnalyzer_InterfaceTracing(t *testing.T) {
 	if !strings.Contains(res.Text, "itf->>+itf: Done") {
 		t.Errorf("failed to trace into interface implementation: %s", res.Text)
 	}
+}
+
+func TestNormalizeSymbolName(t *testing.T) {
+	t.Parallel()
+	a := newSequenceAnalyzer(nil, nil, nil)
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Foo", "Foo"},
+		{"pkg.Foo", "Foo"},
+		{"pkg.sub.Foo", "Foo"},
+		{"(*Type).Method", "Method"},
+		{"(Type).Method", "Method"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			got := a.normalizeSymbolName(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeSymbolName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsMethodMatch(t *testing.T) {
+	t.Parallel()
+	a := newSequenceAnalyzer(nil, nil, nil)
+
+	t.Run("function match without receiver", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+func MyFunc() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		fd := f.Decls[0].(*ast.FuncDecl)
+		if !a.isMethodMatch(fd, "MyFunc") {
+			t.Error("isMethodMatch should match plain function")
+		}
+	})
+
+	t.Run("method match with pointer receiver", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+type T struct{}
+func (t *T) Method() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		fd := f.Decls[1].(*ast.FuncDecl)
+		if !a.isMethodMatch(fd, "(*T).Method") {
+			t.Error("isMethodMatch should match pointer receiver method")
+		}
+	})
+
+	t.Run("method match with value receiver", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+type T struct{}
+func (t T) Method() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		fd := f.Decls[1].(*ast.FuncDecl)
+		if !a.isMethodMatch(fd, "(T).Method") {
+			t.Error("isMethodMatch should match value receiver method")
+		}
+	})
+
+	t.Run("receiver type mismatch", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+type T struct{}
+func (t *T) Foo() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		fd := f.Decls[1].(*ast.FuncDecl)
+		if a.isMethodMatch(fd, "(*U).Foo") {
+			t.Error("isMethodMatch should not match different receiver type")
+		}
+	})
+
+	t.Run("plain function vs method symbol", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+func Foo() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		fd := f.Decls[0].(*ast.FuncDecl)
+		if a.isMethodMatch(fd, "(*T).Foo") {
+			t.Error("isMethodMatch should not match method symbol on plain function")
+		}
+	})
+}
+
+func TestResolveStartFunc(t *testing.T) {
+	t.Parallel()
+	a := newSequenceAnalyzer(nil, nil, nil)
+
+	t.Run("finds function in package", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+func TargetFunc() {}
+func OtherFunc() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		pkg := &packages.Package{
+			Syntax: []*ast.File{f},
+		}
+		fd, err := a.resolveStartFunc(pkg, "TargetFunc")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if fd.Name.Name != "TargetFunc" {
+			t.Errorf("expected TargetFunc, got %s", fd.Name.Name)
+		}
+	})
+
+	t.Run("returns error when not found", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+func OtherFunc() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		pkg := &packages.Package{
+			Syntax: []*ast.File{f},
+		}
+		_, err := a.resolveStartFunc(pkg, "MissingFunc")
+		if err == nil {
+			t.Error("expected error for missing function")
+		}
+	})
+
+	t.Run("resolves method with receiver", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+type T struct{}
+func (t *T) Method() {}
+func StandaloneFunc() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		pkg := &packages.Package{
+			Syntax: []*ast.File{f},
+		}
+		fd, err := a.resolveStartFunc(pkg, "(*T).Method")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if fd.Name.Name != "Method" {
+			t.Errorf("expected Method, got %s", fd.Name.Name)
+		}
+	})
+
+	t.Run("falls back to bestMatch when no isMethodMatch succeeds", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+type T struct{}
+func (t *T) Method() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		pkg := &packages.Package{
+			Syntax: []*ast.File{f},
+		}
+		fd, err := a.resolveStartFunc(pkg, "Method")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// isMethodMatch fails for a method when remaining has no dot,
+		// but bestMatch captures it as fallback
+		if fd.Name.Name != "Method" {
+			t.Errorf("expected Method, got %s", fd.Name.Name)
+		}
+		if fd.Recv == nil {
+			t.Error("expected method with receiver (bestMatch fallback), got plain function")
+		}
+	})
+}
+
+// TestFindStartPackage_ModuleRelativeAndUnexported verifies that the full
+// findStartPackage → resolveStartFunc pipeline resolves both module-relative
+// and fully-qualified paths to unexported methods on unexported types.
+// This is a regression test for Issue #450.
+func TestFindStartPackage_ModuleRelativeAndUnexported(t *testing.T) {
+	t.Parallel()
+
+	// --- Setup: create a real Go workspace with an unexported type+method ---
+	tmpDir := t.TempDir()
+
+	goMod := []byte("module example.com/test\n\ngo 1.25\n")
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), goMod, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	src := []byte(`package test
+
+type internalCounter struct{ count int }
+
+func logCount(n int) int { return n }
+
+func (c *internalCounter) incrementBy(n int) int {
+	c.count += n
+	logCount(c.count)
+	return c.count
+}
+
+func Start(n int) int {
+	c := &internalCounter{}
+	return c.incrementBy(n)
+}
+`)
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), src, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Build the indexer against the real workspace ---
+	idx, err := newIndexer(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := idx.Refresh(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := idx.Packages(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Build the analyzer ---
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
+	// Pre-populate the analyzer state so loadPackages is a no-op.
+	analyzer.pkgMu.Lock()
+	analyzer.pkgs = pkgs
+	analyzer.funcMap = analyzer.mapSymbols(pkgs)
+	analyzer.lastLoad = time.Now().Add(1 * time.Hour)
+	analyzer.pkgMu.Unlock()
+
+	tests := []struct {
+		name        string
+		startSymbol string
+		wantFunc    string // expected function name in the diagram
+	}{
+		{
+			name:        "module-relative unexported method",
+			startSymbol: "example.com/test.(*internalCounter).incrementBy",
+			wantFunc:    "logCount",
+		},
+		{
+			name:        "module-relative exported free function",
+			startSymbol: "example.com/test.Start",
+			wantFunc:    "incrementBy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res, err := analyzer.AnalyzeSequenceFlow(ctx, map[string]interface{}{
+				"start_symbol": tt.startSymbol,
+				"max_depth":    float64(3),
+			}, nil)
+			if err != nil {
+				t.Fatalf("AnalyzeSequenceFlow failed: %v", err)
+			}
+			if res.Text == "" {
+				t.Fatal("expected non-empty diagram output")
+			}
+			if strings.Contains(res.Text, "Error") {
+				t.Fatalf("unexpected error in output: %s", res.Text)
+			}
+			if !strings.Contains(res.Text, tt.wantFunc) {
+				t.Errorf("diagram missing expected function %q:\n%s", tt.wantFunc, res.Text)
+			}
+		})
+	}
+}
+
+// parseTestFile is a helper that parses Go source into an AST.
+func parseTestFile(t *testing.T, code string) (*token.FileSet, *ast.File) {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "test.go", code, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	return fset, f
 }

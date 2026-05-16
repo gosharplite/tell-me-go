@@ -5,7 +5,9 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -169,5 +171,29 @@ func TestNewSessionState_InitRepositoriesFailure(t *testing.T) {
 	_, err := NewSessionState(ctx, badDir)
 	if err == nil {
 		t.Error("expected error from NewSessionState with invalid path, got nil")
+	}
+}
+
+// failingTaskStore is a ListStore[ports.Task] whose ReadAll always fails.
+type failingTaskStore struct{}
+
+func (s *failingTaskStore) ReadAll(ctx context.Context) ([]ports.Task, error) {
+	return nil, errors.New("simulated read failure")
+}
+func (s *failingTaskStore) Update(ctx context.Context, id float64, item ports.Task) error { return nil }
+func (s *failingTaskStore) Delete(ctx context.Context, id float64) error                  { return nil }
+func (s *failingTaskStore) DeleteAll(ctx context.Context) error                           { return nil }
+func (s *failingTaskStore) Append(ctx context.Context, item ports.Task) error             { return nil }
+
+func TestInitServices_InitializeFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, err := initServices(ctx, &failingTaskStore{})
+	if err == nil {
+		t.Fatal("expected error from initServices when Initialize fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "simulated read failure") {
+		t.Errorf("expected error to contain 'simulated read failure', got: %v", err)
 	}
 }

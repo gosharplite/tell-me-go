@@ -186,3 +186,49 @@ func TestTestEventBus_AssertEventPublished_EdgeCases(t *testing.T) {
 	// Wrong concrete type
 	assert.False(t, bus.AssertEventPublished(reflect.TypeOf(otherEvent{})))
 }
+
+// ----- CleanupBus tests -----
+
+// spyShutdownBus wraps TestEventBus and signals a channel when Shutdown is called.
+type spyShutdownBus struct {
+	*eventstest.TestEventBus
+	shutdownCalled chan struct{}
+}
+
+func (s *spyShutdownBus) Shutdown(ctx context.Context) error {
+	err := s.TestEventBus.Shutdown(ctx)
+	s.shutdownCalled <- struct{}{}
+	return err
+}
+
+func TestCleanupBus(t *testing.T) {
+	t.Run("shutdown_called_on_cleanup", func(t *testing.T) {
+		var spy *spyShutdownBus
+		t.Run("inner", func(t *testing.T) {
+			spy = &spyShutdownBus{
+				TestEventBus:   &eventstest.TestEventBus{},
+				shutdownCalled: make(chan struct{}, 1),
+			}
+			eventstest.CleanupBus(t, spy)
+		})
+		// t.Cleanup fires after the inner subtest returns but before
+		// t.Run returns. At this point Shutdown must have been called.
+		if spy == nil {
+			t.Fatal("spy was not initialised")
+		}
+		select {
+		case <-spy.shutdownCalled:
+			// pass — Shutdown was invoked by the cleanup hook
+		case <-time.After(time.Second):
+			t.Error("expected Shutdown to be called on cleanup, but it was not")
+		}
+	})
+
+	t.Run("shutdown_error_is_logged", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		bus.SetShutdownErr(errors.New("boom"))
+		eventstest.CleanupBus(t, bus)
+		// The error will be logged via t.Logf when cleanup fires.
+		// This subtest simply asserts no panic occurs.
+	})
+}

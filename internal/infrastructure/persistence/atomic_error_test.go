@@ -519,6 +519,118 @@ func TestIsTransientRenameError_DirectoryTarget(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Context-cancellation error‑path tests for select/case <-ctx.Done() blocks
+// ---------------------------------------------------------------------------
+
+// TestAtomicWrite_CancelBeforeWrite covers line 46-47 in atomic.go:
+//
+//	select { case <-ctx.Done(): return ctx.Err() }  – after prepareTempFile, before Write.
+//
+// The mock FS does NOT check context in MkdirAll or CreateTemp, so
+// prepareTempFile succeeds and the cancellation is detected at the
+// first explicit select.
+func TestAtomicWrite_CancelBeforeWrite(t *testing.T) {
+	t.Parallel()
+	m := newMockFS()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before AtomicWrite starts
+
+	err := AtomicWrite(ctx, m, "/test", []byte("data"), 0644)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestAtomicWrite_CancelAfterWrite covers line 57-58 in atomic.go:
+//
+//	select { case <-ctx.Done(): return ctx.Err() }  – after Write, before commitTempFile.
+//
+// The WriteFunc blocks until the test cancels the context, guaranteeing
+// that when Write returns the context is already cancelled.  Line 57's
+// select then catches the cancellation.
+func TestAtomicWrite_CancelAfterWrite(t *testing.T) {
+	m := newMockFS()
+	writeHappened := make(chan struct{})
+	unblockWrite := make(chan struct{})
+
+	m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
+		return &mockFile{
+			name: dir + "/temp123",
+			data: new(bytes.Buffer),
+			WriteFunc: func(p []byte) (n int, err error) {
+				close(writeHappened) // signal that Write was called
+				<-unblockWrite       // block until cancel is done
+				return len(p), nil
+			},
+		}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- AtomicWrite(ctx, m, "/test", []byte("data"), 0644)
+	}()
+
+	<-writeHappened     // WriteFunc has been entered
+	cancel()            // cancel before Write returns
+	close(unblockWrite) // let Write return
+
+	err := <-errCh
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestRenameWithRetry_ContextCancelledDuringBackoff covers line 114-115 in
+// atomic.go:
+//
+//	select { case <-ctx.Done(): return ctx.Err() }  – inside the retry loop.
+//
+// The RenameFunc always returns a transient error ("Access is denied").
+// After the first failure the function enters the backoff select; the
+// test cancels the context during the sleep, causing ctx.Done() to fire.
+func TestRenameWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
+	m := newMockFS()
+	callCount := 0
+
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		callCount++
+		return errors.New("Access is denied") // always transient
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- renameWithRetry(ctx, m, "/tmp/src", "/tmp/dst", 0644)
+	}()
+
+	// Let the first rename attempt happen, then cancel during the backoff.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	err := <-errCh
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	// Should NOT exhaust all 5 retries
+	if callCount >= 5 {
+		t.Errorf("expected < 5 rename attempts, got %d", callCount)
+	}
+}
+
 // mockDirEntry implements os.DirEntry for testing.
 type mockDirEntry struct {
 	name  string

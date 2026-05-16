@@ -325,3 +325,86 @@ func TestInitializePaths_EnsureDirectoriesFailure(t *testing.T) {
 		t.Error("expected error when EnsureDirectories fails inside initializePaths, got nil")
 	}
 }
+
+// =============================================================================
+// RotateSession with non-nil writer — asserts archival message is written
+// =============================================================================
+
+func TestRotateSession_WithWriter(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	homeDir := tmp
+	mode := "test-mode"
+	ctx := context.Background()
+
+	paths, err := initializePaths(ctx, &OSFileSystem{}, homeDir, mode)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create at least one file so the backup directory is created
+	if err := os.WriteFile(paths.HistoryPath, []byte("test data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	err = RotateSession(ctx, &OSFileSystem{}, &buf, *paths, 30, nil)
+	if err != nil {
+		t.Fatalf("RotateSession failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Archiving existing session files") {
+		t.Errorf("expected archival message in writer output, got: %s", output)
+	}
+}
+
+// =============================================================================
+// cleanupOldBackups with ReadDir non-NotExist error — error propagates
+// =============================================================================
+
+func TestCleanupOldBackups_ReadDirError(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.ReadDirFunc = func(ctx context.Context, name string) ([]os.DirEntry, error) {
+		return nil, os.ErrPermission
+	}
+
+	paths := persistence.ResolvePaths("/home/test", "default")
+	err := cleanupOldBackups(context.Background(), m, *paths, 7, nil)
+	if err == nil {
+		t.Error("expected error from ReadDir failure, got nil")
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Errorf("expected os.ErrPermission, got %v", err)
+	}
+}
+
+// =============================================================================
+// RotateSession with cleanupOldBackups returning an error
+// =============================================================================
+
+func TestRotateSession_CleanupError(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	// Make the files exist so the archive loop proceeds.
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		return &mockFileInfo{name: name}, nil
+	}
+	// ReadDir returns a non-NotExist error so cleanupOldBackups fails.
+	m.ReadDirFunc = func(ctx context.Context, name string) ([]os.DirEntry, error) {
+		return nil, os.ErrPermission
+	}
+
+	paths := persistence.ResolvePaths("/home/test", "default")
+	var buf bytes.Buffer
+	err := RotateSession(context.Background(), m, &buf, *paths, 7, slog.Default())
+	if err == nil {
+		t.Error("expected error when cleanupOldBackups fails inside RotateSession, got nil")
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Errorf("expected os.ErrPermission, got %v", err)
+	}
+}

@@ -311,8 +311,25 @@ func (a *defaultDeadCodeAnalyzer) processImplementations(ctx context.Context, st
 func (a *defaultDeadCodeAnalyzer) buildFileToPkgMap(pkgs []*packages.Package) map[string]string {
 	fileToPkg := make(map[string]string)
 	for _, pkg := range pkgs {
+		// GoFiles contains the source files for this package variant.
+		// With Tests:true (set in indexer.loadPackages), synthesized test
+		// packages appear as separate entries: internal test variants share
+		// the production PkgPath, and external test variants use the
+		// PkgPath + "_test" convention. Both populate GoFiles with the
+		// appropriate test files, so a single pass over all pkgs.GoFiles
+		// naturally covers production, internal-test, and external-test
+		// source files.
 		for _, file := range pkg.GoFiles {
 			fileToPkg[file] = pkg.PkgPath
+		}
+		// CompiledGoFiles covers files that are suitable for type-checking.
+		// It is a superset of GoFiles in most configurations, but including
+		// it as a fallback ensures any file processed by the type checker
+		// (and thus appearing in usage locations) has a package mapping.
+		for _, file := range pkg.CompiledGoFiles {
+			if _, exists := fileToPkg[file]; !exists {
+				fileToPkg[file] = pkg.PkgPath
+			}
 		}
 	}
 	return fileToPkg

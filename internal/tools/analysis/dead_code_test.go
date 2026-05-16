@@ -4,10 +4,12 @@
 package analysis
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go/token"
 	"go/types"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -734,6 +736,26 @@ func TestInternal_NilReceiverCoverage(t *testing.T) {
 		assert.False(t, analyzer.isInterfaceMethod(fnStructOther), "Struct method is not an interface method")
 	})
 
+	t.Run("Non-Nil Receiver with Interface Underlying Type", func(t *testing.T) {
+		// Create an interface type
+		iface := types.NewInterfaceType(nil, nil)
+		// Create a named type whose underlying is the interface
+		named := types.NewNamed(
+			types.NewTypeName(token.NoPos, nil, "MyInterface", iface),
+			iface,
+			nil,
+		)
+		// Create a receiver variable of that named type
+		recv := types.NewVar(token.NoPos, nil, "m", named)
+		// Create a method signature with that receiver
+		sig := types.NewSignatureType(recv, nil, nil, nil, nil, false)
+		fn := types.NewFunc(token.NoPos, nil, "Helper", sig)
+
+		// The underlying type of the receiver's type is *types.Interface
+		assert.True(t, analyzer.isInterfaceMethod(fn),
+			"method on interface-named type should be treated as interface method")
+	})
+
 	t.Run("Non-Function Object Guard", func(t *testing.T) {
 		// Create a mock variable instead of a function/type
 		mockVar := types.NewVar(token.NoPos, nil, "MockVar", types.Typ[types.Int])
@@ -747,6 +769,67 @@ func TestInternal_NilReceiverCoverage(t *testing.T) {
 		}
 		if analyzer.isInterfaceType(mockVar) {
 			t.Errorf("Expected isInterfaceType to return false for a *types.Var")
+		}
+	})
+}
+
+func TestSignatureMatches_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("param count mismatch", func(t *testing.T) {
+		t.Parallel()
+		// Signature with 1 param
+		paramType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.String]))
+		sig := types.NewSignatureType(nil, nil, nil, paramType, nil, false)
+
+		want := wellKnownContractSignature{
+			params:  []string{"[]byte"}, // different count
+			results: nil,
+		}
+		if signatureMatches(sig, want) {
+			t.Error("should not match when param count differs")
+		}
+	})
+
+	t.Run("result count mismatch", func(t *testing.T) {
+		t.Parallel()
+		resultType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.String]))
+		sig := types.NewSignatureType(nil, nil, nil, nil, resultType, false)
+
+		want := wellKnownContractSignature{
+			params:  nil,
+			results: []string{"int", "error"}, // different count
+		}
+		if signatureMatches(sig, want) {
+			t.Error("should not match when result count differs")
+		}
+	})
+
+	t.Run("param type mismatch", func(t *testing.T) {
+		t.Parallel()
+		paramType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int]))
+		sig := types.NewSignatureType(nil, nil, nil, paramType, nil, false)
+
+		want := wellKnownContractSignature{
+			params:  []string{"string"},
+			results: nil,
+		}
+		if signatureMatches(sig, want) {
+			t.Error("should not match when param type differs")
+		}
+	})
+
+	t.Run("result type mismatch", func(t *testing.T) {
+		t.Parallel()
+		resultType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int]))
+		sig := types.NewSignatureType(nil, nil, nil, nil, resultType, false)
+
+		want := wellKnownContractSignature{
+			params:  nil,
+			results: []string{"string"},
+		}
+		if signatureMatches(sig, want) {
+			t.Error("should not match when result type differs")
 		}
 	})
 }
@@ -1023,6 +1106,152 @@ func TestTrackExternalUsages_GetUsagesError(t *testing.T) {
 	}
 }
 
+func TestAnalyzeUsages_ErrorAccumulation(t *testing.T) {
+	t.Parallel()
+
+	// Capture slog output
+	var logBuf bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	defer slog.SetDefault(oldLogger)
+
+	ctx := context.Background()
+	state := &scanState{
+		targetModule: "example.com/test",
+		pkgs:         []*packages.Package{},
+		declarations: map[string]*symMeta{
+			"example.com/test/foo.SymbolA": {
+				id:      "example.com/test/foo.SymbolA",
+				pkgPath: "example.com/test/foo",
+				name:    "SymbolA",
+				symType: "Function",
+			},
+			"example.com/test/bar.SymbolB": {
+				id:      "example.com/test/bar.SymbolB",
+				pkgPath: "example.com/test/bar",
+				name:    "SymbolB",
+				symType: "Function",
+			},
+		},
+		totalUses:    make(map[string]int),
+		externalUses: make(map[string]int),
+	}
+
+	sentinelErr := fmt.Errorf("index corruption")
+	callOrder := make([]string, 0)
+
+	mockIdx := &mockSymbolIndex{
+		IsSymbolUsedFunc: func(ctx context.Context, name string, hb chan<- struct{}) bool {
+			// Both symbols enter the GetUsages path so we can verify
+			// that SymbolB is processed despite SymbolA's error.
+			return true
+		},
+		GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+			callOrder = append(callOrder, symbol)
+			if symbol == "example.com/test/foo.SymbolA" {
+				return nil, sentinelErr
+			}
+			return nil, nil
+		},
+		GetImplementationsFunc: func(ctx context.Context, id string) []string {
+			return []string{}
+		},
+	}
+
+	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+	analyzer.analyzeUsages(ctx, state, "/tmp/proj", nil)
+
+	// Both symbols must be processed despite the error on SymbolA
+	if len(callOrder) < 2 {
+		t.Errorf("expected at least 2 symbols processed, got %d: %v", len(callOrder), callOrder)
+	}
+
+	// slog.Warn must contain the sentinel error
+	if !strings.Contains(logBuf.String(), sentinelErr.Error()) {
+		t.Errorf("expected slog.Warn to contain %q, got: %s", sentinelErr.Error(), logBuf.String())
+	}
+}
+
+func TestProcessImplementations_ZeroTotalUses(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	state := &scanState{
+		declarations: map[string]*symMeta{
+			"example.com/foo.Symbol": {
+				id:      "example.com/foo.Symbol",
+				pkgPath: "example.com/foo",
+				name:    "Symbol",
+				symType: "Function",
+			},
+			"example.com/bar.Impl": {
+				id:      "example.com/bar.Impl",
+				pkgPath: "example.com/bar",
+				name:    "Impl",
+				symType: "Function",
+			},
+		},
+		totalUses:    map[string]int{"example.com/foo.Symbol": 0},
+		externalUses: make(map[string]int),
+	}
+
+	mockIdx := &mockSymbolIndex{
+		GetImplementationsFunc: func(ctx context.Context, id string) []string {
+			return []string{"example.com/bar.Impl"} // from a different package
+		},
+	}
+	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+	analyzer.processImplementations(ctx, state, "example.com/foo.Symbol", nil)
+
+	if state.totalUses["example.com/foo.Symbol"] != 1 {
+		t.Errorf("expected totalUses to be bumped to 1, got %d", state.totalUses["example.com/foo.Symbol"])
+	}
+	if state.externalUses["example.com/foo.Symbol"] != 1 {
+		t.Errorf("expected externalUses to be incremented, got %d", state.externalUses["example.com/foo.Symbol"])
+	}
+}
+
+func TestProcessImplementations_SamePackageNoIncrement(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	state := &scanState{
+		declarations: map[string]*symMeta{
+			"example.com/foo.Symbol": {
+				id:      "example.com/foo.Symbol",
+				pkgPath: "example.com/foo",
+				name:    "Symbol",
+				symType: "Function",
+			},
+			"example.com/foo.Impl": {
+				id:      "example.com/foo.Impl",
+				pkgPath: "example.com/foo",
+				name:    "Impl",
+				symType: "Function",
+			},
+		},
+		totalUses:    map[string]int{"example.com/foo.Symbol": 0},
+		externalUses: make(map[string]int),
+	}
+
+	mockIdx := &mockSymbolIndex{
+		GetImplementationsFunc: func(ctx context.Context, id string) []string {
+			return []string{"example.com/foo.Impl"} // same package
+		},
+	}
+	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+	analyzer.processImplementations(ctx, state, "example.com/foo.Symbol", nil)
+
+	// totalUses bumped to 1
+	if state.totalUses["example.com/foo.Symbol"] != 1 {
+		t.Errorf("expected totalUses bumped to 1, got %d", state.totalUses["example.com/foo.Symbol"])
+	}
+	// externalUses NOT incremented (same package)
+	if state.externalUses["example.com/foo.Symbol"] != 0 {
+		t.Errorf("expected externalUses to stay 0 for same-package impl, got %d", state.externalUses["example.com/foo.Symbol"])
+	}
+}
+
 func TestIdentifyModule_NoGoFilesError(t *testing.T) {
 	t.Parallel()
 
@@ -1030,29 +1259,64 @@ func TestIdentifyModule_NoGoFilesError(t *testing.T) {
 
 	// Package with "no Go files" error but NOT "does not contain main module".
 	// This exercises the skip-continue path in identifyModule.
+	t.Run("skip no-Go-files package, find module on second", func(t *testing.T) {
+		pkgs := []*packages.Package{
+			{
+				PkgPath: "example.com/empty",
+				Errors: []packages.Error{
+					{Msg: "no Go files in /some/dir"},
+				},
+				Module: nil, // no module from the empty package
+			},
+			{
+				PkgPath: "example.com/valid",
+				Errors:  nil,
+				Module: &packages.Module{
+					Path: "example.com/testmodule",
+				},
+			},
+		}
+
+		modulePath, err := analyzer.identifyModule(pkgs)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if modulePath != "example.com/testmodule" {
+			t.Errorf("expected module path 'example.com/testmodule', got: %q", modulePath)
+		}
+	})
+}
+
+func TestIdentifyModule_AllPackagesNoModule(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+
+	// Simulates running outside a Go module directory (e.g., GO111MODULE=off).
+	// No package has a "does not contain main module" error, no non-"no Go files"
+	// error, and every package has Module == nil. This exercises the second
+	// "no go.mod found" fallback return in identifyModule.
 	pkgs := []*packages.Package{
 		{
-			PkgPath: "example.com/empty",
-			Errors: []packages.Error{
-				{Msg: "no Go files in /some/dir"},
-			},
-			Module: nil, // no module from the empty package
+			PkgPath: "example.com/pkg1",
+			Errors:  nil,
+			Module:  nil,
 		},
 		{
-			PkgPath: "example.com/valid",
-			Errors:  nil,
-			Module: &packages.Module{
-				Path: "example.com/testmodule",
-			},
+			PkgPath: "example.com/pkg2",
+			Module:  nil,
 		},
 	}
 
 	modulePath, err := analyzer.identifyModule(pkgs)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if modulePath != "example.com/testmodule" {
-		t.Errorf("expected module path 'example.com/testmodule', got: %q", modulePath)
+	if !strings.Contains(err.Error(), "no go.mod found") {
+		t.Errorf("expected 'no go.mod found', got: %v", err)
+	}
+	if modulePath != "" {
+		t.Errorf("expected empty module path, got: %q", modulePath)
 	}
 }
 
@@ -1083,4 +1347,93 @@ func TestHasTextMatchOutsidePackage_ReadFileError(t *testing.T) {
 	if got {
 		t.Error("expected false when ReadFile fails on all files in other packages")
 	}
+}
+
+func TestHarvestInterfaceMethods_DefensiveGuards(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+	fset := token.NewFileSet()
+
+	t.Run("unexported method skipped", func(t *testing.T) {
+		t.Parallel()
+		state := &scanState{
+			declarations: make(map[string]*symMeta),
+		}
+		// Interface with one unexported method
+		unexportedMethod := types.NewFunc(token.NoPos, nil, "unexported",
+			types.NewSignatureType(nil, nil, nil, nil, nil, false))
+		itf := types.NewInterfaceType([]*types.Func{unexportedMethod}, nil)
+
+		analyzer.harvestInterfaceMethods(itf, fset, state)
+		// unexported method must NOT appear in declarations
+		if len(state.declarations) != 0 {
+			t.Errorf("expected 0 declarations, got %d", len(state.declarations))
+		}
+	})
+
+	t.Run("exported method harvested", func(t *testing.T) {
+		t.Parallel()
+		state := &scanState{
+			declarations: make(map[string]*symMeta),
+		}
+		// Interface with one exported method — exercises the non-nil, exported path
+		realMethod := types.NewFunc(token.NoPos,
+			types.NewPackage("example.com/pkg", "pkg"), "Exported",
+			types.NewSignatureType(nil, nil, nil, nil, nil, false))
+		itf := types.NewInterfaceType([]*types.Func{realMethod}, nil)
+
+		analyzer.harvestInterfaceMethods(itf, fset, state)
+		if len(state.declarations) != 1 {
+			t.Errorf("expected 1 declaration for exported method, got %d", len(state.declarations))
+		}
+	})
+
+	t.Run("nil fset treated as not export_test.go", func(t *testing.T) {
+		t.Parallel()
+		// isExportTestFile with nil fset returns false
+		if isExportTestFile(nil, token.NoPos) {
+			t.Error("isExportTestFile(nil, ...) should return false")
+		}
+	})
+
+	t.Run("invalid pos treated as not export_test.go", func(t *testing.T) {
+		t.Parallel()
+		fset := token.NewFileSet()
+		if isExportTestFile(fset, token.NoPos) {
+			t.Error("isExportTestFile with invalid pos should return false")
+		}
+	})
+}
+
+func TestIsEligibleForHarvest_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+	fset := token.NewFileSet()
+
+	t.Run("nil object returns false", func(t *testing.T) {
+		t.Parallel()
+		if analyzer.isEligibleForHarvest(nil, fset) {
+			t.Error("nil object should not be eligible")
+		}
+	})
+
+	t.Run("nil package returns false", func(t *testing.T) {
+		t.Parallel()
+		obj := types.NewVar(token.NoPos, nil, "X", types.Typ[types.Int]) // Pkg() is nil
+		if analyzer.isEligibleForHarvest(obj, fset) {
+			t.Error("object with nil package should not be eligible")
+		}
+	})
+
+	t.Run("init function skipped", func(t *testing.T) {
+		t.Parallel()
+		pkg := types.NewPackage("example.com/pkg", "pkg")
+		obj := types.NewFunc(token.NoPos, pkg, "init",
+			types.NewSignatureType(nil, nil, nil, nil, nil, false))
+		if analyzer.isEligibleForHarvest(obj, fset) {
+			t.Error("init function should not be eligible")
+		}
+	})
 }

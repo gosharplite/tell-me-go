@@ -36,12 +36,8 @@ func (m *rootBrowserModel) highlightMatches(text, query string) string {
 		return text
 	}
 
-	// Case-insensitive regex for the query
-	re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(query))
-	if err != nil {
-		return text
-	}
-
+	// regexp.QuoteMeta guarantees valid regex
+	re := regexp.MustCompile("(?i)" + regexp.QuoteMeta(query))
 	return re.ReplaceAllStringFunc(text, func(match string) string {
 		return highlightStyle.Render(match)
 	})

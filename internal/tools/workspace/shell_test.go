@@ -438,6 +438,40 @@ func (m *mockShellSecurity) LogAudit(action string, args ...any) {
 	m.MockSecurityManager.LogAudit(action, args...)
 }
 
+func TestShellTool_AuthorizeAndAuditPipeline_OutputFileError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	validator := &toolstest.MockCommandValidator{}
+
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	// Block the output file path to force resolveOutputFile to fail
+	sm.AllowAll = false
+	sm.SetBypassActive(false)
+	sm.IsWritableFunc = func(path string) (string, error) {
+		return "", fmt.Errorf("permission denied on output path")
+	}
+
+	helperSlash := filepath.ToSlash(helperPath)
+	res, err := tool.PipeCommands(ctx, map[string]interface{}{
+		"commands":    []interface{}{fmt.Sprintf("%s echo hello", helperSlash), fmt.Sprintf("%s grep hello", helperSlash)},
+		"reason":      "test output file error",
+		"output_file": "/root/forbidden.txt",
+	}, nil)
+
+	// The error should be in res.Error
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatal("expected res.Error to be non-nil")
+	}
+	if !strings.Contains(res.Error.Error(), "permission denied") {
+		t.Errorf("expected 'permission denied' in res.Error, got: %v", res.Error)
+	}
+}
+
 func TestShellTool_Authorization_Denials(t *testing.T) {
 	t.Run("Authorization Denials", func(t *testing.T) {
 		tests := []struct {
@@ -502,6 +536,156 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestShellTool_ExecuteCommand_AuthorizeError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	validator := &toolstest.MockCommandValidator{}
+
+	mockSec := &mockShellSecurity{
+		MockSecurityManager: sm,
+		AuthorizeFunc: func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+			return false, fmt.Errorf("authorization service down")
+		},
+	}
+	tool := newTestShellTool(mockSec, validator)
+	ctx := context.Background()
+
+	helperSlash := filepath.ToSlash(helperPath)
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"command": fmt.Sprintf("%s echo hello", helperSlash),
+		"reason":  "test auth error",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatal("expected res.Error from authorization failure")
+	}
+	if !strings.Contains(res.Error.Error(), "authorization service down") {
+		t.Errorf("expected 'authorization service down' in res.Error, got: %v", res.Error)
+	}
+}
+
+func TestShellTool_PrepareCommand_WrapShell(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+
+	// Force HasShellFeatures to return true so prepareCommand calls wrapper.Wrap
+	validator := &toolstest.MockCommandValidator{
+		HasShellFeaturesFunc: func(parts []string) bool {
+			return true
+		},
+	}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	helperSlash := filepath.ToSlash(helperPath)
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"command": fmt.Sprintf("%s echo hello", helperSlash),
+		"reason":  "test shell wrap",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Error != nil {
+		t.Fatalf("unexpected res.Error: %v", res.Error)
+	}
+	if !strings.Contains(res.Text, "hello") {
+		t.Errorf("expected output to contain 'hello', got: %s", res.Text)
+	}
+}
+
+func TestShellTool_StartHeartbeat_WithChannel(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	validator := &toolstest.MockCommandValidator{}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	hb := make(chan struct{}, 1)
+	helperSlash := filepath.ToSlash(helperPath)
+
+	// Pass a non-nil heartbeat channel to exercise the hb != nil path
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"command": fmt.Sprintf("%s echo quick", helperSlash),
+		"reason":  "test heartbeat channel",
+	}, hb)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Error != nil {
+		t.Fatalf("unexpected res.Error: %v", res.Error)
+	}
+	if !strings.Contains(res.Text, "quick") {
+		t.Errorf("expected output to contain 'quick', got: %s", res.Text)
+	}
+}
+
+func TestShellTool_StartHeartbeat_TickFires(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	validator := &toolstest.MockCommandValidator{}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	hb := make(chan struct{}, 1)
+	helperSlash := filepath.ToSlash(helperPath)
+
+	// Sleep long enough for the 2-second heartbeat ticker to fire at least once
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"command": fmt.Sprintf("%s sleep 3", helperSlash),
+		"reason":  "test heartbeat tick fires",
+		"timeout": 10,
+	}, hb)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Error != nil {
+		t.Fatalf("unexpected res.Error: %v", res.Error)
+	}
+}
+
+func TestShellTool_PrepareCommand_ValidateStructureAfterWrap(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+
+	// HasShellFeatures returns true so Wrap is called, then ValidateStructure fails on wrapped parts
+	validator := &toolstest.MockCommandValidator{
+		HasShellFeaturesFunc: func(parts []string) bool {
+			return true
+		},
+		ValidateStructureFunc: func(parts []string) error {
+			// Fail specifically for shell-wrapped parts ("sh", "-c", ...)
+			if len(parts) > 0 && parts[0] == "sh" {
+				return fmt.Errorf("shell wrapping validation failed")
+			}
+			return nil
+		},
+	}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	helperSlash := filepath.ToSlash(helperPath)
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"command": fmt.Sprintf("%s echo hello", helperSlash),
+		"reason":  "test validate after wrap",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatal("expected res.Error from ValidateStructure after wrapping")
+	}
+	if !strings.Contains(res.Error.Error(), "shell wrapping validation failed") {
+		t.Errorf("expected 'shell wrapping validation failed' in res.Error, got: %v", res.Error)
+	}
 }
 
 func TestShellTool_TimeoutParameter(t *testing.T) {
@@ -638,6 +822,36 @@ func TestWindowsTranslator_Translate_LS(t *testing.T) {
 	}
 }
 
+func TestWindowsTranslator_Translate_CP_MV(t *testing.T) {
+	w := &windowsTranslator{}
+
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "cp simple",
+			input:    []string{"cp", "src.txt", "dst.txt"},
+			expected: []string{"cmd", "/c", "copy", "src.txt", "dst.txt"},
+		},
+		{
+			name:     "mv simple",
+			input:    []string{"mv", "old.txt", "new.txt"},
+			expected: []string{"cmd", "/c", "move", "old.txt", "new.txt"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.Translate(tt.input)
+			if !reflect.DeepEqual(got, tt.expected) {
+				t.Errorf("Translate() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestShellTool_TimeoutEnforcement(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
@@ -720,4 +934,45 @@ func TestShellTool_PipeCommands_TooFewCommands(t *testing.T) {
 	if !strings.Contains(res.Text, "at least two commands") {
 		t.Errorf("expected 'at least two commands' in Text, got: %q", res.Text)
 	}
+}
+
+func TestShellTool_SplitPipelineErrors(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+
+	t.Run("Split error", func(t *testing.T) {
+		validator := &toolstest.MockCommandValidator{
+			SplitFunc: func(cmd string) ([]string, error) {
+				return nil, fmt.Errorf("split failure")
+			},
+		}
+		tool := newTestShellTool(sm, validator)
+
+		res, err := tool.splitPipeline([]string{"valid-cmd", "also-valid"})
+		if err == nil {
+			t.Fatal("expected split error")
+		}
+		if !strings.Contains(err.Error(), "error parsing command at index 0") {
+			t.Errorf("expected 'error parsing command at index 0', got: %v", err)
+		}
+		_ = res
+	})
+
+	t.Run("ValidateStructure error", func(t *testing.T) {
+		validator := &toolstest.MockCommandValidator{
+			ValidateStructureFunc: func(parts []string) error {
+				return fmt.Errorf("invalid structure")
+			},
+		}
+		tool := newTestShellTool(sm, validator)
+
+		res, err := tool.splitPipeline([]string{"valid-cmd", "also-valid"})
+		if err == nil {
+			t.Fatal("expected validate structure error")
+		}
+		if !strings.Contains(err.Error(), "invalid command at index 0") {
+			t.Errorf("expected 'invalid command at index 0', got: %v", err)
+		}
+		_ = res
+	})
 }

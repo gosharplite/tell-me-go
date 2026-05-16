@@ -326,6 +326,45 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────
+// buildGraph: getImports error propagation through errgroup
+// ─────────────────────────────────────────────────────────
+
+func TestBuildGraph_GetImportsError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Create a valid workspace with one package
+	pkgDir := filepath.Join(tmpDir, "pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "f.go"), []byte("package pkg"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/mod"), 0644))
+
+	// Also create a second package so the errgroup has work to do
+	pkg2Dir := filepath.Join(tmpDir, "pkg2")
+	require.NoError(t, os.MkdirAll(pkg2Dir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkg2Dir, "f.go"), []byte("package pkg2"), 0644))
+
+	runner := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "example.com/mod", nil
+		},
+		getModuleDirFunc: func(ctx context.Context) (string, error) {
+			return tmpDir, nil
+		},
+	}
+
+	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	// Use a cancelled context so packages.Load inside getImports fails
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := a.buildGraph(ctx)
+	require.Error(t, err, "expected error from cancelled context in getImports")
+}
+
+// ─────────────────────────────────────────────────────────
 // getImports error path test
 // ─────────────────────────────────────────────────────────
 

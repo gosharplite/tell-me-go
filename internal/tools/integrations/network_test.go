@@ -252,6 +252,40 @@ func TestHttpRequest_Errors(t *testing.T) {
 	})
 }
 
+// ── Request creation error path tests (Issue #433) ──
+
+func TestHttpRequest_RequestCreationError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	tool := newnetworkTool(sm, &mockHTTPClient{})
+
+	// http.NewRequestWithContext fails on malformed URLs
+	_, err := tool.HttpRequest(context.Background(), map[string]interface{}{
+		"method": "GET",
+		"url":    "://invalid-url",
+	}, nil)
+	if err == nil {
+		t.Error("expected error for invalid URL")
+	}
+	if !strings.Contains(err.Error(), "failed to create request") {
+		t.Errorf("expected 'failed to create request', got: %v", err)
+	}
+}
+
+func TestReadExternalDocs_RequestCreationError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	tool := newnetworkTool(sm, &mockHTTPClient{})
+
+	_, err := tool.ReadExternalDocs(context.Background(), map[string]interface{}{
+		"url": "://invalid-url",
+	}, nil)
+	if err == nil {
+		t.Error("expected error for invalid URL")
+	}
+	if !strings.Contains(err.Error(), "failed to create request") {
+		t.Errorf("expected 'failed to create request', got: %v", err)
+	}
+}
+
 func TestReadExternalDocs_Errors(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, nil)

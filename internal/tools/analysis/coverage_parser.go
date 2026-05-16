@@ -81,6 +81,10 @@ var rules = []classificationRule{
 // to allow test injection of marshal failures for error-path coverage.
 var jsonMarshalIndent = json.MarshalIndent
 
+// osOpenFile is the function used to open coverage profile files. Exposed as a
+// variable to allow test injection of file-open failures for error-path coverage.
+var osOpenFile = os.Open
+
 // Classify categorizes the block and assigns a priority based on heuristics.
 func (b *uncoveredBlock) Classify() {
 	b.Category = "OTHER"
@@ -391,7 +395,7 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath str
 		return nil, err
 	}
 
-	cf, err := os.Open(tempPath)
+	cf, err := osOpenFile(tempPath)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,6 +236,72 @@ invalid json line
 			assert.Len(t, results, tt.expectedCount)
 			if tt.validateResult != nil {
 				tt.validateResult(t, results)
+			}
+		})
+	}
+}
+
+// TestRegisterMetrics_UnmarshalArgsErrors exercises the UnmarshalArgs error
+// paths inside the RegisterMetrics closures at metrics.go:65-67 (estimate_cost)
+// and metrics.go:104-106 (get_cost_summary). These paths are reachable via:
+//   - Non-JSON-serializable values (e.g., chan) → json.Marshal fails
+//   - Type-mismatched JSON values (e.g., string where bool is expected) → json.Unmarshal fails
+//
+// The handlers wrap these errors with "invalid arguments: %w" and return them.
+func TestRegisterMetrics_UnmarshalArgsErrors(t *testing.T) {
+	// NOT parallel: subtests share a single mockRegistry with registered handlers.
+	sm := &mockSM{}
+
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "output")
+	_ = os.Mkdir(outputDir, 0755)
+	logFile := filepath.Join(outputDir, "test.log")
+	traceFile := filepath.Join(outputDir, "test.trace.jsonl")
+
+	reg := &mockRegistry{}
+	if err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil, nil); err != nil {
+		t.Fatalf("RegisterMetrics failed: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		toolName    string
+		args        map[string]interface{}
+		wantErrText string
+	}{
+		{
+			name:        "estimate_cost with non-serializable args",
+			toolName:    "estimate_cost",
+			args:        map[string]interface{}{"bad": make(chan int)},
+			wantErrText: "invalid arguments",
+		},
+		{
+			name:        "get_cost_summary with string billing",
+			toolName:    "get_cost_summary",
+			args:        map[string]interface{}{"billing": "not-a-bool"},
+			wantErrText: "invalid arguments",
+		},
+		{
+			name:        "get_cost_summary with numeric billing",
+			toolName:    "get_cost_summary",
+			args:        map[string]interface{}{"billing": 123},
+			wantErrText: "invalid arguments",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := reg.handlers[tt.toolName]
+			if handler == nil {
+				t.Fatalf("%s handler not registered", tt.toolName)
+			}
+
+			_, err := handler(context.Background(), tt.args, nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErrText) {
+				t.Errorf("error should contain %q, got: %v", tt.wantErrText, err)
 			}
 		})
 	}

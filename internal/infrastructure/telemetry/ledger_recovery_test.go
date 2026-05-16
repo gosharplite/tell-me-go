@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -282,4 +283,168 @@ func TestMergeRecords_DuplicateKey(t *testing.T) {
 	if !foundOld {
 		t.Error("expected 'unique-old' in merged result")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// findLogFiles error paths (Phase 8)
+// ---------------------------------------------------------------------------
+
+func TestFindLogFiles_ErrorPaths(t *testing.T) {
+	// Subtest A: inaccessible subdirectory — exercises ledger.go:179-180
+	// (inner WalkDirFunc access error path)
+	t.Run("inaccessible subdirectory", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod 0000 not effective on Windows")
+		}
+
+		globalDir := t.TempDir()
+
+		// Create an inaccessible subdirectory with a valid tokens.log inside.
+		// When WalkDir tries to read the subdirectory's contents, it will
+		// invoke the WalkDirFunc with a permission error.
+		inaccessibleDir := filepath.Join(globalDir, "inaccessible")
+		require.NoError(t, os.MkdirAll(inaccessibleDir, 0755))
+		inaccessibleLog := filepath.Join(inaccessibleDir, "tokens.log")
+		require.NoError(t, os.WriteFile(inaccessibleLog, []byte(`{"cost": 1.0}`), 0644))
+		require.NoError(t, os.Chmod(inaccessibleDir, 0000))
+		t.Cleanup(func() {
+			_ = os.Chmod(inaccessibleDir, 0755)
+		})
+
+		// Create a readable subdirectory with a valid tokens.log.
+		readableDir := filepath.Join(globalDir, "readable")
+		require.NoError(t, os.MkdirAll(readableDir, 0755))
+		readableLog := filepath.Join(readableDir, "tokens.log")
+		require.NoError(t, os.WriteFile(readableLog, []byte(`{"cost": 2.0}`), 0644))
+
+		ls := &ledgerStore{}
+		files, err := ls.findLogFiles(globalDir)
+
+		// The walk itself should not return an error; access errors are
+		// swallowed by the WalkDirFunc returning nil.
+		require.NoError(t, err, "findLogFiles should not return an error for inaccessible subdirectory")
+
+		// The readable tokens.log should be found (walk continues).
+		found := false
+		for _, f := range files {
+			if f == readableLog {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "expected readable tokens.log to be in the returned list")
+
+		// The inaccessible tokens.log should NOT be found.
+		for _, f := range files {
+			if f == inaccessibleLog {
+				t.Errorf("expected inaccessible tokens.log to NOT be in the returned list")
+			}
+		}
+	})
+
+	// Subtest B: non-existent root directory — exercises ledger.go:91-93
+	// (outer filepath.WalkDir error path).
+	// NOTE: The WalkDirFunc's os.IsNotExist guard (line 178) catches
+	// fs.ErrNotExist for the root as well, so WalkDir returns nil.
+	// This test documents the current behavior; if the guard is narrowed
+	// to only skip missing entries inside an existing root, this test
+	// should be updated to expect a non-nil error.
+	t.Run("non-existent root directory", func(t *testing.T) {
+		ls := &ledgerStore{}
+		nonexistentDir := filepath.Join(t.TempDir(), "nonexistent")
+		files, err := ls.findLogFiles(nonexistentDir)
+
+		// Current behavior: os.IsNotExist in WalkDirFunc swallows the
+		// fs.ErrNotExist from the root, so no error is returned.
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(files) != 0 {
+			t.Errorf("expected empty files, got %d", len(files))
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// discoverNewRecords os.Stat error path (Phase 9)
+// ---------------------------------------------------------------------------
+
+func TestDiscoverNewRecords_OsStatError(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	// 1. Create a valid log file
+	validDir := filepath.Join(tempDir, "valid")
+	require.NoError(t, os.MkdirAll(validDir, 0755))
+	validLog := filepath.Join(validDir, "tokens.log")
+	require.NoError(t, os.WriteFile(validLog, []byte(`{"cost": 1.0, "timestamp": "2023-10-27T10:00:00Z"}`), 0644))
+
+	// 2. Create a second log file, then delete it
+	goneDir := filepath.Join(tempDir, "gone")
+	require.NoError(t, os.MkdirAll(goneDir, 0755))
+	goneLog := filepath.Join(goneDir, "tokens.log")
+	require.NoError(t, os.WriteFile(goneLog, []byte(`{"cost": 2.0}`), 0644))
+	require.NoError(t, os.Remove(goneLog)) // <-- file removed before stat
+
+	// 3. Build a file list that includes the deleted file
+	files := []string{validLog, goneLog}
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+	ls := newLedgerStore(sm, "test-model", nil)
+
+	seen := make(map[string]bool)
+	pricing := GetPricing(context.Background(), sm, tempDir)
+
+	// 4. Call discoverNewRecords directly
+	discovered := ls.discoverNewRecords(context.Background(), files, tempDir, seen, pricing)
+
+	// 5. Assertions
+	require.Len(t, discovered, 1, "only the valid file should be discovered")
+	assert.Contains(t, discovered[0].Session, "valid/tokens.log")
+	// The goneLog os.Stat error path is exercised silently (continue)
+}
+
+// ---------------------------------------------------------------------------
+// getSessionID filepath.Rel fallback error path (Phase 10)
+// ---------------------------------------------------------------------------
+
+func TestGetSessionID_RelFallback(t *testing.T) {
+	t.Parallel()
+
+	ls := &ledgerStore{}
+
+	t.Run("normal relative path", func(t *testing.T) {
+		result := ls.getSessionID("/base/session/tokens.log", "/base")
+		if result != "session/tokens.log" {
+			t.Errorf("expected 'session/tokens.log', got %q", result)
+		}
+	})
+
+	t.Run("backup prefix rewriting", func(t *testing.T) {
+		result := ls.getSessionID("/base/backups/2023/session/tokens.log", "/base")
+		if result != "backup/2023/session/tokens.log" {
+			t.Errorf("expected 'backup/2023/session/tokens.log', got %q", result)
+		}
+	})
+
+	t.Run("rel error returns path unchanged", func(t *testing.T) {
+		globalDir := `C:\base`
+		path := `D:\other\tokens.log`
+
+		rel, relErr := filepath.Rel(globalDir, path)
+		if relErr != nil {
+			result := ls.getSessionID(path, globalDir)
+			if result != path {
+				t.Errorf("expected fallback to return path unchanged %q, got %q", path, result)
+			}
+		} else {
+			t.Logf("filepath.Rel succeeded (expected on Unix): rel=%q", rel)
+			result := ls.getSessionID(path, globalDir)
+			if result != filepath.ToSlash(rel) {
+				t.Errorf("expected %q, got %q", filepath.ToSlash(rel), result)
+			}
+		}
+	})
 }

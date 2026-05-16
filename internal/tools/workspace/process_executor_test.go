@@ -793,6 +793,69 @@ func validateOpenResult(t *testing.T, f *os.File, err error, wantErr bool, errCo
 	}
 }
 
+func TestResolveAndValidateOutputPath_Escape(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:       "bare dot-dot",
+			path:       "..",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
+		},
+		{
+			name:       "dot-dot prefix",
+			path:       "../etc/passwd",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
+		},
+		{
+			name:       "deep escape",
+			path:       "a/b/../../../etc/passwd",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
+		},
+		{
+			name:    "normal subdirectory",
+			path:    "a/b/c",
+			wantErr: false,
+		},
+		{
+			name:    "dot prefixed",
+			path:    "./foo/bar",
+			wantErr: false,
+		},
+		{
+			name:    "absolute path",
+			path:    "/tmp/foo",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			absPath, err := resolveAndValidateOutputPath(filepath.Clean(tt.path), tt.path)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.errContain)
+				} else if !strings.Contains(err.Error(), tt.errContain) {
+					t.Errorf("expected error containing %q, got: %v", tt.errContain, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if !filepath.IsAbs(absPath) {
+				t.Errorf("expected absolute path, got %q", absPath)
+			}
+		})
+	}
+}
+
 func TestOpenOutputFile_Sanitization(t *testing.T) {
 	executor := newprocessExecutor()
 
@@ -804,6 +867,7 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 		{"trim whitespace", "  out.txt  ", "out.txt"},
 		{"null bytes", "out" + string([]byte{0}) + ".txt", "out.txt"},
 		{"mixed", "  logs/test" + string([]byte{0}) + ".log  ", "logs/test.log"},
+		{"only nulls and spaces", "  \x00\x00  ", ""},
 	}
 
 	for _, tt := range tests {
@@ -814,6 +878,13 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 			f, err := executor.openOutputFile(config)
 			if err != nil {
 				t.Fatalf("openOutputFile(%q) error = %v", tt.path, err)
+			}
+			if tt.expected == "" {
+				if f != nil {
+					_ = f.Close()
+					t.Errorf("expected nil file for empty path after sanitization, got %q", f.Name())
+				}
+				return
 			}
 			if f != nil {
 				name := f.Name()
@@ -837,33 +908,106 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 	}
 }
 
+func TestOpenOutputFile_MkdirAllError(t *testing.T) {
+	executor := newprocessExecutor()
+	tmpDir := t.TempDir()
+
+	// Create a read-only parent directory so MkdirAll fails
+	parentDir := filepath.Join(tmpDir, "readonly_parent")
+	if err := os.MkdirAll(parentDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parentDir, 0755) })
+
+	config := executionConfig{
+		OutputFile: filepath.Join(parentDir, "child", "out.txt"),
+	}
+	f, err := executor.openOutputFile(config)
+	if f != nil {
+		_ = f.Close()
+	}
+	if err == nil {
+		t.Fatal("expected error from MkdirAll under read-only parent")
+	}
+	if !strings.Contains(err.Error(), "failed to create output directory") {
+		t.Errorf("expected 'failed to create output directory' in error, got: %v", err)
+	}
+}
+
 func TestProcessExecutor_Output(t *testing.T) {
 	executor := newprocessExecutor()
 	ctx := context.Background()
 
-	// Success
-	out, err := executor.Output(ctx, helperPath, "echo", "hello")
-	if err != nil {
-		t.Fatalf("Output failed: %v", err)
-	}
-	if string(out) != "hello\n" {
-		t.Errorf("expected 'hello\\n', got %q", string(out))
-	}
+	t.Run("success", func(t *testing.T) {
+		out, err := executor.Output(ctx, helperPath, "echo", "hello")
+		if err != nil {
+			t.Fatalf("Output failed: %v", err)
+		}
+		if string(out) != "hello\n" {
+			t.Errorf("expected 'hello\\n', got %q", string(out))
+		}
+	})
 
-	// Exit error
-	_, err = executor.Output(ctx, helperPath, "exit", "1")
-	if err == nil {
-		t.Error("expected error for non-zero exit")
-	}
+	t.Run("exit error", func(t *testing.T) {
+		out, err := executor.Output(ctx, helperPath, "exit", "1")
+		if err == nil {
+			t.Fatal("expected error for non-zero exit")
+		}
+		if !strings.Contains(err.Error(), "exit status 1") {
+			t.Errorf("expected 'exit status 1' in error, got: %v", err)
+		}
+		if out != nil {
+			t.Logf("partial output on exit error: %q", string(out))
+		}
+	})
 
-	// CombinedOutput success
-	out, err = executor.CombinedOutput(ctx, helperPath, "echo", "hello")
-	if err != nil {
-		t.Fatalf("CombinedOutput failed: %v", err)
-	}
-	if string(out) != "hello\n" {
-		t.Errorf("expected 'hello\\n', got %q", string(out))
-	}
+	t.Run("CombinedOutput success", func(t *testing.T) {
+		out, err := executor.CombinedOutput(ctx, helperPath, "echo", "hello")
+		if err != nil {
+			t.Fatalf("CombinedOutput failed: %v", err)
+		}
+		if string(out) != "hello\n" {
+			t.Errorf("expected 'hello\\n', got %q", string(out))
+		}
+	})
+
+	t.Run("CombinedOutput exit error", func(t *testing.T) {
+		out, err := executor.CombinedOutput(ctx, helperPath, "exit", "2")
+		if err == nil {
+			t.Fatal("expected error for non-zero exit")
+		}
+		if !strings.Contains(err.Error(), "exit status 2") {
+			t.Errorf("expected 'exit status 2' in error, got: %v", err)
+		}
+		if out != nil {
+			t.Logf("partial output on exit error: %q", string(out))
+		}
+	})
+}
+
+func TestProcessExecutor_Output_RunError(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+
+	t.Run("Output with start failure", func(t *testing.T) {
+		out, err := executor.Output(ctx, "/nonexistent/binary_xyz_12345")
+		if err == nil {
+			t.Fatal("expected error for nonexistent binary")
+		}
+		if out == nil {
+			t.Error("expected partial output (empty), got nil")
+		}
+	})
+
+	t.Run("CombinedOutput with start failure", func(t *testing.T) {
+		out, err := executor.CombinedOutput(ctx, "/nonexistent/binary_xyz_12345")
+		if err == nil {
+			t.Fatal("expected error for nonexistent binary")
+		}
+		if out == nil {
+			t.Error("expected partial output (empty), got nil")
+		}
+	})
 }
 
 type errorReader struct{}
@@ -936,6 +1080,7 @@ func TestStreamProcessor_appendErr(t *testing.T) {
 		wantContains  string
 		wantTruncated bool
 		wantEmptySB   bool
+		useFeedback   bool
 	}{
 		{
 			name:          "nil error — no-op",
@@ -982,17 +1127,30 @@ func TestStreamProcessor_appendErr(t *testing.T) {
 			wantTruncated: true,
 			wantEmptySB:   true,
 		},
+		{
+			name:          "error with feedback writer",
+			totalCaptured: 0,
+			maxCapture:    500,
+			err:           fmt.Errorf("feedback test error"),
+			wantContains:  "[Warning] Output read error: feedback test error",
+			wantTruncated: false,
+			useFeedback:   true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			totalCaptured := tt.totalCaptured
+			var fb io.Writer
+			if tt.useFeedback {
+				fb = &bytes.Buffer{}
+			}
 			sp := &streamProcessor{
 				mu:            &sync.Mutex{},
 				truncated:     &atomic.Bool{},
 				totalCaptured: &totalCaptured,
 				maxCapture:    tt.maxCapture,
-				feedback:      nil, // no feedback writer for these cases
+				feedback:      fb,
 			}
 
 			var sb strings.Builder
@@ -1007,6 +1165,12 @@ func TestStreamProcessor_appendErr(t *testing.T) {
 			}
 			if sp.truncated.Load() != tt.wantTruncated {
 				t.Errorf("truncated = %v, want %v", sp.truncated.Load(), tt.wantTruncated)
+			}
+			if tt.useFeedback && fb != nil {
+				fbStr := fb.(*bytes.Buffer).String()
+				if !strings.Contains(fbStr, tt.wantContains) {
+					t.Errorf("expected feedback to contain %q, got %q", tt.wantContains, fbStr)
+				}
 			}
 		})
 	}
@@ -1249,6 +1413,27 @@ func TestProcessExecutor_handleCaptureError(t *testing.T) {
 		fb := feedback.String()
 		if !strings.Contains(fb, "[Warning] Output read error: test error") {
 			t.Errorf("expected warning in feedback, got %q", fb)
+		}
+	})
+
+	t.Run("truncation when message exceeds remaining capacity", func(t *testing.T) {
+		var sb strings.Builder
+		sb.WriteString("abcde") // 5 bytes prefilled
+		var mu sync.Mutex
+		truncated := &atomic.Bool{}
+
+		// maxCapture=10, sb has 5 bytes, remaining=5
+		// The fullMsg "\n[Warning] Output read error: ...\n" is > 5 bytes
+		e.handleCaptureError(fmt.Errorf("truncation test error"), &sb, &mu, executionConfig{}, truncated, 10)
+
+		if !truncated.Load() {
+			t.Error("expected truncated=true when message exceeds remaining capacity")
+		}
+		if sb.Len() > 10 {
+			t.Errorf("expected sb length <= 10, got %d", sb.Len())
+		}
+		if !strings.Contains(sb.String(), "[War") {
+			t.Errorf("expected warning prefix in sb, got %q", sb.String())
 		}
 	})
 }
@@ -1540,5 +1725,13 @@ func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 	}
 	if runtime.GOOS == "windows" && cmd.Cancel == nil {
 		t.Error("expected cmd.Cancel to be set on Windows")
+	}
+
+	// Verify Cancel returns nil when Process is nil (before Start)
+	if runtime.GOOS == "windows" {
+		cancelErr := cmd.Cancel()
+		if cancelErr != nil {
+			t.Errorf("cmd.Cancel() with nil Process should return nil, got: %v", cancelErr)
+		}
 	}
 }

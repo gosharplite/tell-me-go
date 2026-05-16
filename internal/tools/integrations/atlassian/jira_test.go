@@ -143,6 +143,27 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 			expectedText: "Found 1 issues (showing 1):",
 		},
 		{
+			name: "Success Unassigned Issue",
+			args: map[string]interface{}{"jql": "project = PROJ"},
+			mockResp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"total": 1,
+					"issues": [
+						{
+							"key": "PROJ-2",
+							"fields": {
+								"summary": "Unassigned Issue",
+								"status": { "name": "Backlog" },
+								"assignee": { "displayName": "" }
+							}
+						}
+					]
+				}`)),
+			},
+			expectedText: "[PROJ-2] Unassigned Issue (Status: Backlog, Assignee: Unassigned)",
+		},
+		{
 			name: "Context Timeout",
 			args: map[string]interface{}{"jql": "project = PROJ"},
 			mockErr: func() error {
@@ -470,5 +491,175 @@ func TestJiraManager_EdgeCases(t *testing.T) {
 
 		require.Error(t, err)
 		assert.True(t, strings.Contains(err.Error(), "invalid base url") || strings.Contains(err.Error(), "failed to initialize Atlassian provider"))
+	})
+}
+
+func TestJiraManager_ErrorPaths(t *testing.T) {
+	// ── Gap A ─────────────────────────────────────────────────────
+	t.Run("NewJiraManager_ProviderInitFailure", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_BASE_URL", "")
+		m, err := NewJiraManager(nil, nil)
+		assert.Nil(t, m)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to initialize Atlassian provider")
+	})
+
+	// ── Gap B ─────────────────────────────────────────────────────
+	t.Run("checkIssueResponse_BodyReadError", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+
+		resp := &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(&errorReader{err: errors.New("read failure")}),
+		}
+
+		err = m.checkIssueResponse(resp, "PROJ-1")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "additionally, failed to read response body")
+	})
+
+	// ── Gap C ─────────────────────────────────────────────────────
+	t.Run("JiraSearchIssues_HTTP401", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+		m.provider.BaseDelay = 1 * time.Microsecond
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     "401 Unauthorized",
+			Body:       io.NopCloser(strings.NewReader("Unauthorized")),
+		}, nil)
+
+		_, err = m.JiraSearchIssues(context.Background(), map[string]interface{}{"jql": "project = PROJ"}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "jira API returned status: 401 Unauthorized")
+	})
+
+	t.Run("JiraSearchIssues_HTTP403", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+		m.provider.BaseDelay = 1 * time.Microsecond
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusForbidden,
+			Status:     "403 Forbidden",
+			Body:       io.NopCloser(strings.NewReader("Forbidden")),
+		}, nil)
+
+		_, err = m.JiraSearchIssues(context.Background(), map[string]interface{}{"jql": "project = PROJ"}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "jira API returned status: 403 Forbidden")
+	})
+
+	t.Run("JiraSearchIssues_BodyReadError", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+		m.provider.BaseDelay = 1 * time.Microsecond
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(&errorReader{err: errors.New("read failure")}),
+		}, nil)
+
+		_, err = m.JiraSearchIssues(context.Background(), map[string]interface{}{"jql": "project = PROJ"}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "additionally, failed to read response body")
+	})
+
+	// ── Gap D ─────────────────────────────────────────────────────
+	t.Run("JiraGetIssue_HTTP401", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+		m.provider.BaseDelay = 1 * time.Microsecond
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     "401 Unauthorized",
+			Body:       io.NopCloser(strings.NewReader("Unauthorized")),
+		}, nil)
+
+		_, err = m.JiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "jira API returned status: 401 Unauthorized")
+	})
+
+	t.Run("JiraGetIssue_HTTP403", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+		m.provider.BaseDelay = 1 * time.Microsecond
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusForbidden,
+			Status:     "403 Forbidden",
+			Body:       io.NopCloser(strings.NewReader("Forbidden")),
+		}, nil)
+
+		_, err = m.JiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "jira API returned status: 403 Forbidden")
+	})
+
+	// ── Nil context tests: trigger http.NewRequestWithContext failure ──
+	t.Run("JiraSearchIssues_NilContext", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+
+		var nilCtx context.Context
+		_, err = m.JiraSearchIssues(nilCtx, map[string]interface{}{"jql": "project = PROJ"}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "nil Context")
+	})
+
+	t.Run("JiraGetIssue_NilContext", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+		mockClient := new(mockJiraClient)
+		m, err := NewJiraManager(nil, mockClient)
+		require.NoError(t, err)
+
+		var nilCtx context.Context
+		_, err = m.JiraGetIssue(nilCtx, map[string]interface{}{"issue_key": "PROJ-1"}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "nil Context")
 	})
 }

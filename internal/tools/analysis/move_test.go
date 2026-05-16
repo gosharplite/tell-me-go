@@ -114,3 +114,50 @@ func verifyMove(t *testing.T, symbol string, files map[string]*ast.File, tr *mov
 		t.Errorf("symbol %s not in destination", symbol)
 	}
 }
+
+func parseTestMoveFile(code string) (*token.FileSet, *ast.File, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "test.go", code, parser.ParseComments)
+	return fset, f, err
+}
+
+func TestMatchSymbol_ValueSpec(t *testing.T) {
+	t.Parallel()
+	t.Run("matches const", func(t *testing.T) {
+		t.Parallel()
+		tr := newMoveTransform(&movePlan{Symbol: "MyConst"})
+		code := `package a
+const MyConst = 42`
+		fset, f, err := parseTestMoveFile(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = fset
+		if !tr.matchSymbol(f.Decls[0]) {
+			t.Error("matchSymbol should match const declaration")
+		}
+	})
+	t.Run("matches var", func(t *testing.T) {
+		t.Parallel()
+		tr := newMoveTransform(&movePlan{Symbol: "MyVar"})
+		code := `package a
+var MyVar = "hello"`
+		fset, f, err := parseTestMoveFile(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = fset
+		if !tr.matchSymbol(f.Decls[0]) {
+			t.Error("matchSymbol should match var declaration")
+		}
+	})
+}
+
+func TestMovePlanDescription(t *testing.T) {
+	t.Parallel()
+	plan := &movePlan{Symbol: "Foo", SrcFile: "a.go", DstFile: "b.go"}
+	desc := plan.Description()
+	if desc != "Move Foo from a.go to b.go" {
+		t.Errorf("unexpected description: %q", desc)
+	}
+}

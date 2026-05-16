@@ -45,6 +45,12 @@ var (
 
 	// newResourceFn is the resource constructor, overridable in tests for error injection.
 	newResourceFn = resource.New
+
+	// cliNewFn is the CLI application constructor, overridable in tests for error injection.
+	cliNewFn = cli.New
+
+	// newSecurityManagerFn is the security manager constructor, overridable in tests.
+	newSecurityManagerFn = security.NewSecurityManager
 )
 
 func getVersion() string {
@@ -149,7 +155,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 		}
 		return security.NoOpInteractor()
 	}
-	sm := security.NewSecurityManager(interactorProvider)
+	sm := newSecurityManagerFn(interactorProvider)
 
 	// 3. Setup Logger
 	isDebug := os.Getenv("TELL_ME_DEBUG") == "1"
@@ -170,7 +176,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	configLoader := &config.YAMLConfigLoader{
 		Finder: config.NewDefaultConfigFinder(config.WithBaseDir(wd)),
 	}
-	app, err := cli.New(cli.AppDependencies{
+	app, err := cliNewFn(cli.AppDependencies{
 		Version:      appVersion,
 		Stdin:        stdin,
 		Stdout:       stdout,

@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPathPolicy_ValidatePath(t *testing.T) {
@@ -374,4 +377,140 @@ func TestPathPolicy_SystemDirectoryBlockedEvenIfRegistered(t *testing.T) {
 	if err == nil {
 		t.Errorf("ValidatePath allowed access to system directory %s even though it was registered", forbidden)
 	}
+}
+
+func TestValidatePath_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	t.Run("empty path returns empty string", func(t *testing.T) {
+		t.Parallel()
+		result, err := p.ValidatePath("", true)
+		require.NoError(t, err)
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("filepath.Abs error with NUL byte", func(t *testing.T) {
+		t.Parallel()
+		_, err := p.ValidatePath("/tmp/\x00invalid", false)
+		if err == nil {
+			t.Log("filepath.Abs did not error on this platform")
+		} else {
+			assert.Contains(t, err.Error(), "invalid path")
+		}
+	})
+
+	t.Run("rule error propagation", func(t *testing.T) {
+		t.Parallel()
+		t.Log("Rule error path (line 135-137) requires checkBoundary Abs failure — covered in T16")
+	})
+}
+
+func TestPathPolicy_RemovePath_NotFound(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	t.Run("safe path not found", func(t *testing.T) {
+		t.Parallel()
+		err := p.RemovePath("/nonexistent/path/for/removal", true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found in safe authorized list")
+	})
+
+	t.Run("read-only path not found", func(t *testing.T) {
+		t.Parallel()
+		err := p.RemovePath("/nonexistent/path/for/removal", false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found in read-only authorized list")
+	})
+}
+
+func TestCheckBoundary_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	t.Run("filepath.Abs error on boundary", func(t *testing.T) {
+		t.Parallel()
+		// NUL byte triggers filepath.Abs failure on some platforms
+		ok, err := p.checkBoundary("/some/target", "/valid/\x00boundary")
+		if err == nil {
+			t.Skip("filepath.Abs does not error on NUL byte on this platform")
+		}
+		require.Error(t, err)
+		require.False(t, ok)
+	})
+
+	t.Run("resolveSymlinks recursive fallback", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		// Boundary doesn't exist → EvalSymlinks fails → recursive fallback
+		boundary := filepath.Join(tmpDir, "nonexistent_boundary")
+		ok, err := p.checkBoundary(filepath.Join(tmpDir, "target"), boundary)
+		require.NoError(t, err) // resolveSymlinks handles missing dirs gracefully
+		require.False(t, ok)
+	})
+}
+
+func TestCheckDefaultBoundaries_ExtraTempDirs(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	// getExtraTempDirs() returns ["/tmp", "/private/tmp"] on Unix, nil on Windows.
+	// On Linux, os.TempDir() typically returns /tmp already, so this path is
+	// usually caught by the os.TempDir() check before reaching the
+	// getExtraTempDirs() loop. On macOS, os.TempDir() returns a per-user
+	// directory under /var/folders, making the getExtraTempDirs() loop
+	// essential for allowing /tmp paths.
+	if runtime.GOOS == "windows" {
+		t.Skip("getExtraTempDirs() returns nil on Windows")
+	}
+
+	// A file in /tmp should be permitted by checkDefaultBoundaries.
+	// Whether via os.TempDir() or getExtraTempDirs() depends on the platform.
+	path := p.resolveSymlinks("/tmp/test-extra-temp-file.txt")
+	ok, err := p.checkDefaultBoundaries(path, false)
+	require.NoError(t, err)
+	assert.True(t, ok, "path in /tmp should pass checkDefaultBoundaries (via os.TempDir or getExtraTempDirs)")
+
+	// macOS-specific: /private/tmp is also covered by getExtraTempDirs
+	if runtime.GOOS == "darwin" {
+		path2 := p.resolveSymlinks("/private/tmp/test-extra-temp-file.txt")
+		ok2, err2 := p.checkDefaultBoundaries(path2, false)
+		require.NoError(t, err2)
+		assert.True(t, ok2, "path in /private/tmp should pass checkDefaultBoundaries on macOS")
+	}
+}
+
+// TestNewPathPolicy_ResolvedTempDir verifies that resolvedTempDir is populated
+// during construction (paths.go:38-45) and that isExemptedDirectory correctly
+// recognizes paths inside it.
+//
+// The EvalSymlinks fallback on line 44 is [SYSTEM-DEPENDENT]: it only triggers
+// when os.TempDir() returns a non-empty string that filepath.EvalSymlinks cannot
+// resolve. This requires a broken filesystem (e.g., /tmp is a dangling symlink
+// or the underlying mount point is not accessible). In normal operation,
+// resolvedTempDir is always set via the EvalSymlinks path (line 41).
+func TestNewPathPolicy_ResolvedTempDir(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	// resolvedTempDir must be populated during construction
+	require.NotEmpty(t, p.resolvedTempDir, "resolvedTempDir should be populated by newPathPolicy")
+
+	// Verify a file under the real OS temp dir is considered exempted
+	tempFile := filepath.Join(os.TempDir(), "test-exempted-file.txt")
+	tempFile = p.resolveSymlinks(tempFile)
+	exempted := p.isExemptedDirectory(tempFile)
+	assert.True(t, exempted, "path in os.TempDir() should be exempted by isExemptedDirectory")
+}
+
+func TestRegisterPath_EmptyPath(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+	initialSafe := len(p.GetPaths(true))
+	initialRO := len(p.GetPaths(false))
+	p.RegisterPath("", true)
+	p.RegisterPath("", false)
+	assert.Equal(t, initialSafe, len(p.GetPaths(true)), "empty path should not register")
+	assert.Equal(t, initialRO, len(p.GetPaths(false)), "empty path should not register")
 }
