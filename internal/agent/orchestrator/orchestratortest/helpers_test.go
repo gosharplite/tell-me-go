@@ -67,88 +67,96 @@ func TestMockHook(t *testing.T) {
 func TestMockRetryPolicy(t *testing.T) {
 	t.Parallel()
 
-	t.Run("retry_with_duration", func(t *testing.T) {
-		t.Parallel()
-		p := &MockRetryPolicy{
-			Retry:              true,
-			ShouldRetryResults: []time.Duration{5 * time.Second},
-		}
-		c := &clock.RealClock{}
-		d, ok := p.ShouldRetry(c, fmt.Errorf("some error"), 0, false)
-		if d != 5*time.Second {
-			t.Errorf("duration = %v; want 5s", d)
+	t.Run("retry_with_duration", testRetryWithDuration)
+
+	t.Run("no_retry", testNoRetry)
+
+	t.Run("exhausted_results_returns_zero", testExhaustedResultsReturnsZero)
+
+	t.Run("attempt_indexes_results", testAttemptIndexesResults)
+}
+
+func testRetryWithDuration(t *testing.T) {
+	t.Parallel()
+	p := &MockRetryPolicy{
+		Retry:              true,
+		ShouldRetryResults: []time.Duration{5 * time.Second},
+	}
+	c := &clock.RealClock{}
+	d, ok := p.ShouldRetry(c, fmt.Errorf("some error"), 0, false)
+	if d != 5*time.Second {
+		t.Errorf("duration = %v; want 5s", d)
+	}
+	if !ok {
+		t.Error("ShouldRetry returned false; want true")
+	}
+	if !p.ShouldRetryCalled {
+		t.Error("ShouldRetryCalled = false; want true")
+	}
+}
+
+func testNoRetry(t *testing.T) {
+	t.Parallel()
+	p := &MockRetryPolicy{Retry: false}
+	c := &clock.RealClock{}
+	d, ok := p.ShouldRetry(c, fmt.Errorf("some error"), 0, false)
+	if d != 0 {
+		t.Errorf("duration = %v; want 0", d)
+	}
+	if ok {
+		t.Error("ShouldRetry returned true; want false")
+	}
+}
+
+func testExhaustedResultsReturnsZero(t *testing.T) {
+	t.Parallel()
+	p := &MockRetryPolicy{
+		Retry:              true,
+		ShouldRetryResults: []time.Duration{1 * time.Second},
+	}
+	c := &clock.RealClock{}
+
+	// First call: attempt 0, within results slice
+	d, ok := p.ShouldRetry(c, fmt.Errorf("err"), 0, false)
+	if d != 1*time.Second {
+		t.Errorf("first duration = %v; want 1s", d)
+	}
+	if !ok {
+		t.Error("first ShouldRetry returned false; want true")
+	}
+
+	// Second call: attempt 1, exhausted results → returns (0, true)
+	d, ok = p.ShouldRetry(c, fmt.Errorf("err"), 1, false)
+	if d != 0 {
+		t.Errorf("exhausted duration = %v; want 0", d)
+	}
+	if !ok {
+		t.Error("exhausted ShouldRetry returned false; want true")
+	}
+}
+
+func testAttemptIndexesResults(t *testing.T) {
+	t.Parallel()
+	p := &MockRetryPolicy{
+		Retry: true,
+		ShouldRetryResults: []time.Duration{
+			1 * time.Second,
+			2 * time.Second,
+			3 * time.Second,
+		},
+	}
+	c := &clock.RealClock{}
+
+	expected := []time.Duration{1 * time.Second, 2 * time.Second, 3 * time.Second}
+	for i, exp := range expected {
+		d, ok := p.ShouldRetry(c, fmt.Errorf("err"), i, false)
+		if d != exp {
+			t.Errorf("attempt %d: duration = %v; want %v", i, d, exp)
 		}
 		if !ok {
-			t.Error("ShouldRetry returned false; want true")
+			t.Errorf("attempt %d: ShouldRetry returned false; want true", i)
 		}
-		if !p.ShouldRetryCalled {
-			t.Error("ShouldRetryCalled = false; want true")
-		}
-	})
-
-	t.Run("no_retry", func(t *testing.T) {
-		t.Parallel()
-		p := &MockRetryPolicy{Retry: false}
-		c := &clock.RealClock{}
-		d, ok := p.ShouldRetry(c, fmt.Errorf("some error"), 0, false)
-		if d != 0 {
-			t.Errorf("duration = %v; want 0", d)
-		}
-		if ok {
-			t.Error("ShouldRetry returned true; want false")
-		}
-	})
-
-	t.Run("exhausted_results_returns_zero", func(t *testing.T) {
-		t.Parallel()
-		p := &MockRetryPolicy{
-			Retry:              true,
-			ShouldRetryResults: []time.Duration{1 * time.Second},
-		}
-		c := &clock.RealClock{}
-
-		// First call: attempt 0, within results slice
-		d, ok := p.ShouldRetry(c, fmt.Errorf("err"), 0, false)
-		if d != 1*time.Second {
-			t.Errorf("first duration = %v; want 1s", d)
-		}
-		if !ok {
-			t.Error("first ShouldRetry returned false; want true")
-		}
-
-		// Second call: attempt 1, exhausted results → returns (0, true)
-		d, ok = p.ShouldRetry(c, fmt.Errorf("err"), 1, false)
-		if d != 0 {
-			t.Errorf("exhausted duration = %v; want 0", d)
-		}
-		if !ok {
-			t.Error("exhausted ShouldRetry returned false; want true")
-		}
-	})
-
-	t.Run("attempt_indexes_results", func(t *testing.T) {
-		t.Parallel()
-		p := &MockRetryPolicy{
-			Retry: true,
-			ShouldRetryResults: []time.Duration{
-				1 * time.Second,
-				2 * time.Second,
-				3 * time.Second,
-			},
-		}
-		c := &clock.RealClock{}
-
-		expected := []time.Duration{1 * time.Second, 2 * time.Second, 3 * time.Second}
-		for i, exp := range expected {
-			d, ok := p.ShouldRetry(c, fmt.Errorf("err"), i, false)
-			if d != exp {
-				t.Errorf("attempt %d: duration = %v; want %v", i, d, exp)
-			}
-			if !ok {
-				t.Errorf("attempt %d: ShouldRetry returned false; want true", i)
-			}
-		}
-	})
+	}
 }
 
 // ──────────────────────── CreateProcessorForPhase ─────────────────────
