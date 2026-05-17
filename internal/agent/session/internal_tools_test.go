@@ -441,80 +441,89 @@ func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
 		"panic in summarize history background drainer: injected test panic")
 }
 
+// waitForTicked blocks until a tick is signaled or the test times out after 5s.
+func waitForTicked(t *testing.T, ticked <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ticked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ticker did not fire within 5s")
+	}
+}
+
+// waitForReturned blocks until emitHeartbeats returns or the test times out after 3s.
+func waitForReturned(t *testing.T, returned <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-returned:
+	case <-time.After(3 * time.Second):
+		t.Fatal("emitHeartbeats did not return within 3s — possible goroutine leak")
+	}
+}
+
+// verifyHeartbeat asserts that a heartbeat is immediately receivable on a buffered channel.
+func verifyHeartbeat(t *testing.T, hb <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-hb:
+	default:
+		t.Error("expected heartbeat on buffered channel but none received")
+	}
+}
+
+// testEmitHeartbeatsPath exercises one behavioral path through emitHeartbeats.
+// It creates an InternalTools instance, installs an idempotent tick hook, starts
+// emitHeartbeats in a goroutine, waits for the first tick, stops the goroutine,
+// verifies clean return, and optionally checks heartbeat delivery.
+func testEmitHeartbeatsPath(t *testing.T, hb chan struct{}, wantRecv bool) {
+	t.Helper()
+
+	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
+
+	// Install an idempotent tick hook that signals once.
+	ticked := make(chan struct{}, 1)
+	it.testEmitHeartbeatsTickHook = func() {
+		select {
+		case ticked <- struct{}{}:
+		default:
+		}
+	}
+
+	done := make(chan struct{})
+
+	returned := make(chan struct{})
+	go func() {
+		it.emitHeartbeats(done, hb)
+		close(returned)
+	}()
+
+	// Wait for the first tick to fire.
+	waitForTicked(t, ticked)
+
+	// Stop the goroutine.
+	close(done)
+
+	// Verify goroutine returns cleanly (no leak, no panic).
+	waitForReturned(t, returned)
+
+	// For the "send on capacity" case, verify exactly one heartbeat
+	// was delivered through the buffered channel.
+	if wantRecv {
+		verifyHeartbeat(t, hb)
+	}
+}
+
 func TestEmitHeartbeats_TickerPaths(t *testing.T) {
 	// These subtests set a tick hook on the InternalTools instance and must
 	// not run in parallel.
 
-	tests := []struct {
-		name     string
-		hb       chan struct{} // bidirectional; nil for the "nil hb" case
-		wantRecv bool          // whether we expect a heartbeat to be receivable
-	}{
-		{
-			name:     "nil hb skip",
-			hb:       nil,
-			wantRecv: false,
-		},
-		{
-			name:     "full channel drop",
-			hb:       make(chan struct{}), // unbuffered, no consumer
-			wantRecv: false,
-		},
-		{
-			name:     "send on capacity",
-			hb:       make(chan struct{}, 1), // buffered, cap=1
-			wantRecv: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
-
-			// Install an idempotent tick hook that signals once.
-			ticked := make(chan struct{}, 1)
-			it.testEmitHeartbeatsTickHook = func() {
-				select {
-				case ticked <- struct{}{}:
-				default:
-				}
-			}
-
-			done := make(chan struct{})
-
-			returned := make(chan struct{})
-			go func() {
-				it.emitHeartbeats(done, tt.hb)
-				close(returned)
-			}()
-
-			// Wait for the first tick to fire.
-			select {
-			case <-ticked:
-			case <-time.After(5 * time.Second):
-				t.Fatal("ticker did not fire within 5s")
-			}
-
-			// Stop the goroutine.
-			close(done)
-
-			// Verify goroutine returns cleanly (no leak, no panic).
-			select {
-			case <-returned:
-			case <-time.After(3 * time.Second):
-				t.Fatal("emitHeartbeats did not return within 3s — possible goroutine leak")
-			}
-
-			// For the "send on capacity" case, verify exactly one heartbeat
-			// was delivered through the buffered channel.
-			if tt.wantRecv {
-				select {
-				case <-tt.hb:
-					// heartbeat received as expected
-				default:
-					t.Error("expected heartbeat on buffered channel but none received")
-				}
-			}
-		})
-	}
+	t.Run("nil hb skip", func(t *testing.T) {
+		testEmitHeartbeatsPath(t, nil, false)
+	})
+	t.Run("full channel drop", func(t *testing.T) {
+		testEmitHeartbeatsPath(t, make(chan struct{}), false)
+	})
+	t.Run("send on capacity", func(t *testing.T) {
+		testEmitHeartbeatsPath(t, make(chan struct{}, 1), true)
+	})
 }
