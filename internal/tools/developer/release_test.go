@@ -396,20 +396,37 @@ func TestStartHeartbeat_Release(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		hb   chan<- struct{}
+		hb   chan struct{}
 	}{
+		{
+			name: "Full channel falls to default (unbuffered, no receiver)",
+			hb:   make(chan struct{}),
+		},
 		{name: "Done channel close exits goroutine", hb: make(chan struct{}, 1)},
 		{name: "Nil hb channel does not panic", hb: nil},
+		{
+			name: "Successful heartbeat send (buffered channel with receiver)",
+			hb:   make(chan struct{}, 10),
+		},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := &releaseManager{}
+			m := &releaseManager{tickerInterval: 1 * time.Millisecond}
 			done := make(chan struct{})
 
 			go m.startHeartbeat(tt.hb, done)
+
+			if tt.name == "Successful heartbeat send (buffered channel with receiver)" {
+				select {
+				case <-tt.hb:
+					// Successfully received a heartbeat
+				case <-time.After(100 * time.Millisecond):
+					t.Error("expected to receive at least one heartbeat on buffered channel")
+				}
+			}
 
 			close(done)
 			time.Sleep(50 * time.Millisecond)
@@ -606,6 +623,25 @@ func TestTestRunner_RunTestsFailure(t *testing.T) {
 	}
 }
 
+// TestBuildChecker_MkdirTempError verifies that buildChecker.Run reports
+// failure when MkdirTemp fails (e.g., disk full).
+func TestBuildChecker_MkdirTempError(t *testing.T) {
+	t.Parallel()
+	c := &buildChecker{
+		runner: &mockReleaseRunner{},
+		createTempDir: func(dir, pattern string) (string, error) {
+			return "", fmt.Errorf("disk full")
+		},
+	}
+	result := c.Run(context.Background())
+	if result.OK {
+		t.Error("expected build check to fail when MkdirTemp fails")
+	}
+	if !strings.Contains(result.Message, "Failed to create temp dir") {
+		t.Errorf("expected 'Failed to create temp dir' in message, got: %q", result.Message)
+	}
+}
+
 // TestLinterChecker_NonExitStatusError verifies that the linterChecker
 // reports a generic failure when the linter returns a non-exit-status-1
 // error (e.g., a crash or exec failure).
@@ -670,5 +706,24 @@ func TestArchitectureChecker_VerifierError(t *testing.T) {
 	}
 	if !strings.Contains(result.Message, "verifier crash") {
 		t.Errorf("expected 'verifier crash' in message, got: %q", result.Message)
+	}
+}
+
+// TestArchitectureChecker_NilVerifier verifies that architectureChecker.Run
+// returns a failure result when the verifier field is nil. This covers the
+// guard clause at the top of architectureChecker.Run:
+//
+//	if c.verifier == nil {
+//	    return checkResult{OK: false, Message: "Architecture verifier is not available."}
+//	}
+func TestArchitectureChecker_NilVerifier(t *testing.T) {
+	t.Parallel()
+	c := &architectureChecker{verifier: nil}
+	result := c.Run(context.Background())
+	if result.OK {
+		t.Error("expected architecture check to fail when verifier is nil")
+	}
+	if result.Message != "Architecture verifier is not available." {
+		t.Errorf("expected 'Architecture verifier is not available.', got: %q", result.Message)
 	}
 }

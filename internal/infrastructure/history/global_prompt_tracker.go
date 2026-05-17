@@ -365,7 +365,7 @@ func (t *globalPromptTracker) writeCompactedData(w io.Writer, entries []promptEn
 	for _, entry := range entries {
 		data, err := json.Marshal(entry)
 		if err != nil {
-			continue
+			return false // abort compaction; do not silently drop entries
 		}
 		if _, err := w.Write(append(data, '\n')); err != nil {
 			return false

@@ -195,6 +195,7 @@ func TestSQLiteKVStore(t *testing.T) {
 	t.Run("UpdateExisting", testKVStoreUpdateExisting)
 	t.Run("Delete", testKVStoreDelete)
 	t.Run("GetAll", testKVStoreGetAll)
+	t.Run("GetAllEmpty", testKVStoreGetAllEmpty)
 	t.Run("ContextCancellation", testKVStoreContextCancellation)
 	t.Run("DatabaseError", testKVStoreDatabaseError)
 }
@@ -291,6 +292,23 @@ func testKVStoreGetAll(t *testing.T) {
 		if all[k] != v {
 			t.Errorf("key %s: got %q; want %q", k, all[k], v)
 		}
+	}
+}
+
+func testKVStoreGetAllEmpty(t *testing.T) {
+	t.Parallel()
+	kv := setupTestDB(t)
+	ctx := context.Background()
+
+	all, err := kv.GetAll(ctx)
+	if err != nil {
+		t.Fatalf("GetAll on empty table failed: %v", err)
+	}
+	if all == nil {
+		t.Error("GetAll on empty table returned nil map, want empty (non-nil) map")
+	}
+	if len(all) != 0 {
+		t.Errorf("GetAll on empty table: got %d entries, want 0", len(all))
 	}
 }
 

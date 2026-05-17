@@ -333,6 +333,13 @@ func (e *processExecutor) newPipelineCmd(ctx context.Context, parts []string, in
 
 // wirePipes connects stderr, stdin, and stdout pipes across all commands in the pipeline.
 func (p *pipeline) wirePipes() error {
+	var piped bool
+	defer func() {
+		if !piped {
+			p.closePipes()
+		}
+	}()
+
 	for i, cmd := range p.cmds {
 		stderr, err := cmd.StderrPipe()
 		if err != nil {
@@ -362,6 +369,7 @@ func (p *pipeline) wirePipes() error {
 	}
 	p.pipes = append(p.pipes, p.stdoutPipe)
 
+	piped = true // success — caller is now responsible for closePipes()
 	return nil
 }
 

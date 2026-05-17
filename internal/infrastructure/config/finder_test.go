@@ -163,3 +163,18 @@ func TestDefaultConfigFinder_FindInExecutableDir(t *testing.T) {
 	// but calling it ensures coverage.
 	_ = found
 }
+
+// TestFind_ReturnsFallbackWhenAllStrategiesFail verifies that Find() returns
+// the fallback path when no config file is discoverable via any strategy.
+func TestFind_ReturnsFallbackWhenAllStrategiesFail(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := NewDefaultConfigFinder(WithBaseDir(tmpDir))
+	path, err := f.Find()
+	if err != nil {
+		t.Fatalf("Find() returned error: %v", err)
+	}
+	expected := filepath.Join(tmpDir, "configs", "assistant.yaml")
+	if path != expected {
+		t.Errorf("expected fallback path %q, got %q", expected, path)
+	}
+}

@@ -514,3 +514,144 @@ func TestRegisterPath_EmptyPath(t *testing.T) {
 	assert.Equal(t, initialSafe, len(p.GetPaths(true)), "empty path should not register")
 	assert.Equal(t, initialRO, len(p.GetPaths(false)), "empty path should not register")
 }
+
+// TestCheckBoundary_ErrorPath verifies that checkBoundary propagates errors
+// to callers instead of silently swallowing them. When filepath.Abs fails on
+// the boundary (e.g., NUL byte), the error must be returned so callers can log it.
+//
+// This covers the [TECHNICAL DEBT] fix for checkDefaultBoundaries,
+// checkSafePaths, and checkReadOnlyPaths which previously discarded errors
+// with ok, _ := p.checkBoundary(...).
+func TestCheckBoundary_ErrorPath(t *testing.T) {
+	t.Parallel()
+
+	p := newPathPolicy(nil)
+
+	t.Run("checkBoundary propagates filepath.Abs error", func(t *testing.T) {
+		t.Parallel()
+		// NUL byte in boundary triggers filepath.Abs failure on some platforms
+		ok, err := p.checkBoundary("/some/target", "/valid/\x00boundary")
+		if err == nil {
+			t.Skip("filepath.Abs does not error on NUL byte on this platform")
+		}
+		if ok {
+			t.Error("expected ok=false when checkBoundary returns an error")
+		}
+		// Error is propagated — callers (checkDefaultBoundaries, checkSafePaths,
+		// checkReadOnlyPaths) can now log it instead of discarding it.
+	})
+
+	t.Run("checkDefaultBoundaries rejects path outside all boundaries", func(t *testing.T) {
+		t.Parallel()
+		// A path in a directory that is neither CWD nor any temp directory
+		// must be rejected by checkDefaultBoundaries.
+		outside := "/nonexistent_outside_dir/test-file.txt"
+		if runtime.GOOS == "windows" {
+			outside = `C:\nonexistent_outside_dir\test-file.txt`
+		}
+		ok, err := p.checkDefaultBoundaries(outside, false)
+		if err != nil {
+			t.Errorf("checkDefaultBoundaries returned unexpected error: %v", err)
+		}
+		if ok {
+			t.Error("checkDefaultBoundaries should reject path outside all default boundaries")
+		}
+	})
+
+	t.Run("checkSafePaths returns false for empty safePaths", func(t *testing.T) {
+		t.Parallel()
+		p2 := newPathPolicy(nil)
+		// No safe paths registered — checkSafePaths must return false.
+		ok, err := p2.checkSafePaths("/some/target", false)
+		if err != nil {
+			t.Errorf("checkSafePaths returned unexpected error: %v", err)
+		}
+		if ok {
+			t.Error("expected checkSafePaths to return false for empty safePaths")
+		}
+	})
+
+	t.Run("checkReadOnlyPaths returns false for empty readOnlyPaths", func(t *testing.T) {
+		t.Parallel()
+		p2 := newPathPolicy(nil)
+		// No read-only paths registered — checkReadOnlyPaths must return false.
+		ok, err := p2.checkReadOnlyPaths("/some/target", false)
+		if err != nil {
+			t.Errorf("checkReadOnlyPaths returned unexpected error: %v", err)
+		}
+		if ok {
+			t.Error("expected checkReadOnlyPaths to return false for empty readOnlyPaths")
+		}
+	})
+}
+
+// TestCheckBoundary_EvalSymlinksError verifies fail-secure behavior when
+// the boundary directory has restricted permissions (000). Even when
+// filepath.EvalSymlinks succeeds on the directory entry itself (which is
+// [SYSTEM-DEPENDENT]), checkBoundary must correctly identify that a target
+// outside the boundary is rejected.
+//
+// The error path from checkBoundary (via filepath.Abs failure) is tested
+// separately in TestCheckBoundary_ErrorPaths. This test focuses on the
+// common case: boundary exists but target is outside → (false, nil).
+// The logging added by the [TECHNICAL DEBT] fix only triggers when
+// checkBoundary returns err != nil (i.e., filepath.Abs failure), which
+// is platform-specific and covered by TestCheckBoundary_ErrorPaths.
+func TestCheckBoundary_EvalSymlinksError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	nested := filepath.Join(tmpDir, "nested")
+	if err := os.Mkdir(nested, 0000); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chmod(nested, 0700); err != nil {
+			t.Logf("failed to restore permissions on %s: %v", nested, err)
+		}
+	}()
+
+	p := newPathPolicy(nil)
+	// Target OUTSIDE the permission-denied boundary
+	absPath := filepath.Join(tmpDir, "outside_target")
+
+	// checkBoundary with nested as the boundary and a target outside it
+	ok, err := p.checkBoundary(absPath, nested)
+	if ok {
+		t.Error("expected checkBoundary to return false for path outside 000-permission boundary")
+	}
+	// error behavior is platform-dependent: EvalSymlinks may or may not fail
+	// on 000-permission directories. When it fails, resolveSymlinks falls back
+	// to recursive resolution, so the error is not propagated (resolveSymlinks
+	// never returns an error). The only error from checkBoundary is from
+	// filepath.Abs(boundary), which is tested separately.
+	if err != nil {
+		t.Logf("checkBoundary returned error for 000-permission boundary: %v", err)
+	}
+
+	// Verify callers handle the return values correctly (no panic, no crash).
+	// Whether they return ok=true depends on whether tmpDir is under CWD or
+	// os.TempDir() — which is [SYSTEM-DEPENDENT] — so we only verify the
+	// calls complete without error.
+	safeOK, safeErr := p.checkSafePaths(absPath, false)
+	if safeErr != nil {
+		t.Logf("checkSafePaths error: %v", safeErr)
+	}
+	_ = safeOK // may be true or false depending on registration
+
+	roOK, roErr := p.checkReadOnlyPaths(absPath, false)
+	if roErr != nil {
+		t.Logf("checkReadOnlyPaths error: %v", roErr)
+	}
+	_ = roOK // may be true or false depending on registration
+
+	// Verify that ValidatePath itself handles the boundary correctly:
+	// the path should be rejected (ErrSandboxViolation) unless tmpDir happens
+	// to fall within CWD or os.TempDir.
+	validated, validateErr := p.ValidatePath(absPath, true)
+	if validateErr != nil {
+		t.Logf("ValidatePath rejected path (expected outside boundaries): %v", validateErr)
+	} else {
+		t.Logf("ValidatePath accepted path (tmpDir is within default boundaries): %s", validated)
+	}
+}

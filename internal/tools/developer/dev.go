@@ -304,11 +304,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{Text: outStr}, nil
 	}
 
-	res := formatExecutionResult("Benchmark", []byte(outStr), nil, 100, "Benchmark completed.")
-	if res.Error != nil {
-		return tools.ToolResult{}, res.Error
-	}
-	return res, nil
+	return formatExecutionResult("Benchmark", []byte(outStr), nil, 100, "Benchmark completed."), nil
 }
 
 func (m *devManager) validateBenchmarkArgs(path, bench string) error {

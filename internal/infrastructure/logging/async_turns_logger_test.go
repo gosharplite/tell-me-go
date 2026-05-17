@@ -805,3 +805,299 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 		})
 	}
 }
+
+// countingErrorFile is a mock that fails Write/Sync for the first N calls, then succeeds.
+type countingErrorFile struct {
+	infra_persistence.File
+	mu            sync.Mutex
+	writeFailures int
+	syncFailures  int
+	failWriteN    int // fail first N writes, then succeed
+	failSyncN     int // fail first N syncs, then succeed
+}
+
+func (f *countingErrorFile) Write(p []byte) (n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.writeFailures < f.failWriteN {
+		f.writeFailures++
+		return 0, errors.New("write failed")
+	}
+	return len(p), nil
+}
+
+func (f *countingErrorFile) Sync() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.syncFailures < f.failSyncN {
+		f.syncFailures++
+		return errors.New("sync failed")
+	}
+	return nil
+}
+
+func (f *countingErrorFile) Close() error {
+	return nil
+}
+
+// assertLogLevel checks that the handler captured at least one record at the given level
+// containing the given substring.
+func assertLogLevel(t *testing.T, handler *slogHandler, level slog.Level, substr string) {
+	t.Helper()
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	for _, r := range handler.records {
+		if r.Level == level && strings.Contains(r.Message, substr) {
+			return
+		}
+	}
+	t.Errorf("expected %s log containing %q, but not found", level, substr)
+}
+
+// assertNoLogLevel checks that the handler did NOT capture any record at the given level
+// containing the given substring.
+func assertNoLogLevel(t *testing.T, handler *slogHandler, level slog.Level, substr string) {
+	t.Helper()
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	for _, r := range handler.records {
+		if r.Level == level && strings.Contains(r.Message, substr) {
+			t.Errorf("unexpected %s log containing %q", level, substr)
+			return
+		}
+	}
+}
+
+func TestAsyncTurnsLogger_WriteFailureEscalation(t *testing.T) {
+	t.Run("single failure logs Warn not Error", func(t *testing.T) {
+		file := &countingErrorFile{failWriteN: 1, failSyncN: 0}
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   file,
+			ch:     make(chan string, 10),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// First write fails (counter=1 → Warn)
+		l.processMessage("msg 1\n")
+
+		assertLogLevel(t, handler, slog.LevelWarn, "failed to write to turns log")
+		assertNoLogLevel(t, handler, slog.LevelError, "after multiple retries")
+	})
+
+	t.Run("consecutive failures escalate to Error", func(t *testing.T) {
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   &errorWriteFile{}, // always fails Write
+			ch:     make(chan string, 10),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// Trigger 6 write failures
+		for i := 0; i < 6; i++ {
+			l.processMessage(fmt.Sprintf("msg %d\n", i))
+		}
+
+		assertLogLevel(t, handler, slog.LevelError, "failed to write to turns log after multiple retries")
+	})
+
+	t.Run("successful write resets counter", func(t *testing.T) {
+		// Fail 4 writes, then succeed
+		file := &countingErrorFile{failWriteN: 4, failSyncN: 0}
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   file,
+			ch:     make(chan string, 10),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// First 4 writes fail (Warn, counter=1,2,3,4)
+		for i := 0; i < 4; i++ {
+			l.processMessage(fmt.Sprintf("msg %d\n", i))
+		}
+		assertNoLogLevel(t, handler, slog.LevelError, "after multiple retries")
+
+		// 5th write succeeds → counter reset to 0
+		l.processMessage("msg success\n")
+
+		// Verify counter was reset by checking the internal field
+		if got := l.consecutiveFailures.Load(); got != 0 {
+			t.Errorf("expected counter=0 after successful write, got %d", got)
+		}
+	})
+
+	t.Run("counter resets then new failure is Warn", func(t *testing.T) {
+		// Fail 4 times, succeed on 5th, then new file that always fails
+		file1 := &countingErrorFile{failWriteN: 4, failSyncN: 0}
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   file1,
+			ch:     make(chan string, 10),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// Fail 4 times
+		for i := 0; i < 4; i++ {
+			l.processMessage(fmt.Sprintf("msg %d\n", i))
+		}
+
+		// Succeed once (resets counter)
+		l.processMessage("success\n")
+
+		// Switch to always-failing file
+		l.file = &errorWriteFile{}
+
+		// This should be Warn (counter=1 after reset), not Error
+		l.processMessage("new failure\n")
+
+		assertLogLevel(t, handler, slog.LevelWarn, "failed to write to turns log")
+		assertNoLogLevel(t, handler, slog.LevelError, "after multiple retries")
+	})
+}
+
+func TestAsyncTurnsLogger_SyncFailureEscalation(t *testing.T) {
+	t.Run("single sync failure logs Warn", func(t *testing.T) {
+		file := &countingErrorFile{failWriteN: 0, failSyncN: 1}
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   file,
+			ch:     make(chan string), // empty channel → Sync triggers
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// Write succeeds, Sync fails (counter=1 → Warn)
+		l.processMessage("msg\n")
+
+		assertLogLevel(t, handler, slog.LevelWarn, "failed to sync turns log")
+		assertNoLogLevel(t, handler, slog.LevelError, "failed to sync turns log after multiple retries")
+	})
+
+	t.Run("sync failure stays Warn when write succeeds between", func(t *testing.T) {
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   &errorSyncFile{},  // Write succeeds, Sync always fails
+			ch:     make(chan string), // empty → Sync after each write
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// Each processMessage: Write succeeds (counter→0), Sync fails (counter→1).
+		// The counter never reaches 5 because Write resets it each time.
+		for i := 0; i < 6; i++ {
+			l.processMessage(fmt.Sprintf("msg %d\n", i))
+		}
+
+		// Sync failures are Warn-level because counter is reset by successful writes
+		assertLogLevel(t, handler, slog.LevelWarn, "failed to sync turns log")
+		assertNoLogLevel(t, handler, slog.LevelError, "failed to sync turns log after multiple retries")
+	})
+
+	t.Run("successful sync resets counter", func(t *testing.T) {
+		file := &countingErrorFile{failWriteN: 0, failSyncN: 4}
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   file,
+			ch:     make(chan string),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// 4 sync failures (counter=1,2,3,4)
+		for i := 0; i < 4; i++ {
+			l.processMessage(fmt.Sprintf("msg %d\n", i))
+		}
+		assertNoLogLevel(t, handler, slog.LevelError, "after multiple retries")
+
+		// 5th sync succeeds → counter reset
+		l.processMessage("final\n")
+
+		if got := l.consecutiveFailures.Load(); got != 0 {
+			t.Errorf("expected counter=0 after successful sync, got %d", got)
+		}
+	})
+}
+
+func TestAsyncTurnsLogger_DrainAndSyncEscalation(t *testing.T) {
+	t.Run("drain write failure escalates to Error", func(t *testing.T) {
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   &errorWriteFile{}, // Write always fails
+			ch:     make(chan string, 10),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// Pre-fill the channel with 6 messages
+		for i := 0; i < 6; i++ {
+			l.ch <- fmt.Sprintf("msg %d\n", i)
+		}
+
+		// drainAndSync should process all 6, escalating on the 5th
+		l.drainAndSync()
+
+		assertLogLevel(t, handler, slog.LevelError, "after multiple retries")
+	})
+
+	t.Run("drain sync failure escalates to Error", func(t *testing.T) {
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   &errorSyncFile{}, // Write succeeds, Sync always fails
+			ch:     make(chan string, 10),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// 6 successful writes (counter resets each time), Sync at end fails
+		for i := 0; i < 6; i++ {
+			l.ch <- fmt.Sprintf("msg %d\n", i)
+		}
+
+		// drainAndSync: each Write succeeds (counter→0), final Sync fails (counter=1)
+		l.drainAndSync()
+
+		// Only the final Sync is called, so counter=1 → Warn
+		assertLogLevel(t, handler, slog.LevelWarn, "failed to sync turns log on shutdown")
+	})
+
+	t.Run("drain sync escalates after multiple shutdowns", func(t *testing.T) {
+		handler := &slogHandler{}
+		logger := slog.New(handler)
+
+		l := &asyncTurnsLogger{
+			file:   &errorSyncFile{},
+			ch:     make(chan string, 10),
+			logger: logger,
+			clock:  &mockClock{now: time.Now()},
+		}
+
+		// Call drainAndSync 6 times (each does Sync at end, which fails)
+		for i := 0; i < 6; i++ {
+			l.drainAndSync()
+		}
+
+		assertLogLevel(t, handler, slog.LevelError, "failed to sync turns log on shutdown after multiple retries")
+	})
+}

@@ -1365,6 +1365,7 @@ func getResponsesAPIContentBlockTestCases(t *testing.T) []responsesAPITestCase {
 	cases = append(cases, getResponsesAPIRefusalTestCases(t)...)
 	cases = append(cases, getResponsesAPIMixedInputTestCases(t)...)
 	cases = append(cases, getResponsesAPITextBlockFallbackTestCases(t)...)
+	cases = append(cases, getResponsesAPIEdgeCases(t)...)
 	return cases
 }
 
@@ -1592,6 +1593,222 @@ func getResponsesAPITextBlockFallbackTestCases(t *testing.T) []responsesAPITestC
 	}
 }
 
+func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
+		// Gap 1 & 2: Direct content blocks without message wrapper + child blocks
+		{
+			name:    "direct_content_blocks_without_message_wrapper",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type:       "text",
+							OutputText: "direct output text",
+						},
+						{
+							Type: "custom_block",
+							Content: []contentBlock{
+								{Type: "text", Text: "child block text"},
+							},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				var foundDirect, foundChild bool
+				for _, part := range resp.Parts {
+					if part.Text == "direct output text" {
+						foundDirect = true
+					}
+					if part.Text == "child block text" {
+						foundChild = true
+					}
+				}
+				if !foundDirect {
+					t.Error("expected 'direct output text' part")
+				}
+				if !foundChild {
+					t.Error("expected 'child block text' part from child Content iteration")
+				}
+			},
+		},
+		// Gap 3: parseResponseToolCalls error in else-branch
+		{
+			name:    "direct_item_with_invalid_tool_calls",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "direct_item",
+							ToolCalls: []toolCall{
+								{
+									ID:   "call_1",
+									Type: "function",
+									Function: functionCall{
+										Name:      "test_tool",
+										Arguments: "{invalid json",
+									},
+								},
+							},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			wantErr: "failed to unmarshal tool arguments",
+		},
+		// Gap 4: Top-level Name/Arguments without Function
+		{
+			name:    "top_level_tool_call_via_name_and_arguments",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type:      "call",
+							ID:        "call_name_123",
+							Name:      "test_tool",
+							Arguments: `{"param": "val"}`,
+							// No Function field — uses Name/Arguments directly
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				if len(resp.Parts) != 1 || resp.Parts[0].FunctionCall == nil {
+					t.Fatal("expected function call part")
+				}
+				if resp.Parts[0].FunctionCall.ID != "call_name_123" {
+					t.Errorf("expected ID 'call_name_123', got %q", resp.Parts[0].FunctionCall.ID)
+				}
+				if resp.Parts[0].FunctionCall.Name != "test_tool" {
+					t.Errorf("expected name 'test_tool', got %q", resp.Parts[0].FunctionCall.Name)
+				}
+			},
+		},
+		// Gap 4b: Top-level Name/Arguments with invalid JSON — appendToolCall error path
+		{
+			name:    "top_level_tool_call_via_name_and_invalid_arguments",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type:      "call",
+							ID:        "call_name_456",
+							Name:      "test_tool",
+							Arguments: "{invalid json",
+							// No Function field — uses Name/Arguments with broken JSON
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			wantErr: "failed to unmarshal tool arguments",
+		},
+		// Gap 6: extractBlockText with map missing "value" key
+		{
+			name:    "text_block_with_map_missing_value_key",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "text",
+							Text: map[string]interface{}{"other": "not-value"},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				// extractBlockText returns "" for map without "value" key
+				// handleTextBlock then checks OutputText (empty) and InputText (empty)
+				// No part should be added
+				if len(resp.Parts) != 0 {
+					t.Errorf("expected 0 parts for map without 'value' key, got %d", len(resp.Parts))
+				}
+			},
+		},
+		// Gap 7: handleRefusalBlock with empty Refusal
+		{
+			name:    "refusal_block_with_empty_text",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "message",
+							Message: &struct {
+								Role      string         `json:"role"`
+								Content   []contentBlock `json:"content"`
+								ToolCalls []toolCall     `json:"tool_calls"`
+							}{
+								Role: "assistant",
+								Content: []contentBlock{
+									{Type: "refusal", Refusal: ""},
+									{Type: "text", Text: "fallback text"},
+								},
+							},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				// Empty refusal should not produce a part; "fallback text" should
+				if len(resp.Parts) != 1 || resp.Parts[0].Text != "fallback text" {
+					t.Errorf("expected 1 part 'fallback text', got %+v", resp.Parts)
+				}
+			},
+		},
+		// Unknown content block type must return an error (ADR-022 fail-loud)
+		{
+			name:    "unknown_content_block_type_returns_error",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "message",
+							Message: &struct {
+								Role      string         `json:"role"`
+								Content   []contentBlock `json:"content"`
+								ToolCalls []toolCall     `json:"tool_calls"`
+							}{
+								Role: "assistant",
+								Content: []contentBlock{
+									{Type: "future_block_type_xyz"},
+								},
+							},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			wantErr: "unhandled content block type",
+		},
+	}
+}
+
 func getStreamingTestCases(t *testing.T) []responsesAPITestCase {
 	return []responsesAPITestCase{}
 }
@@ -1623,6 +1840,48 @@ func getToolCallTestCases(t *testing.T) []responsesAPITestCase {
 					t.Errorf("unexpected tool call")
 				}
 			},
+		},
+		{
+			name:    "top_level_tool_call_empty_id_returns_error",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "call",
+							ID:   "", // ← empty ID triggers the guard
+							Function: &functionCall{
+								Name:      "test_tool",
+								Arguments: `{"param": "val"}`,
+							},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			wantErr: "invalid tool payload",
+		},
+		{
+			name:    "top_level_tool_call_empty_id_via_name_args",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type:      "call",
+							ID:        "", // ← empty ID
+							Name:      "test_tool",
+							Arguments: `{"param": "val"}`,
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			wantErr: "invalid tool payload",
 		},
 	}
 }

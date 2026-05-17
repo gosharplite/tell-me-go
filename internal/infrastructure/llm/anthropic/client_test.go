@@ -602,3 +602,117 @@ func TestToAnthropicMessages_SkipsEmptyBlocks(t *testing.T) {
 		t.Error("expected 'world' in user content, not found")
 	}
 }
+
+// customRoundTripper is an http.RoundTripper that is NOT an *http.Transport.
+// Used by TestNewClient_TransportCloneFallback to exercise the else branch
+// in NewClient's transport initialization.
+type customRoundTripper struct{}
+
+func (c *customRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"id":"msg","content":[{"type":"text","text":"ok"}],"role":"assistant","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+// TestNewClient_TransportCloneFallback closes Gap #1: when
+// http.DefaultTransport is not an *http.Transport (e.g., it has been
+// replaced by a custom RoundTripper), NewClient must fall back to
+// using DefaultTransport directly instead of calling Clone().
+// This test is NOT parallel because it mutates the global
+// http.DefaultTransport.
+func TestNewClient_TransportCloneFallback(t *testing.T) {
+	// Save and restore DefaultTransport
+	orig := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = orig })
+
+	// Replace DefaultTransport with a non-*http.Transport type
+	http.DefaultTransport = &customRoundTripper{}
+
+	c := NewClient("https://api.anthropic.com/v1", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
+	if c.transport == nil {
+		t.Fatal("expected transport to be non-nil")
+	}
+	if c.httpClient == nil {
+		t.Fatal("expected httpClient to be non-nil")
+	}
+}
+
+// TestPrepareAnthropicRequest_ThinkingBudgetIncreasesMaxTokens closes
+// Gap #2 variant: when thinkingBudget > 0 AND the caller explicitly
+// set MaxTokens (via WithMaxTokens) to a value <= thinkingBudget, the
+// code must still bump MaxTokens above the thinking budget. This
+// complements the table-driven test in truncation_test.go by covering
+// the explicit-MaxTokens-but-still-too-low path.
+func TestPrepareAnthropicRequest_ThinkingBudgetIncreasesMaxTokens(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("https://api.anthropic.com/v1", "claude-3-5-sonnet",
+		&auth.AnthropicAuth{APIKey: "test-key"},
+		WithThinkingBudget(20000), // > defaultMaxTokens (16384)
+		WithMaxTokens(16000),      // < thinkingBudget, triggers increase
+	)
+
+	req, err := c.prepareAnthropicRequest(context.Background(),
+		[]*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The request body should have MaxTokens increased to thinkingBudget + 1024
+	body, _ := io.ReadAll(req.Body)
+	if !strings.Contains(string(body), `"max_tokens":21024`) {
+		t.Errorf("expected max_tokens=21024 (thinkingBudget 20000 + 1024), got body: %s", string(body))
+	}
+}
+
+// TestSendChat_PreCancelledContext closes Gap #3: when the context is
+// already cancelled before SendChat is called, the HTTP client's Do
+// method must return an error before reaching the server. This is
+// distinct from TestSendChat_Timeout which uses a deadline.
+func TestSendChat_PreCancelledContext(t *testing.T) {
+	t.Parallel()
+
+	server, c := setupMockAnthropicServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("HTTP server should not be reached with cancelled context")
+	})
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before the call
+
+	_, _, err := c.SendChat(ctx, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if !strings.Contains(err.Error(), "request failed") {
+		t.Errorf("expected error containing 'request failed', got: %v", err)
+	}
+}
+
+// TestBuildHTTPRequest_VertexURL closes Gap #7: when isVertex()
+// returns true, buildHTTPRequest must construct a URL ending with
+// the model name followed by ":rawPredict" instead of the standard
+// "/messages" path.
+func TestBuildHTTPRequest_VertexURL(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/anthropic/models",
+		"claude-3-5-sonnet",
+		&auth.AnthropicAuth{APIKey: "test-key"},
+	)
+
+	req, err := c.buildHTTPRequest(context.Background(), []byte(`{}`))
+	if err != nil {
+		t.Fatalf("buildHTTPRequest failed: %v", err)
+	}
+
+	// Vertex URL must include model name with :rawPredict
+	expectedSuffix := "claude-3-5-sonnet:rawPredict"
+	if !strings.Contains(req.URL.String(), expectedSuffix) {
+		t.Errorf("expected URL to contain %q, got: %s", expectedSuffix, req.URL.String())
+	}
+}

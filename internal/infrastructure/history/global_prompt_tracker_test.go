@@ -3,6 +3,7 @@ package history
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -712,5 +713,61 @@ func TestGlobalPromptTracker_PerformCompactionPass_CreateTempFailure(t *testing.
 	success := tracker.performCompactionPass(context.Background())
 	if success {
 		t.Error("expected performCompactionPass to fail when output dir is read-only")
+	}
+}
+
+// failAfterNWriter returns nil error for the first N writes, then returns io.ErrShortWrite.
+type failAfterNWriter struct {
+	n       int
+	written int
+}
+
+func (f *failAfterNWriter) Write(p []byte) (int, error) {
+	if f.written >= f.n {
+		return 0, io.ErrShortWrite
+	}
+	f.written++
+	return len(p), nil
+}
+
+func TestWriteCompactedData_Success(t *testing.T) {
+	tracker := &globalPromptTracker{}
+	entries := []promptEntry{
+		{Timestamp: "2026-01-01T00:00:00Z", Prompt: "hello"},
+		{Timestamp: "2026-01-01T00:01:00Z", Prompt: "world"},
+	}
+	var buf bytes.Buffer
+	ok := tracker.writeCompactedData(&buf, entries)
+	if !ok {
+		t.Fatal("expected writeCompactedData to succeed")
+	}
+	// Verify both entries were written as JSON lines
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte{'\n'})
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %q", len(lines), buf.String())
+	}
+	// Verify each line is valid JSON and contains the expected prompt
+	for i, line := range lines {
+		var entry promptEntry
+		if err := json.Unmarshal(line, &entry); err != nil {
+			t.Errorf("line %d is not valid JSON: %v", i, err)
+		}
+		if entry.Prompt != entries[i].Prompt {
+			t.Errorf("line %d: got prompt %q; want %q", i, entry.Prompt, entries[i].Prompt)
+		}
+	}
+}
+
+func TestWriteCompactedData_WriteError(t *testing.T) {
+	tracker := &globalPromptTracker{}
+	entries := []promptEntry{
+		{Timestamp: "2026-01-01T00:00:00Z", Prompt: "hello"},
+		{Timestamp: "2026-01-01T00:01:00Z", Prompt: "world"},
+	}
+	// failAfterNWriter succeeds once, then fails — second entry triggers failure
+	failWriter := &failAfterNWriter{n: 1}
+	ok := tracker.writeCompactedData(failWriter, entries)
+	if ok {
+		t.Fatal("expected writeCompactedData to fail on write error")
 	}
 }

@@ -123,6 +123,30 @@ func TestRegister_PartialFailure(t *testing.T) {
 			wantNotRegistered: "run_linter",
 		},
 		{
+			name:              "go_tidy fails",
+			failOn:            "go_tidy",
+			wantRegistered:    []string{"run_tests"},
+			wantNotRegistered: "go_tidy",
+		},
+		{
+			name:              "get_coverage fails",
+			failOn:            "get_coverage",
+			wantRegistered:    []string{"run_tests", "go_tidy"},
+			wantNotRegistered: "get_coverage",
+		},
+		{
+			name:              "run_benchmark fails",
+			failOn:            "run_benchmark",
+			wantRegistered:    []string{"run_tests", "go_tidy", "get_coverage", "run_linter"},
+			wantNotRegistered: "run_benchmark",
+		},
+		{
+			name:              "check_vulnerabilities fails",
+			failOn:            "check_vulnerabilities",
+			wantRegistered:    []string{"run_tests", "go_tidy", "get_coverage", "run_linter", "run_benchmark"},
+			wantNotRegistered: "check_vulnerabilities",
+		},
+		{
 			name:              "Last tool fails",
 			failOn:            "verify_release_readiness",
 			wantRegistered:    []string{"run_tests", "go_tidy", "get_coverage", "run_linter", "run_benchmark", "check_vulnerabilities"},

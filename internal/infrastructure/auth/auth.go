@@ -98,6 +98,7 @@ func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 				a.Token = strings.TrimSpace(string(content))
 				return a.Token, nil
 			}
+			log.Printf("failed to read auth cache file %s: %v", cacheFile, err)
 		}
 	}
 
@@ -128,7 +129,9 @@ func (a *VertexAuth) Invalidate() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.Token = ""
-	_ = os.Remove(a.getCachePath())
+	if err := os.Remove(a.getCachePath()); err != nil && !os.IsNotExist(err) {
+		log.Printf("failed to remove auth cache file: %v", err)
+	}
 }
 
 // Apply injects the Bearer token into the request headers.
@@ -216,6 +219,9 @@ func (a *ServiceAccountAuth) getToken(ctx context.Context) (string, error) {
 		}
 	} else {
 		// 2. Read the master secret (key.json) from disk
+		if a.KeyFilePath == "" {
+			return "", fmt.Errorf("failed to read service account key: KeyFilePath is empty")
+		}
 		data, err := os.ReadFile(a.KeyFilePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to read service account key: %w", err)
