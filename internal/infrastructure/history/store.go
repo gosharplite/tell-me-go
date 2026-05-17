@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -259,13 +260,21 @@ func (s *jsonlStore) withAppendFile(ctx context.Context, path string, fn func(pe
 	}
 
 	defer func() {
-		// Priority: preserve the error from the operation (fn),
-		// but catch sync/close errors if they occur.
+		// Priority: fn error > Sync error > Close error.
+		// Sync failure after a successful write means data may not be durable
+		// and must be surfaced. Close failure after a successful Sync is
+		// generally spurious (data already durable on POSIX) and is logged
+		// rather than promoted to avoid retry cascades in callers.
 		if serr := f.Sync(); serr != nil && err == nil {
 			err = serr
 		}
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
+		if cerr := f.Close(); cerr != nil {
+			if err == nil {
+				// Close failed but Sync succeeded: data is durable on disk.
+				log.Printf("history: close error after successful sync on %s: %v", path, cerr)
+			}
+			// If err is already set (from fn or Sync), the primary error
+			// takes precedence; Close error is supplemental.
 		}
 	}()
 
@@ -443,7 +452,9 @@ func (s *jsonlStore) Sync(ctx context.Context) error {
 		return err
 	}
 	defer func() {
-		_ = f.Close()
+		if cerr := f.Close(); cerr != nil {
+			log.Printf("history: error closing file after sync on %s: %v", s.filePath, cerr)
+		}
 	}()
 	return f.Sync()
 }

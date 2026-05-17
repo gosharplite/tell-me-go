@@ -5,11 +5,14 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"go/token"
-	"golang.org/x/tools/go/packages"
+	"log"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // location represents a position in a source file.
@@ -152,7 +155,7 @@ func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 
 	symbolsByPath, usagesByName, err := idx.harvestPackages(ctx, fset, pkgs, hb)
 	if err != nil {
-		return err
+		return fmt.Errorf("harvesting packages: %w", err)
 	}
 
 	idx.updateState(pkgs, symbolsByPath, usagesByName, fset)
@@ -171,7 +174,7 @@ func (idx *indexer) toLocation(pos token.Pos) location {
 
 func (idx *indexer) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
 	if err := idx.Refresh(ctx, hb); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("refreshing index for lookup: %w", err)
 	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -188,7 +191,7 @@ func (idx *indexer) Lookup(ctx context.Context, symbol string, hb chan<- struct{
 
 func (idx *indexer) Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
 	if err := idx.Refresh(ctx, hb); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("refreshing index for packages: %w", err)
 	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -268,6 +271,7 @@ func (idx *indexer) updateState(pkgs []*packages.Package, symbolsByPath map[stri
 
 func (idx *indexer) IsSymbolUsed(ctx context.Context, name string, hb chan<- struct{}) bool {
 	if err := idx.Refresh(ctx, hb); err != nil {
+		log.Printf("analysis: index refresh failed in IsSymbolUsed: %v", err)
 		return false
 	}
 	idx.mu.RLock()

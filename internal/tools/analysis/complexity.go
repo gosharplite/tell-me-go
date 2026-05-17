@@ -86,7 +86,7 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 	}
 
 	if err := g.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("gathering complexity metrics: %w", err)
 	}
 
 	return complexities, skippedErrs, nil

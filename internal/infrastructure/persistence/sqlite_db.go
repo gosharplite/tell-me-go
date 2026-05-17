@@ -6,8 +6,8 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
 	"time"
@@ -81,7 +81,7 @@ func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem,
 	}
 
 	if err := migrateTasks(ctx, db, fs, tasksPath, logger); err != nil {
-		log.Printf("Failed to migrate tasks: %v", err)
+		return fmt.Errorf("migrating legacy tasks from %s: %w", tasksPath, err)
 	}
 
 	return nil
@@ -104,7 +104,9 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 		return err
 	}
 	defer func() {
-		_ = tx.Rollback()
+		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+			logger.Warn("failed to rollback migration transaction", "error", rbErr)
+		}
 	}()
 
 	rows := mapTasksToRows(tasks)
@@ -157,7 +159,7 @@ func executeBatchInsert(ctx context.Context, tx *sql.Tx, rows []taskRow) error {
 		}
 
 		if _, err := tx.ExecContext(ctx, queryBuilder.String(), args...); err != nil {
-			return fmt.Errorf("bulk inserting legacy tasks: %w", err)
+			return fmt.Errorf("bulk inserting legacy tasks (batch %d-%d): %w", i, end, err)
 		}
 	}
 	return nil

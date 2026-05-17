@@ -4,8 +4,11 @@
 package history
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -928,7 +931,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			action: func(ctx context.Context, s *jsonlStore) error {
 				return s.Append(ctx, dummyContent)
 			},
-			wantErr: "simulated close error",
+			wantErr: "", // Close error after successful Sync is logged, not returned
 		},
 		{
 			name:      "Close Failure on Archive",
@@ -936,7 +939,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			action: func(ctx context.Context, s *jsonlStore) error {
 				return s.Archive(ctx, dummyContent)
 			},
-			wantErr: "simulated close error",
+			wantErr: "", // Close error after successful Sync is logged, not returned
 		},
 		{
 			name:      "Close Failure on UpdateMetadata",
@@ -944,7 +947,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			action: func(ctx context.Context, s *jsonlStore) error {
 				return s.UpdateMetadata(ctx, 0, map[string]interface{}{"pinned": true})
 			},
-			wantErr: "simulated close error",
+			wantErr: "", // Close error after successful Sync is logged, not returned
 		},
 		{
 			name:      "Close Failure on AppendParts",
@@ -952,7 +955,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			action: func(ctx context.Context, s *jsonlStore) error {
 				return s.AppendParts(ctx, 0, []*llm.Part{{Text: "test"}})
 			},
-			wantErr: "simulated close error",
+			wantErr: "", // Close error after successful Sync is logged, not returned
 		},
 	}
 
@@ -969,6 +972,12 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
 
 			err := tt.action(context.Background(), store)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected nil error, got %v", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
 			}
@@ -1450,5 +1459,135 @@ func TestStore_ErrorPaths(t *testing.T) {
 			err := tt.action(context.Background(), store)
 			assertStoreErrorPath(t, err, tt)
 		})
+	}
+}
+
+// mockSyncCloseFile implements persistence.File with configurable Sync/Close errors.
+type mockSyncCloseFile struct {
+	syncErr  error
+	closeErr error
+	synced   bool
+	closed   bool
+}
+
+func (f *mockSyncCloseFile) Read(p []byte) (int, error)                   { return 0, io.EOF }
+func (f *mockSyncCloseFile) Write(p []byte) (int, error)                  { return len(p), nil }
+func (f *mockSyncCloseFile) Seek(offset int64, whence int) (int64, error) { return 0, nil }
+func (f *mockSyncCloseFile) ReadAt(p []byte, off int64) (int, error)      { return 0, io.EOF }
+func (f *mockSyncCloseFile) ReadDir(n int) ([]os.DirEntry, error)         { return nil, nil }
+func (f *mockSyncCloseFile) Sync() error                                  { f.synced = true; return f.syncErr }
+func (f *mockSyncCloseFile) Close() error                                 { f.closed = true; return f.closeErr }
+
+// mockFSForSyncClose returns a mock file from OpenFile for sync/close testing.
+type mockFSForSyncClose struct {
+	persistence.FileSystem
+	file *mockSyncCloseFile
+}
+
+func (m *mockFSForSyncClose) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
+	return m.file, nil
+}
+
+func TestWithAppendFile_SyncCloseErrorPriority(t *testing.T) {
+	fnErr := errors.New("fn error")
+	syncErr := errors.New("sync error")
+	closeErr := errors.New("close error")
+
+	tests := []struct {
+		name       string
+		fnErr      error
+		syncErr    error
+		closeErr   error
+		wantErr    error
+		wantSynced bool
+		wantClosed bool
+	}{
+		{"fn succeeds, sync succeeds, close succeeds", nil, nil, nil, nil, true, true},
+		{"fn succeeds, sync fails, close succeeds", nil, syncErr, nil, syncErr, true, true},
+		{"fn succeeds, sync succeeds, close fails", nil, nil, closeErr, nil, true, true},
+		{"fn succeeds, sync fails, close fails", nil, syncErr, closeErr, syncErr, true, true},
+		{"fn fails, sync succeeds, close succeeds", fnErr, nil, nil, fnErr, true, true},
+		{"fn fails, sync fails, close succeeds", fnErr, syncErr, nil, fnErr, true, true},
+		{"fn fails, sync succeeds, close fails", fnErr, nil, closeErr, fnErr, true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "test.jsonl")
+
+			mf := &mockSyncCloseFile{syncErr: tt.syncErr, closeErr: tt.closeErr}
+			mfs := &mockFSForSyncClose{FileSystem: infrapersistence.NewOSFileSystem(), file: mf}
+
+			store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+
+			err := store.withAppendFile(context.Background(), filePath, func(f persistence.File) error {
+				return tt.fnErr
+			})
+
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("expected nil error, got %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("expected error %v, got nil", tt.wantErr)
+				} else if !strings.Contains(err.Error(), tt.wantErr.Error()) {
+					t.Errorf("expected error containing %q, got %q", tt.wantErr.Error(), err.Error())
+				}
+			}
+
+			if mf.synced != tt.wantSynced {
+				t.Errorf("synced = %v, want %v", mf.synced, tt.wantSynced)
+			}
+			if mf.closed != tt.wantClosed {
+				t.Errorf("closed = %v, want %v", mf.closed, tt.wantClosed)
+			}
+		})
+	}
+}
+
+func TestSync_CloseErrorLogged(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "sync_test.jsonl")
+
+	// Create the file so Sync doesn't get IsNotExist
+	if err := os.WriteFile(filePath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	closeErr := errors.New("close failed after sync")
+	mf := &mockSyncCloseFile{closeErr: closeErr}
+	mfs := &mockFSForSyncClose{FileSystem: infrapersistence.NewOSFileSystem(), file: mf}
+
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+
+	// Capture log output
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	err := store.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("Sync returned unexpected error: %v", err)
+	}
+
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "close failed after sync") {
+		t.Errorf("expected log to contain 'close failed after sync', got: %s", logOutput)
+	}
+	if !mf.closed {
+		t.Error("Close was not called")
+	}
+}
+
+func TestSync_IsNotExist_ReturnsNil(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "nonexistent.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+
+	err := store.Sync(context.Background())
+	if err != nil {
+		t.Errorf("Sync on non-existent file should return nil, got %v", err)
 	}
 }

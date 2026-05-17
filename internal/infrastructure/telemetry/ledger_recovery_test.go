@@ -320,11 +320,12 @@ func TestFindLogFiles_ErrorPaths(t *testing.T) {
 		ls := &ledgerStore{}
 		files, err := ls.findLogFiles(globalDir)
 
-		// The walk itself should not return an error; access errors are
-		// swallowed by the WalkDirFunc returning nil.
-		require.NoError(t, err, "findLogFiles should not return an error for inaccessible subdirectory")
+		// Walk errors are now collected and returned via errors.Join.
+		// We expect a non-nil error because of the permission-denied subdirectory.
+		require.Error(t, err, "findLogFiles should return an error for inaccessible subdirectory")
+		require.Contains(t, err.Error(), "walk errors during recovery")
 
-		// The readable tokens.log should be found (walk continues).
+		// The readable tokens.log should be found (walk continues despite errors).
 		found := false
 		for _, f := range files {
 			if f == readableLog {
@@ -416,35 +417,243 @@ func TestGetSessionID_RelFallback(t *testing.T) {
 	ls := &ledgerStore{}
 
 	t.Run("normal relative path", func(t *testing.T) {
-		result := ls.getSessionID("/base/session/tokens.log", "/base")
+		result, err := ls.getSessionID("/base/session/tokens.log", "/base")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != "session/tokens.log" {
 			t.Errorf("expected 'session/tokens.log', got %q", result)
 		}
 	})
 
 	t.Run("backup prefix rewriting", func(t *testing.T) {
-		result := ls.getSessionID("/base/backups/2023/session/tokens.log", "/base")
+		result, err := ls.getSessionID("/base/backups/2023/session/tokens.log", "/base")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != "backup/2023/session/tokens.log" {
 			t.Errorf("expected 'backup/2023/session/tokens.log', got %q", result)
 		}
 	})
 
-	t.Run("rel error returns path unchanged", func(t *testing.T) {
+	t.Run("rel error returns error", func(t *testing.T) {
 		globalDir := `C:\base`
 		path := `D:\other\tokens.log`
 
 		rel, relErr := filepath.Rel(globalDir, path)
 		if relErr != nil {
-			result := ls.getSessionID(path, globalDir)
-			if result != path {
-				t.Errorf("expected fallback to return path unchanged %q, got %q", path, result)
+			result, err := ls.getSessionID(path, globalDir)
+			if err == nil {
+				t.Error("expected error from getSessionID when filepath.Rel fails")
+			} else if !strings.Contains(err.Error(), "resolving session ID") {
+				t.Errorf("expected error to contain 'resolving session ID', got: %v", err)
+			}
+			if result != "" {
+				t.Errorf("expected empty string on error, got %q", result)
 			}
 		} else {
 			t.Logf("filepath.Rel succeeded (expected on Unix): rel=%q", rel)
-			result := ls.getSessionID(path, globalDir)
+			result, err := ls.getSessionID(path, globalDir)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if result != filepath.ToSlash(rel) {
 				t.Errorf("expected %q, got %q", filepath.ToSlash(rel), result)
 			}
 		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestFindLogFiles_WalkError (Phase 11 — Recovery failure hardening)
+// ---------------------------------------------------------------------------
+
+func TestFindLogFiles_WalkError(t *testing.T) {
+	t.Run("walk succeeds cleanly", func(t *testing.T) {
+		t.Parallel()
+		globalDir := t.TempDir()
+
+		// Create a normal directory with tokens.log files
+		sessionA := filepath.Join(globalDir, "sessionA")
+		require.NoError(t, os.MkdirAll(sessionA, 0755))
+		logA := filepath.Join(sessionA, "tokens.log")
+		require.NoError(t, os.WriteFile(logA, []byte(`{"cost": 1.0}`), 0644))
+
+		sessionB := filepath.Join(globalDir, "sessionB")
+		require.NoError(t, os.MkdirAll(sessionB, 0755))
+		logB := filepath.Join(sessionB, "tokens.log")
+		require.NoError(t, os.WriteFile(logB, []byte(`{"cost": 2.0}`), 0644))
+
+		ls := &ledgerStore{}
+		files, err := ls.findLogFiles(globalDir)
+
+		require.NoError(t, err, "expected nil error for clean walk")
+		require.Len(t, files, 2, "expected both tokens.log files to be found")
+		assert.Contains(t, files, logA)
+		assert.Contains(t, files, logB)
+	})
+
+	t.Run("walk permission denied mid-tree", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod 0000 not effective on Windows")
+		}
+		t.Parallel()
+		globalDir := t.TempDir()
+
+		// Create an inaccessible subdirectory with a tokens.log inside
+		inaccessibleDir := filepath.Join(globalDir, "locked")
+		require.NoError(t, os.MkdirAll(inaccessibleDir, 0755))
+		inaccessibleLog := filepath.Join(inaccessibleDir, "tokens.log")
+		require.NoError(t, os.WriteFile(inaccessibleLog, []byte(`{"cost": 3.0}`), 0644))
+		require.NoError(t, os.Chmod(inaccessibleDir, 0000))
+		t.Cleanup(func() {
+			_ = os.Chmod(inaccessibleDir, 0755)
+		})
+
+		// Create a readable directory with a tokens.log
+		readableDir := filepath.Join(globalDir, "open")
+		require.NoError(t, os.MkdirAll(readableDir, 0755))
+		readableLog := filepath.Join(readableDir, "tokens.log")
+		require.NoError(t, os.WriteFile(readableLog, []byte(`{"cost": 4.0}`), 0644))
+
+		ls := &ledgerStore{}
+		files, err := ls.findLogFiles(globalDir)
+
+		require.Error(t, err, "expected error from permission-denied subdirectory")
+		require.Contains(t, err.Error(), "walk errors during recovery")
+
+		// The accessible file should still be found
+		found := false
+		for _, f := range files {
+			if f == readableLog {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "expected accessible tokens.log to be in the returned list")
+
+		// The inaccessible file should NOT be found
+		for _, f := range files {
+			require.NotEqual(t, inaccessibleLog, f, "inaccessible tokens.log should not be listed")
+		}
+	})
+
+	t.Run("walk dir not found", func(t *testing.T) {
+		t.Parallel()
+		ls := &ledgerStore{}
+		nonexistentDir := filepath.Join(t.TempDir(), "does-not-exist")
+		files, err := ls.findLogFiles(nonexistentDir)
+
+		// IsNotExist for the root is swallowed by the WalkDirFunc guard
+		require.NoError(t, err, "expected nil error for non-existent root")
+		require.Empty(t, files, "expected no files for non-existent root")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestGetSessionID_RelFailure (Phase 11 — Recovery failure hardening)
+// ---------------------------------------------------------------------------
+
+func TestGetSessionID_RelFailure(t *testing.T) {
+	t.Parallel()
+
+	ls := &ledgerStore{}
+
+	t.Run("relative path resolves normally", func(t *testing.T) {
+		result, err := ls.getSessionID("/base/session/tokens.log", "/base")
+		require.NoError(t, err)
+		assert.Equal(t, "session/tokens.log", result)
+	})
+
+	t.Run("different volume on Windows", func(t *testing.T) {
+		// Use paths from different roots to force filepath.Rel to fail
+		globalDir := `C:\base`
+		path := `D:\other\tokens.log`
+
+		_, relErr := filepath.Rel(globalDir, path)
+		if relErr == nil {
+			t.Skip("filepath.Rel succeeded — different volumes are not simulated on this platform")
+		}
+
+		result, err := ls.getSessionID(path, globalDir)
+		require.Error(t, err, "expected error when filepath.Rel fails")
+		assert.Contains(t, err.Error(), "resolving session ID")
+		assert.Empty(t, result, "expected empty string on error")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestRecoverLedger_PartialWalk (Phase 11 — Recovery failure hardening)
+// ---------------------------------------------------------------------------
+
+func TestRecoverLedger_PartialWalk(t *testing.T) {
+	t.Run("partial walk with some files", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod 0000 not effective on Windows")
+		}
+		t.Parallel()
+		tempDir := t.TempDir()
+
+		// Create an inaccessible subdirectory so findLogFiles returns partial + error
+		inaccessibleDir := filepath.Join(tempDir, "locked")
+		require.NoError(t, os.MkdirAll(inaccessibleDir, 0755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(inaccessibleDir, "tokens.log"),
+			[]byte(`{"cost": 99.0}`), 0644))
+		require.NoError(t, os.Chmod(inaccessibleDir, 0000))
+		t.Cleanup(func() {
+			_ = os.Chmod(inaccessibleDir, 0755)
+		})
+
+		// Create a readable directory with a valid tokens.log
+		readableDir := filepath.Join(tempDir, "open")
+		require.NoError(t, os.MkdirAll(readableDir, 0755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(readableDir, "tokens.log"),
+			[]byte(`{"cost": 5.0, "timestamp": "2023-10-27T10:00:00Z"}`), 0644))
+
+		sm := security.NewSecurityManager(nil)
+		sm.RegisterSafePath(tempDir)
+		ls := newLedgerStore(sm, "test-model", nil)
+
+		ls.recoverLedger(context.Background(), tempDir)
+
+		historyPath := filepath.Join(tempDir, "global_costs.json")
+		require.FileExists(t, historyPath, "global_costs.json should have been created from partial recovery")
+
+		content, err := os.ReadFile(historyPath)
+		require.NoError(t, err)
+		// The accessible file's data should be in the recovered ledger
+		assert.Contains(t, string(content), "open/tokens.log")
+		require.True(t, strings.Contains(string(content), "\"total_cost\":5") ||
+			strings.Contains(string(content), "\"total_cost\":5.0"))
+	})
+
+	t.Run("walk returns zero files with error", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod 0000 not effective on Windows")
+		}
+		t.Parallel()
+		tempDir := t.TempDir()
+
+		// Create ONLY an inaccessible subdirectory — no readable tokens.log at all.
+		// findLogFiles will return (nil, walkError) because: WalkDir fails on the
+		// inaccessible directory and no tokens.log files are found anywhere.
+		inaccessibleDir := filepath.Join(tempDir, "locked")
+		require.NoError(t, os.MkdirAll(inaccessibleDir, 0755))
+		require.NoError(t, os.Chmod(inaccessibleDir, 0000))
+		t.Cleanup(func() {
+			_ = os.Chmod(inaccessibleDir, 0755)
+		})
+
+		sm := security.NewSecurityManager(nil)
+		sm.RegisterSafePath(tempDir)
+		ls := newLedgerStore(sm, "test-model", nil)
+
+		ls.recoverLedger(context.Background(), tempDir)
+
+		historyPath := filepath.Join(tempDir, "global_costs.json")
+		_, err := os.Stat(historyPath)
+		require.True(t, os.IsNotExist(err), "global_costs.json should NOT be created when walk returns zero files")
 	})
 }

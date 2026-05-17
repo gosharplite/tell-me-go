@@ -3,6 +3,7 @@ package analysis
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -38,18 +39,18 @@ func (t *importCleanupTransform) Apply(ctx context.Context, fset *token.FileSet,
 			return err
 		}
 	} else if err := format.Node(&buf, fset, file); err != nil {
-		return err
+		return fmt.Errorf("formatting %s: %w", t.Path, err)
 	}
 
 	res, err := imports.Process(t.Path, buf.Bytes(), nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("processing imports for %s: %w", t.Path, err)
 	}
 
 	// Re-parse the result back into the AST
 	newFile, err := parser.ParseFile(fset, t.Path, res, parser.ParseComments)
 	if err != nil {
-		return err
+		return fmt.Errorf("parsing formatted file %s: %w", t.Path, err)
 	}
 
 	files[t.Path] = newFile
