@@ -259,85 +259,93 @@ func TestRegistry_GetOptions(t *testing.T) {
 
 func TestRegistry_RegisterToToolkit_EmptyDefaultsToCore(t *testing.T) {
 	t.Parallel()
+
+	t.Run("RegisterToToolkit(\"\", def, handler) succeeds", testEmptyDefaultsToCoreSucceeds)
+	t.Run("RegisterToToolkitWithOptions(\"\", def, handler, opts) also defaults to core", testEmptyDefaultsToCoreWithOptions)
+	t.Run("multiple empty-toolkit registrations all go to core", testEmptyDefaultsToCoreMultiple)
+}
+
+func testEmptyDefaultsToCoreSucceeds(t *testing.T) {
+	t.Parallel()
 	r := registry.New()
+	err := r.RegisterToToolkit("", &tools.ToolDeclaration{Name: "empty_tk_tool"}, nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
 
-	t.Run("RegisterToToolkit(\"\", def, handler) succeeds", func(t *testing.T) {
-		err := r.RegisterToToolkit("", &tools.ToolDeclaration{Name: "empty_tk_tool"}, nil)
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
+	decls := r.GetCoreDeclarations()
+	found := false
+	for _, d := range decls {
+		if d.Name == "empty_tk_tool" {
+			found = true
+			break
 		}
+	}
+	if !found {
+		t.Errorf("expected 'empty_tk_tool' in core declarations")
+	}
+}
 
-		decls := r.GetCoreDeclarations()
-		found := false
-		for _, d := range decls {
-			if d.Name == "empty_tk_tool" {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("expected 'empty_tk_tool' in core declarations")
-		}
-	})
+func testEmptyDefaultsToCoreWithOptions(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+	err := r.RegisterToToolkitWithOptions("", &tools.ToolDeclaration{Name: "empty_tk_serial"}, nil, registry.ToolOptions{Serial: true})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
 
-	t.Run("RegisterToToolkitWithOptions(\"\", def, handler, opts) also defaults to core", func(t *testing.T) {
-		err := r.RegisterToToolkitWithOptions("", &tools.ToolDeclaration{Name: "empty_tk_serial"}, nil, registry.ToolOptions{Serial: true})
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
+	if !r.IsSerial("empty_tk_serial") {
+		t.Error("expected empty_tk_serial to be serial")
+	}
 
-		if !r.IsSerial("empty_tk_serial") {
-			t.Error("expected empty_tk_serial to be serial")
+	decls := r.GetCoreDeclarations()
+	found := false
+	for _, d := range decls {
+		if d.Name == "empty_tk_serial" {
+			found = true
+			break
 		}
+	}
+	if !found {
+		t.Errorf("expected 'empty_tk_serial' in core declarations")
+	}
 
-		decls := r.GetCoreDeclarations()
-		found := false
-		for _, d := range decls {
-			if d.Name == "empty_tk_serial" {
-				found = true
-				break
-			}
+	toolkits := r.ListAvailableToolkits()
+	for _, tk := range toolkits {
+		if tk == "" {
+			t.Errorf("expected empty string not to appear in available toolkits, got: %v", toolkits)
 		}
-		if !found {
-			t.Errorf("expected 'empty_tk_serial' in core declarations")
-		}
+	}
+}
 
-		toolkits := r.ListAvailableToolkits()
-		for _, tk := range toolkits {
-			if tk == "" {
-				t.Errorf("expected empty string not to appear in available toolkits, got: %v", toolkits)
-			}
+func testEmptyDefaultsToCoreMultiple(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+	for _, name := range []string{"multi1", "multi2", "multi3"} {
+		if err := r.RegisterToToolkit("", &tools.ToolDeclaration{Name: name}, nil); err != nil {
+			t.Fatalf("failed to register %s: %v", name, err)
 		}
-	})
+	}
 
-	t.Run("multiple empty-toolkit registrations all go to core", func(t *testing.T) {
-		for _, name := range []string{"multi1", "multi2", "multi3"} {
-			if err := r.RegisterToToolkit("", &tools.ToolDeclaration{Name: name}, nil); err != nil {
-				t.Fatalf("failed to register %s: %v", name, err)
-			}
-		}
+	decls := r.GetCoreDeclarations()
+	if len(decls) != 3 {
+		t.Errorf("expected 3 declarations, got %d", len(decls))
+	}
 
-		decls := r.GetCoreDeclarations()
-		// Expect 5 total: empty_tk_tool + empty_tk_serial + multi1 + multi2 + multi3
-		if len(decls) != 5 {
-			t.Errorf("expected 5 declarations, got %d", len(decls))
+	names := make(map[string]bool)
+	for _, d := range decls {
+		names[d.Name] = true
+	}
+	for _, name := range []string{"multi1", "multi2", "multi3"} {
+		if !names[name] {
+			t.Errorf("expected %q in core declarations", name)
 		}
+	}
 
-		names := make(map[string]bool)
-		for _, d := range decls {
-			names[d.Name] = true
+	toolkits := r.ListAvailableToolkits()
+	for _, tk := range toolkits {
+		if tk == "" {
+			t.Errorf("expected empty string not to appear in available toolkits, got: %v", toolkits)
 		}
-		for _, name := range []string{"multi1", "multi2", "multi3"} {
-			if !names[name] {
-				t.Errorf("expected %q in core declarations", name)
-			}
-		}
-
-		toolkits := r.ListAvailableToolkits()
-		for _, tk := range toolkits {
-			if tk == "" {
-				t.Errorf("expected empty string not to appear in available toolkits, got: %v", toolkits)
-			}
-		}
-	})
+	}
 }
