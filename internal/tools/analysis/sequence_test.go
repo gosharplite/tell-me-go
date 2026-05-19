@@ -702,6 +702,20 @@ func TestFindBySuffix(t *testing.T) {
 	}
 }
 
+// setupWalkGuardTest sets up mock packages and locates the named function
+// declaration. It calls t.Fatal if the function is not found.
+func setupWalkGuardTest(t *testing.T, funcName string) (*packages.Package, *ast.FuncDecl) {
+	t.Helper()
+	pkgA, _ := setupMockPackages()
+	for _, decl := range pkgA.Syntax[0].Decls {
+		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == funcName {
+			return pkgA, fd
+		}
+	}
+	t.Fatalf("%s not found in mock package", funcName)
+	return nil, nil
+}
+
 // TestSequenceAnalyzer_WalkGuards exercises every guard clause in walk(...)
 // by calling it directly (not through AnalyzeSequenceFlow).
 func TestSequenceAnalyzer_WalkGuards(t *testing.T) {
@@ -709,18 +723,7 @@ func TestSequenceAnalyzer_WalkGuards(t *testing.T) {
 
 	t.Run("depth at maxDepth returns early", func(t *testing.T) {
 		t.Parallel()
-		pkgA, _ := setupMockPackages()
-
-		var startFunc *ast.FuncDecl
-		for _, decl := range pkgA.Syntax[0].Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == "StartFunc" {
-				startFunc = fd
-				break
-			}
-		}
-		if startFunc == nil {
-			t.Fatal("StartFunc not found")
-		}
+		pkgA, startFunc := setupWalkGuardTest(t, "StartFunc")
 
 		a := &defaultSequenceAnalyzer{}
 		frames := &frameCollector{}
@@ -755,18 +758,7 @@ func TestSequenceAnalyzer_WalkGuards(t *testing.T) {
 
 	t.Run("nil def object returns early", func(t *testing.T) {
 		t.Parallel()
-		pkgA, _ := setupMockPackages()
-
-		var startFunc *ast.FuncDecl
-		for _, decl := range pkgA.Syntax[0].Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == "StartFunc" {
-				startFunc = fd
-				break
-			}
-		}
-		if startFunc == nil {
-			t.Fatal("StartFunc not found")
-		}
+		pkgA, startFunc := setupWalkGuardTest(t, "StartFunc")
 
 		pkg := &packages.Package{
 			PkgPath:   pkgA.PkgPath,
@@ -789,18 +781,7 @@ func TestSequenceAnalyzer_WalkGuards(t *testing.T) {
 
 	t.Run("already visited returns early", func(t *testing.T) {
 		t.Parallel()
-		pkgA, _ := setupMockPackages()
-
-		var startFunc *ast.FuncDecl
-		for _, decl := range pkgA.Syntax[0].Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == "StartFunc" {
-				startFunc = fd
-				break
-			}
-		}
-		if startFunc == nil {
-			t.Fatal("StartFunc not found")
-		}
+		pkgA, startFunc := setupWalkGuardTest(t, "StartFunc")
 
 		obj := pkgA.TypesInfo.Defs[startFunc.Name]
 		if obj == nil {
@@ -821,18 +802,7 @@ func TestSequenceAnalyzer_WalkGuards(t *testing.T) {
 
 	t.Run("successful walk adds frames", func(t *testing.T) {
 		t.Parallel()
-		pkgA, _ := setupMockPackages()
-
-		var startFunc *ast.FuncDecl
-		for _, decl := range pkgA.Syntax[0].Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == "StartFunc" {
-				startFunc = fd
-				break
-			}
-		}
-		if startFunc == nil {
-			t.Fatal("StartFunc not found")
-		}
+		pkgA, startFunc := setupWalkGuardTest(t, "StartFunc")
 
 		a := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, &mockIndexer{})
 		frames := &frameCollector{}
@@ -847,18 +817,7 @@ func TestSequenceAnalyzer_WalkGuards(t *testing.T) {
 
 	t.Run("heartbeat channel receives when non-nil", func(t *testing.T) {
 		t.Parallel()
-		pkgA, _ := setupMockPackages()
-
-		var startFunc *ast.FuncDecl
-		for _, decl := range pkgA.Syntax[0].Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == "StartFunc" {
-				startFunc = fd
-				break
-			}
-		}
-		if startFunc == nil {
-			t.Fatal("StartFunc not found")
-		}
+		pkgA, startFunc := setupWalkGuardTest(t, "StartFunc")
 
 		a := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, &mockIndexer{})
 		frames := &frameCollector{}
