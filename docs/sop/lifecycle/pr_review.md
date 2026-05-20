@@ -6,7 +6,7 @@ Automated AI review pipeline for pull requests. Triggered via tmg-kage `pr-revie
 
 ```
 curl -X POST https://tmg-kage.ptc-nec.net \
-  -H "x-api-key: eGAkSLDMbNpM6CBGYFk=" \
+  -H "x-api-key: DABBETBEg9xiOp6O1M8=" \
   -H "Content-Type: application/json" \
   -d '{"script":"pr-reviewer-1","config":"<PR-number>"}'
 ```
