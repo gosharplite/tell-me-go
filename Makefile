@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-architecture lint vulncheck dead-code check check-full
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-architecture lint vulncheck dead-code check check-full bench
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -38,6 +38,7 @@ help:
 	@echo "  make lint       - Run golangci-lint static analysis"
 	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
 	@echo "  make check      - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck test dead-code test-coverage"
+	@echo "  make bench       - Run all benchmarks with memory allocation metrics"
 	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck test dead-code test-race test-coverage"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
@@ -269,6 +270,9 @@ vulncheck:
 dead-code:
 	go run ./cmd/deadcode
 
+bench:
+	go test -bench=. -benchmem -count=1 ./internal/...
+
 # check runs the full quality pipeline in sequence, stopping on first failure.
 # Fast/cheap checks run first so problems surface quickly.
 check: fmt tidy build
@@ -304,6 +308,8 @@ check-full: fmt tidy build
 	@$(MAKE) test-race
 	@echo "=== test-coverage ==="
 	@$(MAKE) test-coverage
+	@echo "=== bench ==="
+	@$(MAKE) bench
 	@echo ""
 	@echo "All checks passed (including race detection)."
 

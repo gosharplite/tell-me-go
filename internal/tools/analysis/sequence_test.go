@@ -504,14 +504,12 @@ func (t *T) Method() {}
 	})
 }
 
-// TestFindStartPackage_ModuleRelativeAndUnexported verifies that the full
-// findStartPackage → resolveStartFunc pipeline resolves both module-relative
-// and fully-qualified paths to unexported methods on unexported types.
-// This is a regression test for Issue #450.
-func TestFindStartPackage_ModuleRelativeAndUnexported(t *testing.T) {
-	t.Parallel()
+// setupRealWorkspaceAnalyzer creates a temporary Go workspace with the given
+// source code and returns a fully initialized sequenceAnalyzer wired to an
+// indexer targeting that workspace, along with a background context.
+func setupRealWorkspaceAnalyzer(t *testing.T, srcCode string) (*defaultSequenceAnalyzer, context.Context) {
+	t.Helper()
 
-	// --- Setup: create a real Go workspace with an unexported type+method ---
 	tmpDir := t.TempDir()
 
 	goMod := []byte("module example.com/test\n\ngo 1.25\n")
@@ -519,28 +517,10 @@ func TestFindStartPackage_ModuleRelativeAndUnexported(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	src := []byte(`package test
-
-type internalCounter struct{ count int }
-
-func logCount(n int) int { return n }
-
-func (c *internalCounter) incrementBy(n int) int {
-	c.count += n
-	logCount(c.count)
-	return c.count
-}
-
-func Start(n int) int {
-	c := &internalCounter{}
-	return c.incrementBy(n)
-}
-`)
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), src, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(srcCode), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// --- Build the indexer against the real workspace ---
 	idx, err := newIndexer(tmpDir)
 	if err != nil {
 		t.Fatal(err)
@@ -556,52 +536,99 @@ func Start(n int) int {
 		t.Fatal(err)
 	}
 
-	// --- Build the analyzer ---
 	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
-	// Pre-populate the analyzer state so loadPackages is a no-op.
 	analyzer.pkgMu.Lock()
 	analyzer.pkgs = pkgs
 	analyzer.funcMap = analyzer.mapSymbols(pkgs)
 	analyzer.lastLoad = time.Now().Add(1 * time.Hour)
 	analyzer.pkgMu.Unlock()
 
-	tests := []struct {
-		name        string
-		startSymbol string
-		wantFunc    string // expected function name in the diagram
-	}{
-		{
-			name:        "module-relative unexported method",
-			startSymbol: "example.com/test.(*internalCounter).incrementBy",
-			wantFunc:    "logCount",
-		},
-		{
-			name:        "module-relative exported free function",
-			startSymbol: "example.com/test.Start",
-			wantFunc:    "incrementBy",
-		},
-	}
+	return analyzer, ctx
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			res, err := analyzer.AnalyzeSequenceFlow(ctx, map[string]interface{}{
-				"start_symbol": tt.startSymbol,
-				"max_depth":    float64(3),
-			}, nil)
-			if err != nil {
-				t.Fatalf("AnalyzeSequenceFlow failed: %v", err)
-			}
-			if res.Text == "" {
-				t.Fatal("expected non-empty diagram output")
-			}
-			if strings.Contains(res.Text, "Error") {
-				t.Fatalf("unexpected error in output: %s", res.Text)
-			}
-			if !strings.Contains(res.Text, tt.wantFunc) {
-				t.Errorf("diagram missing expected function %q:\n%s", tt.wantFunc, res.Text)
-			}
-		})
+// TestFindStartPackage_UnexportedMethod verifies that a module-relative path
+// to an unexported method on an unexported type is correctly resolved.
+// Regression test for Issue #450.
+func TestFindStartPackage_UnexportedMethod(t *testing.T) {
+	t.Parallel()
+
+	src := `package test
+
+type internalCounter struct{ count int }
+
+func logCount(n int) int { return n }
+
+func (c *internalCounter) incrementBy(n int) int {
+	c.count += n
+	logCount(c.count)
+	return c.count
+}
+
+func Start(n int) int {
+	c := &internalCounter{}
+	return c.incrementBy(n)
+}
+`
+	analyzer, ctx := setupRealWorkspaceAnalyzer(t, src)
+
+	res, err := analyzer.AnalyzeSequenceFlow(ctx, map[string]interface{}{
+		"start_symbol": "example.com/test.(*internalCounter).incrementBy",
+		"max_depth":    float64(3),
+	}, nil)
+	if err != nil {
+		t.Fatalf("AnalyzeSequenceFlow failed: %v", err)
+	}
+	if res.Text == "" {
+		t.Fatal("expected non-empty diagram output")
+	}
+	if strings.Contains(res.Text, "Error") {
+		t.Fatalf("unexpected error in output: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "logCount") {
+		t.Errorf("diagram missing expected function %q:\n%s", "logCount", res.Text)
+	}
+}
+
+// TestFindStartPackage_ExportedFreeFunction verifies that a module-relative
+// path to an exported free function is correctly resolved and traces into
+// method calls within its body.
+func TestFindStartPackage_ExportedFreeFunction(t *testing.T) {
+	t.Parallel()
+
+	src := `package test
+
+type internalCounter struct{ count int }
+
+func logCount(n int) int { return n }
+
+func (c *internalCounter) incrementBy(n int) int {
+	c.count += n
+	logCount(c.count)
+	return c.count
+}
+
+func Start(n int) int {
+	c := &internalCounter{}
+	return c.incrementBy(n)
+}
+`
+	analyzer, ctx := setupRealWorkspaceAnalyzer(t, src)
+
+	res, err := analyzer.AnalyzeSequenceFlow(ctx, map[string]interface{}{
+		"start_symbol": "example.com/test.Start",
+		"max_depth":    float64(3),
+	}, nil)
+	if err != nil {
+		t.Fatalf("AnalyzeSequenceFlow failed: %v", err)
+	}
+	if res.Text == "" {
+		t.Fatal("expected non-empty diagram output")
+	}
+	if strings.Contains(res.Text, "Error") {
+		t.Fatalf("unexpected error in output: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "incrementBy") {
+		t.Errorf("diagram missing expected function %q:\n%s", "incrementBy", res.Text)
 	}
 }
 
@@ -856,180 +883,174 @@ func parseFuncDecl(t *testing.T, code string) *ast.FuncDecl {
 	return f.Decls[0].(*ast.FuncDecl)
 }
 
-// TestSequenceVisitor_Visit tests the Visit method of sequenceVisitor with
-// table-driven subtests covering all switch branches and guard clauses.
-func TestSequenceVisitor_Visit(t *testing.T) {
+func TestSequenceVisitor_Visit_NilNode(t *testing.T) {
 	t.Parallel()
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		analyzer: &defaultSequenceAnalyzer{},
+	}
+	if got := v.Visit(nil); got != nil {
+		t.Errorf("Visit(nil) = %v, want nil", got)
+	}
+}
 
-	t.Run("nil node returns nil", func(t *testing.T) {
-		t.Parallel()
-		v := &sequenceVisitor{
-			ctx:      context.Background(),
-			analyzer: &defaultSequenceAnalyzer{},
-		}
-		if got := v.Visit(nil); got != nil {
-			t.Errorf("Visit(nil) = %v, want nil", got)
-		}
-	})
+func TestSequenceVisitor_Visit_CancelledContext(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	v := &sequenceVisitor{
+		ctx:      ctx,
+		analyzer: &defaultSequenceAnalyzer{},
+	}
+	if got := v.Visit(&ast.Ident{Name: "x"}); got != nil {
+		t.Errorf("Visit with cancelled ctx = %v, want nil", got)
+	}
+}
 
-	t.Run("cancelled context returns nil", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		v := &sequenceVisitor{
-			ctx:      ctx,
-			analyzer: &defaultSequenceAnalyzer{},
-		}
-		if got := v.Visit(&ast.Ident{Name: "x"}); got != nil {
-			t.Errorf("Visit with cancelled ctx = %v, want nil", got)
-		}
-	})
+func TestSequenceVisitor_Visit_ForStmt(t *testing.T) {
+	t.Parallel()
+	_, f := parseTestFile(t, "package p; func f() { for i := 0; i < 10; i++ { g() } }")
+	fd := f.Decls[0].(*ast.FuncDecl)
+	forStmt := fd.Body.List[0].(*ast.ForStmt)
 
-	t.Run("ForStmt walks children and returns nil", func(t *testing.T) {
-		t.Parallel()
-		_, f := parseTestFile(t, "package p; func f() { for i := 0; i < 10; i++ { g() } }")
-		fd := f.Decls[0].(*ast.FuncDecl)
-		forStmt := fd.Body.List[0].(*ast.ForStmt)
+	pkg := &packages.Package{
+		Name:    "p",
+		PkgPath: "test/pkg",
+		TypesInfo: &types.Info{
+			Uses: make(map[*ast.Ident]types.Object),
+			Defs: make(map[*ast.Ident]types.Object),
+		},
+	}
 
-		pkg := &packages.Package{
-			Name:    "p",
-			PkgPath: "test/pkg",
-			TypesInfo: &types.Info{
-				Uses: make(map[*ast.Ident]types.Object),
-				Defs: make(map[*ast.Ident]types.Object),
-			},
-		}
+	frames := &frameCollector{}
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		pkg:      pkg,
+		analyzer: &defaultSequenceAnalyzer{},
+		frames:   frames,
+		maxDepth: 1,
+	}
 
-		frames := &frameCollector{}
-		v := &sequenceVisitor{
-			ctx:      context.Background(),
-			pkg:      pkg,
-			analyzer: &defaultSequenceAnalyzer{},
-			frames:   frames,
-			maxDepth: 1,
-		}
+	got := v.Visit(forStmt)
+	if got != nil {
+		t.Errorf("Visit(ForStmt) = %v, want nil", got)
+	}
+	if v.inLoop != 0 {
+		t.Errorf("inLoop = %d, want 0 (restored after ForStmt)", v.inLoop)
+	}
+}
 
-		got := v.Visit(forStmt)
-		if got != nil {
-			t.Errorf("Visit(ForStmt) = %v, want nil", got)
-		}
-		if v.inLoop != 0 {
-			t.Errorf("inLoop = %d, want 0 (restored after ForStmt)", v.inLoop)
-		}
-	})
+func TestSequenceVisitor_Visit_RangeStmt(t *testing.T) {
+	t.Parallel()
+	_, f := parseTestFile(t, "package p; func f() { for _, x := range items { h() } }")
+	fd := f.Decls[0].(*ast.FuncDecl)
+	rangeStmt := fd.Body.List[0].(*ast.RangeStmt)
 
-	t.Run("RangeStmt walks children and returns nil", func(t *testing.T) {
-		t.Parallel()
-		_, f := parseTestFile(t, "package p; func f() { for _, x := range items { h() } }")
-		fd := f.Decls[0].(*ast.FuncDecl)
-		rangeStmt := fd.Body.List[0].(*ast.RangeStmt)
+	pkg := &packages.Package{
+		Name:    "p",
+		PkgPath: "test/pkg",
+		TypesInfo: &types.Info{
+			Uses: make(map[*ast.Ident]types.Object),
+			Defs: make(map[*ast.Ident]types.Object),
+		},
+	}
 
-		pkg := &packages.Package{
-			Name:    "p",
-			PkgPath: "test/pkg",
-			TypesInfo: &types.Info{
-				Uses: make(map[*ast.Ident]types.Object),
-				Defs: make(map[*ast.Ident]types.Object),
-			},
-		}
+	frames := &frameCollector{}
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		pkg:      pkg,
+		analyzer: &defaultSequenceAnalyzer{},
+		frames:   frames,
+		maxDepth: 1,
+	}
 
-		frames := &frameCollector{}
-		v := &sequenceVisitor{
-			ctx:      context.Background(),
-			pkg:      pkg,
-			analyzer: &defaultSequenceAnalyzer{},
-			frames:   frames,
-			maxDepth: 1,
-		}
+	got := v.Visit(rangeStmt)
+	if got != nil {
+		t.Errorf("Visit(RangeStmt) = %v, want nil", got)
+	}
+	if v.inLoop != 0 {
+		t.Errorf("inLoop = %d, want 0 (restored after RangeStmt)", v.inLoop)
+	}
+}
 
-		got := v.Visit(rangeStmt)
-		if got != nil {
-			t.Errorf("Visit(RangeStmt) = %v, want nil", got)
-		}
-		if v.inLoop != 0 {
-			t.Errorf("inLoop = %d, want 0 (restored after RangeStmt)", v.inLoop)
-		}
-	})
+func TestSequenceVisitor_Visit_GoStmt(t *testing.T) {
+	t.Parallel()
+	_, f := parseTestFile(t, "package p; func f() { go async() }")
+	fd := f.Decls[0].(*ast.FuncDecl)
+	goStmt := fd.Body.List[0].(*ast.GoStmt)
 
-	t.Run("GoStmt walks call and returns nil", func(t *testing.T) {
-		t.Parallel()
-		_, f := parseTestFile(t, "package p; func f() { go async() }")
-		fd := f.Decls[0].(*ast.FuncDecl)
-		goStmt := fd.Body.List[0].(*ast.GoStmt)
+	pkg := &packages.Package{
+		Name:    "p",
+		PkgPath: "test/pkg",
+		TypesInfo: &types.Info{
+			Uses: make(map[*ast.Ident]types.Object),
+			Defs: make(map[*ast.Ident]types.Object),
+		},
+	}
 
-		pkg := &packages.Package{
-			Name:    "p",
-			PkgPath: "test/pkg",
-			TypesInfo: &types.Info{
-				Uses: make(map[*ast.Ident]types.Object),
-				Defs: make(map[*ast.Ident]types.Object),
-			},
-		}
+	frames := &frameCollector{}
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		pkg:      pkg,
+		analyzer: &defaultSequenceAnalyzer{},
+		frames:   frames,
+		maxDepth: 1,
+	}
 
-		frames := &frameCollector{}
-		v := &sequenceVisitor{
-			ctx:      context.Background(),
-			pkg:      pkg,
-			analyzer: &defaultSequenceAnalyzer{},
-			frames:   frames,
-			maxDepth: 1,
-		}
+	got := v.Visit(goStmt)
+	if got != nil {
+		t.Errorf("Visit(GoStmt) = %v, want nil", got)
+	}
+	if v.inGo {
+		t.Error("inGo = true, want false (restored after GoStmt)")
+	}
+}
 
-		got := v.Visit(goStmt)
-		if got != nil {
-			t.Errorf("Visit(GoStmt) = %v, want nil", got)
-		}
-		if v.inGo {
-			t.Error("inGo = true, want false (restored after GoStmt)")
-		}
-	})
+func TestSequenceVisitor_Visit_CallExpr(t *testing.T) {
+	t.Parallel()
+	pkgA, _ := setupMockPackages()
 
-	t.Run("CallExpr delegates to handleCall and returns self", func(t *testing.T) {
-		t.Parallel()
-		pkgA, _ := setupMockPackages()
+	var callExpr *ast.CallExpr
+	for _, decl := range pkgA.Syntax[0].Decls {
+		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == "StartFunc" {
+			callExpr = fd.Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr)
+			break
+		}
+	}
+	if callExpr == nil {
+		t.Fatal("CallExpr not found in StartFunc")
+	}
 
-		var callExpr *ast.CallExpr
-		for _, decl := range pkgA.Syntax[0].Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == "StartFunc" {
-				callExpr = fd.Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr)
-				break
-			}
-		}
-		if callExpr == nil {
-			t.Fatal("CallExpr not found in StartFunc")
-		}
+	frames := &frameCollector{}
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		pkg:      pkgA,
+		modName:  "github.com/test/mod",
+		analyzer: &defaultSequenceAnalyzer{modName: "github.com/test/mod"},
+		frames:   frames,
+		visited:  make(map[string]bool),
+		maxDepth: 1,
+	}
 
-		frames := &frameCollector{}
-		v := &sequenceVisitor{
-			ctx:      context.Background(),
-			pkg:      pkgA,
-			modName:  "github.com/test/mod",
-			analyzer: &defaultSequenceAnalyzer{modName: "github.com/test/mod"},
-			frames:   frames,
-			visited:  make(map[string]bool),
-			maxDepth: 1,
-		}
+	got := v.Visit(callExpr)
+	if got != v {
+		t.Errorf("Visit(CallExpr) = %v, want self (%v)", got, v)
+	}
+	if len(frames.frames) == 0 {
+		t.Error("expected at least one frame from CallExpr")
+	}
+}
 
-		got := v.Visit(callExpr)
-		if got != v {
-			t.Errorf("Visit(CallExpr) = %v, want self (%v)", got, v)
-		}
-		if len(frames.frames) == 0 {
-			t.Error("expected at least one frame from CallExpr")
-		}
-	})
-
-	t.Run("unhandled node type returns self", func(t *testing.T) {
-		t.Parallel()
-		v := &sequenceVisitor{
-			ctx:      context.Background(),
-			analyzer: &defaultSequenceAnalyzer{},
-		}
-		got := v.Visit(&ast.BasicLit{Kind: token.INT, Value: "0"})
-		if got != v {
-			t.Errorf("Visit(BasicLit) = %v, want self (%v)", got, v)
-		}
-	})
+func TestSequenceVisitor_Visit_UnhandledNode(t *testing.T) {
+	t.Parallel()
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		analyzer: &defaultSequenceAnalyzer{},
+	}
+	got := v.Visit(&ast.BasicLit{Kind: token.INT, Value: "0"})
+	if got != v {
+		t.Errorf("Visit(BasicLit) = %v, want self (%v)", got, v)
+	}
 }
 
 // TestSequenceVisitor_HandleCall exercises all uncovered branches in handleCall
@@ -1299,201 +1320,202 @@ func TestGetTypeName(t *testing.T) {
 	}
 }
 
-// TestResolveSelectorCall exercises every branch of sequenceVisitor.resolveSelectorCall.
-func TestResolveSelectorCall(t *testing.T) {
+// TestResolveSelectorCall_PkgNameResolution exercises the PkgName branch of
+// sequenceVisitor.resolveSelectorCall where sel.X is an *ast.Ident that
+// resolves to a *types.PkgName (an import).
+func TestResolveSelectorCall_PkgNameResolution(t *testing.T) {
 	t.Parallel()
-
-	t.Run("sel.X is Ident with PkgName resolution", func(t *testing.T) {
-		t.Parallel()
-		_, f := parseTestFile(t, `package p
+	_, f := parseTestFile(t, `package p
 import "fmt"
 func f() { fmt.Println() }`)
-		fd := f.Decls[1].(*ast.FuncDecl)
-		exprStmt := fd.Body.List[0].(*ast.ExprStmt)
-		call := exprStmt.X.(*ast.CallExpr)
-		sel := call.Fun.(*ast.SelectorExpr)
+	fd := f.Decls[1].(*ast.FuncDecl)
+	exprStmt := fd.Body.List[0].(*ast.ExprStmt)
+	call := exprStmt.X.(*ast.CallExpr)
+	sel := call.Fun.(*ast.SelectorExpr)
 
-		fmtPkg := types.NewPackage("fmt", "fmt")
-		pkgTypes := types.NewPackage("example.com/local/pkg", "p")
+	fmtPkg := types.NewPackage("fmt", "fmt")
+	pkgTypes := types.NewPackage("example.com/local/pkg", "p")
 
-		// PkgName for the import
-		pkgName := types.NewPkgName(token.NoPos, pkgTypes, "fmt", fmtPkg)
+	pkgName := types.NewPkgName(token.NoPos, pkgTypes, "fmt", fmtPkg)
 
-		// Println function in fmt
-		printlnSig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
-		printlnFunc := types.NewFunc(token.NoPos, fmtPkg, "Println", printlnSig)
+	printlnSig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
+	printlnFunc := types.NewFunc(token.NoPos, fmtPkg, "Println", printlnSig)
 
-		uses := make(map[*ast.Ident]types.Object)
-		uses[sel.X.(*ast.Ident)] = pkgName
-		uses[sel.Sel] = printlnFunc
+	uses := make(map[*ast.Ident]types.Object)
+	uses[sel.X.(*ast.Ident)] = pkgName
+	uses[sel.Sel] = printlnFunc
 
-		v := &sequenceVisitor{
-			ctx: context.Background(),
-			pkg: &packages.Package{
-				PkgPath:   "example.com/local/pkg",
-				Types:     pkgTypes,
-				TypesInfo: &types.Info{Uses: uses},
-			},
-			analyzer: &defaultSequenceAnalyzer{},
-		}
+	v := &sequenceVisitor{
+		ctx: context.Background(),
+		pkg: &packages.Package{
+			PkgPath:   "example.com/local/pkg",
+			Types:     pkgTypes,
+			TypesInfo: &types.Info{Uses: uses},
+		},
+		analyzer: &defaultSequenceAnalyzer{},
+	}
 
-		gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
-		if gotFunc != "Println" {
-			t.Errorf("func = %q, want %q", gotFunc, "Println")
-		}
-		if gotPkgPath != "fmt" {
-			t.Errorf("pkgPath = %q, want %q", gotPkgPath, "fmt")
-		}
-		if gotId != "fmt.Println" {
-			t.Errorf("id = %q, want %q", gotId, "fmt.Println")
-		}
-	})
+	gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
+	if gotFunc != "Println" {
+		t.Errorf("func = %q, want %q", gotFunc, "Println")
+	}
+	if gotPkgPath != "fmt" {
+		t.Errorf("pkgPath = %q, want %q", gotPkgPath, "fmt")
+	}
+	if gotId != "fmt.Println" {
+		t.Errorf("id = %q, want %q", gotId, "fmt.Println")
+	}
+}
 
-	t.Run("sel.X is Ident with non-PkgName object", func(t *testing.T) {
-		t.Parallel()
-		_, f := parseTestFile(t, `package p
+// TestResolveSelectorCall_NonPkgNameObject exercises the non-PkgName branch
+// where sel.X is an *ast.Ident that resolves to a non-PkgName object (e.g.
+// a *types.Var), so the code falls into the else branch to derive the
+// package path from the variable's type.
+func TestResolveSelectorCall_NonPkgNameObject(t *testing.T) {
+	t.Parallel()
+	_, f := parseTestFile(t, `package p
 type S struct{}
 func (s S) Method() {}
 func f() { var s S; s.Method() }`)
-		fd := f.Decls[2].(*ast.FuncDecl)            // f
-		exprStmt := fd.Body.List[1].(*ast.ExprStmt) // s.Method()
-		call := exprStmt.X.(*ast.CallExpr)
-		sel := call.Fun.(*ast.SelectorExpr)
+	fd := f.Decls[2].(*ast.FuncDecl)
+	exprStmt := fd.Body.List[1].(*ast.ExprStmt)
+	call := exprStmt.X.(*ast.CallExpr)
+	sel := call.Fun.(*ast.SelectorExpr)
 
-		// sel.X is *ast.Ident "s" — resolves to a *types.Var (not PkgName)
-		pkgTypes := types.NewPackage("example.com/pkg", "p")
-		namedS := types.NewNamed(
-			types.NewTypeName(token.NoPos, pkgTypes, "S", types.NewStruct(nil, nil)),
-			types.NewStruct(nil, nil),
-			nil,
-		)
-		methodFunc := types.NewFunc(
-			token.NoPos,
-			pkgTypes,
-			"Method",
-			types.NewSignatureType(
-				types.NewVar(token.NoPos, nil, "s", namedS),
-				nil, nil, nil, nil, false,
-			),
-		)
-		varS := types.NewVar(token.NoPos, pkgTypes, "s", namedS)
+	pkgTypes := types.NewPackage("example.com/pkg", "p")
+	namedS := types.NewNamed(
+		types.NewTypeName(token.NoPos, pkgTypes, "S", types.NewStruct(nil, nil)),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	methodFunc := types.NewFunc(
+		token.NoPos,
+		pkgTypes,
+		"Method",
+		types.NewSignatureType(
+			types.NewVar(token.NoPos, nil, "s", namedS),
+			nil, nil, nil, nil, false,
+		),
+	)
+	varS := types.NewVar(token.NoPos, pkgTypes, "s", namedS)
 
-		uses := make(map[*ast.Ident]types.Object)
-		uses[sel.X.(*ast.Ident)] = varS // NOT a PkgName → hits else branch
-		uses[sel.Sel] = methodFunc
+	uses := make(map[*ast.Ident]types.Object)
+	uses[sel.X.(*ast.Ident)] = varS
+	uses[sel.Sel] = methodFunc
 
-		v := &sequenceVisitor{
-			ctx: context.Background(),
-			pkg: &packages.Package{
-				PkgPath:   "example.com/local/pkg",
-				TypesInfo: &types.Info{Uses: uses},
-			},
-			analyzer: &defaultSequenceAnalyzer{},
-		}
+	v := &sequenceVisitor{
+		ctx: context.Background(),
+		pkg: &packages.Package{
+			PkgPath:   "example.com/local/pkg",
+			TypesInfo: &types.Info{Uses: uses},
+		},
+		analyzer: &defaultSequenceAnalyzer{},
+	}
 
-		gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
-		if gotFunc != "Method" {
-			t.Errorf("func = %q, want %q", gotFunc, "Method")
-		}
-		if gotPkgPath != "example.com/pkg" {
-			t.Errorf("pkgPath = %q, want %q", gotPkgPath, "example.com/pkg")
-		}
-		if gotId != "example.com/pkg.S.Method" {
-			t.Errorf("id = %q, want %q", gotId, "example.com/pkg.S.Method")
-		}
-	})
+	gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
+	if gotFunc != "Method" {
+		t.Errorf("func = %q, want %q", gotFunc, "Method")
+	}
+	if gotPkgPath != "example.com/pkg" {
+		t.Errorf("pkgPath = %q, want %q", gotPkgPath, "example.com/pkg")
+	}
+	if gotId != "example.com/pkg.S.Method" {
+		t.Errorf("id = %q, want %q", gotId, "example.com/pkg.S.Method")
+	}
+}
 
-	t.Run("sel.X not Ident, resolved via TypesInfo.Types", func(t *testing.T) {
-		t.Parallel()
-		_, f := parseTestFile(t, `package p
+// TestResolveSelectorCall_NonIdentX exercises the branch where sel.X is
+// not an *ast.Ident (e.g. a composite literal like T{}), forcing the
+// resolver to fall back to TypesInfo.Types to obtain the receiver type.
+func TestResolveSelectorCall_NonIdentX(t *testing.T) {
+	t.Parallel()
+	_, f := parseTestFile(t, `package p
 type T struct{}
 func (t T) Method() {}
 func f() { (T{}).Method() }`)
-		fd := f.Decls[2].(*ast.FuncDecl)
-		exprStmt := fd.Body.List[0].(*ast.ExprStmt)
-		call := exprStmt.X.(*ast.CallExpr)
-		sel := call.Fun.(*ast.SelectorExpr)
+	fd := f.Decls[2].(*ast.FuncDecl)
+	exprStmt := fd.Body.List[0].(*ast.ExprStmt)
+	call := exprStmt.X.(*ast.CallExpr)
+	sel := call.Fun.(*ast.SelectorExpr)
 
-		// sel.X is *ast.CompositeLit (T{}) — NOT an *ast.Ident
-		pkgTypes := types.NewPackage("example.com/pkg", "p")
-		namedT := types.NewNamed(
-			types.NewTypeName(token.NoPos, pkgTypes, "T", types.NewStruct(nil, nil)),
-			types.NewStruct(nil, nil),
-			nil,
-		)
-		methodFunc := types.NewFunc(
-			token.NoPos,
-			pkgTypes,
-			"Method",
-			types.NewSignatureType(
-				types.NewVar(token.NoPos, nil, "t", namedT),
-				nil, nil, nil, nil, false,
-			),
-		)
+	pkgTypes := types.NewPackage("example.com/pkg", "p")
+	namedT := types.NewNamed(
+		types.NewTypeName(token.NoPos, pkgTypes, "T", types.NewStruct(nil, nil)),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	methodFunc := types.NewFunc(
+		token.NoPos,
+		pkgTypes,
+		"Method",
+		types.NewSignatureType(
+			types.NewVar(token.NoPos, nil, "t", namedT),
+			nil, nil, nil, nil, false,
+		),
+	)
 
-		uses := make(map[*ast.Ident]types.Object)
-		uses[sel.Sel] = methodFunc
+	uses := make(map[*ast.Ident]types.Object)
+	uses[sel.Sel] = methodFunc
 
-		typesMap := make(map[ast.Expr]types.TypeAndValue)
-		typesMap[sel.X] = types.TypeAndValue{Type: namedT}
+	typesMap := make(map[ast.Expr]types.TypeAndValue)
+	typesMap[sel.X] = types.TypeAndValue{Type: namedT}
 
-		v := &sequenceVisitor{
-			ctx: context.Background(),
-			pkg: &packages.Package{
-				PkgPath: "example.com/local/pkg",
-				TypesInfo: &types.Info{
-					Uses:  uses,
-					Types: typesMap,
-				},
+	v := &sequenceVisitor{
+		ctx: context.Background(),
+		pkg: &packages.Package{
+			PkgPath: "example.com/local/pkg",
+			TypesInfo: &types.Info{
+				Uses:  uses,
+				Types: typesMap,
 			},
-			analyzer: &defaultSequenceAnalyzer{},
-		}
+		},
+		analyzer: &defaultSequenceAnalyzer{},
+	}
 
-		gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
-		if gotFunc != "Method" {
-			t.Errorf("func = %q, want %q", gotFunc, "Method")
-		}
-		if gotPkgPath != "example.com/pkg" {
-			t.Errorf("pkgPath = %q, want %q", gotPkgPath, "example.com/pkg")
-		}
-		if gotId != "example.com/pkg.T.Method" {
-			t.Errorf("id = %q, want %q", gotId, "example.com/pkg.T.Method")
-		}
-	})
+	gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
+	if gotFunc != "Method" {
+		t.Errorf("func = %q, want %q", gotFunc, "Method")
+	}
+	if gotPkgPath != "example.com/pkg" {
+		t.Errorf("pkgPath = %q, want %q", gotPkgPath, "example.com/pkg")
+	}
+	if gotId != "example.com/pkg.T.Method" {
+		t.Errorf("id = %q, want %q", gotId, "example.com/pkg.T.Method")
+	}
+}
 
-	t.Run("both resolution paths fail, returns empty", func(t *testing.T) {
-		t.Parallel()
-		// sel.X is *ast.BasicLit — NOT *ast.Ident, so the first branch
-		// is skipped. TypesInfo.Types has no entry for it, so the second
-		// branch also fails. TypesInfo.Uses has no entry for sel.Sel.
-		sel := &ast.SelectorExpr{
-			X:   &ast.BasicLit{Kind: token.INT, Value: "1"},
-			Sel: &ast.Ident{Name: "Foo"},
-		}
+// TestResolveSelectorCall_BothPathsFail exercises the fallback path where
+// neither the Ident-based nor the TypesInfo.Types-based resolution succeeds
+// and the function returns only the selector name with empty pkgPath/id.
+func TestResolveSelectorCall_BothPathsFail(t *testing.T) {
+	t.Parallel()
+	sel := &ast.SelectorExpr{
+		X:   &ast.BasicLit{Kind: token.INT, Value: "1"},
+		Sel: &ast.Ident{Name: "Foo"},
+	}
 
-		v := &sequenceVisitor{
-			ctx: context.Background(),
-			pkg: &packages.Package{
-				PkgPath: "example.com/local/pkg",
-				TypesInfo: &types.Info{
-					Uses:  make(map[*ast.Ident]types.Object),
-					Types: make(map[ast.Expr]types.TypeAndValue),
-				},
+	v := &sequenceVisitor{
+		ctx: context.Background(),
+		pkg: &packages.Package{
+			PkgPath: "example.com/local/pkg",
+			TypesInfo: &types.Info{
+				Uses:  make(map[*ast.Ident]types.Object),
+				Types: make(map[ast.Expr]types.TypeAndValue),
 			},
-			analyzer: &defaultSequenceAnalyzer{},
-		}
+		},
+		analyzer: &defaultSequenceAnalyzer{},
+	}
 
-		gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
-		if gotFunc != "Foo" {
-			t.Errorf("func = %q, want %q", gotFunc, "Foo")
-		}
-		if gotPkgPath != "" {
-			t.Errorf("pkgPath = %q, want %q", gotPkgPath, "")
-		}
-		if gotId != "" {
-			t.Errorf("id = %q, want %q", gotId, "")
-		}
-	})
+	gotFunc, gotPkgPath, gotId := v.resolveSelectorCall(sel)
+	if gotFunc != "Foo" {
+		t.Errorf("func = %q, want %q", gotFunc, "Foo")
+	}
+	if gotPkgPath != "" {
+		t.Errorf("pkgPath = %q, want %q", gotPkgPath, "")
+	}
+	if gotId != "" {
+		t.Errorf("id = %q, want %q", gotId, "")
+	}
 }
 
 // TestResolveCallDetails exercises every branch of sequenceVisitor.resolveCallDetails.
@@ -1790,96 +1812,88 @@ func TestNormalizeSymbolName_EdgeCases(t *testing.T) {
 	}
 }
 
-// TestAnalyzeSequenceFlow_ErrorPaths exercises error paths and edge cases in
-// AnalyzeSequenceFlow: type-switch branches for max_depth, missing start_symbol,
-// and traceFlow error propagation.
-func TestAnalyzeSequenceFlow_ErrorPaths(t *testing.T) {
+func TestAnalyzeSequenceFlow_MaxDepthInt(t *testing.T) {
 	t.Parallel()
+	pkgA, pkgB := setupMockPackages()
+	idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
 
-	t.Run("max_depth as int type", func(t *testing.T) {
-		t.Parallel()
-		pkgA, pkgB := setupMockPackages()
-		idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
-		analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
+	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": pkgA.PkgPath + ".StartFunc",
+		"max_depth":    2,
+	}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if res.Text == "" {
+		t.Error("expected non-empty diagram with max_depth=2 (int)")
+	}
+}
 
-		res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
-			"start_symbol": pkgA.PkgPath + ".StartFunc",
-			"max_depth":    2, // int, not float64 → case int:
-		}, nil)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		if res.Text == "" {
-			t.Error("expected non-empty diagram with max_depth=2 (int)")
-		}
-	})
+func TestAnalyzeSequenceFlow_MaxDepthUnexpectedType(t *testing.T) {
+	t.Parallel()
+	pkgA, pkgB := setupMockPackages()
+	idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
 
-	t.Run("max_depth unexpected type defaults to 5", func(t *testing.T) {
-		t.Parallel()
-		pkgA, pkgB := setupMockPackages()
-		idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
-		analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
+	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": pkgA.PkgPath + ".StartFunc",
+		"max_depth":    "invalid",
+	}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if res.Text == "" {
+		t.Error("expected non-empty diagram with default depth 5")
+	}
+}
 
-		res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
-			"start_symbol": pkgA.PkgPath + ".StartFunc",
-			"max_depth":    "invalid", // string → default: maxDepth = 5
-		}, nil)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		if res.Text == "" {
-			t.Error("expected non-empty diagram with default depth 5")
-		}
-	})
+func TestAnalyzeSequenceFlow_MaxDepthAbsent(t *testing.T) {
+	t.Parallel()
+	pkgA, pkgB := setupMockPackages()
+	idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
 
-	t.Run("max_depth absent defaults to 5", func(t *testing.T) {
-		t.Parallel()
-		pkgA, pkgB := setupMockPackages()
-		idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
-		analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
+	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": pkgA.PkgPath + ".StartFunc",
+	}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if res.Text == "" {
+		t.Error("expected non-empty diagram with default depth 5")
+	}
+}
 
-		res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
-			"start_symbol": pkgA.PkgPath + ".StartFunc",
-			// max_depth omitted → maxDepth = 5
-		}, nil)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		if res.Text == "" {
-			t.Error("expected non-empty diagram with default depth 5")
-		}
-	})
+func TestAnalyzeSequenceFlow_EmptyStartSymbol(t *testing.T) {
+	t.Parallel()
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, &mockIndexer{})
 
-	t.Run("empty start_symbol", func(t *testing.T) {
-		t.Parallel()
-		analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, &mockIndexer{})
+	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": "",
+	}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Error: missing") {
+		t.Errorf("expected 'Error: missing' in result, got: %s", res.Text)
+	}
+}
 
-		res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
-			"start_symbol": "",
-		}, nil)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		if !strings.Contains(res.Text, "Error: missing") {
-			t.Errorf("expected 'Error: missing' in result, got: %s", res.Text)
-		}
-	})
+func TestAnalyzeSequenceFlow_TraceFlowError(t *testing.T) {
+	t.Parallel()
+	idx := &mockIndexer{err: fmt.Errorf("index failure")}
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
 
-	t.Run("traceFlow error propagates", func(t *testing.T) {
-		t.Parallel()
-		idx := &mockIndexer{err: fmt.Errorf("index failure")}
-		analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
-
-		res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
-			"start_symbol": "example.com/pkg.Func",
-		}, nil)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		if !strings.Contains(res.Text, "Error tracing flow") {
-			t.Errorf("expected 'Error tracing flow' in result, got: %s", res.Text)
-		}
-	})
+	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": "example.com/pkg.Func",
+	}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Error tracing flow") {
+		t.Errorf("expected 'Error tracing flow' in result, got: %s", res.Text)
+	}
 }
 
 // TestLoadPackages_ErrorPaths exercises error paths in loadPackages:
@@ -1920,112 +1934,104 @@ func TestLoadPackages_ErrorPaths(t *testing.T) {
 	})
 }
 
-// TestTraceFlow_ErrorPaths exercises error paths in traceFlow:
-// symbol-not-found with various hint generation branches, and
-// resolveStartFunc error wrapping.
-func TestTraceFlow_ErrorPaths(t *testing.T) {
+func TestTraceFlow_SymbolNotFound_NoSlash(t *testing.T) {
 	t.Parallel()
+	a := &defaultSequenceAnalyzer{
+		pkgs:     []*packages.Package{},
+		funcMap:  make(map[string]funcInfo),
+		lastLoad: time.Now(),
+		cacheTTL: 5 * time.Minute,
+	}
 
-	t.Run("symbol not found, no slash", func(t *testing.T) {
-		t.Parallel()
-		a := &defaultSequenceAnalyzer{
-			pkgs:     []*packages.Package{},
-			funcMap:  make(map[string]funcInfo),
-			lastLoad: time.Now(),
-			cacheTTL: 5 * time.Minute,
+	_, err := a.traceFlow(context.Background(), "MissingFunc", 5, nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	} else {
+		if !strings.Contains(err.Error(), "start symbol not found: MissingFunc") {
+			t.Errorf("expected 'start symbol not found', got: %v", err)
 		}
-
-		_, err := a.traceFlow(context.Background(), "MissingFunc", 5, nil)
-		if err == nil {
-			t.Error("expected error, got nil")
-		} else {
-			if !strings.Contains(err.Error(), "start symbol not found: MissingFunc") {
-				t.Errorf("expected 'start symbol not found', got: %v", err)
-			}
-			// No slash in symbol → no hint
-			if strings.Contains(err.Error(), "try ") {
-				t.Errorf("expected no hint for symbol without slash, got: %v", err)
-			}
+		if strings.Contains(err.Error(), "try ") {
+			t.Errorf("expected no hint for symbol without slash, got: %v", err)
 		}
-	})
+	}
+}
 
-	t.Run("symbol not found, with slash, has module prefix", func(t *testing.T) {
-		t.Parallel()
-		a := &defaultSequenceAnalyzer{
-			pkgs:     []*packages.Package{},
-			funcMap:  make(map[string]funcInfo),
-			modName:  "example.com/mod",
-			lastLoad: time.Now(),
-			cacheTTL: 5 * time.Minute,
+func TestTraceFlow_SymbolNotFound_WithSlash_ModulePrefix(t *testing.T) {
+	t.Parallel()
+	a := &defaultSequenceAnalyzer{
+		pkgs:     []*packages.Package{},
+		funcMap:  make(map[string]funcInfo),
+		modName:  "example.com/mod",
+		lastLoad: time.Now(),
+		cacheTTL: 5 * time.Minute,
+	}
+
+	_, err := a.traceFlow(context.Background(), "example.com/mod/pkg.Func", 5, nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	} else {
+		if !strings.Contains(err.Error(), "start symbol not found") {
+			t.Errorf("expected 'start symbol not found', got: %v", err)
 		}
-
-		_, err := a.traceFlow(context.Background(), "example.com/mod/pkg.Func", 5, nil)
-		if err == nil {
-			t.Error("expected error, got nil")
-		} else {
-			if !strings.Contains(err.Error(), "start symbol not found") {
-				t.Errorf("expected 'start symbol not found', got: %v", err)
-			}
-			if !strings.Contains(err.Error(), "try 'pkg/path.(*Type).Method'") {
-				t.Errorf("expected module-relative hint, got: %v", err)
-			}
+		if !strings.Contains(err.Error(), "try 'pkg/path.(*Type).Method'") {
+			t.Errorf("expected module-relative hint, got: %v", err)
 		}
-	})
+	}
+}
 
-	t.Run("symbol not found, with slash, no module prefix", func(t *testing.T) {
-		t.Parallel()
-		a := &defaultSequenceAnalyzer{
-			pkgs:     []*packages.Package{},
-			funcMap:  make(map[string]funcInfo),
-			modName:  "",
-			lastLoad: time.Now(),
-			cacheTTL: 5 * time.Minute,
+func TestTraceFlow_SymbolNotFound_WithSlash_NoModulePrefix(t *testing.T) {
+	t.Parallel()
+	a := &defaultSequenceAnalyzer{
+		pkgs:     []*packages.Package{},
+		funcMap:  make(map[string]funcInfo),
+		modName:  "",
+		lastLoad: time.Now(),
+		cacheTTL: 5 * time.Minute,
+	}
+
+	_, err := a.traceFlow(context.Background(), "github.com/foo/pkg.Func", 5, nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	} else {
+		if !strings.Contains(err.Error(), "start symbol not found") {
+			t.Errorf("expected 'start symbol not found', got: %v", err)
 		}
-
-		_, err := a.traceFlow(context.Background(), "github.com/foo/pkg.Func", 5, nil)
-		if err == nil {
-			t.Error("expected error, got nil")
-		} else {
-			if !strings.Contains(err.Error(), "start symbol not found") {
-				t.Errorf("expected 'start symbol not found', got: %v", err)
-			}
-			if !strings.Contains(err.Error(), "try the full module path") {
-				t.Errorf("expected full-module-path hint, got: %v", err)
-			}
+		if !strings.Contains(err.Error(), "try the full module path") {
+			t.Errorf("expected full-module-path hint, got: %v", err)
 		}
-	})
+	}
+}
 
-	t.Run("resolveStartFunc error", func(t *testing.T) {
-		t.Parallel()
-		fset := token.NewFileSet()
-		code := `package p
+func TestTraceFlow_ResolveStartFuncError(t *testing.T) {
+	t.Parallel()
+	fset := token.NewFileSet()
+	code := `package p
 func OtherFunc() {}`
-		f, _ := parser.ParseFile(fset, "test.go", code, 0)
+	f, _ := parser.ParseFile(fset, "test.go", code, 0)
 
-		pkg := &packages.Package{
-			PkgPath: "example.com/pkg",
-			Syntax:  []*ast.File{f},
-		}
+	pkg := &packages.Package{
+		PkgPath: "example.com/pkg",
+		Syntax:  []*ast.File{f},
+	}
 
-		a := &defaultSequenceAnalyzer{
-			pkgs:     []*packages.Package{pkg},
-			funcMap:  make(map[string]funcInfo),
-			lastLoad: time.Now(),
-			cacheTTL: 5 * time.Minute,
-		}
+	a := &defaultSequenceAnalyzer{
+		pkgs:     []*packages.Package{pkg},
+		funcMap:  make(map[string]funcInfo),
+		lastLoad: time.Now(),
+		cacheTTL: 5 * time.Minute,
+	}
 
-		_, err := a.traceFlow(context.Background(), "example.com/pkg.WrongName", 5, nil)
-		if err == nil {
-			t.Error("expected error, got nil")
-		} else {
-			if !strings.Contains(err.Error(), "start symbol not found") {
-				t.Errorf("expected 'start symbol not found', got: %v", err)
-			}
-			if !strings.Contains(err.Error(), "WrongName") {
-				t.Errorf("expected 'WrongName' in error, got: %v", err)
-			}
+	_, err := a.traceFlow(context.Background(), "example.com/pkg.WrongName", 5, nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	} else {
+		if !strings.Contains(err.Error(), "start symbol not found") {
+			t.Errorf("expected 'start symbol not found', got: %v", err)
 		}
-	})
+		if !strings.Contains(err.Error(), "WrongName") {
+			t.Errorf("expected 'WrongName' in error, got: %v", err)
+		}
+	}
 }
 
 // TestIsMethodMatch_Remaining exercises the remaining branch in isMethodMatch

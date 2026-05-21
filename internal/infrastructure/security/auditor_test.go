@@ -66,87 +66,95 @@ func TestAuditor_Close(t *testing.T) {
 	})
 }
 
-func TestAuditor_SetLogFile(t *testing.T) {
-	t.Run("empty path", func(t *testing.T) {
-		a := newAuditor(nil)
-		a.SetLogFile("")
-		if a.logger != nil {
-			t.Error("expected nil logger after SetLogFile(\"\")")
-		}
-		if a.file != nil {
-			t.Error("expected nil file after SetLogFile(\"\")")
-		}
-	})
+// newTestAuditor is a shorthand for newAuditor(nil) used by tests.
+func newTestAuditor() *auditor {
+	return newAuditor(nil)
+}
 
-	t.Run("valid path creates file", func(t *testing.T) {
-		a := newAuditor(nil)
-		tmp := filepath.Join(t.TempDir(), "audit.log")
-		a.SetLogFile(tmp)
+func TestAuditor_SetLogFile_EmptyPath(t *testing.T) {
+	t.Parallel()
+	a := newTestAuditor()
+	a.SetLogFile("")
+	if a.logger != nil {
+		t.Error("expected nil logger after SetLogFile(\"\")")
+	}
+	if a.file != nil {
+		t.Error("expected nil file after SetLogFile(\"\")")
+	}
+}
 
-		if a.logger == nil {
-			t.Error("expected non-nil logger after SetLogFile with valid path")
-		}
-		if a.file == nil {
-			t.Error("expected non-nil file after SetLogFile with valid path")
-		}
+func TestAuditor_SetLogFile_ValidPathCreatesFile(t *testing.T) {
+	t.Parallel()
+	a := newTestAuditor()
+	tmp := filepath.Join(t.TempDir(), "audit.log")
+	a.SetLogFile(tmp)
 
-		// Verify file exists on disk
-		if _, err := os.Stat(tmp); os.IsNotExist(err) {
-			t.Errorf("expected file %s to exist on disk", tmp)
-		}
+	if a.logger == nil {
+		t.Error("expected non-nil logger after SetLogFile with valid path")
+	}
+	if a.file == nil {
+		t.Error("expected non-nil file after SetLogFile with valid path")
+	}
 
-		// Cleanup
-		_ = a.Close()
-	})
+	// Verify file exists on disk
+	if _, err := os.Stat(tmp); os.IsNotExist(err) {
+		t.Errorf("expected file %s to exist on disk", tmp)
+	}
 
-	t.Run("overwrite existing file", func(t *testing.T) {
-		a := newAuditor(nil)
-		dir := t.TempDir()
-		pathA := filepath.Join(dir, "audit-a.log")
-		pathB := filepath.Join(dir, "audit-b.log")
+	// Cleanup
+	_ = a.Close()
+}
 
-		a.SetLogFile(pathA)
-		if a.file == nil {
-			t.Fatal("expected non-nil file after first SetLogFile")
-		}
+func TestAuditor_SetLogFile_OverwriteExistingFile(t *testing.T) {
+	t.Parallel()
+	a := newTestAuditor()
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "audit-a.log")
+	pathB := filepath.Join(dir, "audit-b.log")
 
-		a.SetLogFile(pathB) // This should close pathA and open pathB
-		if a.file == nil {
-			t.Fatal("expected non-nil file after second SetLogFile")
-		}
+	a.SetLogFile(pathA)
+	if a.file == nil {
+		t.Fatal("expected non-nil file after first SetLogFile")
+	}
 
-		// Verify new file exists on disk
-		if _, err := os.Stat(pathB); os.IsNotExist(err) {
-			t.Errorf("expected file %s to exist on disk", pathB)
-		}
+	a.SetLogFile(pathB) // This should close pathA and open pathB
+	if a.file == nil {
+		t.Fatal("expected non-nil file after second SetLogFile")
+	}
 
-		_ = a.Close()
-	})
+	// Verify new file exists on disk
+	if _, err := os.Stat(pathB); os.IsNotExist(err) {
+		t.Errorf("expected file %s to exist on disk", pathB)
+	}
 
-	t.Run("invalid path warns", func(t *testing.T) {
-		mock := &mockInteractor{}
-		a := newAuditor(func() domain.UserInteractor { return mock })
-		a.SetLogFile("/nonexistent_dir_xyz_should_not_exist/audit.log")
+	_ = a.Close()
+}
 
-		if a.logger != nil {
-			t.Error("expected nil logger after failed open")
-		}
-		if len(mock.Warns) != 1 {
-			t.Errorf("expected 1 warning, got %d: %v", len(mock.Warns), mock.Warns)
-		}
-		if len(mock.Warns) >= 1 && !strings.Contains(mock.Warns[0], "Failed to open command log file") {
-			t.Errorf("warning does not contain expected message: %q", mock.Warns[0])
-		}
-	})
+func TestAuditor_SetLogFile_InvalidPathWarns(t *testing.T) {
+	t.Parallel()
+	mock := &mockInteractor{}
+	a := newAuditor(func() domain.UserInteractor { return mock })
+	a.SetLogFile("/nonexistent_dir_xyz_should_not_exist/audit.log")
 
-	t.Run("invalid path with nil interactor (no panic)", func(t *testing.T) {
-		a := newAuditor(nil) // interactor provider returns nil
-		// Must not panic when interactor() returns nil
-		a.SetLogFile("/nonexistent_dir_xyz_should_not_exist/audit.log")
-		if a.logger != nil {
-			t.Error("expected nil logger after failed open")
-		}
-	})
+	if a.logger != nil {
+		t.Error("expected nil logger after failed open")
+	}
+	if len(mock.Warns) != 1 {
+		t.Errorf("expected 1 warning, got %d: %v", len(mock.Warns), mock.Warns)
+	}
+	if len(mock.Warns) >= 1 && !strings.Contains(mock.Warns[0], "Failed to open command log file") {
+		t.Errorf("warning does not contain expected message: %q", mock.Warns[0])
+	}
+}
+
+func TestAuditor_SetLogFile_InvalidPathNilInteractor(t *testing.T) {
+	t.Parallel()
+	a := newAuditor(nil) // interactor provider returns nil
+	// Must not panic when interactor() returns nil
+	a.SetLogFile("/nonexistent_dir_xyz_should_not_exist/audit.log")
+	if a.logger != nil {
+		t.Error("expected nil logger after failed open")
+	}
 }
 
 func TestAuditor_LogAudit(t *testing.T) {

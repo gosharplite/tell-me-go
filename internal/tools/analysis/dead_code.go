@@ -173,6 +173,49 @@ func (a *defaultDeadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (stri
 	return "", fmt.Errorf("no go.mod found")
 }
 
+// accumulateFirstError stores the first non-nil error into collectedErr.
+func accumulateFirstError(collectedErr *error, err error) {
+	if *collectedErr == nil {
+		*collectedErr = err
+	}
+}
+
+// sendHeartbeat sends a non-blocking pulse on hb every 20th call (when i%20==0).
+// It is a no-op when hb is nil.
+func sendHeartbeat(i int, hb chan<- struct{}) {
+	if i%20 != 0 || hb == nil {
+		return
+	}
+	select {
+	case hb <- struct{}{}:
+	default:
+	}
+}
+
+// analyzeSingleUsage processes one symbol's usage data: tracking external
+// usages, protecting interface contract symbols, and processing
+// implementations. It returns any error from trackExternalUsages for
+// soft-fail accumulation.
+func (a *defaultDeadCodeAnalyzer) analyzeSingleUsage(
+	ctx context.Context,
+	state *scanState,
+	id string,
+	meta *symMeta,
+	fileToPkg map[string]string,
+	resolvedPath string,
+	hb chan<- struct{},
+) error {
+	var trackErr error
+	if err := a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath, hb); err != nil {
+		trackErr = err
+	}
+	if a.isInterfaceSymbol(meta) {
+		a.protectContractSymbol(state, id)
+	}
+	a.processImplementations(ctx, state, id, hb)
+	return trackErr
+}
+
 func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string, hb chan<- struct{}) {
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
@@ -184,24 +227,12 @@ func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scan
 
 	var collectedErr error
 	for i, id := range ids {
-		if i%20 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
+		sendHeartbeat(i, hb)
 
 		meta := state.declarations[id]
-		if err := a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath, hb); err != nil {
-			// soft-fail: collect error, continue processing remaining symbols
-			if collectedErr == nil {
-				collectedErr = err
-			}
+		if err := a.analyzeSingleUsage(ctx, state, id, meta, fileToPkg, resolvedPath, hb); err != nil {
+			accumulateFirstError(&collectedErr, err)
 		}
-		if a.isInterfaceSymbol(meta) {
-			a.protectContractSymbol(state, id)
-		}
-		a.processImplementations(ctx, state, id, hb)
 	}
 	if collectedErr != nil {
 		slog.Warn("usage lookup errors occurred", "error", collectedErr)
@@ -367,12 +398,7 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 	snapshotTotal, snapshotExternal, ids := takeUsageSnapshots(state)
 
 	for i, id := range ids {
-		if i%20 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
+		sendHeartbeat(i, hb)
 
 		if count := snapshotTotal[id]; count > 0 {
 			a.propagateUsageToImplementations(ctx, id, count, snapshotExternal, state, hb)

@@ -292,93 +292,112 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 	})
 }
 
-func TestRegisterGit_PartialFailure(t *testing.T) {
+// TestRegisterGit_PartialFailure_GetGitStatus verifies that registerGit
+// propagates errors when the first RegisterToToolkit call fails.
+func TestRegisterGit_PartialFailure_GetGitStatus(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	exec := &toolstest.MockExecutor{}
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "get_git_status",
+	}
+	err := registerGit(registry, sm, exec)
+	if err == nil {
+		t.Fatal("expected error from registerGit")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure', got %q", err.Error())
+	}
+}
 
-	t.Run("first RegisterToToolkit fails", func(t *testing.T) {
-		registry := &failingRegistry{
-			mockToolRegistry: &mockToolRegistry{},
-			failOnTool:       "get_git_status",
-		}
-		err := registerGit(registry, sm, exec)
-		if err == nil {
-			t.Fatal("expected error from registerGit")
-		}
-		if !strings.Contains(err.Error(), "injected failure") {
-			t.Errorf("expected 'injected failure', got %q", err.Error())
-		}
-	})
+// TestRegisterGit_PartialFailure_GetGitBlame verifies that registerGit
+// propagates errors when a mid-sequence RegisterToToolkit call fails.
+func TestRegisterGit_PartialFailure_GetGitBlame(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "get_git_blame",
+	}
+	err := registerGit(registry, sm, exec)
+	if err == nil {
+		t.Fatal("expected error from registerGit")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure', got %q", err.Error())
+	}
+}
 
-	t.Run("mid RegisterToToolkit fails", func(t *testing.T) {
-		registry := &failingRegistry{
-			mockToolRegistry: &mockToolRegistry{},
-			failOnTool:       "get_git_blame",
-		}
-		err := registerGit(registry, sm, exec)
-		if err == nil {
-			t.Fatal("expected error from registerGit")
-		}
-		if !strings.Contains(err.Error(), "injected failure") {
-			t.Errorf("expected 'injected failure', got %q", err.Error())
-		}
-	})
+// TestRegisterGit_PartialFailure_GitCommit verifies that registerGit
+// propagates errors when RegisterToToolkitWithOptions fails.
+func TestRegisterGit_PartialFailure_GitCommit(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "git_commit",
+	}
+	err := registerGit(registry, sm, exec)
+	if err == nil {
+		t.Fatal("expected error from registerGit")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure', got %q", err.Error())
+	}
+}
 
-	t.Run("RegisterToToolkitWithOptions fails", func(t *testing.T) {
-		registry := &failingRegistry{
-			mockToolRegistry: &mockToolRegistry{},
-			failOnTool:       "git_commit",
-		}
-		err := registerGit(registry, sm, exec)
-		if err == nil {
-			t.Fatal("expected error from registerGit")
-		}
-		if !strings.Contains(err.Error(), "injected failure") {
-			t.Errorf("expected 'injected failure', got %q", err.Error())
-		}
-	})
+// TestRegisterGit_PartialFailure_GetGitDiff verifies that registerGit
+// propagates errors when the second RegisterToToolkit call fails.
+func TestRegisterGit_PartialFailure_GetGitDiff(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "get_git_diff",
+	}
+	err := registerGit(registry, sm, exec)
+	if err == nil {
+		t.Fatal("expected error from registerGit")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure', got %q", err.Error())
+	}
+}
 
-	t.Run("second RegisterToToolkit fails", func(t *testing.T) {
-		registry := &failingRegistry{
-			mockToolRegistry: &mockToolRegistry{},
-			failOnTool:       "get_git_diff",
-		}
-		err := registerGit(registry, sm, exec)
-		if err == nil {
-			t.Fatal("expected error from registerGit")
-		}
-		if !strings.Contains(err.Error(), "injected failure") {
-			t.Errorf("expected 'injected failure', got %q", err.Error())
-		}
-	})
+// TestRegisterGit_PartialFailure_GitCreateBranch verifies that registerGit
+// propagates errors when the last RegisterToToolkitWithOptions call fails.
+func TestRegisterGit_PartialFailure_GitCreateBranch(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "git_create_branch",
+	}
+	err := registerGit(registry, sm, exec)
+	if err == nil {
+		t.Fatal("expected error from registerGit")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure', got %q", err.Error())
+	}
+}
 
-	t.Run("last RegisterToToolkitWithOptions fails", func(t *testing.T) {
-		registry := &failingRegistry{
-			mockToolRegistry: &mockToolRegistry{},
-			failOnTool:       "git_create_branch",
-		}
-		err := registerGit(registry, sm, exec)
-		if err == nil {
-			t.Fatal("expected error from registerGit")
-		}
-		if !strings.Contains(err.Error(), "injected failure") {
-			t.Errorf("expected 'injected failure', got %q", err.Error())
-		}
-	})
-
-	t.Run("third RegisterToToolkit fails", func(t *testing.T) {
-		registry := &failingRegistry{
-			mockToolRegistry: &mockToolRegistry{},
-			failOnTool:       "get_git_log",
-		}
-		err := registerGit(registry, sm, exec)
-		if err == nil {
-			t.Fatal("expected error from registerGit")
-		}
-		if !strings.Contains(err.Error(), "injected failure") {
-			t.Errorf("expected 'injected failure', got %q", err.Error())
-		}
-	})
+// TestRegisterGit_PartialFailure_GetGitLog verifies that registerGit
+// propagates errors when the third RegisterToToolkit call fails.
+func TestRegisterGit_PartialFailure_GetGitLog(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	registry := &failingRegistry{
+		mockToolRegistry: &mockToolRegistry{},
+		failOnTool:       "get_git_log",
+	}
+	err := registerGit(registry, sm, exec)
+	if err == nil {
+		t.Fatal("expected error from registerGit")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Errorf("expected 'injected failure', got %q", err.Error())
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -18,16 +18,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
-func TestBackupManager_Undo(t *testing.T) {
+// setupBackupForUndo creates a backupManager with two snapshots:
+// a WRITE snapshot (new file) followed by a REPLACE snapshot (modification).
+// Returns the manager, context, and the file path.
+func setupBackupForUndo(t *testing.T) (*backupManager, context.Context, string) {
+	t.Helper()
 	tempDir := t.TempDir()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.RegisterSafePath(tempDir)
 	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
 	ctx := context.Background()
-
 	path := filepath.Join(tempDir, "test.txt")
 
-	// 1. Snapshot new file creation
+	// Step 1: Snapshot new file creation
 	if err := bm.snapshot(ctx, path, "WRITE"); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +38,7 @@ func TestBackupManager_Undo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 2. Snapshot modification
+	// Step 2: Snapshot modification
 	if err := bm.snapshot(ctx, path, "REPLACE"); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +46,14 @@ func TestBackupManager_Undo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 3. Undo modification
+	return bm, ctx, path
+}
+
+// TestBackupManager_Undo_Modification verifies that undoing a REPLACE
+// snapshot restores the previous file content.
+func TestBackupManager_Undo_Modification(t *testing.T) {
+	bm, ctx, path := setupBackupForUndo(t)
+
 	res, err := bm.undo(ctx, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -58,9 +68,20 @@ func TestBackupManager_Undo(t *testing.T) {
 	if string(content) != "v1" {
 		t.Errorf("got %s, want v1", content)
 	}
+}
 
-	// 4. Undo creation
-	res, err = bm.undo(ctx, 1)
+// TestBackupManager_Undo_Creation verifies that undoing a WRITE snapshot
+// (after the modification was already undone) removes the created file.
+func TestBackupManager_Undo_Creation(t *testing.T) {
+	bm, ctx, path := setupBackupForUndo(t)
+
+	// Undo the modification first
+	if _, err := bm.undo(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Then undo the creation
+	res, err := bm.undo(ctx, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +190,11 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 	}
 }
 
-func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
+// setupUndoErrorTest creates a backupManager with the test case's snapshot
+// already taken. Returns the manager, context, and the mock security manager
+// (needed for cleanup).
+func setupUndoErrorTest(t *testing.T, tc undoErrorTestCase) (*backupManager, context.Context) {
+	t.Helper()
 	tempDir := t.TempDir()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	fs := tc.mockFS
@@ -180,7 +205,7 @@ func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 	ctx := context.Background()
 
 	cleanup := tc.setup(t, tempDir, sm)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	fullPath := tc.snapshotPath
 	if fullPath != "" {
@@ -192,8 +217,14 @@ func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 		}
 	}
 
-	res, err := bm.undo(ctx, 1)
+	return bm, ctx
+}
 
+// verifyUndoErrorResult asserts the undo result against the test case's
+// expectations. When wantErrSubstr is set, it checks the error; otherwise
+// it checks for success and optional result substring.
+func verifyUndoErrorResult(t *testing.T, res string, err error, tc undoErrorTestCase) {
+	t.Helper()
 	if tc.wantErrSubstr != "" {
 		if err == nil || !strings.Contains(err.Error(), tc.wantErrSubstr) {
 			t.Errorf("expected error containing %q, got %v", tc.wantErrSubstr, err)
@@ -207,6 +238,12 @@ func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 	if tc.wantResSubstr != "" && !strings.Contains(res, tc.wantResSubstr) {
 		t.Errorf("expected result containing %q, got %q", tc.wantResSubstr, res)
 	}
+}
+
+func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
+	bm, ctx := setupUndoErrorTest(t, tc)
+	res, err := bm.undo(ctx, 1)
+	verifyUndoErrorResult(t, res, err, tc)
 }
 
 // ---------------------------------------------------------------------------

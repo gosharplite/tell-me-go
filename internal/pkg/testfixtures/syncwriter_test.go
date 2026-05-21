@@ -20,99 +20,82 @@ func (w *noStringWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
-func TestSyncWriter_Write(t *testing.T) {
-	tests := []struct {
-		name   string
-		sw     *SyncWriter
-		data   []byte
-		verify func(t *testing.T, sw *SyncWriter, n int, err error)
-	}{
-		{
-			name: "writes to external writer",
-			sw:   &SyncWriter{Writer: &bytes.Buffer{}},
-			data: []byte("hello"),
-			verify: func(t *testing.T, sw *SyncWriter, n int, err error) {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if n != 5 {
-					t.Errorf("n = %d; want 5", n)
-				}
-				buf := sw.Writer.(*bytes.Buffer)
-				if buf.String() != "hello" {
-					t.Errorf("external buffer = %q; want %q", buf.String(), "hello")
-				}
-			},
-		},
-		{
-			name: "writes to internal buffer when Writer is nil",
-			sw:   &SyncWriter{},
-			data: []byte("hello"),
-			verify: func(t *testing.T, sw *SyncWriter, n int, err error) {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if n != 5 {
-					t.Errorf("n = %d; want 5", n)
-				}
-				if sw.String() != "hello" {
-					t.Errorf("String() = %q; want %q", sw.String(), "hello")
-				}
-			},
-		},
-		{
-			name: "sends OnWrite notification",
-			sw:   &SyncWriter{OnWrite: make(chan struct{}, 1)},
-			data: []byte("x"),
-			verify: func(t *testing.T, sw *SyncWriter, n int, err error) {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				select {
-				case <-sw.OnWrite:
-					// OK: notification received
-				default:
-					t.Error("expected OnWrite notification but none received")
-				}
-			},
-		},
-		{
-			name: "OnWrite nil does not panic",
-			sw:   &SyncWriter{OnWrite: nil},
-			data: []byte("x"),
-			verify: func(t *testing.T, sw *SyncWriter, n int, err error) {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if n != 1 {
-					t.Errorf("n = %d; want 1", n)
-				}
-			},
-		},
-		{
-			name: "OnWrite full does not block",
-			sw:   &SyncWriter{OnWrite: make(chan struct{})},
-			data: []byte("x"),
-			verify: func(t *testing.T, sw *SyncWriter, n int, err error) {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if n != 1 {
-					t.Errorf("n = %d; want 1", n)
-				}
-				// If we reached here, Write did not block — the default
-				// case in select was taken. That is the expected behaviour.
-			},
-		},
+func TestSyncWriter_Write_ExternalWriter(t *testing.T) {
+	t.Parallel()
+	sw := &SyncWriter{Writer: &bytes.Buffer{}}
+	data := []byte("hello")
+	n, err := sw.Write(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if n != 5 {
+		t.Errorf("n = %d; want 5", n)
+	}
+	buf := sw.Writer.(*bytes.Buffer)
+	if buf.String() != "hello" {
+		t.Errorf("external buffer = %q; want %q", buf.String(), "hello")
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			n, err := tt.sw.Write(tt.data)
-			tt.verify(t, tt.sw, n, err)
-		})
+func TestSyncWriter_Write_InternalBuffer(t *testing.T) {
+	t.Parallel()
+	sw := &SyncWriter{}
+	data := []byte("hello")
+	n, err := sw.Write(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if n != 5 {
+		t.Errorf("n = %d; want 5", n)
+	}
+	if sw.String() != "hello" {
+		t.Errorf("String() = %q; want %q", sw.String(), "hello")
+	}
+}
+
+func TestSyncWriter_Write_OnWriteNotification(t *testing.T) {
+	t.Parallel()
+	sw := &SyncWriter{OnWrite: make(chan struct{}, 1)}
+	data := []byte("x")
+	n, err := sw.Write(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = n
+	select {
+	case <-sw.OnWrite:
+		// OK: notification received
+	default:
+		t.Error("expected OnWrite notification but none received")
+	}
+}
+
+func TestSyncWriter_Write_OnWriteNil(t *testing.T) {
+	t.Parallel()
+	sw := &SyncWriter{OnWrite: nil}
+	data := []byte("x")
+	n, err := sw.Write(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("n = %d; want 1", n)
+	}
+}
+
+func TestSyncWriter_Write_OnWriteFull(t *testing.T) {
+	t.Parallel()
+	sw := &SyncWriter{OnWrite: make(chan struct{})}
+	data := []byte("x")
+	n, err := sw.Write(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("n = %d; want 1", n)
+	}
+	// If we reached here, Write did not block — the default
+	// case in select was taken. That is the expected behaviour.
 }
 
 func TestSyncWriter_String(t *testing.T) {

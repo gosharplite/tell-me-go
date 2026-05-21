@@ -411,57 +411,64 @@ func TestDiscoverNewRecords_OsStatError(t *testing.T) {
 // getSessionID filepath.Rel fallback error path (Phase 10)
 // ---------------------------------------------------------------------------
 
-func TestGetSessionID_RelFallback(t *testing.T) {
+func newLedgerStoreForTest() *ledgerStore {
+	return &ledgerStore{}
+}
+
+func TestGetSessionID_NormalRelativePath(t *testing.T) {
 	t.Parallel()
+	ls := newLedgerStoreForTest()
 
-	ls := &ledgerStore{}
+	result, err := ls.getSessionID("/base/session/tokens.log", "/base")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "session/tokens.log" {
+		t.Errorf("expected 'session/tokens.log', got %q", result)
+	}
+}
 
-	t.Run("normal relative path", func(t *testing.T) {
-		result, err := ls.getSessionID("/base/session/tokens.log", "/base")
+func TestGetSessionID_BackupPrefixRewriting(t *testing.T) {
+	t.Parallel()
+	ls := newLedgerStoreForTest()
+
+	result, err := ls.getSessionID("/base/backups/2023/session/tokens.log", "/base")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "backup/2023/session/tokens.log" {
+		t.Errorf("expected 'backup/2023/session/tokens.log', got %q", result)
+	}
+}
+
+func TestGetSessionID_RelError(t *testing.T) {
+	t.Parallel()
+	ls := newLedgerStoreForTest()
+
+	globalDir := `C:\base`
+	path := `D:\other\tokens.log`
+
+	rel, relErr := filepath.Rel(globalDir, path)
+	if relErr != nil {
+		result, err := ls.getSessionID(path, globalDir)
+		if err == nil {
+			t.Error("expected error from getSessionID when filepath.Rel fails")
+		} else if !strings.Contains(err.Error(), "resolving session ID") {
+			t.Errorf("expected error to contain 'resolving session ID', got: %v", err)
+		}
+		if result != "" {
+			t.Errorf("expected empty string on error, got %q", result)
+		}
+	} else {
+		t.Logf("filepath.Rel succeeded (expected on Unix): rel=%q", rel)
+		result, err := ls.getSessionID(path, globalDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result != "session/tokens.log" {
-			t.Errorf("expected 'session/tokens.log', got %q", result)
+		if result != filepath.ToSlash(rel) {
+			t.Errorf("expected %q, got %q", filepath.ToSlash(rel), result)
 		}
-	})
-
-	t.Run("backup prefix rewriting", func(t *testing.T) {
-		result, err := ls.getSessionID("/base/backups/2023/session/tokens.log", "/base")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if result != "backup/2023/session/tokens.log" {
-			t.Errorf("expected 'backup/2023/session/tokens.log', got %q", result)
-		}
-	})
-
-	t.Run("rel error returns error", func(t *testing.T) {
-		globalDir := `C:\base`
-		path := `D:\other\tokens.log`
-
-		rel, relErr := filepath.Rel(globalDir, path)
-		if relErr != nil {
-			result, err := ls.getSessionID(path, globalDir)
-			if err == nil {
-				t.Error("expected error from getSessionID when filepath.Rel fails")
-			} else if !strings.Contains(err.Error(), "resolving session ID") {
-				t.Errorf("expected error to contain 'resolving session ID', got: %v", err)
-			}
-			if result != "" {
-				t.Errorf("expected empty string on error, got %q", result)
-			}
-		} else {
-			t.Logf("filepath.Rel succeeded (expected on Unix): rel=%q", rel)
-			result, err := ls.getSessionID(path, globalDir)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result != filepath.ToSlash(rel) {
-				t.Errorf("expected %q, got %q", filepath.ToSlash(rel), result)
-			}
-		}
-	})
+	}
 }
 
 // ---------------------------------------------------------------------------

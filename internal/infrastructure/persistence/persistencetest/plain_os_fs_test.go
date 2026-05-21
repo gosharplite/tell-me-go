@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 )
 
@@ -101,6 +102,33 @@ func TestPlainOSFileSystem_WriteFile(t *testing.T) {
 	})
 }
 
+// assertFileContent reads the file at path using fs.ReadFile and fails if
+// the content does not match want.
+func assertFileContent(t *testing.T, fs persistence.FileSystem, ctx context.Context, path string, want []byte) {
+	t.Helper()
+	got, err := fs.ReadFile(ctx, path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) failed: %v", path, err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// assertNoOrphanTempFiles fails if any entry in dir matches "atomic-*".
+func assertNoOrphanTempFiles(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	for _, e := range entries {
+		if matched, _ := filepath.Match("atomic-*", e.Name()); matched {
+			t.Errorf("orphaned temp file found: %s", e.Name())
+		}
+	}
+}
+
 // =============================================================================
 // AtomicWrite
 // =============================================================================
@@ -122,13 +150,7 @@ func TestPlainOSFileSystem_AtomicWrite(t *testing.T) {
 			t.Fatalf("AtomicWrite failed: %v", err)
 		}
 
-		got, err := fs.ReadFile(ctx, path)
-		if err != nil {
-			t.Fatalf("ReadFile failed: %v", err)
-		}
-		if string(got) != string(data) {
-			t.Errorf("got %q, want %q", got, data)
-		}
+		assertFileContent(t, fs, ctx, path, data)
 	})
 
 	t.Run("temp file cleanup on failure", func(t *testing.T) {
@@ -143,15 +165,7 @@ func TestPlainOSFileSystem_AtomicWrite(t *testing.T) {
 		}
 
 		// Verify no atomic-* temp files were left behind.
-		entries, readErr := os.ReadDir(dir)
-		if readErr != nil {
-			t.Fatalf("ReadDir failed: %v", readErr)
-		}
-		for _, e := range entries {
-			if matched, _ := filepath.Match("atomic-*", e.Name()); matched {
-				t.Errorf("orphaned temp file found: %s", e.Name())
-			}
-		}
+		assertNoOrphanTempFiles(t, dir)
 	})
 
 	t.Run("overwrite", func(t *testing.T) {
@@ -166,13 +180,7 @@ func TestPlainOSFileSystem_AtomicWrite(t *testing.T) {
 			t.Fatalf("second AtomicWrite failed: %v", err)
 		}
 
-		got, err := fs.ReadFile(ctx, path)
-		if err != nil {
-			t.Fatalf("ReadFile failed: %v", err)
-		}
-		if string(got) != "new" {
-			t.Errorf("got %q, want %q", got, "new")
-		}
+		assertFileContent(t, fs, ctx, path, []byte("new"))
 	})
 }
 
@@ -413,6 +421,50 @@ func TestPlainOSFileSystem_Open(t *testing.T) {
 }
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+// writeCloseAndVerify writes data to f, closes f, then verifies the file
+// at path on disk contains the expected content.
+func writeCloseAndVerify(t *testing.T, f persistence.File, path string, data []byte) {
+	t.Helper()
+	n, err := f.Write(data)
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	if n != len(data) {
+		t.Errorf("wrote %d bytes, want %d", n, len(data))
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("os.ReadFile failed: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Errorf("got %q, want %q", got, data)
+	}
+}
+
+// readAndCompare reads from r into a buffer of len(data) and fails if the
+// content does not match.
+func readAndCompare(t *testing.T, r persistence.File, data []byte) {
+	t.Helper()
+	buf := make([]byte, len(data))
+	n, err := r.Read(buf)
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+	if n != len(data) {
+		t.Errorf("read %d bytes, want %d", n, len(data))
+	}
+	if string(buf) != string(data) {
+		t.Errorf("got %q, want %q", buf, data)
+	}
+}
+
+// =============================================================================
 // OpenFile
 // =============================================================================
 
@@ -433,26 +485,7 @@ func TestPlainOSFileSystem_OpenFile(t *testing.T) {
 			t.Fatalf("OpenFile failed: %v", err)
 		}
 
-		n, err := f.Write(data)
-		if err != nil {
-			t.Fatalf("Write failed: %v", err)
-		}
-		if n != len(data) {
-			t.Errorf("wrote %d bytes, want %d", n, len(data))
-		}
-
-		if err := f.Close(); err != nil {
-			t.Fatalf("Close failed: %v", err)
-		}
-
-		// Verify file exists with correct content.
-		got, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("os.ReadFile failed: %v", err)
-		}
-		if string(got) != string(data) {
-			t.Errorf("got %q, want %q", got, data)
-		}
+		writeCloseAndVerify(t, f, path, data)
 	})
 
 	t.Run("open existing", func(t *testing.T) {
@@ -470,17 +503,7 @@ func TestPlainOSFileSystem_OpenFile(t *testing.T) {
 		}
 		defer func() { _ = f.Close() }()
 
-		buf := make([]byte, len(data))
-		n, err := f.Read(buf)
-		if err != nil {
-			t.Fatalf("Read failed: %v", err)
-		}
-		if n != len(data) {
-			t.Errorf("read %d bytes, want %d", n, len(data))
-		}
-		if string(buf) != string(data) {
-			t.Errorf("got %q, want %q", buf, data)
-		}
+		readAndCompare(t, f, data)
 	})
 }
 

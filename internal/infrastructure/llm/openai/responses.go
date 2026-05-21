@@ -114,52 +114,70 @@ func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem
 			return err
 		}
 	} else {
-		// Process as direct content block based on type
-		cb := contentBlock{
-			Type:       out.Type,
-			Text:       out.Text,
-			InputText:  out.InputText,
-			OutputText: out.OutputText,
-			Thought:    out.Thought,
-			Reasoning:  out.Reasoning,
-			Refusal:    out.Refusal,
-		}
-		if err := c.appendPartsFromBlock(content, cb); err != nil {
-			// Output-item types (e.g., "call", "message") are not
-			// content-block types; they are handled by the fallback
-			// logic below. Only propagate errors that are not about
-			// unhandled block types at this level.
-			if !errors.Is(err, errUnhandledBlockType) {
-				return err
-			}
-		}
-
-		// Fallback for items that put blocks in a top-level array
-		for _, childCb := range out.Content {
-			if err := c.appendPartsFromBlock(content, childCb); err != nil {
-				return err
-			}
-		}
-
-		// Top-level tool calls in output item
-		if err := c.parseResponseToolCalls(out.ToolCalls, content); err != nil {
+		if err := c.processDirectOutputItem(content, out); err != nil {
 			return err
 		}
+	}
+	return nil
+}
 
-		// Detection logic for top-level tool call (type: "call")
-		targetName := out.Name
-		targetArgs := out.Arguments
-		if out.Function != nil {
-			targetName = out.Function.Name
-			targetArgs = out.Function.Arguments
+// processDirectOutputItem handles output items that lack a Message wrapper.
+// These items carry content blocks directly (Text, InputText, OutputText, etc.),
+// a top-level Content array for child blocks, ToolCalls, and optionally
+// a top-level function/tool call (type: "call").
+func (c *client) processDirectOutputItem(content *llm.Content, out *responseOutputItem) error {
+	// Process as direct content block based on type
+	cb := contentBlock{
+		Type:       out.Type,
+		Text:       out.Text,
+		InputText:  out.InputText,
+		OutputText: out.OutputText,
+		Thought:    out.Thought,
+		Reasoning:  out.Reasoning,
+		Refusal:    out.Refusal,
+	}
+	if err := c.appendPartsFromBlock(content, cb); err != nil {
+		// Output-item types (e.g., "call", "message") are not
+		// content-block types; they are handled by the fallback
+		// logic below. Only propagate errors that are not about
+		// unhandled block types at this level.
+		if !errors.Is(err, errUnhandledBlockType) {
+			return err
 		}
-		if targetName != "" {
-			if out.ID == "" {
-				return fmt.Errorf("invalid tool payload: missing ID for top-level tool call '%s'", targetName)
-			}
-			if err := c.appendToolCall(content, out.ID, targetName, targetArgs); err != nil {
-				return err
-			}
+	}
+
+	// Fallback for items that put blocks in a top-level array
+	for _, childCb := range out.Content {
+		if err := c.appendPartsFromBlock(content, childCb); err != nil {
+			return err
+		}
+	}
+
+	// Top-level tool calls in output item
+	if err := c.parseResponseToolCalls(out.ToolCalls, content); err != nil {
+		return err
+	}
+
+	// Detection logic for top-level tool call (type: "call")
+	return c.detectTopLevelToolCall(content, out)
+}
+
+// detectTopLevelToolCall checks for a top-level function/tool call in the
+// output item. It resolves the call name and arguments from either the
+// Function field (preferred) or the top-level Name/Arguments fields (fallback).
+func (c *client) detectTopLevelToolCall(content *llm.Content, out *responseOutputItem) error {
+	targetName := out.Name
+	targetArgs := out.Arguments
+	if out.Function != nil {
+		targetName = out.Function.Name
+		targetArgs = out.Function.Arguments
+	}
+	if targetName != "" {
+		if out.ID == "" {
+			return fmt.Errorf("invalid tool payload: missing ID for top-level tool call '%s'", targetName)
+		}
+		if err := c.appendToolCall(content, out.ID, targetName, targetArgs); err != nil {
+			return err
 		}
 	}
 	return nil

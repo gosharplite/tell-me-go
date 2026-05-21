@@ -30,13 +30,13 @@ func (m *mockTypeIndex) Lookup(ctx context.Context, symbol string, hb chan<- str
 // errSentinel is a sentinel error used to verify Lookup error propagation.
 var errSentinel = errors.New("index lookup failure")
 
-// TestGetTypeInfo_ErrorPaths exercises all seven error/early-return paths in
-// defaultTypeManager.GetTypeInfo. It uses a mock symbolIndex to control each
-// decision point in isolation.
-func TestGetTypeInfo_ErrorPaths(t *testing.T) {
-	t.Parallel()
-
-	// Pre-create shared temp files for findTypeSpec-nil and findMethodsInPackage-error cases.
+// setupErrorPathTmpDir creates two Go source files in a temp directory:
+//   - mismatch.go: contains OtherType (not MyStruct)
+//   - hastype.go: contains MyStruct with method Foo
+//
+// Returns the temp directory path.
+func setupErrorPathTmpDir(t *testing.T) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 
 	mismatchFile := filepath.Join(tmpDir, "mismatch.go")
@@ -58,127 +58,145 @@ func (s *MyStruct) Foo() string { return "" }
 		t.Fatal(err)
 	}
 
+	return tmpDir
+}
+
+// TestGetTypeInfo_UnmarshalArgsError verifies that an unmarshalable argument
+// (a channel) produces an error and a zero-valued ToolResult.
+func TestGetTypeInfo_UnmarshalArgsError(t *testing.T) {
+	t.Parallel()
+	m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	ch := make(chan struct{})
+	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ch}, nil)
+	if err == nil {
+		t.Fatal("expected error for channel value, got nil")
+	}
+	if res.Text != "" {
+		t.Errorf("expected empty Text on UnmarshalArgs error, got %q", res.Text)
+	}
+	if res.Metadata != nil || res.BinaryData != nil || res.Error != nil {
+		t.Errorf("expected zero-valued ToolResult fields, got Metadata=%v BinaryData=%v Error=%v",
+			res.Metadata, res.BinaryData, res.Error)
+	}
+}
+
+// TestGetTypeInfo_EmptyTypename verifies that an empty typename returns
+// a guidance message without error.
+func TestGetTypeInfo_EmptyTypename(t *testing.T) {
+	t.Parallel()
+	m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ""}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Please provide a typename.") {
+		t.Errorf("expected guidance message, got: %s", res.Text)
+	}
+}
+
+// TestGetTypeInfo_LookupError verifies that when Lookup returns an error,
+// the method returns a "Type not found." message without surfacing the error.
+func TestGetTypeInfo_LookupError(t *testing.T) {
+	t.Parallel()
+	idx := &mockTypeIndex{
+		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+			return nil, errSentinel
+		},
+	}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Type not found.") {
+		t.Errorf("expected 'Type not found.', got: %s", res.Text)
+	}
+}
+
+// TestGetTypeInfo_LookupEmpty verifies that when Lookup returns zero locations
+// without an error, the method returns a "Type not found." message.
+func TestGetTypeInfo_LookupEmpty(t *testing.T) {
+	t.Parallel()
+	idx := &mockTypeIndex{
+		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+			return nil, nil
+		},
+	}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Type not found.") {
+		t.Errorf("expected 'Type not found.', got: %s", res.Text)
+	}
+}
+
+// TestGetTypeInfo_CacheGetError verifies that when the AST cache cannot
+// retrieve a file (missing on disk), an error is propagated.
+func TestGetTypeInfo_CacheGetError(t *testing.T) {
+	t.Parallel()
+	tmpDir := setupErrorPathTmpDir(t)
+
+	idx := &mockTypeIndex{
+		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+			return []analysis.Location{{Path: filepath.Join(tmpDir, "does_not_exist.go"), Line: 1, Column: 1}}, nil
+		},
+	}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
+	if err == nil {
+		t.Error("expected error for cache get failure, got nil")
+	}
+}
+
+// TestGetTypeInfo_FindTypeSpecNil verifies that when findTypeSpec returns nil
+// (the file parses but lacks the requested type), the method returns a
+// "Type not found." message.
+func TestGetTypeInfo_FindTypeSpecNil(t *testing.T) {
+	t.Parallel()
+	tmpDir := setupErrorPathTmpDir(t)
+
+	idx := &mockTypeIndex{
+		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+			return []analysis.Location{{Path: filepath.Join(tmpDir, "mismatch.go"), Line: 2, Column: 6}}, nil
+		},
+	}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MissingType"}, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Type not found.") {
+		t.Errorf("expected 'Type not found.', got: %s", res.Text)
+	}
+}
+
+// TestGetTypeInfo_FindMethodsError verifies that a cancelled context causes
+// findMethodsInPackage to fail, propagating an error.
+func TestGetTypeInfo_FindMethodsError(t *testing.T) {
+	t.Parallel()
+	tmpDir := setupErrorPathTmpDir(t)
+
 	cancelCtx, cancel := context.WithCancel(context.Background())
-	cancel() // immediately canceled
+	cancel()
 
-	type testCase struct {
-		name     string
-		args     map[string]interface{}
-		lookupFn func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error)
-		ctx      context.Context
-		wantErr  bool
-		wantText string // if non-empty, must appear in res.Text
-	}
-
-	cases := []testCase{
-		// ── Path 1: UnmarshalArgs fails ──────────────────────────────────────
-		// Channel values cannot be JSON-marshaled, so UnmarshalArgs returns an error.
-		{
-			name:    "path1_UnmarshalArgs_channel",
-			args:    map[string]interface{}{"typename": make(chan int)},
-			wantErr: true,
-		},
-		// ── Path 2: Empty typename ───────────────────────────────────────────
-		{
-			name:     "path2_empty_typename",
-			args:     map[string]interface{}{"typename": ""},
-			wantErr:  false,
-			wantText: "Please provide a typename.",
-		},
-		// ── Path 3: Lookup returns error ─────────────────────────────────────
-		// Code does: if err != nil || len(locs) == 0 → "Type not found."
-		// The error is swallowed; the caller sees nil error.
-		{
-			name: "path3_Lookup_error",
-			args: map[string]interface{}{"typename": "Foo"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
-				return nil, errSentinel
-			},
-			wantErr:  false,
-			wantText: "Type not found.",
-		},
-		// ── Path 4: Lookup returns empty locations ───────────────────────────
-		{
-			name: "path4_Lookup_empty",
-			args: map[string]interface{}{"typename": "Foo"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
-				return nil, nil
-			},
-			wantErr:  false,
-			wantText: "Type not found.",
-		},
-		// ── Path 5: Cache.Get fails ──────────────────────────────────────────
-		// Lookup returns a valid location but the file doesn't exist on disk.
-		{
-			name: "path5_CacheGet_error",
-			args: map[string]interface{}{"typename": "Foo"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
-				return []analysis.Location{{Path: filepath.Join(tmpDir, "does_not_exist.go"), Line: 1, Column: 1}}, nil
-			},
-			wantErr: true,
-		},
-		// ── Path 6: findTypeSpec returns nil ─────────────────────────────────
-		// The file parses successfully but does not contain the requested type.
-		{
-			name: "path6_findTypeSpec_nil",
-			args: map[string]interface{}{"typename": "MissingType"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
-				return []analysis.Location{{Path: mismatchFile, Line: 2, Column: 6}}, nil
-			},
-			wantErr:  false,
-			wantText: "Type not found.",
-		},
-		// ── Path 7: findMethodsInPackage returns error ───────────────────────
-		// A canceled context causes checkCancellation to return an error inside
-		// the walk function, which filepath.Walk propagates.
-		{
-			name: "path7_findMethodsInPackage_error",
-			args: map[string]interface{}{"typename": "MyStruct"},
-			lookupFn: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
-				return []analysis.Location{{Path: hasTypeFile, Line: 2, Column: 6}}, nil
-			},
-			ctx:     cancelCtx,
-			wantErr: true,
+	idx := &mockTypeIndex{
+		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+			return []analysis.Location{{Path: filepath.Join(tmpDir, "hastype.go"), Line: 2, Column: 6}}, nil
 		},
 	}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
 
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			idx := &mockTypeIndex{}
-			if tc.lookupFn != nil {
-				idx.LookupFunc = tc.lookupFn
-			}
-
-			ctx := tc.ctx
-			if ctx == nil {
-				ctx = context.Background()
-			}
-
-			m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
-			res, err := m.GetTypeInfo(ctx, tc.args, nil)
-
-			if (err != nil) != tc.wantErr {
-				t.Errorf("error = %v, wantErr = %v", err, tc.wantErr)
-			}
-
-			if tc.wantText != "" && !strings.Contains(res.Text, tc.wantText) {
-				t.Errorf("expected result to contain %q, got:\n%s", tc.wantText, res.Text)
-			}
-
-			// On error paths, the ToolResult should be zero-valued.
-			if tc.wantErr && err != nil {
-				if res.Text != "" {
-					t.Errorf("expected empty ToolResult on error, got Text=%q", res.Text)
-				}
-				if res.Metadata != nil || res.BinaryData != nil || res.Error != nil {
-					t.Errorf("expected zero-valued ToolResult fields, got Metadata=%v BinaryData=%v Error=%v",
-						res.Metadata, res.BinaryData, res.Error)
-				}
-			}
-		})
+	_, err := m.GetTypeInfo(cancelCtx, map[string]interface{}{"typename": "MyStruct"}, nil)
+	if err == nil {
+		t.Error("expected error for cancelled context during findMethods, got nil")
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -17,6 +18,12 @@ import (
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
+
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(s string) string {
+	return ansiRE.ReplaceAllString(s, "")
+}
 
 func TestHistory_Rendering(t *testing.T) {
 	ctx := context.Background()
@@ -244,8 +251,10 @@ func TestHistory_RenderTextFallback(t *testing.T) {
 	t.Run("raw=false uses glamour renderer", func(t *testing.T) {
 		var buf bytes.Buffer
 		ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: false})
-		output := buf.String()
+		output := stripANSI(buf.String())
 		// Non-raw path should still contain the content (rendered by glamour)
+		// ANSI escapes are stripped first — glamour may emit color codes
+		// depending on terminal environment state set by prior tests.
 		if !strings.Contains(output, "hello world") {
 			t.Errorf("expected rendered text to contain 'hello world', got %q", output)
 		}

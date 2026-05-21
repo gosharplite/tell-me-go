@@ -992,11 +992,19 @@ func TestAppendSummaryToLog_OpenError(t *testing.T) {
 // findLogFiles extended tests (Phase 6)
 // ---------------------------------------------------------------------------
 
-func TestFindLogFiles_UnreadableSubdirectory_CallbackError(t *testing.T) {
+// setupFindLogFilesWithUnreadableSubdir creates a temp directory containing:
+//   - readable/tokens.log (valid)
+//   - locked/              (mode 0000, contains tokens.log)
+//
+// Returns the root directory. Skips in short mode or if chmod is unavailable.
+// Caller must call t.Cleanup to restore permissions; this helper registers
+// the cleanup itself.
+func setupFindLogFilesWithUnreadableSubdir(t *testing.T) string {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping chmod-based test in short mode")
 	}
-	// NOT parallel — chmod on temp dirs can interfere.
+
 	tempDir := t.TempDir()
 
 	// Create a valid tokens.log in a readable subdirectory.
@@ -1019,6 +1027,13 @@ func TestFindLogFiles_UnreadableSubdirectory_CallbackError(t *testing.T) {
 		t.Skipf("cannot chmod directory (maybe root?): %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(badDir, 0755) })
+
+	return tempDir
+}
+
+func TestFindLogFiles_UnreadableSubdirectory_CallbackError(t *testing.T) {
+	// NOT parallel — chmod on temp dirs can interfere.
+	tempDir := setupFindLogFilesWithUnreadableSubdir(t)
 
 	ls := &ledgerStore{}
 	files, err := ls.findLogFiles(tempDir)
@@ -1189,22 +1204,19 @@ func TestRegisterMetrics_UnmarshalArgsErrorUnreachable(t *testing.T) {
 	}
 }
 
-// TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError exercises the
-// get_cost_summary handler closure body (metrics.go:69-116), specifically
-// the log.Printf warning path (lines 83-85) when EstimateCost fails with
-// a non-NotExist error. We make parseUsage fail by placing the logFile inside
-// a no-permission directory so os.Open returns EACCES.
-//
-// NOT parallel — uses chmod on a temp directory.
-func TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError(t *testing.T) {
+// setupGetCostSummaryHandlerWithSilentUpdateError creates a directory layout
+// where parseUsage fails with EACCES (logFile inside no-permission dir) but
+// getCostSummary succeeds (global_costs.json in writable parent).
+// It registers metrics and returns the get_cost_summary handler.
+// Skips in short mode or if chmod is unavailable.
+func setupGetCostSummaryHandlerWithSilentUpdateError(t *testing.T) tools.ToolFunc {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping chmod-based test in short mode")
 	}
-	// NOT parallel: chmod on temp dirs can interfere.
 
 	reg := &mockRegistry{}
 	sm := &mockSM{}
-
 	tmpDir := t.TempDir()
 
 	// Create a writable parent directory so global_costs.json can be placed
@@ -1217,8 +1229,7 @@ func TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError(t *testing.T) {
 	// Create a no-permission subdirectory. Setting logFile inside this dir
 	// causes os.Open (inside parseUsage) to fail with EACCES, which is NOT
 	// os.IsNotExist. EstimateCost returns a non-nil error, triggering the
-	// log.Printf("Warning: Failed to record cost before summary: %v", err)
-	// branch in the get_cost_summary handler closure.
+	// log.Printf warning branch in the get_cost_summary handler closure.
 	noAccessDir := filepath.Join(parentDir, "noaccess")
 	if err := os.Mkdir(noAccessDir, 0755); err != nil {
 		t.Fatal(err)
@@ -1255,6 +1266,19 @@ func TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError(t *testing.T) {
 	if handler == nil {
 		t.Fatal("get_cost_summary handler not registered")
 	}
+	return handler
+}
+
+// TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError exercises the
+// get_cost_summary handler closure body (metrics.go:69-116), specifically
+// the log.Printf warning path (lines 83-85) when EstimateCost fails with
+// a non-NotExist error. We make parseUsage fail by placing the logFile inside
+// a no-permission directory so os.Open returns EACCES.
+//
+// NOT parallel — uses chmod on a temp directory.
+func TestRegisterMetrics_GetCostSummaryHandler_SilentUpdateError(t *testing.T) {
+	// NOT parallel — uses chmod on a temp directory.
+	handler := setupGetCostSummaryHandlerWithSilentUpdateError(t)
 
 	// Call the handler. The silent update (EstimateCost) will fail because
 	// parseUsage cannot open logFile (EACCES on parent dir). The handler
