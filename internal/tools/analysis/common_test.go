@@ -16,15 +16,15 @@ var (
 	sharedIdxOnce sync.Once
 )
 
-func getSharedIndexer(t *testing.T) *indexer {
+func getSharedIndexer(tb testing.TB) *indexer {
 	sharedIdxOnce.Do(func() {
 		var err error
 		sharedIdx, err = newIndexer(".")
 		if err != nil {
-			t.Fatalf("failed to create shared indexer: %v", err)
+			tb.Fatalf("failed to create shared indexer: %v", err)
 		}
 		if err := sharedIdx.Refresh(context.Background(), nil); err != nil {
-			t.Fatalf("failed to refresh shared indexer: %v", err)
+			tb.Fatalf("failed to refresh shared indexer: %v", err)
 		}
 	})
 	return sharedIdx
