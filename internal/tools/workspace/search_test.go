@@ -251,71 +251,82 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 // createSearchMatcher tests
 // ---------------------------------------------------------------------------
 
-func TestCreateSearchMatcher(t *testing.T) {
+// TestCreateSearchMatcher_LiteralMatch verifies the literal match
+// path returns true when a line contains the query string.
+func TestCreateSearchMatcher_LiteralMatch(t *testing.T) {
 	s := &fileSearcher{}
+	matcher, err := s.createSearchMatcher("hello", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matcher == nil {
+		t.Fatal("expected non-nil matcher")
+	}
+	_, ok := matcher("ignored-path.txt", "hello world")
+	if !ok {
+		t.Error("expected true for line containing 'hello'")
+	}
+}
 
-	t.Run("literal match", func(t *testing.T) {
-		matcher, err := s.createSearchMatcher("hello", false)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if matcher == nil {
-			t.Fatal("expected non-nil matcher")
-		}
-		_, ok := matcher("ignored-path.txt", "hello world")
-		if !ok {
-			t.Error("expected true for line containing 'hello'")
-		}
-	})
+// TestCreateSearchMatcher_LiteralNoMatch verifies the literal match
+// path returns false when a line does not contain the query string.
+func TestCreateSearchMatcher_LiteralNoMatch(t *testing.T) {
+	s := &fileSearcher{}
+	matcher, err := s.createSearchMatcher("hello", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, ok := matcher("ignored-path.txt", "goodbye world")
+	if ok {
+		t.Error("expected false for line not containing 'hello'")
+	}
+}
 
-	t.Run("literal no match", func(t *testing.T) {
-		matcher, err := s.createSearchMatcher("hello", false)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, ok := matcher("ignored-path.txt", "goodbye world")
-		if ok {
-			t.Error("expected false for line not containing 'hello'")
-		}
-	})
+// TestCreateSearchMatcher_RegexValidMatch verifies the regex match
+// path returns true when a line matches the pattern.
+func TestCreateSearchMatcher_RegexValidMatch(t *testing.T) {
+	s := &fileSearcher{}
+	matcher, err := s.createSearchMatcher("^func", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matcher == nil {
+		t.Fatal("expected non-nil matcher")
+	}
+	_, ok := matcher("ignored.go", "func main() {}")
+	if !ok {
+		t.Error("expected true for line starting with 'func'")
+	}
+}
 
-	t.Run("regex valid match", func(t *testing.T) {
-		matcher, err := s.createSearchMatcher("^func", true)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if matcher == nil {
-			t.Fatal("expected non-nil matcher")
-		}
-		_, ok := matcher("ignored.go", "func main() {}")
-		if !ok {
-			t.Error("expected true for line starting with 'func'")
-		}
-	})
+// TestCreateSearchMatcher_RegexValidNoMatch verifies the regex match
+// path returns false when a line does not match the pattern.
+func TestCreateSearchMatcher_RegexValidNoMatch(t *testing.T) {
+	s := &fileSearcher{}
+	matcher, err := s.createSearchMatcher("^func", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, ok := matcher("ignored.go", "var x = 1")
+	if ok {
+		t.Error("expected false for line not starting with 'func'")
+	}
+}
 
-	t.Run("regex valid no match", func(t *testing.T) {
-		matcher, err := s.createSearchMatcher("^func", true)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, ok := matcher("ignored.go", "var x = 1")
-		if ok {
-			t.Error("expected false for line not starting with 'func'")
-		}
-	})
-
-	t.Run("regex invalid", func(t *testing.T) {
-		matcher, err := s.createSearchMatcher("[invalid", true)
-		if err == nil {
-			t.Fatal("expected error for invalid regex")
-		}
-		if matcher != nil {
-			t.Error("expected nil matcher for invalid regex")
-		}
-		if !strings.Contains(err.Error(), "invalid regex") {
-			t.Errorf("expected 'invalid regex' in error, got %q", err.Error())
-		}
-	})
+// TestCreateSearchMatcher_RegexInvalid verifies that an invalid regex
+// pattern returns an error and a nil matcher.
+func TestCreateSearchMatcher_RegexInvalid(t *testing.T) {
+	s := &fileSearcher{}
+	matcher, err := s.createSearchMatcher("[invalid", true)
+	if err == nil {
+		t.Fatal("expected error for invalid regex")
+	}
+	if matcher != nil {
+		t.Error("expected nil matcher for invalid regex")
+	}
+	if !strings.Contains(err.Error(), "invalid regex") {
+		t.Errorf("expected 'invalid regex' in error, got %q", err.Error())
+	}
 }
 
 // ---------------------------------------------------------------------------
