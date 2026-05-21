@@ -10,143 +10,32 @@ import (
 	"testing"
 )
 
-func TestMockInteractor(t *testing.T) {
+// --- Confirm (3 subtests) ---
+
+func TestMockInteractor_Confirm(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		setup func() *MockInteractor
-		check func(t *testing.T, m *MockInteractor)
+		name    string
+		mock    *MockInteractor
+		wantOk  bool
+		wantErr string
 	}{
 		{
-			name: "Confirm_yes",
-			setup: func() *MockInteractor {
-				return &MockInteractor{Answer: "y"}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				ok, err := m.Confirm(context.Background(), "msg")
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if !ok {
-					t.Error("expected true for answer 'y'")
-				}
-			},
+			name:   "yes",
+			mock:   &MockInteractor{Answer: "y"},
+			wantOk: true,
 		},
 		{
-			name: "Confirm_no",
-			setup: func() *MockInteractor {
-				return &MockInteractor{Answer: "n"}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				ok, err := m.Confirm(context.Background(), "msg")
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if ok {
-					t.Error("expected false for answer 'n'")
-				}
-			},
+			name:   "no",
+			mock:   &MockInteractor{Answer: "n"},
+			wantOk: false,
 		},
 		{
-			name: "Confirm_with_error",
-			setup: func() *MockInteractor {
-				return &MockInteractor{Err: errors.New("fail")}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				ok, err := m.Confirm(context.Background(), "msg")
-				if err == nil || err.Error() != "fail" {
-					t.Errorf("got error %v; want 'fail'", err)
-				}
-				if ok {
-					t.Error("expected false when Err is set")
-				}
-			},
-		},
-		{
-			name: "ReadLine_with_answer",
-			setup: func() *MockInteractor {
-				return &MockInteractor{Answer: "input"}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				line, err := m.ReadLine(context.Background())
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if line != "input" {
-					t.Errorf("got %q; want 'input'", line)
-				}
-			},
-		},
-		{
-			name: "ReadLine_empty_returns_EOF",
-			setup: func() *MockInteractor {
-				return &MockInteractor{Answer: ""}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				line, err := m.ReadLine(context.Background())
-				if err != io.EOF {
-					t.Errorf("got error %v; want io.EOF", err)
-				}
-				if line != "" {
-					t.Errorf("got %q; want ''", line)
-				}
-			},
-		},
-		{
-			name: "ReadLine_with_error",
-			setup: func() *MockInteractor {
-				return &MockInteractor{Err: errors.New("fail")}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				line, err := m.ReadLine(context.Background())
-				if err == nil || err.Error() != "fail" {
-					t.Errorf("got error %v; want 'fail'", err)
-				}
-				if line != "" {
-					t.Errorf("got %q; want ''", line)
-				}
-			},
-		},
-		{
-			name: "ReadSingleKey",
-			setup: func() *MockInteractor {
-				return &MockInteractor{Answer: "a"}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				key, err := m.ReadSingleKey(context.Background())
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if key != "a" {
-					t.Errorf("got %q; want 'a'", key)
-				}
-			},
-		},
-		{
-			name: "Warn_appends",
-			setup: func() *MockInteractor {
-				return &MockInteractor{}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				m.Warn("a")
-				m.Warn("b")
-				if len(m.Warns) != 2 || m.Warns[0] != "a" || m.Warns[1] != "b" {
-					t.Errorf("got %v; want [a b]", m.Warns)
-				}
-			},
-		},
-		{
-			name: "Prompt_appends",
-			setup: func() *MockInteractor {
-				return &MockInteractor{}
-			},
-			check: func(t *testing.T, m *MockInteractor) {
-				m.Prompt("a")
-				if len(m.Prompts) != 1 || m.Prompts[0] != "a" {
-					t.Errorf("got %v; want [a]", m.Prompts)
-				}
-			},
+			name:    "with_error",
+			mock:    &MockInteractor{Err: errors.New("fail")},
+			wantOk:  false,
+			wantErr: "fail",
 		},
 	}
 
@@ -154,8 +43,112 @@ func TestMockInteractor(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := tt.setup()
-			tt.check(t, m)
+			ok, err := tt.mock.Confirm(context.Background(), "msg")
+
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Errorf("got error %v; want %q", err, tt.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+			if ok != tt.wantOk {
+				t.Errorf("got %v; want %v", ok, tt.wantOk)
+			}
 		})
+	}
+}
+
+// --- ReadLine (3 subtests) ---
+
+func TestMockInteractor_ReadLine(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mock    *MockInteractor
+		want    string
+		wantErr error
+	}{
+		{
+			name: "with_answer",
+			mock: &MockInteractor{Answer: "input"},
+			want: "input",
+		},
+		{
+			name:    "empty_returns_EOF",
+			mock:    &MockInteractor{Answer: ""},
+			want:    "",
+			wantErr: io.EOF,
+		},
+		{
+			name:    "with_error",
+			mock:    &MockInteractor{Err: errors.New("fail")},
+			want:    "",
+			wantErr: errors.New("fail"),
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			line, err := tt.mock.ReadLine(context.Background())
+
+			if tt.wantErr != nil {
+				if err == nil || err.Error() != tt.wantErr.Error() {
+					t.Errorf("got error %v; want %v", err, tt.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+			if line != tt.want {
+				t.Errorf("got %q; want %q", line, tt.want)
+			}
+		})
+	}
+}
+
+// --- ReadSingleKey (1 subtest) ---
+
+func TestMockInteractor_ReadSingleKey(t *testing.T) {
+	t.Parallel()
+
+	mock := &MockInteractor{Answer: "a"}
+	key, err := mock.ReadSingleKey(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key != "a" {
+		t.Errorf("got %q; want 'a'", key)
+	}
+}
+
+// --- Warn (1 subtest) ---
+
+func TestMockInteractor_Warn(t *testing.T) {
+	t.Parallel()
+
+	mock := &MockInteractor{}
+	mock.Warn("a")
+	mock.Warn("b")
+	if len(mock.Warns) != 2 || mock.Warns[0] != "a" || mock.Warns[1] != "b" {
+		t.Errorf("got %v; want [a b]", mock.Warns)
+	}
+}
+
+// --- Prompt (1 subtest) ---
+
+func TestMockInteractor_Prompt(t *testing.T) {
+	t.Parallel()
+
+	mock := &MockInteractor{}
+	mock.Prompt("a")
+	if len(mock.Prompts) != 1 || mock.Prompts[0] != "a" {
+		t.Errorf("got %v; want [a]", mock.Prompts)
 	}
 }

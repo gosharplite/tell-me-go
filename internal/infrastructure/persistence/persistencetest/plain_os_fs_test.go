@@ -586,6 +586,63 @@ func TestPlainOSFileSystem_RemoveAll(t *testing.T) {
 // Walk
 // =============================================================================
 
+// walkVisitRecorder returns a WalkFunc that records the base name of each
+// visited path in the provided map. Errors are passed through immediately.
+func walkVisitRecorder(visited map[string]bool) func(path string, info os.FileInfo, err error) error {
+	return func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		visited[filepath.Base(path)] = true
+		return nil
+	}
+}
+
+// walkCancelAfterFirst returns a WalkFunc that cancels the context after
+// the first successful visit, then returns ctx.Err() on subsequent visits
+// to terminate the walk early.
+func walkCancelAfterFirst(callCount *int, cancel context.CancelFunc, ctx context.Context) func(path string, info os.FileInfo, err error) error {
+	return func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		*callCount++
+		if *callCount == 1 {
+			cancel()
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return nil
+	}
+}
+
+// createWalkFixture creates a small directory tree for Walk tests:
+//
+//	<root>/
+//	  sub/
+//	    a.txt
+//	    b.txt
+//
+// It returns the root path. Failures are fatal.
+func createWalkFixture(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatalf("os.MkdirAll failed: %v", err)
+	}
+	for _, name := range []string{"a.txt", "b.txt"} {
+		path := filepath.Join(sub, name)
+		if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
+			t.Fatalf("os.WriteFile(%s) failed: %v", path, err)
+		}
+	}
+	return root
+}
+
 func TestPlainOSFileSystem_Walk(t *testing.T) {
 	t.Parallel()
 
@@ -595,27 +652,10 @@ func TestPlainOSFileSystem_Walk(t *testing.T) {
 	t.Run("walk visits files", func(t *testing.T) {
 		t.Parallel()
 
-		root := t.TempDir()
-		// Create a small directory tree.
-		sub := filepath.Join(root, "sub")
-		if err := os.MkdirAll(sub, 0755); err != nil {
-			t.Fatalf("os.MkdirAll failed: %v", err)
-		}
-		for _, name := range []string{"a.txt", "b.txt"} {
-			path := filepath.Join(sub, name)
-			if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
-				t.Fatalf("os.WriteFile(%s) failed: %v", path, err)
-			}
-		}
+		root := createWalkFixture(t)
 
 		visited := make(map[string]bool)
-		err := fs.Walk(ctx, root, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			visited[filepath.Base(path)] = true
-			return nil
-		})
+		err := fs.Walk(ctx, root, walkVisitRecorder(visited))
 		if err != nil {
 			t.Fatalf("Walk failed: %v", err)
 		}
@@ -631,39 +671,12 @@ func TestPlainOSFileSystem_Walk(t *testing.T) {
 	t.Run("context cancellation", func(t *testing.T) {
 		t.Parallel()
 
-		root := t.TempDir()
-		sub := filepath.Join(root, "sub")
-		if err := os.MkdirAll(sub, 0755); err != nil {
-			t.Fatalf("os.MkdirAll failed: %v", err)
-		}
-		for _, name := range []string{"a.txt", "b.txt"} {
-			path := filepath.Join(sub, name)
-			if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
-				t.Fatalf("os.WriteFile(%s) failed: %v", path, err)
-			}
-		}
+		root := createWalkFixture(t)
 
 		ctx, cancel := context.WithCancel(ctx)
 		callCount := 0
 
-		err := fs.Walk(ctx, root, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			callCount++
-
-			// Cancel context after processing the first entry (the root directory).
-			if callCount == 1 {
-				cancel()
-				return nil
-			}
-
-			// After cancellation, return the context error to terminate walk.
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return nil
-		})
+		err := fs.Walk(ctx, root, walkCancelAfterFirst(&callCount, cancel, ctx))
 
 		if err == nil {
 			t.Fatal("expected error from cancelled context, got nil")
