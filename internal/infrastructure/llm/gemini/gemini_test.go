@@ -200,6 +200,100 @@ func TestSendChat_Scenarios(t *testing.T) {
 	}
 }
 
+// validateDynamicOnlyRequest asserts that:
+// - systemInstruction is present (initialized from nil)                 (Gap 9)
+// - dynamic system parts appear in systemInstruction                    (Gap 7)
+// - system-role entries are excluded from contents                      (Gap 7)
+func validateDynamicOnlyRequest(t *testing.T, r *http.Request) {
+	t.Helper()
+	if r.Header.Get("Authorization") != "Bearer test-token" {
+		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+	}
+	var req struct {
+		SystemInstruction struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"systemInstruction"`
+		Contents []struct {
+			Role  string `json:"role"`
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"contents"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		t.Errorf("failed to decode request: %v", err)
+	}
+
+	// Gap 9: systemInstruction must be present (initialized from nil)
+	if len(req.SystemInstruction.Parts) == 0 {
+		t.Fatal("expected systemInstruction to be present with dynamic parts")
+	}
+	// Gap 7: dynamic system parts appear in systemInstruction
+	if req.SystemInstruction.Parts[0].Text != "You are helpful" {
+		t.Errorf("expected systemInstruction.parts[0].text == %q, got %q",
+			"You are helpful", req.SystemInstruction.Parts[0].Text)
+	}
+
+	// Gap 7: system-role entries must NOT appear in contents
+	for i, c := range req.Contents {
+		if c.Role == "system" {
+			t.Errorf("contents[%d] has role 'system', expected it to be excluded", i)
+		}
+	}
+}
+
+// validateStaticAndDynamicRequest asserts that:
+// - Both static and dynamic parts are present in systemInstruction     (Gap 8)
+// - system-role entries are excluded from contents                      (Gap 7)
+func validateStaticAndDynamicRequest(t *testing.T, r *http.Request) {
+	t.Helper()
+	if r.Header.Get("Authorization") != "Bearer test-token" {
+		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+	}
+	var req struct {
+		SystemInstruction struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"systemInstruction"`
+		Contents []struct {
+			Role  string `json:"role"`
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"contents"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		t.Errorf("failed to decode request: %v", err)
+	}
+
+	// Gap 8: Both static and dynamic parts must be present in systemInstruction
+	if len(req.SystemInstruction.Parts) < 2 {
+		t.Fatalf("expected at least 2 systemInstruction parts (static + dynamic), got %d", len(req.SystemInstruction.Parts))
+	}
+
+	// Collect part texts for order-independent comparison
+	texts := make(map[string]bool)
+	for _, p := range req.SystemInstruction.Parts {
+		texts[p.Text] = true
+	}
+	if !texts["Be concise"] {
+		t.Errorf("expected systemInstruction to contain static part %q, got %v", "Be concise", texts)
+	}
+	if !texts["You are helpful"] {
+		t.Errorf("expected systemInstruction to contain dynamic part %q, got %v", "You are helpful", texts)
+	}
+
+	// Gap 7: system-role entries must NOT appear in contents
+	for i, c := range req.Contents {
+		if c.Role == "system" {
+			t.Errorf("contents[%d] has role 'system', expected it to be excluded", i)
+		}
+	}
+}
+
 func TestPrepareRequest_SystemPromptMerging(t *testing.T) {
 	tests := []sendChatTestCase{
 		{
@@ -213,44 +307,7 @@ func TestPrepareRequest_SystemPromptMerging(t *testing.T) {
 				{Role: "system", Parts: []*llm.Part{{Text: "You are helpful"}}},
 				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
 			},
-			validateReq: func(t *testing.T, r *http.Request) {
-				if r.Header.Get("Authorization") != "Bearer test-token" {
-					t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
-				}
-				var req struct {
-					SystemInstruction struct {
-						Parts []struct {
-							Text string `json:"text"`
-						} `json:"parts"`
-					} `json:"systemInstruction"`
-					Contents []struct {
-						Role  string `json:"role"`
-						Parts []struct {
-							Text string `json:"text"`
-						} `json:"parts"`
-					} `json:"contents"`
-				}
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-					t.Errorf("failed to decode request: %v", err)
-				}
-
-				// Gap 9: systemInstruction must be present (initialized from nil)
-				if len(req.SystemInstruction.Parts) == 0 {
-					t.Fatal("expected systemInstruction to be present with dynamic parts")
-				}
-				// Gap 7: dynamic system parts appear in systemInstruction
-				if req.SystemInstruction.Parts[0].Text != "You are helpful" {
-					t.Errorf("expected systemInstruction.parts[0].text == %q, got %q",
-						"You are helpful", req.SystemInstruction.Parts[0].Text)
-				}
-
-				// Gap 7: system-role entries must NOT appear in contents
-				for i, c := range req.Contents {
-					if c.Role == "system" {
-						t.Errorf("contents[%d] has role 'system', expected it to be excluded", i)
-					}
-				}
-			},
+			validateReq: validateDynamicOnlyRequest,
 		},
 		{
 			name: "StaticAndDynamic",
@@ -263,51 +320,7 @@ func TestPrepareRequest_SystemPromptMerging(t *testing.T) {
 				{Role: "system", Parts: []*llm.Part{{Text: "You are helpful"}}},
 				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
 			},
-			validateReq: func(t *testing.T, r *http.Request) {
-				if r.Header.Get("Authorization") != "Bearer test-token" {
-					t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
-				}
-				var req struct {
-					SystemInstruction struct {
-						Parts []struct {
-							Text string `json:"text"`
-						} `json:"parts"`
-					} `json:"systemInstruction"`
-					Contents []struct {
-						Role  string `json:"role"`
-						Parts []struct {
-							Text string `json:"text"`
-						} `json:"parts"`
-					} `json:"contents"`
-				}
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-					t.Errorf("failed to decode request: %v", err)
-				}
-
-				// Gap 8: Both static and dynamic parts must be present in systemInstruction
-				if len(req.SystemInstruction.Parts) < 2 {
-					t.Fatalf("expected at least 2 systemInstruction parts (static + dynamic), got %d", len(req.SystemInstruction.Parts))
-				}
-
-				// Collect part texts for order-independent comparison
-				texts := make(map[string]bool)
-				for _, p := range req.SystemInstruction.Parts {
-					texts[p.Text] = true
-				}
-				if !texts["Be concise"] {
-					t.Errorf("expected systemInstruction to contain static part %q, got %v", "Be concise", texts)
-				}
-				if !texts["You are helpful"] {
-					t.Errorf("expected systemInstruction to contain dynamic part %q, got %v", "You are helpful", texts)
-				}
-
-				// Gap 7: system-role entries must NOT appear in contents
-				for i, c := range req.Contents {
-					if c.Role == "system" {
-						t.Errorf("contents[%d] has role 'system', expected it to be excluded", i)
-					}
-				}
-			},
+			validateReq: validateStaticAndDynamicRequest,
 		},
 	}
 
@@ -891,25 +904,9 @@ func TestParseVertexAI_NoV1Segment(t *testing.T) {
 	t.Run("NoV1InPathSegment", func(t *testing.T) {
 		apiURL := "https://us-central1-aiplatform.googleapis.com/locations/us-central1/publishers/google/models/gemini-1.5-flash"
 		backend, project, location, baseURL, publisherPath := c.parseVertexAI(apiURL)
-
-		if backend != genai.BackendVertexAI {
-			t.Errorf("expected VertexAI backend, got %v", backend)
-		}
-		if project != "" {
-			t.Errorf("expected empty project, got %q", project)
-		}
-		if location != "us-central1" {
-			t.Errorf("expected location us-central1, got %q", location)
-		}
-		// Gap 6: publisherPath is the full segment when no /v1/ exists
-		expectedPath := "publishers/google/models/gemini-1.5-flash"
-		if publisherPath != expectedPath {
-			t.Errorf("expected publisherPath %q, got %q", expectedPath, publisherPath)
-		}
-		// Gap 6: baseURL stays empty when /v1/ not present
-		if baseURL != "" {
-			t.Errorf("expected empty baseURL when no /v1/, got %q", baseURL)
-		}
+		assertParseVertexAIResult(t, backend, project, location, baseURL, publisherPath,
+			genai.BackendVertexAI, "", "us-central1", "",
+			"publishers/google/models/gemini-1.5-flash")
 	})
 
 	// Gap 5: URL where /v1/ appears inside the publisher path segment.
@@ -917,27 +914,32 @@ func TestParseVertexAI_NoV1Segment(t *testing.T) {
 	t.Run("V1InPathSegment", func(t *testing.T) {
 		apiURL := "https://us-central1-aiplatform.googleapis.com/locations/us-central1/publishers/google/models/gemini-1.5-flash/v1/extra"
 		backend, project, location, baseURL, publisherPath := c.parseVertexAI(apiURL)
-
-		if backend != genai.BackendVertexAI {
-			t.Errorf("expected VertexAI backend, got %v", backend)
-		}
-		if project != "" {
-			t.Errorf("expected empty project, got %q", project)
-		}
-		if location != "us-central1" {
-			t.Errorf("expected location us-central1, got %q", location)
-		}
-		// Gap 5: publisherPath is truncated at /v1/
-		expectedPath := "publishers/google/models/gemini-1.5-flash"
-		if publisherPath != expectedPath {
-			t.Errorf("expected publisherPath %q, got %q", expectedPath, publisherPath)
-		}
-		// Gap 5: baseURL is set when /v1/ present in apiURL
-		expectedBaseURL := "https://us-central1-aiplatform.googleapis.com/locations/us-central1/publishers/google/models/gemini-1.5-flash/"
-		if baseURL != expectedBaseURL {
-			t.Errorf("expected baseURL %q, got %q", expectedBaseURL, baseURL)
-		}
+		assertParseVertexAIResult(t, backend, project, location, baseURL, publisherPath,
+			genai.BackendVertexAI, "", "us-central1",
+			"https://us-central1-aiplatform.googleapis.com/locations/us-central1/publishers/google/models/gemini-1.5-flash/",
+			"publishers/google/models/gemini-1.5-flash")
 	})
+}
+
+// assertParseVertexAIResult validates all 5 return values from parseVertexAI.
+func assertParseVertexAIResult(t *testing.T, backend genai.Backend, project, location, baseURL, publisherPath string,
+	wantBackend genai.Backend, wantProject, wantLocation, wantBaseURL, wantPublisherPath string) {
+	t.Helper()
+	if backend != wantBackend {
+		t.Errorf("expected backend %v, got %v", wantBackend, backend)
+	}
+	if project != wantProject {
+		t.Errorf("expected project %q, got %q", wantProject, project)
+	}
+	if location != wantLocation {
+		t.Errorf("expected location %q, got %q", wantLocation, location)
+	}
+	if publisherPath != wantPublisherPath {
+		t.Errorf("expected publisherPath %q, got %q", wantPublisherPath, publisherPath)
+	}
+	if baseURL != wantBaseURL {
+		t.Errorf("expected baseURL %q, got %q", wantBaseURL, baseURL)
+	}
 }
 
 func TestGemini_ModelQualification(t *testing.T) {

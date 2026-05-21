@@ -571,35 +571,39 @@ func TestToAnthropicMessages_SkipsEmptyBlocks(t *testing.T) {
 		t.Fatalf("SendChat failed: %v", err)
 	}
 
-	// The model entry with empty text must be skipped.
-	// Consecutive same-role entries (both "user") may be merged
-	// into one message with multiple content blocks.
-	// Either way, we must NOT see a "model" role message.
-	for _, msg := range captured.Messages {
+	assertNoModelRoleMessage(t, captured.Messages)
+	assertUserContentContains(t, captured.Messages, "hello", "world")
+}
+
+// assertNoModelRoleMessage fails if any message in the captured request has role "model".
+func assertNoModelRoleMessage(t *testing.T, msgs []message) {
+	t.Helper()
+	for _, msg := range msgs {
 		if msg.Role == "model" {
 			t.Errorf("empty model entry was not skipped; got model message: %+v", msg)
 		}
 	}
+}
 
-	// Verify the user content is present regardless of merge behaviour
-	var foundHello, foundWorld bool
-	for _, msg := range captured.Messages {
+// assertUserContentContains fails if the given strings are not found in user-role message content blocks.
+func assertUserContentContains(t *testing.T, msgs []message, texts ...string) {
+	t.Helper()
+	found := make(map[string]bool)
+	for _, msg := range msgs {
 		if msg.Role == "user" {
 			for _, block := range msg.Content {
-				if block.Text == "hello" {
-					foundHello = true
-				}
-				if block.Text == "world" {
-					foundWorld = true
+				for _, text := range texts {
+					if block.Text == text {
+						found[text] = true
+					}
 				}
 			}
 		}
 	}
-	if !foundHello {
-		t.Error("expected 'hello' in user content, not found")
-	}
-	if !foundWorld {
-		t.Error("expected 'world' in user content, not found")
+	for _, text := range texts {
+		if !found[text] {
+			t.Errorf("expected %q in user content, not found", text)
+		}
 	}
 }
 

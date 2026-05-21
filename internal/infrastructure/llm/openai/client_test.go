@@ -1593,9 +1593,10 @@ func getResponsesAPITextBlockFallbackTestCases(t *testing.T) []responsesAPITestC
 	}
 }
 
-func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
+// getResponsesAPIEdgeGap1And2 covers Gap 1 & 2: Direct content blocks
+// without message wrapper + child blocks.
+func getResponsesAPIEdgeGap1And2(t *testing.T) []responsesAPITestCase {
 	return []responsesAPITestCase{
-		// Gap 1 & 2: Direct content blocks without message wrapper + child blocks
 		{
 			name:    "direct_content_blocks_without_message_wrapper",
 			model:   "gpt-5.4",
@@ -1636,7 +1637,13 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 				}
 			},
 		},
-		// Gap 3: parseResponseToolCalls error in else-branch
+	}
+}
+
+// getResponsesAPIEdgeGap3 covers Gap 3: parseResponseToolCalls error
+// in else-branch.
+func getResponsesAPIEdgeGap3(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
 		{
 			name:    "direct_item_with_invalid_tool_calls",
 			model:   "gpt-5.4",
@@ -1664,7 +1671,13 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 			},
 			wantErr: "failed to unmarshal tool arguments",
 		},
-		// Gap 4: Top-level Name/Arguments without Function
+	}
+}
+
+// getResponsesAPIEdgeGap4 covers Gap 4: Top-level Name/Arguments
+// without Function.
+func getResponsesAPIEdgeGap4(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
 		{
 			name:    "top_level_tool_call_via_name_and_arguments",
 			model:   "gpt-5.4",
@@ -1696,7 +1709,13 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 				}
 			},
 		},
-		// Gap 4b: Top-level Name/Arguments with invalid JSON — appendToolCall error path
+	}
+}
+
+// getResponsesAPIEdgeGap4b covers Gap 4b: Top-level Name/Arguments
+// with invalid JSON — appendToolCall error path.
+func getResponsesAPIEdgeGap4b(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
 		{
 			name:    "top_level_tool_call_via_name_and_invalid_arguments",
 			model:   "gpt-5.4",
@@ -1718,7 +1737,13 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 			},
 			wantErr: "failed to unmarshal tool arguments",
 		},
-		// Gap 6: extractBlockText with map missing "value" key
+	}
+}
+
+// getResponsesAPIEdgeGap6 covers Gap 6: extractBlockText with map
+// missing "value" key.
+func getResponsesAPIEdgeGap6(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
 		{
 			name:    "text_block_with_map_missing_value_key",
 			model:   "gpt-5.4",
@@ -1744,7 +1769,13 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 				}
 			},
 		},
-		// Gap 7: handleRefusalBlock with empty Refusal
+	}
+}
+
+// getResponsesAPIEdgeGap7 covers Gap 7: handleRefusalBlock with empty
+// Refusal.
+func getResponsesAPIEdgeGap7(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
 		{
 			name:    "refusal_block_with_empty_text",
 			model:   "gpt-5.4",
@@ -1778,7 +1809,13 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 				}
 			},
 		},
-		// Unknown content block type must return an error (ADR-022 fail-loud)
+	}
+}
+
+// getResponsesAPIEdgeADR022 covers ADR-022: Unknown content block type
+// must return an error (fail-loud).
+func getResponsesAPIEdgeADR022(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
 		{
 			name:    "unknown_content_block_type_returns_error",
 			model:   "gpt-5.4",
@@ -1807,6 +1844,19 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 			wantErr: "unhandled content block type",
 		},
 	}
+}
+
+// getResponsesAPIEdgeCases aggregates all edge-case test scenarios.
+func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
+	var cases []responsesAPITestCase
+	cases = append(cases, getResponsesAPIEdgeGap1And2(t)...)
+	cases = append(cases, getResponsesAPIEdgeGap3(t)...)
+	cases = append(cases, getResponsesAPIEdgeGap4(t)...)
+	cases = append(cases, getResponsesAPIEdgeGap4b(t)...)
+	cases = append(cases, getResponsesAPIEdgeGap6(t)...)
+	cases = append(cases, getResponsesAPIEdgeGap7(t)...)
+	cases = append(cases, getResponsesAPIEdgeADR022(t)...)
+	return cases
 }
 
 func getStreamingTestCases(t *testing.T) []responsesAPITestCase {
