@@ -189,7 +189,17 @@ func TestBrowseCommand_NilInteractorRef_DoesNotPanic(t *testing.T) {
 		Interactor:   nil, // explicit nil
 	}
 
-	err := executeBrowseCommand(cmdCtx, []string{"browse"})
+	// Use capturerOverride to force a deterministic TTY check result.
+	// Without this, prior test packages can pollute TTY detection global
+	// state (os.Stdout, terminal env vars), causing IsTTY to return true
+	// and execution to reach GetUnifiedHistoryProvider on an unprepared
+	// mock — same class of bug as #511/#512.
+	c := &browseCommand{
+		ctx:              cmdCtx,
+		capturerOverride: &mockCapturerInteractor{isTTY: false},
+	}
+
+	err := c.runBrowse(stdctx.Background(), "test-config.yaml")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "requires an interactive TTY")
 	// Should not panic with nil InteractorRef
