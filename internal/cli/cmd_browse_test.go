@@ -49,46 +49,35 @@ func executeBrowseCommand(cmdCtx *context, args []string) error {
 func TestBrowseCommand_RunBrowse_Errors(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name       string
-		setupMocks func(*chatMockLoader, *mockBootstrapper)
-		wantErr    string
-	}{
-		{
-			name: "TTY not available",
-			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper) {
-				// No mocks needed — capturer.IsTTY(os.Stdout) is false in tests,
-				// so the function returns early before touching config/history.
-			},
-			wantErr: "requires an interactive TTY",
-		},
-	}
+	t.Run("TTY not available", func(t *testing.T) {
+		var stdout, stderr strings.Builder
+		sm := &mockSM{}
+		mb, ml, _ := setupMocks()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var stdout, stderr strings.Builder
-			sm := &mockSM{}
-			mb, ml, _ := setupMocks()
+		cmdCtx := &context{
+			Version:      "1.0.0",
+			Stdin:        strings.NewReader(""),
+			Stdout:       &stdout,
+			Stderr:       &stderr,
+			SM:           sm,
+			Bootstrapper: mb,
+			Loader:       ml,
+		}
 
-			if tt.setupMocks != nil {
-				tt.setupMocks(ml, mb)
-			}
+		// Use capturerOverride to force a deterministic TTY check.
+		// Without this, prior test packages can pollute TTY detection
+		// global state, causing IsTTY to return true and execution to
+		// reach GetUnifiedHistoryProvider on an unprepared mock.
+		// Same class of bug as #515, #511, #512.
+		c := &browseCommand{
+			ctx:              cmdCtx,
+			capturerOverride: &mockCapturerInteractor{isTTY: false},
+		}
 
-			cmdCtx := &context{
-				Version:      "1.0.0",
-				Stdin:        strings.NewReader(""),
-				Stdout:       &stdout,
-				Stderr:       &stderr,
-				SM:           sm,
-				Bootstrapper: mb,
-				Loader:       ml,
-			}
-
-			err := executeBrowseCommand(cmdCtx, []string{"browse"})
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.wantErr)
-		})
-	}
+		err := c.runBrowse(stdctx.Background(), "test-config.yaml")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "requires an interactive TTY")
+	})
 }
 
 func TestBrowseCommand_SetupCapturer(t *testing.T) {
