@@ -50,24 +50,12 @@ func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[strin
 		return tools.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
 	}
 
-	sb.WriteString("\nLogical Code Changes:\n")
 	fset := token.NewFileSet()
-	for i, relPath := range changedFiles {
-		if i%5 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
-		if a.isGoFile(relPath) {
-			changes, changeErr := a.analyzeFileChange(ctx, params.Target, relPath, fset)
-			if changeErr != nil {
-				// Soft-fail: include error in output but continue
-				a.renderChanges(&sb, relPath, []string{"(analysis error: " + changeErr.Error() + ")"})
-			} else {
-				a.renderChanges(&sb, relPath, changes)
-			}
-		}
+	fileChanges := a.analyzeChangedFiles(ctx, params.Target, changedFiles, fset, hb)
+
+	sb.WriteString("\nLogical Code Changes:\n")
+	for relPath, changes := range fileChanges {
+		a.renderChanges(&sb, relPath, changes)
 	}
 
 	return tools.ToolResult{Text: sb.String()}, nil
@@ -104,6 +92,38 @@ func (a *defaultChangeAnalyzer) getDiffMetadata(ctx context.Context, target stri
 	changedFiles := strings.Split(filesRaw, "\n")
 
 	return sb.String(), changedFiles, nil
+}
+
+// analyzeChangedFiles iterates over changed files, sending heartbeats and
+// analyzing Go files. Non-Go files are skipped silently. Analysis errors
+// are captured as soft-fail messages rather than failing the entire diff.
+func (a *defaultChangeAnalyzer) analyzeChangedFiles(
+	ctx context.Context,
+	target string,
+	changedFiles []string,
+	fset *token.FileSet,
+	hb chan<- struct{},
+) map[string][]string {
+	fileChanges := make(map[string][]string, len(changedFiles))
+
+	for i, relPath := range changedFiles {
+		if i%5 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+		if !a.isGoFile(relPath) {
+			continue
+		}
+		changes, changeErr := a.analyzeFileChange(ctx, target, relPath, fset)
+		if changeErr != nil {
+			fileChanges[relPath] = []string{"(analysis error: " + changeErr.Error() + ")"}
+		} else {
+			fileChanges[relPath] = changes
+		}
+	}
+	return fileChanges
 }
 
 func (a *defaultChangeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath string, fset *token.FileSet) ([]string, error) {

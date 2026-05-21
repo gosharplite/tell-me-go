@@ -19,158 +19,134 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-func TestSendResult(t *testing.T) {
+func TestSendResult_ContextAlreadyCancelled(t *testing.T) {
 	t.Parallel()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	results := make(chan pkgResult)
+	hb := make(chan struct{}, 1)
+
+	err := sendResult(ctx, results, pkgResult{
+		symbols: make(map[string][]symbolLocation),
+		usages:  make(map[string][]location),
+	}, hb)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	select {
+	case <-results:
+		t.Error("unexpected result on results channel when context cancelled")
+	default:
+	}
+	select {
+	case <-hb:
+		t.Error("unexpected heartbeat on hb channel when context cancelled")
+	default:
+	}
+}
+
+func TestSendResult_SuccessfulSendWithNilHb(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	results := make(chan pkgResult, 1)
 	emptyResult := pkgResult{
 		symbols: make(map[string][]symbolLocation),
 		usages:  make(map[string][]location),
 	}
 
-	// -------------------------------------------------------------------
-	// EC1: context already cancelled
-	//
-	// Use an unbuffered results channel with no receiver so that
-	// the send branch always blocks.  With only ctx.Done() ready,
-	// select deterministically returns context.Canceled.
-	// -------------------------------------------------------------------
-	t.Run("context already cancelled", func(t *testing.T) {
-		t.Parallel()
+	err := sendResult(ctx, results, emptyResult, nil)
+	assert.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // immediately cancel
+	select {
+	case got := <-results:
+		assert.Equal(t, emptyResult, got)
+	default:
+		t.Error("expected result on results channel")
+	}
+}
 
-		results := make(chan pkgResult) // unbuffered, no receiver → send blocks
-		hb := make(chan struct{}, 1)
+func TestSendResult_SuccessfulSendWithNonNilHb(t *testing.T) {
+	t.Parallel()
 
-		err := sendResult(ctx, results, emptyResult, hb)
-		assert.ErrorIs(t, err, context.Canceled)
+	ctx := context.Background()
+	results := make(chan pkgResult, 1)
+	hb := make(chan struct{}, 1)
+	emptyResult := pkgResult{
+		symbols: make(map[string][]symbolLocation),
+		usages:  make(map[string][]location),
+	}
 
-		// Nothing sent on results.
-		select {
-		case <-results:
-			t.Error("unexpected result on results channel when context cancelled")
-		default:
-		}
-		// No heartbeat.
-		select {
-		case <-hb:
-			t.Error("unexpected heartbeat on hb channel when context cancelled")
-		default:
-		}
-	})
+	err := sendResult(ctx, results, emptyResult, hb)
+	assert.NoError(t, err)
 
-	// -------------------------------------------------------------------
-	// EC2: successful send with nil hb
-	// -------------------------------------------------------------------
-	t.Run("successful send with nil hb", func(t *testing.T) {
-		t.Parallel()
+	select {
+	case got := <-results:
+		assert.Equal(t, emptyResult, got)
+	default:
+		t.Error("expected result on results channel")
+	}
+	select {
+	case <-hb:
+	default:
+		t.Error("expected heartbeat on hb channel")
+	}
+}
 
-		ctx := context.Background()
-		results := make(chan pkgResult, 1)
+func TestSendResult_HbChannelFull(t *testing.T) {
+	t.Parallel()
 
-		err := sendResult(ctx, results, emptyResult, nil)
-		assert.NoError(t, err)
+	ctx := context.Background()
+	results := make(chan pkgResult, 1)
+	hb := make(chan struct{})
+	emptyResult := pkgResult{
+		symbols: make(map[string][]symbolLocation),
+		usages:  make(map[string][]location),
+	}
 
-		select {
-		case got := <-results:
-			assert.Equal(t, emptyResult, got)
-		default:
-			t.Error("expected result on results channel")
-		}
-	})
+	err := sendResult(ctx, results, emptyResult, hb)
+	assert.NoError(t, err)
 
-	// -------------------------------------------------------------------
-	// EC3: successful send with non-nil hb
-	// -------------------------------------------------------------------
-	t.Run("successful send with non-nil hb", func(t *testing.T) {
-		t.Parallel()
+	select {
+	case got := <-results:
+		assert.Equal(t, emptyResult, got)
+	default:
+		t.Error("expected result on results channel")
+	}
+	select {
+	case <-hb:
+		t.Error("unexpected heartbeat on unbuffered hb (should have been dropped)")
+	default:
+	}
+}
 
-		ctx := context.Background()
-		results := make(chan pkgResult, 1)
-		hb := make(chan struct{}, 1)
+func TestSendResult_ResultsChannelFull_ContextCancelled(t *testing.T) {
+	t.Parallel()
 
-		err := sendResult(ctx, results, emptyResult, hb)
-		assert.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	results := make(chan pkgResult)
+	emptyResult := pkgResult{
+		symbols: make(map[string][]symbolLocation),
+		usages:  make(map[string][]location),
+	}
 
-		// Result received.
-		select {
-		case got := <-results:
-			assert.Equal(t, emptyResult, got)
-		default:
-			t.Error("expected result on results channel")
-		}
-		// Heartbeat received.
-		select {
-		case <-hb:
-			// ok
-		default:
-			t.Error("expected heartbeat on hb channel")
-		}
-	})
+	ready := make(chan struct{})
+	go func() {
+		ready <- struct{}{}
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
 
-	// -------------------------------------------------------------------
-	// EC4: hb channel full — no blocking
-	// -------------------------------------------------------------------
-	t.Run("hb channel full — no blocking", func(t *testing.T) {
-		t.Parallel()
+	<-ready
+	err := sendResult(ctx, results, emptyResult, nil)
+	assert.ErrorIs(t, err, context.Canceled)
 
-		ctx := context.Background()
-		results := make(chan pkgResult, 1)
-		// Unbuffered hb with no receiver: send would block without the
-		// default clause in sendResult.
-		hb := make(chan struct{})
-
-		err := sendResult(ctx, results, emptyResult, hb)
-		assert.NoError(t, err)
-
-		// Result must still be delivered (hb drop is silent).
-		select {
-		case got := <-results:
-			assert.Equal(t, emptyResult, got)
-		default:
-			t.Error("expected result on results channel")
-		}
-		// hb must be empty (heartbeat silently dropped via default).
-		select {
-		case <-hb:
-			t.Error("unexpected heartbeat on unbuffered hb (should have been dropped)")
-		default:
-		}
-	})
-
-	// -------------------------------------------------------------------
-	// EC5: results channel full — context cancelled
-	// -------------------------------------------------------------------
-	t.Run("results channel full — context cancelled", func(t *testing.T) {
-		t.Parallel()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		// Unbuffered results with no receiver: sendResult will block on
-		// the send until the context is cancelled.
-		results := make(chan pkgResult)
-
-		// Orchestration pattern from TestGetImplementations_SingleflightCoalescing.
-		ready := make(chan struct{})
-		go func() {
-			ready <- struct{}{} // signal: I've started
-			time.Sleep(10 * time.Millisecond)
-			cancel()
-		}()
-
-		<-ready // wait for goroutine to be ready
-
-		// sendResult will block until the goroutine cancels the context.
-		err := sendResult(ctx, results, emptyResult, nil)
-		assert.ErrorIs(t, err, context.Canceled)
-
-		// Verify nothing was sent on results.
-		select {
-		case <-results:
-			t.Error("unexpected result on unbuffered results channel after cancellation")
-		default:
-		}
-	})
+	select {
+	case <-results:
+		t.Error("unexpected result on unbuffered results channel after cancellation")
+	default:
+	}
 }
 
 // mockFileInfo implements os.FileInfo for shouldIndexFile tests.
@@ -260,226 +236,208 @@ func TestShouldIndexFile(t *testing.T) {
 	}
 }
 
-func TestProcessFile(t *testing.T) {
+// TestProcessFile_ValidGoFile verifies that processFile correctly indexes
+// a valid Go source file: the harvester's currentPath is set to the
+// absolute path of the file, and symbols are collected.
+func TestProcessFile_ValidGoFile(t *testing.T) {
 	t.Parallel()
 	idx := &indexer{resolvePath: filepath.Abs}
 
-	// -------------------------------------------------------------------
-	// EC1: valid Go file, indexed
-	// -------------------------------------------------------------------
-	t.Run("valid Go file, indexed", func(t *testing.T) {
-		t.Parallel()
+	tmpDir := t.TempDir()
+	goFile := filepath.Join(tmpDir, "test.go")
+	content := "package p\n\nvar X = 1\n"
+	if err := os.WriteFile(goFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-		tmpDir := t.TempDir()
-		goFile := filepath.Join(tmpDir, "test.go")
-		content := "package p\n\nvar X = 1\n"
-		if err := os.WriteFile(goFile, []byte(content), 0644); err != nil {
-			t.Fatal(err)
-		}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, goFile, content, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, goFile, content, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+	h := newHarvester(fset)
+	err = idx.processFile(fset, file, h)
+	if err != nil {
+		t.Fatalf("processFile: %v", err)
+	}
 
-		h := newHarvester(fset)
-		err = idx.processFile(fset, file, h)
-		if err != nil {
-			t.Fatalf("processFile: %v", err)
-		}
-
-		absPath, _ := filepath.Abs(goFile)
-		if h.currentPath != absPath {
-			t.Errorf("currentPath = %q; want %q", h.currentPath, absPath)
-		}
-		if len(h.symbolsByPath) == 0 {
-			t.Error("expected symbols to be collected")
-		}
-	})
-
-	// -------------------------------------------------------------------
-	// EC2: os.Stat fails (file deleted between Load and Refresh) — silent skip
-	// -------------------------------------------------------------------
-	t.Run("os.Stat fails, silent skip", func(t *testing.T) {
-		t.Parallel()
-
-		fset := token.NewFileSet()
-		path := "/nonexistent/deleted_file.go"
-		file, err := parser.ParseFile(fset, path, "package p", 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		h := newHarvester(fset)
-		err = idx.processFile(fset, file, h)
-		if err != nil {
-			t.Errorf("expected nil error for deleted file, got %v", err)
-		}
-		if h.currentPath != "" {
-			t.Errorf("currentPath = %q; want empty", h.currentPath)
-		}
-		if len(h.symbolsByPath) != 0 {
-			t.Error("expected no symbols for deleted file")
-		}
-	})
-
-	// -------------------------------------------------------------------
-	// EC3: shouldIndexFile returns false (non-.go file)
-	// -------------------------------------------------------------------
-	t.Run("shouldIndexFile returns false", func(t *testing.T) {
-		t.Parallel()
-
-		tmpDir := t.TempDir()
-		txtFile := filepath.Join(tmpDir, "test.txt")
-		if err := os.WriteFile(txtFile, []byte("not a go file"), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, txtFile, "package p", 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		h := newHarvester(fset)
-		err = idx.processFile(fset, file, h)
-		if err != nil {
-			t.Errorf("expected nil error, got %v", err)
-		}
-		if h.currentPath != "" {
-			t.Errorf("currentPath = %q; want empty", h.currentPath)
-		}
-		if len(h.symbolsByPath) != 0 {
-			t.Error("expected no symbols for non-.go file")
-		}
-	})
+	absPath, _ := filepath.Abs(goFile)
+	if h.currentPath != absPath {
+		t.Errorf("currentPath = %q; want %q", h.currentPath, absPath)
+	}
+	if len(h.symbolsByPath) == 0 {
+		t.Error("expected symbols to be collected")
+	}
 }
 
-func TestProcessPackage(t *testing.T) {
-	// All subtests are parallel-safe; DI-based resolvePath injection
-	// replaces the previous OS-level CWD manipulation.
+// TestProcessFile_OsStatFails verifies that processFile silently skips
+// a file when os.Stat fails (e.g. file deleted between Load and Refresh).
+// No error is returned, currentPath stays empty, and no symbols are recorded.
+func TestProcessFile_OsStatFails(t *testing.T) {
+	t.Parallel()
 	idx := &indexer{resolvePath: filepath.Abs}
 
-	// -------------------------------------------------------------------
-	// EC5: empty package, no Syntax
-	// -------------------------------------------------------------------
-	t.Run("empty package, no Syntax", func(t *testing.T) {
-		t.Parallel()
+	fset := token.NewFileSet()
+	path := "/nonexistent/deleted_file.go"
+	file, err := parser.ParseFile(fset, path, "package p", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		fset := token.NewFileSet()
-		pkg := types.NewPackage("example.com/test", "test")
-		manualPkg := &packages.Package{
-			Types:     pkg,
-			TypesInfo: &types.Info{},
-			Syntax:    nil, // zero Syntax files
-		}
+	h := newHarvester(fset)
+	err = idx.processFile(fset, file, h)
+	if err != nil {
+		t.Errorf("expected nil error for deleted file, got %v", err)
+	}
+	if h.currentPath != "" {
+		t.Errorf("currentPath = %q; want empty", h.currentPath)
+	}
+	if len(h.symbolsByPath) != 0 {
+		t.Error("expected no symbols for deleted file")
+	}
+}
 
-		ctx := context.Background()
-		result, err := idx.processPackage(ctx, fset, manualPkg)
-		assert.NoError(t, err)
-		assert.Empty(t, result.symbols)
-		assert.Empty(t, result.usages)
-	})
+// TestProcessFile_ShouldIndexFileReturnsFalse verifies that processFile
+// returns early without error when shouldIndexFile returns false (e.g.
+// for a non-.go file). currentPath stays empty and no symbols are recorded.
+func TestProcessFile_ShouldIndexFileReturnsFalse(t *testing.T) {
+	t.Parallel()
+	idx := &indexer{resolvePath: filepath.Abs}
 
-	// -------------------------------------------------------------------
-	// EC2: context cancelled before loop
-	// -------------------------------------------------------------------
-	t.Run("context cancelled before loop", func(t *testing.T) {
-		t.Parallel()
+	tmpDir := t.TempDir()
+	txtFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(txtFile, []byte("not a go file"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-		tmpDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.26\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(tmpDir, "a.go"), []byte("package test\nvar X = 1\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, txtFile, "package p", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		fset := token.NewFileSet()
-		pkgs, err := packages.Load(&packages.Config{
-			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
-			Dir:  tmpDir,
-			Fset: fset,
-		}, ".")
-		if err != nil {
-			t.Fatalf("packages.Load: %v", err)
-		}
-		if len(pkgs) == 0 {
-			t.Fatal("expected at least one package")
-		}
+	h := newHarvester(fset)
+	err = idx.processFile(fset, file, h)
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+	if h.currentPath != "" {
+		t.Errorf("currentPath = %q; want empty", h.currentPath)
+	}
+	if len(h.symbolsByPath) != 0 {
+		t.Error("expected no symbols for non-.go file")
+	}
+}
 
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
+// EC5: empty package, no Syntax
+func TestProcessPackage_EmptyPackage(t *testing.T) {
+	t.Parallel()
 
-		_, err = idx.processPackage(ctx, fset, pkgs[0])
-		assert.ErrorIs(t, err, context.Canceled)
-	})
+	fset := token.NewFileSet()
+	pkg := types.NewPackage("example.com/test", "test")
+	manualPkg := &packages.Package{
+		Types:     pkg,
+		TypesInfo: &types.Info{},
+		Syntax:    nil,
+	}
 
-	// -------------------------------------------------------------------
-	// EC3: processFile error propagation
-	//
-	// Inject a failing resolvePath via DI to verify that path-resolution
-	// errors from processFile propagate correctly through processPackage.
-	// -------------------------------------------------------------------
-	t.Run("processFile error propagation", func(t *testing.T) {
-		t.Parallel()
+	idx := &indexer{resolvePath: filepath.Abs}
+	ctx := context.Background()
+	result, err := idx.processPackage(ctx, fset, manualPkg)
+	assert.NoError(t, err)
+	assert.Empty(t, result.symbols)
+	assert.Empty(t, result.usages)
+}
 
-		errInjected := errors.New("path resolution failed")
-		idx := &indexer{
-			resolvePath: func(string) (string, error) { return "", errInjected },
-		}
+// EC2: context cancelled before loop
+func TestProcessPackage_ContextCancelled(t *testing.T) {
+	t.Parallel()
 
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, "any.go", "package test\nvar X = 1\n", 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.26\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "a.go"), []byte("package test\nvar X = 1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-		h := newHarvester(fset)
-		err = idx.processFile(fset, file, h)
-		assert.ErrorIs(t, err, errInjected)
-		assert.Empty(t, h.symbolsByPath)
-		assert.Empty(t, h.currentPath)
-	})
+	fset := token.NewFileSet()
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
+		Dir:  tmpDir,
+		Fset: fset,
+	}, ".")
+	if err != nil {
+		t.Fatalf("packages.Load: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("expected at least one package")
+	}
 
-	// -------------------------------------------------------------------
-	// EC1: multiple files processed
-	// -------------------------------------------------------------------
-	t.Run("multiple files processed", func(t *testing.T) {
-		t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
-		tmpDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.26\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(tmpDir, "a.go"), []byte("package test\nvar A = 1\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(tmpDir, "b.go"), []byte("package test\nvar B = 2\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
+	idx := &indexer{resolvePath: filepath.Abs}
+	_, err = idx.processPackage(ctx, fset, pkgs[0])
+	assert.ErrorIs(t, err, context.Canceled)
+}
 
-		fset := token.NewFileSet()
-		pkgs, err := packages.Load(&packages.Config{
-			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
-			Dir:  tmpDir,
-			Fset: fset,
-		}, ".")
-		if err != nil {
-			t.Fatalf("packages.Load: %v", err)
-		}
-		if len(pkgs) == 0 {
-			t.Fatal("expected at least one package")
-		}
+// EC3: processFile error propagation
+func TestProcessPackage_ProcessFileError(t *testing.T) {
+	t.Parallel()
 
-		ctx := context.Background()
-		result, err := idx.processPackage(ctx, fset, pkgs[0])
-		assert.NoError(t, err)
+	errInjected := errors.New("path resolution failed")
+	idx := &indexer{
+		resolvePath: func(string) (string, error) { return "", errInjected },
+	}
 
-		// Should have symbols from both files (2 distinct file paths)
-		assert.Len(t, result.symbols, 2, "expected symbols from 2 files")
-	})
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "any.go", "package test\nvar X = 1\n", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := newHarvester(fset)
+	err = idx.processFile(fset, file, h)
+	assert.ErrorIs(t, err, errInjected)
+	assert.Empty(t, h.symbolsByPath)
+	assert.Empty(t, h.currentPath)
+}
+
+// EC1: multiple files processed
+func TestProcessPackage_MultipleFiles(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\ngo 1.26\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "a.go"), []byte("package test\nvar A = 1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "b.go"), []byte("package test\nvar B = 2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fset := token.NewFileSet()
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
+		Dir:  tmpDir,
+		Fset: fset,
+	}, ".")
+	if err != nil {
+		t.Fatalf("packages.Load: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("expected at least one package")
+	}
+
+	idx := &indexer{resolvePath: filepath.Abs}
+	ctx := context.Background()
+	result, err := idx.processPackage(ctx, fset, pkgs[0])
+	assert.NoError(t, err)
+	assert.Len(t, result.symbols, 2, "expected symbols from 2 files")
 }
 
 func TestHarvestPackages(t *testing.T) {
