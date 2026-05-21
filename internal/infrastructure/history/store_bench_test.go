@@ -96,7 +96,7 @@ func BenchmarkJSONLStoreAppend(b *testing.B) {
 // BenchmarkJSONLStoreCompact measures the full compaction cycle (Load → Save)
 // against a file pre-seeded with content entries and patches.
 func BenchmarkJSONLStoreCompact(b *testing.B) {
-	sizes := []int{100, 1000, 5000}
+	sizes := []int{100, 5000}
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
 			ctx := context.Background()
