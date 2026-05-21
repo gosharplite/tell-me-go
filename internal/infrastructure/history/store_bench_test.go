@@ -94,7 +94,7 @@ func BenchmarkJSONLStoreAppend(b *testing.B) {
 }
 
 // BenchmarkJSONLStoreCompact measures the full compaction cycle (Load → Save)
-// against a file pre-seeded with content entries and patches.
+// against a file pre-seeded with content entries that already have metadata set.
 func BenchmarkJSONLStoreCompact(b *testing.B) {
 	sizes := []int{100, 5000}
 	for _, size := range sizes {
@@ -104,21 +104,21 @@ func BenchmarkJSONLStoreCompact(b *testing.B) {
 			fs := persistencetest.NewPlainOSFileSystem()
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
+
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				store := newJSONLStore(fs, filePath, archivePath)
 
 				seed := generateContents(size)
+				for idx := range seed {
+					seed[idx].Pinned = true
+				}
+
+				store := newJSONLStore(fs, filePath, archivePath)
 				if err := store.Save(ctx, seed); err != nil {
 					b.Fatalf("seed Save failed: %v", err)
 				}
 
-				for idx := 0; idx < size; idx++ {
-					if err := store.UpdateMetadata(ctx, idx, map[string]interface{}{"pinned": true}); err != nil {
-						b.Fatalf("UpdateMetadata[%d] failed: %v", idx, err)
-					}
-				}
 				b.StartTimer()
 
 				_ = store.Compact(ctx)
