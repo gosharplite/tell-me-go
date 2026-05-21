@@ -138,8 +138,19 @@ func TestBrowseCommand_NewBrowseCommand_RunE(t *testing.T) {
 		Interactor:   ref,
 	}
 
-	// RunE should fail with TTY error, but the capturer should have been set
-	err := executeBrowseCommand(cmdCtx, []string{"browse"})
+	// Use capturerFactory (not capturerOverride) so getCapturer routes
+	// through setupCapturer, which populates InteractorRef before the
+	// TTY check. The factory returns a mock with isTTY:false for
+	// deterministic behavior regardless of global terminal state.
+	// Same class of bug as #515, #511, #512.
+	c := &browseCommand{
+		ctx: cmdCtx,
+		capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
+			return &mockCapturerInteractor{isTTY: false}
+		},
+	}
+
+	err := c.runBrowse(stdctx.Background(), "test-config.yaml")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "requires an interactive TTY")
 
