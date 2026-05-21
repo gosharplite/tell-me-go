@@ -934,55 +934,66 @@ func TestOpenOutputFile_MkdirAllError(t *testing.T) {
 	}
 }
 
-func TestProcessExecutor_Output(t *testing.T) {
+// TestProcessExecutor_Output_Success verifies that Output returns stdout
+// with a trailing newline on successful command execution.
+func TestProcessExecutor_Output_Success(t *testing.T) {
 	executor := newprocessExecutor()
 	ctx := context.Background()
+	out, err := executor.Output(ctx, helperPath, "echo", "hello")
+	if err != nil {
+		t.Fatalf("Output failed: %v", err)
+	}
+	if string(out) != "hello\n" {
+		t.Errorf("expected 'hello\\n', got %q", string(out))
+	}
+}
 
-	t.Run("success", func(t *testing.T) {
-		out, err := executor.Output(ctx, helperPath, "echo", "hello")
-		if err != nil {
-			t.Fatalf("Output failed: %v", err)
-		}
-		if string(out) != "hello\n" {
-			t.Errorf("expected 'hello\\n', got %q", string(out))
-		}
-	})
+// TestProcessExecutor_Output_ExitError verifies that Output returns an error
+// containing the exit status when the command exits non-zero.
+func TestProcessExecutor_Output_ExitError(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	out, err := executor.Output(ctx, helperPath, "exit", "1")
+	if err == nil {
+		t.Fatal("expected error for non-zero exit")
+	}
+	if !strings.Contains(err.Error(), "exit status 1") {
+		t.Errorf("expected 'exit status 1' in error, got: %v", err)
+	}
+	if out != nil {
+		t.Logf("partial output on exit error: %q", string(out))
+	}
+}
 
-	t.Run("exit error", func(t *testing.T) {
-		out, err := executor.Output(ctx, helperPath, "exit", "1")
-		if err == nil {
-			t.Fatal("expected error for non-zero exit")
-		}
-		if !strings.Contains(err.Error(), "exit status 1") {
-			t.Errorf("expected 'exit status 1' in error, got: %v", err)
-		}
-		if out != nil {
-			t.Logf("partial output on exit error: %q", string(out))
-		}
-	})
+// TestProcessExecutor_CombinedOutput_Success verifies that CombinedOutput
+// returns combined stdout+stderr on successful command execution.
+func TestProcessExecutor_CombinedOutput_Success(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	out, err := executor.CombinedOutput(ctx, helperPath, "echo", "hello")
+	if err != nil {
+		t.Fatalf("CombinedOutput failed: %v", err)
+	}
+	if string(out) != "hello\n" {
+		t.Errorf("expected 'hello\\n', got %q", string(out))
+	}
+}
 
-	t.Run("CombinedOutput success", func(t *testing.T) {
-		out, err := executor.CombinedOutput(ctx, helperPath, "echo", "hello")
-		if err != nil {
-			t.Fatalf("CombinedOutput failed: %v", err)
-		}
-		if string(out) != "hello\n" {
-			t.Errorf("expected 'hello\\n', got %q", string(out))
-		}
-	})
-
-	t.Run("CombinedOutput exit error", func(t *testing.T) {
-		out, err := executor.CombinedOutput(ctx, helperPath, "exit", "2")
-		if err == nil {
-			t.Fatal("expected error for non-zero exit")
-		}
-		if !strings.Contains(err.Error(), "exit status 2") {
-			t.Errorf("expected 'exit status 2' in error, got: %v", err)
-		}
-		if out != nil {
-			t.Logf("partial output on exit error: %q", string(out))
-		}
-	})
+// TestProcessExecutor_CombinedOutput_ExitError verifies that CombinedOutput
+// returns an error containing the exit status when the command exits non-zero.
+func TestProcessExecutor_CombinedOutput_ExitError(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+	out, err := executor.CombinedOutput(ctx, helperPath, "exit", "2")
+	if err == nil {
+		t.Fatal("expected error for non-zero exit")
+	}
+	if !strings.Contains(err.Error(), "exit status 2") {
+		t.Errorf("expected 'exit status 2' in error, got: %v", err)
+	}
+	if out != nil {
+		t.Logf("partial output on exit error: %q", string(out))
+	}
 }
 
 func TestProcessExecutor_Output_RunError(t *testing.T) {
@@ -1071,6 +1082,28 @@ func TestProcessExecutor_LookPath(t *testing.T) {
 // streamProcessor.appendErr tests
 // ---------------------------------------------------------------------------
 
+// verifyAppendErrResult asserts the state of the string builder, truncated flag,
+// and optional feedback buffer against the test case expectations.
+func verifyAppendErrResult(t *testing.T, sb *strings.Builder, sp *streamProcessor, wantEmptySB bool, wantContains string, wantTruncated bool, useFeedback bool, fb io.Writer) {
+	t.Helper()
+	got := sb.String()
+	if wantEmptySB && got != "" {
+		t.Errorf("expected empty sb, got %q", got)
+	}
+	if wantContains != "" && !strings.Contains(got, wantContains) {
+		t.Errorf("expected sb to contain %q, got %q", wantContains, got)
+	}
+	if sp.truncated.Load() != wantTruncated {
+		t.Errorf("truncated = %v, want %v", sp.truncated.Load(), wantTruncated)
+	}
+	if useFeedback && fb != nil {
+		fbStr := fb.(*bytes.Buffer).String()
+		if !strings.Contains(fbStr, wantContains) {
+			t.Errorf("expected feedback to contain %q, got %q", wantContains, fbStr)
+		}
+	}
+}
+
 func TestStreamProcessor_appendErr(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -1156,22 +1189,7 @@ func TestStreamProcessor_appendErr(t *testing.T) {
 			var sb strings.Builder
 			sp.appendErr(&sb, tt.err)
 
-			got := sb.String()
-			if tt.wantEmptySB && got != "" {
-				t.Errorf("expected empty sb, got %q", got)
-			}
-			if tt.wantContains != "" && !strings.Contains(got, tt.wantContains) {
-				t.Errorf("expected sb to contain %q, got %q", tt.wantContains, got)
-			}
-			if sp.truncated.Load() != tt.wantTruncated {
-				t.Errorf("truncated = %v, want %v", sp.truncated.Load(), tt.wantTruncated)
-			}
-			if tt.useFeedback && fb != nil {
-				fbStr := fb.(*bytes.Buffer).String()
-				if !strings.Contains(fbStr, tt.wantContains) {
-					t.Errorf("expected feedback to contain %q, got %q", tt.wantContains, fbStr)
-				}
-			}
+			verifyAppendErrResult(t, &sb, sp, tt.wantEmptySB, tt.wantContains, tt.wantTruncated, tt.useFeedback, fb)
 		})
 	}
 }
@@ -1186,256 +1204,232 @@ func (f *failingWriter) Write(p []byte) (int, error) {
 	return 0, fmt.Errorf("disk full")
 }
 
-func TestWriteTracker_Write(t *testing.T) {
-	t.Run("normal write", func(t *testing.T) {
-		feedback := &bytes.Buffer{}
-		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
-		var w bytes.Buffer
+func TestWriteTracker_Write_NormalWrite(t *testing.T) {
+	feedback := &bytes.Buffer{}
+	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+	var w bytes.Buffer
+	wt.Write(&w, []byte("data"))
+	if w.String() != "data" {
+		t.Errorf("expected 'data', got %q", w.String())
+	}
+	if feedback.Len() != 0 {
+		t.Errorf("expected no feedback, got %q", feedback.String())
+	}
+	if wt.failed.Load() {
+		t.Error("expected failed=false")
+	}
+}
 
-		wt.Write(&w, []byte("data"))
+func TestWriteTracker_Write_WriteFailure(t *testing.T) {
+	feedback := &bytes.Buffer{}
+	wt := &writeTracker{feedback: feedback, filePath: "important.txt"}
+	wt.Write(&failingWriter{}, []byte("data"))
+	if !wt.failed.Load() {
+		t.Error("expected failed=true after write error")
+	}
+	fb := feedback.String()
+	if !strings.Contains(fb, "[Warning] Failed to write to output file") {
+		t.Errorf("expected warning in feedback, got %q", fb)
+	}
+	if !strings.Contains(fb, "important.txt") {
+		t.Errorf("expected file path in warning, got %q", fb)
+	}
+	if !strings.Contains(fb, "disk full") {
+		t.Errorf("expected error cause in warning, got %q", fb)
+	}
+}
 
-		if w.String() != "data" {
-			t.Errorf("expected 'data', got %q", w.String())
-		}
-		if feedback.Len() != 0 {
-			t.Errorf("expected no feedback, got %q", feedback.String())
-		}
-		if wt.failed.Load() {
-			t.Error("expected failed=false")
-		}
-	})
+func TestWriteTracker_Write_AlreadyFailed(t *testing.T) {
+	feedback := &bytes.Buffer{}
+	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+	wt.failed.Store(true)
+	wt.Write(&failingWriter{}, []byte("more data"))
+	if feedback.Len() != 0 {
+		t.Errorf("expected no new feedback, got %q", feedback.String())
+	}
+}
 
-	t.Run("write failure — warning emitted once", func(t *testing.T) {
-		feedback := &bytes.Buffer{}
-		wt := &writeTracker{feedback: feedback, filePath: "important.txt"}
+func TestWriteTracker_Write_TypedNilFile(t *testing.T) {
+	feedback := &bytes.Buffer{}
+	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+	var f *os.File = nil
+	var w io.Writer = f
+	wt.Write(w, []byte("data"))
+	if wt.failed.Load() {
+		t.Error("expected failed=false for typed nil")
+	}
+	if feedback.Len() != 0 {
+		t.Errorf("expected no feedback, got %q", feedback.String())
+	}
+}
 
-		wt.Write(&failingWriter{}, []byte("data"))
-
-		if !wt.failed.Load() {
-			t.Error("expected failed=true after write error")
-		}
-		fb := feedback.String()
-		if !strings.Contains(fb, "[Warning] Failed to write to output file") {
-			t.Errorf("expected warning in feedback, got %q", fb)
-		}
-		if !strings.Contains(fb, "important.txt") {
-			t.Errorf("expected file path in warning, got %q", fb)
-		}
-		if !strings.Contains(fb, "disk full") {
-			t.Errorf("expected error cause in warning, got %q", fb)
-		}
-	})
-
-	t.Run("already failed — second write silently skipped", func(t *testing.T) {
-		feedback := &bytes.Buffer{}
-		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
-		wt.failed.Store(true) // precondition: already failed
-
-		wt.Write(&failingWriter{}, []byte("more data"))
-
-		// Feedback must not grow — the write should be skipped entirely.
-		if feedback.Len() != 0 {
-			t.Errorf("expected no new feedback, got %q", feedback.String())
-		}
-	})
-
-	t.Run("typed nil *os.File — skipped", func(t *testing.T) {
-		feedback := &bytes.Buffer{}
-		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
-
-		var f *os.File = nil
-		var w io.Writer = f // typed nil: interface is non-nil, concrete is nil
-		wt.Write(w, []byte("data"))
-
-		if wt.failed.Load() {
-			t.Error("expected failed=false for typed nil")
-		}
-		if feedback.Len() != 0 {
-			t.Errorf("expected no feedback, got %q", feedback.String())
-		}
-	})
-
-	t.Run("nil interface — skipped", func(t *testing.T) {
-		feedback := &bytes.Buffer{}
-		wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
-
-		wt.Write(nil, []byte("data"))
-
-		if wt.failed.Load() {
-			t.Error("expected failed=false for nil interface")
-		}
-		if feedback.Len() != 0 {
-			t.Errorf("expected no feedback, got %q", feedback.String())
-		}
-	})
+func TestWriteTracker_Write_NilInterface(t *testing.T) {
+	feedback := &bytes.Buffer{}
+	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
+	wt.Write(nil, []byte("data"))
+	if wt.failed.Load() {
+		t.Error("expected failed=false for nil interface")
+	}
+	if feedback.Len() != 0 {
+		t.Errorf("expected no feedback, got %q", feedback.String())
+	}
 }
 
 // ---------------------------------------------------------------------------
 // newPipelineCmd tests
 // ---------------------------------------------------------------------------
 
-func TestProcessExecutor_newPipelineCmd(t *testing.T) {
+func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex0(t *testing.T) {
 	e := newprocessExecutor()
 	ctx := context.Background()
+	_, err := e.newPipelineCmd(ctx, []string{}, 0, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error for empty parts")
+	}
+	if !strings.Contains(err.Error(), "empty command at index 0") {
+		t.Errorf("expected 'empty command at index 0', got %q", err.Error())
+	}
+}
 
-	t.Run("empty parts — index 0", func(t *testing.T) {
-		_, err := e.newPipelineCmd(ctx, []string{}, 0, executionConfig{})
-		if err == nil {
-			t.Fatal("expected error for empty parts")
-		}
-		if !strings.Contains(err.Error(), "empty command at index 0") {
-			t.Errorf("expected 'empty command at index 0', got %q", err.Error())
-		}
-	})
+func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex2(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+	_, err := e.newPipelineCmd(ctx, []string{}, 2, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error for empty parts")
+	}
+	if !strings.Contains(err.Error(), "empty command at index 2") {
+		t.Errorf("expected 'empty command at index 2', got %q", err.Error())
+	}
+}
 
-	t.Run("empty parts — index 2", func(t *testing.T) {
-		_, err := e.newPipelineCmd(ctx, []string{}, 2, executionConfig{})
-		if err == nil {
-			t.Fatal("expected error for empty parts")
-		}
-		if !strings.Contains(err.Error(), "empty command at index 2") {
-			t.Errorf("expected 'empty command at index 2', got %q", err.Error())
-		}
-	})
+func TestProcessExecutor_newPipelineCmd_ValidParts(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+	cmd, err := e.newPipelineCmd(ctx, []string{"echo", "hello"}, 0, executionConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil *exec.Cmd")
+	}
+	if cmd.Args[0] != "echo" {
+		t.Errorf("expected cmd.Args[0] == 'echo', got %q", cmd.Args[0])
+	}
+}
 
-	t.Run("valid parts — returns *exec.Cmd", func(t *testing.T) {
-		cmd, err := e.newPipelineCmd(ctx, []string{"echo", "hello"}, 0, executionConfig{})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+func TestProcessExecutor_newPipelineCmd_WithEnv(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+	config := executionConfig{Env: map[string]string{"GOOS": "linux", "CUSTOM_VAR": "testval"}}
+	cmd, err := e.newPipelineCmd(ctx, []string{"go", "version"}, 0, config)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil *exec.Cmd")
+	}
+	if len(cmd.Env) == 0 {
+		t.Fatal("expected cmd.Env to be non-empty")
+	}
+	foundGOOS, foundCustom := false, false
+	for _, e := range cmd.Env {
+		if e == "GOOS=linux" {
+			foundGOOS = true
 		}
-		if cmd == nil {
-			t.Fatal("expected non-nil *exec.Cmd")
+		if e == "CUSTOM_VAR=testval" {
+			foundCustom = true
 		}
-		if cmd.Args[0] != "echo" {
-			t.Errorf("expected cmd.Args[0] == 'echo', got %q", cmd.Args[0])
-		}
-	})
-
-	t.Run("with env — cmd.Env includes custom var", func(t *testing.T) {
-		config := executionConfig{
-			Env: map[string]string{"GOOS": "linux", "CUSTOM_VAR": "testval"},
-		}
-		cmd, err := e.newPipelineCmd(ctx, []string{"go", "version"}, 0, config)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cmd == nil {
-			t.Fatal("expected non-nil *exec.Cmd")
-		}
-		if len(cmd.Env) == 0 {
-			t.Fatal("expected cmd.Env to be non-empty")
-		}
-		foundGOOS := false
-		foundCustom := false
-		for _, e := range cmd.Env {
-			if e == "GOOS=linux" {
-				foundGOOS = true
-			}
-			if e == "CUSTOM_VAR=testval" {
-				foundCustom = true
-			}
-		}
-		if !foundGOOS {
-			t.Error("cmd.Env missing GOOS=linux")
-		}
-		if !foundCustom {
-			t.Error("cmd.Env missing CUSTOM_VAR=testval")
-		}
-	})
+	}
+	if !foundGOOS {
+		t.Error("cmd.Env missing GOOS=linux")
+	}
+	if !foundCustom {
+		t.Error("cmd.Env missing CUSTOM_VAR=testval")
+	}
 }
 
 // ---------------------------------------------------------------------------
 // handleCaptureError tests
 // ---------------------------------------------------------------------------
 
-func TestProcessExecutor_handleCaptureError(t *testing.T) {
+func TestProcessExecutor_handleCaptureError_NilError(t *testing.T) {
 	e := newprocessExecutor()
+	var sb strings.Builder
+	var mu sync.Mutex
+	truncated := &atomic.Bool{}
+	e.handleCaptureError(nil, &sb, &mu, executionConfig{}, truncated, 100)
+	if sb.String() != "" {
+		t.Errorf("expected empty sb, got %q", sb.String())
+	}
+	if truncated.Load() {
+		t.Error("expected truncated=false")
+	}
+}
 
-	t.Run("nil error — no-op", func(t *testing.T) {
-		var sb strings.Builder
-		var mu sync.Mutex
-		truncated := &atomic.Bool{}
+func TestProcessExecutor_handleCaptureError_ErrTooLongWithCapacity(t *testing.T) {
+	e := newprocessExecutor()
+	var sb strings.Builder
+	var mu sync.Mutex
+	truncated := &atomic.Bool{}
+	e.handleCaptureError(bufio.ErrTooLong, &sb, &mu, executionConfig{}, truncated, 500)
+	got := sb.String()
+	if !strings.Contains(got, "[Warning] Output line too long") {
+		t.Errorf("expected 'too long' warning, got %q", got)
+	}
+	if truncated.Load() {
+		t.Error("expected truncated=false when capacity remains")
+	}
+}
 
-		e.handleCaptureError(nil, &sb, &mu, executionConfig{}, truncated, 100)
+func TestProcessExecutor_handleCaptureError_ErrTooLongNoCapacity(t *testing.T) {
+	e := newprocessExecutor()
+	var sb strings.Builder
+	sb.WriteString("12345")
+	var mu sync.Mutex
+	truncated := &atomic.Bool{}
+	e.handleCaptureError(bufio.ErrTooLong, &sb, &mu, executionConfig{}, truncated, 5)
+	if sb.String() != "12345" {
+		t.Errorf("expected sb unchanged %q, got %q", "12345", sb.String())
+	}
+	if !truncated.Load() {
+		t.Error("expected truncated=true when at max capacity")
+	}
+}
 
-		if sb.String() != "" {
-			t.Errorf("expected empty sb, got %q", sb.String())
-		}
-		if truncated.Load() {
-			t.Error("expected truncated=false")
-		}
-	})
+func TestProcessExecutor_handleCaptureError_WithFeedback(t *testing.T) {
+	e := newprocessExecutor()
+	var sb strings.Builder
+	var mu sync.Mutex
+	truncated := &atomic.Bool{}
+	feedback := &bytes.Buffer{}
+	config := executionConfig{Feedback: feedback}
+	e.handleCaptureError(fmt.Errorf("test error"), &sb, &mu, config, truncated, 500)
+	if !strings.Contains(sb.String(), "[Warning] Output read error: test error") {
+		t.Errorf("expected error warning in sb, got %q", sb.String())
+	}
+	fb := feedback.String()
+	if !strings.Contains(fb, "[Warning] Output read error: test error") {
+		t.Errorf("expected warning in feedback, got %q", fb)
+	}
+}
 
-	t.Run("ErrTooLong with capacity — warning written", func(t *testing.T) {
-		var sb strings.Builder
-		var mu sync.Mutex
-		truncated := &atomic.Bool{}
-
-		e.handleCaptureError(bufio.ErrTooLong, &sb, &mu, executionConfig{}, truncated, 500)
-
-		got := sb.String()
-		if !strings.Contains(got, "[Warning] Output line too long") {
-			t.Errorf("expected 'too long' warning, got %q", got)
-		}
-		if truncated.Load() {
-			t.Error("expected truncated=false when capacity remains")
-		}
-	})
-
-	t.Run("ErrTooLong no capacity — truncated flag set, sb unchanged", func(t *testing.T) {
-		var sb strings.Builder
-		sb.WriteString("12345") // pre-fill exactly 5 bytes
-		var mu sync.Mutex
-		truncated := &atomic.Bool{}
-
-		e.handleCaptureError(bufio.ErrTooLong, &sb, &mu, executionConfig{}, truncated, 5)
-
-		if sb.String() != "12345" {
-			t.Errorf("expected sb unchanged %q, got %q", "12345", sb.String())
-		}
-		if !truncated.Load() {
-			t.Error("expected truncated=true when at max capacity")
-		}
-	})
-
-	t.Run("error with feedback writer", func(t *testing.T) {
-		var sb strings.Builder
-		var mu sync.Mutex
-		truncated := &atomic.Bool{}
-		feedback := &bytes.Buffer{}
-		config := executionConfig{Feedback: feedback}
-
-		e.handleCaptureError(fmt.Errorf("test error"), &sb, &mu, config, truncated, 500)
-
-		if !strings.Contains(sb.String(), "[Warning] Output read error: test error") {
-			t.Errorf("expected error warning in sb, got %q", sb.String())
-		}
-		fb := feedback.String()
-		if !strings.Contains(fb, "[Warning] Output read error: test error") {
-			t.Errorf("expected warning in feedback, got %q", fb)
-		}
-	})
-
-	t.Run("truncation when message exceeds remaining capacity", func(t *testing.T) {
-		var sb strings.Builder
-		sb.WriteString("abcde") // 5 bytes prefilled
-		var mu sync.Mutex
-		truncated := &atomic.Bool{}
-
-		// maxCapture=10, sb has 5 bytes, remaining=5
-		// The fullMsg "\n[Warning] Output read error: ...\n" is > 5 bytes
-		e.handleCaptureError(fmt.Errorf("truncation test error"), &sb, &mu, executionConfig{}, truncated, 10)
-
-		if !truncated.Load() {
-			t.Error("expected truncated=true when message exceeds remaining capacity")
-		}
-		if sb.Len() > 10 {
-			t.Errorf("expected sb length <= 10, got %d", sb.Len())
-		}
-		if !strings.Contains(sb.String(), "[War") {
-			t.Errorf("expected warning prefix in sb, got %q", sb.String())
-		}
-	})
+func TestProcessExecutor_handleCaptureError_Truncation(t *testing.T) {
+	e := newprocessExecutor()
+	var sb strings.Builder
+	sb.WriteString("abcde")
+	var mu sync.Mutex
+	truncated := &atomic.Bool{}
+	e.handleCaptureError(fmt.Errorf("truncation test error"), &sb, &mu, executionConfig{}, truncated, 10)
+	if !truncated.Load() {
+		t.Error("expected truncated=true when message exceeds remaining capacity")
+	}
+	if sb.Len() > 10 {
+		t.Errorf("expected sb length <= 10, got %d", sb.Len())
+	}
+	if !strings.Contains(sb.String(), "[War") {
+		t.Errorf("expected warning prefix in sb, got %q", sb.String())
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1740,125 +1734,105 @@ func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 // Task 4 — Command/Pipeline error path hardening
 // ---------------------------------------------------------------------------
 
-// TestPipeline_WirePipesCleanupOnFailure verifies that when wirePipes fails
-// mid-allocation, partially-allocated pipes are properly closed via the
-// deferred closePipes() call, preventing file descriptor leaks.
-func TestPipeline_WirePipesCleanupOnFailure(t *testing.T) {
-	t.Run("stderr pipe failure mid-pipeline", func(t *testing.T) {
-		cmd1 := exec.Command("echo", "hello")
-		cmd2 := exec.Command("echo", "world")
-		cmd3 := exec.Command("echo", "third")
-
-		// Pre-consume cmd3's StderrPipe so wirePipes fails on it
-		if _, err := cmd3.StderrPipe(); err != nil {
-			t.Fatalf("failed to pre-consume StderrPipe: %v", err)
-		}
-
-		p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2, cmd3}}
-		err := p.wirePipes()
-		if err == nil {
-			t.Fatal("expected wirePipes to fail on pre-consumed StderrPipe")
-		}
-		if !strings.Contains(err.Error(), "failed to get stderr pipe for command 2") {
-			t.Errorf("expected stderr pipe error for command 2, got: %v", err)
-		}
-		// Verify cleanup: closePipes should be safe to call (no double-close panic)
-		// The deferred closePipes already ran, so calling again should be a no-op
-		p.closePipes()
-	})
-
-	t.Run("stdout pipe failure mid-pipeline", func(t *testing.T) {
-		cmd1 := exec.Command("echo", "hello")
-		cmd2 := exec.Command("echo", "world")
-		cmd3 := exec.Command("echo", "third")
-
-		// Pre-consume cmd1's StdoutPipe so wirePipes fails on first iteration's stdout
-		if _, err := cmd1.StdoutPipe(); err != nil {
-			t.Fatalf("failed to pre-consume StdoutPipe: %v", err)
-		}
-
-		p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2, cmd3}}
-		err := p.wirePipes()
-		if err == nil {
-			t.Fatal("expected wirePipes to fail on pre-consumed StdoutPipe")
-		}
-		if !strings.Contains(err.Error(), "failed to get stdout pipe for command 0") {
-			t.Errorf("expected stdout pipe error for command 0, got: %v", err)
-		}
-		// Verify cleanup: cmd1's stderr was already obtained → pipes should have 1 entry
-		// The defer already closed it; calling closePipes again is safe
-		if len(p.pipes) != 1 {
-			t.Errorf("expected 1 pipe (cmd1 stderr) before cleanup, got %d", len(p.pipes))
-		}
-		p.closePipes()
-	})
-
-	t.Run("last stdout pipe fails", func(t *testing.T) {
-		cmd1 := exec.Command("echo", "hello")
-		cmd2 := exec.Command("echo", "world")
-
-		// Pre-consume cmd2's StdoutPipe (the last command's stdout)
-		if _, err := cmd2.StdoutPipe(); err != nil {
-			t.Fatalf("failed to pre-consume StdoutPipe: %v", err)
-		}
-
-		p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2}}
-		err := p.wirePipes()
-		if err == nil {
-			t.Fatal("expected wirePipes to fail on pre-consumed last StdoutPipe")
-		}
-		if !strings.Contains(err.Error(), "failed to get stdout pipe for last command") {
-			t.Errorf("expected last stdout pipe error, got: %v", err)
-		}
-		// Verify cleanup: cmd1's stderr, cmd1's stdout, and cmd2's stderr
-		// were all allocated before the failure. The defer should have closed all 3.
-		if len(p.pipes) != 3 {
-			t.Errorf("expected 3 pipes before cleanup, got %d", len(p.pipes))
-		}
-		p.closePipes()
-	})
+func TestPipeline_WirePipesCleanupOnFailure_StderrPipe(t *testing.T) {
+	cmd1 := exec.Command("echo", "hello")
+	cmd2 := exec.Command("echo", "world")
+	cmd3 := exec.Command("echo", "third")
+	if _, err := cmd3.StderrPipe(); err != nil {
+		t.Fatalf("failed to pre-consume StderrPipe: %v", err)
+	}
+	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2, cmd3}}
+	err := p.wirePipes()
+	if err == nil {
+		t.Fatal("expected wirePipes to fail on pre-consumed StderrPipe")
+	}
+	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 2") {
+		t.Errorf("expected stderr pipe error for command 2, got: %v", err)
+	}
+	p.closePipes()
 }
 
-// TestRunCommand_NonExitError verifies RunCommand behavior when the process
-// is terminated by a signal (non-*exec.ExitError) or when the executable
-// cannot be found at all.
-func TestRunCommand_NonExitError(t *testing.T) {
+func TestPipeline_WirePipesCleanupOnFailure_StdoutPipe(t *testing.T) {
+	cmd1 := exec.Command("echo", "hello")
+	cmd2 := exec.Command("echo", "world")
+	cmd3 := exec.Command("echo", "third")
+	if _, err := cmd1.StdoutPipe(); err != nil {
+		t.Fatalf("failed to pre-consume StdoutPipe: %v", err)
+	}
+	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2, cmd3}}
+	err := p.wirePipes()
+	if err == nil {
+		t.Fatal("expected wirePipes to fail on pre-consumed StdoutPipe")
+	}
+	if !strings.Contains(err.Error(), "failed to get stdout pipe for command 0") {
+		t.Errorf("expected stdout pipe error for command 0, got: %v", err)
+	}
+	if len(p.pipes) != 1 {
+		t.Errorf("expected 1 pipe (cmd1 stderr) before cleanup, got %d", len(p.pipes))
+	}
+	p.closePipes()
+}
+
+func TestPipeline_WirePipesCleanupOnFailure_LastStdoutPipe(t *testing.T) {
+	cmd1 := exec.Command("echo", "hello")
+	cmd2 := exec.Command("echo", "world")
+	if _, err := cmd2.StdoutPipe(); err != nil {
+		t.Fatalf("failed to pre-consume StdoutPipe: %v", err)
+	}
+	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2}}
+	err := p.wirePipes()
+	if err == nil {
+		t.Fatal("expected wirePipes to fail on pre-consumed last StdoutPipe")
+	}
+	if !strings.Contains(err.Error(), "failed to get stdout pipe for last command") {
+		t.Errorf("expected last stdout pipe error, got: %v", err)
+	}
+	if len(p.pipes) != 3 {
+		t.Errorf("expected 3 pipes before cleanup, got %d", len(p.pipes))
+	}
+	p.closePipes()
+}
+
+// TestRunCommand_NonExitError_SignalKill verifies RunCommand behavior when
+// the process is terminated by a signal (via context timeout), producing a
+// non-*exec.ExitError. The exit code must be non-zero and partial output
+// should be preserved.
+func TestRunCommand_NonExitError_SignalKill(t *testing.T) {
 	e := newprocessExecutor()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	res, err := e.RunCommand(ctx, []string{helperPath, "sleep", "10"}, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error from killed command")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Logf("expected context error, got: %v (may vary by OS)", err)
+	}
+	if res.ExitCode == 0 {
+		t.Error("expected non-zero exit code for killed command")
+	}
+	if res.Output == "" {
+		t.Log("no partial output captured (OK — command may not have produced output before kill)")
+	}
+}
 
-	t.Run("command killed by signal", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-		defer cancel()
-		res, err := e.RunCommand(ctx, []string{helperPath, "sleep", "10"}, executionConfig{})
-		if err == nil {
-			t.Fatal("expected error from killed command")
-		}
-		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-			t.Logf("expected context error, got: %v (may vary by OS)", err)
-		}
-		if res.ExitCode == 0 {
-			t.Error("expected non-zero exit code for killed command")
-		}
-		// Partial output should be returned (the process may have produced some)
-		if res.Output == "" {
-			t.Log("no partial output captured (OK — command may not have produced output before kill)")
-		}
-	})
-
-	t.Run("command not found", func(t *testing.T) {
-		ctx := context.Background()
-		res, err := e.RunCommand(ctx, []string{"nonexistent_command_xyz_31415"}, executionConfig{})
-		if err == nil {
-			t.Fatal("expected error for nonexistent command")
-		}
-		if !strings.Contains(err.Error(), "executable file not found") &&
-			!strings.Contains(err.Error(), "not found") &&
-			!strings.Contains(err.Error(), "failed to start") {
-			t.Logf("expected 'not found' or 'failed to start' in error, got: %v", err)
-		}
-		if res.ExitCode != 1 {
-			t.Errorf("expected exit code 1 for nonexistent command, got %d", res.ExitCode)
-		}
-	})
+// TestRunCommand_NonExitError_CommandNotFound verifies RunCommand behavior
+// when the executable cannot be found.
+func TestRunCommand_NonExitError_CommandNotFound(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+	res, err := e.RunCommand(ctx, []string{"nonexistent_command_xyz_31415"}, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error for nonexistent command")
+	}
+	if !strings.Contains(err.Error(), "executable file not found") &&
+		!strings.Contains(err.Error(), "not found") &&
+		!strings.Contains(err.Error(), "failed to start") {
+		t.Logf("expected 'not found' or 'failed to start' in error, got: %v", err)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1 for nonexistent command, got %d", res.ExitCode)
+	}
 }
 
 // TestRunCommand_OutputFileCloseError verifies the Close error propagation
