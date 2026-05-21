@@ -98,31 +98,25 @@ func registerCrossToolkitTool(t *testing.T, r tools.Registry) {
 	}
 }
 
+// findDeclByName returns true if any declaration in decls has the given name.
+func findDeclByName(decls []*tools.ToolDeclaration, name string) bool {
+	for _, d := range decls {
+		if d.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func validateCrossToolkitTool(t *testing.T, r tools.Registry) {
 	t.Helper()
 	// 1. cross_tool remains in core declarations
-	coreDecls := r.GetCoreDeclarations()
-	foundInCore := false
-	for _, d := range coreDecls {
-		if d.Name == "cross_tool" {
-			foundInCore = true
-			break
-		}
-	}
-	if !foundInCore {
+	if !findDeclByName(r.GetCoreDeclarations(), "cross_tool") {
 		t.Errorf("expected cross_tool to remain in core declarations")
 	}
 
 	// 2. cross_tool also appears in git toolkit declarations
-	gitDecls := r.GetDeclarationsByToolkits([]string{"git"})
-	foundInGit := false
-	for _, d := range gitDecls {
-		if d.Name == "cross_tool" {
-			foundInGit = true
-			break
-		}
-	}
-	if !foundInGit {
+	if !findDeclByName(r.GetDeclarationsByToolkits([]string{"git"}), "cross_tool") {
 		t.Errorf("expected cross_tool to appear in git toolkit declarations")
 	}
 
