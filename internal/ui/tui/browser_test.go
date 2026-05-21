@@ -218,7 +218,12 @@ func TestBrowserModel_View(t *testing.T) {
 
 	_ = m.View()
 
-	// Assertions on the rendered content (directly or via View if height permits)
+	// Strip ANSI escape sequences before asserting — lipgloss may emit
+	// color codes depending on terminal environment state set by prior
+	// test packages in the full suite (same class of bug as #511).
+	rendered = stripANSI(rendered)
+
+	// Assertions on the rendered content
 	expectedSubstrings := []string{
 		"> [USER] - 1",
 		"[PINNED]",
