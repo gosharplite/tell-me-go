@@ -917,102 +917,106 @@ func TestSimpleEventBus_FlushCancellations(t *testing.T) {
 	})
 }
 
-func TestSimpleEventBus_ListenDefensive(t *testing.T) {
+func TestSimpleEventBus_ListenDefensive_NilBus(t *testing.T) {
 	t.Parallel()
 
-	t.Run("NilBus", func(t *testing.T) {
-		var bus *events.SimpleEventBus = nil
-		err := bus.Listen(context.Background())
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			t.Errorf("expected ErrBusNotInitialized, got %v", err)
-		}
-	})
+	var bus *events.SimpleEventBus = nil
+	err := bus.Listen(context.Background())
+	if !errors.Is(err, events.ErrBusNotInitialized) {
+		t.Errorf("expected ErrBusNotInitialized, got %v", err)
+	}
+}
 
-	t.Run("ClosedBus", func(t *testing.T) {
-		ctx := context.Background()
-		bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
-		_ = bus.Shutdown(ctx)
+func TestSimpleEventBus_ListenDefensive_ClosedBus(t *testing.T) {
+	t.Parallel()
 
-		err := bus.Listen(ctx)
-		if !errors.Is(err, events.ErrBusClosed) {
-			t.Errorf("expected ErrBusClosed, got %v", err)
-		}
-	})
+	ctx := context.Background()
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+	_ = bus.Shutdown(ctx)
 
-	t.Run("AlreadyRunning", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	err := bus.Listen(ctx)
+	if !errors.Is(err, events.ErrBusClosed) {
+		t.Errorf("expected ErrBusClosed, got %v", err)
+	}
+}
 
-		bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
-		eventstest.CleanupBus(t, bus)
+func TestSimpleEventBus_ListenDefensive_AlreadyRunning(t *testing.T) {
+	t.Parallel()
 
-		// Start the first Listen in a background goroutine and wait for
-		// full initialization. After WaitStarted returns, b.running is
-		// guaranteed true under the lock.
-		listenDone := make(chan struct{})
-		go func() {
-			defer close(listenDone)
-			_ = bus.Listen(ctx)
-		}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+	eventstest.CleanupBus(t, bus)
+
+	// Start the first Listen in a background goroutine and wait for
+	// full initialization. After WaitStarted returns, b.running is
+	// guaranteed true under the lock.
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		_ = bus.Listen(ctx)
+	}()
+	bus.WaitStarted()
+
+	// Call Listen a second time on an already-running bus.
+	// This exercises the early-return path:
+	//   if b.running { b.mu.Unlock(); return nil }
+	err := bus.Listen(ctx)
+	if err != nil {
+		t.Errorf("expected nil on re-entrant Listen to already-running bus, got %v", err)
+	}
+
+	// Clean shutdown: cancel the context and wait for the first Listen
+	// goroutine to return.
+	cancel()
+	<-listenDone
+}
+
+func TestSimpleEventBus_ListenDefensive_SyncMode(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+
+	// Listen on a sync-mode bus must return nil immediately
+	// and signal started so WaitStarted does not block.
+	err := bus.Listen(ctx)
+	if err != nil {
+		t.Errorf("Listen in sync mode should return nil, got %v", err)
+	}
+
+	// WaitStarted must return immediately — proves signalStarted was called.
+	// Use a channel + timeout to detect deadlock without hanging the test.
+	done := make(chan struct{})
+	go func() {
 		bus.WaitStarted()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// OK — WaitStarted returned
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("WaitStarted blocked after sync-mode Listen — signalStarted was not called")
+	}
 
-		// Call Listen a second time on an already-running bus.
-		// This exercises the early-return path:
-		//   if b.running { b.mu.Unlock(); return nil }
-		err := bus.Listen(ctx)
-		if err != nil {
-			t.Errorf("expected nil on re-entrant Listen to already-running bus, got %v", err)
-		}
-
-		// Clean shutdown: cancel the context and wait for the first Listen
-		// goroutine to return.
-		cancel()
-		<-listenDone
+	// Publish should still work after sync-mode Listen (bus is not closed).
+	received := make(chan events.Event, 1)
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		received <- e
 	})
-
-	t.Run("SyncMode", func(t *testing.T) {
-		ctx := context.Background()
-		bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
-		// Listen on a sync-mode bus must return nil immediately
-		// and signal started so WaitStarted does not block.
-		err := bus.Listen(ctx)
-		if err != nil {
-			t.Errorf("Listen in sync mode should return nil, got %v", err)
+	if err := bus.Publish(ctx, testEvent{val: "sync-mode"}); err != nil {
+		t.Fatalf("Publish after sync-mode Listen failed: %v", err)
+	}
+	select {
+	case got := <-received:
+		if got.(testEvent).val != "sync-mode" {
+			t.Errorf("expected 'sync-mode', got %v", got.(testEvent).val)
 		}
-
-		// WaitStarted must return immediately — proves signalStarted was called.
-		// Use a channel + timeout to detect deadlock without hanging the test.
-		done := make(chan struct{})
-		go func() {
-			bus.WaitStarted()
-			close(done)
-		}()
-		select {
-		case <-done:
-			// OK — WaitStarted returned
-		case <-time.After(500 * time.Millisecond):
-			t.Fatal("WaitStarted blocked after sync-mode Listen — signalStarted was not called")
-		}
-
-		// Publish should still work after sync-mode Listen (bus is not closed).
-		received := make(chan events.Event, 1)
-		bus.Subscribe(func(ctx context.Context, e events.Event) {
-			received <- e
-		})
-		if err := bus.Publish(ctx, testEvent{val: "sync-mode"}); err != nil {
-			t.Fatalf("Publish after sync-mode Listen failed: %v", err)
-		}
-		select {
-		case got := <-received:
-			if got.(testEvent).val != "sync-mode" {
-				t.Errorf("expected 'sync-mode', got %v", got.(testEvent).val)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for event after sync-mode Listen")
-		}
-	})
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event after sync-mode Listen")
+	}
 }
 
 func TestSimpleEventBus_NilAndClosedSubscriptions(t *testing.T) {

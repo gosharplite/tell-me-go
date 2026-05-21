@@ -418,91 +418,76 @@ func TestRunLinter(t *testing.T) {
 	}
 }
 
-func TestGoTidy_Errors(t *testing.T) {
+func TestGoTidy_Errors_ModTidyFails(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name       string
-		executeErr error
-		cmdFail    string
-		decline    bool
-	}{
-		{
-			name:       "go mod tidy fails",
-			executeErr: errors.New("tidy error"),
-			cmdFail:    "tidy",
-		},
-		{
-			name:       "go fmt fails",
-			executeErr: errors.New("fmt error"),
-			cmdFail:    "fmt",
-		},
-		{
-			name:    "user declined",
-			decline: true,
-		},
-		{
-			name:       "error with empty output",
-			executeErr: errors.New("tidy error"),
-			cmdFail:    "tidy",
+	m, _, _ := setupDevManager(t)
+	runner := m.runner.(*mockGoRunner)
+	runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
+		return []byte("failed"), errors.New("tidy error")
+	}
+
+	res, err := m.goTidy(context.Background(), nil, nil)
+	if err != nil {
+		t.Errorf("expected nil error for go mod tidy fails, got %v", err)
+	}
+	displayName := "Go mod tidy/fmt"
+	if !strings.Contains(res.Text, displayName+" failed or found issues:") {
+		t.Errorf("expected failure text in result, got %q", res.Text)
+	}
+}
+
+func TestGoTidy_Errors_FmtFails(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	runner := m.runner.(*mockGoRunner)
+	runner.formatCodeFunc = func(ctx context.Context, path string) ([]byte, error) {
+		return []byte("failed"), errors.New("fmt error")
+	}
+
+	res, err := m.goTidy(context.Background(), nil, nil)
+	if err != nil {
+		t.Errorf("expected nil error for go fmt fails, got %v", err)
+	}
+	displayName := "Go mod tidy/fmt"
+	if !strings.Contains(res.Text, displayName+" failed or found issues:") {
+		t.Errorf("expected failure text in result, got %q", res.Text)
+	}
+}
+
+func TestGoTidy_Errors_UserDeclined(t *testing.T) {
+	t.Parallel()
+	m, _, sm := setupDevManager(t)
+	sm.AllowAll = false
+	m.validator = &mockValidator{
+		CommandValidator: m.validator,
+		isSafeFunc: func(command string) (bool, string) {
+			if strings.Contains(command, "tidy") {
+				return false, "forced prompt for test"
+			}
+			return true, ""
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			m, _, sm := setupDevManager(t)
-			if tt.decline {
-				sm.AllowAll = false
-				m.validator = &mockValidator{
-					CommandValidator: m.validator,
-					isSafeFunc: func(command string) (bool, string) {
-						if strings.Contains(command, "tidy") {
-							return false, "forced prompt for test"
-						}
-						return true, ""
-					},
-				}
-			} else {
-				runner := m.runner.(*mockGoRunner)
-				if tt.cmdFail == "tidy" {
-					runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
-						// Return empty output when testing the error+empty path
-						if tt.name == "error with empty output" {
-							return nil, tt.executeErr
-						}
-						return []byte("failed"), tt.executeErr
-					}
-				} else {
-					runner.formatCodeFunc = func(ctx context.Context, path string) ([]byte, error) {
-						return []byte("failed"), tt.executeErr
-					}
-				}
-			}
+	res, err := m.goTidy(context.Background(), nil, nil)
+	if err == nil {
+		t.Error("expected error for user declined, got nil")
+	}
+	if !strings.Contains(res.Text, "Action denied by user.") {
+		t.Errorf("expected 'Action denied by user.', got %q", res.Text)
+	}
+}
 
-			res, err := m.goTidy(context.Background(), nil, nil)
-			if tt.name == "error with empty output" {
-				if err == nil {
-					t.Error("expected error for empty output, got nil")
-				}
-				return
-			}
-			if tt.decline {
-				if err == nil {
-					t.Error("expected error for user declined, got nil")
-				}
-				if !strings.Contains(res.Text, "Action denied by user.") {
-					t.Errorf("expected 'Action denied by user.', got %q", res.Text)
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("expected nil error for %s, got %v", tt.name, err)
-			}
-			displayName := "Go mod tidy/fmt"
-			if !strings.Contains(res.Text, displayName+" failed or found issues:") {
-				t.Errorf("expected failure text in result, got %q", res.Text)
-			}
-		})
+func TestGoTidy_Errors_ModTidyFailsEmptyOutput(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+	runner := m.runner.(*mockGoRunner)
+	runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
+		return nil, errors.New("tidy error")
+	}
+
+	_, err := m.goTidy(context.Background(), nil, nil)
+	if err == nil {
+		t.Error("expected error for empty output, got nil")
 	}
 }
 
