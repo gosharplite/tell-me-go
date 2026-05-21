@@ -282,9 +282,9 @@ func BenchmarkTokenCounter(b *testing.B) {
 
 	b.Run("TextOnly/NilRegistry", func(b *testing.B) {
 		counter := NewHeuristicTokenCounter(nil)
+		contents := makeTextOnlyContents(50)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			contents := makeTextOnlyContents(50)
 			_ = counter.Count(contents)
 		}
 	})
@@ -292,9 +292,9 @@ func BenchmarkTokenCounter(b *testing.B) {
 	b.Run("TextOnly/WithRegistry", func(b *testing.B) {
 		reg := &stubRegistry{decls: makeToolDecls(20)}
 		counter := NewHeuristicTokenCounter(reg)
+		contents := makeTextOnlyContents(50)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			contents := makeTextOnlyContents(50)
 			_ = counter.Count(contents)
 		}
 	})
@@ -302,9 +302,9 @@ func BenchmarkTokenCounter(b *testing.B) {
 	b.Run("MixedParts", func(b *testing.B) {
 		reg := &stubRegistry{decls: makeToolDecls(20)}
 		counter := NewHeuristicTokenCounter(reg)
+		contents := makeMixedContents(50)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			contents := makeMixedContents(50)
 			_ = counter.Count(contents)
 		}
 	})
