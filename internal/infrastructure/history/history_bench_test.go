@@ -25,13 +25,6 @@ func BenchmarkManagerAddContent(b *testing.B) {
 			fs := persistencetest.NewPlainOSFileSystem()
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
-			m := NewManager(fs, filePath, archivePath)
-
-			if preSeed > 0 {
-				if err := m.SetContents(ctx, generateContents(preSeed)); err != nil {
-					b.Fatalf("SetContents seed failed: %v", err)
-				}
-			}
 
 			entry := &llm.Content{
 				Role: "user",
@@ -40,9 +33,17 @@ func BenchmarkManagerAddContent(b *testing.B) {
 				},
 			}
 
-			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				m := NewManager(fs, filePath, archivePath)
+				if preSeed > 0 {
+					if err := m.SetContents(ctx, generateContents(preSeed)); err != nil {
+						b.Fatalf("SetContents seed failed: %v", err)
+					}
+				}
+				b.StartTimer()
+
 				_ = m.AddContent(ctx, entry)
 			}
 		})

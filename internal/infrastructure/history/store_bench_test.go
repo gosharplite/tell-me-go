@@ -67,12 +67,6 @@ func BenchmarkJSONLStoreAppend(b *testing.B) {
 			fs := persistencetest.NewPlainOSFileSystem()
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
-			store := newJSONLStore(fs, filePath, archivePath)
-
-			if preSeed > 0 {
-				seed := generateContents(preSeed)
-				_ = store.Save(ctx, seed)
-			}
 
 			singleEntry := []*llm.Content{{
 				Role: "user",
@@ -81,9 +75,18 @@ func BenchmarkJSONLStoreAppend(b *testing.B) {
 				},
 			}}
 
-			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				store := newJSONLStore(fs, filePath, archivePath)
+				if preSeed > 0 {
+					seed := generateContents(preSeed)
+					if err := store.Save(ctx, seed); err != nil {
+						b.Fatalf("seed Save failed: %v", err)
+					}
+				}
+				b.StartTimer()
+
 				_ = store.Append(ctx, singleEntry)
 			}
 		})
@@ -101,18 +104,23 @@ func BenchmarkJSONLStoreCompact(b *testing.B) {
 			fs := persistencetest.NewPlainOSFileSystem()
 			filePath := filepath.Join(tmpDir, "history.jsonl")
 			archivePath := filepath.Join(tmpDir, "archive.jsonl")
-			store := newJSONLStore(fs, filePath, archivePath)
-
-			seed := generateContents(size)
-			_ = store.Save(ctx, seed)
-
-			for idx := 0; idx < size; idx++ {
-				_ = store.UpdateMetadata(ctx, idx, map[string]interface{}{"pinned": true})
-			}
-
-			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				store := newJSONLStore(fs, filePath, archivePath)
+
+				seed := generateContents(size)
+				if err := store.Save(ctx, seed); err != nil {
+					b.Fatalf("seed Save failed: %v", err)
+				}
+
+				for idx := 0; idx < size; idx++ {
+					if err := store.UpdateMetadata(ctx, idx, map[string]interface{}{"pinned": true}); err != nil {
+						b.Fatalf("UpdateMetadata[%d] failed: %v", idx, err)
+					}
+				}
+				b.StartTimer()
+
 				_ = store.Compact(ctx)
 			}
 		})
