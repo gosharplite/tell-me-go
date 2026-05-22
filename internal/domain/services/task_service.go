@@ -155,6 +155,27 @@ func (s *taskService) ListTasks(status string, limit, offset int) []ports.Task {
 	return list
 }
 
+// CountTasks returns the total number of tasks matching the given status filter.
+// status="" returns the total count across all statuses.
+func (s *taskService) CountTasks(status string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// For the in-memory map path (current behavior): count from s.tasks.
+	// This is consistent with ListTasks which also reads from s.tasks.
+	// [TECHNICAL DEBT] When ListTasks is updated to query the persistent store
+	// for non-pending statuses (Issue #521), this must also fall through to
+	// the store for accurate counts across sessions.
+	count := 0
+	for _, t := range s.tasks {
+		if status != "" && t.Status != status {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
 // ClearTasks removes all tasks.
 func (s *taskService) ClearTasks(ctx context.Context) error {
 	s.mu.Lock()

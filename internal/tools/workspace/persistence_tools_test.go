@@ -249,6 +249,44 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			expectedResult: "All tasks cleared",
 		},
 		{
+			name: "list with default limit",
+			args: map[string]interface{}{"action": "list"},
+			setup: func(m *mockListStore, ts ports.TaskStore) {
+				ctx := context.Background()
+				for i := 1; i <= 60; i++ {
+					_, _ = ts.AddTask(ctx, fmt.Sprintf("task %d", i))
+				}
+			},
+			expectedResult: "showing 1-50 of 60",
+		},
+		{
+			name: "list with limit and offset",
+			args: map[string]interface{}{"action": "list", "offset": 50.0},
+			setup: func(m *mockListStore, ts ports.TaskStore) {
+				ctx := context.Background()
+				for i := 1; i <= 60; i++ {
+					_, _ = ts.AddTask(ctx, fmt.Sprintf("task %d", i))
+				}
+			},
+			expectedResult: "showing 51-60 of 60",
+		},
+		{
+			name:           "list empty store",
+			args:           map[string]interface{}{"action": "list"},
+			expectedResult: "No tasks found.",
+		},
+		{
+			name: "list with next page hint",
+			args: map[string]interface{}{"action": "list"},
+			setup: func(m *mockListStore, ts ports.TaskStore) {
+				ctx := context.Background()
+				for i := 1; i <= 60; i++ {
+					_, _ = ts.AddTask(ctx, fmt.Sprintf("task %d", i))
+				}
+			},
+			expectedResult: "Use offset=50 for next page.",
+		},
+		{
 			name:           "Error on unknown action",
 			args:           map[string]interface{}{"action": "unknown"},
 			expectedResult: "Error: unknown action: unknown",
@@ -479,6 +517,37 @@ func TestPersistenceTools_Register_ErrorPaths(t *testing.T) {
 			t.Errorf("expected 'injected failure', got %q", err.Error())
 		}
 	})
+}
+
+// TestManageTasks_ListLastPageNoHint verifies that when listing the last
+// partial page, no "Use offset=" pagination hint is emitted.
+func TestManageTasks_ListLastPageNoHint(t *testing.T) {
+	pt, provider := setupPersistenceTools()
+	ctx := context.Background()
+
+	// Add 60 tasks
+	for i := 1; i <= 60; i++ {
+		_, err := provider.tasks.AddTask(ctx, fmt.Sprintf("task %d", i))
+		if err != nil {
+			t.Fatalf("AddTask failed: %v", err)
+		}
+	}
+
+	// List with offset=50 (last partial page: tasks 51-60)
+	res, err := pt.ManageTasks(ctx, map[string]interface{}{
+		"action": "list",
+		"offset": 50.0,
+	}, nil)
+	if err != nil {
+		t.Fatalf("ManageTasks failed: %v", err)
+	}
+
+	if strings.Contains(res.Text, "Use offset=") {
+		t.Errorf("expected no 'Use offset=' hint on last page, got: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "showing 51-60 of 60") {
+		t.Errorf("expected 'showing 51-60 of 60' header, got: %s", res.Text)
+	}
 }
 
 // TestManageTasks_UnmarshalError verifies that passing a non-string "action"
