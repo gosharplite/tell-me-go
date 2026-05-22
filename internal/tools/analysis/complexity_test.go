@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -351,6 +352,11 @@ func (s S) ValueMethod() {}
 // is covered by TestGatherComplexities_ContextCancelledDuringProcessing.
 func TestGatherComplexities_WalkError(t *testing.T) {
 	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
+	}
+
 	tmpDir := t.TempDir()
 	// Create an unreadable directory to trigger Walk error
 	unreadableDir := filepath.Join(tmpDir, "unreadable")

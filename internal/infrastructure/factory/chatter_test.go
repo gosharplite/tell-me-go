@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -199,6 +200,10 @@ func TestNewChatter(t *testing.T) {
 	})
 
 	t.Run("fails when skill repo cannot load", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("os.Chmod(0000) does not prevent file reads on Windows")
+		}
+
 		deps2, cfg2 := setupNilDepTest(t)
 		// setupNilDepTest creates a docs/skills/ dir. Drop an unreadable
 		// .md file into it to cause NewFileSkillRepository to fail.

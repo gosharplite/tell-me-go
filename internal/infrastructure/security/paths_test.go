@@ -497,11 +497,12 @@ func TestNewPathPolicy_ResolvedTempDir(t *testing.T) {
 	// resolvedTempDir must be populated during construction
 	require.NotEmpty(t, p.resolvedTempDir, "resolvedTempDir should be populated by newPathPolicy")
 
-	// Verify a file under the real OS temp dir is considered exempted
-	tempFile := filepath.Join(os.TempDir(), "test-exempted-file.txt")
-	tempFile = p.resolveSymlinks(tempFile)
+	// Use the resolved temp dir from the policy itself as the reference,
+	// rather than os.TempDir() directly, to avoid normalization mismatches
+	// (e.g., short vs long paths, symlink resolution, case differences on Windows).
+	tempFile := filepath.Join(p.resolvedTempDir, "test-exempted-file.txt")
 	exempted := p.isExemptedDirectory(tempFile)
-	assert.True(t, exempted, "path in os.TempDir() should be exempted by isExemptedDirectory")
+	assert.True(t, exempted, "path in resolvedTempDir should be exempted by isExemptedDirectory")
 }
 
 func TestRegisterPath_EmptyPath(t *testing.T) {

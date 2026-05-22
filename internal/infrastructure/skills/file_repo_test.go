@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -170,6 +171,10 @@ func TestFileSkillRepository_GetAll(t *testing.T) {
 }
 
 func TestNewFileSkillRepository_ErrorPaths_UnreadableSkillFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent reads on Windows")
+	}
+
 	tmpDir := t.TempDir()
 	skillsDir := filepath.Join(tmpDir, "docs", "skills")
 	if err := os.MkdirAll(skillsDir, 0755); err != nil {
@@ -214,6 +219,10 @@ func TestNewFileSkillRepository_ErrorPaths_MissingName(t *testing.T) {
 }
 
 func TestNewFileSkillRepository_ErrorPaths_UnreadableSubdirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
+	}
+
 	tmpDir := t.TempDir()
 	skillsDir := filepath.Join(tmpDir, "docs", "skills")
 	if err := os.MkdirAll(skillsDir, 0755); err != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -272,6 +273,9 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 		{
 			name: "listInternalPackages error (unreadable directory)",
 			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
+				if runtime.GOOS == "windows" {
+					t.Skip("os.Chmod(0000) does not make directory unreadable on Windows")
+				}
 				dir := setupWorkspace(t)
 
 				// Create a subdirectory with 0000 permissions so that
@@ -390,6 +394,11 @@ func TestBuildGraph_GetImportsError(t *testing.T) {
 
 func TestListInternalPackages_ErrorPath(t *testing.T) {
 	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not make directory unreadable on Windows")
+	}
+
 	tmpDir := t.TempDir()
 
 	subdir := filepath.Join(tmpDir, "subdir")

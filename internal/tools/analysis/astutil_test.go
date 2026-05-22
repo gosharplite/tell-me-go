@@ -787,8 +787,8 @@ func TestASTCache_AbsPath(t *testing.T) {
 		t.Parallel()
 		cache := newASTCache("/base")
 		abs := cache.absPath("/absolute/path/file.go")
-		if abs != "/absolute/path/file.go" {
-			t.Errorf("expected /absolute/path/file.go, got %s", abs)
+		if filepath.ToSlash(abs) != "/absolute/path/file.go" {
+			t.Errorf("expected /absolute/path/file.go, got %s", filepath.ToSlash(abs))
 		}
 	})
 

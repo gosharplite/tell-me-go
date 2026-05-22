@@ -909,6 +909,10 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 }
 
 func TestOpenOutputFile_MkdirAllError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent MkdirAll on Windows")
+	}
+
 	executor := newprocessExecutor()
 	tmpDir := t.TempDir()
 

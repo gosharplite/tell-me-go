@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -612,6 +613,10 @@ func TestOpenLogFileForAppend_MkdirAllSucceeds(t *testing.T) {
 func TestOpenLogFileForAppend_MkdirAllFails(t *testing.T) {
 	t.Parallel()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file creation on Windows")
+	}
+
 	tmpDir := t.TempDir()
 	// Create a read+execute (no write) parent directory.
 	// This allows path lookup (ENOENT for the first OpenFile) but
@@ -641,6 +646,10 @@ func TestOpenLogFileForAppend_MkdirAllFails(t *testing.T) {
 
 func TestOpenLogFileForAppend_PermissionDenied(t *testing.T) {
 	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file creation on Windows")
+	}
 
 	tmpDir := t.TempDir()
 	// Create the parent directory but make it non-writable.
@@ -830,6 +839,10 @@ func TestResolveUsageForSummary_SuccessWithOverrides(t *testing.T) {
 func TestAppendSummaryToLog_OpenError(t *testing.T) {
 	t.Parallel()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file creation on Windows")
+	}
+
 	tmpDir := t.TempDir()
 
 	// Create a read-only parent directory (no write permission).
@@ -900,6 +913,11 @@ func setupFindLogFilesWithUnreadableSubdir(t *testing.T) string {
 
 func TestFindLogFiles_UnreadableSubdirectory_CallbackError(t *testing.T) {
 	// NOT parallel — chmod on temp dirs can interfere.
+
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
+	}
+
 	tempDir := setupFindLogFilesWithUnreadableSubdir(t)
 
 	ls := &ledgerStore{}
