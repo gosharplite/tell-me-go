@@ -658,7 +658,7 @@ func TestShellTool_PrepareCommand_ValidateStructureAfterWrap(t *testing.T) {
 	// shellPrefix returns the expected shell command prefix after wrapping.
 	shellPrefix := "sh"
 	if runtime.GOOS == "windows" {
-		shellPrefix = "cmd"
+		shellPrefix = "cmd.exe"
 	}
 
 	// HasShellFeatures returns true so Wrap is called, then ValidateStructure fails on wrapped parts
