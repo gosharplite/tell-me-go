@@ -64,9 +64,23 @@ func NewSessionConfig(configPath string, newSession bool, lastN, backN int, rawO
 	}
 }
 
+// SessionManagerOption defines a functional option for configuring a SessionManager.
+type SessionManagerOption func(*sessionManager)
+
+// WithClock sets a custom clock implementation. Defaults to clock.RealClock{}.
+func WithClock(c clock.Clock) SessionManagerOption {
+	return func(sm *sessionManager) { sm.Clock = c }
+}
+
+// WithEntropySource sets a custom entropy source for session ID generation.
+// Defaults to rand.Reader.
+func WithEntropySource(r io.Reader) SessionManagerOption {
+	return func(sm *sessionManager) { sm.EntropySource = r }
+}
+
 // NewSessionManager creates a new sessionManager.
-func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
-	return &sessionManager{
+func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, opts ...SessionManagerOption) SessionManager {
+	s := &sessionManager{
 		HomeDir:         homeDir,
 		Version:         version,
 		SM:              sm,
@@ -75,9 +89,13 @@ func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdo
 		AgentFactory:    factory,
 		HistoryRenderer: historyRenderer,
 		UIRenderer:      uiRenderer,
-		Clock:           clk,
-		EntropySource:   entropy,
+		Clock:           clock.RealClock{},
+		EntropySource:   rand.Reader,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Run executes the session orchestration.
@@ -253,22 +271,11 @@ type RunParams struct {
 	Config          *config.Config
 	Deps            ports.SessionDependencies
 	Capturer        ports.Capturer
-	Clock           clock.Clock
-	EntropySource   io.Reader
 }
 
 // Run is the high-level entry point for running a chat session.
 // It simplifies the public API by encapsulating internal component assembly.
 func Run(ctx context.Context, params RunParams) error {
-	clk := params.Clock
-	if clk == nil {
-		clk = clock.RealClock{}
-	}
-	entropy := params.EntropySource
-	if entropy == nil {
-		entropy = rand.Reader
-	}
-
 	orch := NewSessionManager(
 		params.HomeDir,
 		params.Version,
@@ -278,8 +285,6 @@ func Run(ctx context.Context, params RunParams) error {
 		params.AgentFactory,
 		params.HistoryRenderer,
 		params.UIRenderer,
-		clk,
-		entropy,
 	)
 
 	sCfg := NewSessionConfig(

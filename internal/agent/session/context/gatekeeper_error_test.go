@@ -9,7 +9,6 @@ import (
 	"io"
 	"testing"
 
-	"crypto/rand"
 	"log/slog"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -185,7 +183,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
-	o := session.NewSessionManager("", "", nil, io.Discard, io.Discard, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
+	o := session.NewSessionManager("", "", nil, io.Discard, io.Discard, agentFactory, nil, &mockFailingUIRenderer{})
 
 	cfg := &config.Config{
 		SelectedProvider: "test",

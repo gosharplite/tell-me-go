@@ -49,7 +49,7 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	mTurnsLogger := new(agenttest.MockTurnsLogger)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -90,7 +90,7 @@ func TestSessionManager_Run_Error(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -156,7 +156,7 @@ func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	t.Parallel()
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
 	mChatter := new(agenttest.MockChatter)
 	mCapturer := new(agenttest.MockCapturer)
 
@@ -549,7 +549,7 @@ func TestSessionManager_Rollback(t *testing.T) {
 			mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
 			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 			mUIRenderer := new(agenttest.MockUIRenderer)
-			orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+			orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
 
 			mHistory.SetRollbackErr(tt.rollbackErr)
 			sCfg := &session.SessionConfigInternal{BackN: tt.backN}
@@ -720,7 +720,7 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 
 			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 			mUIRenderer := new(agenttest.MockUIRenderer)
-			orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+			orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
 			sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 				Model: "model",
@@ -792,7 +792,7 @@ func TestSessionManager_Run_ShutdownError(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, &stderrBuf, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, &stderrBuf, factory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -831,7 +831,7 @@ func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -881,7 +881,7 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -931,7 +931,7 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -990,7 +990,7 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -1095,8 +1095,7 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 
 			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 			orch := session.NewSessionManager("home", "1.0.0", nil,
-				io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer,
-				clock.RealClock{}, rand.Reader)
+				io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
 
 			sCfg := &session.SessionConfigInternal{
 				Config: &config.Config{},
