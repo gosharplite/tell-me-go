@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -372,9 +373,8 @@ func TestLedgerStore_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
 }
 
 func TestLedgerStore_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
-	// Skip on Windows — chmod doesn't work the same way
-	if err := os.Chmod(t.TempDir(), 0755); err != nil {
-		t.Skipf("skipping on platform without chmod support: %v", err)
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows: chmod does not prevent file removal")
 	}
 
 	tmpDir, err := os.MkdirTemp("", "ls_acquire_remove_fail_test")
@@ -507,9 +507,8 @@ func TestMetricsManager_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
 }
 
 func TestMetricsManager_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
-	// Skip on Windows — chmod doesn't work the same way
-	if err := os.Chmod(t.TempDir(), 0755); err != nil {
-		t.Skipf("skipping on platform without chmod support: %v", err)
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows: chmod does not prevent file removal")
 	}
 
 	tmpDir, err := os.MkdirTemp("", "mm_acquire_remove_fail_test")
