@@ -6,6 +6,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -61,6 +62,45 @@ func (m *mockTaskRepo) Append(ctx context.Context, task ports.Task) error {
 	return nil
 }
 
+func (m *mockTaskRepo) Query(ctx context.Context, filter ports.ListFilter, limit, offset int) ([]ports.Task, error) {
+	if m.readErr != nil {
+		return nil, m.readErr
+	}
+	var result []ports.Task
+	for _, t := range m.tasks {
+		if filter.Status != "" && t.Status != filter.Status {
+			continue
+		}
+		if filter.NotStatus != "" && t.Status == filter.NotStatus {
+			continue
+		}
+		if !filter.Since.IsZero() && t.CreatedAt.Before(filter.Since) {
+			continue
+		}
+		if !filter.Before.IsZero() && t.CreatedAt.After(filter.Before) {
+			continue
+		}
+		result = append(result, t)
+	}
+	if offset > 0 {
+		if offset >= len(result) {
+			return []ports.Task{}, nil
+		}
+		result = result[offset:]
+	}
+	if limit > 0 && limit < len(result) {
+		result = result[:limit]
+	}
+	return result, nil
+}
+
+func (m *mockTaskRepo) Count(ctx context.Context) (int, error) {
+	if m.readErr != nil {
+		return 0, m.readErr
+	}
+	return len(m.tasks), nil
+}
+
 func setupTaskService(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
 	t.Helper()
 	repo := &mockTaskRepo{}
@@ -95,7 +135,7 @@ func TestTaskService_Update(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tasks := s.ListTasks("")
+	tasks := s.ListTasks("", 0, 0)
 	if len(tasks) != 1 || tasks[0].Content != "Updated task" || tasks[0].Status != "completed" {
 		t.Errorf("unexpected task: %+v", tasks[0])
 	}
@@ -110,7 +150,7 @@ func TestTaskService_Delete(t *testing.T) {
 	if err := s.DeleteTask(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.ListTasks("")) != 0 {
+	if len(s.ListTasks("", 0, 0)) != 0 {
 		t.Error("task not deleted")
 	}
 }
@@ -126,7 +166,7 @@ func TestTaskService_Concurrency(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func(val int) {
 			_, _ = s.AddTask(ctx, "Task")
-			_ = s.ListTasks("")
+			_ = s.ListTasks("", 0, 0)
 			done <- true
 		}(i)
 	}
@@ -135,8 +175,8 @@ func TestTaskService_Concurrency(t *testing.T) {
 		<-done
 	}
 
-	if len(s.ListTasks("")) != workers {
-		t.Errorf("expected %d tasks, got %d", workers, len(s.ListTasks("")))
+	if len(s.ListTasks("", 0, 0)) != workers {
+		t.Errorf("expected %d tasks, got %d", workers, len(s.ListTasks("", 0, 0)))
 	}
 }
 
@@ -148,8 +188,8 @@ func TestTaskService_Initialize(t *testing.T) {
 		t.Parallel()
 		repo := &mockTaskRepo{
 			tasks: []ports.Task{
-				{ID: 1, Content: "Task 1"},
-				{ID: 10, Content: "Task 10"},
+				{ID: 1, Content: "Task 1", Status: "pending"},
+				{ID: 10, Content: "Task 10", Status: "pending"},
 			},
 		}
 		s := NewTaskService(repo)
@@ -159,7 +199,7 @@ func TestTaskService_Initialize(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		tasks := s.ListTasks("")
+		tasks := s.ListTasks("", 0, 0)
 		if len(tasks) != 2 {
 			t.Errorf("expected 2 tasks, got %d", len(tasks))
 		}
@@ -203,7 +243,7 @@ func TestTaskService_ClearTasks(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(s.ListTasks("")) != 0 {
+		if len(s.ListTasks("", 0, 0)) != 0 {
 			t.Error("tasks not cleared from service")
 		}
 		if len(repo.tasks) != 0 {
@@ -301,12 +341,12 @@ func TestTaskService_ListTasks_Filter(t *testing.T) {
 	t3, _ := s.AddTask(ctx, "Completed")
 	_, _ = s.UpdateTask(ctx, t3.ID, "", "completed")
 
-	pending := s.ListTasks("pending")
+	pending := s.ListTasks("pending", 0, 0)
 	if len(pending) != 2 {
 		t.Errorf("expected 2 pending tasks, got %d", len(pending))
 	}
 
-	completed := s.ListTasks("completed")
+	completed := s.ListTasks("completed", 0, 0)
 	if len(completed) != 1 {
 		t.Errorf("expected 1 completed task, got %d", len(completed))
 	}
@@ -344,11 +384,91 @@ func TestTaskService_DeleteTask_Multiple(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	tasks := s.ListTasks("")
+	tasks := s.ListTasks("", 0, 0)
 	if len(tasks) != 2 {
 		t.Errorf("expected 2 tasks, got %d", len(tasks))
 	}
 	if len(repo.tasks) != 2 {
 		t.Error("task not deleted from repo")
+	}
+}
+
+func TestTaskService_Initialize_OnlyActive(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	repo := &mockTaskRepo{
+		tasks: []ports.Task{
+			{ID: 1, Content: "Pending 1", Status: "pending"},
+			{ID: 2, Content: "In Progress", Status: "in_progress"},
+			{ID: 3, Content: "Completed 1", Status: "completed"},
+			{ID: 4, Content: "Completed 2", Status: "completed"},
+		},
+	}
+	s := NewTaskService(repo)
+
+	err := s.Initialize(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only pending and in_progress should be loaded
+	tasks := s.ListTasks("", 0, 0)
+	if len(tasks) != 2 {
+		t.Errorf("expected 2 active tasks, got %d: %+v", len(tasks), tasks)
+	}
+	for _, task := range tasks {
+		if task.Status == "completed" {
+			t.Errorf("completed task %d should not have been loaded", int(task.ID))
+		}
+	}
+
+	// nextID should be max of active IDs + 1 = 3 (not 5 from completed tasks)
+	if s.nextID != 3 {
+		t.Errorf("expected nextID 3, got %v", s.nextID)
+	}
+}
+
+func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := setupTaskService(t)
+
+	// Add 5 tasks
+	for i := 0; i < 5; i++ {
+		_, err := s.AddTask(ctx, fmt.Sprintf("Task %d", i+1))
+		if err != nil {
+			t.Fatalf("failed to add task: %v", err)
+		}
+	}
+
+	// limit=3, offset=0 → first 3
+	first3 := s.ListTasks("", 3, 0)
+	if len(first3) != 3 {
+		t.Errorf("expected 3 tasks, got %d", len(first3))
+	}
+	if first3[0].ID != 1 || first3[2].ID != 3 {
+		t.Errorf("expected IDs 1,2,3, got %v", first3)
+	}
+
+	// limit=2, offset=3 → tasks 4,5
+	middle := s.ListTasks("", 2, 3)
+	if len(middle) != 2 {
+		t.Errorf("expected 2 tasks, got %d", len(middle))
+	}
+	if middle[0].ID != 4 || middle[1].ID != 5 {
+		t.Errorf("expected IDs 4,5, got %v", middle)
+	}
+
+	// offset beyond total → empty
+	beyond := s.ListTasks("", 10, 100)
+	if len(beyond) != 0 {
+		t.Errorf("expected 0 tasks, got %d", len(beyond))
+	}
+
+	// limit=0, offset=0 → all
+	all := s.ListTasks("", 0, 0)
+	if len(all) != 5 {
+		t.Errorf("expected 5 tasks, got %d", len(all))
 	}
 }

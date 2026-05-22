@@ -184,6 +184,12 @@ func (s *failingTaskStore) Update(ctx context.Context, id float64, item ports.Ta
 func (s *failingTaskStore) Delete(ctx context.Context, id float64) error                  { return nil }
 func (s *failingTaskStore) DeleteAll(ctx context.Context) error                           { return nil }
 func (s *failingTaskStore) Append(ctx context.Context, item ports.Task) error             { return nil }
+func (s *failingTaskStore) Query(ctx context.Context, filter ports.ListFilter, limit, offset int) ([]ports.Task, error) {
+	return nil, errors.New("simulated query failure")
+}
+func (s *failingTaskStore) Count(ctx context.Context) (int, error) {
+	return 0, errors.New("simulated count failure")
+}
 
 func TestInitServices_InitializeFailure(t *testing.T) {
 	t.Parallel()
@@ -193,7 +199,7 @@ func TestInitServices_InitializeFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from initServices when Initialize fails, got nil")
 	}
-	if !strings.Contains(err.Error(), "simulated read failure") {
-		t.Errorf("expected error to contain 'simulated read failure', got: %v", err)
+	if !strings.Contains(err.Error(), "simulated query failure") {
+		t.Errorf("expected error to contain 'simulated query failure', got: %v", err)
 	}
 }
