@@ -18,6 +18,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// panicHook is a heartbeatHooks mock that panics on every tick.
+type panicHook struct{}
+
+func (panicHook) onTick() { panic("injected test panic") }
+
+// signalHook is a heartbeatHooks mock that signals a channel on every tick.
+// It is idempotent — only the first tick is signaled.
+type signalHook struct{ ch chan struct{} }
+
+func (s signalHook) onTick() {
+	select {
+	case s.ch <- struct{}{}:
+	default:
+	}
+}
+
 // mockLogger is a test spy that captures Error calls for assertion.
 type mockLogger struct {
 	ports.NoOpLogger // safe default for unused log methods
@@ -408,10 +424,8 @@ func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
 	logger := &mockLogger{}
 	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, logger)
 
-	// 2. Install the test-only panic hook on the struct field.
-	it.testEmitHeartbeatsPanic = func() {
-		panic("injected test panic")
-	}
+	// 2. Install the test-only panic hook.
+	it.hooks = panicHook{}
 
 	// 3. Start emitHeartbeats in a background goroutine.
 	done := make(chan struct{})
@@ -480,14 +494,9 @@ func testEmitHeartbeatsPath(t *testing.T, hb chan struct{}, wantRecv bool) {
 
 	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
 
-	// Install an idempotent tick hook that signals once.
+	// Install a tick hook that signals once.
 	ticked := make(chan struct{}, 1)
-	it.testEmitHeartbeatsTickHook = func() {
-		select {
-		case ticked <- struct{}{}:
-		default:
-		}
-	}
+	it.hooks = signalHook{ch: ticked}
 
 	done := make(chan struct{})
 
