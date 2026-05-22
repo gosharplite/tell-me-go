@@ -35,19 +35,20 @@ func normalizeStatusFilter(input string) string {
 
 // taskListModel implements tea.Model for the task list browser.
 type taskListModel struct {
-	ctx        context.Context
-	provider   ports.TaskStore
-	viewport   viewport.Model
-	searchBar  textinput.Model
-	tasks      []ports.Task
-	selected   int
-	totalCount int
-	pageOffset int
-	pageSize   int
-	ready      bool
-	width      int
-	height     int
-	err        error
+	ctx          context.Context
+	provider     ports.TaskStore
+	viewport     viewport.Model
+	searchBar    textinput.Model
+	tasks        []ports.Task
+	selected     int
+	totalCount   int
+	pageOffset   int
+	pageSize     int
+	statusFilter string
+	ready        bool
+	width        int
+	height       int
+	err          error
 }
 
 // NewTaskListModel creates a new task list model.
@@ -57,12 +58,13 @@ func NewTaskListModel(ctx context.Context, provider ports.TaskStore) *taskListMo
 	ti.Prompt = "📋 "
 
 	return &taskListModel{
-		ctx:        ctx,
-		provider:   provider,
-		searchBar:  ti,
-		selected:   -1,
-		pageOffset: 0,
-		pageSize:   50,
+		ctx:          ctx,
+		provider:     provider,
+		searchBar:    ti,
+		selected:     -1,
+		pageOffset:   0,
+		pageSize:     50,
+		statusFilter: "",
 	}
 }
 
@@ -70,7 +72,7 @@ func NewTaskListModel(ctx context.Context, provider ports.TaskStore) *taskListMo
 func (m *taskListModel) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
-		fetchTasksCmd(m.provider, "", 0, m.pageSize),
+		fetchTasksCmd(m.provider, "", m.pageOffset, m.pageSize),
 	)
 }
 
@@ -115,6 +117,14 @@ func (m *taskListModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchBar.Focus()
 		m.updateViewportHeight()
 		return m, nil
+	case "n":
+		m.nextPage()
+		m.selected = 0
+		return m, fetchTasksCmd(m.provider, m.statusFilter, m.pageOffset, m.pageSize)
+	case "p":
+		m.prevPage()
+		m.selected = 0
+		return m, fetchTasksCmd(m.provider, m.statusFilter, m.pageOffset, m.pageSize)
 	}
 
 	return m.handleViewportUpdate(msg)
@@ -127,15 +137,17 @@ func (m *taskListModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchBar.Blur()
 		m.pageOffset = 0
 		m.selected = -1
+		m.statusFilter = normalizeStatusFilter(m.searchBar.Value())
 		m.updateViewportHeight()
-		return m, fetchTasksCmd(m.provider, normalizeStatusFilter(m.searchBar.Value()), 0, m.pageSize)
+		return m, fetchTasksCmd(m.provider, m.statusFilter, m.pageOffset, m.pageSize)
 	case "esc":
 		m.searchBar.SetValue("")
 		m.searchBar.Blur()
 		m.pageOffset = 0
 		m.selected = -1
+		m.statusFilter = ""
 		m.updateViewportHeight()
-		return m, fetchTasksCmd(m.provider, "", 0, m.pageSize)
+		return m, fetchTasksCmd(m.provider, "", m.pageOffset, m.pageSize)
 	}
 	m.searchBar, cmd = m.searchBar.Update(msg)
 	return m, cmd
@@ -152,6 +164,20 @@ func (m *taskListModel) moveSelection(delta int) {
 		m.selected = len(m.tasks) - 1
 	}
 	m.updateViewportContent()
+}
+
+func (m *taskListModel) nextPage() {
+	next := m.pageOffset + m.pageSize
+	if next < m.totalCount {
+		m.pageOffset = next
+	}
+}
+
+func (m *taskListModel) prevPage() {
+	m.pageOffset -= m.pageSize
+	if m.pageOffset < 0 {
+		m.pageOffset = 0
+	}
 }
 
 func (m *taskListModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -278,6 +304,6 @@ func (m *taskListModel) renderFooter() string {
 	}
 
 	return footerStyle.Render(
-		fmt.Sprintf("j/k: select • /: filter • q: back • showing %d-%d of %d", start, end, m.totalCount),
+		fmt.Sprintf("j/k: select • n/p: page • /: filter • q: back • showing %d-%d of %d", start, end, m.totalCount),
 	)
 }
