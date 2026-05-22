@@ -229,6 +229,7 @@ func TestSQLiteHealthChecker_DBFileStatFails(t *testing.T) {
 	}
 	// Force file creation on disk by creating a table.
 	if _, err := db.Exec("CREATE TABLE test (id INTEGER);"); err != nil {
+		_ = db.Close()
 		t.Fatalf("failed to create table: %v", err)
 	}
 	_ = db.Close()
