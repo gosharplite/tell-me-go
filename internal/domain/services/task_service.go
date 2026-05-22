@@ -36,7 +36,10 @@ func NewTaskService(store ports.ListStore[ports.Task]) *taskService {
 
 // Initialize loads tasks from the repository.
 func (s *taskService) Initialize(ctx context.Context) error {
-	tasks, err := s.store.ReadAll(ctx)
+	// Load only active tasks (not completed) into memory.
+	// Completed tasks remain in the persistent store and can be
+	// queried on demand via ListTasks with status filter.
+	tasks, err := s.store.Query(ctx, ports.ListFilter{NotStatus: "completed"}, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -119,8 +122,8 @@ func (s *taskService) DeleteTask(ctx context.Context, id float64) error {
 	return nil
 }
 
-// ListTasks returns all tasks, optionally filtered by status.
-func (s *taskService) ListTasks(status string) []ports.Task {
+// ListTasks returns all tasks, optionally filtered by status, bounded by limit and offset.
+func (s *taskService) ListTasks(status string, limit, offset int) []ports.Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -135,6 +138,19 @@ func (s *taskService) ListTasks(status string) []ports.Task {
 	sort.Slice(list, func(i, j int) bool {
 		return list[i].ID < list[j].ID
 	})
+
+	// Apply offset
+	if offset > 0 {
+		if offset >= len(list) {
+			return []ports.Task{}
+		}
+		list = list[offset:]
+	}
+
+	// Apply limit
+	if limit > 0 && limit < len(list) {
+		list = list[:limit]
+	}
 
 	return list
 }

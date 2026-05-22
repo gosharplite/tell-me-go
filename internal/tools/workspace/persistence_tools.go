@@ -151,7 +151,7 @@ func (t *persistenceTools) deleteTask(ctx context.Context, id float64) (tools.To
 }
 
 func (t *persistenceTools) listTasks(status string) (tools.ToolResult, error) {
-	tasks := t.tasks.ListTasks(status)
+	tasks := t.tasks.ListTasks(status, 0, 0)
 	if len(tasks) == 0 {
 		return tools.ToolResult{Text: "No tasks found."}, nil
 	}
