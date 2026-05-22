@@ -104,7 +104,7 @@ func TestNormalizeStatusFilter(t *testing.T) {
 // ── taskListModel tests ──
 
 func TestNewTaskListModel_PlaceholderAndPrompt(t *testing.T) {
-	m := NewTaskListModel(context.Background(), &mockTaskStore{})
+	m := newTaskListModel(context.Background(), &mockTaskStore{})
 
 	if m.searchBar.Placeholder != "Status filter (pending/completed)..." {
 		t.Errorf("placeholder = %q; want %q",
@@ -129,7 +129,7 @@ func TestTaskListModel_SearchEnter_NormalizesStatus(t *testing.T) {
 		},
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.searchBar.Focus()
 	m.searchBar.SetValue("task 1") // arbitrary text
 
@@ -171,7 +171,7 @@ func TestTaskListModel_SearchEnter_ValidStatus_Pending(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.searchBar.Focus()
 	m.searchBar.SetValue("pending")
 
@@ -199,7 +199,7 @@ func TestTaskListModel_SearchEnter_ValidStatus_Completed(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.searchBar.Focus()
 	m.searchBar.SetValue("  COMPLETED  ")
 
@@ -227,7 +227,7 @@ func TestTaskListModel_SearchEsc_ResetsFilter(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.searchBar.Focus()
 	m.searchBar.SetValue("pending")
 
@@ -256,7 +256,7 @@ func TestTaskListModel_SearchEnter_BlurAndReset(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.searchBar.Focus()
 	m.selected = 3
 	m.pageOffset = 10
@@ -281,7 +281,7 @@ func TestTaskListModel_SearchBar_FocusAndUnfocus(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 
 	// Focus search bar with "/"
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
@@ -303,7 +303,7 @@ func TestTaskListModel_FooterText(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	footer := m.renderFooter()
 
 	// Footer should mention filter
@@ -365,7 +365,7 @@ func TestTaskListModel_View_WithSearchFocused(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	m.searchBar.Focus()
 	m.searchBar.SetValue("pending")
@@ -428,7 +428,7 @@ func TestTaskListModel_Init(t *testing.T) {
 		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
 		CountTasksFunc: func(status string) int { return 0 },
 	}
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("expected Init to return a command")
@@ -487,7 +487,7 @@ func TestTaskListModel_QuitKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewTaskListModel(context.Background(), store)
+			m := newTaskListModel(context.Background(), store)
 			_, cmd := m.Update(tt.key)
 			if cmd == nil {
 				t.Fatal("expected quit command")
@@ -548,7 +548,7 @@ func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
 		},
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	// Simulate initial load completing
 	m.tasks = make([]ports.Task, 50)
@@ -597,7 +597,7 @@ func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
 		},
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	m.tasks = make([]ports.Task, 50)
 	m.totalCount = 100
@@ -640,7 +640,7 @@ func TestTaskListModel_PageNav_PrevPage_AtZero_Clamped(t *testing.T) {
 		},
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	m.tasks = []ports.Task{}
 	m.totalCount = 10
@@ -674,7 +674,7 @@ func TestTaskListModel_PageNav_NextPage_AtLastPage_Clamped(t *testing.T) {
 		},
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	m.tasks = make([]ports.Task, 50)
 	m.totalCount = 100
@@ -701,7 +701,7 @@ func TestTaskListModel_Footer_ShowsCorrectRange(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	m.tasks = make([]ports.Task, 50)
 	m.totalCount = 100
@@ -724,7 +724,7 @@ func TestTaskListModel_Footer_AtPageZero(t *testing.T) {
 		CountTasksFunc: func(status string) int { return 0 },
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	m.tasks = make([]ports.Task, 10)
 	m.totalCount = 10
@@ -753,7 +753,7 @@ func TestTaskListModel_PageNav_PreservesStatusFilter(t *testing.T) {
 		},
 	}
 
-	m := NewTaskListModel(context.Background(), store)
+	m := newTaskListModel(context.Background(), store)
 	m.ready = true
 	m.statusFilter = "pending"
 	m.tasks = []ports.Task{{ID: 1, Content: "test", Status: "pending"}}

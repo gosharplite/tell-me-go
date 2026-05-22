@@ -52,7 +52,7 @@ type taskListModel struct {
 }
 
 // NewTaskListModel creates a new task list model.
-func NewTaskListModel(ctx context.Context, provider ports.TaskStore) *taskListModel {
+func newTaskListModel(ctx context.Context, provider ports.TaskStore) *taskListModel {
 	ti := textinput.New()
 	ti.Placeholder = "Status filter (pending/completed)..."
 	ti.Prompt = "📋 "
