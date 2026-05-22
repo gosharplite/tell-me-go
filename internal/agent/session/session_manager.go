@@ -28,7 +28,6 @@ import (
 type sessionManager struct {
 	HomeDir         string
 	Version         string
-	Loader          config.ConfigLoader
 	SM              domain_security.Manager
 	Stdout          io.Writer
 	Stderr          io.Writer
@@ -134,11 +133,10 @@ func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 }
 
 // NewSessionManager creates a new sessionManager.
-func NewSessionManager(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
+func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
 	return &sessionManager{
 		HomeDir:         homeDir,
 		Version:         version,
-		Loader:          loader,
 		SM:              sm,
 		Stdout:          stdout,
 		Stderr:          stderr,
@@ -308,7 +306,6 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 type RunParams struct {
 	HomeDir         string
 	Version         string
-	Loader          config.ConfigLoader
 	SM              domain_security.Manager
 	Stdout          io.Writer
 	Stderr          io.Writer
@@ -343,7 +340,6 @@ func Run(ctx context.Context, params RunParams) error {
 	orch := NewSessionManager(
 		params.HomeDir,
 		params.Version,
-		params.Loader,
 		params.SM,
 		params.Stdout,
 		params.Stderr,
