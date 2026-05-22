@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -174,6 +175,10 @@ func TestSQLiteHealthChecker_IntegrityCheckExecFailure(t *testing.T) {
 func TestSQLiteHealthChecker_DirNotWritable(t *testing.T) {
 	t.Parallel()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file creation on Windows")
+	}
+
 	if os.Geteuid() == 0 {
 		t.Skip("skipping permission test: running as root")
 	}
@@ -210,27 +215,34 @@ func TestSQLiteHealthChecker_DBFileStatFails(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	// Create a symlink to a path in a non-existent directory.
-	// The parent directory (tmpDir) exists and is writable, so the filesystem
-	// checks pass, but os.Stat follows the symlink and fails because the
-	// target directory does not exist → size_bytes = 0.
-	dbPath := filepath.Join(tmpDir, "dangling")
-	if err := os.Symlink("/nonexistent_dir/test.db", dbPath); err != nil {
-		t.Fatal(err)
-	}
+	// Open the database so the file is created on disk, then close and
+	// delete it. The directory still exists and is writable, but os.Stat
+	// on the DB file fails (file gone) → size_bytes = 0. PingContext
+	// then fails because the connection is closed, resulting in
+	// StatusUnhealthy — same behavior as the dangling symlink approach,
+	// without requiring symlink privileges.
+	dbPath := filepath.Join(tmpDir, "test.db")
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer func() { _ = db.Close() }()
+	// Force file creation on disk by creating a table.
+	if _, err := db.Exec("CREATE TABLE test (id INTEGER);"); err != nil {
+		_ = db.Close()
+		t.Fatalf("failed to create table: %v", err)
+	}
+	_ = db.Close()
+
+	if err := os.Remove(dbPath); err != nil {
+		t.Fatalf("failed to remove database file: %v", err)
+	}
 
 	checker := newSQLiteHealthChecker(db, dbPath)
 	report, _ := checker.Check(context.Background())
 
-	// os.Stat follows the dangling symlink and fails → size_bytes = 0.
-	// Then PingContext fails because SQLite cannot create the DB file
-	// in the non-existent directory.
+	// os.Stat fails because the file was removed → size_bytes = 0.
+	// PingContext fails because the connection is closed.
 	if report.Status != ports.StatusUnhealthy {
 		t.Errorf("expected StatusUnhealthy, got %s: %s", report.Status, report.Message)
 	}
@@ -355,6 +367,10 @@ func TestSQLiteHealthChecker_Check(t *testing.T) {
 	// ---------------
 	t.Run("dir_not_writable", func(t *testing.T) {
 		t.Parallel()
+
+		if runtime.GOOS == "windows" {
+			t.Skip("os.Chmod does not prevent file creation on Windows")
+		}
 
 		if os.Geteuid() == 0 {
 			t.Skip("skipping permission test: running as root")

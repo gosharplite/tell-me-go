@@ -200,13 +200,14 @@ func (p *pathPolicy) isExemptedDirectory(absPath string) bool {
 	// Explicitly exempt the evaluated OS temporary directory
 	if p.resolvedTempDir != "" {
 		temp := filepath.ToSlash(p.resolvedTempDir)
+		absNormalized := filepath.ToSlash(absPath)
 		if !isCaseSensitive() {
 			temp = strings.ToLower(temp)
-			abs := strings.ToLower(absPath)
+			abs := strings.ToLower(absNormalized)
 			if strings.HasPrefix(abs, temp) {
 				return true
 			}
-		} else if strings.HasPrefix(absPath, temp) {
+		} else if strings.HasPrefix(absNormalized, temp) {
 			return true
 		}
 	}

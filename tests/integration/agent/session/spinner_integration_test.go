@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	sessiontest "github.com/gosharplite/tell-me-go/internal/agent/session/sessiontest"
 	sessionui "github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -101,7 +102,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		return mChatter, nil
 	}
 
-	orch := session.NewSessionManager("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
+	orch := session.NewSessionManager("home", "1.0.0", nil, stdout, stderr, factory, nil, uiRenderer, session.WithClock(clock), session.WithEntropySource(strings.NewReader("deterministic_entropy")))
 
 	// 2. Mock Agent Behavior
 	// When Chat is called, it will emit events via the event bus.
@@ -158,7 +159,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		Mode:             "mode",
 		SelectedProvider: "provider",
 	})
-	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
+	deps := sessiontest.New(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	assert.NoError(t, err)

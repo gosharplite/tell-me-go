@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -22,6 +23,10 @@ import (
 // permission checks.
 func makeUnwritableDir(t *testing.T) (dir string, fileInside string) {
 	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file creation on Windows")
+	}
 
 	if os.Geteuid() == 0 {
 		t.Skip("skipping permission test: running as root")

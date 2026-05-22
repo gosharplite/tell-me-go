@@ -22,9 +22,26 @@ type KVStore interface {
 	GetAll(ctx context.Context) (map[string]string, error)
 }
 
+// ListFilter provides optional filtering for ListStore.Query.
+// All fields are optional — zero values mean "no filter."
+type ListFilter struct {
+	Status    string    // empty = all statuses; non-empty = exact match
+	NotStatus string    // empty = no exclusion; non-empty = exclude this status
+	Since     time.Time // zero = no lower bound on CreatedAt
+	Before    time.Time // zero = no upper bound on CreatedAt
+}
+
 // ListStore defines a generic list storage interface.
 type ListStore[T any] interface {
 	ReadAll(ctx context.Context) ([]T, error)
+
+	// Query returns items matching the filter, bounded by limit and offset.
+	// limit=0 means no limit; offset=0 means start from beginning.
+	Query(ctx context.Context, filter ListFilter, limit, offset int) ([]T, error)
+
+	// Count returns the total number of items in the store.
+	Count(ctx context.Context) (int, error)
+
 	Append(ctx context.Context, item T) error
 	Update(ctx context.Context, id float64, item T) error
 	Delete(ctx context.Context, id float64) error
@@ -50,7 +67,13 @@ type SessionInfo struct {
 
 // TaskReader defines the interface for reading tasks.
 type TaskReader interface {
-	ListTasks(status string) []Task
+	// ListTasks returns tasks filtered by status, bounded by limit and offset.
+	// status="" returns all statuses. limit=0 means no limit. offset=0 means start from beginning.
+	ListTasks(status string, limit, offset int) []Task
+
+	// CountTasks returns the total number of tasks matching the given status filter.
+	// status="" returns the total count across all statuses.
+	CountTasks(status string) int
 }
 
 // TaskWriter defines the interface for modifying tasks.

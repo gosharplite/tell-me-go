@@ -655,14 +655,20 @@ func TestShellTool_PrepareCommand_ValidateStructureAfterWrap(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 
+	// shellPrefix returns the expected shell command prefix after wrapping.
+	shellPrefix := "sh"
+	if runtime.GOOS == "windows" {
+		shellPrefix = "cmd.exe"
+	}
+
 	// HasShellFeatures returns true so Wrap is called, then ValidateStructure fails on wrapped parts
 	validator := &toolstest.MockCommandValidator{
 		HasShellFeaturesFunc: func(parts []string) bool {
 			return true
 		},
 		ValidateStructureFunc: func(parts []string) error {
-			// Fail specifically for shell-wrapped parts ("sh", "-c", ...)
-			if len(parts) > 0 && parts[0] == "sh" {
+			// Fail specifically for shell-wrapped parts (shellPrefix, "-c", ...)
+			if len(parts) > 0 && parts[0] == shellPrefix {
 				return fmt.Errorf("shell wrapping validation failed")
 			}
 			return nil

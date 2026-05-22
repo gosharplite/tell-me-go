@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1223,10 +1224,21 @@ func TestRunLinter_AuthorizationError(t *testing.T) {
 	}
 }
 
+// echoCommand returns the platform-appropriate command name and arguments
+// to produce text output. On Windows, echo is a cmd.exe built-in, not a
+// standalone binary.
+func echoCommand(text string) (string, []string) {
+	if runtime.GOOS == "windows" {
+		return "cmd", []string{"/c", "echo", text}
+	}
+	return "echo", []string{text}
+}
+
 func TestRealExecutor_Execute(t *testing.T) {
 	t.Parallel()
 	e := &realExecutor{}
-	out, err := e.Execute(context.Background(), "echo", "hello")
+	name, args := echoCommand("hello")
+	out, err := e.Execute(context.Background(), name, args...)
 	require.NoError(t, err)
 	assert.Contains(t, string(out), "hello")
 }

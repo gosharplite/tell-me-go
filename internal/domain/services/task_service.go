@@ -36,7 +36,10 @@ func NewTaskService(store ports.ListStore[ports.Task]) *taskService {
 
 // Initialize loads tasks from the repository.
 func (s *taskService) Initialize(ctx context.Context) error {
-	tasks, err := s.store.ReadAll(ctx)
+	// Load only active tasks (not completed) into memory.
+	// Completed tasks remain in the persistent store and can be
+	// queried on demand via ListTasks with status filter.
+	tasks, err := s.store.Query(ctx, ports.ListFilter{NotStatus: "completed"}, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -119,8 +122,8 @@ func (s *taskService) DeleteTask(ctx context.Context, id float64) error {
 	return nil
 }
 
-// ListTasks returns all tasks, optionally filtered by status.
-func (s *taskService) ListTasks(status string) []ports.Task {
+// ListTasks returns all tasks, optionally filtered by status, bounded by limit and offset.
+func (s *taskService) ListTasks(status string, limit, offset int) []ports.Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -136,7 +139,41 @@ func (s *taskService) ListTasks(status string) []ports.Task {
 		return list[i].ID < list[j].ID
 	})
 
+	// Apply offset
+	if offset > 0 {
+		if offset >= len(list) {
+			return []ports.Task{}
+		}
+		list = list[offset:]
+	}
+
+	// Apply limit
+	if limit > 0 && limit < len(list) {
+		list = list[:limit]
+	}
+
 	return list
+}
+
+// CountTasks returns the total number of tasks matching the given status filter.
+// status="" returns the total count across all statuses.
+func (s *taskService) CountTasks(status string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// For the in-memory map path (current behavior): count from s.tasks.
+	// This is consistent with ListTasks which also reads from s.tasks.
+	// [TECHNICAL DEBT] When ListTasks is updated to query the persistent store
+	// for non-pending statuses (Issue #521), this must also fall through to
+	// the store for accurate counts across sessions.
+	count := 0
+	for _, t := range s.tasks {
+		if status != "" && t.Status != status {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 // ClearTasks removes all tasks.

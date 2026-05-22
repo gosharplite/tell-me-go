@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -22,10 +23,79 @@ func newSQLiteTaskStore(db *sql.DB) *sqliteTaskStore {
 	return &sqliteTaskStore{db: db}
 }
 
-func (s *sqliteTaskStore) ReadAll(ctx context.Context) (res []ports.Task, err error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, content, status, created_at FROM tasks ORDER BY id")
+func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]ports.Task, error) {
+	// Load all active tasks (not completed) — unbounded count is acceptable
+	// because active tasks are bounded by human workflow.
+	active, err := s.Query(ctx, ports.ListFilter{NotStatus: "completed"}, 0, 0)
 	if err != nil {
-		return nil, fmt.Errorf("querying all tasks: %w", err)
+		return nil, fmt.Errorf("querying active tasks: %w", err)
+	}
+
+	// Load most recent 500 completed tasks (ORDER BY id DESC, LIMIT 500).
+	completed, err := s.queryOrdered(ctx, ports.ListFilter{Status: "completed"}, 500, 0, "DESC")
+	if err != nil {
+		return nil, fmt.Errorf("querying completed tasks: %w", err)
+	}
+
+	// Merge: active first (already sorted ASC by id), then completed reversed to ASC.
+	all := make([]ports.Task, 0, len(active)+len(completed))
+	all = append(all, active...)
+
+	// completed comes back DESC (most recent first). Reverse to ASC before appending.
+	for i := len(completed) - 1; i >= 0; i-- {
+		all = append(all, completed[i])
+	}
+
+	return all, nil
+}
+
+// Query returns tasks matching the filter. Results are ordered by id ASC.
+// Use queryOrdered for DESC ordering.
+func (s *sqliteTaskStore) Query(ctx context.Context, filter ports.ListFilter, limit, offset int) ([]ports.Task, error) {
+	return s.queryOrdered(ctx, filter, limit, offset, "ASC")
+}
+
+// queryOrdered is like Query but accepts an explicit ORDER direction ("ASC" or "DESC").
+func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFilter, limit, offset int, order string) (result []ports.Task, err error) {
+	// Build WHERE clauses dynamically based on non-zero filter fields
+	query := "SELECT id, content, status, created_at FROM tasks"
+	var conditions []string
+	var args []any
+
+	if filter.Status != "" {
+		conditions = append(conditions, "status = ?")
+		args = append(args, filter.Status)
+	}
+	if filter.NotStatus != "" {
+		conditions = append(conditions, "status != ?")
+		args = append(args, filter.NotStatus)
+	}
+	if !filter.Since.IsZero() {
+		conditions = append(conditions, "created_at >= ?")
+		args = append(args, filter.Since.Format(time.RFC3339Nano))
+	}
+	if !filter.Before.IsZero() {
+		conditions = append(conditions, "created_at <= ?")
+		args = append(args, filter.Before.Format(time.RFC3339Nano))
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY id " + order
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+	if offset > 0 {
+		query += " OFFSET ?"
+		args = append(args, offset)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying tasks ordered %s: %w", order, err)
 	}
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
@@ -34,24 +104,31 @@ func (s *sqliteTaskStore) ReadAll(ctx context.Context) (res []ports.Task, err er
 			}
 		}
 	}()
-
 	for rows.Next() {
 		var t ports.Task
 		var createdAtStr string
-		if scanErr := rows.Scan(&t.ID, &t.Content, &t.Status, &createdAtStr); scanErr != nil {
-			return nil, fmt.Errorf("scanning task row: %w", scanErr)
+		if err := rows.Scan(&t.ID, &t.Content, &t.Status, &createdAtStr); err != nil {
+			return nil, fmt.Errorf("scanning task row: %w", err)
 		}
-		var parseErr error
-		t.CreatedAt, parseErr = time.Parse(time.RFC3339Nano, createdAtStr)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for task %d: %w", int(t.ID), parseErr)
+		t.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse created_at for task %d: %w", int(t.ID), err)
 		}
-		res = append(res, t)
+		result = append(result, t)
 	}
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("tasks rows iteration error: %w", err)
 	}
-	return res, nil
+	return result, nil
+}
+
+func (s *sqliteTaskStore) Count(ctx context.Context) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting tasks: %w", err)
+	}
+	return count, nil
 }
 
 func (s *sqliteTaskStore) Update(ctx context.Context, id float64, item ports.Task) error {

@@ -140,13 +140,12 @@ func BenchmarkConcurrentSearch_SyntheticScale(b *testing.B) {
 	}
 }
 
-func BenchmarkConcurrentSearch_IOScale(b *testing.B) {
-	ctx := context.Background()
-	sp := &benchmarkSearchSecurityManager{}
+// generateIOScaleFixture creates ~10,000 files (~100MB) on real disk
+// under tmpDir. This is extracted from BenchmarkConcurrentSearch_IOScale
+// to keep the benchmark function below the complexity threshold.
+func generateIOScaleFixture(b *testing.B, tmpDir string) {
+	b.Helper()
 
-	tmpDir := b.TempDir()
-
-	// Generate ~100MB of small files on real disk
 	const numDirs = 100
 	const filesPerDir = 100
 	lineTemplate := "func generated_%d_%d_%d(x int) int { return x + %d }\n"
@@ -177,6 +176,16 @@ func BenchmarkConcurrentSearch_IOScale(b *testing.B) {
 			}
 		}
 	}
+}
+
+func BenchmarkConcurrentSearch_IOScale(b *testing.B) {
+	ctx := context.Background()
+	sp := &benchmarkSearchSecurityManager{}
+
+	tmpDir := b.TempDir()
+
+	// Generate ~100MB of small files on real disk
+	generateIOScaleFixture(b, tmpDir)
 
 	fs := persistencetest.NewPlainOSFileSystem()
 	policy := infra_persistence.NewWorkspacePolicy()

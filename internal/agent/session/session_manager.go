@@ -14,12 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 )
@@ -28,7 +24,6 @@ import (
 type sessionManager struct {
 	HomeDir         string
 	Version         string
-	Loader          config.ConfigLoader
 	SM              domain_security.Manager
 	Stdout          io.Writer
 	Stderr          io.Writer
@@ -69,85 +64,38 @@ func NewSessionConfig(configPath string, newSession bool, lastN, backN int, rawO
 	}
 }
 
-// sessionDependencies holds the required components for a session.
-type sessionDependencies struct {
-	Paths            *persistence.Paths
-	HistoryManager   ports.HistoryManager
-	Client           domain_llm.LLMClient
-	Gateway          domain_llm.LLMGateway
-	Registry         domaintools.Registry
-	SecurityManager  domain_security.Manager
-	Tracker          domain_pricing.CostTracker
-	PricingData      domain_pricing.PricingData
-	PricingOverrides map[string]domain_pricing.ModelPricing
-	EventBus         events.EventBus
-	Logger           ports.Logger
-	TurnsLogger      ports.TurnsLogger
-	SessionProvider  ports.SessionProvider
-	Health           ports.HealthCheckManager
+// SessionManagerOption defines a functional option for configuring a SessionManager.
+type SessionManagerOption func(*sessionManager)
+
+// WithClock sets a custom clock implementation. Defaults to clock.RealClock{}.
+func WithClock(c clock.Clock) SessionManagerOption {
+	return func(sm *sessionManager) { sm.Clock = c }
 }
 
-func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gateway }
-func (d *sessionDependencies) GetHistoryManager() ports.HistoryManager {
-	return d.HistoryManager
-}
-func (d *sessionDependencies) GetRegistry() (domaintools.Registry, error) { return d.Registry, nil }
-func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
-	return d.SecurityManager
-}
-func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
-func (d *sessionDependencies) GetLogger() ports.Logger      { return d.Logger }
-func (d *sessionDependencies) GetTurnsLogger() ports.TurnsLogger {
-	return d.TurnsLogger
-}
-func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
-func (d *sessionDependencies) GetSessionProvider() ports.SessionProvider {
-	return d.SessionProvider
-}
-func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
-	return d.PricingOverrides
-}
-func (d *sessionDependencies) GetTracker() domain_pricing.CostTracker { return d.Tracker }
-func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
-	return d.PricingData
-}
-func (d *sessionDependencies) GetHealthManager() ports.HealthCheckManager { return d.Health }
-
-// NewSessionDependencies creates a new sessionDependencies with all required components.
-func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger ports.Logger, turnsLogger ports.TurnsLogger, sessionProvider ports.SessionProvider, health ports.HealthCheckManager) ports.SessionDependencies {
-	return &sessionDependencies{
-		Paths:            paths,
-		HistoryManager:   hManager,
-		Client:           client,
-		Gateway:          gw,
-		Registry:         reg,
-		SecurityManager:  sm,
-		Tracker:          tracker,
-		PricingData:      pData,
-		PricingOverrides: overrides,
-		EventBus:         bus,
-		Logger:           logger,
-		TurnsLogger:      turnsLogger,
-		SessionProvider:  sessionProvider,
-		Health:           health,
-	}
+// WithEntropySource sets a custom entropy source for session ID generation.
+// Defaults to rand.Reader.
+func WithEntropySource(r io.Reader) SessionManagerOption {
+	return func(sm *sessionManager) { sm.EntropySource = r }
 }
 
 // NewSessionManager creates a new sessionManager.
-func NewSessionManager(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
-	return &sessionManager{
+func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, opts ...SessionManagerOption) SessionManager {
+	s := &sessionManager{
 		HomeDir:         homeDir,
 		Version:         version,
-		Loader:          loader,
 		SM:              sm,
 		Stdout:          stdout,
 		Stderr:          stderr,
 		AgentFactory:    factory,
 		HistoryRenderer: historyRenderer,
 		UIRenderer:      uiRenderer,
-		Clock:           clk,
-		EntropySource:   entropy,
+		Clock:           clock.RealClock{},
+		EntropySource:   rand.Reader,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Run executes the session orchestration.
@@ -308,7 +256,6 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 type RunParams struct {
 	HomeDir         string
 	Version         string
-	Loader          config.ConfigLoader
 	SM              domain_security.Manager
 	Stdout          io.Writer
 	Stderr          io.Writer
@@ -324,34 +271,20 @@ type RunParams struct {
 	Config          *config.Config
 	Deps            ports.SessionDependencies
 	Capturer        ports.Capturer
-	Clock           clock.Clock
-	EntropySource   io.Reader
 }
 
 // Run is the high-level entry point for running a chat session.
 // It simplifies the public API by encapsulating internal component assembly.
 func Run(ctx context.Context, params RunParams) error {
-	clk := params.Clock
-	if clk == nil {
-		clk = clock.RealClock{}
-	}
-	entropy := params.EntropySource
-	if entropy == nil {
-		entropy = rand.Reader
-	}
-
 	orch := NewSessionManager(
 		params.HomeDir,
 		params.Version,
-		params.Loader,
 		params.SM,
 		params.Stdout,
 		params.Stderr,
 		params.AgentFactory,
 		params.HistoryRenderer,
 		params.UIRenderer,
-		clk,
-		entropy,
 	)
 
 	sCfg := NewSessionConfig(

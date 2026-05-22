@@ -30,7 +30,7 @@ invalid json line starting with i
 		_ = state.Close()
 	}()
 
-	tasks := state.GetTasks().ListTasks("")
+	tasks := state.GetTasks().ListTasks("", 0, 0)
 
 	if len(tasks) != 2 {
 		t.Errorf("expected 2 tasks, got %d. Corrupted line might not have been skipped correctly", len(tasks))

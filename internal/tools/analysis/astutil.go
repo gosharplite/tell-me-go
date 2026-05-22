@@ -53,10 +53,20 @@ func newASTCache(baseDir string) *astCache {
 }
 
 func (c *astCache) absPath(relPath string) string {
-	if c.baseDir == "" || filepath.IsAbs(relPath) {
+	if c.baseDir == "" || isAbsPath(relPath) {
 		return relPath
 	}
 	return filepath.Join(c.baseDir, relPath)
+}
+
+// isAbsPath returns true if p is absolute on the current OS.
+// On Windows, filepath.IsAbs returns false for Unix-style absolute paths
+// (e.g., "/foo/bar"), so we treat forward-slash-prefixed paths as absolute.
+func isAbsPath(p string) bool {
+	if filepath.IsAbs(p) {
+		return true
+	}
+	return os.PathSeparator == '\\' && strings.HasPrefix(p, "/")
 }
 
 func (cf cachedFile) isValid(info os.FileInfo) bool {
