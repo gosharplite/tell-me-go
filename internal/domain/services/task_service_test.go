@@ -429,6 +429,113 @@ func TestTaskService_Initialize_OnlyActive(t *testing.T) {
 	}
 }
 
+func TestTaskService_CountTasks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		setup    func(s ports.TaskStore)
+		status   string
+		expected int
+	}{
+		{
+			name:     "empty store",
+			setup:    func(s ports.TaskStore) {},
+			status:   "",
+			expected: 0,
+		},
+		{
+			name: "all pending - count all",
+			setup: func(s ports.TaskStore) {
+				_, _ = s.AddTask(ctx, "Task 1")
+				_, _ = s.AddTask(ctx, "Task 2")
+				_, _ = s.AddTask(ctx, "Task 3")
+			},
+			status:   "",
+			expected: 3,
+		},
+		{
+			name: "all pending - filter pending",
+			setup: func(s ports.TaskStore) {
+				_, _ = s.AddTask(ctx, "Task 1")
+				_, _ = s.AddTask(ctx, "Task 2")
+				_, _ = s.AddTask(ctx, "Task 3")
+			},
+			status:   "pending",
+			expected: 3,
+		},
+		{
+			name: "all pending - filter completed",
+			setup: func(s ports.TaskStore) {
+				_, _ = s.AddTask(ctx, "Task 1")
+				_, _ = s.AddTask(ctx, "Task 2")
+				_, _ = s.AddTask(ctx, "Task 3")
+			},
+			status:   "completed",
+			expected: 0,
+		},
+		{
+			name: "mixed - count all",
+			setup: func(s ports.TaskStore) {
+				_, _ = s.AddTask(ctx, "Pending 1")
+				_, _ = s.AddTask(ctx, "Pending 2")
+				t, _ := s.AddTask(ctx, "Completed")
+				_, _ = s.UpdateTask(ctx, t.ID, "", "completed")
+			},
+			status:   "",
+			expected: 3,
+		},
+		{
+			name: "mixed - filter pending",
+			setup: func(s ports.TaskStore) {
+				_, _ = s.AddTask(ctx, "Pending 1")
+				_, _ = s.AddTask(ctx, "Pending 2")
+				t, _ := s.AddTask(ctx, "Completed")
+				_, _ = s.UpdateTask(ctx, t.ID, "", "completed")
+			},
+			status:   "pending",
+			expected: 2,
+		},
+		{
+			name: "mixed - filter completed",
+			setup: func(s ports.TaskStore) {
+				_, _ = s.AddTask(ctx, "Pending 1")
+				_, _ = s.AddTask(ctx, "Pending 2")
+				t, _ := s.AddTask(ctx, "Completed")
+				_, _ = s.UpdateTask(ctx, t.ID, "", "completed")
+			},
+			status:   "completed",
+			expected: 1,
+		},
+		{
+			name: "after clear",
+			setup: func(s ports.TaskStore) {
+				_, _ = s.AddTask(ctx, "Task 1")
+				_, _ = s.AddTask(ctx, "Task 2")
+				_, _ = s.AddTask(ctx, "Task 3")
+				_ = s.ClearTasks(ctx)
+			},
+			status:   "",
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s, _ := setupTaskService(t)
+			tt.setup(s)
+
+			got := s.CountTasks(tt.status)
+			if got != tt.expected {
+				t.Errorf("CountTasks(%q) = %d; want %d", tt.status, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

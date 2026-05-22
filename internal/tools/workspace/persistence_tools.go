@@ -29,7 +29,7 @@ func newpersistenceTools(state ports.SessionProvider, reg tools.ToolMetadataProv
 
 	// Handle interface-nil-pointer trap
 	v := reflect.ValueOf(state)
-	if v.Kind() == reflect.Ptr && v.IsNil() {
+	if v.Kind() == reflect.Pointer && v.IsNil() {
 		return &persistenceTools{}
 	}
 
@@ -91,6 +91,14 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 					Type:        "STRING",
 					Description: "The new status (e.g., 'completed', 'pending') for 'update' or filter for 'list'.",
 				},
+				"limit": {
+					Type:        "NUMBER",
+					Description: "Maximum tasks to return for the 'list' action. Default: 50. Use 0 for unlimited.",
+				},
+				"offset": {
+					Type:        "NUMBER",
+					Description: "Number of tasks to skip for the 'list' action. Default: 0. Use with limit for pagination.",
+				},
 			},
 			Required: []string{"action"},
 		},
@@ -107,6 +115,8 @@ func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 		Content string  `json:"content"`
 		Status  string  `json:"status"`
 		TaskID  float64 `json:"task_id"`
+		Limit   float64 `json:"limit"`
+		Offset  float64 `json:"offset"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -120,7 +130,7 @@ func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 	case "delete":
 		return t.deleteTask(ctx, params.TaskID)
 	case "list":
-		return t.listTasks(params.Status)
+		return t.listTasks(params.Status, int(params.Limit), int(params.Offset))
 	case "clear":
 		return t.clearTasks(ctx)
 	default:
@@ -150,13 +160,26 @@ func (t *persistenceTools) deleteTask(ctx context.Context, id float64) (tools.To
 	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", id)}, nil
 }
 
-func (t *persistenceTools) listTasks(status string) (tools.ToolResult, error) {
-	tasks := t.tasks.ListTasks(status, 0, 0)
+func (t *persistenceTools) listTasks(status string, limit, offset int) (tools.ToolResult, error) {
+	if limit == 0 {
+		limit = 50
+	}
+	tasks := t.tasks.ListTasks(status, limit, offset)
+	totalCount := t.tasks.CountTasks(status)
+
 	if len(tasks) == 0 {
+		if totalCount > 0 {
+			return tools.ToolResult{Text: fmt.Sprintf("No tasks found. (total: %d)", totalCount)}, nil
+		}
 		return tools.ToolResult{Text: "No tasks found."}, nil
 	}
+
 	var sb strings.Builder
-	sb.WriteString("Tasks:\n")
+	// Pagination summary header
+	from := offset + 1
+	to := offset + len(tasks)
+	fmt.Fprintf(&sb, "Tasks (showing %d-%d of %d):\n", from, to, totalCount)
+
 	for _, task := range tasks {
 		icon := "[ ]"
 		if task.Status == "completed" {
@@ -164,6 +187,12 @@ func (t *persistenceTools) listTasks(status string) (tools.ToolResult, error) {
 		}
 		_, _ = fmt.Fprintf(&sb, "%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status)
 	}
+
+	// Pagination hint when there are more pages
+	if len(tasks) == limit && (offset+limit) < totalCount {
+		fmt.Fprintf(&sb, "\nUse offset=%d for next page.", offset+limit)
+	}
+
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 

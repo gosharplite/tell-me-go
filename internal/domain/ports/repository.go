@@ -70,6 +70,10 @@ type TaskReader interface {
 	// ListTasks returns tasks filtered by status, bounded by limit and offset.
 	// status="" returns all statuses. limit=0 means no limit. offset=0 means start from beginning.
 	ListTasks(status string, limit, offset int) []Task
+
+	// CountTasks returns the total number of tasks matching the given status filter.
+	// status="" returns the total count across all statuses.
+	CountTasks(status string) int
 }
 
 // TaskWriter defines the interface for modifying tasks.
