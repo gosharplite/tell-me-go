@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session/sessiontest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/mock"
@@ -15,7 +16,7 @@ import (
 // Exported for external tests
 type SessionManagerInternal = sessionManager
 type SessionConfigInternal = sessionConfig
-type SessionDependenciesInternal = sessionDependencies
+type SessionDependenciesInternal = sessiontest.Deps
 
 func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*ui.Bridge, error) {
 	return o.applyConfiguration(ctx, chatAgent, sCfg, sd, capturer)
