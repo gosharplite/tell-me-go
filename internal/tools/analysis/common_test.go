@@ -86,6 +86,8 @@ func (m *mockIndexer) GetImplementations(ctx context.Context, id string, hb chan
 	return m.impls[id]
 }
 
+func (m *mockIndexer) WarmImplementations(ctx context.Context) {}
+
 func (s *mockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
