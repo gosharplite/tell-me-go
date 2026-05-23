@@ -53,11 +53,11 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 	}
 
 	gatekeeper := sessctx.NewTokenGatekeeper(
-		&agenttest.MockEstimator{},
+		&agenttest.MockTokenCounter{},
 		&mockFailingSummarizer{},
 		sessctx.WithMaxTokens(100),
 	)
-	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95)
+	gatekeeper.Estimator.(*agenttest.MockTokenCounter).SetTokens(95)
 
 	err := gatekeeper.Transform(ctx, req)
 	if err == nil || err.Error() != "summarizer failed" {
@@ -214,14 +214,14 @@ func TestTokenGatekeeper_NilSummarizer(t *testing.T) {
 	}
 
 	gatekeeper := sessctx.NewTokenGatekeeper(
-		&agenttest.MockEstimator{},
+		&agenttest.MockTokenCounter{},
 		nil,
 		sessctx.WithMaxTokens(100000),
 	)
 	// Summarizer intentionally nil — tests the nil-guard path
 	// 95% tokens triggers safety pressure (90% threshold) but stays under
 	// the hard limit (MaxTokens - reserved = 100000 - min(1000, 10000) = 99000)
-	gatekeeper.Estimator.(*agenttest.MockEstimator).SetTokens(95000)
+	gatekeeper.Estimator.(*agenttest.MockTokenCounter).SetTokens(95000)
 
 	err := gatekeeper.Transform(ctx, req)
 	require.ErrorIs(t, err, llm.ErrTerminal)
