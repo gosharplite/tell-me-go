@@ -139,42 +139,6 @@ func signatureMatches(sig *types.Signature, want wellKnownContractSignature) boo
 	return true
 }
 
-// wellKnownBridgeSymbols enumerates fully-qualified symbol identities
-// (per getSymbolIdentity) that are consumed exclusively through the
-// agentinternal bridge pattern (ADR-022) — struct wrappers and exported
-// types whose callers reside in external _test packages that the
-// AST-based analyzer cannot trace via interface dispatch.
-//
-// Each entry is a known false positive: the symbol IS used in production
-// or test code, but the static analyzer cannot prove it. Suppressing
-// here prevents noise in dead_code_graph output.
-//
-// Format:
-//   - Types:     "pkgPath.TypeName"
-//   - Methods:   "pkgPath.TypeName.MethodName"
-//
-// Only add symbols that are definitively consumed via the bridge pattern
-// and verified via text search (hasTextMatchOutsidePackage). Do not use
-// this set as a general-purpose suppression mechanism.
-var wellKnownBridgeSymbols = map[string]bool{
-	// agentinternal bridge: DiffConfig is called through AgentInternal struct
-	// wrapper, not through an interface that the analyzer can trace.
-	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal.AgentInternal.DiffConfig": true,
-
-	// DriftReport helper types: exported for use in drift_test.go (same
-	// package) and agentinternal accessor. Zero production callers outside
-	// the agent package — the bridge pattern is the sole cross-package path.
-	"github.com/gosharplite/tell-me-go/internal/agent.CtxManagerDrift": true,
-	"github.com/gosharplite/tell-me-go/internal/agent.EngineDrift":     true,
-}
-
-// isWellKnownBridgeSymbol reports whether id matches a symbol known to be
-// consumed through the agentinternal bridge pattern and therefore a false
-// positive in dead-code analysis.
-func isWellKnownBridgeSymbol(id string) bool {
-	return wellKnownBridgeSymbols[id]
-}
-
 // isWellKnownContract reports whether obj is a method that may be invoked
 // structurally through a stdlib interface (e.g., io.Writer, fmt.Stringer,
 // http.Handler). Such methods must be protected from being flagged as

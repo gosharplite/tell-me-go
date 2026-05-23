@@ -63,10 +63,11 @@ func formatDisplayName(id string, meta *symMeta) string {
 // evaluateOrphan determines whether a symbol qualifies as dead or effectively
 // private, producing an orphanReport if so.
 func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState) *orphanReport {
-	// Known false positives from the agentinternal bridge pattern (ADR-022).
-	// These symbols are consumed through struct wrappers or external _test
-	// packages that static analysis cannot trace via interface dispatch.
-	if isWellKnownBridgeSymbol(id) {
+	// Symbols annotated with //nolint:deadcode are explicitly excluded
+	// from dead-code reporting. This is a co-located, self-documenting
+	// mechanism for suppressing known false positives (e.g., symbols
+	// consumed through the agentinternal bridge pattern, ADR-022).
+	if isNolintDeadcode(meta.obj, state) {
 		return nil
 	}
 

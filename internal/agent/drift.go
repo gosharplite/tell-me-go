@@ -25,6 +25,8 @@ type DriftReport struct {
 
 // EngineDrift describes a mismatch between the intended runtime
 // configuration and the engine's live state.
+//
+//nolint:deadcode
 type EngineDrift struct {
 	ExpectedProvider string
 	ActualProvider   string
@@ -37,6 +39,8 @@ type EngineDrift struct {
 // CtxManagerDrift describes a mismatch between the intended limits
 // and the context manager's live state. Field names match
 // events.Limits for a direct 1:1 mapping to the data source.
+//
+//nolint:deadcode
 type CtxManagerDrift struct {
 	ExpectedMaxHistoryTokens int
 	ActualMaxHistoryTokens   int

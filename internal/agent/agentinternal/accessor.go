@@ -126,6 +126,8 @@ func (a *AgentInternal) ApplyConfig(ctx context.Context) error {
 // DiffConfig compares the canonical intended configuration against
 // the live engine/context-manager state. See agent.DiffConfig for
 // full documentation.
+//
+//nolint:deadcode
 func (a *AgentInternal) DiffConfig() *agent.DriftReport {
 	return a.raw.DiffConfig()
 }
