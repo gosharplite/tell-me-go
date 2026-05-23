@@ -52,11 +52,17 @@ func TestGoldenPath_ConfigToShutdown(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	// Step 2 — Create bootstrapper with mock LLM client
-	bootstrapper := di.NewBootstrapper(homeDir, sm, "test-version", io.Discard, io.Discard, logger, nil,
-		func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-			return &goldenPathMockClient{}, nil
-		},
-	)
+	bsCfg := di.DefaultBootstrapperConfig()
+	bsCfg.HomeDir = homeDir
+	bsCfg.SM = sm
+	bsCfg.Version = "test-version"
+	bsCfg.Stdout = io.Discard
+	bsCfg.Stderr = io.Discard
+	bsCfg.Logger = logger
+	bsCfg.ClientFactory = func(c *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return &goldenPathMockClient{}, nil
+	}
+	bootstrapper := di.NewBootstrapper(bsCfg)
 
 	// Step 3 — Build session dependencies
 	cfg := &config.Config{

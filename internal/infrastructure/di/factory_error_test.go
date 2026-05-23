@@ -93,10 +93,17 @@ func TestGetHistoryManager_FailurePaths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := new(mockConfigurableSecurityManager)
-			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, tt.fs, nil)
-			cfg := &config.Config{Mode: "assistant"}
+			bcfg := DefaultBootstrapperConfig()
+			bcfg.HomeDir = tempDir
+			bcfg.SM = sm
+			bcfg.Version = "1.0.0"
+			bcfg.Stdout = io.Discard
+			bcfg.Stderr = io.Discard
+			bcfg.FileSystem = tt.fs
+			b := NewBootstrapper(bcfg)
+			testCfg := &config.Config{Mode: "assistant"}
 
-			hManager, err := b.GetHistoryManager(ctx, cfg)
+			hManager, err := b.GetHistoryManager(ctx, testCfg)
 			assert.Error(t, err)
 			assert.ErrorIs(t, err, tt.wantErr)
 			assert.Nil(t, hManager)
@@ -268,11 +275,18 @@ func TestGetUnifiedHistoryProvider_FailurePaths(t *testing.T) {
 	}
 
 	sm := new(mockConfigurableSecurityManager)
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, fs, nil)
-	cfg := &config.Config{Mode: "assistant"}
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.FileSystem = fs
+	b := NewBootstrapper(bcfg)
+	testCfg := &config.Config{Mode: "assistant"}
 
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
-	provider, err := b.GetUnifiedHistoryProvider(ctx, cfg, hManager)
+	provider, err := b.GetUnifiedHistoryProvider(ctx, testCfg, hManager)
 
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, errInfraInit)
@@ -290,7 +304,14 @@ func TestGetSuggestionService_Fallback(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	fs := &infra_persistence.OSFileSystem{}
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, fs, nil)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.FileSystem = fs
+	b := NewBootstrapper(bcfg)
 
 	svc, err := b.GetSuggestionService(ctx, []string{"test"})
 	assert.NoError(t, err)

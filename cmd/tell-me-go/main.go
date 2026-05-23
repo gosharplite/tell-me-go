@@ -167,7 +167,14 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	slog.SetDefault(logger)
 
 	// 4. Build DI Container
-	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, stdout, stderr, logger, nil, nil)
+	cfg := di.DefaultBootstrapperConfig()
+	cfg.HomeDir = homeDir
+	cfg.SM = sm
+	cfg.Version = appVersion
+	cfg.Stdout = stdout
+	cfg.Stderr = stderr
+	cfg.Logger = logger
+	bootstrapper := di.NewBootstrapper(cfg)
 
 	// 5. Instantiate ChatService
 	chatService := bootstrapper.GetChatService()
