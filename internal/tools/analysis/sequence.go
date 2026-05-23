@@ -144,6 +144,15 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 		return nil, err
 	}
 
+	// Warm the implementation cache after Refresh so that subsequent
+	// GetImplementations calls in tryRecurse hit an already-hot cache.
+	// This is a no-op if the cache is already populated (sync.Once).
+	// Guard against nil idx: some test paths construct a
+	// defaultSequenceAnalyzer without an indexer.
+	if a.idx != nil {
+		a.idx.WarmImplementations(ctx)
+	}
+
 	var modName string
 
 	// Try exact match first

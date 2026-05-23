@@ -53,3 +53,5 @@ func (m *MockSymbolIndex) Packages(ctx context.Context, hb chan<- struct{}) ([]*
 	return nil, nil
 }
 func (m *MockSymbolIndex) Refresh(ctx context.Context, hb chan<- struct{}) error { return nil }
+
+func (m *MockSymbolIndex) WarmImplementations(ctx context.Context) {}

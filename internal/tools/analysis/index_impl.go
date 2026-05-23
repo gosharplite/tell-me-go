@@ -139,3 +139,16 @@ func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId st
 	}
 	return idx.computeImplementationsLazy()[interfaceMethodId]
 }
+
+// WarmImplementations eagerly computes the implementation cache by calling
+// computeImplementationsLazy() and discarding the result. The side effect
+// (populating idx.implsCache.impls) is the intended outcome.
+//
+// It is safe to call concurrently with GetImplementations — both share the
+// same sync.Once gate (idx.implsCache.once), so only one computation runs.
+//
+// The ctx parameter is accepted for future cancellation support (e.g., if
+// sync.Once is replaced with singleflight.DoChan) but is currently unused.
+func (idx *indexer) WarmImplementations(ctx context.Context) {
+	_ = idx.computeImplementationsLazy()
+}

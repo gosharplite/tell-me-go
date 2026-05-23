@@ -130,6 +130,12 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 		return nil, nil
 	}
 
+	// Warm the implementation cache after Refresh so that subsequent
+	// GetImplementations calls in processImplementations and
+	// propagateUsageToImplementations hit an already-hot cache.
+	// This is a no-op if the cache is already populated (sync.Once).
+	a.idx.WarmImplementations(ctx)
+
 	targetModule, err := a.identifyModule(pkgs)
 	if err != nil {
 		return nil, err
