@@ -7,7 +7,7 @@
 // agent.InternalAccessor. There is zero branching, zero business
 // logic, and zero error handling. The bridge is exercised by tests
 // in internal/agent/ (package agent_test) and tests/integration/agent/,
-// which collectively cover all 18 exported symbols.
+// which collectively cover all 17 exported symbols.
 //
 // This package includes mechanical delegation tests in accessor_test.go
 // that verify interface conformance between AgentInternal wrappers and
