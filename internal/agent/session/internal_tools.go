@@ -13,12 +13,22 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// heartbeatHooks allows tests to observe or inject faults into the ticker loop.
+// In production, a no-op implementation is used.
+type heartbeatHooks interface {
+	onTick()
+}
+
+// prodHeartbeatHooks is the production no-op.
+type prodHeartbeatHooks struct{}
+
+func (prodHeartbeatHooks) onTick() {}
+
 // InternalTools provides tool wrappers that interact with agent services.
 type InternalTools struct {
-	ctxManager                 *sessctx.Manager
-	logger                     ports.Logger
-	testEmitHeartbeatsPanic    func() // nil in production; see ADR-032 §Fault-Injection Exception
-	testEmitHeartbeatsTickHook func() // nil in production; see ADR-032
+	ctxManager *sessctx.Manager
+	logger     ports.Logger
+	hooks      heartbeatHooks // prodHeartbeatHooks in production; test mocks in tests
 }
 
 // NewInternalTools creates a new InternalTools provider.
@@ -26,7 +36,11 @@ func NewInternalTools(cm *sessctx.Manager, logger ports.Logger) *InternalTools {
 	if logger == nil {
 		logger = &ports.NoOpLogger{}
 	}
-	return &InternalTools{ctxManager: cm, logger: logger}
+	return &InternalTools{
+		ctxManager: cm,
+		logger:     logger,
+		hooks:      prodHeartbeatHooks{},
+	}
 }
 
 // emitHeartbeats sends periodic heartbeats until the done channel is closed.
@@ -43,12 +57,7 @@ func (t *InternalTools) emitHeartbeats(done <-chan struct{}, hb chan<- struct{})
 		case <-done:
 			return
 		case <-ticker.C:
-			if t.testEmitHeartbeatsPanic != nil {
-				t.testEmitHeartbeatsPanic()
-			}
-			if t.testEmitHeartbeatsTickHook != nil {
-				t.testEmitHeartbeatsTickHook()
-			}
+			t.hooks.onTick()
 			if hb != nil {
 				select {
 				case hb <- struct{}{}:

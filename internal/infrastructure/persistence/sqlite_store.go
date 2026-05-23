@@ -55,10 +55,15 @@ func (s *sqliteTaskStore) Query(ctx context.Context, filter ports.ListFilter, li
 	return s.queryOrdered(ctx, filter, limit, offset, "ASC")
 }
 
-// queryOrdered is like Query but accepts an explicit ORDER direction ("ASC" or "DESC").
-func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFilter, limit, offset int, order string) (result []ports.Task, err error) {
-	// Build WHERE clauses dynamically based on non-zero filter fields
-	query := "SELECT id, content, status, created_at FROM tasks"
+// whereClause holds a parameterized SQL WHERE fragment and its arguments.
+type whereClause struct {
+	sql  string
+	args []any
+}
+
+// buildWhereClause constructs a WHERE fragment from the given ListFilter.
+// Returns an empty whereClause if no filter conditions are set.
+func buildWhereClause(filter ports.ListFilter) whereClause {
 	var conditions []string
 	var args []any
 
@@ -79,10 +84,22 @@ func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFil
 		args = append(args, filter.Before.Format(time.RFC3339Nano))
 	}
 
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
+	if len(conditions) == 0 {
+		return whereClause{}
 	}
-	query += " ORDER BY id " + order
+
+	return whereClause{
+		sql:  " WHERE " + strings.Join(conditions, " AND "),
+		args: args,
+	}
+}
+
+// queryOrdered is like Query but accepts an explicit ORDER direction ("ASC" or "DESC").
+func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFilter, limit, offset int, order string) (result []ports.Task, err error) {
+	wc := buildWhereClause(filter)
+
+	query := "SELECT id, content, status, created_at FROM tasks" + wc.sql + " ORDER BY id " + order
+	args := wc.args
 
 	if limit > 0 {
 		query += " LIMIT ?"
