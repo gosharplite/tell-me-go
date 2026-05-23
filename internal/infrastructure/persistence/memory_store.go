@@ -131,57 +131,56 @@ func (s *memoryListStore[T]) getCreatedAt(item T) time.Time {
 	return time.Time{}
 }
 
+// matchesFilter returns true when item satisfies all non-zero filters.
+func (s *memoryListStore[T]) matchesFilter(item T, filter ports.ListFilter) bool {
+	if filter.Status != "" {
+		if s.getStatus(item) != filter.Status {
+			return false
+		}
+	}
+	if filter.NotStatus != "" {
+		if s.getStatus(item) == filter.NotStatus {
+			return false
+		}
+	}
+	if !filter.Since.IsZero() {
+		if s.getCreatedAt(item).Before(filter.Since) {
+			return false
+		}
+	}
+	if !filter.Before.IsZero() {
+		if s.getCreatedAt(item).After(filter.Before) {
+			return false
+		}
+	}
+	return true
+}
+
+// applyOffsetLimit slices result with the given offset and limit.
+func applyOffsetLimit[T any](result []T, offset, limit int) []T {
+	if offset > 0 {
+		if offset >= len(result) {
+			return []T{}
+		}
+		result = result[offset:]
+	}
+	if limit > 0 && limit < len(result) {
+		result = result[:limit]
+	}
+	return result
+}
+
 func (s *memoryListStore[T]) Query(ctx context.Context, filter ports.ListFilter, limit, offset int) ([]T, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var result []T
 	for _, item := range s.data {
-		// Apply status filter
-		if filter.Status != "" {
-			itemStatus := s.getStatus(item)
-			if itemStatus != filter.Status {
-				continue
-			}
+		if s.matchesFilter(item, filter) {
+			result = append(result, item)
 		}
-		// Apply NotStatus exclusion
-		if filter.NotStatus != "" {
-			itemStatus := s.getStatus(item)
-			if itemStatus == filter.NotStatus {
-				continue
-			}
-		}
-		// Apply Since filter
-		if !filter.Since.IsZero() {
-			itemTime := s.getCreatedAt(item)
-			if itemTime.Before(filter.Since) {
-				continue
-			}
-		}
-		// Apply Before filter
-		if !filter.Before.IsZero() {
-			itemTime := s.getCreatedAt(item)
-			if itemTime.After(filter.Before) {
-				continue
-			}
-		}
-		result = append(result, item)
 	}
-
-	// Apply offset
-	if offset > 0 {
-		if offset >= len(result) {
-			return []T{}, nil
-		}
-		result = result[offset:]
-	}
-
-	// Apply limit
-	if limit > 0 && limit < len(result) {
-		result = result[:limit]
-	}
-
-	return result, nil
+	return applyOffsetLimit(result, offset, limit), nil
 }
 
 func (s *memoryListStore[T]) Count(ctx context.Context) (int, error) {

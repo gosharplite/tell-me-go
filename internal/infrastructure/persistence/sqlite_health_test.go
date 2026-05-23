@@ -248,27 +248,32 @@ func TestSQLiteHealthChecker_DBFileStatFails(t *testing.T) {
 	}
 
 	// Verify size_bytes was set to 0 (the else branch).
-	// Note: the untyped 0 literal in the production code is stored as int,
-	// not int64. We accept either representation.
 	details, ok := report.Details.(map[string]any)
 	if !ok {
 		t.Fatal("expected Details to be a map[string]any")
 	}
+	sizeBytes := extractSizeBytes(t, details)
+	if sizeBytes != 0 {
+		t.Errorf("expected size_bytes = 0, got %d", sizeBytes)
+	}
+}
+
+// extractSizeBytes extracts the "size_bytes" value from a details map,
+// accepting both int and int64 representations.
+func extractSizeBytes(t *testing.T, details map[string]any) int64 {
+	t.Helper()
 	raw, exists := details["size_bytes"]
 	if !exists {
 		t.Fatal("expected size_bytes key in details")
 	}
-	var sizeBytes int64
 	switch v := raw.(type) {
 	case int64:
-		sizeBytes = v
+		return v
 	case int:
-		sizeBytes = int64(v)
+		return int64(v)
 	default:
 		t.Fatalf("expected size_bytes to be int or int64, got %T (%v)", raw, raw)
-	}
-	if sizeBytes != 0 {
-		t.Errorf("expected size_bytes = 0, got %d", sizeBytes)
+		return 0
 	}
 }
 
@@ -293,24 +298,6 @@ func TestNoOpHealthChecker_Check(t *testing.T) {
 // in sqliteHealthChecker.Check(). Each subtest exercises a distinct code path.
 func TestSQLiteHealthChecker_Check(t *testing.T) {
 	t.Parallel()
-
-	// Helper to extract size_bytes from details map (handles int and int64).
-	extractSizeBytes := func(t *testing.T, details map[string]any) int64 {
-		t.Helper()
-		raw, exists := details["size_bytes"]
-		if !exists {
-			t.Fatal("expected size_bytes key in details")
-		}
-		switch v := raw.(type) {
-		case int64:
-			return v
-		case int:
-			return int64(v)
-		default:
-			t.Fatalf("expected size_bytes to be int or int64, got %T (%v)", raw, raw)
-			return 0
-		}
-	}
 
 	// ---------------
 	// Baseline: all checks pass on a healthy database.
