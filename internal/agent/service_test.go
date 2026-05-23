@@ -39,6 +39,8 @@ func TestProcessMessage(t *testing.T) {
 		errMsg           string
 		expectedErr      error
 		extraExpectedErr error
+		stderr           *bytes.Buffer // if non-nil, stderr is captured here; nil → io.Discard
+		stderrContains   string        // if set, assert stderr contains this string after ProcessMessage
 	}{
 		{
 			name: "Success",
@@ -91,6 +93,106 @@ func TestProcessMessage(t *testing.T) {
 					assert.True(t, cleanupCalled)
 					return nil
 				}
+			},
+		},
+		{
+			name: "CleanupError",
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cfg: &config.Config{
+				Mode: "assistant",
+				Providers: map[string]config.LLMProvider{
+					"test": {Model: "test-model"},
+				},
+				SelectedProvider: "test",
+			},
+			stderr:         &bytes.Buffer{},
+			stderrContains: "Warning: Session cleanup failed: cleanup failure",
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{
+					Mode: "assistant",
+					Providers: map[string]config.LLMProvider{
+						"test": {Model: "test-model"},
+					},
+					SelectedProvider: "test",
+				}
+				cleanup := func(context.Context) error {
+					return errors.New("cleanup failure")
+				}
+
+				mockHM := &mockHistoryManagerForRetry{}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
+				deps.On("GetHistoryManager").Return(mockHM)
+				deps.On("GetPricingData").Return(pricing.PricingData{})
+				deps.On("GetLogger").Return(&ports.NoOpLogger{})
+				deps.On("GetTurnsLogger").Return(tl)
+				deps.On("GetSessionProvider").Return(nil)
+
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("Subscribe", mock.Anything).Return()
+				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+				agentMock.On("Shutdown", mock.Anything).Return(nil)
+
+				cap.On("IsTTY", mock.Anything).Return(true)
+				cap.On("Close", mock.Anything).Return(nil)
+
+				return nil
+			},
+		},
+		{
+			name: "EventBusShutdownError",
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cfg: &config.Config{
+				Mode: "assistant",
+				Providers: map[string]config.LLMProvider{
+					"test": {Model: "test-model"},
+				},
+				SelectedProvider: "test",
+			},
+			stderr:         &bytes.Buffer{},
+			stderrContains: "Warning: Event bus shutdown failed: bus shutdown failure",
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{
+					Mode: "assistant",
+					Providers: map[string]config.LLMProvider{
+						"test": {Model: "test-model"},
+					},
+					SelectedProvider: "test",
+				}
+				// cleanup succeeds — the error comes from bus.Shutdown instead
+				cleanup := func(context.Context) error {
+					return nil
+				}
+
+				mockHM := &mockHistoryManagerForRetry{}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
+				deps.On("GetHistoryManager").Return(mockHM)
+				deps.On("GetPricingData").Return(pricing.PricingData{})
+				deps.On("GetLogger").Return(&ports.NoOpLogger{})
+				deps.On("GetTurnsLogger").Return(tl)
+				deps.On("GetSessionProvider").Return(nil)
+
+				// THIS is the critical line: Shutdown returns a non-ErrBusNotInitialized error
+				bus.On("Shutdown", mock.Anything).Return(errors.New("bus shutdown failure"))
+
+				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("Subscribe", mock.Anything).Return()
+				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+				agentMock.On("Shutdown", mock.Anything).Return(nil)
+
+				cap.On("IsTTY", mock.Anything).Return(true)
+				cap.On("Close", mock.Anything).Return(nil)
+
+				return nil
 			},
 		},
 		{
@@ -352,8 +454,12 @@ func TestProcessMessage(t *testing.T) {
 				return agentMock, nil
 			})
 
+			var stderr io.Writer = io.Discard
+			if tt.stderr != nil {
+				stderr = tt.stderr
+			}
 			service := agent.NewChatService(
-				"home", "v1", io.Discard, io.Discard, sm,
+				"home", "v1", io.Discard, stderr, sm,
 				sf, chatterFactory, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
 			)
 
@@ -363,6 +469,10 @@ func TestProcessMessage(t *testing.T) {
 			}
 
 			err := service.ProcessMessage(ctx, tt.cfg, tt.cmd, capturer)
+
+			if tt.stderr != nil && tt.stderrContains != "" {
+				assert.Contains(t, tt.stderr.String(), tt.stderrContains)
+			}
 
 			if tt.wantErr {
 				assert.Error(t, err)
