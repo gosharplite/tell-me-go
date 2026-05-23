@@ -68,30 +68,42 @@ func (m *mockTaskRepo) Query(ctx context.Context, filter ports.ListFilter, limit
 	}
 	var result []ports.Task
 	for _, t := range m.tasks {
-		if filter.Status != "" && t.Status != filter.Status {
-			continue
+		if taskMatchesFilter(t, filter) {
+			result = append(result, t)
 		}
-		if filter.NotStatus != "" && t.Status == filter.NotStatus {
-			continue
-		}
-		if !filter.Since.IsZero() && t.CreatedAt.Before(filter.Since) {
-			continue
-		}
-		if !filter.Before.IsZero() && t.CreatedAt.After(filter.Before) {
-			continue
-		}
-		result = append(result, t)
 	}
+	return applyTaskOffsetLimit(result, limit, offset), nil
+}
+
+// taskMatchesFilter returns true when task satisfies all non-zero filter conditions.
+func taskMatchesFilter(task ports.Task, filter ports.ListFilter) bool {
+	if filter.Status != "" && task.Status != filter.Status {
+		return false
+	}
+	if filter.NotStatus != "" && task.Status == filter.NotStatus {
+		return false
+	}
+	if !filter.Since.IsZero() && task.CreatedAt.Before(filter.Since) {
+		return false
+	}
+	if !filter.Before.IsZero() && task.CreatedAt.After(filter.Before) {
+		return false
+	}
+	return true
+}
+
+// applyTaskOffsetLimit applies offset/limit slicing to a task slice.
+func applyTaskOffsetLimit(tasks []ports.Task, limit, offset int) []ports.Task {
 	if offset > 0 {
-		if offset >= len(result) {
-			return []ports.Task{}, nil
+		if offset >= len(tasks) {
+			return []ports.Task{}
 		}
-		result = result[offset:]
+		tasks = tasks[offset:]
 	}
-	if limit > 0 && limit < len(result) {
-		result = result[:limit]
+	if limit > 0 && limit < len(tasks) {
+		tasks = tasks[:limit]
 	}
-	return result, nil
+	return tasks
 }
 
 func (m *mockTaskRepo) Count(ctx context.Context) (int, error) {
@@ -536,46 +548,68 @@ func TestTaskService_CountTasks(t *testing.T) {
 	}
 }
 
-func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
-	t.Parallel()
+// seedTaskServiceWithN adds n tasks ("Task 1" through "Task N") to the store.
+func seedTaskServiceWithN(t *testing.T, s ports.TaskStore, n int) {
+	t.Helper()
 	ctx := context.Background()
-	s, _ := setupTaskService(t)
-
-	// Add 5 tasks
-	for i := 0; i < 5; i++ {
+	for i := 0; i < n; i++ {
 		_, err := s.AddTask(ctx, fmt.Sprintf("Task %d", i+1))
 		if err != nil {
 			t.Fatalf("failed to add task: %v", err)
 		}
 	}
+}
 
-	// limit=3, offset=0 → first 3
-	first3 := s.ListTasks("", 3, 0)
-	if len(first3) != 3 {
-		t.Errorf("expected 3 tasks, got %d", len(first3))
-	}
-	if first3[0].ID != 1 || first3[2].ID != 3 {
-		t.Errorf("expected IDs 1,2,3, got %v", first3)
-	}
+func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
+	t.Parallel()
 
-	// limit=2, offset=3 → tasks 4,5
-	middle := s.ListTasks("", 2, 3)
-	if len(middle) != 2 {
-		t.Errorf("expected 2 tasks, got %d", len(middle))
-	}
-	if middle[0].ID != 4 || middle[1].ID != 5 {
-		t.Errorf("expected IDs 4,5, got %v", middle)
-	}
+	t.Run("limit3_offset0_returns_first_3", func(t *testing.T) {
+		t.Parallel()
+		s, _ := setupTaskService(t)
+		seedTaskServiceWithN(t, s, 5)
 
-	// offset beyond total → empty
-	beyond := s.ListTasks("", 10, 100)
-	if len(beyond) != 0 {
-		t.Errorf("expected 0 tasks, got %d", len(beyond))
-	}
+		tasks := s.ListTasks("", 3, 0)
+		if len(tasks) != 3 {
+			t.Errorf("expected 3 tasks, got %d", len(tasks))
+		}
+		if tasks[0].ID != 1 || tasks[2].ID != 3 {
+			t.Errorf("expected IDs 1,2,3, got %v", tasks)
+		}
+	})
 
-	// limit=0, offset=0 → all
-	all := s.ListTasks("", 0, 0)
-	if len(all) != 5 {
-		t.Errorf("expected 5 tasks, got %d", len(all))
-	}
+	t.Run("limit2_offset3_returns_tasks_4_5", func(t *testing.T) {
+		t.Parallel()
+		s, _ := setupTaskService(t)
+		seedTaskServiceWithN(t, s, 5)
+
+		tasks := s.ListTasks("", 2, 3)
+		if len(tasks) != 2 {
+			t.Errorf("expected 2 tasks, got %d", len(tasks))
+		}
+		if tasks[0].ID != 4 || tasks[1].ID != 5 {
+			t.Errorf("expected IDs 4,5, got %v", tasks)
+		}
+	})
+
+	t.Run("offset_beyond_total_returns_empty", func(t *testing.T) {
+		t.Parallel()
+		s, _ := setupTaskService(t)
+		seedTaskServiceWithN(t, s, 5)
+
+		tasks := s.ListTasks("", 10, 100)
+		if len(tasks) != 0 {
+			t.Errorf("expected 0 tasks, got %d", len(tasks))
+		}
+	})
+
+	t.Run("limit0_returns_all", func(t *testing.T) {
+		t.Parallel()
+		s, _ := setupTaskService(t)
+		seedTaskServiceWithN(t, s, 5)
+
+		tasks := s.ListTasks("", 0, 0)
+		if len(tasks) != 5 {
+			t.Errorf("expected 5 tasks, got %d", len(tasks))
+		}
+	})
 }

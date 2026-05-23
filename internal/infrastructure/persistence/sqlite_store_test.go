@@ -871,63 +871,99 @@ func TestSQLiteTaskStore_ReadAll_Bounded(t *testing.T) {
 	db := setupSQLite(t)
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
-
 	now := time.Now()
 
 	// Insert 10 pending tasks
 	for i := 1; i <= 10; i++ {
 		task := ports.Task{ID: float64(i), Content: fmt.Sprintf("pending %d", i), Status: "pending", CreatedAt: now}
-		if err := store.Append(ctx, task); err != nil {
-			t.Fatalf("append pending %d: %v", i, err)
-		}
+		require.NoError(t, store.Append(ctx, task))
 	}
 
 	// Insert 600 completed tasks
 	for i := 11; i <= 610; i++ {
 		task := ports.Task{ID: float64(i), Content: fmt.Sprintf("completed %d", i), Status: "completed", CreatedAt: now.Add(time.Duration(i) * time.Second)}
-		if err := store.Append(ctx, task); err != nil {
-			t.Fatalf("append completed %d: %v", i, err)
-		}
+		require.NoError(t, store.Append(ctx, task))
 	}
 
 	tasks, err := store.ReadAll(ctx)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	// Expect 10 pending + 500 completed = 510 total
-	if len(tasks) != 510 {
-		t.Errorf("expected 510 tasks (10 pending + 500 completed), got %d", len(tasks))
-	}
+	t.Run("total_count", func(t *testing.T) {
+		if len(tasks) != 510 {
+			t.Errorf("expected 510 tasks (10 pending + 500 completed), got %d", len(tasks))
+		}
+	})
 
-	// Verify all pending tasks are present
-	pendingCount := 0
-	for _, t := range tasks {
-		if t.Status == "pending" {
-			pendingCount++
+	t.Run("pending_present", func(t *testing.T) {
+		assertPendingCount(t, tasks, 10)
+	})
+
+	t.Run("completed_truncation", func(t *testing.T) {
+		assertCompletedRetention(t, tasks, 11, 110, 111, 610)
+	})
+}
+
+// assertPendingCount verifies that exactly want tasks in the slice have
+// Status == "pending".
+func assertPendingCount(t *testing.T, tasks []ports.Task, want int) {
+	t.Helper()
+	count := 0
+	for _, task := range tasks {
+		if task.Status == "pending" {
+			count++
 		}
 	}
-	if pendingCount != 10 {
-		t.Errorf("expected 10 pending tasks, got %d", pendingCount)
+	if count != want {
+		t.Errorf("expected %d pending tasks, got %d", want, count)
 	}
+}
 
-	// Verify completed tasks are the most recent 500 (IDs 111–610, not 11–110)
+// assertCompletedRetention verifies that completed tasks in the oldest range
+// [oldestExcludedStart, oldestExcludedEnd] are NOT present and that completed
+// tasks in the newest range [newestIncludedStart, newestIncludedEnd] ARE present.
+func assertCompletedRetention(t *testing.T, tasks []ports.Task, oldestExcludedStart, oldestExcludedEnd, newestIncludedStart, newestIncludedEnd float64) {
+	t.Helper()
 	completedIDs := make(map[float64]bool)
-	for _, t := range tasks {
-		if t.Status == "completed" {
-			completedIDs[t.ID] = true
+	for _, task := range tasks {
+		if task.Status == "completed" {
+			completedIDs[task.ID] = true
 		}
 	}
-	// The oldest 100 completed (IDs 11–110) should be excluded
-	for id := float64(11); id <= 110; id++ {
+	for id := oldestExcludedStart; id <= oldestExcludedEnd; id++ {
 		if completedIDs[id] {
 			t.Errorf("completed task %d should have been truncated", int(id))
 		}
 	}
-	// The newest 500 completed (IDs 111–610) should be included
-	for id := float64(111); id <= 610; id++ {
+	for id := newestIncludedStart; id <= newestIncludedEnd; id++ {
 		if !completedIDs[id] {
 			t.Errorf("completed task %d should have been retained", int(id))
+		}
+	}
+}
+
+// =============================================================================
+// seedBenchmarkTasks inserts 10,000 tasks with a fixed status distribution:
+// 3000 pending, 1000 in_progress, 6000 completed.
+// =============================================================================
+
+func seedBenchmarkTasks(b *testing.B, store *sqliteTaskStore, ctx context.Context, now time.Time) {
+	b.Helper()
+	b.Log("inserting 10,000 tasks...")
+	for i := 1; i <= 10000; i++ {
+		status := "completed"
+		if i <= 3000 {
+			status = "pending"
+		} else if i <= 4000 {
+			status = "in_progress"
+		}
+		task := ports.Task{
+			ID:        float64(i),
+			Content:   fmt.Sprintf("Task %d", i),
+			Status:    status,
+			CreatedAt: now.Add(time.Duration(i) * time.Second),
+		}
+		if err := store.Append(ctx, task); err != nil {
+			b.Fatalf("append task %d: %v", i, err)
 		}
 	}
 }
@@ -953,27 +989,8 @@ func BenchmarkSQLiteQuery_10000Tasks(b *testing.B) {
 	ctx := context.Background()
 	now := time.Now()
 
-	// Insert 10,000 tasks: 3000 pending, 1000 in_progress, 6000 completed
-	b.Log("inserting 10,000 tasks...")
-	for i := 1; i <= 10000; i++ {
-		status := "completed"
-		if i <= 3000 {
-			status = "pending"
-		} else if i <= 4000 {
-			status = "in_progress"
-		}
-		task := ports.Task{
-			ID:        float64(i),
-			Content:   fmt.Sprintf("Task %d", i),
-			Status:    status,
-			CreatedAt: now.Add(time.Duration(i) * time.Second),
-		}
-		if err := store.Append(ctx, task); err != nil {
-			b.Fatalf("append task %d: %v", i, err)
-		}
-	}
+	seedBenchmarkTasks(b, store, ctx, now)
 
-	// Verify count
 	count, err := store.Count(ctx)
 	if err != nil {
 		b.Fatalf("count failed: %v", err)
@@ -985,7 +1002,6 @@ func BenchmarkSQLiteQuery_10000Tasks(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		// Query with status filter + limit — must allocate proportionally to result, not total
 		tasks, err := store.Query(ctx, ports.ListFilter{Status: "pending"}, 100, 0)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
@@ -993,7 +1009,6 @@ func BenchmarkSQLiteQuery_10000Tasks(b *testing.B) {
 		if len(tasks) > 100 {
 			b.Fatalf("expected at most 100 tasks, got %d", len(tasks))
 		}
-		// Ensure results are not retained across iterations
 		_ = tasks
 	}
 
@@ -1001,20 +1016,13 @@ func BenchmarkSQLiteQuery_10000Tasks(b *testing.B) {
 }
 
 // =============================================================================
-// TestSQLiteTaskStore_Query_BoundedMemory proves that Query's memory
-// allocation is proportional to the result set, not the total DB size.
+// seedMixedStatusTasks inserts count tasks into the store with a status
+// distribution: first 500 pending, next 500 in_progress, rest completed.
 // =============================================================================
 
-func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
-	t.Parallel()
-
-	db := setupSQLite(t)
-	store := newSQLiteTaskStore(db)
-	ctx := context.Background()
-	now := time.Now()
-
-	// Insert 5000 tasks with mixed statuses
-	for i := 1; i <= 5000; i++ {
+func seedMixedStatusTasks(t *testing.T, store *sqliteTaskStore, ctx context.Context, now time.Time, count int) {
+	t.Helper()
+	for i := 1; i <= count; i++ {
 		status := "completed"
 		if i <= 500 {
 			status = "pending"
@@ -1031,8 +1039,10 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 			t.Fatalf("append task %d: %v", i, err)
 		}
 	}
+}
 
-	// Query with limit=10 — result must have exactly 10 items
+func testTaskStoreQueryLimitEnforced(t *testing.T, store *sqliteTaskStore) {
+	ctx := context.Background()
 	tasks, err := store.Query(ctx, ports.ListFilter{}, 10, 0)
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
@@ -1040,8 +1050,10 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 	if len(tasks) != 10 {
 		t.Errorf("expected 10 tasks with limit=10, got %d", len(tasks))
 	}
+}
 
-	// Query pending tasks only — must return all 500 (no limit)
+func testTaskStoreQueryStatusFilterPending(t *testing.T, store *sqliteTaskStore) {
+	ctx := context.Background()
 	pending, err := store.Query(ctx, ports.ListFilter{Status: "pending"}, 0, 0)
 	if err != nil {
 		t.Fatalf("Query pending failed: %v", err)
@@ -1049,8 +1061,10 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 	if len(pending) != 500 {
 		t.Errorf("expected 500 pending tasks, got %d", len(pending))
 	}
+}
 
-	// Query with offset beyond total — must return empty
+func testTaskStoreQueryOffsetBeyondTotal(t *testing.T, store *sqliteTaskStore) {
+	ctx := context.Background()
 	empty, err := store.Query(ctx, ports.ListFilter{}, 10, 10000)
 	if err != nil {
 		t.Fatalf("Query beyond range failed: %v", err)
@@ -1058,8 +1072,10 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 	if len(empty) != 0 {
 		t.Errorf("expected 0 tasks with offset beyond total, got %d", len(empty))
 	}
+}
 
-	// Verify Count
+func testTaskStoreQueryCountAccurate(t *testing.T, store *sqliteTaskStore) {
+	ctx := context.Background()
 	count, err := store.Count(ctx)
 	if err != nil {
 		t.Fatalf("Count failed: %v", err)
@@ -1067,18 +1083,18 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 	if count != 5000 {
 		t.Errorf("expected 5000 total tasks, got %d", count)
 	}
+}
 
-	// Verify ReadAll bounded behavior (should return 500 pending + 1000 in_progress + 500 completed = 2000)
+func testTaskStoreQueryReadallBounded(t *testing.T, store *sqliteTaskStore) {
+	ctx := context.Background()
 	all, err := store.ReadAll(ctx)
 	if err != nil {
 		t.Fatalf("ReadAll failed: %v", err)
 	}
-	// 500 pending + 1000 in_progress + 500 (most recent completed) = 2000
 	expectedMax := 500 + 1000 + 500
 	if len(all) > expectedMax {
 		t.Errorf("ReadAll returned %d tasks, expected at most %d", len(all), expectedMax)
 	}
-	// All pending should be present
 	pendingInAll := 0
 	for _, task := range all {
 		if task.Status == "pending" {
@@ -1088,4 +1104,26 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 	if pendingInAll != 500 {
 		t.Errorf("expected 500 pending tasks in ReadAll, got %d", pendingInAll)
 	}
+}
+
+// =============================================================================
+// TestSQLiteTaskStore_Query_BoundedMemory proves that Query's memory
+// allocation is proportional to the result set, not the total DB size.
+// =============================================================================
+
+func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
+	t.Parallel()
+
+	db := setupSQLite(t)
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	seedMixedStatusTasks(t, store, ctx, now, 5000)
+
+	t.Run("limit_enforced", func(t *testing.T) { testTaskStoreQueryLimitEnforced(t, store) })
+	t.Run("status_filter_pending", func(t *testing.T) { testTaskStoreQueryStatusFilterPending(t, store) })
+	t.Run("offset_beyond_total", func(t *testing.T) { testTaskStoreQueryOffsetBeyondTotal(t, store) })
+	t.Run("count_accurate", func(t *testing.T) { testTaskStoreQueryCountAccurate(t, store) })
+	t.Run("readall_bounded", func(t *testing.T) { testTaskStoreQueryReadallBounded(t, store) })
 }
