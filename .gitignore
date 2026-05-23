@@ -45,4 +45,3 @@ Thumbs.db
 internal/tools/workspace/*.txt
 coverage.raw
 coverage.out
-deadcode
