@@ -82,12 +82,6 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 	return b
 }
 
-// Config returns the BootstrapperConfig used to construct this Bootstrapper.
-// It is primarily intended for test assertions.
-func (b *Bootstrapper) Config() BootstrapperConfig {
-	return b.cfg
-}
-
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	b.cfg.Logger.Debug("Building session dependencies",
