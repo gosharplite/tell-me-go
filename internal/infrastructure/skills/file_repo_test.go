@@ -252,3 +252,62 @@ func TestNewFileSkillRepository_ErrorPaths_UnreadableSubdirectory(t *testing.T) 
 		t.Errorf("expected 'load skills from' error, got: %v", err)
 	}
 }
+
+func TestValidateSkill(t *testing.T) {
+	tests := []struct {
+		name      string
+		skillName string
+		desc      string
+		wantValid bool
+		wantErr   error
+	}{
+		{
+			name:      "both fields present",
+			skillName: "go-patterns",
+			desc:      "Go design patterns",
+			wantValid: true,
+			wantErr:   nil,
+		},
+		{
+			name:      "both fields empty",
+			skillName: "",
+			desc:      "",
+			wantValid: false,
+			wantErr:   nil,
+		},
+		{
+			name:      "name missing, desc present",
+			skillName: "",
+			desc:      "A description",
+			wantValid: false,
+			wantErr:   errInvalidFrontmatter,
+		},
+		{
+			name:      "name present, desc empty",
+			skillName: "my-skill",
+			desc:      "",
+			wantValid: false,
+			wantErr:   nil,
+		},
+		{
+			name:      "whitespace-only name",
+			skillName: "  ",
+			desc:      "",
+			wantValid: false,
+			wantErr:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			valid, err := validateSkill(tt.skillName, tt.desc)
+
+			if valid != tt.wantValid {
+				t.Errorf("valid = %v; want %v", valid, tt.wantValid)
+			}
+			if err != tt.wantErr {
+				t.Errorf("err = %v; want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
