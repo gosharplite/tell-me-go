@@ -139,6 +139,50 @@ func (a *defaultSequenceAnalyzer) mapSymbols(pkgs []*packages.Package) map[strin
 	return funcMap
 }
 
+// resolveStartSymbol resolves a fully-qualified symbol name to its
+// containing package and function declaration. It tries an exact
+// funcMap match first, then falls back to legacy package-path search.
+// Returns (pkg, funcDecl, error). The error includes a user-facing
+// hint when resolution fails.
+func (a *defaultSequenceAnalyzer) resolveStartSymbol(startSymbol string) (*packages.Package, *ast.FuncDecl, error) {
+	// Try exact match first
+	a.pkgMu.RLock()
+	info, ok := a.funcMap[startSymbol]
+	a.pkgMu.RUnlock()
+	if ok {
+		return info.pkg, info.decl, nil
+	}
+
+	// Fallback to legacy search
+	a.pkgMu.RLock()
+	pkgs := a.pkgs
+	modName := a.modName
+	a.pkgMu.RUnlock()
+
+	startPkg, rem := a.findStartPackage(startSymbol, pkgs, modName)
+	if startPkg != nil {
+		startFunc, err := a.resolveStartFunc(startPkg, rem)
+		if err != nil {
+			return nil, nil, fmt.Errorf("start symbol not found: %s: %w", startSymbol, err)
+		}
+		return startPkg, startFunc, nil
+	}
+
+	// Build hint for error message
+	hint := ""
+	if strings.Contains(startSymbol, "/") {
+		// Only show the fully-qualified-path hint if the symbol already
+		// looks like a fully-qualified path that we couldn't resolve.
+		// For module-relative paths, suggest trying the package-local format.
+		if modName != "" && strings.HasPrefix(startSymbol, modName) {
+			hint = " (try 'pkg/path.(*Type).Method' for a method, or 'pkg/path.Func' for a function)"
+		} else {
+			hint = " (try the full module path, e.g. 'github.com/foo/bar/pkg.Func' or 'pkg/path.Func')"
+		}
+	}
+	return nil, nil, fmt.Errorf("start symbol not found: %s%s", startSymbol, hint)
+}
+
 func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int, hb chan<- struct{}) ([]callFrame, error) {
 	if err := a.loadPackages(ctx, hb); err != nil {
 		return nil, err
@@ -153,51 +197,14 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 		a.idx.WarmImplementations(ctx)
 	}
 
-	var modName string
+	startPkg, startFunc, err := a.resolveStartSymbol(startSymbol)
+	if err != nil {
+		return nil, err
+	}
 
-	// Try exact match first
 	a.pkgMu.RLock()
-	info, ok := a.funcMap[startSymbol]
+	modName := a.modName
 	a.pkgMu.RUnlock()
-
-	var startPkg *packages.Package
-	var startFunc *ast.FuncDecl
-
-	if ok {
-		startPkg = info.pkg
-		startFunc = info.decl
-	} else {
-		// Fallback to legacy search
-		a.pkgMu.RLock()
-		pkgs := a.pkgs
-		modName = a.modName
-		a.pkgMu.RUnlock()
-
-		var rem string
-		startPkg, rem = a.findStartPackage(startSymbol, pkgs, modName)
-		if startPkg != nil {
-			var err error
-			startFunc, err = a.resolveStartFunc(startPkg, rem)
-			if err != nil {
-				return nil, fmt.Errorf("start symbol not found: %s: %w", startSymbol, err)
-			}
-		}
-	}
-
-	if startPkg == nil || startFunc == nil {
-		hint := ""
-		if strings.Contains(startSymbol, "/") {
-			// Only show the fully-qualified-path hint if the symbol already
-			// looks like a fully-qualified path that we couldn't resolve.
-			// For module-relative paths, suggest trying the package-local format.
-			if modName != "" && strings.HasPrefix(startSymbol, modName) {
-				hint = " (try 'pkg/path.(*Type).Method' for a method, or 'pkg/path.Func' for a function)"
-			} else {
-				hint = " (try the full module path, e.g. 'github.com/foo/bar/pkg.Func' or 'pkg/path.Func')"
-			}
-		}
-		return nil, fmt.Errorf("start symbol not found: %s%s", startSymbol, hint)
-	}
 
 	collector := &frameCollector{}
 	visited := make(map[string]bool)
