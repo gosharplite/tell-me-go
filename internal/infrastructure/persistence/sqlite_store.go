@@ -94,21 +94,43 @@ func buildWhereClause(filter ports.ListFilter) whereClause {
 	}
 }
 
-// queryOrdered is like Query but accepts an explicit ORDER direction ("ASC" or "DESC").
-func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFilter, limit, offset int, order string) (result []ports.Task, err error) {
-	wc := buildWhereClause(filter)
+// orderClause holds a parameterized SQL ORDER BY / LIMIT / OFFSET fragment.
+type orderClause struct {
+	sql  string
+	args []any
+}
 
-	query := "SELECT id, content, status, created_at FROM tasks" + wc.sql + " ORDER BY id " + order
-	args := wc.args
+// buildOrderClause constructs an ORDER BY fragment with optional LIMIT and OFFSET.
+// Defaults to "ORDER BY id ASC" when order is not "DESC".
+func buildOrderClause(order string, limit, offset int) orderClause {
+	var sql string
+	var args []any
+
+	if order == "DESC" {
+		sql = " ORDER BY id DESC"
+	} else {
+		sql = " ORDER BY id ASC"
+	}
 
 	if limit > 0 {
-		query += " LIMIT ?"
+		sql += " LIMIT ?"
 		args = append(args, limit)
 	}
 	if offset > 0 {
-		query += " OFFSET ?"
+		sql += " OFFSET ?"
 		args = append(args, offset)
 	}
+
+	return orderClause{sql: sql, args: args}
+}
+
+// queryOrdered is like Query but accepts an explicit ORDER direction ("ASC" or "DESC").
+func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFilter, limit, offset int, order string) (result []ports.Task, err error) {
+	wc := buildWhereClause(filter)
+	oc := buildOrderClause(order, limit, offset)
+
+	query := "SELECT id, content, status, created_at FROM tasks" + wc.sql + oc.sql
+	args := append(wc.args, oc.args...)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

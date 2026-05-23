@@ -1394,3 +1394,19 @@ func TestGetUnifiedHistoryProvider_SuccessPath(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, reg)
 }
+
+func TestNewBootstrapper_DefaultFallbacks(t *testing.T) {
+	cfg := BootstrapperConfig{
+		HomeDir: t.TempDir(),
+		Version: "test",
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		// ClientFactory, Logger, FileSystem, WorkspacePolicy — all deliberately nil
+		// to exercise the default-assignment branches in NewBootstrapper.
+	}
+	b := NewBootstrapper(cfg)
+	assert.NotNil(t, b.GetChatService())
+	assert.NotNil(t, b.GetHistoryBrowser())
+	assert.NotNil(t, b.GetUIRenderer())
+	assert.NotNil(t, b.GetHistoryRenderer())
+}

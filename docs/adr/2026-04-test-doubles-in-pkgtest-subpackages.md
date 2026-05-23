@@ -180,7 +180,8 @@ identifies the package as a test-helper sibling.**
 
 - `verify_architecture` (the project's layer-rule checker) catches any
   production code importing a `*test` package or `testfixtures`.
-- A grep-based CI lint (to be added) catches any new file matching
+- `make verify-testutil-convention` (invoked by `make test`, `make check`,
+  and `make check-full`) catches any new file matching
   `internal/.*/testutil/.*\.go` and fails the build with a pointer to
   this ADR.
 - Code review checklist: when reviewing a new test helper, verify it

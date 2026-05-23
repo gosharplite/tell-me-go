@@ -10,6 +10,93 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
+func TestBuildOrderClause(t *testing.T) {
+	tests := []struct {
+		name       string
+		order      string
+		limit      int
+		offset     int
+		wantSQL    string
+		wantArgLen int
+		wantArgs   []any
+	}{
+		{
+			name:       "ASC default",
+			order:      "ASC",
+			limit:      0,
+			offset:     0,
+			wantSQL:    " ORDER BY id ASC",
+			wantArgLen: 0,
+			wantArgs:   nil,
+		},
+		{
+			name:       "DESC",
+			order:      "DESC",
+			limit:      0,
+			offset:     0,
+			wantSQL:    " ORDER BY id DESC",
+			wantArgLen: 0,
+			wantArgs:   nil,
+		},
+		{
+			name:       "empty order defaults to ASC",
+			order:      "",
+			limit:      0,
+			offset:     0,
+			wantSQL:    " ORDER BY id ASC",
+			wantArgLen: 0,
+			wantArgs:   nil,
+		},
+		{
+			name:       "with limit only",
+			order:      "DESC",
+			limit:      50,
+			offset:     0,
+			wantSQL:    " ORDER BY id DESC LIMIT ?",
+			wantArgLen: 1,
+			wantArgs:   []any{50},
+		},
+		{
+			name:       "with offset only",
+			order:      "ASC",
+			limit:      0,
+			offset:     10,
+			wantSQL:    " ORDER BY id ASC OFFSET ?",
+			wantArgLen: 1,
+			wantArgs:   []any{10},
+		},
+		{
+			name:       "with limit and offset",
+			order:      "DESC",
+			limit:      100,
+			offset:     200,
+			wantSQL:    " ORDER BY id DESC LIMIT ? OFFSET ?",
+			wantArgLen: 2,
+			wantArgs:   []any{100, 200},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oc := buildOrderClause(tt.order, tt.limit, tt.offset)
+
+			if oc.sql != tt.wantSQL {
+				t.Errorf("sql = %q; want %q", oc.sql, tt.wantSQL)
+			}
+			if len(oc.args) != tt.wantArgLen {
+				t.Errorf("args len = %d; want %d", len(oc.args), tt.wantArgLen)
+			}
+			if tt.wantArgs != nil {
+				for i, want := range tt.wantArgs {
+					if oc.args[i] != want {
+						t.Errorf("args[%d] = %v (%T); want %v (%T)", i, oc.args[i], oc.args[i], want, want)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestBuildWhereClause(t *testing.T) {
 	refTime := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
 

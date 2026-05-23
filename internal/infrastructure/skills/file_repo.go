@@ -85,6 +85,24 @@ func (r *fileSkillRepository) GetAll(ctx context.Context) ([]domain.Skill, error
 	return r.cache, nil
 }
 
+// validateSkill checks parsed skill fields and reports whether the file
+// represents a valid skill. It returns (true, nil) when both name and
+// description are present, (false, nil) when the file should be silently
+// skipped, and (false, errInvalidFrontmatter) when a valid frontmatter
+// block is missing the required name field.
+func validateSkill(name, desc string) (bool, error) {
+	if name == "" {
+		if desc == "" {
+			return false, nil
+		}
+		return false, errInvalidFrontmatter
+	}
+	if desc == "" {
+		return false, nil
+	}
+	return true, nil
+}
+
 // parseSkill extracts the skill metadata from the Markdown frontmatter
 // and calculates the token count heuristic.
 func parseSkill(data []byte) (*domain.Skill, error) {
@@ -115,16 +133,11 @@ func parseSkill(data []byte) (*domain.Skill, error) {
 		}
 	}
 
-	// Only return a Skill if it has both name and description.
-	// If the file had valid frontmatter delimiters (opening and closing "---")
-	// but is missing the required name field, treat it as a parse error.
-	if name == "" && desc == "" {
-		return nil, nil
+	valid, err := validateSkill(name, desc)
+	if err != nil {
+		return nil, err
 	}
-	if name == "" {
-		return nil, errInvalidFrontmatter
-	}
-	if desc == "" {
+	if !valid {
 		return nil, nil
 	}
 
