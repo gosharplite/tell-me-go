@@ -167,6 +167,80 @@ func (m *mockServiceSessionDependencies) GetHealthManager() ports.HealthCheckMan
 // MockServiceSessionDependencies is a mock of SessionDependencies.
 type MockServiceSessionDependencies = mockServiceSessionDependencies
 
+// StubSessionDependencies is a manual stub implementing ports.SessionDependencies.
+// Each exported field corresponds to a getter method; set the fields your test needs
+// and leave the rest nil / zero-valued.
+type StubSessionDependencies struct {
+	Gateway          llm.LLMGateway
+	PricingOverrides map[string]pricing.ModelPricing
+	Tracker          pricing.CostTracker
+	PricingData      pricing.PricingData
+	HistoryManager   ports.HistoryManager
+	Paths            *persistence.Paths
+	Registry         tools.Registry
+	RegistryErr      error
+	SecurityManager  security.Manager
+	EventBus         events.EventBus
+	Logger           ports.Logger
+	TurnsLogger      ports.TurnsLogger
+	SessionProvider  ports.SessionProvider
+	HealthManager    ports.HealthCheckManager
+}
+
+var _ ports.SessionDependencies = (*StubSessionDependencies)(nil)
+
+func (s *StubSessionDependencies) GetGateway() llm.LLMGateway {
+	return s.Gateway
+}
+
+func (s *StubSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing {
+	return s.PricingOverrides
+}
+
+func (s *StubSessionDependencies) GetTracker() pricing.CostTracker {
+	return s.Tracker
+}
+
+func (s *StubSessionDependencies) GetPricingData() pricing.PricingData {
+	return s.PricingData
+}
+
+func (s *StubSessionDependencies) GetHistoryManager() ports.HistoryManager {
+	return s.HistoryManager
+}
+
+func (s *StubSessionDependencies) GetPaths() *persistence.Paths {
+	return s.Paths
+}
+
+func (s *StubSessionDependencies) GetRegistry() (tools.Registry, error) {
+	return s.Registry, s.RegistryErr
+}
+
+func (s *StubSessionDependencies) GetSecurityManager() security.Manager {
+	return s.SecurityManager
+}
+
+func (s *StubSessionDependencies) GetEventBus() events.EventBus {
+	return s.EventBus
+}
+
+func (s *StubSessionDependencies) GetLogger() ports.Logger {
+	return s.Logger
+}
+
+func (s *StubSessionDependencies) GetTurnsLogger() ports.TurnsLogger {
+	return s.TurnsLogger
+}
+
+func (s *StubSessionDependencies) GetSessionProvider() ports.SessionProvider {
+	return s.SessionProvider
+}
+
+func (s *StubSessionDependencies) GetHealthManager() ports.HealthCheckManager {
+	return s.HealthManager
+}
+
 // mockServiceEventBus is a mock of EventBus.
 type mockServiceEventBus struct {
 	mock.Mock
