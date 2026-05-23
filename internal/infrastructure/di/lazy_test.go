@@ -30,7 +30,7 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode:  "assistant",
 		Model: "test-model",
 	}
@@ -43,10 +43,17 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 		return nil, simulatedErr
 	}
 
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, clientFactory)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = clientFactory
+	b := NewBootstrapper(bcfg)
 
 	// 1. BuildSessionDependencies should SUCCEED
-	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	require.NoError(t, err)
 	require.NotNil(t, deps)
 	defer func() { _ = cleanup(ctx) }()
@@ -89,12 +96,18 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode:  "assistant",
 		Model: "test-model",
 	}
 
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
 
 	callCount := 0
 	mockToolchain := new(mockToolchainFactory)
@@ -105,7 +118,7 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	b.toolchainFactory = mockToolchain
 
 	// 1. BuildSessionDependencies should NOT trigger registry construction
-	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	require.NoError(t, err)
 	require.NotNil(t, deps)
 	defer func() { _ = cleanup(ctx) }()

@@ -7,7 +7,6 @@ import (
 	stdctx "context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -23,7 +22,6 @@ import (
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
-	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 )
 
 // ConfigurableSecurityManager extends the domain security manager with configuration methods.
@@ -38,6 +36,7 @@ type ConfigurableSecurityManager interface {
 
 // Bootstrapper handles the instantiation and wiring of system components.
 type Bootstrapper struct {
+	cfg               BootstrapperConfig
 	sessionFactory    sessionFactory
 	toolchainFactory  toolchainFactory
 	telemetryFactory  telemetryFactory
@@ -46,75 +45,58 @@ type Bootstrapper struct {
 	uiFactory         uiFactory
 	chatFactory       chatFactory
 	suggestionFactory suggestionFactory
-	HomeDir           string
-	SM                ConfigurableSecurityManager
-	Version           string
-	Stdout            io.Writer
-	Stderr            io.Writer
-	Logger            *slog.Logger
-	FileSystem        infra_persistence.FileSystem
-	WorkspacePolicy   services.WorkspacePolicy
-	ClientFactory     func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
-	RegisterAllTools  func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics   func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
-	RotateSession     func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error
-	NewSessionState   func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
 // NewBootstrapper creates a new Bootstrapper instance.
-func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, fs infra_persistence.FileSystem, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) *Bootstrapper {
-	if clientFactory == nil {
-		clientFactory = infra_llm.NewClient
+func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
+	if cfg.ClientFactory == nil {
+		cfg.ClientFactory = infra_llm.NewClient
 	}
-	if logger == nil {
-		logger = slog.Default()
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
 	}
-	if fs == nil {
-		fs = &infra_persistence.OSFileSystem{}
-	}
-	b := &Bootstrapper{
-		HomeDir:          homeDir,
-		SM:               sm,
-		Version:          version,
-		Stdout:           stdout,
-		Stderr:           stderr,
-		Logger:           logger,
-		FileSystem:       fs,
-		ClientFactory:    clientFactory,
-		RegisterAllTools: infra_tools.RegisterAll,
-		RegisterMetrics:  telemetry.RegisterMetrics,
-		RotateSession:    infra_persistence.RotateSession,
-		NewSessionState:  infra_persistence.NewSessionState,
+	if cfg.FileSystem == nil {
+		cfg.FileSystem = &infra_persistence.OSFileSystem{}
 	}
 
-	if b.WorkspacePolicy == nil {
-		b.WorkspacePolicy = infra_persistence.NewWorkspacePolicy()
+	b := &Bootstrapper{cfg: cfg}
+
+	if b.cfg.WorkspacePolicy == nil {
+		b.cfg.WorkspacePolicy = infra_persistence.NewWorkspacePolicy()
 	}
 
-	b.sessionFactory = newSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
-		b.RotateSession,
-		b.NewSessionState)
-	b.toolchainFactory = newToolchainFactory(homeDir, fs, sm, b.WorkspacePolicy,
-		b.RegisterAllTools,
-		b.RegisterMetrics)
-	b.telemetryFactory = newTelemetryFactory(homeDir, fs, sm, logger)
-	b.historyFactory = newHistoryFactory(homeDir, fs)
+	b.sessionFactory = newSessionFactory(
+		cfg.HomeDir, cfg.FileSystem, cfg.SM, cfg.Stdout, cfg.Stderr, cfg.Logger,
+		cfg.RotateSession, cfg.NewSessionState,
+	)
+	b.toolchainFactory = newToolchainFactory(
+		cfg.HomeDir, cfg.FileSystem, cfg.SM, b.cfg.WorkspacePolicy,
+		cfg.RegisterAllTools, cfg.RegisterMetrics,
+	)
+	b.telemetryFactory = newTelemetryFactory(cfg.HomeDir, cfg.FileSystem, cfg.SM, cfg.Logger)
+	b.historyFactory = newHistoryFactory(cfg.HomeDir, cfg.FileSystem)
 	b.healthFactory = newHealthFactory()
-	b.uiFactory = newUIFactory(sm, stdout, stderr, logger)
-	b.chatFactory = newChatFactory(homeDir, version, stdout, stderr, sm, fs, b, b.uiFactory)
-	b.suggestionFactory = newSuggestionFactory(homeDir, fs, stderr, logger, b.WorkspacePolicy)
+	b.uiFactory = newUIFactory(cfg.SM, cfg.Stdout, cfg.Stderr, cfg.Logger)
+	b.chatFactory = newChatFactory(cfg.HomeDir, cfg.Version, cfg.Stdout, cfg.Stderr, cfg.SM, cfg.FileSystem, b, b.uiFactory)
+	b.suggestionFactory = newSuggestionFactory(cfg.HomeDir, cfg.FileSystem, cfg.Stderr, cfg.Logger, b.cfg.WorkspacePolicy)
 	return b
+}
+
+// Config returns the BootstrapperConfig used to construct this Bootstrapper.
+// It is primarily intended for test assertions.
+func (b *Bootstrapper) Config() BootstrapperConfig {
+	return b.cfg
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
-	b.Logger.Debug("Building session dependencies",
+	b.cfg.Logger.Debug("Building session dependencies",
 		slog.String("config_model", cfg.Model),
 		slog.String("config_path", configPath),
 		slog.Int("config_models_count", len(cfg.Models)))
 
 	for k, v := range cfg.Models {
-		b.Logger.Debug("Config model details",
+		b.cfg.Logger.Debug("Config model details",
 			slog.String("model", k),
 			slog.Float64("pricing_comp", v.Pricing.Comp))
 	}
@@ -131,26 +113,26 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.cfg.Logger), events.WithAsync(false))
 
 	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
 
 	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
-		return b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
+		return b.cfg.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.cfg.Logger))
 	})
 
 	deps := &sessionDeps{
 		paths:            paths,
 		hManager:         hManager,
-		sm:               b.SM,
+		sm:               b.cfg.SM,
 		tracker:          tracker,
 		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
-		logger:           telemetry.NewSlogLogger(b.Logger),
+		logger:           telemetry.NewSlogLogger(b.cfg.Logger),
 		turnsLogger:      turnsLogger,
 		sessionProvider:  sessionProvider,
-		workspacePolicy:  b.WorkspacePolicy,
+		workspacePolicy:  b.cfg.WorkspacePolicy,
 		lazyClient:       lazyClient,
 	}
 
@@ -168,7 +150,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 			PricingOverrides: pricingOverrides,
 			Capturer:         capturer,
 		})
-	}, telemetry.NewSlogLogger(b.Logger))
+	}, telemetry.NewSlogLogger(b.cfg.Logger))
 	deps.lazyRegistry = lazyRegistry
 
 	return deps, hManager, cleanup, nil
@@ -234,7 +216,7 @@ func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.Histor
 	}
 
 	// Calculate and record cost
-	if recordErr := telemetry.RecordSessionCost(ctx, b.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
+	if recordErr := telemetry.RecordSessionCost(ctx, b.cfg.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
 		errs = append(errs, fmt.Errorf("failed to record final session cost: %w", recordErr))
 	}
 
@@ -250,7 +232,7 @@ func (b *Bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 		// and 'v.Pricing' will be fully populated from the YAML.
 		if v.Pricing.Comp > 0 {
 			pricingOverrides[k] = v.Pricing
-			b.Logger.Debug("Added pricing override for model",
+			b.cfg.Logger.Debug("Added pricing override for model",
 				slog.String("model", k),
 				slog.Float64("comp", v.Pricing.Comp))
 		}

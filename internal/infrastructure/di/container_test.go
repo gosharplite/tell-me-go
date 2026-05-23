@@ -126,11 +126,18 @@ func TestBuildSessionDependencies(t *testing.T) {
 
 	client := new(mockLLMClient)
 
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	cfg := DefaultBootstrapperConfig()
+	cfg.HomeDir = tempDir
+	cfg.SM = sm
+	cfg.Version = "1.0.0"
+	cfg.Stdout = io.Discard
+	cfg.Stderr = io.Discard
+	cfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
-	})
+	}
+	bootstrapper := NewBootstrapper(cfg)
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode: "assistant",
 		Models: map[string]config.ModelConfig{
 			"test-model": {
@@ -140,7 +147,7 @@ func TestBuildSessionDependencies(t *testing.T) {
 		Model: "test-model",
 	}
 
-	deps, hManager, cleanup, err := Bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	deps, hManager, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, deps)
 	assert.NotNil(t, hManager)
@@ -156,9 +163,16 @@ func TestGetAgentFactory(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
 
-	factory := Bootstrapper.GetAgentFactory()
+	cfg := DefaultBootstrapperConfig()
+	cfg.HomeDir = tempDir
+	cfg.SM = sm
+	cfg.Version = "1.0.0"
+	cfg.Stdout = io.Discard
+	cfg.Stderr = io.Discard
+	bootstrapper := NewBootstrapper(cfg)
+
+	factory := bootstrapper.GetAgentFactory()
 	assert.NotNil(t, factory)
 }
 
@@ -168,7 +182,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode:  "assistant",
 		Model: "test-model",
 	}
@@ -197,7 +211,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			name: "FailsOnHistoryLoadError",
 			setup: func(t *testing.T) string {
 				home := filepath.Join(tempDir, "history-err-home")
-				modeDir := filepath.Join(home, "output", cfg.Mode)
+				modeDir := filepath.Join(home, "output", testCfg.Mode)
 				err := os.MkdirAll(modeDir, 0755)
 				require.NoError(t, err)
 				historyPath := filepath.Join(modeDir, "history.jsonl")
@@ -238,7 +252,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			name: "FailsOnStateInitError",
 			setup: func(t *testing.T) string {
 				home := filepath.Join(tempDir, "sessionstate-err-home")
-				modeDir := filepath.Join(home, "output", cfg.Mode)
+				modeDir := filepath.Join(home, "output", testCfg.Mode)
 				err := os.MkdirAll(modeDir, 0755)
 				require.NoError(t, err)
 				// Create a directory where the db file should be to cause SQLite init to fail
@@ -268,9 +282,16 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 					return new(mockLLMClient), nil
 				}
 			}
-			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, cf)
+			bcfg := DefaultBootstrapperConfig()
+			bcfg.HomeDir = homeDir
+			bcfg.SM = sm
+			bcfg.Version = "1.0.0"
+			bcfg.Stdout = io.Discard
+			bcfg.Stderr = io.Discard
+			bcfg.ClientFactory = cf
+			b := NewBootstrapper(bcfg)
 			newSession := strings.Contains(tt.name, "TriggerNewSession")
-			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
+			_, _, _, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", newSession, nil)
 
 			if tt.wantErr == "" && tt.targetErr == nil {
 				assert.NoError(t, err)
@@ -296,7 +317,7 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode:  "assistant",
 		Model: "test-model",
 	}
@@ -310,11 +331,18 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 	sm.On("IsPathSafe", mock.Anything).Return("", simulatedErr)
 
 	var stderr bytes.Buffer
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = &stderr
+	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	})
+	}
+	bootstrapper := NewBootstrapper(bcfg)
 
-	deps, hManager, cleanup, err := Bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", true, nil)
+	deps, hManager, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", true, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, deps)
 	assert.NotNil(t, hManager)
@@ -344,31 +372,38 @@ func TestFinalizeSession(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode:  "assistant",
 		Model: "test-model",
 	}
 
 	client := new(mockLLMClient)
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
-	})
+	}
+	b := NewBootstrapper(bcfg)
 
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 
-	deps, hManager, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	deps, hManager, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, cleanup)
 	defer func() { _ = cleanup(ctx) }()
 
 	// Test success
-	err = b.FinalizeSession(ctx, hManager, deps, cfg)
+	err = b.FinalizeSession(ctx, hManager, deps, testCfg)
 	assert.NoError(t, err)
 
 	// Test with save error
-	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, cfg)
+	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, testCfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "save failed")
 
@@ -377,7 +412,7 @@ func TestFinalizeSession(t *testing.T) {
 	setupDefaultSMExpectations(sm)
 	sm.On("IsPathSafe", mock.Anything).Return("", errors.New("record cost failed"))
 
-	err = b.FinalizeSession(ctx, hManager, deps, cfg)
+	err = b.FinalizeSession(ctx, hManager, deps, testCfg)
 	assert.Error(t, err)
 	if err != nil {
 		assert.Contains(t, err.Error(), "record cost failed")
@@ -388,7 +423,7 @@ func TestFinalizeSession(t *testing.T) {
 	setupDefaultSMExpectations(sm)
 	sm.On("IsPathSafe", mock.Anything).Return("", errors.New("record cost failed"))
 
-	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, cfg)
+	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, testCfg)
 	assert.Error(t, err)
 	if err != nil {
 		assert.Contains(t, err.Error(), "save failed")
@@ -403,9 +438,16 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
 
-	factory := Bootstrapper.GetAgentFactory()
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bootstrapper := NewBootstrapper(bcfg)
+
+	factory := bootstrapper.GetAgentFactory()
 	assert.NotNil(t, factory)
 
 	// Execute the factory
@@ -424,14 +466,14 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 		client:   client,
 	}
 
-	cfg := ports.ChatterConfig{
+	testCfg := ports.ChatterConfig{
 		ProviderName: "test-provider",
 		Model:        "test-model",
 		Mode:         "assistant",
 		LogPath:      "tokens.log",
 		TracePath:    "tokens.trace.jsonl",
 	}
-	agent, err := factory(context.Background(), mockDeps, cfg)
+	agent, err := factory(context.Background(), mockDeps, testCfg)
 	assert.NoError(t, err)
 	assert.NotNil(t, agent)
 }
@@ -497,11 +539,18 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 
 	client := new(mockLLMClient)
 
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
-	})
+	}
+	bootstrapper := NewBootstrapper(bcfg)
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode: "assistant",
 		Models: map[string]config.ModelConfig{
 			"test-model": {
@@ -511,7 +560,7 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 		Model: "test-model",
 	}
 
-	deps, hManager, cleanup, err := Bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", true, nil)
+	deps, hManager, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", true, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, deps)
 	assert.NotNil(t, hManager)
@@ -628,50 +677,50 @@ func TestContainer_InitializationErrors(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	simulatedErr := errors.New("simulated error")
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode:  "assistant",
 		Model: "test-model",
 	}
 
 	tests := []struct {
 		name      string
-		mockSetup func(b *Bootstrapper, sm *mockConfigurableSecurityManager)
+		cfgSetup  func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager)
+		mockSetup func(sm *mockConfigurableSecurityManager)
 		wantErr   string
 	}{
 		{
 			name: "ToolRegistrationFails",
-			mockSetup: func(b *Bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
+			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
+				cfg.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
 					return simulatedErr
 				}
-				b.toolchainFactory = newToolchainFactory(b.HomeDir, b.FileSystem, b.SM, b.WorkspacePolicy, b.RegisterAllTools, b.RegisterMetrics)
 			},
-			wantErr: "", // Lazy initialization
+			wantErr: "",
 		},
 		{
 			name: "TelemetryRegistrationFails",
-			mockSetup: func(b *Bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
+			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
+				cfg.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 					return simulatedErr
 				}
-				b.toolchainFactory = newToolchainFactory(b.HomeDir, b.FileSystem, b.SM, b.WorkspacePolicy, b.RegisterAllTools, b.RegisterMetrics)
 			},
-			wantErr: "", // Lazy initialization
+			wantErr: "",
 		},
 		{
 			name: "SessionRotationFails",
-			mockSetup: func(b *Bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RotateSession = func(ctx context.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
+			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
+				cfg.RotateSession = func(ctx context.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
 					return simulatedErr
 				}
-				b.sessionFactory = newSessionFactory(b.HomeDir, b.FileSystem, b.SM, b.Stdout, b.Stderr, b.Logger, b.RotateSession, b.NewSessionState)
+			},
+			mockSetup: func(sm *mockConfigurableSecurityManager) {
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 			},
 			wantErr: "session initialization failed during rotation for",
 		},
 		{
 			name: "SessionProviderCloseFails",
-			mockSetup: func(b *Bootstrapper, sm *mockConfigurableSecurityManager) {
+			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
 				mockSP := new(mockSessionProvider)
 				mockKV := new(mockKVStore)
 				mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
@@ -681,12 +730,11 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				mockSP.On("SetInfo", mock.Anything).Return().Maybe()
 				mockSP.On("Close").Return(simulatedErr)
 
-				b.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+				cfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 					return mockSP, nil
 				}
-				b.sessionFactory = newSessionFactory(b.HomeDir, b.FileSystem, b.SM, b.Stdout, b.Stderr, b.Logger, b.RotateSession, b.NewSessionState)
 			},
-			wantErr: "", // No error from BuildSessionDependencies
+			wantErr: "",
 		},
 	}
 
@@ -698,16 +746,27 @@ func TestContainer_InitializationErrors(t *testing.T) {
 			sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 			var stderr bytes.Buffer
-			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+			bcfg := DefaultBootstrapperConfig()
+			bcfg.HomeDir = tempDir
+			bcfg.SM = sm
+			bcfg.Version = "1.0.0"
+			bcfg.Stdout = io.Discard
+			bcfg.Stderr = &stderr
+			bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 				return new(mockLLMClient), nil
-			})
-
-			if tt.mockSetup != nil {
-				tt.mockSetup(b, sm)
 			}
 
+			if tt.cfgSetup != nil {
+				tt.cfgSetup(&bcfg, sm)
+			}
+			if tt.mockSetup != nil {
+				tt.mockSetup(sm)
+			}
+
+			b := NewBootstrapper(bcfg)
+
 			newSession := (tt.name == "SessionRotationFails")
-			_, _, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
+			_, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", newSession, nil)
 
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -750,11 +809,18 @@ func TestCrossSessionPersistence(t *testing.T) {
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	// 3. Build Dependencies
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	})
-	cfg := &config.Config{Mode: mode, Model: "test-model"}
-	_, _, cleanup, err := Bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	}
+	bootstrapper := NewBootstrapper(bcfg)
+	testCfg := &config.Config{Mode: mode, Model: "test-model"}
+	_, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 
 	// 4. Verification
 	assert.NoError(t, err)
@@ -844,9 +910,15 @@ func TestGetSuggestionService(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
 
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bootstrapper := NewBootstrapper(bcfg)
 
-	svc, err := Bootstrapper.GetSuggestionService(ctx, []string{"test prompt"})
+	svc, err := bootstrapper.GetSuggestionService(ctx, []string{"test prompt"})
 	assert.NoError(t, err)
 	assert.NotNil(t, svc)
 
@@ -867,16 +939,23 @@ func TestBootstrapper_Cleanup_ClosesTurnsLogger(t *testing.T) {
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
-	bootstrapper := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tmpDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	})
+	}
+	bootstrapper := NewBootstrapper(bcfg)
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode: "assistant",
 	}
 
 	// 2. Execute BuildSessionDependencies
-	deps, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "dummy-path.yaml", true, nil)
+	deps, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "dummy-path.yaml", true, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
@@ -897,7 +976,13 @@ func TestGetChatService(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
 
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
 	svc := b.GetChatService()
 	assert.NotNil(t, svc)
 }
@@ -951,21 +1036,27 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	file := &mockFileWithErrors{closeErr: logErr}
 	fs := &mockFSWithErrors{file: file}
 
-	bootstrapper := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, fs, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tmpDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.FileSystem = fs
+	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	})
-
-	bootstrapper.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+	}
+	bcfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 		return mockSP, nil
 	}
-	bootstrapper.sessionFactory = newSessionFactory(bootstrapper.HomeDir, bootstrapper.FileSystem, bootstrapper.SM, bootstrapper.Stdout, bootstrapper.Stderr, bootstrapper.Logger, bootstrapper.RotateSession, bootstrapper.NewSessionState)
+	bootstrapper := NewBootstrapper(bcfg)
 
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		Mode: "assistant",
 	}
 
 	// 2. Build dependencies
-	_, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	_, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 
@@ -982,8 +1073,8 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 
 func TestBootstrapper_GetPricingOverrides(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := &Bootstrapper{Logger: logger}
-	cfg := &config.Config{
+	b := &Bootstrapper{cfg: BootstrapperConfig{Logger: logger}}
+	testCfg := &config.Config{
 		Models: map[string]config.ModelConfig{
 			"model1": {
 				Pricing: pricing.ModelPricing{Comp: 0.1},
@@ -997,7 +1088,7 @@ func TestBootstrapper_GetPricingOverrides(t *testing.T) {
 		},
 	}
 
-	overrides := b.getPricingOverrides(cfg)
+	overrides := b.getPricingOverrides(testCfg)
 	assert.Len(t, overrides, 2)
 	assert.Contains(t, overrides, "model1")
 	assert.Contains(t, overrides, "model3")
@@ -1017,10 +1108,16 @@ func TestGetUnifiedHistoryProvider_Failure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
-	cfg := &config.Config{Mode: "assistant"}
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tmpDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+	testCfg := &config.Config{Mode: "assistant"}
 
-	provider, err := b.GetUnifiedHistoryProvider(context.Background(), cfg, nil)
+	provider, err := b.GetUnifiedHistoryProvider(context.Background(), testCfg, nil)
 	assert.Error(t, err)
 	assert.Nil(t, provider)
 }
@@ -1038,7 +1135,13 @@ func TestGetSuggestionService_Failure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tmpDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
 
 	svc, err := b.GetSuggestionService(context.Background(), nil)
 	// Suggestion service itself doesn't fail, it just uses NoOpTracker
@@ -1057,10 +1160,16 @@ func TestGetHistoryManager_Failure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
-	cfg := &config.Config{Mode: "assistant"}
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tmpDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+	testCfg := &config.Config{Mode: "assistant"}
 
-	hManager, err := b.GetHistoryManager(context.Background(), cfg)
+	hManager, err := b.GetHistoryManager(context.Background(), testCfg)
 	assert.Error(t, err)
 	assert.Nil(t, hManager)
 }
@@ -1132,8 +1241,8 @@ func TestBypassConfirmationPriority(t *testing.T) {
 				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 			}
 
-			cfg := &config.Config{BypassConfirmation: tt.yamlBypass}
-			factory.applySessionSecuritySettings(ctx, mockSP, cfg)
+			testCfg := &config.Config{BypassConfirmation: tt.yamlBypass}
+			factory.applySessionSecuritySettings(ctx, mockSP, testCfg)
 
 			sm.AssertExpectations(t)
 			mockKV.AssertExpectations(t)
@@ -1206,9 +1315,9 @@ func TestHandleNewSession_RetentionDays(t *testing.T) {
 			paths := &persistence.Paths{
 				LogPath: filepath.Join(tempDir, "test.log"),
 			}
-			cfg := &config.Config{Mode: "assistant", Model: "test-model"}
+			testCfg := &config.Config{Mode: "assistant", Model: "test-model"}
 
-			_ = factory.handleNewSession(ctx, paths, cfg, nil, mockKV)
+			_ = factory.handleNewSession(ctx, paths, testCfg, nil, mockKV)
 
 			select {
 			case capturedRetention = <-rotateCalled:
@@ -1228,7 +1337,13 @@ func TestBootstrapper_Getters(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
 
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
 
 	assert.NotNil(t, b.GetHistoryBrowser())
 	assert.NotNil(t, b.GetUIRenderer())
@@ -1242,29 +1357,35 @@ func TestGetUnifiedHistoryProvider_SuccessPath(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
 
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
-	cfg := &config.Config{Mode: "assistant"}
+	client := new(mockLLMClient)
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return client, nil
+	}
+	b := NewBootstrapper(bcfg)
+	testCfg := &config.Config{Mode: "assistant"}
 
 	// Build a real HistoryManager first (exercises BuildHistoryManager success)
-	hManager, err := b.GetHistoryManager(ctx, cfg)
+	hManager, err := b.GetHistoryManager(ctx, testCfg)
 	require.NoError(t, err)
 	require.NotNil(t, hManager)
 
 	// Exercise BuildUnifiedHistoryProvider success path (gap 1)
-	provider, err := b.GetUnifiedHistoryProvider(ctx, cfg, hManager)
+	provider, err := b.GetUnifiedHistoryProvider(ctx, testCfg, hManager)
 	assert.NoError(t, err)
 	assert.NotNil(t, provider)
 
 	// Exercise BuildRegistry success path (gap 2) through a full session build
 	// This tests the real defaultToolchainFactory.BuildRegistry return reg, nil
-	client := new(mockLLMClient)
-	b.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-		return client, nil
-	}
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Once()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
-	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	require.NoError(t, err)
 	defer func() { _ = cleanup(ctx) }()
 
