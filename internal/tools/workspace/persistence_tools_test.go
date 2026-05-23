@@ -16,6 +16,34 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
+// taskMatchesFilter returns true if task matches the given filter.
+func taskMatchesFilter(task ports.Task, filter ports.ListFilter) bool {
+	if filter.NotStatus != "" && task.Status == filter.NotStatus {
+		return false
+	}
+	if filter.Status != "" && task.Status != filter.Status {
+		return false
+	}
+	if !filter.Since.IsZero() && task.CreatedAt.Before(filter.Since) {
+		return false
+	}
+	if !filter.Before.IsZero() && task.CreatedAt.After(filter.Before) {
+		return false
+	}
+	return true
+}
+
+// applyTaskOffsetLimit applies offset and limit to a slice of tasks.
+func applyTaskOffsetLimit(tasks []ports.Task, limit, offset int) []ports.Task {
+	if offset >= len(tasks) {
+		return []ports.Task{}
+	}
+	if limit > 0 {
+		return tasks[offset:min(offset+limit, len(tasks))]
+	}
+	return tasks[offset:]
+}
+
 // mockListStore implements ports.ListStore[ports.Task]
 type mockListStore struct {
 	tasks []ports.Task
@@ -77,30 +105,11 @@ func (m *mockListStore) Query(ctx context.Context, filter ports.ListFilter, limi
 	}
 	var result []ports.Task
 	for _, t := range m.tasks {
-		if filter.Status != "" && t.Status != filter.Status {
-			continue
+		if taskMatchesFilter(t, filter) {
+			result = append(result, t)
 		}
-		if filter.NotStatus != "" && t.Status == filter.NotStatus {
-			continue
-		}
-		if !filter.Since.IsZero() && t.CreatedAt.Before(filter.Since) {
-			continue
-		}
-		if !filter.Before.IsZero() && t.CreatedAt.After(filter.Before) {
-			continue
-		}
-		result = append(result, t)
 	}
-	if offset > 0 {
-		if offset >= len(result) {
-			return []ports.Task{}, nil
-		}
-		result = result[offset:]
-	}
-	if limit > 0 && limit < len(result) {
-		result = result[:limit]
-	}
-	return result, nil
+	return applyTaskOffsetLimit(result, limit, offset), nil
 }
 
 func (m *mockListStore) Count(ctx context.Context) (int, error) {
@@ -172,20 +181,48 @@ func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 }
 
 func TestPersistenceTools_ManageTasks(t *testing.T) {
+	t.Run("add", testManageTasksAdd)
+	t.Run("list", testManageTasksList)
+	t.Run("update", testManageTasksUpdate)
+	t.Run("delete_and_clear", testManageTasksDeleteAndClear)
+	t.Run("completed_filter", testManageTasksCompletedFilter)
+	t.Run("error", testManageTasksError)
+}
+
+func testManageTasksAdd(t *testing.T) {
 	tests := []struct {
 		name           string
 		args           map[string]interface{}
-		setup          func(*mockListStore, ports.TaskStore)
 		expectedResult string
-		expectError    bool
 	}{
 		{
 			name:           "Successfully add task",
 			args:           map[string]interface{}{"action": "add", "content": "task 1"},
 			expectedResult: "Task added with ID 1",
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pt, provider := setupPersistenceTools()
+			setupManageTasks(t, nil, provider)
+
+			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
+
+			assertManageTasksResult(t, res, err, tt.expectedResult, false)
+		})
+	}
+}
+
+func testManageTasksList(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           map[string]interface{}
+		setup          func(*mockListStore, ports.TaskStore)
+		expectedResult string
+	}{
 		{
-			name: "Successfully list tasks",
+			name: "list basic",
 			args: map[string]interface{}{"action": "list"},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
@@ -194,59 +231,6 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 				}
 			},
 			expectedResult: "task 1",
-		},
-		{
-			name: "Successfully update task",
-			args: map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"},
-			setup: func(m *mockListStore, ts ports.TaskStore) {
-				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
-				if s, ok := ts.(ports.Initializer); ok {
-					_ = s.Initialize(context.Background())
-				}
-			},
-			expectedResult: "Task 1 updated",
-		},
-		{
-			name: "Successfully list completed tasks",
-			args: map[string]interface{}{"action": "list", "status": "completed"},
-			setup: func(m *mockListStore, ts ports.TaskStore) {
-				// Use AddTask + UpdateTask to get a completed task into
-				// the in-memory map (Initialize no longer loads completed tasks).
-				ctx := context.Background()
-				t1, err := ts.AddTask(ctx, "task 1")
-				if err != nil {
-					t.Fatalf("AddTask failed: %v", err)
-				}
-				if _, err := ts.UpdateTask(ctx, t1.ID, "", "completed"); err != nil {
-					t.Fatalf("UpdateTask failed: %v", err)
-				}
-				if _, err := ts.AddTask(ctx, "task 2"); err != nil {
-					t.Fatalf("AddTask failed: %v", err)
-				}
-			},
-			expectedResult: "[x]",
-		},
-		{
-			name: "Successfully delete task",
-			args: map[string]interface{}{"action": "delete", "task_id": 1.0},
-			setup: func(m *mockListStore, ts ports.TaskStore) {
-				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
-				if s, ok := ts.(ports.Initializer); ok {
-					_ = s.Initialize(context.Background())
-				}
-			},
-			expectedResult: "Task 1 deleted",
-		},
-		{
-			name: "Successfully clear tasks",
-			args: map[string]interface{}{"action": "clear"},
-			setup: func(m *mockListStore, ts ports.TaskStore) {
-				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
-				if s, ok := ts.(ports.Initializer); ok {
-					_ = s.Initialize(context.Background())
-				}
-			},
-			expectedResult: "All tasks cleared",
 		},
 		{
 			name: "list with default limit",
@@ -286,8 +270,143 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			},
 			expectedResult: "Use offset=50 for next page.",
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pt, provider := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider)
+
+			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
+
+			assertManageTasksResult(t, res, err, tt.expectedResult, false)
+		})
+	}
+}
+
+func testManageTasksUpdate(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           map[string]interface{}
+		setup          func(*mockListStore, ports.TaskStore)
+		expectedResult string
+	}{
 		{
-			name:           "Error on unknown action",
+			name: "Successfully update task",
+			args: map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"},
+			setup: func(m *mockListStore, ts ports.TaskStore) {
+				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
+			},
+			expectedResult: "Task 1 updated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pt, provider := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider)
+
+			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
+
+			assertManageTasksResult(t, res, err, tt.expectedResult, false)
+		})
+	}
+}
+
+func testManageTasksDeleteAndClear(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           map[string]interface{}
+		setup          func(*mockListStore, ports.TaskStore)
+		expectedResult string
+	}{
+		{
+			name: "delete task",
+			args: map[string]interface{}{"action": "delete", "task_id": 1.0},
+			setup: func(m *mockListStore, ts ports.TaskStore) {
+				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
+			},
+			expectedResult: "Task 1 deleted",
+		},
+		{
+			name: "clear tasks",
+			args: map[string]interface{}{"action": "clear"},
+			setup: func(m *mockListStore, ts ports.TaskStore) {
+				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
+			},
+			expectedResult: "All tasks cleared",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pt, provider := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider)
+
+			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
+
+			assertManageTasksResult(t, res, err, tt.expectedResult, false)
+		})
+	}
+}
+
+func testManageTasksCompletedFilter(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           map[string]interface{}
+		setup          func(*mockListStore, ports.TaskStore)
+		expectedResult string
+	}{
+		{
+			name: "list completed",
+			args: map[string]interface{}{"action": "list", "status": "completed"},
+			setup: func(m *mockListStore, ts ports.TaskStore) {
+				ctx := context.Background()
+				t1, err := ts.AddTask(ctx, "task 1")
+				if err != nil {
+					t.Fatalf("AddTask failed: %v", err)
+				}
+				if _, err := ts.UpdateTask(ctx, t1.ID, "", "completed"); err != nil {
+					t.Fatalf("UpdateTask failed: %v", err)
+				}
+				if _, err := ts.AddTask(ctx, "task 2"); err != nil {
+					t.Fatalf("AddTask failed: %v", err)
+				}
+			},
+			expectedResult: "[x]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pt, provider := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider)
+
+			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
+
+			assertManageTasksResult(t, res, err, tt.expectedResult, false)
+		})
+	}
+}
+
+func testManageTasksError(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           map[string]interface{}
+		expectedResult string
+		expectError    bool
+	}{
+		{
+			name:           "unknown action",
 			args:           map[string]interface{}{"action": "unknown"},
 			expectedResult: "Error: unknown action: unknown",
 		},
@@ -296,7 +415,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pt, provider := setupPersistenceTools()
-			setupManageTasks(t, tt.setup, provider)
+			setupManageTasks(t, nil, provider)
 
 			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 

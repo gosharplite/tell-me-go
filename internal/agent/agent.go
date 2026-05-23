@@ -416,6 +416,12 @@ type InternalAccessor interface {
 		pricingOverrides map[string]domain_pricing.ModelPricing,
 		limits events.Limits,
 	)
+
+	// DiffConfig compares the canonical intended configuration against
+	// the live engine/context-manager state. Returns a DriftReport
+	// describing any mismatches. Callers should check report.InSync
+	// rather than testing for a nil report — DiffConfig never returns nil.
+	DiffConfig() *DriftReport
 }
 
 // AsInternal wraps a ports.Chatter to provide access to its internal components.

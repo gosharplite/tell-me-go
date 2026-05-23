@@ -123,6 +123,15 @@ func (a *AgentInternal) ApplyConfig(ctx context.Context) error {
 	return a.raw.ApplyConfig(ctx)
 }
 
+// DiffConfig compares the canonical intended configuration against
+// the live engine/context-manager state. See agent.DiffConfig for
+// full documentation.
+//
+//nolint:deadcode
+func (a *AgentInternal) DiffConfig() *agent.DriftReport {
+	return a.raw.DiffConfig()
+}
+
 // Chat invokes the underlying agent's Chat method. Provided for
 // convenience so test code holding an *AgentInternal does not have to
 // call .raw.AsChatter().Chat(...) explicitly.

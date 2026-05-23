@@ -160,3 +160,204 @@ func TestGetImplementations_RefreshError(t *testing.T) {
 		t.Errorf("expected nil result on Refresh error, got %v", result)
 	}
 }
+
+// TestWarmImplementations_WarmsGetImplementations verifies that calling
+// WarmImplementations before GetImplementations produces the same results
+// as calling GetImplementations alone — no semantic change, just cache warming.
+func TestWarmImplementations_WarmsGetImplementations(t *testing.T) {
+	t.Parallel()
+
+	code := `package test
+
+type Greeter interface {
+	Greet() string
+}
+
+type EnglishGreeter struct{}
+
+func (e EnglishGreeter) Greet() string { return "hello" }
+`
+	tmpDir, idx := setupIndexerWorkspace(t, code)
+	_ = tmpDir
+
+	// Get the full implementations map via the lazy path to discover a valid key.
+	fullImpls := idx.computeImplementationsLazy()
+	require.NotEmpty(t, fullImpls, "expected at least one implementation")
+
+	var queryID string
+	for id := range fullImpls {
+		queryID = id
+		break
+	}
+	require.NotEmpty(t, queryID)
+
+	// Freeze the indexer so Refresh does not trigger loadPackages.
+	idx.mu.Lock()
+	idx.lastRefresh = time.Now().Add(1 * time.Hour)
+	idx.mu.Unlock()
+
+	// Invalidate the cache so we start cold.
+	idx.mu.Lock()
+	idx.implsCache = &implCacheEntry{}
+	idx.mu.Unlock()
+
+	// Warm the cache.
+	idx.WarmImplementations(context.Background())
+
+	// Now GetImplementations should return the same result from the warmed cache.
+	got := idx.GetImplementations(context.Background(), queryID, nil)
+	want := fullImpls[queryID]
+
+	assert.ElementsMatch(t, want, got, "GetImplementations after WarmImplementations must match direct computeImplementationsLazy result")
+}
+
+// TestWarmImplementations_Idempotent verifies that calling WarmImplementations
+// twice does not double-compute. The sync.Once gate ensures the computation
+// runs exactly once even when WarmImplementations is called multiple times.
+func TestWarmImplementations_Idempotent(t *testing.T) {
+	t.Parallel()
+
+	code := `package test
+
+type Greeter interface {
+	Greet() string
+}
+
+type EnglishGreeter struct{}
+
+func (e EnglishGreeter) Greet() string { return "hello" }
+`
+	tmpDir, idx := setupIndexerWorkspace(t, code)
+	_ = tmpDir
+
+	// Freeze Refresh.
+	idx.mu.Lock()
+	idx.lastRefresh = time.Now().Add(1 * time.Hour)
+	idx.mu.Unlock()
+
+	// Invalidate the cache.
+	idx.mu.Lock()
+	idx.implsCache = &implCacheEntry{}
+	idx.mu.Unlock()
+
+	// Wire the test hook to count computeImplementations invocations.
+	var computeCount atomic.Int64
+	idx.testComputeImplementationsHook = func() {
+		computeCount.Add(1)
+	}
+
+	// Call WarmImplementations twice.
+	idx.WarmImplementations(context.Background())
+	idx.WarmImplementations(context.Background())
+
+	assert.Equal(t, int64(1), computeCount.Load(),
+		"WarmImplementations called twice must invoke computeImplementations exactly once (sync.Once)")
+}
+
+// TestWarmImplementations_CancelledContext verifies that calling
+// WarmImplementations with a cancelled context does not panic.
+// The ctx parameter is accepted for future cancellation support
+// but is not yet wired (sync.Once does not support cancellation).
+func TestWarmImplementations_CancelledContext(t *testing.T) {
+	t.Parallel()
+
+	code := `package test
+
+type Greeter interface {
+	Greet() string
+}
+
+type EnglishGreeter struct{}
+
+func (e EnglishGreeter) Greet() string { return "hello" }
+`
+	tmpDir, idx := setupIndexerWorkspace(t, code)
+	_ = tmpDir
+
+	// Freeze Refresh.
+	idx.mu.Lock()
+	idx.lastRefresh = time.Now().Add(1 * time.Hour)
+	idx.mu.Unlock()
+
+	// Invalidate the cache.
+	idx.mu.Lock()
+	idx.implsCache = &implCacheEntry{}
+	idx.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancel
+
+	// Must not panic.
+	assert.NotPanics(t, func() {
+		idx.WarmImplementations(ctx)
+	}, "WarmImplementations with cancelled context must not panic")
+
+	// The cache should still be populated (sync.Once ignores ctx).
+	fullImpls := idx.computeImplementationsLazy()
+	assert.NotEmpty(t, fullImpls, "cache must be populated even with cancelled context")
+}
+
+// TestWarmImplementations_Concurrent verifies that N concurrent
+// WarmImplementations calls are coalesced into exactly 1
+// computeImplementations invocation via the sync.Once gate.
+func TestWarmImplementations_Concurrent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping concurrency test in short mode")
+	}
+	t.Parallel()
+
+	code := `package test
+
+type Greeter interface {
+	Greet() string
+}
+
+type EnglishGreeter struct{}
+
+func (e EnglishGreeter) Greet() string { return "hello" }
+`
+	tmpDir, idx := setupIndexerWorkspace(t, code)
+	_ = tmpDir
+
+	// Freeze Refresh.
+	idx.mu.Lock()
+	idx.lastRefresh = time.Now().Add(1 * time.Hour)
+	idx.mu.Unlock()
+
+	// Invalidate the cache.
+	idx.mu.Lock()
+	idx.implsCache = &implCacheEntry{}
+	idx.mu.Unlock()
+
+	var computeCount atomic.Int64
+	idx.testComputeImplementationsHook = func() {
+		computeCount.Add(1)
+	}
+
+	// Deterministic barrier (same pattern as TestGetImplementations_SingleflightCoalescing).
+	const N = 12
+	ready := make(chan struct{}, N)
+	release := make(chan struct{})
+	done := make(chan struct{}, N)
+
+	for i := 0; i < N; i++ {
+		go func() {
+			ready <- struct{}{}
+			<-release
+			idx.WarmImplementations(context.Background())
+			done <- struct{}{}
+		}()
+	}
+
+	for i := 0; i < N; i++ {
+		<-ready
+	}
+	close(release)
+
+	for i := 0; i < N; i++ {
+		<-done
+	}
+
+	assert.Equal(t, int64(1), computeCount.Load(),
+		"sync.Once must coalesce N concurrent WarmImplementations into exactly 1 compute")
+}

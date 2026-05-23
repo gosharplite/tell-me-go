@@ -79,31 +79,32 @@ func TestBuildWhereClause(t *testing.T) {
 				t.Errorf("args len = %d; want %d", len(wc.args), tt.wantArgLen)
 			}
 
-			// Verify args are in correct order matching the SQL ? placeholders
-			argIdx := 0
-			if tt.filter.Status != "" {
-				if wc.args[argIdx] != tt.filter.Status {
-					t.Errorf("args[%d] = %v; want Status %q", argIdx, wc.args[argIdx], tt.filter.Status)
-				}
-				argIdx++
-			}
-			if tt.filter.NotStatus != "" {
-				if wc.args[argIdx] != tt.filter.NotStatus {
-					t.Errorf("args[%d] = %v; want NotStatus %q", argIdx, wc.args[argIdx], tt.filter.NotStatus)
-				}
-				argIdx++
-			}
-			if !tt.filter.Since.IsZero() {
-				if wc.args[argIdx] != tt.filter.Since.Format(time.RFC3339Nano) {
-					t.Errorf("args[%d] = %v; want Since %q", argIdx, wc.args[argIdx], tt.filter.Since.Format(time.RFC3339Nano))
-				}
-				argIdx++
-			}
-			if !tt.filter.Before.IsZero() {
-				if wc.args[argIdx] != tt.filter.Before.Format(time.RFC3339Nano) {
-					t.Errorf("args[%d] = %v; want Before %q", argIdx, wc.args[argIdx], tt.filter.Before.Format(time.RFC3339Nano))
-				}
-			}
+			verifyWhereArgs(t, wc, tt.filter)
 		})
 	}
+}
+
+// verifyWhereArgs checks that wc.args contains the correct values matching
+// the non-zero fields of f, in the same order that buildWhereClause places them.
+func verifyWhereArgs(t *testing.T, wc whereClause, f ports.ListFilter) {
+	t.Helper()
+
+	argIdx := 0
+	checkArg(t, wc.args, &argIdx, "Status", f.Status, f.Status != "")
+	checkArg(t, wc.args, &argIdx, "NotStatus", f.NotStatus, f.NotStatus != "")
+	checkArg(t, wc.args, &argIdx, "Since", f.Since.Format(time.RFC3339Nano), !f.Since.IsZero())
+	checkArg(t, wc.args, &argIdx, "Before", f.Before.Format(time.RFC3339Nano), !f.Before.IsZero())
+}
+
+// checkArg verifies a single argument at args[*idx] if isSet is true,
+// then advances idx. Skips verification when isSet is false.
+func checkArg(t *testing.T, args []any, idx *int, fieldName, want string, isSet bool) {
+	t.Helper()
+	if !isSet {
+		return
+	}
+	if args[*idx] != want {
+		t.Errorf("args[%d] = %v; want %s %q", *idx, args[*idx], fieldName, want)
+	}
+	*idx++
 }

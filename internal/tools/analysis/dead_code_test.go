@@ -576,6 +576,8 @@ func (m *mockSymbolIndex) Packages(ctx context.Context, hb chan<- struct{}) ([]*
 }
 func (m *mockSymbolIndex) Refresh(ctx context.Context, hb chan<- struct{}) error { return nil }
 
+func (m *mockSymbolIndex) WarmImplementations(ctx context.Context) {}
+
 func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 	tests := []struct {
 		name             string

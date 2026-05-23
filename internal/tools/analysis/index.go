@@ -60,6 +60,20 @@ type symbolIndex interface {
 	IsSymbolUsed(ctx context.Context, name string, hb chan<- struct{}) bool
 	// GetImplementations returns the concrete method identities that implement the given interface method.
 	GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string
+	// WarmImplementations eagerly computes the implementation cache.
+	// It calls computeImplementationsLazy() and discards the result,
+	// warming the cache as a side effect. Interactive consumers
+	// (TUI, long-running agent) opt in; non-interactive consumers (CI)
+	// skip it.
+	//
+	// The context parameter is accepted for future cancellation support
+	// but is not yet wired (the underlying sync.Once does not support
+	// cancellation). Calling with a cancelled context is safe and will
+	// not panic, but the warm-up will proceed regardless.
+	//
+	// Idempotent: safe to call when the cache is already hot
+	// (sync.Once returns immediately).
+	WarmImplementations(ctx context.Context)
 	// Packages returns the loaded packages.
 	Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error)
 	// Refresh re-scans the workspace to update the index.

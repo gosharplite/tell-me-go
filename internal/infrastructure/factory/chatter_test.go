@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -141,41 +140,7 @@ type mockTracker struct {
 }
 
 func TestNewChatter(t *testing.T) {
-	tmpDir := t.TempDir()
-	modeDir := filepath.Join(tmpDir, "modes", "dev")
-	err := os.MkdirAll(modeDir, 0755)
-	if err != nil {
-		t.Fatalf("failed to create mode dir: %v", err)
-	}
-
-	// Create skills dir to satisfy NewFileSkillRepository
-	skillsDir := filepath.Join(tmpDir, "docs", "skills")
-	err = os.MkdirAll(skillsDir, 0755)
-	if err != nil {
-		t.Fatalf("failed to create skills dir: %v", err)
-	}
-
-	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	eventstest.CleanupBus(t, bus)
-
-	deps := &mockSessionDeps{
-		gw:       &mockGateway{},
-		hManager: &mockHistoryManager{},
-		reg:      &mockRegistry{},
-		sm:       &mockSecurityManager{},
-		bus:      bus,
-		paths: &persistence.Paths{
-			ModeDir: modeDir,
-		},
-		tracker: &mockTracker{},
-	}
-
-	cfg := ports.ChatterConfig{
-		ProviderName: "test-provider",
-		Model:        "test-model",
-		LogPath:      filepath.Join(tmpDir, "trace.log"),
-		TracePath:    filepath.Join(tmpDir, "trace.jsonl"),
-	}
+	deps, cfg := setupNilDepTest(t)
 
 	t.Run("successful initialization", func(t *testing.T) {
 		chatter, err := NewChatter(context.Background(), deps, cfg)
@@ -204,27 +169,26 @@ func TestNewChatter(t *testing.T) {
 			t.Skip("os.Chmod(0000) does not prevent file reads on Windows")
 		}
 
-		deps2, cfg2 := setupNilDepTest(t)
-		// setupNilDepTest creates a docs/skills/ dir. Drop an unreadable
-		// .md file into it to cause NewFileSkillRepository to fail.
-		skillsDir := filepath.Join(filepath.Dir(filepath.Dir(deps2.paths.ModeDir)), "docs", "skills")
+		// Drop an unreadable .md file into the skills dir to cause
+		// NewFileSkillRepository to fail.
+		skillsDir := filepath.Join(filepath.Dir(filepath.Dir(deps.paths.ModeDir)), "docs", "skills")
 		badFile := filepath.Join(skillsDir, "bad.md")
 		require.NoError(t, os.WriteFile(badFile,
 			[]byte("---\nname: Test\ndescription: Test\n---\nContent"), 0644))
 		require.NoError(t, os.Chmod(badFile, 0000))
 		t.Cleanup(func() { _ = os.Chmod(badFile, 0644) })
 
-		_, err := NewChatter(context.Background(), deps2, cfg2)
+		_, err := NewChatter(context.Background(), deps, cfg)
 		if err == nil || !strings.Contains(err.Error(), "failed to initialize skill repository") {
 			t.Errorf("expected 'failed to initialize skill repository' error, got: %v", err)
 		}
 	})
 
 	t.Run("fails when registry cannot be retrieved", func(t *testing.T) {
-		deps2, cfg2 := setupNilDepTest(t)
-		deps2.regErr = errors.New("registry unavailable")
+		deps.regErr = errors.New("registry unavailable")
+		t.Cleanup(func() { deps.regErr = nil })
 
-		_, err := NewChatter(context.Background(), deps2, cfg2)
+		_, err := NewChatter(context.Background(), deps, cfg)
 		if err == nil || !strings.Contains(err.Error(), "failed to retrieve tool registry") {
 			t.Errorf("expected 'failed to retrieve tool registry' error, got: %v", err)
 		}
