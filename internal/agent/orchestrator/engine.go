@@ -146,6 +146,17 @@ func (e *Engine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.CostTrack
 	return nil
 }
 
+// GetConfig returns a snapshot of the current engine configuration.
+// This is a diagnostic accessor — not for use in the hot path.
+func (e *Engine) GetConfig() EngineConfigSnapshot {
+	cfg := e.config.Load()
+	return EngineConfigSnapshot{
+		ProviderName: cfg.ProviderName,
+		Model:        cfg.Model,
+		Mode:         cfg.Mode,
+	}
+}
+
 // NewEngine creates a new Engine with a default pipeline.
 func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *Engine {
 	backoff := 2 * time.Second

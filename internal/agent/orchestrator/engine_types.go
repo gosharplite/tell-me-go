@@ -55,6 +55,15 @@ func (c RuntimeConfig) validate() error {
 	return nil
 }
 
+// EngineConfigSnapshot is a value-type snapshot of the user-facing
+// engine configuration fields. It is returned by Engine.GetConfig()
+// for diagnostic use (drift detection). Not for hot-path use.
+type EngineConfigSnapshot struct {
+	ProviderName string
+	Model        string
+	Mode         string
+}
+
 // engineConfig defines the lock-free runtime state for the Engine.
 type engineConfig struct {
 	ProviderName     string

@@ -32,6 +32,10 @@ func (m *mockInternalAccessor) ApplyConfig(ctx context.Context) error {
 	return m.Called(ctx).Error(0)
 }
 
+func (m *mockInternalAccessor) DiffConfig() *agent.DriftReport {
+	return m.Called().Get(0).(*agent.DriftReport)
+}
+
 func (m *mockInternalAccessor) AsChatter() ports.Chatter {
 	return m.Called().Get(0).(ports.Chatter)
 }
@@ -278,6 +282,31 @@ func TestAgentInternal_Getters(t *testing.T) {
 				t.Helper()
 				if !reflect.DeepEqual(got, want) {
 					t.Errorf("GetRuntimeConfig() = %+v; want %+v", got, want)
+				}
+			},
+		},
+		{
+			name: "DiffConfig",
+			setup: func(mock *mockInternalAccessor) any {
+				report := &agent.DriftReport{InSync: true}
+				mock.On("DiffConfig").Return(report)
+				return report
+			},
+			call: func(ai *AgentInternal) any {
+				return ai.DiffConfig()
+			},
+			assert: func(t *testing.T, got, want any) {
+				t.Helper()
+				gotReport, ok := got.(*agent.DriftReport)
+				if !ok {
+					t.Fatalf("DiffConfig() returned %T, want *agent.DriftReport", got)
+				}
+				wantReport, ok := want.(*agent.DriftReport)
+				if !ok {
+					t.Fatalf("want is %T, not *agent.DriftReport", want)
+				}
+				if gotReport != wantReport {
+					t.Errorf("DiffConfig() = %+v; want %+v", gotReport, wantReport)
 				}
 			},
 		},
