@@ -36,14 +36,13 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockSM := &agenttest.MockServiceSecurityManager{}
 			mockSF := &agentinternal.MockSessionLifecycleManager{}
 			if tt.setup != nil {
 				tt.setup(mockSF)
 			}
 
 			service := agent.NewChatService(
-				"home", "v1", io.Discard, io.Discard, mockSM,
+				"home", "v1", io.Discard, io.Discard, nil,
 				mockSF, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
 			)
 

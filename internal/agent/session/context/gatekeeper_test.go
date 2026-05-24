@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,12 +60,13 @@ func TestTokenGatekeeper_ValidateHardLimits(t *testing.T) {
 			maxTokens: 1000,
 			tokens:    950,
 			bus:       &agenttest.MockEventBusFail{PublishErr: errors.New("boom")},
-			logger:    &agenttest.MockPortsLogger{},
+			logger:    &testfixtures.SpyLogger{},
 			wantErr:   llm.ErrContextLimitExceeded,
 			extra: func(t *testing.T, logger ports.Logger) {
-				ml := logger.(*agenttest.MockPortsLogger)
-				require.GreaterOrEqual(t, len(ml.Errors), 1, "expected at least one error logged")
-				require.Contains(t, ml.Errors, "event_publish_failed")
+				ml := logger.(*testfixtures.SpyLogger)
+				errors := ml.GetErrors()
+				require.GreaterOrEqual(t, len(errors), 1, "expected at least one error logged")
+				require.Contains(t, errors, "event_publish_failed")
 			},
 		},
 		{
@@ -72,11 +74,11 @@ func TestTokenGatekeeper_ValidateHardLimits(t *testing.T) {
 			maxTokens: 1000,
 			tokens:    950,
 			bus:       &agenttest.MockEventBusFail{PublishErr: events.ErrBusNotInitialized},
-			logger:    &agenttest.MockPortsLogger{},
+			logger:    &testfixtures.SpyLogger{},
 			wantErr:   llm.ErrContextLimitExceeded,
 			extra: func(t *testing.T, logger ports.Logger) {
-				ml := logger.(*agenttest.MockPortsLogger)
-				require.Empty(t, ml.Errors, "ErrBusNotInitialized should be swallowed, not logged")
+				ml := logger.(*testfixtures.SpyLogger)
+				require.Empty(t, ml.GetErrors(), "ErrBusNotInitialized should be swallowed, not logged")
 			},
 		},
 		{

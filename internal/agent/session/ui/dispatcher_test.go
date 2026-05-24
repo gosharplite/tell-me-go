@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -58,24 +59,12 @@ func (s *spyRenderer) SetUseColor(_ bool)                                       
 func (s *spyRenderer) SetForceSpinner(_ bool)                                      {}
 func (s *spyRenderer) IsTerminalContext() bool                                     { return false }
 
-// spyLogger records debug messages for assertion.
-type spyLogger struct {
-	debugs []string
-}
-
-func (l *spyLogger) Debug(msg string, args ...any) { l.debugs = append(l.debugs, msg) }
-func (l *spyLogger) Info(msg string, args ...any)  {}
-func (l *spyLogger) Warn(msg string, args ...any)  {}
-func (l *spyLogger) Error(msg string, args ...any) {}
-
-var _ ports.Logger = (*spyLogger)(nil)
-
 // --- helper ---
 
-func newTestDispatcher(t *testing.T) (*eventDispatcher, *spyRenderer, *spyLogger) {
+func newTestDispatcher(t *testing.T) (*eventDispatcher, *spyRenderer, *testfixtures.SpyLogger) {
 	t.Helper()
 	renderer := &spyRenderer{}
-	logger := &spyLogger{}
+	logger := &testfixtures.SpyLogger{}
 	sc := newSpinnerCoord(renderer, logger)
 	sm := newUIStateMachine(sc)
 	d := newEventDispatcher(renderer, logger, sm, sc, false, true, false, "")
@@ -134,7 +123,7 @@ func TestHandleToolEvents_NilCallsGuard(t *testing.T) {
 	})
 
 	assert.Empty(t, renderer.logToolCallCalls, "LogToolCall must not be called when Calls is nil")
-	assert.Contains(t, logger.debugs, "handleToolEvents: ToolCallEvent missing Calls")
+	assert.Contains(t, logger.GetDebugs(), "handleToolEvents: ToolCallEvent missing Calls")
 }
 
 func TestHandleToolEvents_EmptyNameGuard(t *testing.T) {
@@ -148,7 +137,7 @@ func TestHandleToolEvents_EmptyNameGuard(t *testing.T) {
 	})
 
 	assert.Empty(t, renderer.logToolResultCalls, "LogToolResult must not be called when Name is empty")
-	assert.Contains(t, logger.debugs, "handleToolEvents: ToolResultEvent missing Name")
+	assert.Contains(t, logger.GetDebugs(), "handleToolEvents: ToolResultEvent missing Name")
 }
 
 func TestHandleToolEvents_ContextTODO(t *testing.T) {
@@ -179,7 +168,7 @@ func TestHandleToolEvents_UnexpectedType(t *testing.T) {
 
 	assert.Empty(t, renderer.logToolCallCalls)
 	assert.Empty(t, renderer.logToolResultCalls)
-	assert.Contains(t, logger.debugs, "handleToolEvents: unexpected event type")
+	assert.Contains(t, logger.GetDebugs(), "handleToolEvents: unexpected event type")
 }
 
 func TestHandleToolEvents_ResumesActiveSpinner(t *testing.T) {
