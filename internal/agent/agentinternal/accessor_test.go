@@ -555,7 +555,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 	t.Run("BuildSessionDependencies/all non-nil", func(t *testing.T) {
 		m := new(MockSessionLifecycleManager)
 
-		deps := &agenttest.MockServiceSessionDependencies{}
+		deps := &agenttest.StubSessionDependencies{}
 		hm := &agenttest.MockHistoryManager{}
 		cleanup := func(ctx context.Context) error { return nil }
 
@@ -625,7 +625,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 		err := m.FinalizeSession(
 			context.Background(),
 			&agenttest.MockHistoryManager{},
-			&agenttest.MockServiceSessionDependencies{},
+			&agenttest.StubSessionDependencies{},
 			&domain_config.Config{},
 		)
 
@@ -646,7 +646,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 		err := m.FinalizeSession(
 			context.Background(),
 			&agenttest.MockHistoryManager{},
-			&agenttest.MockServiceSessionDependencies{},
+			&agenttest.StubSessionDependencies{},
 			&domain_config.Config{},
 		)
 

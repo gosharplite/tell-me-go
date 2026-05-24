@@ -106,67 +106,6 @@ func (m *mockServiceSecurityManager) Close() error         { return m.Called().E
 // MockServiceSecurityManager is a mock of Manager.
 type MockServiceSecurityManager = mockServiceSecurityManager
 
-// mockServiceSessionDependencies is a mock of SessionDependencies.
-type mockServiceSessionDependencies struct {
-	mock.Mock
-}
-
-func (m *mockServiceSessionDependencies) GetGateway() llm.LLMGateway {
-	return m.Called().Get(0).(llm.LLMGateway)
-}
-func (m *mockServiceSessionDependencies) GetHistoryManager() ports.HistoryManager {
-	return m.Called().Get(0).(ports.HistoryManager)
-}
-func (m *mockServiceSessionDependencies) GetRegistry() (tools.Registry, error) {
-	args := m.Called()
-	return args.Get(0).(tools.Registry), args.Error(1)
-}
-func (m *mockServiceSessionDependencies) GetSecurityManager() security.Manager {
-	return m.Called().Get(0).(security.Manager)
-}
-func (m *mockServiceSessionDependencies) GetEventBus() events.EventBus {
-	return m.Called().Get(0).(events.EventBus)
-}
-func (m *mockServiceSessionDependencies) GetLogger() ports.Logger {
-	return m.Called().Get(0).(ports.Logger)
-}
-func (m *mockServiceSessionDependencies) GetTurnsLogger() ports.TurnsLogger {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.TurnsLogger)
-}
-func (m *mockServiceSessionDependencies) GetPaths() *persistence.Paths {
-	return m.Called().Get(0).(*persistence.Paths)
-}
-func (m *mockServiceSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing {
-	return m.Called().Get(0).(map[string]pricing.ModelPricing)
-}
-func (m *mockServiceSessionDependencies) GetTracker() pricing.CostTracker {
-	return m.Called().Get(0).(pricing.CostTracker)
-}
-func (m *mockServiceSessionDependencies) GetPricingData() pricing.PricingData {
-	return m.Called().Get(0).(pricing.PricingData)
-}
-func (m *mockServiceSessionDependencies) GetSessionProvider() ports.SessionProvider {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.SessionProvider)
-}
-func (m *mockServiceSessionDependencies) GetHealthManager() ports.HealthCheckManager {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.HealthCheckManager)
-}
-
-// MockServiceSessionDependencies is a mock of SessionDependencies.
-type MockServiceSessionDependencies = mockServiceSessionDependencies
-
 // StubSessionDependencies is a manual stub implementing ports.SessionDependencies.
 // Each exported field corresponds to a getter method; set the fields your test needs
 // and leave the rest nil / zero-valued.
@@ -241,24 +180,54 @@ func (s *StubSessionDependencies) GetHealthManager() ports.HealthCheckManager {
 	return s.HealthManager
 }
 
-// mockServiceEventBus is a mock of EventBus.
-type mockServiceEventBus struct {
-	mock.Mock
+// StubEventBus is a stub implementation of events.EventBus for testing.
+// Set ShutdownErr to control the error returned by Shutdown; all other
+// methods are no-ops.
+type StubEventBus struct {
+	ShutdownErr error
 }
 
-func (m *mockServiceEventBus) Publish(ctx context.Context, e events.Event) error {
-	return m.Called(ctx, e).Error(0)
-}
-func (m *mockServiceEventBus) Subscribe(sub func(context.Context, events.Event)) {
-	m.Called(sub)
-}
-func (m *mockServiceEventBus) Shutdown(ctx context.Context) error { return m.Called(ctx).Error(0) }
-func (m *mockServiceEventBus) Flush(ctx context.Context) error    { return m.Called(ctx).Error(0) }
-func (m *mockServiceEventBus) Listen(ctx context.Context) error   { <-ctx.Done(); return ctx.Err() }
-func (m *mockServiceEventBus) WaitStarted()                       { m.Called() }
+var _ events.EventBus = (*StubEventBus)(nil)
 
-// MockServiceEventBus is a mock of EventBus.
-type MockServiceEventBus = mockServiceEventBus
+func (s *StubEventBus) Publish(ctx context.Context, e events.Event) error { return nil }
+func (s *StubEventBus) Subscribe(sub func(context.Context, events.Event)) {}
+func (s *StubEventBus) Shutdown(ctx context.Context) error                { return s.ShutdownErr }
+func (s *StubEventBus) Flush(ctx context.Context) error                   { return nil }
+func (s *StubEventBus) Listen(ctx context.Context) error                  { <-ctx.Done(); return ctx.Err() }
+func (s *StubEventBus) WaitStarted()                                      {}
+
+// StubCapturer is a stub implementation of agent.CapturerInteractor for testing.
+// Set fields to control return values; all other methods are no-ops.
+type StubCapturer struct {
+	IsTTYVal            bool
+	CapturePromptResult string
+	CapturePromptErr    error
+	ConfirmResult       bool
+	ConfirmErr          error
+	CloseErr            error
+}
+
+var (
+	_ ports.Capturer          = (*StubCapturer)(nil)
+	_ security.UserInteractor = (*StubCapturer)(nil)
+)
+
+func (s *StubCapturer) IsTTY(v any) bool { return s.IsTTYVal }
+
+func (s *StubCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
+	return s.CapturePromptResult, s.CapturePromptErr
+}
+
+func (s *StubCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+	return s.ConfirmResult, s.ConfirmErr
+}
+
+func (s *StubCapturer) Close(ctx context.Context) error { return s.CloseErr }
+
+func (s *StubCapturer) Warn(msg string)                                   {}
+func (s *StubCapturer) Prompt(msg string)                                 {}
+func (s *StubCapturer) ReadSingleKey(ctx context.Context) (string, error) { return "", nil }
+func (s *StubCapturer) ReadLine(ctx context.Context) (string, error)      { return "", nil }
 
 // mockServiceAgent is a mock of Chatter.
 type mockServiceAgent struct {
@@ -276,43 +245,6 @@ func (m *mockServiceAgent) Shutdown(ctx context.Context) error                  
 
 // MockServiceAgent is a mock of Chatter.
 type MockServiceAgent = mockServiceAgent
-
-// mockServiceCapturer is a mock of Capturer.
-type mockServiceCapturer struct {
-	mock.Mock
-}
-
-func (m *mockServiceCapturer) IsTTY(v any) bool {
-	args := m.Called(v)
-	return args.Bool(0)
-}
-
-func (m *mockServiceCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
-	callArgs := m.Called(ctx, args, opts)
-	return callArgs.String(0), callArgs.Error(1)
-}
-
-func (m *mockServiceCapturer) Confirm(ctx context.Context, message string) (bool, error) {
-	args := m.Called(ctx, message)
-	return args.Bool(0), args.Error(1)
-}
-func (m *mockServiceCapturer) Warn(msg string)   { m.Called(msg) }
-func (m *mockServiceCapturer) Prompt(msg string) { m.Called(msg) }
-func (m *mockServiceCapturer) ReadSingleKey(ctx context.Context) (string, error) {
-	args := m.Called(ctx)
-	return args.String(0), args.Error(1)
-}
-func (m *mockServiceCapturer) ReadLine(ctx context.Context) (string, error) {
-	args := m.Called(ctx)
-	return args.String(0), args.Error(1)
-}
-func (m *mockServiceCapturer) Close(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
-
-// MockServiceCapturer is a mock of Capturer.
-type MockServiceCapturer = mockServiceCapturer
 
 type mockTurnsLogger struct {
 	mock.Mock
