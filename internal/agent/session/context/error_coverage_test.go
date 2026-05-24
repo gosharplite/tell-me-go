@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
 
@@ -446,7 +447,7 @@ func TestTokenGatekeeper_PublishSystemEvent_NilEventBus(t *testing.T) {
 // SafePublish returns a non-ErrBusNotInitialized error, the failure is logged
 // via getLogger().Error (covers the error-logging branch at gatekeeper.go:180-183).
 func TestTokenGatekeeper_PublishSystemEvent_SafePublishError(t *testing.T) {
-	logger := &agenttest.MockPortsLogger{}
+	logger := &testfixtures.SpyLogger{}
 	tg := newTokenGatekeeper(
 		nil,
 		nil,
@@ -455,15 +456,15 @@ func TestTokenGatekeeper_PublishSystemEvent_SafePublishError(t *testing.T) {
 	)
 	tg.publishSystemEvent(context.Background(), "test message", "info")
 
-	require.GreaterOrEqual(t, len(logger.Errors), 1)
-	require.Contains(t, logger.Errors, "event_publish_failed")
+	require.GreaterOrEqual(t, len(logger.GetErrors()), 1)
+	require.Contains(t, logger.GetErrors(), "event_publish_failed")
 }
 
 // TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized verifies that
 // when SafePublish returns ErrBusNotInitialized, the error is silently swallowed
 // and NOT logged (covers the resilience branch at gatekeeper.go:179-180).
 func TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized(t *testing.T) {
-	logger := &agenttest.MockPortsLogger{}
+	logger := &testfixtures.SpyLogger{}
 	tg := newTokenGatekeeper(
 		nil,
 		nil,
@@ -472,5 +473,5 @@ func TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized(t *testing.T) {
 	)
 	tg.publishSystemEvent(context.Background(), "test message", "info")
 
-	require.Empty(t, logger.Errors, "ErrBusNotInitialized should be silently swallowed, not logged")
+	require.Empty(t, logger.GetErrors(), "ErrBusNotInitialized should be silently swallowed, not logged")
 }

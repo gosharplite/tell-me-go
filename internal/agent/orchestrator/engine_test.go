@@ -20,6 +20,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -853,23 +854,6 @@ func (*noopSecurityManager) ReadLine(context.Context) (string, error)      { ret
 func (*noopSecurityManager) IsCommandAllowed(string) bool                  { return true }
 func (*noopSecurityManager) IsBypassActive() bool                          { return false }
 
-// spyLogger records calls to Error for assertion in tests.
-type spyLogger struct {
-	errorCalls []spyLogCall
-}
-
-type spyLogCall struct {
-	msg  string
-	args []any
-}
-
-func (s *spyLogger) Error(msg string, args ...any) {
-	s.errorCalls = append(s.errorCalls, spyLogCall{msg, args})
-}
-func (s *spyLogger) Warn(msg string, args ...any)  {}
-func (s *spyLogger) Info(msg string, args ...any)  {}
-func (s *spyLogger) Debug(msg string, args ...any) {}
-
 func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {
 	step := &ExecutionStep{}
 	ctx := context.Background()
@@ -955,7 +939,7 @@ func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {
 		cm := sessctx.NewManager(sessctx.NewStrategy(counter), nil, bus, nil)
 		require.NoError(t, cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000}))
 
-		sl := &spyLogger{}
+		sl := &testfixtures.SpyLogger{}
 
 		turn := &Turn{
 			Events:       bus,
@@ -985,7 +969,8 @@ func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {
 		assert.Empty(t, bus.GetEvents())
 
 		// Assert spy logger recorded exactly one Error call
-		require.Len(t, sl.errorCalls, 1)
-		assert.Equal(t, "event_publish_failed", sl.errorCalls[0].msg)
+		errors := sl.GetErrors()
+		require.Len(t, errors, 1)
+		assert.Equal(t, "event_publish_failed", errors[0])
 	})
 }
