@@ -14,38 +14,78 @@ import (
 // argument only; key-value args are not stored). It is goroutine-safe.
 //
 // Zero value is ready to use.
+//
+// Use GetErrors, GetWarns, GetInfos, GetDebugs, or CalledWith to read
+// recorded messages. Do not access the underlying slices directly since
+// they are not protected by the mutex.
 type SpyLogger struct {
 	mu     sync.Mutex
-	Errors []string
-	Warns  []string
-	Infos  []string
-	Debugs []string
+	errors []string
+	warns  []string
+	infos  []string
+	debugs []string
 }
 
 var _ ports.Logger = (*SpyLogger)(nil)
 
+// GetErrors returns a snapshot copy of all Error-level messages recorded.
+func (s *SpyLogger) GetErrors() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]string, len(s.errors))
+	copy(result, s.errors)
+	return result
+}
+
+// GetWarns returns a snapshot copy of all Warn-level messages recorded.
+func (s *SpyLogger) GetWarns() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]string, len(s.warns))
+	copy(result, s.warns)
+	return result
+}
+
+// GetInfos returns a snapshot copy of all Info-level messages recorded.
+func (s *SpyLogger) GetInfos() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]string, len(s.infos))
+	copy(result, s.infos)
+	return result
+}
+
+// GetDebugs returns a snapshot copy of all Debug-level messages recorded.
+func (s *SpyLogger) GetDebugs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]string, len(s.debugs))
+	copy(result, s.debugs)
+	return result
+}
+
 func (s *SpyLogger) Error(msg string, args ...any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Errors = append(s.Errors, msg)
+	s.errors = append(s.errors, msg)
 }
 
 func (s *SpyLogger) Warn(msg string, args ...any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Warns = append(s.Warns, msg)
+	s.warns = append(s.warns, msg)
 }
 
 func (s *SpyLogger) Info(msg string, args ...any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Infos = append(s.Infos, msg)
+	s.infos = append(s.infos, msg)
 }
 
 func (s *SpyLogger) Debug(msg string, args ...any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Debugs = append(s.Debugs, msg)
+	s.debugs = append(s.debugs, msg)
 }
 
 // CalledWith returns true if any call at the given level had the exact
@@ -57,13 +97,13 @@ func (s *SpyLogger) CalledWith(level, msg string) bool {
 	var slice []string
 	switch level {
 	case "Error":
-		slice = s.Errors
+		slice = s.errors
 	case "Warn":
-		slice = s.Warns
+		slice = s.warns
 	case "Info":
-		slice = s.Infos
+		slice = s.infos
 	case "Debug":
-		slice = s.Debugs
+		slice = s.debugs
 	default:
 		return false
 	}
@@ -79,8 +119,8 @@ func (s *SpyLogger) CalledWith(level, msg string) bool {
 func (s *SpyLogger) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Errors = nil
-	s.Warns = nil
-	s.Infos = nil
-	s.Debugs = nil
+	s.errors = nil
+	s.warns = nil
+	s.infos = nil
+	s.debugs = nil
 }

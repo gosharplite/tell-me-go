@@ -123,7 +123,7 @@ func TestHandleToolEvents_NilCallsGuard(t *testing.T) {
 	})
 
 	assert.Empty(t, renderer.logToolCallCalls, "LogToolCall must not be called when Calls is nil")
-	assert.Contains(t, logger.Debugs, "handleToolEvents: ToolCallEvent missing Calls")
+	assert.Contains(t, logger.GetDebugs(), "handleToolEvents: ToolCallEvent missing Calls")
 }
 
 func TestHandleToolEvents_EmptyNameGuard(t *testing.T) {
@@ -137,7 +137,7 @@ func TestHandleToolEvents_EmptyNameGuard(t *testing.T) {
 	})
 
 	assert.Empty(t, renderer.logToolResultCalls, "LogToolResult must not be called when Name is empty")
-	assert.Contains(t, logger.Debugs, "handleToolEvents: ToolResultEvent missing Name")
+	assert.Contains(t, logger.GetDebugs(), "handleToolEvents: ToolResultEvent missing Name")
 }
 
 func TestHandleToolEvents_ContextTODO(t *testing.T) {
@@ -168,7 +168,7 @@ func TestHandleToolEvents_UnexpectedType(t *testing.T) {
 
 	assert.Empty(t, renderer.logToolCallCalls)
 	assert.Empty(t, renderer.logToolResultCalls)
-	assert.Contains(t, logger.Debugs, "handleToolEvents: unexpected event type")
+	assert.Contains(t, logger.GetDebugs(), "handleToolEvents: unexpected event type")
 }
 
 func TestHandleToolEvents_ResumesActiveSpinner(t *testing.T) {

@@ -165,8 +165,9 @@ func TestSkillInjector_Transform(t *testing.T) {
 				assert.Len(t, req.History, 1, "expected history unchanged")
 				assert.False(t, req.PersistHistory, "expected PersistHistory to remain false when skill selection fails")
 				// Verify the warning was logged.
-				require.Len(t, errLogger.Warns, 1)
-				assert.Equal(t, "skill selection failed; proceeding without injected skills", errLogger.Warns[0])
+				warns := errLogger.GetWarns()
+				require.Len(t, warns, 1)
+				assert.Equal(t, "skill selection failed; proceeding without injected skills", warns[0])
 			},
 		},
 	}

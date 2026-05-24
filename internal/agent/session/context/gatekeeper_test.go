@@ -64,8 +64,9 @@ func TestTokenGatekeeper_ValidateHardLimits(t *testing.T) {
 			wantErr:   llm.ErrContextLimitExceeded,
 			extra: func(t *testing.T, logger ports.Logger) {
 				ml := logger.(*testfixtures.SpyLogger)
-				require.GreaterOrEqual(t, len(ml.Errors), 1, "expected at least one error logged")
-				require.Contains(t, ml.Errors, "event_publish_failed")
+				errors := ml.GetErrors()
+				require.GreaterOrEqual(t, len(errors), 1, "expected at least one error logged")
+				require.Contains(t, errors, "event_publish_failed")
 			},
 		},
 		{
@@ -77,7 +78,7 @@ func TestTokenGatekeeper_ValidateHardLimits(t *testing.T) {
 			wantErr:   llm.ErrContextLimitExceeded,
 			extra: func(t *testing.T, logger ports.Logger) {
 				ml := logger.(*testfixtures.SpyLogger)
-				require.Empty(t, ml.Errors, "ErrBusNotInitialized should be swallowed, not logged")
+				require.Empty(t, ml.GetErrors(), "ErrBusNotInitialized should be swallowed, not logged")
 			},
 		},
 		{

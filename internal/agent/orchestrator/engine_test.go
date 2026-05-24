@@ -969,7 +969,8 @@ func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {
 		assert.Empty(t, bus.GetEvents())
 
 		// Assert spy logger recorded exactly one Error call
-		require.Len(t, sl.Errors, 1)
-		assert.Equal(t, "event_publish_failed", sl.Errors[0])
+		errors := sl.GetErrors()
+		require.Len(t, errors, 1)
+		assert.Equal(t, "event_publish_failed", errors[0])
 	})
 }
