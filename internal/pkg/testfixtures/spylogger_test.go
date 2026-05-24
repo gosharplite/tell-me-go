@@ -24,8 +24,8 @@ func TestSpyLogger_RecordsAllLevels(t *testing.T) {
 	if len(sl.GetWarns()) != 1 {
 		t.Errorf("Warns = %d; want 1", len(sl.GetWarns()))
 	}
-	if len(sl.GetInfos()) != 1 {
-		t.Errorf("Infos = %d; want 1", len(sl.GetInfos()))
+	if len(sl.getInfos()) != 1 {
+		t.Errorf("Infos = %d; want 1", len(sl.getInfos()))
 	}
 	if len(sl.GetDebugs()) != 2 {
 		t.Errorf("Debugs = %d; want 2", len(sl.GetDebugs()))
@@ -72,9 +72,9 @@ func TestSpyLogger_Reset(t *testing.T) {
 	sl.Info("i")
 	sl.Debug("d")
 
-	sl.Reset()
+	sl.reset()
 
-	if len(sl.GetErrors()) != 0 || len(sl.GetWarns()) != 0 || len(sl.GetInfos()) != 0 || len(sl.GetDebugs()) != 0 {
+	if len(sl.GetErrors()) != 0 || len(sl.GetWarns()) != 0 || len(sl.getInfos()) != 0 || len(sl.GetDebugs()) != 0 {
 		t.Error("Reset() did not clear all slices")
 	}
 }

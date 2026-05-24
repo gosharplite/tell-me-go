@@ -15,7 +15,7 @@ import (
 //
 // Zero value is ready to use.
 //
-// Use GetErrors, GetWarns, GetInfos, GetDebugs, or CalledWith to read
+// Use getErrors, getWarns, getInfos, getDebugs, or CalledWith to read
 // recorded messages. Do not access the underlying slices directly since
 // they are not protected by the mutex.
 type SpyLogger struct {
@@ -46,8 +46,8 @@ func (s *SpyLogger) GetWarns() []string {
 	return result
 }
 
-// GetInfos returns a snapshot copy of all Info-level messages recorded.
-func (s *SpyLogger) GetInfos() []string {
+// getInfos returns a snapshot copy of all Info-level messages recorded.
+func (s *SpyLogger) getInfos() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := make([]string, len(s.infos))
@@ -115,8 +115,8 @@ func (s *SpyLogger) CalledWith(level, msg string) bool {
 	return false
 }
 
-// Reset clears all recorded calls.
-func (s *SpyLogger) Reset() {
+// reset clears all recorded calls.
+func (s *SpyLogger) reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.errors = nil
