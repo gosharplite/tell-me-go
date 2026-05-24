@@ -270,8 +270,16 @@ vulncheck:
 dead-code:
 	go run ./cmd/deadcode
 
+BENCH_PKGS := ./internal/agent/session/context \
+              ./internal/domain/events \
+              ./internal/infrastructure/history \
+              ./internal/infrastructure/llm \
+              ./internal/infrastructure/persistence \
+              ./internal/tools/analysis \
+              ./internal/tools/workspace
+
 bench:
-	go test -bench=. -benchmem -count=1 ./internal/...
+	go test -bench=. -benchmem -count=1 $(BENCH_PKGS)
 
 # check runs the full quality pipeline in sequence, stopping on first failure.
 # Fast/cheap checks run first so problems surface quickly.
