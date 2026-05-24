@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,33 +25,14 @@ func (m *mockSkillSelector) SelectSkills(ctx context.Context, taskDescription st
 	return m.selected, m.err
 }
 
-// mockLogger records Warn calls for assertion in tests.
-type mockLogger struct {
-	warns []struct {
-		msg  string
-		args []any
-	}
-}
-
-func (m *mockLogger) Warn(msg string, args ...any) {
-	m.warns = append(m.warns, struct {
-		msg  string
-		args []any
-	}{msg, args})
-}
-
-func (m *mockLogger) Error(msg string, args ...any) {}
-func (m *mockLogger) Info(msg string, args ...any)  {}
-func (m *mockLogger) Debug(msg string, args ...any) {}
-
 func TestSkillInjector_Transform(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	// errLogger is intentionally shared via closure capture by exactly ONE test case
 	// ("SelectSkillsErrorIsLoggedAndSwallowed"). No other case sets logger to a non-nil
-	// value, so no data race exists. Do not reuse errLogger in additional cases without
-	// scoping it per-test or making mockLogger thread-safe.
-	errLogger := &mockLogger{}
+	// value, so no data race exists. SpyLogger is goroutine-safe, so accidental reuse
+	// is safe.
+	errLogger := &testfixtures.SpyLogger{}
 
 	tests := []struct {
 		name     string
@@ -183,8 +165,8 @@ func TestSkillInjector_Transform(t *testing.T) {
 				assert.Len(t, req.History, 1, "expected history unchanged")
 				assert.False(t, req.PersistHistory, "expected PersistHistory to remain false when skill selection fails")
 				// Verify the warning was logged.
-				require.Len(t, errLogger.warns, 1)
-				assert.Equal(t, "skill selection failed; proceeding without injected skills", errLogger.warns[0].msg)
+				require.Len(t, errLogger.Warns, 1)
+				assert.Equal(t, "skill selection failed; proceeding without injected skills", errLogger.Warns[0])
 			},
 		},
 	}
@@ -279,7 +261,7 @@ func TestSkillInjector_IsAlreadyInjected(t *testing.T) {
 func TestNewSkillInjector(t *testing.T) {
 	t.Parallel()
 	selector := &mockSkillSelector{}
-	logger := &mockLogger{}
+	logger := &testfixtures.SpyLogger{}
 
 	transformer := NewSkillInjector(selector, logger)
 

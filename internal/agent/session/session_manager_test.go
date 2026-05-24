@@ -27,6 +27,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1078,7 +1079,7 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			mockLogger := new(agenttest.MockPortsLogger)
+			mockLogger := new(testfixtures.SpyLogger)
 
 			mChatter := new(agenttest.MockChatter)
 			var uiSub func(context.Context, events.Event)
@@ -1123,10 +1124,10 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 
 			switch tt.expectedMethod {
 			case "Warn":
-				require.True(t, mockLogger.WarnCalledWith(tt.expectedMessage),
+				require.True(t, mockLogger.CalledWith("Warn", tt.expectedMessage),
 					"expected logger.Warn to be called with %q", tt.expectedMessage)
 			case "Debug":
-				require.True(t, mockLogger.DebugCalledWith(tt.expectedMessage),
+				require.True(t, mockLogger.CalledWith("Debug", tt.expectedMessage),
 					"expected logger.Debug to be called with %q", tt.expectedMessage)
 			}
 

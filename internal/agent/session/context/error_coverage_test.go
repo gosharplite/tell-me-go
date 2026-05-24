@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
 
@@ -446,7 +447,7 @@ func TestTokenGatekeeper_PublishSystemEvent_NilEventBus(t *testing.T) {
 // SafePublish returns a non-ErrBusNotInitialized error, the failure is logged
 // via getLogger().Error (covers the error-logging branch at gatekeeper.go:180-183).
 func TestTokenGatekeeper_PublishSystemEvent_SafePublishError(t *testing.T) {
-	logger := &agenttest.MockPortsLogger{}
+	logger := &testfixtures.SpyLogger{}
 	tg := newTokenGatekeeper(
 		nil,
 		nil,
@@ -463,7 +464,7 @@ func TestTokenGatekeeper_PublishSystemEvent_SafePublishError(t *testing.T) {
 // when SafePublish returns ErrBusNotInitialized, the error is silently swallowed
 // and NOT logged (covers the resilience branch at gatekeeper.go:179-180).
 func TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized(t *testing.T) {
-	logger := &agenttest.MockPortsLogger{}
+	logger := &testfixtures.SpyLogger{}
 	tg := newTokenGatekeeper(
 		nil,
 		nil,
