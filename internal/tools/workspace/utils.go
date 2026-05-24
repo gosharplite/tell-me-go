@@ -253,11 +253,7 @@ func (p *searchPipeline) scanFile(path string) error {
 
 // scanLines reads a file line-by-line, applies the matcher, and sends results to the pipeline.
 func (p *searchPipeline) scanLines(path string, file persistence.File) error {
-	const maxScannerCapacity = 10 * 1024 * 1024
 	scanner := bufio.NewScanner(file)
-	// Go's GC handles short-lived 64KB buffers incredibly fast, and this avoids the pointer-growth leak.
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxScannerCapacity)
 
 	lineNum := 0
 	for scanner.Scan() {
