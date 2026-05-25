@@ -166,3 +166,42 @@ func BenchmarkDeadCodeAnalysis_WarmFullModule(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkDeadCodeAnalysis_WarmFullModuleDeep measures the dead_code_graph
+// pipeline with --deep enabled on a warm shared index. Compare against
+// BenchmarkDeadCodeAnalysis_WarmFullModule to quantify the cost of the
+// type-aware AST verification pass.
+//
+// Expected: 1.5–3× slower than the baseline warm scan. The deep pass walks
+// AST nodes for every orphaned method candidate. If this ratio exceeds 5×,
+// investigate the AST walk for redundant work or missing early-exits.
+func BenchmarkDeadCodeAnalysis_WarmFullModuleDeep(b *testing.B) {
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"path": ".",
+		"deep": true,
+	}
+	sm := &mockSecurityProvider{}
+
+	idx := getSharedIndexer(b)
+
+	// Warm up: ensure the indexer and types are loaded.
+	analyzer := newDeadCodeAnalyzer(sm, idx)
+	_, err := analyzer.FindOrphanedSymbols(ctx, args, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		analyzer := newDeadCodeAnalyzer(sm, idx)
+		result, err := analyzer.FindOrphanedSymbols(ctx, args, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if result.Text == "" {
+			b.Fatal("dead_code_graph returned empty result — is go.mod present?")
+		}
+	}
+}

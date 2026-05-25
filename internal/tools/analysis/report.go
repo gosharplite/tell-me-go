@@ -62,7 +62,7 @@ func formatDisplayName(id string, meta *symMeta) string {
 
 // evaluateOrphan determines whether a symbol qualifies as dead or effectively
 // private, producing an orphanReport if so.
-func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState) *orphanReport {
+func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState, deep bool) *orphanReport {
 	// Symbols annotated with //nolint:deadcode are explicitly excluded
 	// from dead-code reporting. This is a co-located, self-documenting
 	// mechanism for suppressing known false positives (e.g., symbols
@@ -96,7 +96,13 @@ func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state
 		reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
 	}
 
-	if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
+	if deep && meta.isMethod {
+		if a.resolveCrossPackageMethodUsages(state, meta.name, id, meta.pkgPath) {
+			return nil // Confirmed alive cross-package — reclassified
+		}
+		reason += deepVerifiedDead
+		// Skip text-search warning — we verified it's a false positive
+	} else if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
 		reason += " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
 	}
 
@@ -122,14 +128,14 @@ func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state
 }
 
 // buildReport orchestrates the full report-building pipeline from scanState to structured findings.
-func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanState, hb chan<- struct{}) []orphanReport {
-	findings := a.collectOrphanFindings(ctx, state, hb)
+func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanState, deep bool, hb chan<- struct{}) []orphanReport {
+	findings := a.collectOrphanFindings(ctx, state, deep, hb)
 	sortOrphanReports(findings)
 	return findings
 }
 
 // collectOrphanFindings iterates over all declarations and evaluates each for orphan status.
-func (a *defaultDeadCodeAnalyzer) collectOrphanFindings(ctx context.Context, state *scanState, hb chan<- struct{}) []orphanReport {
+func (a *defaultDeadCodeAnalyzer) collectOrphanFindings(ctx context.Context, state *scanState, deep bool, hb chan<- struct{}) []orphanReport {
 	var findings []orphanReport
 
 	// Sort IDs for deterministic iteration
@@ -147,7 +153,7 @@ func (a *defaultDeadCodeAnalyzer) collectOrphanFindings(ctx context.Context, sta
 			}
 		}
 
-		if report := a.evaluateOrphan(id, state.declarations[id], state); report != nil {
+		if report := a.evaluateOrphan(id, state.declarations[id], state, deep); report != nil {
 			findings = append(findings, *report)
 		}
 	}

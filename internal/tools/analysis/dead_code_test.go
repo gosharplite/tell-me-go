@@ -913,7 +913,7 @@ func TestGatherOrphanReports(t *testing.T) {
 
 			analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
 
-			reports, err := analyzer.GatherOrphanReports(ctx, caseDir, nil)
+			reports, err := analyzer.GatherOrphanReports(ctx, caseDir, false, nil)
 			require.NoError(t, err)
 
 			// Verify that all expected orphan reports are found.
@@ -945,7 +945,7 @@ func TestGatherOrphanReports_ErrorPaths(t *testing.T) {
 		denyingSP := &denyingSecurityProvider{}
 		analyzer := newDeadCodeAnalyzer(denyingSP, &mockSymbolIndex{})
 
-		reports, err := analyzer.GatherOrphanReports(context.Background(), "/some/path", nil)
+		reports, err := analyzer.GatherOrphanReports(context.Background(), "/some/path", false, nil)
 		if err == nil {
 			t.Error("expected error from security policy rejection")
 		}
@@ -966,7 +966,7 @@ func TestGatherOrphanReports_ErrorPaths(t *testing.T) {
 		}
 		analyzer := newDeadCodeAnalyzer(sp, mockIdx)
 
-		reports, err := analyzer.GatherOrphanReports(context.Background(), tmpDir, nil)
+		reports, err := analyzer.GatherOrphanReports(context.Background(), tmpDir, false, nil)
 		if err != nil {
 			t.Errorf("expected nil error for empty packages, got: %v", err)
 		}
@@ -987,7 +987,7 @@ func TestGatherOrphanReports_ErrorPaths(t *testing.T) {
 		}
 		analyzer := newDeadCodeAnalyzer(sp, mockIdx)
 
-		reports, err := analyzer.GatherOrphanReports(context.Background(), tmpDir, nil)
+		reports, err := analyzer.GatherOrphanReports(context.Background(), tmpDir, false, nil)
 		if err == nil {
 			t.Error("expected error from indexer failure")
 		}
@@ -1576,7 +1576,7 @@ func TestRunAnalysisPipeline_EmptyPathDefaultsToDot(t *testing.T) {
 	require.NoError(t, idx.Refresh(context.Background(), nil))
 
 	analyzer := newDeadCodeAnalyzer(sp, idx)
-	state, err := analyzer.runAnalysisPipeline(context.Background(), "", nil, nil)
+	state, err := analyzer.runAnalysisPipeline(context.Background(), "", nil, false, nil)
 	require.NoError(t, err)
 	require.NotNil(t, state)
 }

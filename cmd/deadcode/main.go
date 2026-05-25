@@ -22,7 +22,7 @@ func run() int {
 	sp := security.NewSecurityManager(nil)
 	analyzer := analysis.NewDeadCodeAnalyzerForCLI(sp)
 
-	reports, err := analyzer.GatherOrphanReports(ctx, ".", nil)
+	reports, err := analyzer.GatherOrphanReports(ctx, ".", false, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1

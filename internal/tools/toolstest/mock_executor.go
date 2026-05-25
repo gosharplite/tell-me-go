@@ -23,10 +23,12 @@ type MockExecutor struct {
 	Error       error
 	CommandName string
 	CommandArgs []string
+	CallCount   int
 }
 
 // Output records the command and returns the pre-set output and error.
 func (m *MockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	m.CallCount++
 	m.CommandName = name
 	m.CommandArgs = args
 	return m.OutputBytes, m.Error
@@ -34,6 +36,7 @@ func (m *MockExecutor) Output(ctx context.Context, name string, args ...string) 
 
 // CombinedOutput records the command and returns the pre-set output and error.
 func (m *MockExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	m.CallCount++
 	m.CommandName = name
 	m.CommandArgs = args
 	return m.OutputBytes, m.Error
