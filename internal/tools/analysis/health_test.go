@@ -25,7 +25,7 @@ type mockDeadCodeAnalyzer struct {
 	err     error
 }
 
-func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, hb chan<- struct{}) ([]orphanReport, error) {
+func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]orphanReport, error) {
 	return m.reports, m.err
 }
 
