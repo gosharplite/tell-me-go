@@ -231,8 +231,8 @@ func TestMockSecurityManager_Confirm(t *testing.T) {
 		if !ok {
 			t.Error("expected true from interactor with Answer='y'")
 		}
-		if !mock.ConfirmCalled {
-			t.Error("expected ConfirmCalled to be true")
+		if mock.ConfirmCallCount == 0 {
+			t.Error("expected ConfirmCallCount > 0")
 		}
 		if mock.LastConfirmText != "msg" {
 			t.Errorf("got LastConfirmText %q; want 'msg'", mock.LastConfirmText)

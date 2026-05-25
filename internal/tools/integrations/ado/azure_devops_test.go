@@ -2284,7 +2284,7 @@ func TestCreatePipeline(t *testing.T) {
 			assert.Equal(t, tt.wantPipelineID, result.PipelineID)
 			assert.Equal(t, tt.wantName, result.Name)
 			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
-			assert.Equal(t, tt.expectConfirm, sm.ConfirmCalled, "Confirm call mismatch")
+			assert.Equal(t, tt.expectConfirm, sm.ConfirmCallCount > 0, "Confirm call mismatch")
 
 			if tt.name == "Success" {
 				_, exists := m.pipelineCache.Load(cacheKey)

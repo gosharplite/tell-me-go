@@ -110,6 +110,76 @@ identifies the package as a test-helper sibling.**
   an unexported `buffer` interface backed by an unexported `safeBuffer`
   struct).
 
+### Mock construction pattern
+
+Test doubles in `*test/` packages **must** use the hand-rolled function-field
+pattern. Embedding `github.com/stretchr/testify/mock.Mock` is **prohibited**.
+
+#### Standard pattern
+
+A mock is a struct where each field controls the behaviour of a method, and
+the zero value is immediately usable:
+
+```go
+// MockClock is a test double for clock.Clock.
+// The zero value is usable — Now() falls through to real wall-clock time.
+type MockClock struct {
+    CurrentTime time.Time  // non-zero fixes the value returned by Now()
+}
+func (m *MockClock) Now() time.Time {
+    if m.CurrentTime.IsZero() {
+        return time.Now()
+    }
+    return m.CurrentTime
+}
+```
+
+#### Spy variant for call-count/call-order assertion
+
+When a test needs to assert that a method was called (or called N times, or
+called in a specific order), add lightweight spy fields to the struct:
+
+```go
+type MockClock struct {
+    CurrentTime   time.Time
+    CalledNow     int       // call-count field
+    CalledMethods []string  // call-order field (append method name on each call)
+}
+
+func (m *MockClock) Now() time.Time {
+    m.CalledNow++
+    m.CalledMethods = append(m.CalledMethods, "Now")
+    // ... normal behaviour ...
+}
+```
+
+Tests assert directly on the spy fields:
+
+```go
+mClock := &agenttest.MockClock{CurrentTime: fixedTime}
+// ... run system under test ...
+if mClock.CalledNow < 1 {
+    t.Errorf("expected Now() to be called at least once, got %d", mClock.CalledNow)
+}
+```
+
+#### Rationale
+
+1. **Make the zero value useful** (Go proverb). Hand-rolled mocks work without
+   `.On()` boilerplate.
+2. **Consistent with `toolstest/`** which already uses this pattern exclusively.
+3. **Simpler to read and maintain.** A `MockClock` with a `CurrentTime` field
+   is self-documenting. A testify mock requires reading `.On()` calls in each
+   test to understand behaviour.
+4. **For call-count assertions, use spy fields** (e.g. `CalledNow int`,
+   `CalledMethods []string`) rather than pulling in `testify/mock`.
+
+#### Exception: `agentinternal/`
+
+The `internal/agent/agentinternal/` package (ADR-022 escape hatch) may use
+`testify/mock` for mocks that reference `internal/agent` package types, since
+those mocks cannot live in `agenttest/` without creating import cycles.
+
 ## Consequences
 
 ### Positive
@@ -184,6 +254,10 @@ identifies the package as a test-helper sibling.**
   and `make check-full`) catches any new file matching
   `internal/.*/testutil/.*\.go` and fails the build with a pointer to
   this ADR.
+- `make verify-mock-pattern` (invoked by `make check` and `make check-full`)
+  greps for `"github.com/stretchr/testify/mock"` imports in `*test/` packages
+  (excluding `agentinternal/`) and fails the build with a pointer to the
+  Mock construction pattern section of this ADR.
 - Code review checklist: when reviewing a new test helper, verify it
   is placed in `<production-pkg>/<pkg>test/` or `internal/pkg/testfixtures/`,
   not in a centralized helper package.
