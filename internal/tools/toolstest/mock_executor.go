@@ -42,16 +42,6 @@ func (m *MockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 	return m.OutputBytes, m.Error
 }
 
-// Reset zeroes all call-tracking fields so the same MockExecutor can be
-// reused across subtests.
-func (m *MockExecutor) Reset() {
-	m.CallCount = 0
-	m.CommandName = ""
-	m.CommandArgs = nil
-	m.OutputBytes = nil
-	m.Error = nil
-}
-
 // LookPath simulates looking for an executable in the path.
 func (m *MockExecutor) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil

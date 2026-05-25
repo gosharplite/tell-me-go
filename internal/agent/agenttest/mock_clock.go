@@ -25,11 +25,6 @@ type MockClock struct {
 	CalledMethods []string
 }
 
-func (m *MockClock) Reset() {
-	m.CalledNow = 0
-	m.CalledMethods = nil
-}
-
 func (m *MockClock) Now() time.Time {
 	m.CalledNow++
 	m.CalledMethods = append(m.CalledMethods, "Now")
