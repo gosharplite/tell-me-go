@@ -253,7 +253,11 @@ func (p *searchPipeline) scanFile(path string) error {
 
 // scanLines reads a file line-by-line, applies the matcher, and sends results to the pipeline.
 func (p *searchPipeline) scanLines(path string, file persistence.File) error {
+	const maxScannerCapacity = 10 * 1024 * 1024
 	scanner := bufio.NewScanner(file)
+	// Minimal initial buffer avoids large upfront allocation (64KB→4KB);
+	// maxScannerCapacity preserves the original max token size for long lines.
+	scanner.Buffer(make([]byte, 0, 4096), maxScannerCapacity)
 
 	lineNum := 0
 	for scanner.Scan() {
