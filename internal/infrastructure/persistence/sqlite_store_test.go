@@ -948,7 +948,13 @@ func assertCompletedRetention(t *testing.T, tasks []ports.Task, oldestExcludedSt
 
 func seedBenchmarkTasks(b *testing.B, store *sqliteTaskStore, ctx context.Context, now time.Time) {
 	b.Helper()
-	b.Log("inserting 10,000 tasks...")
+	b.Log("inserting 10,000 tasks (single transaction)...")
+
+	// BEGIN transaction — avoids per-INSERT disk sync (205s → <1s)
+	if _, err := store.db.ExecContext(ctx, "BEGIN"); err != nil {
+		b.Fatalf("begin transaction: %v", err)
+	}
+
 	for i := 1; i <= 10000; i++ {
 		status := "completed"
 		if i <= 3000 {
@@ -965,6 +971,11 @@ func seedBenchmarkTasks(b *testing.B, store *sqliteTaskStore, ctx context.Contex
 		if err := store.Append(ctx, task); err != nil {
 			b.Fatalf("append task %d: %v", i, err)
 		}
+	}
+
+	// COMMIT — flush all INSERTs to disk atomically
+	if _, err := store.db.ExecContext(ctx, "COMMIT"); err != nil {
+		b.Fatalf("commit transaction: %v", err)
 	}
 }
 
