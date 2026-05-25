@@ -435,6 +435,45 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 // Performance: walks only packages whose PkgPath differs from the
 // declaring package. Skips packages with nil TypesInfo. Returns early
 // on first confirmed match.
+
+// resolveInPackage walks the AST of a single package looking for a
+// method identifier that type-resolves to targetId. Returns true on
+// first confirmed match.
+//
+// This is the inner loop extracted from resolveCrossPackageMethodUsages
+// to reduce cyclomatic complexity below the project threshold of 10.
+func (a *defaultDeadCodeAnalyzer) resolveInPackage(
+	pkg *packages.Package,
+	methodName string,
+	targetId string,
+) bool {
+	for _, file := range pkg.Syntax {
+		found := false
+		ast.Inspect(file, func(n ast.Node) bool {
+			if found {
+				return false
+			}
+			ident, ok := n.(*ast.Ident)
+			if !ok || ident.Name != methodName {
+				return true
+			}
+			obj, ok := pkg.TypesInfo.Uses[ident]
+			if !ok || obj == nil {
+				return true
+			}
+			if getSymbolIdentity(obj) == targetId {
+				found = true
+				return false
+			}
+			return true
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *defaultDeadCodeAnalyzer) resolveCrossPackageMethodUsages(
 	state *scanState,
 	methodName string,
@@ -444,38 +483,14 @@ func (a *defaultDeadCodeAnalyzer) resolveCrossPackageMethodUsages(
 	declaringBase := getBasePkgPath(declaringPkgPath)
 
 	for _, pkg := range state.pkgs {
-		pkgBase := getBasePkgPath(pkg.PkgPath)
-		if pkgBase == declaringBase {
-			continue // Same package — not cross-package
+		if getBasePkgPath(pkg.PkgPath) == declaringBase {
+			continue
 		}
 		if pkg.TypesInfo == nil {
-			continue // Cannot resolve types
+			continue
 		}
-
-		for _, file := range pkg.Syntax {
-			found := false
-			ast.Inspect(file, func(n ast.Node) bool {
-				if found {
-					return false // Stop walking after first match
-				}
-				ident, ok := n.(*ast.Ident)
-				if !ok || ident.Name != methodName {
-					return true
-				}
-				obj, ok := pkg.TypesInfo.Uses[ident]
-				if !ok || obj == nil {
-					return true
-				}
-				resolvedId := getSymbolIdentity(obj)
-				if resolvedId == targetId {
-					found = true
-					return false
-				}
-				return true
-			})
-			if found {
-				return true
-			}
+		if a.resolveInPackage(pkg, methodName, targetId) {
+			return true
 		}
 	}
 	return false

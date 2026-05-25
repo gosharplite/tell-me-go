@@ -61,70 +61,53 @@ func formatDisplayName(id string, meta *symMeta) string {
 }
 
 // evaluateOrphan determines whether a symbol qualifies as dead or effectively
-// private, producing an orphanReport if so.
+// private, producing an orphanReport if so. The logic is decomposed into a
+// pipeline of single-purpose evaluators (see orphan_evaluator.go).
 func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState, deep bool) *orphanReport {
-	// Symbols annotated with //nolint:deadcode are explicitly excluded
-	// from dead-code reporting. This is a co-located, self-documenting
-	// mechanism for suppressing known false positives (e.g., symbols
-	// consumed through the agentinternal bridge pattern, ADR-022).
-	if isNolintDeadcode(meta.obj, state) {
-		return nil
+	ctx := &orphanEvalContext{
+		id:          id,
+		meta:        meta,
+		state:       state,
+		deep:        deep,
+		complexity:  a.calculateSymbolComplexity(meta.obj, state.pkgs),
+		impact:      a.calculateImpactScore(meta.obj, state.pkgs),
+		displayName: formatDisplayName(id, meta),
 	}
+	return a.runOrphanPipeline(ctx)
+}
 
-	total := state.totalUses[id]
-	external := state.externalUses[id]
+// runOrphanPipeline assembles evaluators conditionally based on --deep mode
+// and executes them in sequence. Returns nil when any evaluator excludes the
+// symbol, or the final orphanReport when all evaluators pass.
+func (a *defaultDeadCodeAnalyzer) runOrphanPipeline(ctx *orphanEvalContext) *orphanReport {
+	evaluators := a.buildEvaluatorPipeline(ctx.deep)
 
-	if total > 0 && external > 0 {
-		return nil
-	}
-
-	var severity, reason string
-	if total == 0 {
-		severity = "DEAD"
-		reason = "No references found within the module (including interfaces/tests)."
-	} else {
-		// Implicitly: total > 0 && external == 0
-		severity = "PRIVATE"
-		reason = "Exported symbol is only used within its own package."
-	}
-
-	complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
-	impact := a.calculateImpactScore(meta.obj, state.pkgs)
-	displayName := formatDisplayName(id, meta)
-
-	if severity == "PRIVATE" && complexity >= 10 {
-		reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
-	}
-
-	if deep && meta.isMethod {
-		if a.resolveCrossPackageMethodUsages(state, meta.name, id, meta.pkgPath) {
-			return nil // Confirmed alive cross-package — reclassified
+	for _, ev := range evaluators {
+		ctx = ev.evaluate(ctx)
+		if ctx == nil {
+			return nil
 		}
-		reason += deepVerifiedDead
-		// Skip text-search warning — we verified it's a false positive
-	} else if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
-		reason += " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
 	}
+	return ctx.report
+}
 
-	// Anonymous-interface-assertion hedge. See
-	// dead_code_anon_interface.go for the full rationale. Methods only:
-	// the pattern `x.(interface{ M() })` invokes a method, never a free
-	// function or a type. Independent of the text-search warning above
-	// — both may legitimately fire on the same orphan, in which case
-	// both appear.
-	if meta.isMethod && a.hasAnonymousInterfaceAssertionMatch(state, meta.name) {
-		reason += fmt.Sprintf(" [WARNING: method name appears in anonymous-interface assertion site(s); verify with: grep -rn \"%s\" --include='*.go' .]", meta.name)
+// buildEvaluatorPipeline returns the ordered list of evaluators for the
+// orphan classification pipeline. When --deep is active, the deep verification
+// evaluator replaces the text-match warning evaluator.
+func (a *defaultDeadCodeAnalyzer) buildEvaluatorPipeline(deep bool) []orphanEvaluator {
+	evaluators := []orphanEvaluator{
+		&nolintGateEvaluator{analyzer: a},
+		&usageGateEvaluator{},
+		&severityClassifierEvaluator{},
+		&complexityReclassifierEvaluator{},
 	}
-
-	return &orphanReport{
-		Symbol:     displayName,
-		Pkg:        meta.pkgPath,
-		Type:       meta.symType,
-		Severity:   severity,
-		Reason:     reason,
-		Complexity: complexity,
-		Impact:     impact,
+	if deep {
+		evaluators = append(evaluators, &deepVerificationEvaluator{analyzer: a})
+	} else {
+		evaluators = append(evaluators, &textMatchWarningEvaluator{analyzer: a})
 	}
+	evaluators = append(evaluators, &anonInterfaceWarningEvaluator{analyzer: a})
+	return evaluators
 }
 
 // buildReport orchestrates the full report-building pipeline from scanState to structured findings.
