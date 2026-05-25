@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-architecture lint vulncheck dead-code check check-full bench
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-architecture lint vulncheck dead-code check check-full bench
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -45,7 +45,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -228,6 +228,57 @@ else
 	@echo "  ✓ *ForInternalUse brand contained to bridge package."
 endif
 
+verify-mock-pattern:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for testify/mock imports in *test/ packages (ADR-021 mock pattern)..."
+	@FILES="$$( grep -rl '"github.com/stretchr/testify/mock"' --include='*.go' internal/ \
+		| grep '/[^/]*test/' \
+		| grep -v '_test\.go$$' \
+		| grep -v 'agentinternal/' \
+		| sort -u )"; \
+	COUNT=$$(echo "$$FILES" | grep -c '\.go$$' || true); \
+	if [ "$$COUNT" -gt 11 ]; then \
+		echo ""; \
+		echo "❌ ADR-021 violation: new testify/mock import in a *test/ package."; \
+		echo "   Test doubles in *test/ packages must use hand-rolled function-field"; \
+		echo "   mocks, not testify/mock. See ADR-021 Mock construction pattern:"; \
+		echo "   docs/adr/2026-04-test-doubles-in-pkgtest-subpackages.md"; \
+		echo ""; \
+		echo "Files importing testify/mock:"; \
+		echo "$$FILES"; \
+		echo ""; \
+		echo "Baseline: 11 allowed (existing tech debt — tracked for elimination)."; \
+		echo "New: $$((COUNT - 11)) file(s) above baseline."; \
+		exit 1; \
+	fi; \
+	echo "  ✓ testify/mock count: $$COUNT (baseline: 11, no new violations)"
+else
+	@echo "Checking for testify/mock imports in *test/ packages (ADR-021 mock pattern)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$files = Get-ChildItem -Path internal -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			($$_.FullName.Replace('\', '/')) -match '/[^/]*test/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'agentinternal/' \
+		} | Where-Object { \
+			(Select-String -Path $$_.FullName -Pattern '\"github.com/stretchr/testify/mock\"' -SimpleMatch:$$true) \
+		} | ForEach-Object { $$_.FullName.Replace('\', '/') } | Sort-Object -Unique; \
+		$$count = ($$files | Measure-Object).Count; \
+		if ($$count -gt 11) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-021 violation: new testify/mock import in a *test/ package.'; \
+			Write-Host '   See: docs/adr/2026-04-test-doubles-in-pkgtest-subpackages.md'; \
+			Write-Host ''; \
+			Write-Host 'Files importing testify/mock:'; \
+			$$files | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			Write-Host ('Baseline: 11 allowed. New: ' + ($$count - 11) + ' file(s) above baseline.'); \
+			exit 1 \
+		}; \
+		Write-Host ('  ✓ testify/mock count: ' + $$count + ' (baseline: 11, no new violations)') \
+	"
+endif
+
 verify-architecture:
 ifeq ($(IS_POSIX),true)
 	@ARCH_FAIL_ON_VIOLATION=1 go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
@@ -288,6 +339,8 @@ check: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-mock-pattern ==="
+	@$(MAKE) verify-mock-pattern
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="
@@ -306,6 +359,8 @@ check-full: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-mock-pattern ==="
+	@$(MAKE) verify-mock-pattern
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="

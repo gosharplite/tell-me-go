@@ -16,16 +16,16 @@ import (
 // IsWritableFunc, and can plug in a UserInteractor to drive Confirm /
 // ReadLine flows.
 type MockSecurityManager struct {
-	AllowAll        bool
-	AllowedCommands map[string]bool
-	BypassActive    bool
-	AuthorizeFunc   func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
-	IsSafeFunc      func(path string) (string, error)
-	IsWritableFunc  func(path string) (string, error)
-	ConfirmFunc     func(ctx context.Context, message string) (bool, error)
-	ConfirmCalled   bool
-	LastConfirmText string
-	Interactor      security.UserInteractor
+	AllowAll         bool
+	AllowedCommands  map[string]bool
+	BypassActive     bool
+	AuthorizeFunc    func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
+	IsSafeFunc       func(path string) (string, error)
+	IsWritableFunc   func(path string) (string, error)
+	ConfirmFunc      func(ctx context.Context, message string) (bool, error)
+	ConfirmCallCount int
+	LastConfirmText  string
+	Interactor       security.UserInteractor
 }
 
 var _ security.Manager = (*MockSecurityManager)(nil)
@@ -65,7 +65,7 @@ func (m *MockSecurityManager) Prompt(message string)               {}
 func (m *MockSecurityManager) Warn(message string)                 {}
 
 func (m *MockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	m.ConfirmCalled = true
+	m.ConfirmCallCount++
 	m.LastConfirmText = message
 	if m.ConfirmFunc != nil {
 		return m.ConfirmFunc(ctx, message)
