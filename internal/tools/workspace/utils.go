@@ -255,9 +255,9 @@ func (p *searchPipeline) scanFile(path string) error {
 func (p *searchPipeline) scanLines(path string, file persistence.File) error {
 	const maxScannerCapacity = 10 * 1024 * 1024
 	scanner := bufio.NewScanner(file)
-	// Go's GC handles short-lived 64KB buffers incredibly fast, and this avoids the pointer-growth leak.
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxScannerCapacity)
+	// Minimal initial buffer avoids large upfront allocation (64KB→4KB);
+	// maxScannerCapacity preserves the original max token size for long lines.
+	scanner.Buffer(make([]byte, 0, 4096), maxScannerCapacity)
 
 	lineNum := 0
 	for scanner.Scan() {
