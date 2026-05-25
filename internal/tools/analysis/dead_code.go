@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/ast"
 	"go/types"
 	"log/slog"
 	"os"
@@ -17,6 +18,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"golang.org/x/tools/go/packages"
 )
+
+// deepVerifiedDead is the reason suffix appended when --deep confirms
+// a symbol has no cross-package callers.
+const deepVerifiedDead = " [DEEP: verified no cross-package callers; text-search warning suppressed]"
 
 // defaultDeadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
 type defaultDeadCodeAnalyzer struct {
@@ -82,12 +87,13 @@ func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args 
 	var params struct {
 		Path             string   `json:"path"`
 		ExcludedPackages []string `json:"excluded_packages"`
+		Deep             bool     `json:"deep"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	state, err := a.runAnalysisPipeline(ctx, params.Path, params.ExcludedPackages, hb)
+	state, err := a.runAnalysisPipeline(ctx, params.Path, params.ExcludedPackages, params.Deep, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -95,13 +101,13 @@ func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args 
 		return tools.ToolResult{Text: "No packages found."}, nil
 	}
 
-	findings := a.buildReport(ctx, state, hb)
+	findings := a.buildReport(ctx, state, params.Deep, hb)
 	return a.formatToolResult(findings), nil
 }
 
 // GatherOrphanReports is an internal helper for health checks that returns structured findings.
-func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, hb chan<- struct{}) ([]orphanReport, error) {
-	state, err := a.runAnalysisPipeline(ctx, path, nil, hb)
+func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]orphanReport, error) {
+	state, err := a.runAnalysisPipeline(ctx, path, nil, deep, hb)
 	if err != nil {
 		return nil, err
 	}
@@ -109,10 +115,10 @@ func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path 
 		return nil, nil
 	}
 
-	return a.buildReport(ctx, state, hb), nil
+	return a.buildReport(ctx, state, deep, hb), nil
 }
 
-func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path string, excluded []string, hb chan<- struct{}) (*scanState, error) {
+func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path string, excluded []string, deep bool, hb chan<- struct{}) (*scanState, error) {
 	if path == "" {
 		path = "."
 	}
@@ -410,6 +416,69 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 			a.propagateUsageToImplementations(ctx, id, count, snapshotExternal, state, hb)
 		}
 	}
+}
+
+// resolveCrossPackageMethodUsages performs type-aware AST verification
+// to determine whether a method with the given identity is called from
+// any package outside its declaring package.
+//
+// Unlike hasTextMatchOutsidePackage (which does raw bytes.Contains on
+// the method name), this walk consults TypesInfo.Uses for each matching
+// identifier and compares the resolved object's identity to the target.
+// This eliminates false positives where a same-named method on a
+// different type (e.g., InternalAccessor.DiffConfig vs AgentInternal.DiffConfig)
+// would otherwise trigger a misleading warning.
+//
+// Returns true only when at least one cross-package call site resolves
+// to the exact receiver-type+method represented by targetId.
+//
+// Performance: walks only packages whose PkgPath differs from the
+// declaring package. Skips packages with nil TypesInfo. Returns early
+// on first confirmed match.
+func (a *defaultDeadCodeAnalyzer) resolveCrossPackageMethodUsages(
+	state *scanState,
+	methodName string,
+	targetId string,
+	declaringPkgPath string,
+) bool {
+	declaringBase := getBasePkgPath(declaringPkgPath)
+
+	for _, pkg := range state.pkgs {
+		pkgBase := getBasePkgPath(pkg.PkgPath)
+		if pkgBase == declaringBase {
+			continue // Same package — not cross-package
+		}
+		if pkg.TypesInfo == nil {
+			continue // Cannot resolve types
+		}
+
+		for _, file := range pkg.Syntax {
+			found := false
+			ast.Inspect(file, func(n ast.Node) bool {
+				if found {
+					return false // Stop walking after first match
+				}
+				ident, ok := n.(*ast.Ident)
+				if !ok || ident.Name != methodName {
+					return true
+				}
+				obj, ok := pkg.TypesInfo.Uses[ident]
+				if !ok || obj == nil {
+					return true
+				}
+				resolvedId := getSymbolIdentity(obj)
+				if resolvedId == targetId {
+					found = true
+					return false
+				}
+				return true
+			})
+			if found {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *defaultDeadCodeAnalyzer) hasTextMatchOutsidePackage(state *scanState, symbolName string, declaringPkgPath string) bool {
