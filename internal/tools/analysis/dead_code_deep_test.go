@@ -17,10 +17,12 @@ package analysis
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/go/packages"
 )
 
 // runAnalyzerDeep is a small variant of runAnalyzer that passes deep:true.
@@ -222,4 +224,62 @@ func TestResolveCrossPackageMethodUsages_IdentityResolution(t *testing.T) {
 	assert.False(t, got,
 		"resolveCrossPackageMethodUsages must NOT find Bar anywhere — "+
 			"no such method is called in the fixture.")
+}
+
+// TestResolveInPackage_IdentityResolution is a unit test of the extracted
+// resolveInPackage method. It verifies that the type-aware AST walk
+// correctly resolves identifiers to their full identity within a single
+// *packages.Package.
+//
+// The test extracts the pkgB package from deepIdentFixture (which contains
+// the cross-package call `a.Foo()` where `a` is pkgA.TypeA) and calls
+// resolveInPackage directly with varying targetId values.
+//
+// This satisfies the acceptance criterion: resolveInPackage is
+// independently unit-testable with synthetic *packages.Package fixtures.
+func TestResolveInPackage_IdentityResolution(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	writeFixture(t, tmpDir, deepIdentFixture())
+
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, idx.Refresh(ctx, nil))
+
+	pkgs, err := idx.Packages(ctx, nil)
+	require.NoError(t, err)
+
+	// Find pkgB — it contains the cross-package call `a.Foo()` where
+	// `a` is pkgA.TypeA. This is the package we test directly.
+	var pkgB *packages.Package
+	for _, pkg := range pkgs {
+		if strings.Contains(pkg.PkgPath, "pkgB") {
+			pkgB = pkg
+			break
+		}
+	}
+	require.NotNil(t, pkgB, "must find pkgB package containing the cross-package call")
+	require.NotNil(t, pkgB.TypesInfo, "pkgB must be type-checked")
+
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
+
+	// 1. Correct identity — a.Foo() in pkgB resolves to TypeA.Foo.
+	targetId := "example.com/deepident/pkgA.TypeA.Foo"
+	assert.True(t, analyzer.resolveInPackage(pkgB, "Foo", targetId),
+		"resolveInPackage must find TypeA.Foo called from pkgB. "+
+			"The AST walk should resolve a.Foo() to identity %q.", targetId)
+
+	// 2. Wrong type, same method name — no OtherType.Foo is called.
+	wrongId := "example.com/deepident/pkgA.OtherType.Foo"
+	assert.False(t, analyzer.resolveInPackage(pkgB, "Foo", wrongId),
+		"resolveInPackage must NOT match OtherType.Foo — "+
+			"no such type has Foo called in pkgB.")
+
+	// 3. Wrong method name — no identifier "Bar" exists in pkgB.
+	assert.False(t, analyzer.resolveInPackage(pkgB, "Bar", targetId),
+		"resolveInPackage must NOT match Bar — "+
+			"no such method is called in pkgB.")
 }
