@@ -158,6 +158,13 @@ func (m *MockClock) Snapshot() (now int, methods []string) {
     return m.calledNow, out
 }
 
+// SetCurrentTime safely sets the fixed clock time for tests.
+func (m *MockClock) SetCurrentTime(t time.Time) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.currentTime = t
+}
+
 func (m *MockClock) Now() time.Time {
     m.mu.Lock()
     m.calledNow++
@@ -192,8 +199,7 @@ if len(methods) == 0 || methods[0] != "Now" {
 1. **Make the zero value useful** (Go proverb). Hand-rolled mocks work without
    `.On()` boilerplate.
 2. **Consistent with `toolstest/`** which already uses this pattern exclusively.
-3. **Simpler to read and maintain.** A `MockClock` with a `CurrentTime` field
-   is self-documenting. A testify mock requires reading `.On()` calls in each
+3. **Simpler to read and maintain.** A `MockClock` with explicit state methods like `SetCurrentTime` is self-documenting. A testify mock requires reading `.On()` calls in each
    test to understand behaviour.
 4. **For call-count assertions, use `sync.Mutex`-guarded spy fields**
    with a `Snapshot()` accessor (e.g. unexported `calledNow int`,
