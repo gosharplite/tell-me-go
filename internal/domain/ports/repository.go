@@ -43,14 +43,14 @@ type ListStore[T any] interface {
 	Count(ctx context.Context) (int, error)
 
 	Append(ctx context.Context, item T) error
-	Update(ctx context.Context, id float64, item T) error
-	Delete(ctx context.Context, id float64) error
+	Update(ctx context.Context, id int64, item T) error
+	Delete(ctx context.Context, id int64) error
 	DeleteAll(ctx context.Context) error
 }
 
 // Task represents a unit of work in the to-do list.
 type Task struct {
-	ID        float64   `json:"id"`
+	ID        int64     `json:"id"`
 	Content   string    `json:"content"`
 	Status    string    `json:"status"` // pending, completed
 	CreatedAt time.Time `json:"created_at"`
@@ -79,8 +79,8 @@ type TaskReader interface {
 // TaskWriter defines the interface for modifying tasks.
 type TaskWriter interface {
 	AddTask(ctx context.Context, content string) (Task, error)
-	UpdateTask(ctx context.Context, id float64, content, status string) (Task, error)
-	DeleteTask(ctx context.Context, id float64) error
+	UpdateTask(ctx context.Context, id int64, content, status string) (Task, error)
+	DeleteTask(ctx context.Context, id int64) error
 	ClearTasks(ctx context.Context) error
 }
 

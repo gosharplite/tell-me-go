@@ -19,7 +19,7 @@ type mockTaskRepo struct {
 }
 
 func (m *mockTaskRepo) ReadAll(ctx context.Context) ([]ports.Task, error) { return m.tasks, m.readErr }
-func (m *mockTaskRepo) Update(ctx context.Context, id float64, task ports.Task) error {
+func (m *mockTaskRepo) Update(ctx context.Context, id int64, task ports.Task) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
@@ -32,7 +32,7 @@ func (m *mockTaskRepo) Update(ctx context.Context, id float64, task ports.Task) 
 	return nil
 }
 
-func (m *mockTaskRepo) Delete(ctx context.Context, id float64) error {
+func (m *mockTaskRepo) Delete(ctx context.Context, id int64) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}

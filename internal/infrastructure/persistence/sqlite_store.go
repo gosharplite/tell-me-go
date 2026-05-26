@@ -170,19 +170,19 @@ func (s *sqliteTaskStore) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-func (s *sqliteTaskStore) Update(ctx context.Context, id float64, item ports.Task) error {
+func (s *sqliteTaskStore) Update(ctx context.Context, id int64, item ports.Task) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE tasks SET content = ?, status = ? WHERE id = ?",
-		item.Content, item.Status, int64(id))
+		item.Content, item.Status, id)
 	if err != nil {
-		return fmt.Errorf("updating task %d: %w", int(id), err)
+		return fmt.Errorf("updating task %d: %w", id, err)
 	}
 	return nil
 }
 
-func (s *sqliteTaskStore) Delete(ctx context.Context, id float64) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM tasks WHERE id = ?", int64(id))
+func (s *sqliteTaskStore) Delete(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM tasks WHERE id = ?", id)
 	if err != nil {
-		return fmt.Errorf("deleting task %d: %w", int(id), err)
+		return fmt.Errorf("deleting task %d: %w", id, err)
 	}
 	return nil
 }
@@ -197,9 +197,9 @@ func (s *sqliteTaskStore) DeleteAll(ctx context.Context) error {
 
 func (s *sqliteTaskStore) Append(ctx context.Context, item ports.Task) error {
 	_, err := s.db.ExecContext(ctx, "INSERT INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
-		int64(item.ID), item.Content, item.Status, item.CreatedAt.Format(time.RFC3339Nano))
+		item.ID, item.Content, item.Status, item.CreatedAt.Format(time.RFC3339Nano))
 	if err != nil {
-		return fmt.Errorf("appending task %d: %w", int(item.ID), err)
+		return fmt.Errorf("appending task %d: %w", item.ID, err)
 	}
 	return nil
 }

@@ -180,10 +180,10 @@ type failingTaskStore struct{}
 func (s *failingTaskStore) ReadAll(ctx context.Context) ([]ports.Task, error) {
 	return nil, errors.New("simulated read failure")
 }
-func (s *failingTaskStore) Update(ctx context.Context, id float64, item ports.Task) error { return nil }
-func (s *failingTaskStore) Delete(ctx context.Context, id float64) error                  { return nil }
-func (s *failingTaskStore) DeleteAll(ctx context.Context) error                           { return nil }
-func (s *failingTaskStore) Append(ctx context.Context, item ports.Task) error             { return nil }
+func (s *failingTaskStore) Update(ctx context.Context, id int64, item ports.Task) error { return nil }
+func (s *failingTaskStore) Delete(ctx context.Context, id int64) error                  { return nil }
+func (s *failingTaskStore) DeleteAll(ctx context.Context) error                         { return nil }
+func (s *failingTaskStore) Append(ctx context.Context, item ports.Task) error           { return nil }
 func (s *failingTaskStore) Query(ctx context.Context, filter ports.ListFilter, limit, offset int) ([]ports.Task, error) {
 	return nil, errors.New("simulated query failure")
 }

@@ -176,19 +176,19 @@ func runListConcurrency(t *testing.T, ctx context.Context) {
 	// Concurrent appends
 	for i := 0; i < count; i++ {
 		wg.Add(1)
-		go func(val float64) {
+		go func(val int64) {
 			defer wg.Done()
 			_ = store.Append(ctx, ports.Task{ID: val})
-		}(float64(i))
+		}(int64(i))
 	}
 
 	// Concurrent updates
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
-		go func(val float64) {
+		go func(val int64) {
 			defer wg.Done()
 			_ = store.Update(ctx, val, ports.Task{ID: val, Content: "updated"})
-		}(float64(i))
+		}(int64(i))
 	}
 
 	// Concurrent reads

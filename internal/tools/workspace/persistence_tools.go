@@ -126,9 +126,9 @@ func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 	case "add":
 		return t.addTask(ctx, params.Content)
 	case "update":
-		return t.updateTask(ctx, params.TaskID, params.Content, params.Status)
+		return t.updateTask(ctx, int64(params.TaskID), params.Content, params.Status)
 	case "delete":
-		return t.deleteTask(ctx, params.TaskID)
+		return t.deleteTask(ctx, int64(params.TaskID))
 	case "list":
 		return t.listTasks(params.Status, int(params.Limit), int(params.Offset))
 	case "clear":
@@ -143,21 +143,21 @@ func (t *persistenceTools) addTask(ctx context.Context, content string) (tools.T
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", task.ID)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %d", task.ID)}, nil
 }
 
-func (t *persistenceTools) updateTask(ctx context.Context, id float64, content, status string) (tools.ToolResult, error) {
+func (t *persistenceTools) updateTask(ctx context.Context, id int64, content, status string) (tools.ToolResult, error) {
 	if _, err := t.tasks.UpdateTask(ctx, id, content, status); err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", id)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Task %d updated", id)}, nil
 }
 
-func (t *persistenceTools) deleteTask(ctx context.Context, id float64) (tools.ToolResult, error) {
+func (t *persistenceTools) deleteTask(ctx context.Context, id int64) (tools.ToolResult, error) {
 	if err := t.tasks.DeleteTask(ctx, id); err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", id)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Task %d deleted", id)}, nil
 }
 
 func (t *persistenceTools) listTasks(status string, limit, offset int) (tools.ToolResult, error) {
@@ -185,7 +185,7 @@ func (t *persistenceTools) listTasks(status string, limit, offset int) (tools.To
 		if task.Status == "completed" {
 			icon = "[x]"
 		}
-		_, _ = fmt.Fprintf(&sb, "%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status)
+		_, _ = fmt.Fprintf(&sb, "%d. %s %s (%s)\n", task.ID, icon, task.Content, task.Status)
 	}
 
 	// Pagination hint when there are more pages
