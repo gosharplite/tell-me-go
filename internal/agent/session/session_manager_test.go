@@ -866,13 +866,14 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, mEventBus)
 
-	mClock := &agenttest.MockClock{CurrentTime: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	mClock := &agenttest.MockClock{}
+	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	mEntropy := new(agenttest.MockEntropySource)
 
 	// Entropy source fails
 	mEntropy.On("Read", mock.Anything).Return(nil, 0, fmt.Errorf("entropy failure"))
 
-	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime.UnixNano())
+	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -903,8 +904,9 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
 
-	if mClock.CalledNow < 1 {
-		t.Errorf("expected Now() to be called at least once, got %d", mClock.CalledNow)
+	now, _ := mClock.Snapshot()
+	if now < 1 {
+		t.Errorf("expected Now() to be called at least once, got %d", now)
 	}
 	mEntropy.AssertExpectations(t)
 	mChatter.AssertExpectations(t)
@@ -967,7 +969,8 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, mEventBus)
 
-	mClock := &agenttest.MockClock{CurrentTime: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	mClock := &agenttest.MockClock{}
+	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	mEntropy := new(agenttest.MockEntropySource)
 
 	// Entropy source returns a short read (e.g., only 4 bytes instead of 8)
@@ -980,7 +983,7 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mEntropy.On("Read", mock.Anything).Return(nil, 0, io.EOF).Maybe()
 
 	// Since it's a short read, it should fallback to timestamp-based ID
-	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime.UnixNano())
+	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -1010,8 +1013,9 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
 
-	if mClock.CalledNow < 1 {
-		t.Errorf("expected Now() to be called at least once, got %d", mClock.CalledNow)
+	now, _ := mClock.Snapshot()
+	if now < 1 {
+		t.Errorf("expected Now() to be called at least once, got %d", now)
 	}
 	mChatter.AssertExpectations(t)
 }

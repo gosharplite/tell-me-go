@@ -33,7 +33,8 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, mEventBus)
 
-	mClock := &agenttest.MockClock{CurrentTime: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	mClock := &agenttest.MockClock{}
+	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	mEntropy := new(agenttest.MockEntropySource)
 
 	entropyErr := fmt.Errorf("os entropy exhaustion")
