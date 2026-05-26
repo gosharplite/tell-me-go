@@ -137,29 +137,60 @@ func (m *MockClock) Now() time.Time {
 #### Spy variant for call-count/call-order assertion
 
 When a test needs to assert that a method was called (or called N times, or
-called in a specific order), add lightweight spy fields to the struct:
+called in a specific order), track call state in **unexported fields guarded
+by `sync.Mutex`** and expose a single `Snapshot()` accessor for race-safe
+inspection. This conforms to [ADR-036: Test Determinism Standards §3](./2026-05-test-determinism-standards.md).
 
 ```go
 type MockClock struct {
-    CurrentTime   time.Time
-    CalledNow     int       // call-count field
-    CalledMethods []string  // call-order field (append method name on each call)
+    mu            sync.Mutex
+    currentTime   time.Time
+    calledNow     int
+    calledMethods []string
+}
+
+// Snapshot returns a race-safe copy of the observable call state.
+func (m *MockClock) Snapshot() (now int, methods []string) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    out := make([]string, len(m.calledMethods))
+    copy(out, m.calledMethods)
+    return m.calledNow, out
+}
+
+// SetCurrentTime safely sets the fixed clock time for tests.
+func (m *MockClock) SetCurrentTime(t time.Time) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.currentTime = t
 }
 
 func (m *MockClock) Now() time.Time {
-    m.CalledNow++
-    m.CalledMethods = append(m.CalledMethods, "Now")
-    // ... normal behaviour ...
+    m.mu.Lock()
+    m.calledNow++
+    m.calledMethods = append(m.calledMethods, "Now")
+    t := m.currentTime
+    m.mu.Unlock()
+
+    if t.IsZero() {
+        return time.Now()
+    }
+    return t
 }
 ```
 
-Tests assert directly on the spy fields:
+Tests assert via `Snapshot()` — the only way to read call state:
 
 ```go
-mClock := &agenttest.MockClock{CurrentTime: fixedTime}
+mClock := &agenttest.MockClock{}
+mClock.SetCurrentTime(fixedTime)
 // ... run system under test ...
-if mClock.CalledNow < 1 {
-    t.Errorf("expected Now() to be called at least once, got %d", mClock.CalledNow)
+now, methods := mClock.Snapshot()
+if now < 1 {
+    t.Errorf("expected Now() to be called at least once, got %d", now)
+}
+if len(methods) == 0 || methods[0] != "Now" {
+    t.Errorf("expected first call to be Now(), got %v", methods)
 }
 ```
 
@@ -168,11 +199,12 @@ if mClock.CalledNow < 1 {
 1. **Make the zero value useful** (Go proverb). Hand-rolled mocks work without
    `.On()` boilerplate.
 2. **Consistent with `toolstest/`** which already uses this pattern exclusively.
-3. **Simpler to read and maintain.** A `MockClock` with a `CurrentTime` field
-   is self-documenting. A testify mock requires reading `.On()` calls in each
+3. **Simpler to read and maintain.** A `MockClock` with explicit state methods like `SetCurrentTime` is self-documenting. A testify mock requires reading `.On()` calls in each
    test to understand behaviour.
-4. **For call-count assertions, use spy fields** (e.g. `CalledNow int`,
-   `CalledMethods []string`) rather than pulling in `testify/mock`.
+4. **For call-count assertions, use `sync.Mutex`-guarded spy fields**
+   with a `Snapshot()` accessor (e.g. unexported `calledNow int`,
+   `calledMethods []string`) rather than pulling in `testify/mock`.
+   This ensures the mock passes `go test -race` (see ADR-036 §3).
 
 #### Exception: `agentinternal/`
 
@@ -264,6 +296,9 @@ those mocks cannot live in `agenttest/` without creating import cycles.
 
 ## References
 
+- [ADR-036: Test Determinism Standards](./2026-05-test-determinism-standards.md) §3 —
+  mandates `sync.Mutex`-guarded state for all mocks and fakes. The encapsulated
+  spy pattern in this ADR's examples conforms to that requirement.
 - `docs/refactor/testutil-audit.md` — the full 8-session refactor record,
   including the symbol inventory, per-session outcomes, and lessons
   learned.
