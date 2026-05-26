@@ -107,6 +107,26 @@ func (m *mockMetricsProvider) SetMemoryPercent(mem float64) {
 
 var _ ports.SystemMetricsProvider = (*mockMetricsProvider)(nil)
 
+// safeBuffer is a thread-safe wrapper around bytes.Buffer for use in tests
+// where the test goroutine reads output via String() while a background
+// goroutine concurrently writes via Write (e.g., spinner rendering).
+type safeBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 // TestSpinnerWithMetrics verifies that the spinner renders CPU and memory
 // percentages correctly for both host‑level ticks (idle > 0) and agent‑level
 // CPU seconds (idle == 0).
@@ -173,7 +193,7 @@ func TestSpinnerWithMetrics(t *testing.T) {
 
 			// Build the UI renderer with the mock provider
 			stdout := &bytes.Buffer{}
-			stderr := &bytes.Buffer{}
+			stderr := &safeBuffer{}
 			renderer := ui.NewRenderer(nil, stdout, stderr, nil, provider).(*ui.StdUIRenderer)
 			renderer.SetForceSpinner(true)
 
