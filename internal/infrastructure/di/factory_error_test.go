@@ -4,14 +4,18 @@
 package di
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -61,6 +65,81 @@ func (m *mockFailingFS) ReadFile(ctx context.Context, name string) ([]byte, erro
 		return nil, m.openErr
 	}
 	return nil, errors.New("not implemented")
+}
+
+type mockUnifiedHistoryProvider struct {
+	mock.Mock
+}
+
+func (m *mockUnifiedHistoryProvider) GetHistoryStream(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	return args.Get(0).([]ports.HistoryViewDTO), args.String(1), args.Error(2)
+}
+
+type mockHistoryManagerFull struct {
+	mock.Mock
+}
+
+func (m *mockHistoryManagerFull) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	args := m.Called(ctx, startIdx, endIdx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*llm.Content), args.Error(1)
+}
+
+func (m *mockHistoryManagerFull) GetTotalEntries() int {
+	return m.Called().Int(0)
+}
+
+func (m *mockHistoryManagerFull) GetLastUserMessage(ctx context.Context) (string, int, error) {
+	args := m.Called(ctx)
+	return args.String(0), args.Int(1), args.Error(2)
+}
+
+func (m *mockHistoryManagerFull) GetResolver() llm.AssetResolver {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(llm.AssetResolver)
+}
+
+func (m *mockHistoryManagerFull) SetContents(ctx context.Context, contents []*llm.Content) error {
+	return m.Called(ctx, contents).Error(0)
+}
+
+func (m *mockHistoryManagerFull) AddContent(ctx context.Context, content *llm.Content) error {
+	return m.Called(ctx, content).Error(0)
+}
+
+func (m *mockHistoryManagerFull) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	return m.Called(ctx, index, parts).Error(0)
+}
+
+func (m *mockHistoryManagerFull) Save(ctx context.Context) error {
+	return m.Called(ctx).Error(0)
+}
+
+func (m *mockHistoryManagerFull) Sync(ctx context.Context) error {
+	return m.Called(ctx).Error(0)
+}
+
+func (m *mockHistoryManagerFull) Archive(ctx context.Context, contents []*llm.Content) error {
+	return m.Called(ctx, contents).Error(0)
+}
+
+func (m *mockHistoryManagerFull) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	return m.Called(ctx, turnIndex, pinned).Error(0)
+}
+
+func (m *mockHistoryManagerFull) GetFilePath() string {
+	return m.Called().String(0)
+}
+
+func (m *mockHistoryManagerFull) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	args := m.Called(ctx, turns)
+	return args.Int(0), args.Int(1), args.Int(2), args.Error(3)
 }
 
 func TestGetHistoryManager_FailurePaths(t *testing.T) {
@@ -316,4 +395,94 @@ func TestGetSuggestionService_Fallback(t *testing.T) {
 	svc, err := b.GetSuggestionService(ctx, []string{"test"})
 	assert.NoError(t, err)
 	assert.NotNil(t, svc)
+}
+
+// failingCloser is an io.Closer that returns a configurable error.
+type failingCloser struct{ err error }
+
+func (c *failingCloser) Close() error { return c.err }
+
+// stubProgramRunner is a programRunner that immediately succeeds.
+type stubProgramRunner struct{}
+
+func (r *stubProgramRunner) Run() (tea.Model, error) { return nil, nil }
+
+// failingProgramRunner is a programRunner that returns a configurable error.
+type failingProgramRunner struct{ err error }
+
+func (r *failingProgramRunner) Run() (tea.Model, error) { return nil, r.err }
+
+func TestTUIHistoryBrowser_Browse_LoggerCloseError(t *testing.T) {
+	ctx := context.Background()
+	simulatedErr := errors.New("disk full")
+
+	// Capture log output to assert the warning was emitted
+	var logBuf bytes.Buffer
+	testLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	// Mock provider and manager — never actually called because Run() is stubbed
+	provider := new(mockUnifiedHistoryProvider)
+	provider.On("GetHistoryStream", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(
+		[]ports.HistoryViewDTO{}, "", nil,
+	)
+
+	hManager := new(mockHistoryManagerFull)
+	hManager.On("GetFilePath", mock.Anything).Maybe().Return("")
+	// All other methods are optional — never called when Run() is stubbed
+
+	browser := &tuiHistoryBrowser{
+		logger: testLogger,
+		initLogger: func() (io.Closer, error) {
+			return &failingCloser{err: simulatedErr}, nil
+		},
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {
+			return &stubProgramRunner{}
+		},
+	}
+
+	err := browser.Browse(ctx, provider, hManager)
+
+	assert.NoError(t, err, "Browse should not fail when only logger close fails")
+	logOutput := logBuf.String()
+	assert.Contains(t, logOutput, "failed to close tui logger")
+	assert.Contains(t, logOutput, simulatedErr.Error())
+}
+func TestTUIHistoryBrowser_Browse_ProgramRunError(t *testing.T) {
+	ctx := context.Background()
+	simulatedErr := errors.New("terminal disconnected")
+
+	// Capture log to verify NO warning was emitted (logger close not reached)
+	var logBuf bytes.Buffer
+	testLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	// Mock provider and manager — never actually called because Run() is stubbed
+	provider := new(mockUnifiedHistoryProvider)
+	provider.On("GetHistoryStream", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(
+		[]ports.HistoryViewDTO{}, "", nil,
+	)
+
+	hManager := new(mockHistoryManagerFull)
+	hManager.On("GetFilePath", mock.Anything).Maybe().Return("")
+
+	browser := &tuiHistoryBrowser{
+		logger: testLogger,
+		// initLogger returns an error so the closer/defer is skipped entirely
+		initLogger: func() (io.Closer, error) {
+			return nil, errors.New("logger init skipped")
+		},
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {
+			return &failingProgramRunner{err: simulatedErr}
+		},
+	}
+
+	err := browser.Browse(ctx, provider, hManager)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tui program error")
+	assert.ErrorIs(t, err, simulatedErr,
+		"Browse should wrap the program error with %w so callers can use errors.Is")
+
+	// The warning log should NOT contain any close error since we skipped the logger
+	logOutput := logBuf.String()
+	assert.NotContains(t, logOutput, "failed to close tui logger")
 }
