@@ -24,7 +24,7 @@ func generateTasks(n int) []ports.Task {
 	now := time.Now()
 	for i := 0; i < n; i++ {
 		tasks[i] = ports.Task{
-			ID:        float64(i + 1),
+			ID:        int64(i + 1),
 			Content:   fmt.Sprintf("Task number %d with some descriptive text for realistic JSON size", i+1),
 			Status:    "pending",
 			CreatedAt: now,

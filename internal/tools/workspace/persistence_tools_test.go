@@ -65,7 +65,7 @@ func (m *mockListStore) Append(ctx context.Context, item ports.Task) error {
 	return nil
 }
 
-func (m *mockListStore) Update(ctx context.Context, id float64, item ports.Task) error {
+func (m *mockListStore) Update(ctx context.Context, id int64, item ports.Task) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -78,7 +78,7 @@ func (m *mockListStore) Update(ctx context.Context, id float64, item ports.Task)
 	return fmt.Errorf("not found")
 }
 
-func (m *mockListStore) Delete(ctx context.Context, id float64) error {
+func (m *mockListStore) Delete(ctx context.Context, id int64) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -245,7 +245,7 @@ func testManageTasksList(t *testing.T) {
 		},
 		{
 			name: "list with limit and offset",
-			args: map[string]interface{}{"action": "list", "offset": 50.0},
+			args: map[string]interface{}{"action": "list", "offset": 50},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				ctx := context.Background()
 				for i := 1; i <= 60; i++ {
@@ -293,7 +293,7 @@ func testManageTasksUpdate(t *testing.T) {
 	}{
 		{
 			name: "Successfully update task",
-			args: map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"},
+			args: map[string]interface{}{"action": "update", "task_id": 1, "status": "completed"},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				if s, ok := ts.(ports.Initializer); ok {
@@ -325,7 +325,7 @@ func testManageTasksDeleteAndClear(t *testing.T) {
 	}{
 		{
 			name: "delete task",
-			args: map[string]interface{}{"action": "delete", "task_id": 1.0},
+			args: map[string]interface{}{"action": "delete", "task_id": 1},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				if s, ok := ts.(ports.Initializer); ok {
@@ -528,13 +528,13 @@ func TestPersistenceTools_Errors(t *testing.T) {
 	}
 
 	// updateTask error (not found)
-	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "update", "task_id": 999.0, "status": "completed"}, nil)
+	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "update", "task_id": 999, "status": "completed"}, nil)
 	if err == nil {
 		t.Error("Expected error for non-existent task in updateTask")
 	}
 
 	// deleteTask error (not found)
-	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "delete", "task_id": 999.0}, nil)
+	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "delete", "task_id": 999}, nil)
 	if err == nil {
 		t.Error("Expected error for non-existent task in deleteTask")
 	}
@@ -655,7 +655,7 @@ func TestManageTasks_ListLastPageNoHint(t *testing.T) {
 	// List with offset=50 (last partial page: tasks 51-60)
 	res, err := pt.ManageTasks(ctx, map[string]interface{}{
 		"action": "list",
-		"offset": 50.0,
+		"offset": 50,
 	}, nil)
 	if err != nil {
 		t.Fatalf("ManageTasks failed: %v", err)

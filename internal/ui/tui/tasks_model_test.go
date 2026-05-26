@@ -20,8 +20,8 @@ type mockTaskStore struct {
 
 	// TaskWriter methods (unused by taskListModel but needed for interface)
 	AddTaskFunc    func(ctx context.Context, content string) (ports.Task, error)
-	UpdateTaskFunc func(ctx context.Context, id float64, content, status string) (ports.Task, error)
-	DeleteTaskFunc func(ctx context.Context, id float64) error
+	UpdateTaskFunc func(ctx context.Context, id int64, content, status string) (ports.Task, error)
+	DeleteTaskFunc func(ctx context.Context, id int64) error
 	ClearTasksFunc func(ctx context.Context) error
 }
 
@@ -46,14 +46,14 @@ func (m *mockTaskStore) AddTask(ctx context.Context, content string) (ports.Task
 	return ports.Task{}, nil
 }
 
-func (m *mockTaskStore) UpdateTask(ctx context.Context, id float64, content, status string) (ports.Task, error) {
+func (m *mockTaskStore) UpdateTask(ctx context.Context, id int64, content, status string) (ports.Task, error) {
 	if m.UpdateTaskFunc != nil {
 		return m.UpdateTaskFunc(ctx, id, content, status)
 	}
 	return ports.Task{}, nil
 }
 
-func (m *mockTaskStore) DeleteTask(ctx context.Context, id float64) error {
+func (m *mockTaskStore) DeleteTask(ctx context.Context, id int64) error {
 	if m.DeleteTaskFunc != nil {
 		return m.DeleteTaskFunc(ctx, id)
 	}
@@ -539,7 +539,7 @@ func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
 			// Return 50 tasks to simulate a full page
 			tasks := make([]ports.Task, 50)
 			for i := range tasks {
-				tasks[i] = ports.Task{ID: float64(offset + i + 1), Content: "task", Status: "pending"}
+				tasks[i] = ports.Task{ID: int64(offset + i + 1), Content: "task", Status: "pending"}
 			}
 			return tasks
 		},
@@ -588,7 +588,7 @@ func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
 			receivedOffset = offset
 			tasks := make([]ports.Task, 50)
 			for i := range tasks {
-				tasks[i] = ports.Task{ID: float64(offset + i + 1), Content: "task", Status: "pending"}
+				tasks[i] = ports.Task{ID: int64(offset + i + 1), Content: "task", Status: "pending"}
 			}
 			return tasks
 		},
