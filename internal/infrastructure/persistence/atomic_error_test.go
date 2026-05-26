@@ -601,9 +601,13 @@ func TestAtomicWrite_CancelAfterWrite(t *testing.T) {
 func TestRenameWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
 	m := newMockFS()
 	callCount := 0
+	firstAttemptDone := make(chan struct{})
 
 	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
 		callCount++
+		if callCount == 1 {
+			close(firstAttemptDone) // signal first attempt completed
+		}
 		return errors.New("Access is denied") // always transient
 	}
 
@@ -614,8 +618,8 @@ func TestRenameWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
 		errCh <- renameWithRetry(ctx, m, "/tmp/src", "/tmp/dst", 0644)
 	}()
 
-	// Let the first rename attempt happen, then cancel during the backoff.
-	time.Sleep(50 * time.Millisecond)
+	// Wait for first rename attempt to complete, then cancel during backoff
+	<-firstAttemptDone
 	cancel()
 
 	err := <-errCh

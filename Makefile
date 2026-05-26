@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-architecture lint vulncheck dead-code check check-full bench
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-no-test-sleep verify-architecture lint vulncheck dead-code check check-full bench
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -32,6 +32,7 @@ help:
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
 	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
+	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
@@ -279,6 +280,55 @@ else
 	"
 endif
 
+# Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
+# Legitimate I/O simulation and hardware observation sleeps are explicitly allow-listed.
+verify-no-test-sleep:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for time.Sleep synchronization in test files..."
+	@# ZERO TOLERANCE: internal/ui/ tests must have zero time.Sleep
+	@if grep -rn 'time\.Sleep(' --include='*_test.go' internal/ui/; then \
+		echo ""; \
+		echo "❌ time.Sleep found in internal/ui/ test files."; \
+		echo "   Use deterministic primitives: poll loops, ready channels, or"; \
+		echo "   test-controlled tick channels. See internal/agent/session/doc.go"; \
+		echo "   for canonical patterns."; \
+		exit 1; \
+	fi
+	@# ALLOW-LIST: config/watcher_test.go — only sleeps with 'simulates I/O latency' comment
+	@VIOLATIONS=$$(grep -rn 'time\.Sleep(' --include='*_test.go' internal/infrastructure/config/ | grep -v 'simulates I/O latency'); \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ Undocumented time.Sleep in config test files."; \
+		echo "   Allowed: only sleeps with '// simulates I/O latency' comment."; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		exit 1; \
+	fi
+	@# ALLOW-LIST: telemetry/system_metrics_darwin_test.go only (Darwin kernel observation)
+	@VIOLATIONS=$$(grep -rn 'time\.Sleep(' --include='*_test.go' internal/infrastructure/telemetry/ | grep -v 'system_metrics_darwin_test.go'); \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ time.Sleep in telemetry test files outside system_metrics_darwin_test.go."; \
+		echo "   Darwin kernel tick observation sleeps are allow-listed in that file only."; \
+		echo ""; \
+		echo "$$VIOLATIONS"; \
+		exit 1; \
+	fi
+	@echo "  ✓ No time.Sleep for synchronization in test files."
+else
+	@echo "Checking for time.Sleep synchronization in test files (Windows)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$ui = Select-String -Path 'internal/ui/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false; \
+		if ($$ui) { Write-Host '❌ time.Sleep in internal/ui/ test files'; exit 1 }; \
+		$$cfg = Select-String -Path 'internal/infrastructure/config/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false | Where-Object { $$_.Line -notmatch 'simulates I/O latency' }; \
+		if ($$cfg) { Write-Host '❌ Undocumented time.Sleep in config test files'; $$cfg | ForEach-Object { Write-Host $$_ }; exit 1 }; \
+		$$tel = Select-String -Path 'internal/infrastructure/telemetry/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false | Where-Object { $$_.Path -notmatch 'system_metrics_darwin_test\.go' }; \
+		if ($$tel) { Write-Host '❌ time.Sleep in telemetry test files outside allow-list'; $$tel | ForEach-Object { Write-Host $$_ }; exit 1 }; \
+	"
+	@echo "  ✓ No time.Sleep for synchronization in test files."
+endif
+
 verify-architecture:
 ifeq ($(IS_POSIX),true)
 	@ARCH_FAIL_ON_VIOLATION=1 go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
@@ -341,6 +391,8 @@ check: fmt tidy build
 	@$(MAKE) verify-architecture
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
+	@echo "=== verify-no-test-sleep ==="
+	@$(MAKE) verify-no-test-sleep
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="
@@ -361,6 +413,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-architecture
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
+	@echo "=== verify-no-test-sleep ==="
+	@$(MAKE) verify-no-test-sleep
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="

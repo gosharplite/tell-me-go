@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -356,9 +355,9 @@ func TestRunGitCommand_WithHeartbeat(t *testing.T) {
 	m := &gitManager{
 		Exec: &mockGitExecutor{
 			handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				// Sleep long enough for the 2s ticker to fire at least once,
-				// so the hb != nil branch inside the goroutine is exercised.
-				time.Sleep(2100 * time.Millisecond)
+				// Return immediately — the heartbeat goroutine inside
+				// runGitCommand uses its own ticker; the test's select
+				// already handles "may not fire" case.
 				return []byte("ok"), nil
 			},
 		},

@@ -71,15 +71,14 @@ func (t *InternalTools) emitHeartbeats(done <-chan struct{}, hb chan<- struct{})
 // SummarizeHistory wraps ContextManager.SummarizeRange as a tool.
 func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		Turns float64 `json:"turns"`
-		Focus string  `json:"focus"`
+		Turns int    `json:"turns"`
+		Focus string `json:"focus"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	targetTurns := int(params.Turns)
-	if targetTurns <= 0 {
+	if params.Turns <= 0 {
 		return tools.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
 	}
 
@@ -88,7 +87,7 @@ func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]in
 	defer close(done)
 	go t.emitHeartbeats(done, hb)
 
-	res, metrics, err := t.ctxManager.SummarizeRange(ctx, targetTurns, params.Focus)
+	res, metrics, err := t.ctxManager.SummarizeRange(ctx, params.Turns, params.Focus)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -102,15 +101,14 @@ func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]in
 // ManageHistory manages conversation history by pinning or unpinning specific turns.
 func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		Action string  `json:"action"`
-		Index  float64 `json:"index"`
+		Action string `json:"action"`
+		Index  int    `json:"index"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	index := int(params.Index)
-	if index < 0 {
+	if params.Index < 0 {
 		return tools.ToolResult{}, fmt.Errorf("invalid 'index' parameter: must be >= 0")
 	}
 	var pinned bool
@@ -124,7 +122,7 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, fmt.Errorf("unsupported action: %s", params.Action)
 	}
 
-	if err := t.ctxManager.History.SetPinned(ctx, index, pinned); err != nil {
+	if err := t.ctxManager.History.SetPinned(ctx, params.Index, pinned); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -132,7 +130,7 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 	if pinned {
 		status = "pinned"
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("turn %d has been successfully %s", index, status)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("turn %d has been successfully %s", params.Index, status)}, nil
 }
 
 // RegisterInternal registers the internal tools with the provided registrar.
@@ -146,7 +144,7 @@ func RegisterInternal(r tools.ToolRegistrar, cm *sessctx.Manager, logger ports.L
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
 				"turns": {
-					Type:        "NUMBER",
+					Type:        "INTEGER",
 					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
 				},
 				"focus": {
@@ -175,7 +173,7 @@ func RegisterInternal(r tools.ToolRegistrar, cm *sessctx.Manager, logger ports.L
 					Enum:        []string{"pin", "unpin"},
 				},
 				"index": {
-					Type:        "NUMBER",
+					Type:        "INTEGER",
 					Description: "The 0-based index of the turn to manage.",
 				},
 			},

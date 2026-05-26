@@ -21,15 +21,15 @@ var _ ports.TaskStore = (*taskService)(nil)
 type taskService struct {
 	mu     sync.RWMutex
 	store  ports.ListStore[ports.Task]
-	tasks  map[float64]ports.Task
-	nextID float64
+	tasks  map[int64]ports.Task
+	nextID int64
 }
 
 // NewTaskService creates a new taskService.
 func NewTaskService(store ports.ListStore[ports.Task]) *taskService {
 	return &taskService{
 		store:  store,
-		tasks:  make(map[float64]ports.Task),
+		tasks:  make(map[int64]ports.Task),
 		nextID: 1,
 	}
 }
@@ -81,13 +81,13 @@ func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, 
 }
 
 // UpdateTask updates an existing task.
-func (s *taskService) UpdateTask(ctx context.Context, id float64, content, status string) (ports.Task, error) {
+func (s *taskService) UpdateTask(ctx context.Context, id int64, content, status string) (ports.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	t, ok := s.tasks[id]
 	if !ok {
-		return ports.Task{}, fmt.Errorf("id %.0f: %w", id, ports.ErrTaskNotFound)
+		return ports.Task{}, fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 	}
 
 	if content != "" {
@@ -106,12 +106,12 @@ func (s *taskService) UpdateTask(ctx context.Context, id float64, content, statu
 }
 
 // DeleteTask removes a task.
-func (s *taskService) DeleteTask(ctx context.Context, id float64) error {
+func (s *taskService) DeleteTask(ctx context.Context, id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, ok := s.tasks[id]; !ok {
-		return fmt.Errorf("id %.0f: %w", id, ports.ErrTaskNotFound)
+		return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 	}
 
 	if err := s.store.Delete(ctx, id); err != nil {
@@ -185,6 +185,6 @@ func (s *taskService) ClearTasks(ctx context.Context) error {
 		return err
 	}
 
-	s.tasks = make(map[float64]ports.Task)
+	s.tasks = make(map[int64]ports.Task)
 	return nil
 }

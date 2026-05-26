@@ -24,6 +24,8 @@ func TestDispatcher_HeartbeatTimeout(t *testing.T) {
 		Description: "I emit heartbeats then hang",
 	}
 
+	tickCh := make(chan struct{})
+
 	reg := &mockZombieRegistry{
 		isLongRunningFn:   func(name string) bool { return true },
 		livenessThreshold: 100 * time.Millisecond,
@@ -38,7 +40,11 @@ func TestDispatcher_HeartbeatTimeout(t *testing.T) {
 				return tools.ToolResult{Text: "cancelled"}, ctx.Err()
 			}
 
-			time.Sleep(50 * time.Millisecond)
+			select {
+			case <-tickCh:
+			case <-ctx.Done():
+				return tools.ToolResult{Text: "cancelled"}, ctx.Err()
+			}
 
 			select {
 			case hb <- struct{}{}:
@@ -46,7 +52,7 @@ func TestDispatcher_HeartbeatTimeout(t *testing.T) {
 				return tools.ToolResult{Text: "cancelled"}, ctx.Err()
 			}
 
-			// Now hang longer than the threshold (100ms)
+			// Now hang — wait for context cancellation (no more ticks)
 			select {
 			case <-ctx.Done():
 				return tools.ToolResult{Text: "cancelled"}, ctx.Err()
@@ -67,9 +73,20 @@ func TestDispatcher_HeartbeatTimeout(t *testing.T) {
 	fc := &llm.FunctionCall{Name: hangingTool.Name}
 	tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
 
-	// Execute
-	result, err := exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
-	require.NoError(t, err)
+	// Execute in goroutine so we can feed ticks
+	doneCh := make(chan struct{})
+	var result tools.ToolResult
+	var execErr error
+	go func() {
+		defer close(doneCh)
+		result, execErr = exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
+	}()
+
+	// Feed 1 tick to let the second heartbeat through, then stop
+	tickCh <- struct{}{}
+
+	<-doneCh
+	require.NoError(t, execErr)
 
 	// Should have timed out due to heartbeat missing
 	assert.Error(t, result.Error)
@@ -84,6 +101,8 @@ func TestDispatcher_HeartbeatSuccess(t *testing.T) {
 		Description: "I emit heartbeats and finish successfully",
 	}
 
+	tickCh := make(chan struct{})
+
 	reg := &mockZombieRegistry{
 		isLongRunningFn:   func(name string) bool { return true },
 		livenessThreshold: 500 * time.Millisecond,
@@ -91,14 +110,18 @@ func TestDispatcher_HeartbeatSuccess(t *testing.T) {
 			return []*tools.ToolDeclaration{livelyTool}
 		},
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-			// Emit heartbeats every 10ms for 40ms (total 4 heartbeats)
+			// Emit 4 heartbeats, each gated by a tick from the test
 			for i := 0; i < 4; i++ {
 				select {
 				case hb <- struct{}{}:
 				case <-ctx.Done():
 					return tools.ToolResult{Text: "cancelled"}, ctx.Err()
 				}
-				time.Sleep(10 * time.Millisecond)
+				select {
+				case <-tickCh:
+				case <-ctx.Done():
+					return tools.ToolResult{Text: "cancelled"}, ctx.Err()
+				}
 			}
 			return tools.ToolResult{Text: "success"}, nil
 		},
@@ -114,11 +137,24 @@ func TestDispatcher_HeartbeatSuccess(t *testing.T) {
 	fc := &llm.FunctionCall{Name: livelyTool.Name}
 	tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
 
-	// Execute
-	result, err := exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
+	// Execute in goroutine so we can feed ticks
+	doneCh := make(chan struct{})
+	var result tools.ToolResult
+	var execErr error
+	go func() {
+		defer close(doneCh)
+		result, execErr = exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
+	}()
+
+	// Feed 4 ticks to allow all heartbeats
+	for i := 0; i < 4; i++ {
+		tickCh <- struct{}{}
+	}
+
+	<-doneCh
+	require.NoError(t, execErr)
 
 	// Should succeed because heartbeats kept it alive
-	assert.NoError(t, err)
 	assert.NoError(t, result.Error)
 	assert.Equal(t, "success", result.Text)
 }

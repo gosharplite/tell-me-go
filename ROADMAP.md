@@ -5,6 +5,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 - **Strategic Strategy:** [ADR-001: Hybrid LLM Infrastructure Strategy](./docs/adr/2026-01-multi-llm-provider-strategy.md)
 - **Technical Specification:** [Multi-Provider Implementation Plan](./docs/sop/technical/multi_provider_implementation.md)
 - **Design Standards:** [ADR Management SOP](./docs/sop/standards/adr_standards.md)
+- **Testing Standards:** [ADR-036: Test Determinism Standards](./docs/adr/2026-05-test-determinism-standards.md)
 
 ## Phase 1: Foundation & Governance (Completed)
 - [x] Documentation & ADR Initialization

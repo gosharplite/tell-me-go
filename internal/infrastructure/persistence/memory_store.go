@@ -98,12 +98,12 @@ func (s *memoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
 	return result, nil
 }
 
-func (s *memoryListStore[T]) getID(item T) float64 {
+func (s *memoryListStore[T]) getID(item T) int64 {
 	val := reflect.ValueOf(item)
 	if val.Kind() == reflect.Struct {
 		field := val.FieldByName("ID")
-		if field.IsValid() && field.CanFloat() {
-			return field.Float()
+		if field.IsValid() && field.CanInt() {
+			return field.Int()
 		}
 	}
 	return 0
@@ -189,7 +189,7 @@ func (s *memoryListStore[T]) Count(ctx context.Context) (int, error) {
 	return len(s.data), nil
 }
 
-func (s *memoryListStore[T]) Update(ctx context.Context, id float64, item T) error {
+func (s *memoryListStore[T]) Update(ctx context.Context, id int64, item T) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, v := range s.data {
@@ -201,7 +201,7 @@ func (s *memoryListStore[T]) Update(ctx context.Context, id float64, item T) err
 	return nil
 }
 
-func (s *memoryListStore[T]) Delete(ctx context.Context, id float64) error {
+func (s *memoryListStore[T]) Delete(ctx context.Context, id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, v := range s.data {

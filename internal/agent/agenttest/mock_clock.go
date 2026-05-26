@@ -8,30 +8,62 @@
 package agenttest
 
 import (
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-// MockClock is a test double for clock.Clock. CurrentTime, when
-// non-zero, fixes the value returned by Now() and is advanced by
-// Sleep(); when zero, Now() falls through to the real wall clock.
-// After() returns a buffered channel pre-loaded with CurrentTime+d so
+// MockClock is a test double for clock.Clock. When the stored time is
+// non-zero (set via SetCurrentTime), Now() returns that value and Sleep()
+// advances it; when zero, Now() falls through to the real wall clock.
+// After() returns a buffered channel pre-loaded with the stored time+d so
 // it never blocks. NewTicker() returns a *MockTicker fed from the
 // same After() channel.
 type MockClock struct {
-	CurrentTime   time.Time
-	CalledNow     int
-	CalledMethods []string
+	mu            sync.Mutex
+	currentTime   time.Time
+	calledNow     int
+	calledMethods []string
+}
+
+// Snapshot returns a race-safe copy of the observable call state.
+// now is the count of Now() calls; methods is a defensive copy
+// of the called-methods log (ordered by first call).
+func (m *MockClock) Snapshot() (now int, methods []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.calledMethods))
+	copy(out, m.calledMethods)
+	return m.calledNow, out
+}
+
+// SetCurrentTime safely sets the fixed clock time for tests.
+func (m *MockClock) SetCurrentTime(t time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.currentTime = t
+}
+
+// CurrentTime returns the stored fixed time (race-safe).
+// Returns the zero time.Time if never set.
+func (m *MockClock) CurrentTime() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.currentTime
 }
 
 func (m *MockClock) Now() time.Time {
-	m.CalledNow++
-	m.CalledMethods = append(m.CalledMethods, "Now")
-	if m.CurrentTime.IsZero() {
+	m.mu.Lock()
+	m.calledNow++
+	m.calledMethods = append(m.calledMethods, "Now")
+	t := m.currentTime
+	m.mu.Unlock()
+
+	if t.IsZero() {
 		return time.Now()
 	}
-	return m.CurrentTime
+	return t
 }
 
 func (m *MockClock) Since(t time.Time) time.Duration {
@@ -39,24 +71,36 @@ func (m *MockClock) Since(t time.Time) time.Duration {
 }
 
 func (m *MockClock) Sleep(d time.Duration) {
-	m.CalledMethods = append(m.CalledMethods, "Sleep")
-	m.CurrentTime = m.CurrentTime.Add(d)
+	m.mu.Lock()
+	m.calledMethods = append(m.calledMethods, "Sleep")
+	m.currentTime = m.currentTime.Add(d)
+	m.mu.Unlock()
 }
 
 func (m *MockClock) After(d time.Duration) <-chan time.Time {
-	m.CalledMethods = append(m.CalledMethods, "After")
+	m.mu.Lock()
+	m.calledMethods = append(m.calledMethods, "After")
+	t := m.currentTime.Add(d)
+	m.mu.Unlock()
+
 	c := make(chan time.Time, 1)
-	c <- m.CurrentTime.Add(d)
+	c <- t
 	return c
 }
 
 func (m *MockClock) NewTicker(d time.Duration) clock.Ticker {
-	m.CalledMethods = append(m.CalledMethods, "NewTicker")
+	m.mu.Lock()
+	m.calledMethods = append(m.calledMethods, "NewTicker")
+	m.mu.Unlock()
+
 	return &MockTicker{CVal: m.After(d)}
 }
 
 func (m *MockClock) Jitter(base float64) float64 {
-	m.CalledMethods = append(m.CalledMethods, "Jitter")
+	m.mu.Lock()
+	m.calledMethods = append(m.calledMethods, "Jitter")
+	m.mu.Unlock()
+
 	return base
 }
 

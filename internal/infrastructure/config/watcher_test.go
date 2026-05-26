@@ -61,10 +61,12 @@ func (l *testSessionLoader) toIntPtr(val interface{}) *int {
 type sleepingFileStat struct {
 	delay   time.Duration
 	modTime time.Time
+	started chan struct{} // closed when Stat is entered — signals test that I/O has begun
 }
 
 func (s sleepingFileStat) Stat(name string) (os.FileInfo, error) {
-	time.Sleep(s.delay)
+	close(s.started)
+	time.Sleep(s.delay) // simulates I/O latency
 	return stubFileInfo{modTime: s.modTime}, nil
 }
 
@@ -74,7 +76,7 @@ type sleepingConfigLoader struct {
 }
 
 func (l sleepingConfigLoader) Load(path string) (*domain_config.Config, error) {
-	time.Sleep(l.delay)
+	time.Sleep(l.delay) // simulates I/O latency
 	return &domain_config.Config{
 		MaxHistoryTokens: 500,
 		MaxToolTurns:     10,
@@ -92,7 +94,8 @@ func TestFileConfigWatcher_ConcurrentRefreshAndRead(t *testing.T) {
 
 	// Simulate slow disk: 200ms Stat + 100ms Load = 300ms total I/O.
 	futureTime := time.Now().Add(time.Hour)
-	cw.FS = sleepingFileStat{delay: 200 * time.Millisecond, modTime: futureTime}
+	stat := sleepingFileStat{delay: 200 * time.Millisecond, modTime: futureTime, started: make(chan struct{})}
+	cw.FS = stat
 	cw.Loader = sleepingConfigLoader{delay: 100 * time.Millisecond}
 	cw.SetPaths("/fake/main.yaml", "")
 
@@ -107,7 +110,7 @@ func TestFileConfigWatcher_ConcurrentRefreshAndRead(t *testing.T) {
 
 	// Let Refresh enter Phase 2 I/O, then measure GetLimits latency.
 	close(start)
-	time.Sleep(50 * time.Millisecond) // Refresh is now mid-I/O.
+	<-stat.started // Block until sleepingFileStat.Stat is entered — Refresh is now mid-I/O.
 
 	// Measure: GetLimits must NOT block behind Refresh's disk I/O.
 	before := time.Now()

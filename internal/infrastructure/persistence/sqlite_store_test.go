@@ -363,7 +363,7 @@ func TestSQLiteTaskStore_ReadAll_ScanError(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	// Create a tasks table with a TEXT id instead of INTEGER.
-	// rows.Scan into float64 will fail for non-numeric TEXT values.
+	// rows.Scan into int64 will fail for non-numeric TEXT values.
 	if _, err := db.Exec("CREATE TABLE tasks (id TEXT PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);"); err != nil {
 		t.Fatalf("failed to create table: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestSQLiteTaskStore_ErrorPaths(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
 
-		// Create tasks table with TEXT id so scanning into float64 fails.
+		// Create tasks table with TEXT id so scanning into int64 fails.
 		_, err = db.Exec(`CREATE TABLE tasks (
 			id TEXT PRIMARY KEY,
 			content TEXT NOT NULL,
@@ -875,13 +875,13 @@ func TestSQLiteTaskStore_ReadAll_Bounded(t *testing.T) {
 
 	// Insert 10 pending tasks
 	for i := 1; i <= 10; i++ {
-		task := ports.Task{ID: float64(i), Content: fmt.Sprintf("pending %d", i), Status: "pending", CreatedAt: now}
+		task := ports.Task{ID: int64(i), Content: fmt.Sprintf("pending %d", i), Status: "pending", CreatedAt: now}
 		require.NoError(t, store.Append(ctx, task))
 	}
 
 	// Insert 600 completed tasks
 	for i := 11; i <= 610; i++ {
-		task := ports.Task{ID: float64(i), Content: fmt.Sprintf("completed %d", i), Status: "completed", CreatedAt: now.Add(time.Duration(i) * time.Second)}
+		task := ports.Task{ID: int64(i), Content: fmt.Sprintf("completed %d", i), Status: "completed", CreatedAt: now.Add(time.Duration(i) * time.Second)}
 		require.NoError(t, store.Append(ctx, task))
 	}
 
@@ -921,9 +921,9 @@ func assertPendingCount(t *testing.T, tasks []ports.Task, want int) {
 // assertCompletedRetention verifies that completed tasks in the oldest range
 // [oldestExcludedStart, oldestExcludedEnd] are NOT present and that completed
 // tasks in the newest range [newestIncludedStart, newestIncludedEnd] ARE present.
-func assertCompletedRetention(t *testing.T, tasks []ports.Task, oldestExcludedStart, oldestExcludedEnd, newestIncludedStart, newestIncludedEnd float64) {
+func assertCompletedRetention(t *testing.T, tasks []ports.Task, oldestExcludedStart, oldestExcludedEnd, newestIncludedStart, newestIncludedEnd int64) {
 	t.Helper()
-	completedIDs := make(map[float64]bool)
+	completedIDs := make(map[int64]bool)
 	for _, task := range tasks {
 		if task.Status == "completed" {
 			completedIDs[task.ID] = true
@@ -963,7 +963,7 @@ func seedBenchmarkTasks(b *testing.B, store *sqliteTaskStore, ctx context.Contex
 			status = "in_progress"
 		}
 		task := ports.Task{
-			ID:        float64(i),
+			ID:        int64(i),
 			Content:   fmt.Sprintf("Task %d", i),
 			Status:    status,
 			CreatedAt: now.Add(time.Duration(i) * time.Second),
@@ -1041,7 +1041,7 @@ func seedMixedStatusTasks(t *testing.T, store *sqliteTaskStore, ctx context.Cont
 			status = "in_progress"
 		}
 		task := ports.Task{
-			ID:        float64(i),
+			ID:        int64(i),
 			Content:   fmt.Sprintf("Task %d", i),
 			Status:    status,
 			CreatedAt: now.Add(time.Duration(i) * time.Second),

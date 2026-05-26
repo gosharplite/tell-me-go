@@ -131,15 +131,11 @@ func TestSendResult_ResultsChannelFull_ContextCancelled(t *testing.T) {
 		usages:  make(map[string][]location),
 	}
 
-	ready := make(chan struct{})
-	go func() {
-		ready <- struct{}{}
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
+	errCh := make(chan error, 1)
+	go func() { errCh <- sendResult(ctx, results, emptyResult, nil) }()
 
-	<-ready
-	err := sendResult(ctx, results, emptyResult, nil)
+	cancel() // Cancel immediately
+	err := <-errCh
 	assert.ErrorIs(t, err, context.Canceled)
 
 	select {

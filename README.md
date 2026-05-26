@@ -355,6 +355,8 @@ make test
 make fmt
 ```
 
+See [ADR-036: Test Determinism Standards](docs/adr/2026-05-test-determinism-standards.md) for project-wide testing conventions (no `time.Sleep`, race-safe mocks, deterministic time).
+
 See the [Makefile](Makefile) for additional targets.
 
 ## Design Decisions

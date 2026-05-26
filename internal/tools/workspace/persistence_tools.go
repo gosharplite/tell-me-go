@@ -80,7 +80,7 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 					Enum:        []string{"add", "update", "list", "delete", "clear"},
 				},
 				"task_id": {
-					Type:        "NUMBER",
+					Type:        "INTEGER",
 					Description: "The ID of the task to update or delete.",
 				},
 				"content": {
@@ -92,11 +92,11 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 					Description: "The new status (e.g., 'completed', 'pending') for 'update' or filter for 'list'.",
 				},
 				"limit": {
-					Type:        "NUMBER",
+					Type:        "INTEGER",
 					Description: "Maximum tasks to return for the 'list' action. Default: 50. Use 0 for unlimited.",
 				},
 				"offset": {
-					Type:        "NUMBER",
+					Type:        "INTEGER",
 					Description: "Number of tasks to skip for the 'list' action. Default: 0. Use with limit for pagination.",
 				},
 			},
@@ -111,12 +111,12 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 // ManageTasks handles the manage_tasks tool.
 func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		Action  string  `json:"action"`
-		Content string  `json:"content"`
-		Status  string  `json:"status"`
-		TaskID  float64 `json:"task_id"`
-		Limit   float64 `json:"limit"`
-		Offset  float64 `json:"offset"`
+		Action  string `json:"action"`
+		Content string `json:"content"`
+		Status  string `json:"status"`
+		TaskID  int64  `json:"task_id"`
+		Limit   int    `json:"limit"`
+		Offset  int    `json:"offset"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -130,7 +130,7 @@ func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 	case "delete":
 		return t.deleteTask(ctx, params.TaskID)
 	case "list":
-		return t.listTasks(params.Status, int(params.Limit), int(params.Offset))
+		return t.listTasks(params.Status, params.Limit, params.Offset)
 	case "clear":
 		return t.clearTasks(ctx)
 	default:
@@ -143,21 +143,21 @@ func (t *persistenceTools) addTask(ctx context.Context, content string) (tools.T
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", task.ID)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %d", task.ID)}, nil
 }
 
-func (t *persistenceTools) updateTask(ctx context.Context, id float64, content, status string) (tools.ToolResult, error) {
+func (t *persistenceTools) updateTask(ctx context.Context, id int64, content, status string) (tools.ToolResult, error) {
 	if _, err := t.tasks.UpdateTask(ctx, id, content, status); err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", id)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Task %d updated", id)}, nil
 }
 
-func (t *persistenceTools) deleteTask(ctx context.Context, id float64) (tools.ToolResult, error) {
+func (t *persistenceTools) deleteTask(ctx context.Context, id int64) (tools.ToolResult, error) {
 	if err := t.tasks.DeleteTask(ctx, id); err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", id)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Task %d deleted", id)}, nil
 }
 
 func (t *persistenceTools) listTasks(status string, limit, offset int) (tools.ToolResult, error) {
@@ -185,7 +185,7 @@ func (t *persistenceTools) listTasks(status string, limit, offset int) (tools.To
 		if task.Status == "completed" {
 			icon = "[x]"
 		}
-		_, _ = fmt.Fprintf(&sb, "%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status)
+		_, _ = fmt.Fprintf(&sb, "%d. %s %s (%s)\n", task.ID, icon, task.Content, task.Status)
 	}
 
 	// Pagination hint when there are more pages

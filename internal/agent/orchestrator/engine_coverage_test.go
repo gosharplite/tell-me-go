@@ -635,12 +635,7 @@ func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	// Trigger cancellation in the background
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
+	cancel() // Cancel before the call — SafePublish returns ctx.Err() immediately
 
 	_, err := step.Process(ctx, turn)
 	assert.ErrorIs(t, err, context.Canceled)

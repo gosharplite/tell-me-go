@@ -19,6 +19,7 @@ import (
 	telemetry "github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/stretchr/testify/require"
 )
 
 // controllableClock is a test clock that allows manual advancement of time and ticking.
@@ -106,6 +107,26 @@ func (m *mockMetricsProvider) SetMemoryPercent(mem float64) {
 
 var _ ports.SystemMetricsProvider = (*mockMetricsProvider)(nil)
 
+// safeBuffer is a thread-safe wrapper around bytes.Buffer for use in tests
+// where the test goroutine reads output via String() while a background
+// goroutine concurrently writes via Write (e.g., spinner rendering).
+type safeBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 // TestSpinnerWithMetrics verifies that the spinner renders CPU and memory
 // percentages correctly for both host‑level ticks (idle > 0) and agent‑level
 // CPU seconds (idle == 0).
@@ -172,7 +193,7 @@ func TestSpinnerWithMetrics(t *testing.T) {
 
 			// Build the UI renderer with the mock provider
 			stdout := &bytes.Buffer{}
-			stderr := &bytes.Buffer{}
+			stderr := &safeBuffer{}
 			renderer := ui.NewRenderer(nil, stdout, stderr, nil, provider).(*ui.StdUIRenderer)
 			renderer.SetForceSpinner(true)
 
@@ -191,9 +212,6 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			stop := renderer.StartSpinnerWithMetrics(ctx, "Testing")
 			defer stop()
 
-			// Wait for the first synchronous draw (already happened, but ensure we receive it)
-			time.Sleep(10 * time.Millisecond) // allow spinner goroutine to start
-
 			// Update the provider to return the second sample
 			provider.SetCPUStats(tt.total2, tt.idle2)
 
@@ -202,8 +220,9 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			// Send a tick to cause the spinner goroutine to draw again
 			c.tick()
 
-			// Wait for the draw that includes updated CPU metrics
-			time.Sleep(50 * time.Millisecond) // allow spinner goroutine to process tick and draw
+			require.Eventually(t, func() bool {
+				return strings.Contains(stderr.String(), wantCPU)
+			}, 2*time.Second, 10*time.Millisecond, "spinner did not render expected CPU substring %q", wantCPU)
 
 			// Stop the spinner and capture the final stderr output
 			stop()
