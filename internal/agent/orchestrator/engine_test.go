@@ -593,11 +593,7 @@ func TestEngine_StartTelemetry(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
+	cancel()
 
 	err := e.StartTelemetry(ctx)
 	assert.ErrorIs(t, err, context.Canceled)

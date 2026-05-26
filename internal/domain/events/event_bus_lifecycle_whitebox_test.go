@@ -24,9 +24,11 @@ func TestFlushWaiter_PanicRecovery(t *testing.T) {
 	bus := NewSimpleEventBus(context.Background(), WithLogger(log))
 
 	// Corrupt the cond: replace the Locker with a nil locker so Wait() panics.
-	// This is a white-box technique — only safe in-package.
+	// signalLocker also signals a channel when Wait() calls Unlock (just before
+	// blocking), giving us a deterministic sync point instead of time.Sleep.
+	entered := make(chan struct{})
 	bus.pendingMu.Lock()
-	bus.cond = sync.NewCond((*nilLocker)(nil))
+	bus.cond = sync.NewCond(&signalLocker{entered: entered})
 	bus.pendingCount = 1 // Keep the loop alive so it enters cond.Wait
 	bus.pendingMu.Unlock()
 
@@ -35,11 +37,12 @@ func TestFlushWaiter_PanicRecovery(t *testing.T) {
 
 	go bus.flushWaiter(done, &cancelled)
 
-	// Give the goroutine time to enter cond.Wait.
-	time.Sleep(50 * time.Millisecond)
+	// Wait for flushWaiter to enter cond.Wait — cond.Wait calls Unlock()
+	// just before blocking, which closes the entered channel.
+	<-entered
 
 	// Signal the cond to wake the waiter. When Wait() tries to re-acquire
-	// the lock via nilLocker.Lock(), it panics — exercising the recover().
+	// the lock via signalLocker.Lock(), it panics — exercising the recover().
 	bus.cond.Signal()
 
 	// flushWaiter should recover from the panic and close(done).
@@ -56,11 +59,14 @@ func TestFlushWaiter_PanicRecovery(t *testing.T) {
 	}
 }
 
-// nilLocker implements sync.Locker but panics on Lock.
-type nilLocker struct{}
+// signalLocker implements sync.Locker: Lock panics (to test panic recovery),
+// and Unlock signals a channel for deterministic synchronization in tests.
+type signalLocker struct {
+	entered chan struct{}
+}
 
-func (n *nilLocker) Lock()   { panic("nil locker") }
-func (n *nilLocker) Unlock() {}
+func (s *signalLocker) Lock()   { panic("nil locker") }
+func (s *signalLocker) Unlock() { close(s.entered) }
 
 // TestWaitWorkers_PanicRecovery exercises the recover() path in waitWorkers
 // by replacing waitGroupWait with a panicking function.

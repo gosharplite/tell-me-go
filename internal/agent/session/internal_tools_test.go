@@ -239,11 +239,7 @@ func TestEmitHeartbeats(t *testing.T) {
 	t.Run("does not block when heartbeat channel is full", func(t *testing.T) {
 		done := make(chan struct{})
 		hb := make(chan struct{}) // unbuffered, no consumer
-
-		go func() {
-			time.Sleep(50 * time.Millisecond)
-			close(done)
-		}()
+		close(done)
 
 		it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
 

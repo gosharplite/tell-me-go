@@ -532,7 +532,7 @@ func TestSafePublish_UncooperativeSubscriber(t *testing.T) {
 }
 
 type uncooperativeSubscriber struct {
-	block             chan struct{}
+	block             <-chan struct{}
 	startedProcessing chan struct{}
 }
 
@@ -818,16 +818,17 @@ func TestSimpleEventBus_ShutdownAndFlush(t *testing.T) {
 	g.Go(func() error {
 		return bus.Listen(listenCtx)
 	})
+	bus.WaitStarted()
 
 	var processedCount int
 	var mu sync.Mutex
+	processed := make(chan struct{}, 5)
 
 	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
-		// Simulate some work
-		time.Sleep(10 * time.Millisecond)
 		mu.Lock()
 		processedCount++
 		mu.Unlock()
+		processed <- struct{}{}
 		return nil
 	}})
 
@@ -844,6 +845,15 @@ func TestSimpleEventBus_ShutdownAndFlush(t *testing.T) {
 	defer flushCancel()
 	if err := bus.Flush(flushCtx); err != nil {
 		t.Fatalf("Flush failed: %v", err)
+	}
+
+	// Drain processed signals to confirm each event was handled
+	for i := 0; i < numEvents; i++ {
+		select {
+		case <-processed:
+		case <-time.After(2 * time.Second):
+			t.Fatal("subscriber did not process event in time")
+		}
 	}
 
 	mu.Lock()
@@ -896,24 +906,61 @@ func TestSimpleEventBus_FlushCancellations(t *testing.T) {
 		ctx := context.Background()
 		bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
 
-		// Create a slow subscriber to keep pendingCount > 0
-		bus.SubscribeGlobal(&uncooperativeSubscriber{block: make(chan struct{})})
+		// Start the listener so a worker picks up events.
+		listenCtx, listenCancel := context.WithCancel(ctx)
+		listenDone := make(chan struct{})
+		go func() {
+			defer close(listenDone)
+			if err := bus.Listen(listenCtx); err != nil && !errors.Is(err, context.Canceled) {
+				t.Logf("Listen returned: %v", err)
+			}
+		}()
+		bus.WaitStarted()
+
+		// Create a slow subscriber that signals when the worker is blocked inside Handle.
+		block := make(chan struct{})
+		started := make(chan struct{}, 1)
+		bus.SubscribeGlobal(&uncooperativeSubscriber{
+			block:             block,
+			startedProcessing: started,
+		})
 		_ = bus.Publish(ctx, testEvent{typeName: "slow"})
 
+		// Wait for the worker goroutine to pick up the event and block in Handle.
+		select {
+		case <-started:
+		case <-time.After(1 * time.Second):
+			t.Fatal("worker did not start processing")
+		}
+
+		// Now the worker is blocked in Handle (pendingCount > 0). Flush will
+		// deterministically enter its wait loop.
 		errChan := make(chan error, 1)
 		go func() {
 			errChan <- bus.Flush(ctx)
 		}()
 
-		// Give it a moment to start waiting
-		time.Sleep(50 * time.Millisecond)
-
-		_ = bus.Shutdown(ctx)
+		// Shutdown cancels the bus context (which unblocks Flush) and then waits
+		// for workers to drain. Since our worker is blocked in Handle, Shutdown
+		// would hang. Run it in a separate goroutine so we can observe Flush's
+		// result first, then unblock the worker to let Shutdown complete.
+		shutdownDone := make(chan struct{})
+		go func() {
+			defer close(shutdownDone)
+			_ = bus.Shutdown(ctx)
+		}()
 
 		err := <-errChan
 		if !errors.Is(err, events.ErrBusClosed) {
 			t.Errorf("expected ErrBusClosed, got %v", err)
 		}
+
+		// Cleanup: unblock the subscriber so the worker drains, allowing
+		// Shutdown and Listen to return cleanly.
+		close(block)
+		listenCancel()
+		<-listenDone
+		<-shutdownDone
 	})
 }
 
@@ -1069,8 +1116,12 @@ func TestSimpleEventBus_Shutdown_FlushTimeout(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 
 	// A subscriber that blocks forever — keeps workerWG from draining.
+	started := make(chan struct{}, 1)
 	foreverBlock := make(chan struct{})
-	bus.SubscribeGlobal(&uncooperativeSubscriber{block: foreverBlock})
+	bus.SubscribeGlobal(&uncooperativeSubscriber{
+		block:             foreverBlock,
+		startedProcessing: started,
+	})
 
 	// Start the listener with a cancellable context so workers can drain.
 	listenCtx, listenCancel := context.WithCancel(ctx)
@@ -1089,8 +1140,12 @@ func TestSimpleEventBus_Shutdown_FlushTimeout(t *testing.T) {
 		t.Fatalf("Publish failed: %v", err)
 	}
 
-	// Give the worker time to pick up the event and block.
-	time.Sleep(100 * time.Millisecond)
+	// Wait deterministically for worker to enter Handle
+	select {
+	case <-started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("worker did not start processing")
+	}
 
 	// Shutdown with an already-cancelled context — forces the ctx.Done() branch.
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -1122,11 +1177,12 @@ func TestSimpleEventBus_Shutdown_ActiveWorkers(t *testing.T) {
 	// Listen collects wrappers and starts workers.
 	var processedCount int
 	var mu sync.Mutex
+	processed := make(chan struct{}, 10)
 	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
-		time.Sleep(10 * time.Millisecond)
 		mu.Lock()
 		processedCount++
 		mu.Unlock()
+		processed <- struct{}{}
 		return nil
 	}})
 
@@ -1148,6 +1204,15 @@ func TestSimpleEventBus_Shutdown_ActiveWorkers(t *testing.T) {
 	for i := 0; i < numEvents; i++ {
 		if err := bus.Publish(ctx, testEvent{val: i}); err != nil {
 			t.Fatalf("Publish %d failed: %v", i, err)
+		}
+	}
+
+	// Drain processed signals to confirm each event was handled
+	for i := 0; i < numEvents; i++ {
+		select {
+		case <-processed:
+		case <-time.After(2 * time.Second):
+			t.Fatal("subscriber did not process event in time")
 		}
 	}
 

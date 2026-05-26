@@ -11,6 +11,18 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
+// IsReaderBlocked returns true when readerMu is currently held by
+// another goroutine. Used by tests to deterministically wait for a
+// read goroutine to enter its critical section instead of using
+// time.Sleep.
+func (c *capturer) IsReaderBlocked() bool {
+	if c.readerMu.TryLock() {
+		c.readerMu.Unlock()
+		return false
+	}
+	return true
+}
+
 // Export for testing
 func RenderHistory(w io.Writer, h ports.HistoryManager, limit int, opts ports.HistoryRenderOptions) {
 	renderHistory(w, h, limit, opts)

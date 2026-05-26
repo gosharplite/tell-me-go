@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCapturePromptContextCancellation(t *testing.T) {
@@ -816,8 +817,9 @@ func TestCapturer_ReadLine_ContextCancelled_BlockingSend(t *testing.T) {
 		_, _ = c.ReadLine(context.Background())
 	}()
 
-	// Give the goroutine a moment to send the request and start reading
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return c.IsReaderBlocked()
+	}, 1*time.Second, 5*time.Millisecond, "read goroutine did not acquire readerMu")
 
 	// Action 2: Call ReadLine with a pre-cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -866,8 +868,9 @@ func TestCapturer_Close_ContextCancelled(t *testing.T) {
 		_, _ = c.ReadLine(context.Background())
 	}()
 
-	// Give the goroutine a moment to acquire readerMu and start reading
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return c.IsReaderBlocked()
+	}, 1*time.Second, 5*time.Millisecond, "read goroutine did not acquire readerMu")
 
 	// Close with a pre-cancelled context. Close must not block on readerMu.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -906,8 +909,10 @@ func TestCapturer_ReadSingleKey_ContextCancelled_AfterSend(t *testing.T) {
 		errCh <- err
 	}()
 
-	// Give it time to send the request
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return c.IsReaderBlocked()
+	}, 1*time.Second, 5*time.Millisecond, "read goroutine did not acquire readerMu")
+
 	cancel()
 
 	select {
@@ -943,7 +948,10 @@ func TestCapturer_ReadSingleKey_ContextCancelled_BlockingSend(t *testing.T) {
 	go func() {
 		_, _ = c.ReadLine(context.Background())
 	}()
-	time.Sleep(50 * time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		return c.IsReaderBlocked()
+	}, 1*time.Second, 5*time.Millisecond, "read goroutine did not acquire readerMu")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1045,10 +1053,19 @@ func TestCapturer_ReadAfterCancellation(t *testing.T) {
 	// the pipe). Write data to unblock it — this data will be consumed
 	// by the drained goroutine and discarded. Then write fresh data for
 	// the second read.
+	// Write to the pipe in a goroutine to unblock the drained reader
 	go func() {
-		time.Sleep(20 * time.Millisecond) // Let the drain settle
-		_, _ = pw.Write([]byte("junk\n")) // Unblocks and feeds the drained goroutine
-		time.Sleep(50 * time.Millisecond) // Let the drained goroutine finish and release readerMu
+		_, _ = pw.Write([]byte("junk\n"))
+	}()
+
+	// Wait for the drained goroutine to finish and release readerMu
+	require.Eventually(t, func() bool {
+		return !c.IsReaderBlocked()
+	}, 1*time.Second, 5*time.Millisecond, "drain goroutine did not release readerMu")
+
+	// Now write fresh data for the second ReadLine (must be in a goroutine
+	// because io.Pipe writes block until a reader consumes the data)
+	go func() {
 		_, _ = pw.Write([]byte("hello\n"))
 	}()
 
@@ -1239,7 +1256,10 @@ func TestSendRequest_GoroutineCleanup(t *testing.T) {
 	go func() {
 		_, _ = c.ReadLine(context.Background())
 	}()
-	time.Sleep(50 * time.Millisecond) // Wait for goroutine to acquire readerMu
+
+	require.Eventually(t, func() bool {
+		return c.IsReaderBlocked()
+	}, 1*time.Second, 5*time.Millisecond, "read goroutine did not acquire readerMu")
 
 	// Verify that a cancelled context returns immediately
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1254,12 +1274,21 @@ func TestSendRequest_GoroutineCleanup(t *testing.T) {
 		t.Error("expected needsReset to be true after cancelled sendRequest")
 	}
 
-	// Unblock the first goroutine
+	// Unblock the first goroutine. The orphaned sendRequest goroutine
+	// immediately re-acquires readerMu and blocks on ReadByte, so also
+	// supply one byte to unblock it.
 	_, _ = pw.Write([]byte("x\n"))
-	time.Sleep(100 * time.Millisecond) // Wait for first goroutine to drain and release readerMu
+	_, _ = pw.Write([]byte("x"))
+
+	// Wait for both the first goroutine and the orphan to drain
+	require.Eventually(t, func() bool {
+		return !c.IsReaderBlocked()
+	}, 2*time.Second, 10*time.Millisecond, "goroutines did not release readerMu")
 
 	// After recovery, a new read should work (needsReset causes reader reset)
-	_, _ = pw.Write([]byte("ok\n"))
+	go func() {
+		_, _ = pw.Write([]byte("ok\n"))
+	}()
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel2()
 

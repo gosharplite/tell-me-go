@@ -490,12 +490,13 @@ func TestPublishTurnStatus_ContextDeadlineExceeded(t *testing.T) {
 		Clock:      &agenttest.MockClock{},
 	}
 
-	// Use a deadline so short (1 nanosecond) that it expires before SafePublish
-	// can even call bus.Publish. SafePublish wraps this in its own WithTimeout(2s),
-	// but the parent context deadline takes precedence.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	// Use a deadline already in the past so the context is immediately expired.
+	// SafePublish wraps this in its own WithTimeout(2s), but the parent context
+	// deadline takes precedence.
+	deadline := time.Now().Add(-1 * time.Second) // 1 second in the past
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
-	time.Sleep(10 * time.Millisecond) // ensure the deadline has passed
+	// No sleep needed — deadline is already expired
 
 	// Must not panic. The deadline triggers a context.DeadlineExceeded error
 	// wrapped by SafePublish, which is NOT ErrBusNotInitialized, so the

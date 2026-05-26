@@ -145,8 +145,10 @@ func TestAsyncTurnsLogger_ChannelCloseDuringListen(t *testing.T) {
 	// Send a message so the worker processes at least one item
 	tl.HandleEvent(ctx, events.SystemMessageEvent{Message: "hello", Level: "info"})
 
-	// Give the worker time to process
-	time.Sleep(10 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		content, err := os.ReadFile(logFile)
+		return err == nil && strings.Contains(string(content), "hello")
+	}, 1*time.Second, 5*time.Millisecond, "worker did not process message")
 
 	// Close the logger (this closes the channel and sets closed=true)
 	require.NoError(t, tl.Close())

@@ -171,6 +171,8 @@ func TestDispatcher_ZombieHeartbeatDetection(t *testing.T) {
 
 	mockLog := &mockLogger{CriticalLogs: make(chan string, 10)}
 
+	tickCh := make(chan struct{})
+
 	// Create a tool that emits heartbeats for a while, then goes "zombie"
 	reg := &mockZombieRegistry{
 		livenessThreshold: 100 * time.Millisecond,
@@ -182,20 +184,16 @@ func TestDispatcher_ZombieHeartbeatDetection(t *testing.T) {
 				case <-ctx.Done():
 					return tools.ToolResult{}, ctx.Err()
 				}
-				time.Sleep(50 * time.Millisecond)
-			}
-
-			// Become a zombie: infinite loop without heartbeats
-			// Must still check ctx.Done() to allow clean exit when dispatcher cancels it.
-			for {
 				select {
+				case <-tickCh:
 				case <-ctx.Done():
-					return tools.ToolResult{Text: "cancelled"}, ctx.Err()
-				default:
-					// Simulate heavy computation or hanging I/O
-					time.Sleep(10 * time.Millisecond)
+					return tools.ToolResult{}, ctx.Err()
 				}
 			}
+
+			// Become a zombie: block until context cancelled (no heartbeats)
+			<-ctx.Done()
+			return tools.ToolResult{Text: "cancelled"}, ctx.Err()
 		},
 	}
 
@@ -216,6 +214,10 @@ func TestDispatcher_ZombieHeartbeatDetection(t *testing.T) {
 		defer close(doneCh)
 		result, _ = exec.pipeline.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
 	}()
+
+	// Feed 2 ticks to simulate heartbeat intervals; then stop to trigger liveness timeout
+	tickCh <- struct{}{} // heartbeat 1
+	tickCh <- struct{}{} // heartbeat 2
 
 	select {
 	case <-doneCh:
