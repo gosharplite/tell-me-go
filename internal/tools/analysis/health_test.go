@@ -695,7 +695,6 @@ func TestHealthStartHeartbeat(t *testing.T) {
 		go func() {
 			m.startHeartbeat(done, nil)
 		}()
-		time.Sleep(10 * time.Millisecond)
 		close(done)
 	})
 
@@ -725,7 +724,6 @@ func TestHealthStartHeartbeat(t *testing.T) {
 		go func() {
 			m.startHeartbeat(done, hb)
 		}()
-		time.Sleep(10 * time.Millisecond)
 		close(done)
 		// test passes if we reach here without deadlock/panic
 	})

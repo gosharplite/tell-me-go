@@ -136,12 +136,10 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &ports.Session{StartTime: time.Now()}
 
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
-
-	err = a.Chat(ctx, session, "hello")
+	errCh := make(chan error, 1)
+	go func() { errCh <- a.Chat(ctx, session, "hello") }()
+	cancel()
+	err = <-errCh
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}

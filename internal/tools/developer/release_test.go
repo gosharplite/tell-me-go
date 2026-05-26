@@ -417,20 +417,28 @@ func TestStartHeartbeat_Release(t *testing.T) {
 			m := &releaseManager{tickerInterval: 1 * time.Millisecond}
 			done := make(chan struct{})
 
-			go m.startHeartbeat(tt.hb, done)
+			exited := make(chan struct{})
+			go func() {
+				m.startHeartbeat(tt.hb, done)
+				close(exited)
+			}()
 
+			// For successful heartbeat subtest, receive the heartbeat
 			if tt.name == "Successful heartbeat send (buffered channel with receiver)" {
 				select {
 				case <-tt.hb:
-					// Successfully received a heartbeat
 				case <-time.After(100 * time.Millisecond):
-					t.Error("expected to receive at least one heartbeat on buffered channel")
+					t.Error("expected heartbeat")
 				}
 			}
 
 			close(done)
-			time.Sleep(50 * time.Millisecond)
-			// Test passes if no panic and no deadlock
+
+			select {
+			case <-exited:
+			case <-time.After(1 * time.Second):
+				t.Error("startHeartbeat did not exit after done was closed")
+			}
 		})
 	}
 }

@@ -1166,7 +1166,7 @@ func TestGetDetailedCoverageJSON_FormatError(t *testing.T) {
 }
 
 func TestRunCoverageTest_NilHeartbeat(t *testing.T) {
-	// NOT parallel — uses time.Sleep to let the heartbeat goroutine's ticker fire
+	// NOT parallel — modifies package-level state through mock
 	ctx := context.Background()
 
 	// Create a temp file for coverage output (tempPath must be a file, not a dir)
@@ -1175,20 +1175,15 @@ func TestRunCoverageTest_NilHeartbeat(t *testing.T) {
 	tempPath := f.Name()
 	require.NoError(t, f.Close())
 
-	// Create a mock that writes a valid coverage profile and returns success.
-	// The CombinedOutputFunc includes a short sleep so the heartbeat goroutine's
-	// 2-second ticker has time to fire at least once, exercising both the
-	// hb==nil guard (false branch) and hb!=nil (true branch with channel send).
-	callCount := 0
+	// mockBlocker is nil during the nil-hb call (so CombinedOutput returns
+	// immediately) and set to a channel during the non-nil-hb call (so the
+	// mock blocks until the heartbeat ticker fires and the test receives it).
+	var mockBlocker chan struct{}
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("github.com/user/repo"), nil
 		},
 		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			callCount++
-			// Sleep long enough for the 2s ticker to fire at least once.
-			// First call tests nil hb, second call tests non-nil hb.
-			time.Sleep(2100 * time.Millisecond)
 			for _, arg := range args {
 				if strings.HasPrefix(arg, "-coverprofile=") {
 					path := strings.TrimPrefix(arg, "-coverprofile=")
@@ -1197,29 +1192,34 @@ func TestRunCoverageTest_NilHeartbeat(t *testing.T) {
 					}
 				}
 			}
+			if mockBlocker != nil {
+				<-mockBlocker
+			}
 			return []byte("ok"), nil
 		},
 	}
 	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
-	// Pass nil hb — covers the hb==nil guard (lines 347-348 false branch)
+	// Pass nil hb — call synchronously, mock returns immediately
 	err = hea.runCoverageTest(ctx, ".", tempPath, nil)
 	if err != nil {
 		t.Errorf("runCoverageTest with nil hb failed: %v", err)
 	}
 
-	// Pass non-nil hb — covers the hb!=nil path (inner select on channel send)
+	// Pass non-nil hb — run in goroutine with mock blocked so the 2s ticker fires
+	mockBlocker = make(chan struct{})
 	hb := make(chan struct{}, 1)
-	err = hea.runCoverageTest(ctx, ".", tempPath, hb)
-	if err != nil {
-		t.Errorf("runCoverageTest with non-nil hb failed: %v", err)
-	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- hea.runCoverageTest(ctx, ".", tempPath, hb) }()
 
-	// Verify the heartbeat was received
 	select {
 	case <-hb:
-		// heartbeat received
-	default:
-		// may not receive if default case was taken
+	case <-time.After(3 * time.Second):
+		t.Error("timed out waiting for heartbeat")
+	}
+	close(mockBlocker)
+	err = <-errCh
+	if err != nil {
+		t.Errorf("runCoverageTest with non-nil hb failed: %v", err)
 	}
 }

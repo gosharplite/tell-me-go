@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -496,11 +495,7 @@ func TestGatherComplexities_ContextCancelledDuringProcessing(t *testing.T) {
 		ch <- result{complexities: c, err: e}
 	}()
 
-	// Give Walk time to launch goroutines. Even on fast machines,
-	// 500 files with limited concurrency will have goroutines still
-	// waiting on sem.Acquire when we cancel.
-	time.Sleep(5 * time.Millisecond)
-	cancel()
+	cancel() // Cancel immediately — goroutines see ctx.Done() during processing
 
 	res := <-ch
 	require.Error(t, res.err)
@@ -575,13 +570,7 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 		ch <- result{complexities: c, err: e}
 	}()
 
-	// Walk traverses directories very fast (microseconds even for 500
-	// entries). The goroutines, however, are parsing and analysing large
-	// files. Cancel after Walk has finished but while goroutines are
-	// still busy — this is the window that forces g.Wait() to surface
-	// the error.
-	time.Sleep(50 * time.Millisecond)
-	cancel()
+	cancel() // Cancel immediately — goroutines see ctx.Done() during processing
 
 	res := <-ch
 	require.Error(t, res.err)

@@ -19,23 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 )
 
-// blockingSubscriber is a Subscriber whose Handle blocks on a release channel
-// until the test's t.Cleanup closes it. Used to keep a per-subscriber worker
-// busy so its inbound channel does not drain — which is the prerequisite for
-// triggering the backpressure-drop branch in enqueueEvent.
-type blockingSubscriber struct {
-	release <-chan struct{}
-}
-
-func (s *blockingSubscriber) Handle(ctx context.Context, e events.Event) error {
-	select {
-	case <-s.release:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 // newReleaseChan returns a channel plus a one-shot release function and
 // registers a t.Cleanup to close it. Subscribers reading from this channel
 // will unblock when either the test calls release() or the test ends,
@@ -86,7 +69,11 @@ func TestPublish_DropsEventWhenSubscriberQueueIsFull(t *testing.T) {
 	eventstest.CleanupBus(t, bus)
 
 	releaseCh, release := newReleaseChan(t)
-	bus.SubscribeGlobal(&blockingSubscriber{release: releaseCh})
+	started := make(chan struct{}, 1)
+	bus.SubscribeGlobal(&uncooperativeSubscriber{
+		block:             releaseCh,
+		startedProcessing: started,
+	})
 
 	// Run the listener so the per-subscriber worker is started.
 	listenDone := make(chan struct{})
@@ -105,10 +92,12 @@ func TestPublish_DropsEventWhenSubscriberQueueIsFull(t *testing.T) {
 		t.Fatalf("first Publish failed: %v", err)
 	}
 
-	// Wait for the subscriber to actually be inside Handle (blocked on release).
-	// Without this, the second publish might land in an empty queue and be
-	// drained immediately, never filling it.
-	waitForBlockedWorker(t)
+	// Wait deterministically for the subscriber to be inside Handle (blocked on release).
+	select {
+	case <-started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("subscriber did not start processing in time")
+	}
 
 	// Second publish: fills the size-1 queue (worker is still blocked).
 	if err := bus.Publish(ctx, testEvent{typeName: "queue_full_e2"}); err != nil {
@@ -160,17 +149,6 @@ func TestPublish_DropsEventWhenSubscriberQueueIsFull(t *testing.T) {
 	if err := bus.Flush(flushCtx2); err != nil {
 		t.Errorf("Flush after release should succeed (drop arm balanced pendingCount), got: %v", err)
 	}
-}
-
-// waitForBlockedWorker yields the scheduler enough that the per-subscriber
-// worker goroutine has time to dequeue the first event and block inside
-// Handle. We use a brief sleep loop because there is no public hook to
-// observe worker state; the exact timing isn't critical because the
-// downstream assertion is on observable Publish behavior, not on timing.
-func waitForBlockedWorker(t *testing.T) {
-	t.Helper()
-	// 50ms is generous on CI; the worker only needs one channel receive.
-	time.Sleep(50 * time.Millisecond)
 }
 
 // TestPublish_ReturnsContextErrorWhenCancelledDuringEnqueue verifies the

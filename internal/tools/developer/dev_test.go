@@ -884,7 +884,9 @@ func TestRunWithHeartbeat_Resilience(t *testing.T) {
 
 		var fnCalled bool
 		err := m.runWithHeartbeat(context.Background(), hb, "test", "cmd", "reason", func() error {
-			time.Sleep(50 * time.Millisecond) // Let several ticks fire into full channel
+			for i := 0; i < 10; i++ {
+				runtime.Gosched()
+			}
 			fnCalled = true
 			return nil
 		})

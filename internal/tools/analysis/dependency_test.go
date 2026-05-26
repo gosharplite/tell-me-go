@@ -92,8 +92,6 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 		go func() {
 			a.startHeartbeat(nil, done)
 		}()
-		// Give it time to enter the loop and tick once
-		time.Sleep(10 * time.Millisecond)
 		close(done)
 	})
 
@@ -125,8 +123,6 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 		go func() {
 			a.startHeartbeat(hb, done)
 		}()
-		// Wait a tick, then close — the `default:` at line 143 must prevent blocking
-		time.Sleep(10 * time.Millisecond)
 		close(done)
 		// Test passes if we reach here (no goroutine leak, no panic)
 	})

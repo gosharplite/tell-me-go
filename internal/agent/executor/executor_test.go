@@ -477,13 +477,14 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	}
 	assert.Less(t, duration, 1*time.Second, "Execution should short-circuit within milliseconds")
 
-	// Allow a small grace period for workers to clean up
-	time.Sleep(100 * time.Millisecond)
+	// Poll runtime.NumGoroutine() until it settles within the acceptable delta.
+	// This replaces a fixed 100ms sleep with deterministic polling, tolerating
+	// slow CI runners while avoiding unnecessary waits on fast machines.
+	require.Eventually(t, func() bool {
+		return runtime.NumGoroutine() <= initialGoroutines+5
+	}, 2*time.Second, 10*time.Millisecond, "goroutines did not settle — possible leak")
 
-	// Verify no goroutine leak
 	finalGoroutines := runtime.NumGoroutine()
-	// An exact match might be flaky due to background test runners, but we expect no massive leak (like 10 new goroutines).
-	// We just ensure the number hasn't skyrocketed.
 	assert.InDelta(t, initialGoroutines, finalGoroutines, 5, "Number of goroutines should remain stable, proving bounded workers have exited")
 }
 
