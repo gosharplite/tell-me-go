@@ -111,6 +111,7 @@ type MockServiceSecurityManager = mockServiceSecurityManager
 // and leave the rest nil / zero-valued.
 type StubSessionDependencies struct {
 	Gateway          llm.LLMGateway
+	Client           llm.LLMClient // optional; nil in all current call sites
 	PricingOverrides map[string]pricing.ModelPricing
 	Tracker          pricing.CostTracker
 	PricingData      pricing.PricingData
@@ -178,6 +179,45 @@ func (s *StubSessionDependencies) GetSessionProvider() ports.SessionProvider {
 
 func (s *StubSessionDependencies) GetHealthManager() ports.HealthCheckManager {
 	return s.HealthManager
+}
+
+// NewStubSessionDependencies constructs a StubSessionDependencies from
+// positional parameters, matching the legacy sessiontest.New() signature.
+// Prefer struct-literal initialization for new code:
+//
+//	&StubSessionDependencies{HistoryManager: hm, EventBus: bus, ...}
+func NewStubSessionDependencies(
+	paths *persistence.Paths,
+	hManager ports.HistoryManager,
+	client llm.LLMClient,
+	gw llm.LLMGateway,
+	reg tools.Registry,
+	sm security.Manager,
+	tracker pricing.CostTracker,
+	pData pricing.PricingData,
+	overrides map[string]pricing.ModelPricing,
+	bus events.EventBus,
+	logger ports.Logger,
+	turnsLogger ports.TurnsLogger,
+	sessionProvider ports.SessionProvider,
+	health ports.HealthCheckManager,
+) *StubSessionDependencies {
+	return &StubSessionDependencies{
+		Paths:            paths,
+		HistoryManager:   hManager,
+		Client:           client,
+		Gateway:          gw,
+		Registry:         reg,
+		SecurityManager:  sm,
+		Tracker:          tracker,
+		PricingData:      pData,
+		PricingOverrides: overrides,
+		EventBus:         bus,
+		Logger:           logger,
+		TurnsLogger:      turnsLogger,
+		SessionProvider:  sessionProvider,
+		HealthManager:    health,
+	}
 }
 
 // StubEventBus is a stub implementation of events.EventBus for testing.
