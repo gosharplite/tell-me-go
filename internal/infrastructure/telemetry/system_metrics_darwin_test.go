@@ -25,7 +25,9 @@ func TestDarwinMetricsProvider_GetCPUStats(t *testing.T) {
 		t.Errorf("GetCPUStats() idle ticks (%d) > total ticks (%d)", idle1, total1)
 	}
 
-	// Wait a short moment and sample again; ticks should increase (or stay the same)
+	// Darwin kernel tick accumulation: waiting for real hardware state change.
+	// This is NOT goroutine synchronization — Mach host_processor_info counters
+	// are updated asynchronously by the kernel scheduler.
 	time.Sleep(10 * time.Millisecond)
 	total2, idle2 := p.GetCPUStats()
 	if total2 < total1 {
@@ -57,6 +59,9 @@ func TestCPUPercentCalculation(t *testing.T) {
 
 	// Take two samples with a small delay, simulating what the UI renderer does
 	total1, idle1 := p.GetCPUStats()
+	// Darwin kernel tick accumulation: waiting for real hardware state change.
+	// This is NOT goroutine synchronization — Mach host_processor_info counters
+	// are updated asynchronously by the kernel scheduler.
 	time.Sleep(100 * time.Millisecond)
 	total2, idle2 := p.GetCPUStats()
 

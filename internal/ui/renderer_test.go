@@ -223,8 +223,6 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 		for i := 0; i < numGoroutines; i++ {
 			go func() {
 				defer wg.Done()
-				// Simulate random arrival of stop calls
-				time.Sleep(time.Millisecond * 10)
 				stop()
 			}()
 		}

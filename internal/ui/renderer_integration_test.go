@@ -191,9 +191,6 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			stop := renderer.StartSpinnerWithMetrics(ctx, "Testing")
 			defer stop()
 
-			// Wait for the first synchronous draw (already happened, but ensure we receive it)
-			time.Sleep(10 * time.Millisecond) // allow spinner goroutine to start
-
 			// Update the provider to return the second sample
 			provider.SetCPUStats(tt.total2, tt.idle2)
 
@@ -202,8 +199,14 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			// Send a tick to cause the spinner goroutine to draw again
 			c.tick()
 
-			// Wait for the draw that includes updated CPU metrics
-			time.Sleep(50 * time.Millisecond) // allow spinner goroutine to process tick and draw
+			// Wait for the spinner goroutine to process the tick and draw.
+			// Poll stderr for the expected CPU substring instead of guessing with time.Sleep.
+			for i := 0; i < 200; i++ {
+				if strings.Contains(stderr.String(), wantCPU) {
+					break
+				}
+				runtime.Gosched()
+			}
 
 			// Stop the spinner and capture the final stderr output
 			stop()
