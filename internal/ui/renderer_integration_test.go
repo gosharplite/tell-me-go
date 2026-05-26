@@ -19,6 +19,7 @@ import (
 	telemetry "github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/stretchr/testify/require"
 )
 
 // controllableClock is a test clock that allows manual advancement of time and ticking.
@@ -199,14 +200,9 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			// Send a tick to cause the spinner goroutine to draw again
 			c.tick()
 
-			// Wait for the spinner goroutine to process the tick and draw.
-			// Poll stderr for the expected CPU substring instead of guessing with time.Sleep.
-			for i := 0; i < 200; i++ {
-				if strings.Contains(stderr.String(), wantCPU) {
-					break
-				}
-				runtime.Gosched()
-			}
+			require.Eventually(t, func() bool {
+				return strings.Contains(stderr.String(), wantCPU)
+			}, 2*time.Second, 10*time.Millisecond, "spinner did not render expected CPU substring %q", wantCPU)
 
 			// Stop the spinner and capture the final stderr output
 			stop()
