@@ -680,3 +680,37 @@ func TestManageTasks_UnmarshalError(t *testing.T) {
 		t.Fatal("expected error from unmarshal args")
 	}
 }
+
+// TestManageTasks_SchemaTaskIDIsInteger verifies that the LLM-facing JSON
+// schema for the manage_tasks tool declares task_id as "INTEGER", not
+// "NUMBER". This prevents LLMs from emitting fractional IDs (e.g., 3.5)
+// that would fail validation at the domain boundary (ports.Task.ID is int64).
+func TestManageTasks_SchemaTaskIDIsInteger(t *testing.T) {
+	pt, _ := setupPersistenceTools()
+	reg := registry.New()
+	if err := pt.Register(reg); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	var manageDecl *tools.ToolDeclaration
+	for _, d := range reg.GetDeclarations() {
+		if d.Name == "manage_tasks" {
+			manageDecl = d
+			break
+		}
+	}
+	if manageDecl == nil {
+		t.Fatal("manage_tasks not found in declarations")
+	}
+	if manageDecl.Parameters == nil {
+		t.Fatal("manage_tasks has no parameters schema")
+	}
+
+	taskIDProp := manageDecl.Parameters.Properties["task_id"]
+	if taskIDProp == nil {
+		t.Fatal("task_id parameter not found in manage_tasks schema")
+	}
+	if taskIDProp.Type != "INTEGER" {
+		t.Errorf("task_id schema type = %q; want %q", taskIDProp.Type, "INTEGER")
+	}
+}
