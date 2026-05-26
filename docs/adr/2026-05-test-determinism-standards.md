@@ -139,6 +139,9 @@ contexts) and leaked a serialization concern into pure domain logic.
 
 - [ADR-011](2026-04-uibridge-actor-model.md) — Defines the original deterministic testing
   rules (Rules 1–3) that this ADR generalizes across the project.
+- [ADR-022](2026-04-test-doubles-in-pkgtest-subpackages.md) — establishes the
+  `<pkg>test` mock construction pattern. The encapsulated spy variant in ADR-022
+  conforms to this ADR's §3 race-safety requirement.
 - [ADR-032](2026-05-test-hook-policy.md) — Defines the test-hook policy that provides the
   legitimate exception mechanism for unexported concrete types where interface mocking is
   impossible.
