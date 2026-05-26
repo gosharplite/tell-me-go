@@ -451,7 +451,8 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 func TestTurnEngine_ClockInjection(t *testing.T) {
 	t.Parallel()
 	fixedTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	mockClock := &agenttest.MockClock{CurrentTime: fixedTime}
+	mockClock := &agenttest.MockClock{}
+	mockClock.SetCurrentTime(fixedTime)
 
 	var capturedTime time.Time
 	var Mu sync.Mutex

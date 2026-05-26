@@ -38,7 +38,8 @@ func TestMockClock_RaceDetection(t *testing.T) {
 	// CalledMethods should have goroutines*iterations*6 entries
 	// (NewTicker also appends "After" via its internal call to After)
 	expected := goroutines * iterations * 6
-	if len(m.CalledMethods) != expected {
-		t.Errorf("got %d entries, want %d", len(m.CalledMethods), expected)
+	_, methods := m.Snapshot()
+	if len(methods) != expected {
+		t.Errorf("got %d entries, want %d", len(methods), expected)
 	}
 }
