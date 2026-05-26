@@ -280,7 +280,7 @@ else
 	"
 endif
 
-# Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-XXX).
+# Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
 # Legitimate I/O simulation and hardware observation sleeps are explicitly allow-listed.
 verify-no-test-sleep:
 ifeq ($(IS_POSIX),true)
