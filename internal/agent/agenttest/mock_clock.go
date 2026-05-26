@@ -8,6 +8,7 @@
 package agenttest
 
 import (
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -20,18 +21,23 @@ import (
 // it never blocks. NewTicker() returns a *MockTicker fed from the
 // same After() channel.
 type MockClock struct {
+	mu            sync.Mutex
 	CurrentTime   time.Time
 	CalledNow     int
 	CalledMethods []string
 }
 
 func (m *MockClock) Now() time.Time {
+	m.mu.Lock()
 	m.CalledNow++
 	m.CalledMethods = append(m.CalledMethods, "Now")
-	if m.CurrentTime.IsZero() {
+	t := m.CurrentTime
+	m.mu.Unlock()
+
+	if t.IsZero() {
 		return time.Now()
 	}
-	return m.CurrentTime
+	return t
 }
 
 func (m *MockClock) Since(t time.Time) time.Duration {
@@ -39,24 +45,36 @@ func (m *MockClock) Since(t time.Time) time.Duration {
 }
 
 func (m *MockClock) Sleep(d time.Duration) {
+	m.mu.Lock()
 	m.CalledMethods = append(m.CalledMethods, "Sleep")
 	m.CurrentTime = m.CurrentTime.Add(d)
+	m.mu.Unlock()
 }
 
 func (m *MockClock) After(d time.Duration) <-chan time.Time {
+	m.mu.Lock()
 	m.CalledMethods = append(m.CalledMethods, "After")
+	t := m.CurrentTime.Add(d)
+	m.mu.Unlock()
+
 	c := make(chan time.Time, 1)
-	c <- m.CurrentTime.Add(d)
+	c <- t
 	return c
 }
 
 func (m *MockClock) NewTicker(d time.Duration) clock.Ticker {
+	m.mu.Lock()
 	m.CalledMethods = append(m.CalledMethods, "NewTicker")
+	m.mu.Unlock()
+
 	return &MockTicker{CVal: m.After(d)}
 }
 
 func (m *MockClock) Jitter(base float64) float64 {
+	m.mu.Lock()
 	m.CalledMethods = append(m.CalledMethods, "Jitter")
+	m.mu.Unlock()
+
 	return base
 }
 
