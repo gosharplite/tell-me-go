@@ -619,6 +619,22 @@ func (c *blockingClock) After(d time.Duration) <-chan time.Time {
 func (c *blockingClock) Now() time.Time              { return time.Now() }
 func (c *blockingClock) Jitter(base float64) float64 { return base }
 
+// syncClock is a Clock whose After() returns an unbuffered channel that never fires,
+// and also closes calledCh to signal that After() was invoked — allowing tests to
+// deterministically wait for a goroutine to reach the select block before calling cancel().
+type syncClock struct {
+	clock.Clock
+	ch       chan time.Time
+	calledCh chan struct{}
+}
+
+func (c *syncClock) After(d time.Duration) <-chan time.Time {
+	close(c.calledCh)
+	return c.ch
+}
+func (c *syncClock) Now() time.Time              { return time.Now() }
+func (c *syncClock) Jitter(base float64) float64 { return base }
+
 func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Hour}
 	step := &RecoveryStep{Policy: policy}
