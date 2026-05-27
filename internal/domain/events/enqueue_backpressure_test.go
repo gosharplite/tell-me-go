@@ -36,6 +36,21 @@ func newReleaseChan(t *testing.T) (ch <-chan struct{}, release func()) {
 	return c, release
 }
 
+// assertDropLogged verifies the structured log output contains the expected
+// drop-warning message, the dropped event type, and the WARN level.
+func assertDropLogged(t *testing.T, logOutput, eventType string) {
+	t.Helper()
+	if !strings.Contains(logOutput, "subscriber queue full, dropping event") {
+		t.Errorf("expected drop warning in log, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, eventType) {
+		t.Errorf("expected dropped event type %s in log, got: %s", eventType, logOutput)
+	}
+	if !strings.Contains(logOutput, "level=WARN") {
+		t.Errorf("expected WARN level for drop log, got: %s", logOutput)
+	}
+}
+
 // TestPublish_DropsEventWhenSubscriberQueueIsFull verifies the backpressure
 // "drop" arm of (*SimpleEventBus).enqueueEvent — the `default:` branch of
 // its 3-arm select.
@@ -117,16 +132,7 @@ func TestPublish_DropsEventWhenSubscriberQueueIsFull(t *testing.T) {
 	}
 
 	// Verify the Warn log was emitted for the dropped event.
-	logOutput := buf.String()
-	if !strings.Contains(logOutput, "subscriber queue full, dropping event") {
-		t.Errorf("expected drop warning in log, got: %s", logOutput)
-	}
-	if !strings.Contains(logOutput, "queue_full_e3") {
-		t.Errorf("expected dropped event type queue_full_e3 in log, got: %s", logOutput)
-	}
-	if !strings.Contains(logOutput, "level=WARN") {
-		t.Errorf("expected WARN level for drop log, got: %s", logOutput)
-	}
+	assertDropLogged(t, buf.String(), "queue_full_e3")
 
 	// Indirect pendingCount assertion:
 	// The drop arm calls decPending() to undo its incPending(). If that were

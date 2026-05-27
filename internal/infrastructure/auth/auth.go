@@ -229,7 +229,7 @@ func (a *ServiceAccountAuth) getToken(ctx context.Context) (string, error) {
 
 		// 3. Exchange JSON key for a Bearer token via Google OAuth2
 		// Scope required for Vertex AI: "https://www.googleapis.com/auth/cloud-platform"
-		creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloud-platform")
+		creds, err := google.CredentialsFromJSONWithType(ctx, data, google.ServiceAccount, "https://www.googleapis.com/auth/cloud-platform")
 		if err != nil {
 			return "", fmt.Errorf("failed to parse service account JSON: %w", err)
 		}

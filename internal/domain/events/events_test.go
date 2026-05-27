@@ -1162,6 +1162,19 @@ func TestSimpleEventBus_Shutdown_FlushTimeout(t *testing.T) {
 	<-listenDone
 }
 
+// drainSignals drains exactly count signals from ch, failing the test if
+// any signal does not arrive within the timeout.
+func drainSignals(t *testing.T, ch <-chan struct{}, count int) {
+	t.Helper()
+	for i := 0; i < count; i++ {
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatal("subscriber did not process event in time")
+		}
+	}
+}
+
 // TestSimpleEventBus_Shutdown_ActiveWorkers exercises the <-done path in
 // Shutdown where the worker goroutines drain successfully before the context
 // expires, and close(done) fires from the normal path (not recover).
@@ -1208,13 +1221,7 @@ func TestSimpleEventBus_Shutdown_ActiveWorkers(t *testing.T) {
 	}
 
 	// Drain processed signals to confirm each event was handled
-	for i := 0; i < numEvents; i++ {
-		select {
-		case <-processed:
-		case <-time.After(2 * time.Second):
-			t.Fatal("subscriber did not process event in time")
-		}
-	}
+	drainSignals(t, processed, numEvents)
 
 	// Flush ensures all events are processed before we stop the listener.
 	flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)

@@ -51,12 +51,28 @@ func (f *defaultUIFactory) HistoryRenderer() ports.HistoryRenderer {
 
 // tuiHistoryBrowser implements ports.HistoryBrowser using the TUI.
 type tuiHistoryBrowser struct {
-	logger *slog.Logger
+	logger     *slog.Logger
+	initLogger func() (io.Closer, error)
+	newProgram func(model tea.Model, opts ...tea.ProgramOption) programRunner
+}
+
+// programRunner abstracts tea.Program.Run to allow fault injection in tests.
+type programRunner interface {
+	Run() (tea.Model, error)
+}
+
+// teaProgramRunner wraps a *tea.Program to satisfy the programRunner interface.
+type teaProgramRunner struct {
+	p *tea.Program
+}
+
+func (r *teaProgramRunner) Run() (tea.Model, error) {
+	return r.p.Run()
 }
 
 // Browse launches the TUI history browser.
 func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
-	if closer, err := tui.InitLogger(); err == nil {
+	if closer, err := b.initLogger(); err == nil {
 		defer func() {
 			if closeErr := closer.Close(); closeErr != nil {
 				b.logger.Warn("failed to close tui logger", "error", closeErr)
@@ -65,7 +81,7 @@ func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHis
 	}
 
 	model := tui.NewRootBrowserModel(ctx, provider, hManager)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := b.newProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui program error: %w", err)
 	}
@@ -74,6 +90,10 @@ func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHis
 
 func (f *defaultUIFactory) HistoryBrowser() ports.HistoryBrowser {
 	return &tuiHistoryBrowser{
-		logger: f.Logger,
+		logger:     f.Logger,
+		initLogger: tui.InitLogger,
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {
+			return &teaProgramRunner{p: tea.NewProgram(model, opts...)}
+		},
 	}
 }

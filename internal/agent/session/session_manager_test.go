@@ -463,7 +463,7 @@ func TestSessionDependencies_Accessors(t *testing.T) {
 	deps := &session.SessionDependenciesInternal{
 		Paths:           paths,
 		SessionProvider: sessionProvider,
-		Health:          healthManager,
+		HealthManager:   healthManager,
 	}
 
 	require.Equal(t, paths, deps.GetPaths())
