@@ -425,10 +425,15 @@ func TestRecoveryStep_Process(t *testing.T) {
 		// this test cancels AFTER the goroutine has entered attemptRetry and
 		// started blocking in the select.
 		//
-		// blockingClock.After() returns an unbuffered channel that never fires,
-		// forcing the select to block on ctx.Done().
+		// syncClock.After() closes calledCh on entry and returns an unbuffered
+		// channel that never fires, forcing the select to block on ctx.Done().
+		// The main goroutine waits on calledCh for a deterministic signal that
+		// the spawned goroutine has reached the select boundary before calling cancel().
 		bus := &passThroughEventBus{}
-		clk := &blockingClock{ch: make(chan time.Time)}
+		clk := &syncClock{
+			ch:       make(chan time.Time),
+			calledCh: make(chan struct{}),
+		}
 		step := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Hour}}
 		turn := &Turn{
 			State: &TurnState{
@@ -440,7 +445,7 @@ func TestRecoveryStep_Process(t *testing.T) {
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
-		// NOTE: cancel() is deliberately called in a goroutine below,
+		// NOTE: cancel() is called below after the goroutine enters the select,
 		// NOT here — the context must be alive when Process() starts.
 
 		type procResult struct {
@@ -454,11 +459,9 @@ func TestRecoveryStep_Process(t *testing.T) {
 			resultCh <- procResult{res: res, err: err}
 		}()
 
-		// Yield briefly so the goroutine can enter attemptRetry and block
-		// in the select. 1ms is generous; even if the goroutine hasn't
-		// reached the select yet, cancel() will hit the ctx.Err() guard
-		// at line 147 instead — both paths produce the same result.
-		time.Sleep(time.Millisecond)
+		// Block until the goroutine has entered the select (After() was called),
+		// then cancel. This deterministically hits line 154: case <-ctx.Done().
+		<-clk.calledCh
 		cancel()
 		r := <-resultCh
 
