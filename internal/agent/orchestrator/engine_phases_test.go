@@ -417,4 +417,53 @@ func TestRecoveryStep_Process(t *testing.T) {
 		// the ctx.Err() guard, not the select case
 		assert.Equal(t, 1, turn.State.RetryCount)
 	})
+
+	t.Run("context cancelled during select wait", func(t *testing.T) {
+		// This test covers the select { case <-ctx.Done(): ... } branch at line 154
+		// in attemptRetry. Unlike the "cancelled during retry wait" and
+		// "cancelled before select" tests which cancel before calling Process(),
+		// this test cancels AFTER the goroutine has entered attemptRetry and
+		// started blocking in the select.
+		//
+		// blockingClock.After() returns an unbuffered channel that never fires,
+		// forcing the select to block on ctx.Done().
+		bus := &passThroughEventBus{}
+		clk := &blockingClock{ch: make(chan time.Time)}
+		step := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Hour}}
+		turn := &Turn{
+			State: &TurnState{
+				LastError:  llm.ErrTransient,
+				RetryCount: 0,
+			},
+			Clock:  clk,
+			Events: bus,
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		// NOTE: cancel() is deliberately called in a goroutine below,
+		// NOT here — the context must be alive when Process() starts.
+
+		type procResult struct {
+			res ProcessResult
+			err error
+		}
+		resultCh := make(chan procResult, 1)
+
+		go func() {
+			res, err := step.Process(ctx, turn)
+			resultCh <- procResult{res: res, err: err}
+		}()
+
+		// Yield briefly so the goroutine can enter attemptRetry and block
+		// in the select. 1ms is generous; even if the goroutine hasn't
+		// reached the select yet, cancel() will hit the ctx.Err() guard
+		// at line 147 instead — both paths produce the same result.
+		time.Sleep(time.Millisecond)
+		cancel()
+		r := <-resultCh
+
+		assert.Equal(t, ProcessResult{}, r.res)
+		assert.ErrorIs(t, r.err, context.Canceled)
+		assert.Equal(t, 1, turn.State.RetryCount)
+	})
 }
