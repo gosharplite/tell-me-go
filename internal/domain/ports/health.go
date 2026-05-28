@@ -34,18 +34,29 @@ const (
 
 // ComponentReport encapsulates the diagnostic result for a single system component.
 type ComponentReport struct {
-	Component Component    `json:"component"`
-	Status    HealthStatus `json:"status"`
-	Message   string       `json:"message"`
-	Details   any          `json:"details,omitempty"`
-	Error     error        `json:"-"`
+	// Component identifies the system component that was checked.
+	Component Component `json:"component"`
+	// Status is the health status of this component.
+	Status HealthStatus `json:"status"`
+	// Message provides a human-readable description of the component's state.
+	Message string `json:"message"`
+	// Details contains component-specific diagnostic data (e.g., latency,
+	// endpoint URL, provider name). The structure varies by component type.
+	Details any `json:"details,omitempty"`
+	// Error is the underlying error if the component is unhealthy.
+	// This field is excluded from JSON serialization.
+	Error error `json:"-"`
 }
 
 // HealthReport provides a consolidated view of the overall system health.
 type HealthReport struct {
-	OverallStatus HealthStatus                  `json:"overall_status"`
-	Components    map[Component]ComponentReport `json:"components"`
-	Timestamp     time.Time                     `json:"timestamp"`
+	// OverallStatus is the aggregate health of the system. It is
+	// StatusHealthy only when all components are healthy.
+	OverallStatus HealthStatus `json:"overall_status"`
+	// Components maps each component identifier to its diagnostic report.
+	Components map[Component]ComponentReport `json:"components"`
+	// Timestamp records when the health check was performed.
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // HealthChecker is the interface for individual component health providers.

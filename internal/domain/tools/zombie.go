@@ -10,16 +10,26 @@ import (
 )
 
 // ExecutionObserver defines the domain's external monitoring needs.
+// Implementations receive callbacks when tool goroutines exhibit
+// abnormal lifecycle behavior.
 type ExecutionObserver interface {
+	// ExecutionTimedOut is called when a tool fails to complete or
+	// send a heartbeat within the configured LivenessThreshold.
 	ExecutionTimedOut(toolID string)
+
+	// ExecutionCompletedLate is called when a tool finishes execution
+	// after its context has been cancelled, indicating a goroutine
+	// that outlived its intended lifetime.
 	ExecutionCompletedLate(toolID string)
 }
 
 // ToolOutput captures the result and error of a tool execution.
 // It is used to monitor goroutines that may outlive their context.
 type ToolOutput struct {
+	// Result is the tool's output, populated only when Err is nil.
 	Result ToolResult
-	Err    error
+	// Err is the error returned by the tool handler, or nil on success.
+	Err error
 }
 
 // ZombieTool handles the monitoring of potentially leaked tool goroutines.

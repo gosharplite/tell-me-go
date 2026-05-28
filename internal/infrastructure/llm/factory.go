@@ -29,7 +29,27 @@ import (
 // Pinned by TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning.
 const softMaxTokensCeiling = 200_000
 
-// NewClient is the central factory for creating LLM providers.
+// NewClient is the central factory for creating LLM provider clients.
+//
+// It inspects cfg.GetActiveProvider() to determine the provider type
+// ("openai", "deepseek", "anthropic", "google", "gemini"), creates the
+// appropriate authenticator, resolves timeout and thinking budget, and
+// instantiates a provider-specific client. The resulting client is
+// wrapped in a resilientClient for automatic retry on transient failures.
+//
+// Parameters:
+//   - cfg: must have at least one configured provider with a non-empty
+//     Type. The active provider is determined by cfg.SelectedProvider.
+//   - pData: pricing data used to resolve per-model token limits and
+//     thinking budget caps.
+//   - bus: event bus for publishing usage metrics and diagnostics.
+//     May be nil, in which case metrics are not published.
+//   - logger: if nil, a NoOpLogger is used. The logger receives
+//     provider configuration diagnostics and soft warnings.
+//
+// Returns an llm.ExtendedClient ready for concurrent use, or an error
+// if no provider is configured or authentication setup fails. Unknown
+// provider types fall back to Gemini for backward compatibility.
 func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 	p := cfg.GetActiveProvider()
 
@@ -177,7 +197,20 @@ func resolveTimeout(cfg *config.Config) time.Duration {
 	return timeout
 }
 
-// CreateAuthenticator exposed for toolchain/health checks.
+// CreateAuthenticator creates an authenticator for the given provider
+// configuration. It is the public entry point for authentication setup,
+// used by the toolchain and health check subsystems.
+//
+// The authenticator type is determined by the provider type and
+// available credentials:
+//   - APIKey: BearerAuth (OpenAI/DeepSeek), AnthropicAuth, or
+//     APIKeyAuth (Google/Gemini with explicit key)
+//   - Service Account JSON file: ServiceAccountAuth
+//   - Google/Gemini without API key: VertexAuth (Application Default
+//     Credentials)
+//
+// Returns an error if no credentials are available and the provider
+// does not support credential-less authentication.
 func CreateAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 	return createAuthenticator(p)
 }
