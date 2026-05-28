@@ -14,11 +14,23 @@ var (
 	ErrTaskNotFound = errors.New("task not found")
 )
 
-// KVStore defines a generic key-value storage interface.
+// KVStore defines a generic key-value storage interface for persisting
+// simple configuration and settings data.
 type KVStore interface {
+	// Get retrieves the value for the given key. Returns an empty
+	// string if the key does not exist. The implementation determines
+	// whether a missing key is an error.
 	Get(ctx context.Context, key string) (string, error)
+
+	// Set stores a value for the given key, overwriting any existing
+	// value. The change is immediately durable.
 	Set(ctx context.Context, key string, val string) error
+
+	// Delete removes the given key and its value. It is a no-op if
+	// the key does not exist.
 	Delete(ctx context.Context, key string) error
+
+	// GetAll returns a copy of all key-value pairs currently stored.
 	GetAll(ctx context.Context) (map[string]string, error)
 }
 
@@ -31,8 +43,10 @@ type ListFilter struct {
 	Before    time.Time // zero = no upper bound on CreatedAt
 }
 
-// ListStore defines a generic list storage interface.
+// ListStore defines a generic list storage interface for ordered,
+// filterable collections of items.
 type ListStore[T any] interface {
+	// ReadAll returns every item in the store in insertion order.
 	ReadAll(ctx context.Context) ([]T, error)
 
 	// Query returns items matching the filter, bounded by limit and offset.
@@ -42,17 +56,28 @@ type ListStore[T any] interface {
 	// Count returns the total number of items in the store.
 	Count(ctx context.Context) (int, error)
 
+	// Append adds an item to the end of the store.
 	Append(ctx context.Context, item T) error
+
+	// Update replaces the item at the given zero-based index.
 	Update(ctx context.Context, id int64, item T) error
+
+	// Delete removes the item at the given zero-based index.
 	Delete(ctx context.Context, id int64) error
+
+	// DeleteAll removes every item from the store.
 	DeleteAll(ctx context.Context) error
 }
 
 // Task represents a unit of work in the to-do list.
 type Task struct {
-	ID        int64     `json:"id"`
-	Content   string    `json:"content"`
-	Status    string    `json:"status"` // pending, completed
+	// ID is the unique, monotonically increasing identifier.
+	ID int64 `json:"id"`
+	// Content is the human-readable description of the task.
+	Content string `json:"content"`
+	// Status is the current state: "pending" or "completed".
+	Status string `json:"status"`
+	// CreatedAt records when the task was added.
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -78,9 +103,19 @@ type TaskReader interface {
 
 // TaskWriter defines the interface for modifying tasks.
 type TaskWriter interface {
+	// AddTask creates a new task with the given content and "pending" status.
+	// Returns the created task with its assigned ID.
 	AddTask(ctx context.Context, content string) (Task, error)
+
+	// UpdateTask modifies the content and/or status of an existing task.
+	// An empty content string leaves the content unchanged.
 	UpdateTask(ctx context.Context, id int64, content, status string) (Task, error)
+
+	// DeleteTask removes the task with the given ID. Returns an error
+	// if the task does not exist.
 	DeleteTask(ctx context.Context, id int64) error
+
+	// ClearTasks removes all tasks from the store.
 	ClearTasks(ctx context.Context) error
 }
 
@@ -92,19 +127,31 @@ type TaskStore interface {
 
 // Initializer defines an interface for components requiring lifecycle initialization.
 type Initializer interface {
+	// Initialize performs one-time setup (e.g., creating database tables,
+	// running migrations). It must be called before any other methods.
+	// Implementations must be idempotent.
 	Initialize(ctx context.Context) error
 }
 
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
+	// GetTasks returns the task management store.
 	GetTasks() TaskStore
+
+	// GetSettings returns the key-value store for application settings.
 	GetSettings() KVStore
+
+	// GetHealthChecker returns a health checker for the persistence layer.
 	GetHealthChecker() HealthChecker
 }
 
 // SessionStateProvider manages session-level metadata and state.
 type SessionStateProvider interface {
+	// GetInfo returns a snapshot of the current session metadata.
 	GetInfo() SessionInfo
+
+	// SetInfo replaces the session metadata. The update is immediate
+	// and visible to subsequent GetInfo calls.
 	SetInfo(info SessionInfo)
 }
 

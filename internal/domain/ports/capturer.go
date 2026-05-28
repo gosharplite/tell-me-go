@@ -40,8 +40,23 @@ func WithTUIPrompt(tui bool) CaptureOption {
 
 // Capturer defines the interface for UI interactions that the orchestrator needs.
 type Capturer interface {
+	// IsTTY reports whether v is connected to an interactive terminal.
+	// It accepts an io.Writer (typically os.Stdout or os.Stdin) and returns
+	// true if the writer is a character device capable of interactive I/O.
 	IsTTY(v any) bool
+
+	// CapturePrompt presents the user with an interactive prompt and returns
+	// the input string. It blocks until the user submits input or the context
+	// is cancelled.
+	//
+	// Options (WithSkipTTYWait, WithRaw, WithTUIPrompt) modify capture
+	// behavior. When no options are provided, CapturePrompt uses sensible
+	// defaults for the current terminal configuration.
+	//
+	// The returned error is non-nil only when the context is cancelled or
+	// the underlying input stream encounters an irrecoverable error.
 	CapturePrompt(ctx context.Context, args []string, opts ...CaptureOption) (string, error)
+
 	// Confirm asks the user for a yes/no confirmation.
 	Confirm(ctx context.Context, message string) (bool, error)
 	// Close performs any necessary cleanup, such as flushing suggestion buffers.

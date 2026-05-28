@@ -21,7 +21,14 @@ type SuggestionService interface {
 
 // PromptTracker defines the interface for persisting and loading cross-session prompts.
 type PromptTracker interface {
+	// Append records a user prompt for future suggestion retrieval.
+	// Fire-and-forget: the implementation may buffer writes.
 	Append(ctx context.Context, prompt string) error
+
+	// LoadTopN returns up to limit of the most frequently used prompts
+	// across all recorded sessions, ordered by frequency descending.
 	LoadTopN(ctx context.Context, limit int) ([]string, error)
+
+	// Close flushes any buffered writes and releases resources.
 	Close() error
 }
