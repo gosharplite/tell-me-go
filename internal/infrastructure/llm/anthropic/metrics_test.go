@@ -326,8 +326,9 @@ func TestCheckTruncation(t *testing.T) {
 			err := checkTruncation(tt.resp)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("checkTruncation error = %v, wantErr = %v", err, tt.wantErr)
+				return
 			}
-			if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+			if err != nil && tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 				t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
 			}
 		})

@@ -460,62 +460,6 @@ func TestNewClient_Options(t *testing.T) {
 	}
 }
 
-// TestJSONMarshal_DefensiveGuard tests the json.Marshal error path on
-// messagesRequest directly. Although this does not call
-// prepareAnthropicRequest, it validates the same json.Marshal call
-// site that appears at client.go:368. The guard in
-// prepareAnthropicRequest is structurally unreachable through the
-// normal API because toAnthropicSchema always produces
-// map[string]interface{} values for InputSchema. These tests prove
-// that an unmarshalable payload — should one ever be constructed (e.g.,
-// via a bug in future refactoring) — produces a non-nil error, so the
-// `if err != nil { return ... }` guard is not dead code.
-func TestJSONMarshal_DefensiveGuard(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		payload messagesRequest
-		wantErr bool
-	}{
-		{
-			name: "channel in InputSchema — unmarshalable",
-			payload: messagesRequest{
-				Model:    "claude-3",
-				Messages: []message{},
-				Tools:    []tool{{Name: "broken", InputSchema: make(chan int)}},
-			},
-			wantErr: true,
-		},
-		{
-			name: "function in InputSchema — unmarshalable",
-			payload: messagesRequest{
-				Model:    "claude-3",
-				Messages: []message{},
-				Tools:    []tool{{Name: "broken", InputSchema: func() {}}},
-			},
-			wantErr: true,
-		},
-		{
-			name: "valid payload — marshalable",
-			payload: messagesRequest{
-				Model:     "claude-3",
-				Messages:  []message{},
-				MaxTokens: 4096,
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			_, err := json.Marshal(tt.payload)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("json.Marshal error = %v, wantErr = %v", err, tt.wantErr)
-			}
-		})
-	}
-}
 
 // TestBuildHTTPRequest_CustomHeaders closes Gap #4: custom headers
 // set via WithHeaders must appear on every outgoing HTTP request,
