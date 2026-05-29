@@ -267,3 +267,70 @@ func TestFromAnthropicResponse_ExtractContentError(t *testing.T) {
 		t.Errorf("expected nil metrics on error, got %+v", metrics)
 	}
 }
+
+// TestCheckTruncation directly tests the checkTruncation pure function,
+// covering the nil-guard (line 63 of metrics.go) and all stop_reason branches.
+// These cases intentionally overlap with truncation_test.go — those tests
+// exercise the end-to-end path through SendChat; this tests the pure function
+// directly, including the structurally-unreachable nil-response guard.
+func TestCheckTruncation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		resp        *messagesResponse
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "nil response",
+			resp:    nil,
+			wantErr: false,
+		},
+		{
+			name:    "stop_reason end_turn",
+			resp:    &messagesResponse{StopReason: "end_turn"},
+			wantErr: false,
+		},
+		{
+			name:    "stop_reason tool_use",
+			resp:    &messagesResponse{StopReason: "tool_use"},
+			wantErr: false,
+		},
+		{
+			name: "stop_reason max_tokens with tool_use block",
+			resp: &messagesResponse{
+				StopReason: "max_tokens",
+				Content: []contentBlock{
+					{Type: "tool_use", Name: "write_file", ID: "toolu_001"},
+				},
+			},
+			wantErr:     true,
+			errContains: "truncated at max_tokens during tool_use",
+		},
+		{
+			name: "stop_reason max_tokens text-only",
+			resp: &messagesResponse{
+				StopReason: "max_tokens",
+				Content:    []contentBlock{{Type: "text", Text: "partial"}},
+			},
+			wantErr:     true,
+			errContains: "truncated at max_tokens",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkTruncation(tt.resp)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("checkTruncation error = %v, wantErr = %v", err, tt.wantErr)
+				return
+			}
+			if err != nil && tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
+			}
+		})
+	}
+}
