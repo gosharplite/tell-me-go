@@ -137,10 +137,20 @@ func (c *client) processDirectOutputItem(content *llm.Content, out *responseOutp
 		Refusal:    out.Refusal,
 	}
 	if err := c.appendPartsFromBlock(content, cb); err != nil {
-		// Output-item types (e.g., "call", "message") are not
-		// content-block types; they are handled by the fallback
-		// logic below. Only propagate errors that are not about
-		// unhandled block types at this level.
+		// ADR-024 (2026-05): The !errors.Is(err, errUnhandledBlockType) guard
+		// below is structurally unreachable with the current appendPartsFromBlock
+		// implementation — every error path in that function wraps
+		// errUnhandledBlockType. The guard exists as a defensive future-proofing
+		// measure: if appendPartsFromBlock ever gains a new error-returning
+		// code path (e.g., a validation failure in handleToolUseBlock), this
+		// guard ensures the error propagates rather than being silently suppressed
+		// alongside the sentinel suppression for output-item types like "call"
+		// and "message".
+		//
+		// Coverage gap accepted by architect (Issue #617). The branch is
+		// untestable without refactoring appendPartsFromBlock to return a
+		// distinguishable error type. processDirectOutputItem exceeds 90%
+		// branch coverage via all other reachable paths.
 		if !errors.Is(err, errUnhandledBlockType) {
 			return err
 		}
