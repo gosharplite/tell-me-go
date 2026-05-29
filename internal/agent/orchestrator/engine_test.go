@@ -439,6 +439,43 @@ func TestExecutionStep_Process(t *testing.T) {
 		assert.Equal(t, 2.0, turn.State.Metrics.CumulativeToolDuration)
 	})
 
+	t.Run("No trace in context — CumulativeToolDuration not set", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+		ex := &agenttest.MockAgentExecutor{
+			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+				return &llm.Content{Role: "tool"}, nil
+			},
+		}
+		counter := &agenttest.MockTokenCounter{}
+		hMock := &agenttest.MockHistoryManager{}
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+		turn := &Turn{
+			Events:       bus,
+			Executor:     ex,
+			TokenCounter: counter,
+			CtxManager:   cm,
+			Clock:        &agenttest.MockClock{},
+			State: &TurnState{
+				HasToolCalls: true,
+				Response: &llm.Content{
+					Role:  "model",
+					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
+				},
+				Metrics: &llm.Metrics{},
+			},
+		}
+
+		// Use bare context.Background() — no OTEL trace injected,
+		// so the nil-trace branch in recordToolMetrics is exercised.
+		res, err := step.Process(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.Equal(t, PhasePersisting, res.NextPhase)
+		assert.NotNil(t, turn.State.ToolResponse)
+		assert.Greater(t, turn.State.Metrics.ToolDuration, float64(0))
+		assert.Equal(t, float64(0), turn.State.Metrics.CumulativeToolDuration)
+	})
+
 	t.Run("Execution error", func(t *testing.T) {
 		bus := &eventstest.MockEventBus{}
 		ex := &agenttest.MockAgentExecutor{
@@ -804,18 +841,43 @@ func TestEngine_Processors(t *testing.T) {
 	assert.IsType(t, &GuardStep{}, procs[PhaseGuard])
 }
 
-func TestEngine_GetLoggerFallback(t *testing.T) {
-	e := &Engine{}
-	// engineConfig is nil by default if not initialized via NewEngine or Store
-	logger := e.getLogger()
-	assert.NotNil(t, logger)
-}
+func TestEngine_GetLogger_Fallback(t *testing.T) {
+	t.Parallel()
 
-func TestEngine_GetLoggerFallback_WithConfig(t *testing.T) {
-	e := &Engine{}
-	e.config.Store(&engineConfig{Logger: nil})
-	logger := e.getLogger()
-	assert.NotNil(t, logger)
+	tests := []struct {
+		name   string
+		engine *Engine
+	}{
+		{
+			name:   "nil config — returns slog.Default",
+			engine: &Engine{},
+		},
+		{
+			name: "non-nil config with nil Logger — returns slog.Default",
+			engine: func() *Engine {
+				e := &Engine{}
+				e.config.Store(&engineConfig{Logger: nil})
+				return e
+			}(),
+		},
+		{
+			name: "non-nil config with real Logger — returns that Logger",
+			engine: func() *Engine {
+				e := &Engine{}
+				l := &ports.NoOpLogger{}
+				e.config.Store(&engineConfig{Logger: l})
+				return e
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			logger := tt.engine.getLogger()
+			assert.NotNil(t, logger)
+		})
+	}
 }
 
 func TestNewEngine_FastRetry(t *testing.T) {

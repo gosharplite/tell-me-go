@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
@@ -248,6 +249,19 @@ func TestGuardStep_TDT(t *testing.T) {
 	}
 }
 
+// mockSessionProvider is a minimal ports.SessionProvider for tests
+// that need to exercise the active-toolkits code path in InvokeModel.
+type mockSessionProvider struct {
+	info ports.SessionInfo
+}
+
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo            { return m.info }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)        { m.info = info }
+func (m *mockSessionProvider) GetTasks() ports.TaskStore             { return nil }
+func (m *mockSessionProvider) GetSettings() ports.KVStore            { return nil }
+func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }
+func (m *mockSessionProvider) Close() error                          { return nil }
+
 func TestInferenceStep_TDT(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -296,6 +310,27 @@ func TestInferenceStep_TDT(t *testing.T) {
 			apiResponse: &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}},
 			expectedPh:  PhasePersisting,
 		},
+		{
+			name: "Toolkits active — GetDeclarationsByToolkits called",
+			apiResponse: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Hello from toolkit"}},
+			},
+			expectedPh: PhasePersisting,
+		},
+		{
+			name: "Tool call with non-string reason arg",
+			apiResponse: &llm.Content{
+				Role: "model",
+				Parts: []*llm.Part{{
+					FunctionCall: &llm.FunctionCall{
+						Name: "test_tool",
+						Args: map[string]any{"reason": 42.0},
+					},
+				}},
+			},
+			expectedPh: PhaseExecuting,
+		},
 	}
 
 	for _, tt := range tests {
@@ -318,7 +353,29 @@ func TestInferenceStep_TDT(t *testing.T) {
 			bus := &eventstest.MockEventBus{}
 
 			hMock := &agenttest.MockHistoryManager{}
-			cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+			reg := &agenttest.MockToolRegistry{}
+
+			var cm *sessctx.Manager
+			if tt.name == "Toolkits active — GetDeclarationsByToolkits called" {
+				// Register tools in a non-core toolkit so that
+				// GetDeclarationsByToolkits returns a non-empty list
+				// while GetCoreDeclarations (ToolkitMap["core"]) returns nil.
+				if err := reg.RegisterToToolkit("test_toolkit", &tools.ToolDeclaration{
+					Name:        "toolkit_tool",
+					Description: "A tool in a non-core toolkit",
+				}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					return tools.ToolResult{}, nil
+				}); err != nil {
+					t.Fatalf("RegisterToToolkit: %v", err)
+				}
+				sp := &mockSessionProvider{
+					info: ports.SessionInfo{ActiveToolkits: []string{"test_toolkit"}},
+				}
+				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
+			} else {
+				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+			}
 
 			turn := &Turn{
 				Gateway:    gw,
@@ -328,7 +385,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 					PreparedHistory: tt.history,
 				},
 				Clock:    &agenttest.MockClock{},
-				Registry: &agenttest.MockToolRegistry{},
+				Registry: reg,
 			}
 
 			step := &InferenceStep{}
@@ -340,6 +397,11 @@ func TestInferenceStep_TDT(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedPh, res.NextPhase)
+			}
+
+			if tt.name == "Tool call with non-string reason arg" {
+				assert.True(t, turn.State.HasToolCalls, "HasToolCalls must be true for a FunctionCall response")
+				assert.Empty(t, turn.State.ToolReasons, "non-string reason arg must be skipped, ToolReasons must be empty")
 			}
 		})
 	}
