@@ -460,7 +460,6 @@ func TestNewClient_Options(t *testing.T) {
 	}
 }
 
-
 // TestBuildHTTPRequest_CustomHeaders closes Gap #4: custom headers
 // set via WithHeaders must appear on every outgoing HTTP request,
 // and nil/empty headers must not cause panics.
