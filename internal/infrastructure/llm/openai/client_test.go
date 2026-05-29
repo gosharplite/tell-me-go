@@ -1674,6 +1674,50 @@ func getResponsesAPIEdgeGap3(t *testing.T) []responsesAPITestCase {
 	}
 }
 
+// getResponsesAPIEdgeGap3b covers the child-content-block error
+// propagation path in processDirectOutputItem (responses.go:151-153).
+// When a direct output item's type is not a recognised content-block
+// type (e.g. "message"), appendPartsFromBlock returns
+// errUnhandledBlockType, which processDirectOutputItem suppresses via
+// errors.Is. Execution then falls through to the child Content loop.
+// That loop has NO sentinel suppression, so an unknown child content
+// block type MUST propagate as an error.
+func getResponsesAPIEdgeGap3b(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
+		{
+			name:    "child_content_block_with_unknown_type_propagates_error",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							// Type "message" is not a known content-block
+							// type. appendPartsFromBlock returns
+							// errUnhandledBlockType, which
+							// processDirectOutputItem suppresses via
+							// errors.Is. Execution then falls through
+							// to the child Content loop below.
+							Type: "message",
+							Content: []contentBlock{
+								{Type: "text", Text: "this is fine"},
+								// This child has an unknown type. The
+								// child loop has NO sentinel
+								// suppression, so the error MUST
+								// propagate.
+								{Type: "future_block_type_xyz"},
+							},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			wantErr: "unhandled content block type",
+		},
+	}
+}
+
 // getResponsesAPIEdgeGap4 covers Gap 4: Top-level Name/Arguments
 // without Function.
 func getResponsesAPIEdgeGap4(t *testing.T) []responsesAPITestCase {
@@ -1851,6 +1895,7 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 	var cases []responsesAPITestCase
 	cases = append(cases, getResponsesAPIEdgeGap1And2(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap3(t)...)
+	cases = append(cases, getResponsesAPIEdgeGap3b(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap4(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap4b(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap6(t)...)

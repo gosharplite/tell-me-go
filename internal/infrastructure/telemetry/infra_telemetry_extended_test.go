@@ -372,6 +372,28 @@ func TestMetricsManager_Retention(t *testing.T) {
 	if filtered[0].Session != "new" {
 		t.Error("Kept wrong record")
 	}
+
+	t.Run("zero_days", func(t *testing.T) {
+		t.Parallel()
+		filtered := m.applyRetentionPolicy(history, 0)
+		if len(filtered) != 2 {
+			t.Errorf("Expected 2 records (no filtering), got %d", len(filtered))
+		}
+		if filtered[0].Session != "new" || filtered[1].Session != "old" {
+			t.Errorf("Records mismatch: [0]=%q [1]=%q", filtered[0].Session, filtered[1].Session)
+		}
+	})
+
+	t.Run("negative_days", func(t *testing.T) {
+		t.Parallel()
+		filtered := m.applyRetentionPolicy(history, -1)
+		if len(filtered) != 2 {
+			t.Errorf("Expected 2 records (no filtering), got %d", len(filtered))
+		}
+		if filtered[0].Session != "new" || filtered[1].Session != "old" {
+			t.Errorf("Records mismatch: [0]=%q [1]=%q", filtered[0].Session, filtered[1].Session)
+		}
+	})
 }
 
 func TestMetricsManager_LoadRetentionDays(t *testing.T) {
