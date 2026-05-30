@@ -348,3 +348,68 @@ func TestProcessLogLine_SkipsSummaryLine(t *testing.T) {
 		t.Errorf("expected 0 total cost (line skipped), got %f", state.totalCost)
 	}
 }
+
+// Sink variables for benchmarks — prevent compiler optimizations from eliding results.
+var (
+	benchSinkUsage     domain_pricing.UsageStats
+	benchSinkCost      float64
+	benchSinkModel     string
+	benchSinkTimestamp time.Time
+	benchSinkParseErr  error
+)
+
+// benchParseLine is a single realistic log line without a cost field,
+// forcing calculateLineCost → CostCalculator.Calculate for every line.
+const benchParseLine = `{"model":"claude-sonnet-4-20250514","prompt_tokens":1500,"response_tokens":800,"cached_tokens":200,"cache_write_tokens":100,"thinking_tokens":400,"search_queries":2,"timestamp":"2026-03-15T10:30:00Z"}` + "\n"
+
+// benchParsePricing is the pricing fixture used by all parseUsage benchmarks.
+var benchParsePricing = domain_pricing.PricingData{
+	Models: map[string]domain_pricing.ModelPricing{
+		"claude-sonnet-4-20250514": {Hit: 0.30, Miss: 3.00, Comp: 15.00, SearchQuery: 0.015},
+	},
+}
+
+func BenchmarkParseUsage_Small(b *testing.B) {
+	path := createBenchLogFile(b, benchParseLine)
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		benchSinkUsage, benchSinkCost, benchSinkModel, benchSinkTimestamp, benchSinkParseErr =
+			parseUsage(path, benchParsePricing, "")
+	}
+
+	_, _, _, _, _ = benchSinkUsage, benchSinkCost, benchSinkModel, benchSinkTimestamp, benchSinkParseErr
+}
+
+func BenchmarkParseUsage_Large(b *testing.B) {
+	lines := make([]string, 1000)
+	for i := range lines {
+		lines[i] = benchParseLine[:len(benchParseLine)-1] // strip trailing \n
+	}
+	content := strings.Join(lines, "\n") + "\n"
+
+	path := createBenchLogFile(b, content)
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		benchSinkUsage, benchSinkCost, benchSinkModel, benchSinkTimestamp, benchSinkParseErr =
+			parseUsage(path, benchParsePricing, "")
+	}
+
+	_, _, _, _, _ = benchSinkUsage, benchSinkCost, benchSinkModel, benchSinkTimestamp, benchSinkParseErr
+}
+
+// createBenchLogFile writes content to a temp file and returns its path.
+func createBenchLogFile(b *testing.B, content string) string {
+	b.Helper()
+	tmpFile, err := os.Create(filepath.Join(b.TempDir(), "bench-usage.log"))
+	if err != nil {
+		b.Fatalf("failed to create temp file: %v", err)
+	}
+	defer func() { _ = tmpFile.Close() }()
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		b.Fatalf("failed to write to temp file: %v", err)
+	}
+	return tmpFile.Name()
+}

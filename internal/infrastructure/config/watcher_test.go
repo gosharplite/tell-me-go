@@ -717,3 +717,66 @@ type nilSessionLoader struct{}
 func (l *nilSessionLoader) LoadSession(path string) (*domain_config.SessionConfig, error) {
 	return nil, nil
 }
+
+// stubFinder implements domain_config.ConfigFinder for testing.
+type stubFinder struct {
+	path string
+}
+
+func (f *stubFinder) Find() (string, error) {
+	return f.path, nil
+}
+
+func TestFileConfigWatcher_RefreshAfterSetPaths_ReadsConfigLimits(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFilePath := filepath.Join(tmpDir, "config.yaml")
+
+	// Step 1: Write initial config with non-default values.
+	initialYAML := `
+MODE: "assistant"
+MAX_TURNS: 42
+MAX_HISTORY_TOKENS: 50000
+MAX_HISTORY_TURNS: 7
+`
+	if err := os.WriteFile(configFilePath, []byte(initialYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 2: Construct watcher with real YAMLConfigLoader and stubFinder.
+	loader := &YAMLConfigLoader{Finder: &stubFinder{path: configFilePath}}
+	cw := NewFileConfigWatcher(loader, nil, 100, 10, 20, nil)
+	cw.SetPaths(configFilePath, "")
+
+	// Step 3: Refresh and verify limits are read from the config file.
+	cw.Refresh("")
+	tokens, toolTurns, historyTurns := cw.GetLimits()
+
+	if tokens != 50000 {
+		t.Errorf("MAX_HISTORY_TOKENS: got %d, want 50000", tokens)
+	}
+	if toolTurns != 42 {
+		t.Errorf("MAX_TURNS: got %d, want 42", toolTurns)
+	}
+	if historyTurns != 7 {
+		t.Errorf("MAX_HISTORY_TURNS: got %d, want 7", historyTurns)
+	}
+
+	// Step 4: Overwrite the file with updated values and shift mtime forward.
+	updatedYAML := `
+MAX_TURNS: 99
+`
+	if err := os.WriteFile(configFilePath, []byte(updatedYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Force the modification time into the future to guarantee the
+	// watcher's mtime-based change detection fires.
+	futureTime := time.Now().Add(5 * time.Second)
+	if err := os.Chtimes(configFilePath, futureTime, futureTime); err != nil {
+		t.Fatal(err)
+	}
+	cw.Refresh("")
+	_, toolTurns, _ = cw.GetLimits()
+	if toolTurns != 99 {
+		t.Errorf("MAX_TURNS after update: got %d, want 99", toolTurns)
+	}
+}

@@ -92,6 +92,9 @@ type ChatterConfig struct {
 	LogPath string
 	// TracePath is the filesystem path for writing detailed execution traces.
 	TracePath string
+	// ConfigPath is the filesystem path to the main YAML configuration file.
+	// Used by the config watcher to detect and apply runtime config changes.
+	ConfigPath string
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.
@@ -112,6 +115,9 @@ type SessionConfig interface {
 	// GetRawOutput returns true if markdown rendering should be disabled
 	// and output should be displayed as plain text.
 	GetRawOutput() bool
+
+	// GetConfigPath returns the filesystem path to the main configuration file.
+	GetConfigPath() string
 
 	// GetConfig returns the full application configuration.
 	GetConfig() *config.Config

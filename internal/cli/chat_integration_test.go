@@ -57,9 +57,9 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	cfg.Version = "1.0.0"
 	cfg.Stdout = &stdout
 	cfg.Stderr = &stderr
-	cfg.ClientFactory = func(c *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus, logger ports.Logger) (domain_llm.ExtendedClient, error) {
+	cfg.ClientFactory = ports.ClientFactoryFunc(func(c *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus, logger ports.Logger) (domain_llm.ExtendedClient, error) {
 		return mClient, nil
-	}
+	})
 	b := di.NewBootstrapper(cfg)
 
 	// Wrap bootstrapper to override AgentFactory

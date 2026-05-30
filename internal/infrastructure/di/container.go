@@ -50,7 +50,7 @@ type Bootstrapper struct {
 // NewBootstrapper creates a new Bootstrapper instance.
 func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 	if cfg.ClientFactory == nil {
-		cfg.ClientFactory = infra_llm.NewClient
+		cfg.ClientFactory = &infra_llm.DefaultClientFactory{}
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -111,8 +111,18 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
 
+	logger := telemetry.NewSlogLogger(b.cfg.Logger)
 	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
-		return b.cfg.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.cfg.Logger))
+		if len(cfg.FailoverOrder) > 0 {
+			gw, err := b.cfg.ClientFactory.NewFailoverChain(cfg, pricingData, bus, logger)
+			if err != nil {
+				return nil, err
+			}
+			if gw != nil {
+				return gw, nil
+			}
+		}
+		return b.cfg.ClientFactory.NewClient(cfg, pricingData, bus, logger)
 	})
 
 	deps := &sessionDeps{

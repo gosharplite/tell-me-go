@@ -38,10 +38,10 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 	callCount := 0
 	simulatedErr := errors.New("llm init failed")
 
-	clientFactory := func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	clientFactory := ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		callCount++
 		return nil, simulatedErr
-	}
+	})
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tempDir

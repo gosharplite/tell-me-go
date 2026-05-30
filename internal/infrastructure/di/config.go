@@ -8,9 +8,6 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -37,7 +34,7 @@ type BootstrapperConfig struct {
 	WorkspacePolicy services.WorkspacePolicy
 
 	// Factory functions
-	ClientFactory    func(*config.Config, pricing.PricingData, events.EventBus, ports.Logger) (llm.ExtendedClient, error)
+	ClientFactory    ports.ClientFactory
 	RegisterAllTools func(infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(tools.Registry, security.Manager, string, string, string, string, map[string]pricing.ModelPricing, ports.KVStore) error
 	RotateSession    func(context.Context, infra_persistence.FileSystem, io.Writer, persistence.Paths, int, *slog.Logger) error
@@ -51,7 +48,7 @@ func DefaultBootstrapperConfig() BootstrapperConfig {
 	return BootstrapperConfig{
 		Logger:           slog.Default(),
 		FileSystem:       &infra_persistence.OSFileSystem{},
-		ClientFactory:    infra_llm.NewClient,
+		ClientFactory:    &infra_llm.DefaultClientFactory{},
 		RegisterAllTools: infra_tools.RegisterAll,
 		RegisterMetrics:  telemetry.RegisterMetrics,
 		RotateSession:    infra_persistence.RotateSession,

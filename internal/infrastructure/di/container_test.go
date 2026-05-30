@@ -132,9 +132,9 @@ func TestBuildSessionDependencies(t *testing.T) {
 	cfg.Version = "1.0.0"
 	cfg.Stdout = io.Discard
 	cfg.Stderr = io.Discard
-	cfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	cfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
-	}
+	})
 	bootstrapper := NewBootstrapper(cfg)
 
 	testCfg := &config.Config{
@@ -192,7 +192,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 	tests := []struct {
 		name          string
 		setup         func(t *testing.T) string // Returns homeDir for this test case
-		clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
+		clientFactory ports.ClientFactory
 		mockSetup     func(sm *mockConfigurableSecurityManager)
 		wantErr       string
 		targetErr     error
@@ -228,9 +228,9 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			setup: func(t *testing.T) string {
 				return filepath.Join(tempDir, "factory-err-home")
 			},
-			clientFactory: func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+			clientFactory: ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 				return nil, simulatedErr
-			},
+			}),
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
@@ -278,9 +278,9 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			}
 			cf := tt.clientFactory
 			if cf == nil {
-				cf = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+				cf = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 					return new(mockLLMClient), nil
-				}
+				})
 			}
 			bcfg := DefaultBootstrapperConfig()
 			bcfg.HomeDir = homeDir
@@ -337,9 +337,9 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 	bcfg.Version = "1.0.0"
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = &stderr
-	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	}
+	})
 	bootstrapper := NewBootstrapper(bcfg)
 
 	deps, hManager, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", true, nil)
@@ -384,9 +384,9 @@ func TestFinalizeSession(t *testing.T) {
 	bcfg.Version = "1.0.0"
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = io.Discard
-	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
-	}
+	})
 	b := NewBootstrapper(bcfg)
 
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -545,9 +545,9 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	bcfg.Version = "1.0.0"
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = io.Discard
-	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
-	}
+	})
 	bootstrapper := NewBootstrapper(bcfg)
 
 	testCfg := &config.Config{
@@ -752,9 +752,9 @@ func TestContainer_InitializationErrors(t *testing.T) {
 			bcfg.Version = "1.0.0"
 			bcfg.Stdout = io.Discard
 			bcfg.Stderr = &stderr
-			bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+			bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 				return new(mockLLMClient), nil
-			}
+			})
 
 			if tt.cfgSetup != nil {
 				tt.cfgSetup(&bcfg, sm)
@@ -815,9 +815,9 @@ func TestCrossSessionPersistence(t *testing.T) {
 	bcfg.Version = "1.0.0"
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = io.Discard
-	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	}
+	})
 	bootstrapper := NewBootstrapper(bcfg)
 	testCfg := &config.Config{Mode: mode, Model: "test-model"}
 	_, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
@@ -945,9 +945,9 @@ func TestBootstrapper_Cleanup_ClosesTurnsLogger(t *testing.T) {
 	bcfg.Version = "1.0.0"
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = io.Discard
-	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	}
+	})
 	bootstrapper := NewBootstrapper(bcfg)
 
 	testCfg := &config.Config{
@@ -1043,9 +1043,9 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = io.Discard
 	bcfg.FileSystem = fs
-	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
-	}
+	})
 	bcfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 		return mockSP, nil
 	}
@@ -1364,9 +1364,9 @@ func TestGetUnifiedHistoryProvider_SuccessPath(t *testing.T) {
 	bcfg.Version = "1.0.0"
 	bcfg.Stdout = io.Discard
 	bcfg.Stderr = io.Discard
-	bcfg.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
-	}
+	})
 	b := NewBootstrapper(bcfg)
 	testCfg := &config.Config{Mode: "assistant"}
 
