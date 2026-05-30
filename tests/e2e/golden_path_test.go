@@ -59,9 +59,9 @@ func TestGoldenPath_ConfigToShutdown(t *testing.T) {
 	bsCfg.Stdout = io.Discard
 	bsCfg.Stderr = io.Discard
 	bsCfg.Logger = logger
-	bsCfg.ClientFactory = func(c *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bsCfg.ClientFactory = ports.ClientFactoryFunc(func(c *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return &goldenPathMockClient{}, nil
-	}
+	})
 	bootstrapper := di.NewBootstrapper(bsCfg)
 
 	// Step 3 — Build session dependencies

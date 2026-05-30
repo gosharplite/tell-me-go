@@ -306,3 +306,29 @@ func resolveTimeout(cfg *config.Config) time.Duration {
 func CreateAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 	return createAuthenticator(p)
 }
+
+// DefaultClientFactory implements ports.ClientFactory by delegating to
+// the canonical package-level constructor functions (NewClient and
+// NewFailoverChain). It is the production implementation wired by
+// DefaultBootstrapperConfig.
+type DefaultClientFactory struct{}
+
+// NewClient delegates to the package-level NewClient constructor.
+func (f *DefaultClientFactory) NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	return NewClient(cfg, pData, bus, logger)
+}
+
+// NewFailoverChain delegates to the package-level NewFailoverChain constructor.
+// The nil-return convention is preserved: when no failover providers are
+// configured, the underlying NewFailoverChain returns (nil, nil), and this
+// method propagates that through the llm.ExtendedClient interface.
+func (f *DefaultClientFactory) NewFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	gw, err := NewFailoverChain(cfg, pData, bus, logger)
+	if err != nil {
+		return nil, err
+	}
+	return gw, nil
+}
+
+// Compile-time verification that DefaultClientFactory satisfies ports.ClientFactory.
+var _ ports.ClientFactory = (*DefaultClientFactory)(nil)
