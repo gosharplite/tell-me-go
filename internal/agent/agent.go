@@ -365,7 +365,7 @@ type configRefreshHook struct {
 	a *agent
 }
 
-func (h *configRefreshHook) BeforeTurn(turn *orchestrator.Turn) {}
+func (h *configRefreshHook) BeforeTurn(turn *orchestrator.Turn)           {}
 func (h *configRefreshHook) AfterTurn(turn *orchestrator.Turn, err error) {}
 func (h *configRefreshHook) OnPhaseTransition(from, to orchestrator.TurnPhase, state *orchestrator.TurnState) {
 	if from == orchestrator.PhaseInference && to == orchestrator.PhaseExecuting {

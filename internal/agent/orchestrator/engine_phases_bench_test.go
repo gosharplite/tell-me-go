@@ -31,10 +31,10 @@ func (b *benchEventBus) Publish(_ context.Context, e events.Event) error {
 	return nil
 }
 
-func (b *benchEventBus) Subscribe(func(context.Context, events.Event))  {}
-func (b *benchEventBus) Shutdown(_ context.Context) error                { return nil }
-func (b *benchEventBus) Flush(_ context.Context) error                   { return nil }
-func (b *benchEventBus) WaitStarted()                                    {}
+func (b *benchEventBus) Subscribe(func(context.Context, events.Event)) {}
+func (b *benchEventBus) Shutdown(_ context.Context) error              { return nil }
+func (b *benchEventBus) Flush(_ context.Context) error                 { return nil }
+func (b *benchEventBus) WaitStarted()                                  {}
 
 func (b *benchEventBus) Listen(ctx context.Context) error {
 	<-ctx.Done()
@@ -46,7 +46,7 @@ func (b *benchEventBus) Listen(ctx context.Context) error {
 // call-tracking slice, avoiding the unbounded memory growth of MockClock.
 type benchClock struct{}
 
-func (benchClock) Now() time.Time                 { return time.Time{} }
+func (benchClock) Now() time.Time                  { return time.Time{} }
 func (benchClock) Since(t time.Time) time.Duration { return 0 }
 func (benchClock) Sleep(d time.Duration)           {}
 func (benchClock) After(d time.Duration) <-chan time.Time {
