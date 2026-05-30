@@ -347,7 +347,7 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		refiner := &ContextRefiner{}
 		persist := &PersistenceStep{}
 		recovery := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
-		turn := newBenchTurn()
+		turn := newBenchTurnWithClock(benchClock{})
 		prewarmCache(b, turn.CtxManager, turn.Index)
 		// Suppress unbounded history growth from AddContent
 		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
