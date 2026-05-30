@@ -42,8 +42,9 @@ type ToolRegistrationParams struct {
 	HealthManager    ports.HealthCheckManager
 }
 
-// RegisterAll registers all available tools into the registry.
-func RegisterAll(params ToolRegistrationParams) error {
+// validateRegistrationParams checks required fields in ToolRegistrationParams
+// and returns an error if any are nil.
+func validateRegistrationParams(params ToolRegistrationParams) error {
 	if params.Registry == nil {
 		return fmt.Errorf("RegisterAll: Registry is required and must not be nil")
 	}
@@ -52,6 +53,14 @@ func RegisterAll(params ToolRegistrationParams) error {
 	}
 	if params.WorkspacePolicy == nil {
 		return fmt.Errorf("RegisterAll: WorkspacePolicy is required and must not be nil")
+	}
+	return nil
+}
+
+// RegisterAll registers all available tools into the registry.
+func RegisterAll(params ToolRegistrationParams) error {
+	if err := validateRegistrationParams(params); err != nil {
+		return err
 	}
 	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager); err != nil {
 		return err

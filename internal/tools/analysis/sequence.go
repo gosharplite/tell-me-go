@@ -424,9 +424,8 @@ func (a *defaultSequenceAnalyzer) exprToString(expr ast.Expr) string {
 // matches package "github.com/foo/bar"). When multiple packages match, the
 // one with the longest import path wins. Returns the matched package and the
 // remaining portion of the symbol after the package path, or nil if no match.
-// When modName is non-empty, a second pass strips the module prefix
-// from each package path and retries, enabling resolution of
-// module-relative symbols like "internal/tools/analysis.Func".
+// When modName is non-empty and the first pass finds no match,
+// matchByModuleRelative is tried as a fallback.
 func (a *defaultSequenceAnalyzer) findByPrefix(symbol string, allPkgs []*packages.Package, modName string) (*packages.Package, string) {
 	var startPkg *packages.Package
 	var remaining string
@@ -438,21 +437,27 @@ func (a *defaultSequenceAnalyzer) findByPrefix(symbol string, allPkgs []*package
 			}
 		}
 	}
-	// Second pass: try module-relative matching. Strip the module prefix
-	// from each package path (e.g. "github.com/foo/bar/internal/pkg" →
-	// "internal/pkg") and retry the prefix check.
 	if modName != "" {
-		modPrefix := modName + "/"
-		for _, p := range allPkgs {
-			relPath := strings.TrimPrefix(p.PkgPath, modPrefix)
-			if relPath == p.PkgPath {
-				continue // trim had no effect; skip
-			}
-			if strings.HasPrefix(symbol, relPath+".") {
-				if startPkg == nil {
-					startPkg = p
-					remaining = symbol[len(relPath)+1:]
-				}
+		startPkg, remaining = a.matchByModuleRelative(symbol, allPkgs, modName+"/", startPkg, remaining)
+	}
+	return startPkg, remaining
+}
+
+// matchByModuleRelative is the second-pass fallback for findByPrefix.
+// It strips the module prefix from each package path (e.g.
+// "github.com/foo/bar/internal/pkg" → "internal/pkg") and retries the
+// prefix check. Only sets startPkg when the first pass found nothing
+// (startPkg == nil).
+func (a *defaultSequenceAnalyzer) matchByModuleRelative(symbol string, allPkgs []*packages.Package, modPrefix string, startPkg *packages.Package, remaining string) (*packages.Package, string) {
+	for _, p := range allPkgs {
+		relPath := strings.TrimPrefix(p.PkgPath, modPrefix)
+		if relPath == p.PkgPath {
+			continue // trim had no effect; skip
+		}
+		if strings.HasPrefix(symbol, relPath+".") {
+			if startPkg == nil {
+				startPkg = p
+				remaining = symbol[len(relPath)+1:]
 			}
 		}
 	}
