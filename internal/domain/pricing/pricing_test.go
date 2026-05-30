@@ -9,6 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// benchSinkBreakdown prevents the compiler from optimizing away benchmark calls.
+var benchSinkBreakdown CostBreakdown
+
 func TestGetModelPricing(t *testing.T) {
 	t.Parallel()
 	p := PricingData{
@@ -152,4 +155,71 @@ func TestCostCalculator_CacheWriteCost(t *testing.T) {
 			assert.Equal(t, tt.want, got.CacheWriteCost)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Benchmarks
+// ---------------------------------------------------------------------------
+
+var calcPricing = PricingData{
+	Models: map[string]ModelPricing{
+		"claude-sonnet-4-20250514": {Hit: 0.30, Miss: 3.00, Comp: 15.00, SearchQuery: 0.015},
+		"gpt-4.1":                  {Hit: 0.50, Miss: 2.00, Comp: 8.00, SearchQuery: 0.010},
+	},
+}
+
+type benchCase struct {
+	name  string
+	stats UsageStats
+}
+
+var benchCases = []benchCase{
+	{
+		name:  "small",
+		stats: UsageStats{PromptTokens: 100, ResponseTokens: 50},
+	},
+	{
+		name: "large",
+		stats: UsageStats{
+			PromptTokens:     150_000,
+			ResponseTokens:   80_000,
+			CachedTokens:     20_000,
+			CacheWriteTokens: 10_000,
+			ThinkingTokens:   40_000,
+			SearchQueries:    5,
+		},
+	},
+}
+
+func BenchmarkCostCalculator_Calculate_Single(b *testing.B) {
+	const modelName = "claude-sonnet-4-20250514"
+	calc := &CostCalculator{Pricing: calcPricing, Model: calcPricing.GetModelPricing(modelName)}
+
+	for _, tc := range benchCases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				benchSinkBreakdown = calc.Calculate(tc.stats)
+			}
+		})
+	}
+	_ = benchSinkBreakdown
+}
+
+func BenchmarkCostCalculator_Calculate_Batch100(b *testing.B) {
+	const modelName = "claude-sonnet-4-20250514"
+	calc := &CostCalculator{Pricing: calcPricing, Model: calcPricing.GetModelPricing(modelName)}
+
+	for _, tc := range benchCases {
+		b.Run(tc.name, func(b *testing.B) {
+			// b.ResetTimer() after all setup. Batch of 100 calls per iteration — amortized cost = reported / 100.
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				for j := 0; j < 100; j++ {
+					benchSinkBreakdown = calc.Calculate(tc.stats)
+				}
+			}
+		})
+	}
+	_ = benchSinkBreakdown
 }

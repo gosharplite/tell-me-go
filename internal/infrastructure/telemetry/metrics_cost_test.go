@@ -317,3 +317,278 @@ func TestRenderReport_AllRows(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Benchmark fixtures
+// ---------------------------------------------------------------------------
+
+var benchRenderPricing = domain_pricing.PricingData{
+	UpdatedAt: "2026-03-15T00:00:00Z",
+	Models: map[string]domain_pricing.ModelPricing{
+		"claude-sonnet-4-20250514": {
+			Hit: 0.30, Miss: 3.00, Comp: 15.00, SearchQuery: 0.015,
+		},
+	},
+}
+
+var benchSinkReport string
+var benchSinkEstimate string
+var benchSinkEstimateErr error
+
+// ---------------------------------------------------------------------------
+// BenchmarkRenderReport_Single — one render per iteration
+// ---------------------------------------------------------------------------
+
+func BenchmarkRenderReport_Single(b *testing.B) {
+	m := &metricsManager{
+		model: "claude-sonnet-4-20250514",
+	}
+
+	b.Run("minimal", func(b *testing.B) {
+		breakdown := domain_pricing.CostBreakdown{
+			Stats: domain_pricing.UsageStats{
+				PromptTokens:   100,
+				ResponseTokens: 50,
+			},
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			benchSinkReport = m.renderReport(benchRenderPricing, breakdown)
+		}
+		_ = benchSinkReport
+	})
+
+	b.Run("full", func(b *testing.B) {
+		breakdown := domain_pricing.CostBreakdown{
+			Stats: domain_pricing.UsageStats{
+				PromptTokens:     150000,
+				ResponseTokens:   80000,
+				CachedTokens:     20000,
+				CacheWriteTokens: 10000,
+				ThinkingTokens:   40000,
+				SearchQueries:    5,
+			},
+			InputCost:      0.390,
+			CacheCost:      0.006,
+			CacheWriteCost: 0.0375,
+			OutputCost:     1.800,
+			SearchCost:     0.075,
+			TotalCost:      2.3085,
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			benchSinkReport = m.renderReport(benchRenderPricing, breakdown)
+		}
+		_ = benchSinkReport
+	})
+}
+
+// ---------------------------------------------------------------------------
+// BenchmarkRenderReport_Batch100 — 100 renders per iteration
+// ---------------------------------------------------------------------------
+
+func BenchmarkRenderReport_Batch100(b *testing.B) {
+	m := &metricsManager{
+		model: "claude-sonnet-4-20250514",
+	}
+
+	b.Run("minimal", func(b *testing.B) {
+		breakdown := domain_pricing.CostBreakdown{
+			Stats: domain_pricing.UsageStats{
+				PromptTokens:   100,
+				ResponseTokens: 50,
+			},
+		}
+		b.ResetTimer()
+		// Batch of 100 calls per iteration — amortized cost = reported / 100.
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 100; j++ {
+				benchSinkReport = m.renderReport(benchRenderPricing, breakdown)
+			}
+		}
+		_ = benchSinkReport
+	})
+
+	b.Run("full", func(b *testing.B) {
+		breakdown := domain_pricing.CostBreakdown{
+			Stats: domain_pricing.UsageStats{
+				PromptTokens:     150000,
+				ResponseTokens:   80000,
+				CachedTokens:     20000,
+				CacheWriteTokens: 10000,
+				ThinkingTokens:   40000,
+				SearchQueries:    5,
+			},
+			InputCost:      0.390,
+			CacheCost:      0.006,
+			CacheWriteCost: 0.0375,
+			OutputCost:     1.800,
+			SearchCost:     0.075,
+			TotalCost:      2.3085,
+		}
+		b.ResetTimer()
+		// Batch of 100 calls per iteration — amortized cost = reported / 100.
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 100; j++ {
+				benchSinkReport = m.renderReport(benchRenderPricing, breakdown)
+			}
+		}
+		_ = benchSinkReport
+	})
+}
+
+// ---------------------------------------------------------------------------
+// BenchmarkEstimateCost_Single — one EstimateCost call per iteration.
+// Exercises: IsPathSafe (mock) → GetPricing (reads pricing.json) → parseUsage
+// (reads + parses log) → CostCalculator.Calculate (math) → renderReport (string build).
+// Uses shouldRecord=false to bypass all ledger/lock/KV I/O.
+// ---------------------------------------------------------------------------
+
+func BenchmarkEstimateCost_Single(b *testing.B) {
+	const oneLine = `{"model":"claude-sonnet-4-20250514","prompt_tokens":1500,"response_tokens":800,"cached_tokens":200,"cache_write_tokens":100,"thinking_tokens":400,"search_queries":2,"timestamp":"2026-03-15T10:30:00Z","cost":0.015432}`
+
+	const pricingJSON = `{
+  "updated_at": "2026-03-15T00:00:00Z",
+  "models": {
+    "claude-sonnet-4-20250514": {
+      "hit": 0.30,
+      "miss": 3.00,
+      "comp": 15.00,
+      "search_query": 0.015
+    }
+  }
+}`
+
+	setup := func(b *testing.B, logContent string) *metricsManager {
+		b.Helper()
+
+		tmpDir := b.TempDir()
+
+		// Create output directory and session_tokens.log
+		outputDir := filepath.Join(tmpDir, "output")
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			b.Fatal(err)
+		}
+		logPath := filepath.Join(outputDir, "session_tokens.log")
+		if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
+			b.Fatal(err)
+		}
+
+		// Create assets/pricing.json in parent of outputDir
+		assetsDir := filepath.Join(tmpDir, "assets")
+		if err := os.MkdirAll(assetsDir, 0755); err != nil {
+			b.Fatal(err)
+		}
+		pricingPath := filepath.Join(assetsDir, "pricing.json")
+		if err := os.WriteFile(pricingPath, []byte(pricingJSON), 0644); err != nil {
+			b.Fatal(err)
+		}
+
+		return &metricsManager{
+			sm:      &mockSM{},
+			logFile: logPath,
+			model:   "claude-sonnet-4-20250514",
+			mode:    "benchmark",
+		}
+	}
+
+	b.Run("small_log", func(b *testing.B) {
+		m := setup(b, oneLine+"\n")
+		ctx := context.Background()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+		}
+		_, _ = benchSinkEstimate, benchSinkEstimateErr
+	})
+
+	b.Run("large_log", func(b *testing.B) {
+		// Build 100 identical lines (simulates a long session).
+		largeContent := strings.Repeat(oneLine+"\n", 100)
+		m := setup(b, largeContent)
+		ctx := context.Background()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+		}
+		_, _ = benchSinkEstimate, benchSinkEstimateErr
+	})
+}
+
+// ---------------------------------------------------------------------------
+// BenchmarkEstimateCost_Batch100 — 100 calls per iteration, amortized.
+// ---------------------------------------------------------------------------
+
+func BenchmarkEstimateCost_Batch100(b *testing.B) {
+	const oneLine = `{"model":"claude-sonnet-4-20250514","prompt_tokens":1500,"response_tokens":800,"cached_tokens":200,"cache_write_tokens":100,"thinking_tokens":400,"search_queries":2,"timestamp":"2026-03-15T10:30:00Z","cost":0.015432}`
+
+	const pricingJSON = `{
+  "updated_at": "2026-03-15T00:00:00Z",
+  "models": {
+    "claude-sonnet-4-20250514": {
+      "hit": 0.30,
+      "miss": 3.00,
+      "comp": 15.00,
+      "search_query": 0.015
+    }
+  }
+}`
+
+	setup := func(b *testing.B, logContent string) *metricsManager {
+		b.Helper()
+
+		tmpDir := b.TempDir()
+
+		outputDir := filepath.Join(tmpDir, "output")
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			b.Fatal(err)
+		}
+		logPath := filepath.Join(outputDir, "session_tokens.log")
+		if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
+			b.Fatal(err)
+		}
+
+		assetsDir := filepath.Join(tmpDir, "assets")
+		if err := os.MkdirAll(assetsDir, 0755); err != nil {
+			b.Fatal(err)
+		}
+		pricingPath := filepath.Join(assetsDir, "pricing.json")
+		if err := os.WriteFile(pricingPath, []byte(pricingJSON), 0644); err != nil {
+			b.Fatal(err)
+		}
+
+		return &metricsManager{
+			sm:      &mockSM{},
+			logFile: logPath,
+			model:   "claude-sonnet-4-20250514",
+			mode:    "benchmark",
+		}
+	}
+
+	b.Run("small_log", func(b *testing.B) {
+		m := setup(b, oneLine+"\n")
+		ctx := context.Background()
+		b.ResetTimer()
+		// Batch of 100 calls per iteration — amortized cost = reported / 100.
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 100; j++ {
+				benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+			}
+		}
+		_, _ = benchSinkEstimate, benchSinkEstimateErr
+	})
+
+	b.Run("large_log", func(b *testing.B) {
+		largeContent := strings.Repeat(oneLine+"\n", 100)
+		m := setup(b, largeContent)
+		ctx := context.Background()
+		b.ResetTimer()
+		// Batch of 100 calls per iteration — amortized cost = reported / 100.
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 100; j++ {
+				benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+			}
+		}
+		_, _ = benchSinkEstimate, benchSinkEstimateErr
+	})
+}
