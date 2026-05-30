@@ -130,6 +130,98 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	return NewResilientClient(baseClient), nil
 }
 
+// NewFailoverChain creates a FailoverGateway from the configured failover
+// provider order. It constructs a resilientClient for each provider in the
+// chain and wraps them in a FailoverGateway for transparent failover.
+//
+// When cfg.FailoverOrder is empty, this returns nil, nil — callers should
+// fall back to NewClient for single-provider operation.
+//
+// Each client in the chain is independently constructed via the same
+// per-provider logic as NewClient (authenticator, timeout, thinking budget,
+// headers), but wrapped in a resilientClient instead of returned directly.
+func NewFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (*FailoverGateway, error) {
+	providers := cfg.GetFailoverProviders()
+	if len(providers) == 0 {
+		return nil, nil
+	}
+
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
+
+	timeout := resolveTimeout(cfg)
+	clients := make([]NamedClient, 0, len(providers))
+
+	for _, provider := range providers {
+		p := provider // capture range variable
+
+		authenticator, err := createAuthenticator(&p)
+		if err != nil {
+			return nil, fmt.Errorf("failover chain: provider %q: %w", p.Type, err)
+		}
+
+		maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
+
+		var baseClient llm.LLMClient
+
+		switch p.Type {
+		case "openai", "deepseek":
+			baseClient = openai.NewClient(p.URL, p.Model, authenticator,
+				openai.WithHeaders(p.Headers),
+				openai.WithPersona(cfg.Person),
+				openai.WithTimeout(timeout),
+				openai.WithThinkingBudget(maxBudget),
+				openai.WithMaxTokens(p.MaxTokens),
+				openai.WithLogger(logger),
+			)
+		case "anthropic":
+			baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
+				anthropic.WithHeaders(p.Headers),
+				anthropic.WithThinkingBudget(maxBudget),
+				anthropic.WithMaxTokens(p.MaxTokens),
+				anthropic.WithPersona(cfg.Person),
+				anthropic.WithTimeout(timeout),
+				anthropic.WithLogger(logger),
+			)
+		case "google", "gemini", "": // Default to Gemini for now
+			baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
+				gemini.WithHeaders(p.Headers),
+				gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+				gemini.WithMaxOutputTokens(p.MaxTokens),
+				gemini.WithSystemInstruction(cfg.Person),
+				gemini.WithSearch(cfg.UseSearch),
+				gemini.WithEventBus(bus),
+				gemini.WithTimeout(timeout),
+				gemini.WithLogger(logger),
+			)
+		default:
+			// Fallback to Gemini if type is unknown for backward compatibility
+			baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
+				gemini.WithHeaders(p.Headers),
+				gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+				gemini.WithMaxOutputTokens(p.MaxTokens),
+				gemini.WithSystemInstruction(cfg.Person),
+				gemini.WithSearch(cfg.UseSearch),
+				gemini.WithEventBus(bus),
+				gemini.WithTimeout(timeout),
+				gemini.WithLogger(logger),
+			)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("failover chain: provider %q: %w", p.Type, err)
+		}
+
+		clients = append(clients, NamedClient{
+			Name:   p.Type,
+			Client: NewResilientClient(baseClient),
+		})
+	}
+
+	return NewFailoverGateway(clients), nil
+}
+
 func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 	// Preserve the existing logic for Service Account JSON
 	if p.APIKey != "" && strings.HasSuffix(strings.ToLower(p.APIKey), ".json") {

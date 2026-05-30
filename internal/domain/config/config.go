@@ -99,6 +99,7 @@ type Config struct {
 	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
 	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`
 	Providers          map[string]LLMProvider `yaml:"PROVIDERS"`
+	FailoverOrder      []string               `yaml:"FAILOVER_ORDER"`
 }
 
 // GetActiveProvider returns the configuration for the selected provider.
@@ -143,6 +144,26 @@ type ModelConfig struct {
 	MaxThinkingBudget int                  `yaml:"MAX_THINKING_BUDGET"`
 	ContextWindow     int                  `yaml:"CONTEXT_WINDOW"`
 	Pricing           pricing.ModelPricing `yaml:"PRICING"`
+}
+
+// GetFailoverProviders returns the LLMProvider values from c.Providers in the
+// order specified by c.FailoverOrder. Providers named in FailoverOrder that
+// are not present in the Providers map are silently skipped. Returns nil when
+// FailoverOrder is empty or nil.
+func (c *Config) GetFailoverProviders() []LLMProvider {
+	if len(c.FailoverOrder) == 0 {
+		return nil
+	}
+	result := make([]LLMProvider, 0, len(c.FailoverOrder))
+	for _, name := range c.FailoverOrder {
+		if p, ok := c.Providers[name]; ok {
+			result = append(result, p)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // ResolveThinkingBudget returns the best matching thinking budget for the model.
