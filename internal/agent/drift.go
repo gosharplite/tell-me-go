@@ -50,6 +50,51 @@ type CtxManagerDrift struct {
 	ActualMaxHistoryTurns    int
 }
 
+// diffEngine compares the engine's live configuration against the canonical
+// config. Returns nil when the engine is in sync or nil (uninitialized).
+func (a *agent) diffEngine(cfg *runtimeConfig) *EngineDrift {
+	if a.engine == nil {
+		return nil
+	}
+	engineSnap := a.engine.GetConfig()
+	if cfg.ProviderName != engineSnap.ProviderName ||
+		cfg.Model != engineSnap.Model ||
+		cfg.Mode != engineSnap.Mode {
+		return &EngineDrift{
+			ExpectedProvider: cfg.ProviderName,
+			ActualProvider:   engineSnap.ProviderName,
+			ExpectedModel:    cfg.Model,
+			ActualModel:      engineSnap.Model,
+			ExpectedMode:     cfg.Mode,
+			ActualMode:       engineSnap.Mode,
+		}
+	}
+	return nil
+}
+
+// diffCtxManager compares the context manager's live limits against the
+// canonical config. Returns nil when the context manager is in sync or
+// nil (uninitialized).
+func (a *agent) diffCtxManager(cfg *runtimeConfig) *CtxManagerDrift {
+	if a.ctxManager == nil {
+		return nil
+	}
+	limits := a.ctxManager.GetLimits()
+	if cfg.Limits.MaxHistoryTokens != limits.MaxHistoryTokens ||
+		cfg.Limits.MaxToolTurns != limits.MaxToolTurns ||
+		cfg.Limits.MaxHistoryTurns != limits.MaxHistoryTurns {
+		return &CtxManagerDrift{
+			ExpectedMaxHistoryTokens: cfg.Limits.MaxHistoryTokens,
+			ActualMaxHistoryTokens:   limits.MaxHistoryTokens,
+			ExpectedMaxToolTurns:     cfg.Limits.MaxToolTurns,
+			ActualMaxToolTurns:       limits.MaxToolTurns,
+			ExpectedMaxHistoryTurns:  cfg.Limits.MaxHistoryTurns,
+			ActualMaxHistoryTurns:    limits.MaxHistoryTurns,
+		}
+	}
+	return nil
+}
+
 // DiffConfig compares the canonical intended configuration (a.config)
 // against the live state of the engine and context manager. It returns
 // a DriftReport describing any mismatches.
@@ -74,40 +119,14 @@ func (a *agent) DiffConfig() *DriftReport {
 
 	report := &DriftReport{InSync: true}
 
-	// Compare engine state
-	if a.engine != nil {
-		engineSnap := a.engine.GetConfig()
-		if cfg.ProviderName != engineSnap.ProviderName ||
-			cfg.Model != engineSnap.Model ||
-			cfg.Mode != engineSnap.Mode {
-			report.InSync = false
-			report.EngineDrift = &EngineDrift{
-				ExpectedProvider: cfg.ProviderName,
-				ActualProvider:   engineSnap.ProviderName,
-				ExpectedModel:    cfg.Model,
-				ActualModel:      engineSnap.Model,
-				ExpectedMode:     cfg.Mode,
-				ActualMode:       engineSnap.Mode,
-			}
-		}
+	if ed := a.diffEngine(cfg); ed != nil {
+		report.InSync = false
+		report.EngineDrift = ed
 	}
 
-	// Compare context manager state
-	if a.ctxManager != nil {
-		limits := a.ctxManager.GetLimits()
-		if cfg.Limits.MaxHistoryTokens != limits.MaxHistoryTokens ||
-			cfg.Limits.MaxToolTurns != limits.MaxToolTurns ||
-			cfg.Limits.MaxHistoryTurns != limits.MaxHistoryTurns {
-			report.InSync = false
-			report.CtxManagerDrift = &CtxManagerDrift{
-				ExpectedMaxHistoryTokens: cfg.Limits.MaxHistoryTokens,
-				ActualMaxHistoryTokens:   limits.MaxHistoryTokens,
-				ExpectedMaxToolTurns:     cfg.Limits.MaxToolTurns,
-				ActualMaxToolTurns:       limits.MaxToolTurns,
-				ExpectedMaxHistoryTurns:  cfg.Limits.MaxHistoryTurns,
-				ActualMaxHistoryTurns:    limits.MaxHistoryTurns,
-			}
-		}
+	if cmd := a.diffCtxManager(cfg); cmd != nil {
+		report.InSync = false
+		report.CtxManagerDrift = cmd
 	}
 
 	return report

@@ -29,6 +29,59 @@ import (
 // Pinned by TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning.
 const softMaxTokensCeiling = 200_000
 
+// buildBaseClient constructs a provider-specific LLM client based on the
+// provider type. Unknown or empty types fall back to Gemini. The caller
+// must provide a pre-created authenticator.
+func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, persona string, useSearch bool, timeout time.Duration, maxBudget int, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
+	var baseClient llm.LLMClient
+	var err error
+
+	switch p.Type {
+	case "openai", "deepseek":
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator,
+			openai.WithHeaders(p.Headers),
+			openai.WithPersona(persona),
+			openai.WithTimeout(timeout),
+			openai.WithThinkingBudget(maxBudget),
+			openai.WithMaxTokens(p.MaxTokens),
+			openai.WithLogger(logger),
+		)
+	case "anthropic":
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
+			anthropic.WithHeaders(p.Headers),
+			anthropic.WithThinkingBudget(maxBudget),
+			anthropic.WithMaxTokens(p.MaxTokens),
+			anthropic.WithPersona(persona),
+			anthropic.WithTimeout(timeout),
+			anthropic.WithLogger(logger),
+		)
+	case "google", "gemini", "":
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
+			gemini.WithHeaders(p.Headers),
+			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+			gemini.WithMaxOutputTokens(p.MaxTokens),
+			gemini.WithSystemInstruction(persona),
+			gemini.WithSearch(useSearch),
+			gemini.WithEventBus(bus),
+			gemini.WithTimeout(timeout),
+			gemini.WithLogger(logger),
+		)
+	default:
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
+			gemini.WithHeaders(p.Headers),
+			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+			gemini.WithMaxOutputTokens(p.MaxTokens),
+			gemini.WithSystemInstruction(persona),
+			gemini.WithSearch(useSearch),
+			gemini.WithEventBus(bus),
+			gemini.WithTimeout(timeout),
+			gemini.WithLogger(logger),
+		)
+	}
+
+	return baseClient, err
+}
+
 // newClient is the central factory for creating LLM provider clients.
 //
 // It inspects cfg.GetActiveProvider() to determine the provider type
@@ -77,52 +130,7 @@ func newClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
 	timeout := resolveTimeout(cfg)
 
-	var baseClient llm.LLMClient
-
-	switch p.Type {
-	case "openai", "deepseek":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator,
-			openai.WithHeaders(p.Headers),
-			openai.WithPersona(cfg.Person),
-			openai.WithTimeout(timeout),
-			openai.WithThinkingBudget(maxBudget),
-			openai.WithMaxTokens(p.MaxTokens),
-			openai.WithLogger(logger),
-		)
-	case "anthropic":
-		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
-			anthropic.WithHeaders(p.Headers),
-			anthropic.WithThinkingBudget(maxBudget),
-			anthropic.WithMaxTokens(p.MaxTokens),
-			anthropic.WithPersona(cfg.Person),
-			anthropic.WithTimeout(timeout),
-			anthropic.WithLogger(logger),
-		)
-	case "google", "gemini", "": // Default to Gemini for now
-		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
-			gemini.WithHeaders(p.Headers),
-			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
-			gemini.WithMaxOutputTokens(p.MaxTokens),
-			gemini.WithSystemInstruction(cfg.Person),
-			gemini.WithSearch(cfg.UseSearch),
-			gemini.WithEventBus(bus),
-			gemini.WithTimeout(timeout),
-			gemini.WithLogger(logger),
-		)
-	default:
-		// Fallback to Gemini if type is unknown for backward compatibility
-		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
-			gemini.WithHeaders(p.Headers),
-			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
-			gemini.WithMaxOutputTokens(p.MaxTokens),
-			gemini.WithSystemInstruction(cfg.Person),
-			gemini.WithSearch(cfg.UseSearch),
-			gemini.WithEventBus(bus),
-			gemini.WithTimeout(timeout),
-			gemini.WithLogger(logger),
-		)
-	}
-
+	baseClient, err := buildBaseClient(p, authenticator, cfg.Person, cfg.UseSearch, timeout, maxBudget, bus, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -163,52 +171,7 @@ func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.
 
 		maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
 
-		var baseClient llm.LLMClient
-
-		switch p.Type {
-		case "openai", "deepseek":
-			baseClient = openai.NewClient(p.URL, p.Model, authenticator,
-				openai.WithHeaders(p.Headers),
-				openai.WithPersona(cfg.Person),
-				openai.WithTimeout(timeout),
-				openai.WithThinkingBudget(maxBudget),
-				openai.WithMaxTokens(p.MaxTokens),
-				openai.WithLogger(logger),
-			)
-		case "anthropic":
-			baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
-				anthropic.WithHeaders(p.Headers),
-				anthropic.WithThinkingBudget(maxBudget),
-				anthropic.WithMaxTokens(p.MaxTokens),
-				anthropic.WithPersona(cfg.Person),
-				anthropic.WithTimeout(timeout),
-				anthropic.WithLogger(logger),
-			)
-		case "google", "gemini", "": // Default to Gemini for now
-			baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
-				gemini.WithHeaders(p.Headers),
-				gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
-				gemini.WithMaxOutputTokens(p.MaxTokens),
-				gemini.WithSystemInstruction(cfg.Person),
-				gemini.WithSearch(cfg.UseSearch),
-				gemini.WithEventBus(bus),
-				gemini.WithTimeout(timeout),
-				gemini.WithLogger(logger),
-			)
-		default:
-			// Fallback to Gemini if type is unknown for backward compatibility
-			baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
-				gemini.WithHeaders(p.Headers),
-				gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
-				gemini.WithMaxOutputTokens(p.MaxTokens),
-				gemini.WithSystemInstruction(cfg.Person),
-				gemini.WithSearch(cfg.UseSearch),
-				gemini.WithEventBus(bus),
-				gemini.WithTimeout(timeout),
-				gemini.WithLogger(logger),
-			)
-		}
-
+		baseClient, err := buildBaseClient(p, authenticator, cfg.Person, cfg.UseSearch, timeout, maxBudget, bus, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failover chain: provider %q: %w", p.Type, err)
 		}
