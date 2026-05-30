@@ -49,6 +49,7 @@ func (c *sessionConfig) GetPrompt() string         { return c.Prompt }
 func (c *sessionConfig) GetLastN() int             { return c.LastN }
 func (c *sessionConfig) GetBackN() int             { return c.BackN }
 func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
+func (c *sessionConfig) GetConfigPath() string     { return c.ConfigPath }
 func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
 
 // NewSessionConfig creates a new sessionConfig with required parameters.
@@ -109,6 +110,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		Mode:         cfg.Mode,
 		LogPath:      paths.LogPath,
 		TracePath:    paths.TracePath,
+		ConfigPath:   sc.GetConfigPath(),
 	}
 	chatAgent, err := o.AgentFactory(ctx, sd, chatterCfg)
 	if err != nil {

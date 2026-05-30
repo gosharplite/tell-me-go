@@ -98,6 +98,7 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		domain_config.DefaultMaxHistoryTurns,
 		deps.GetLogger(),
 	)
+	cw.SetPaths(cfg.ConfigPath, "")
 
 	// 2. Compose Agent Options
 	opts := []agent.AgentOption{
