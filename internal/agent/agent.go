@@ -320,6 +320,12 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 	}
 	a.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 
+	// Register a hook that refreshes configuration between the inference
+	// and execution phases of each turn. This enables mid-session hot-reload:
+	// if the config file ModTime changes while the LLM is responding, the
+	// updated limits (e.g. MAX_TURNS) take effect before tool execution.
+	a.engine.ApplyOptions(orchestrator.WithEngineHook(&configRefreshHook{a: a}))
+
 	// [REFACTOR] Use errgroup to coordinate the engine run loop and background telemetry workers.
 	// We create a child context that is canceled when either the engine finishes or the background
 	// tasks fail. We also use a defer cancel() to ensure the background tasks are stopped if engine finishes.
@@ -340,6 +346,31 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 	})
 
 	return g.Wait()
+}
+
+// configRefreshHook implements orchestrator.TurnHook to refresh the agent's
+// runtime configuration when transitioning from the Inference phase to the
+// Execution phase. This is the narrow window between receiving the LLM
+// response and executing tool calls — the ideal point for mid-session
+// config hot-reload because:
+//   - The LLM response (which may include tool calls) is already in hand.
+//   - The config file may have been modified while waiting for the LLM.
+//   - Updated limits (MAX_TURNS, context window, etc.) take effect before
+//     the Dispatcher evaluates whether to allow tool execution.
+//
+// Errors from applyConfig are intentionally ignored: Refresh is best-effort
+// per ADR-029 §5, and the hook signature (TurnHook.BeforeTurn) does not
+// return an error. A failed refresh leaves the prior config intact.
+type configRefreshHook struct {
+	a *agent
+}
+
+func (h *configRefreshHook) BeforeTurn(turn *orchestrator.Turn) {}
+func (h *configRefreshHook) AfterTurn(turn *orchestrator.Turn, err error) {}
+func (h *configRefreshHook) OnPhaseTransition(from, to orchestrator.TurnPhase, state *orchestrator.TurnState) {
+	if from == orchestrator.PhaseInference && to == orchestrator.PhaseExecuting {
+		_ = h.a.applyConfig(context.Background())
+	}
 }
 
 // Shutdown gracefully stops the agent and its components.

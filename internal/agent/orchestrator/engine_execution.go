@@ -42,7 +42,15 @@ func (p *ExecutionStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 
 	toolStart := Turn.Clock.Now()
 
-	toolResponse, err := Turn.Executor.Execute(ctx, Turn.State.Response, Turn.Index, Turn.MaxToolTurns)
+	// Read live limits from the context manager so mid-session config
+	// reloads (ConfigWatcher.Refresh + Reconfigure) are reflected before
+	// tool execution. Falls back to Turn.MaxToolTurns when CtxManager is
+	// nil (e.g. bare Turn structs in unit tests).
+	maxTurns := Turn.MaxToolTurns
+	if Turn.CtxManager != nil {
+		maxTurns = Turn.CtxManager.GetLimits().MaxToolTurns
+	}
+	toolResponse, err := Turn.Executor.Execute(ctx, Turn.State.Response, Turn.Index, maxTurns)
 
 	if toolResponse != nil {
 		Turn.State.ToolResponse = toolResponse
