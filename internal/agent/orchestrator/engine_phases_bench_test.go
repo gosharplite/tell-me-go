@@ -249,27 +249,29 @@ func BenchmarkPersistenceStep(b *testing.B) {
 
 	b.Run("with_response", func(b *testing.B) {
 		step := &PersistenceStep{}
+		turn := newBenchTurn()
+		// Suppress unbounded history growth from AddContent
+		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
+			func(ctx context.Context, content *llm.Content) error { return nil }
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			b.StopTimer()
-			turn := newBenchTurn()
-			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-			b.StartTimer()
 			_, _ = step.Process(context.Background(), turn)
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		}
 	})
 
 	b.Run("with_tool_response", func(b *testing.B) {
 		step := &PersistenceStep{}
+		turn := newBenchTurn()
+		// Suppress unbounded history growth from AddContent
+		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
+			func(ctx context.Context, content *llm.Content) error { return nil }
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			b.StopTimer()
-			turn := newBenchTurn()
-			turn.State.ToolResponse = &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "result"}}}
-			b.StartTimer()
 			_, _ = step.Process(context.Background(), turn)
+			turn.State.ToolResponse = &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "result"}}}
 		}
 	})
 }
@@ -323,19 +325,20 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		guard := &GuardStep{}
 		refiner := &ContextRefiner{}
 		persist := &PersistenceStep{}
+		turn := newBenchTurn()
+		prewarmCache(b, turn.CtxManager, turn.Index)
+		// Suppress unbounded history growth from AddContent
+		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
+			func(ctx context.Context, content *llm.Content) error { return nil }
 		ctx := context.Background()
 
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			b.StopTimer()
-			turn := newBenchTurn()
-			prewarmCache(b, turn.CtxManager, turn.Index)
-			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-			b.StartTimer()
 			_, _ = guard.Process(ctx, turn)
 			_, _ = refiner.Process(ctx, turn)
 			_, _ = persist.Process(ctx, turn)
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		}
 	})
 
@@ -344,22 +347,23 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		refiner := &ContextRefiner{}
 		persist := &PersistenceStep{}
 		recovery := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
+		turn := newBenchTurn()
+		prewarmCache(b, turn.CtxManager, turn.Index)
+		// Suppress unbounded history growth from AddContent
+		turn.CtxManager.History.(*agenttest.MockHistoryManager).AddContentFunc =
+			func(ctx context.Context, content *llm.Content) error { return nil }
 		ctx := context.Background()
 
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			b.StopTimer()
-			turn := newBenchTurn()
-			prewarmCache(b, turn.CtxManager, turn.Index)
-			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-			turn.State.LastError = llm.ErrTransient
-			turn.State.RetryCount = 0
-			b.StartTimer()
 			_, _ = guard.Process(ctx, turn)
 			_, _ = refiner.Process(ctx, turn)
 			_, _ = persist.Process(ctx, turn)
 			_, _ = recovery.Process(ctx, turn)
+			turn.State.LastError = llm.ErrTransient
+			turn.State.RetryCount = 0
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		}
 	})
 }
