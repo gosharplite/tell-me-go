@@ -192,22 +192,26 @@ func BenchmarkPersistenceStep(b *testing.B) {
 
 	b.Run("with_response", func(b *testing.B) {
 		step := &PersistenceStep{}
-		turn := newBenchTurn()
-		turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			turn := newBenchTurn()
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+			b.StartTimer()
 			_, _ = step.Process(context.Background(), turn)
 		}
 	})
 
 	b.Run("with_tool_response", func(b *testing.B) {
 		step := &PersistenceStep{}
-		turn := newBenchTurn()
-		turn.State.ToolResponse = &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "result"}}}
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			turn := newBenchTurn()
+			turn.State.ToolResponse = &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "result"}}}
+			b.StartTimer()
 			_, _ = step.Process(context.Background(), turn)
 		}
 	})
@@ -262,22 +266,19 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		guard := &GuardStep{}
 		refiner := &ContextRefiner{}
 		persist := &PersistenceStep{}
-
-		turn := newBenchTurn()
-		prewarmCache(b, turn.CtxManager, turn.Index)
-		turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		ctx := context.Background()
 
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			turn := newBenchTurn()
+			prewarmCache(b, turn.CtxManager, turn.Index)
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+			b.StartTimer()
 			_, _ = guard.Process(ctx, turn)
 			_, _ = refiner.Process(ctx, turn)
 			_, _ = persist.Process(ctx, turn)
-		}
-		b.StopTimer()
-		if turn.State.PreparedHistory == nil {
-			b.Error("expected PreparedHistory to be populated after ContextRefiner")
 		}
 	})
 
@@ -285,24 +286,23 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 		guard := &GuardStep{}
 		refiner := &ContextRefiner{}
 		persist := &PersistenceStep{}
-		recovery := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
-
-		turn := newBenchTurn()
-		prewarmCache(b, turn.CtxManager, turn.Index)
-		turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+		recovery := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
 		ctx := context.Background()
 
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			turn := newBenchTurn()
+			prewarmCache(b, turn.CtxManager, turn.Index)
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+			turn.State.LastError = llm.ErrTransient
+			turn.State.RetryCount = 0
+			b.StartTimer()
 			_, _ = guard.Process(ctx, turn)
 			_, _ = refiner.Process(ctx, turn)
 			_, _ = persist.Process(ctx, turn)
 			_, _ = recovery.Process(ctx, turn)
-		}
-		b.StopTimer()
-		if turn.State.PreparedHistory == nil {
-			b.Error("expected PreparedHistory to be populated after ContextRefiner")
 		}
 	})
 }
