@@ -132,6 +132,81 @@ func newBenchTurnWithRealBus() *Turn {
 	}
 }
 
+// newBenchTurnLarge creates a Turn with substantial realistic
+// history for large-variant benchmarks. It populates
+// MockHistoryManager.Contents with 80 entries alternating between
+// user and model roles, uses benchClock and passThroughEventBus
+// for zero-allocation measurement, and wires AddContentFunc to
+// suppress unbounded growth.
+func newBenchTurnLarge() *Turn {
+	entries := makeLargeHistory()
+	counter := &agenttest.MockTokenCounter{Tokens: len(entries) * 100}
+	hMock := &agenttest.MockHistoryManager{
+		Contents: entries,
+	}
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, &passThroughEventBus{}, nil)
+	if err := cm.Reconfigure(events.Limits{
+		MaxToolTurns:     100,
+		MaxHistoryTokens: 500000,
+		MaxHistoryTurns:  200,
+		ContextWindow:    500000,
+	}); err != nil {
+		panic(err)
+	}
+	// Suppress unbounded history growth from AddContent
+	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error { return nil }
+	return &Turn{
+		Index:        1,
+		CtxManager:   cm,
+		Events:       &passThroughEventBus{},
+		TokenCounter: counter,
+		Clock:        benchClock{},
+		State:        &TurnState{},
+		Logger:       &ports.NoOpLogger{},
+	}
+}
+
+// makeLargeHistory returns a slice of 80 *llm.Content entries
+// alternating between user and model roles with realistic text.
+func makeLargeHistory() []*llm.Content {
+	userTexts := []string{
+		"What is the weather today?",
+		"Can you summarize the latest news?",
+		"Tell me about the history of computers.",
+		"How does a car engine work?",
+		"What is the capital of France?",
+		"Explain the theory of relativity.",
+		"What are the best practices for writing Go code?",
+		"How do I make a chocolate cake?",
+		"Describe the solar system.",
+		"What is machine learning?",
+	}
+	modelTexts := []string{
+		"The weather is sunny with a high of 72°F.",
+		"Here is a summary of today's top stories: ...",
+		"Computers originated from early calculating devices...",
+		"A car engine converts fuel into mechanical energy through combustion.",
+		"The capital of France is Paris.",
+		"Einstein's theory of relativity describes the relationship between space and time.",
+		"Go best practices include writing clear, simple code and using interfaces.",
+		"To make a chocolate cake, you'll need flour, sugar, cocoa, eggs, and butter.",
+		"The solar system consists of the Sun, eight planets, and various smaller bodies.",
+		"Machine learning is a subset of AI that enables systems to learn from data.",
+	}
+	contents := make([]*llm.Content, 0, 80)
+	for i := 0; i < 40; i++ {
+		contents = append(contents, &llm.Content{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: userTexts[i%len(userTexts)]}},
+		})
+		contents = append(contents, &llm.Content{
+			Role:  "model",
+			Parts: []*llm.Part{{Text: modelTexts[i%len(modelTexts)]}},
+		})
+	}
+	return contents
+}
+
 // prewarmCache calls cm.Prepare once to populate the Manager's
 // internal cache so that subsequent Prepare calls hit the cache.
 func prewarmCache(tb testing.TB, cm *sessctx.Manager, turnIndex int) {
@@ -225,6 +300,16 @@ func BenchmarkContextRefiner(b *testing.B) {
 			_, _ = step.Process(ctx, turn)
 		}
 	})
+
+	b.Run("large", func(b *testing.B) {
+		step := &ContextRefiner{}
+		turn := newBenchTurnLarge()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = step.Process(context.Background(), turn)
+		}
+	})
 }
 
 // BenchmarkPersistenceStep measures the overhead of the Persistence phase
@@ -272,6 +357,18 @@ func BenchmarkPersistenceStep(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_, _ = step.Process(context.Background(), turn)
 			turn.State.ToolResponse = &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "result"}}}
+		}
+	})
+
+	b.Run("large", func(b *testing.B) {
+		step := &PersistenceStep{}
+		turn := newBenchTurnLarge()
+		turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = step.Process(context.Background(), turn)
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		}
 	})
 }
@@ -363,6 +460,23 @@ func BenchmarkFullTurnCycle(b *testing.B) {
 			_, _ = recovery.Process(ctx, turn)
 			turn.State.LastError = llm.ErrTransient
 			turn.State.RetryCount = 0
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+		}
+	})
+
+	b.Run("large", func(b *testing.B) {
+		guard := &GuardStep{}
+		refiner := &ContextRefiner{}
+		persist := &PersistenceStep{}
+		turn := newBenchTurnLarge()
+		turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+		ctx := context.Background()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = guard.Process(ctx, turn)
+			_, _ = refiner.Process(ctx, turn)
+			_, _ = persist.Process(ctx, turn)
 			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		}
 	})
