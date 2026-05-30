@@ -238,6 +238,78 @@ func TestGetActiveProvider(t *testing.T) {
 	}
 }
 
+func TestConfig_GetFailoverProviders(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		failoverOrder []string
+		providers     map[string]LLMProvider
+		expectedLen   int
+		expectedTypes []string // nil means nil slice expected
+	}{
+		{
+			name:          "empty order",
+			failoverOrder: []string{},
+			providers:     map[string]LLMProvider{"p1": {Type: "openai"}},
+			expectedLen:   0,
+			expectedTypes: nil,
+		},
+		{
+			name:          "all found",
+			failoverOrder: []string{"p1", "p2"},
+			providers: map[string]LLMProvider{
+				"p1": {Type: "openai"},
+				"p2": {Type: "anthropic"},
+			},
+			expectedLen:   2,
+			expectedTypes: []string{"openai", "anthropic"},
+		},
+		{
+			name:          "some missing",
+			failoverOrder: []string{"p1", "missing", "p2"},
+			providers: map[string]LLMProvider{
+				"p1": {Type: "openai"},
+				"p2": {Type: "gemini"},
+			},
+			expectedLen:   2,
+			expectedTypes: []string{"openai", "gemini"},
+		},
+		{
+			name:          "all missing",
+			failoverOrder: []string{"x", "y"},
+			providers:     map[string]LLMProvider{"p1": {Type: "openai"}},
+			expectedLen:   0,
+			expectedTypes: nil,
+		},
+		{
+			name:          "nil order",
+			failoverOrder: nil,
+			providers:     map[string]LLMProvider{"p1": {Type: "openai"}},
+			expectedLen:   0,
+			expectedTypes: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := &Config{
+				FailoverOrder: tt.failoverOrder,
+				Providers:     tt.providers,
+			}
+			got := cfg.GetFailoverProviders()
+			assert.Len(t, got, tt.expectedLen)
+			if tt.expectedTypes == nil {
+				assert.Nil(t, got)
+			} else {
+				for i, expectedType := range tt.expectedTypes {
+					assert.Equal(t, expectedType, got[i].Type)
+				}
+			}
+		})
+	}
+}
+
 func TestDeepSeekPricingMatch(t *testing.T) {
 	t.Parallel()
 	pData := DefaultPricing()
