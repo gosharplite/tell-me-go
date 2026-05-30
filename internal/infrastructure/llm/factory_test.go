@@ -224,7 +224,7 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 	pData := pricing.PricingData{}
 
 	// This should hit the default: case in the switch statement
-	client, err := NewClient(cfg, pData, bus, nil)
+	client, err := newClient(cfg, pData, bus, nil)
 	if err != nil {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
@@ -288,7 +288,7 @@ func runFactorySendChatAndCapture(
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 
-	c, err := NewClient(cfg, pData, bus, nil)
+	c, err := newClient(cfg, pData, bus, nil)
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -509,7 +509,7 @@ func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 
-	_, err := NewClient(cfg, pricing.PricingData{}, bus, logger)
+	_, err := newClient(cfg, pricing.PricingData{}, bus, logger)
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
