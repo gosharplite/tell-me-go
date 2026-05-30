@@ -427,3 +427,108 @@ func TestFailoverGateway_Generate_PrimaryUnrecognizedErrorFailsImmediately(t *te
 		t.Errorf("secondary should not have been called, but was called %d times", secondary.generateCalled)
 	}
 }
+
+func TestFailoverGateway_Generate_ContextCancelledBeforeAttempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancel
+
+	primary := &mockExtendedClient{
+		name: "primary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			t.Error("primary should not be called when context is cancelled")
+			return nil, nil, nil
+		},
+	}
+	secondary := &mockExtendedClient{
+		name: "secondary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			t.Error("secondary should not be called when context is cancelled")
+			return nil, nil, nil
+		},
+	}
+
+	fg := NewFailoverGateway([]NamedClient{
+		{Name: primary.name, Client: primary},
+		{Name: secondary.name, Client: secondary},
+	})
+
+	_, _, err := fg.Generate(ctx, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected error to wrap context.Canceled, got %v", err)
+	}
+	if primary.generateCalled != 0 {
+		t.Errorf("primary.generateCalled = %d, want 0", primary.generateCalled)
+	}
+	if secondary.generateCalled != 0 {
+		t.Errorf("secondary.generateCalled = %d, want 0", secondary.generateCalled)
+	}
+}
+
+func TestFailoverGateway_Generate_ContextCancelledMidFailover(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	primary := &mockExtendedClient{
+		name: "primary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			cancel() // cancel after primary is called, before next iteration
+			return nil, nil, llm.ErrTransient
+		},
+	}
+	secondary := &mockExtendedClient{
+		name: "secondary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			t.Error("secondary should not be called after context is cancelled")
+			return nil, nil, nil
+		},
+	}
+
+	fg := NewFailoverGateway([]NamedClient{
+		{Name: primary.name, Client: primary},
+		{Name: secondary.name, Client: secondary},
+	})
+
+	_, _, err := fg.Generate(ctx, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected error to wrap context.Canceled, got %v", err)
+	}
+	if primary.generateCalled != 1 {
+		t.Errorf("primary.generateCalled = %d, want 1", primary.generateCalled)
+	}
+	if secondary.generateCalled != 0 {
+		t.Errorf("secondary.generateCalled = %d, want 0", secondary.generateCalled)
+	}
+}
+
+func TestFailoverGateway_SendChat_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	primary := &mockExtendedClient{
+		name: "primary",
+		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			t.Error("primary should not be called when context is cancelled")
+			return nil, nil, nil
+		},
+	}
+
+	fg := NewFailoverGateway([]NamedClient{
+		{Name: primary.name, Client: primary},
+	})
+
+	_, _, err := fg.SendChat(ctx, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected error to wrap context.Canceled, got %v", err)
+	}
+	if primary.sendChatCalled != 0 {
+		t.Errorf("primary.sendChatCalled = %d, want 0", primary.sendChatCalled)
+	}
+}

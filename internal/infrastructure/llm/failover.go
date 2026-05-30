@@ -50,6 +50,10 @@ func NewFailoverGateway(clients []NamedClient) *FailoverGateway {
 func (fg *FailoverGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	var lastErr error
 	for _, nc := range fg.clients {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, fmt.Errorf("failover: context cancelled before provider %q: %w", nc.Name, err)
+		}
+
 		content, metrics, err := nc.Client.Generate(ctx, input, tools, resolver)
 		if err == nil {
 			if metrics != nil {
@@ -79,6 +83,10 @@ func (fg *FailoverGateway) Generate(ctx context.Context, input []*llm.Content, t
 
 // SendChat delegates to the primary client.
 func (fg *FailoverGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failover: context cancelled: %w", err)
+	}
+
 	return fg.clients[0].Client.SendChat(ctx, history, tools, resolver)
 }
 
