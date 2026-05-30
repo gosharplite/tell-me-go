@@ -7,6 +7,9 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 // HistoryManagerProvider defines the interface for providing history-related services.
@@ -24,4 +27,30 @@ type HistoryManagerProvider interface {
 type SuggestionProvider interface {
 	// GetSuggestionService initializes and returns the suggestion service.
 	GetSuggestionService(ctx context.Context, recentHistory []string) (SuggestionService, error)
+}
+
+// ClientFactory abstracts LLM client creation for the DI container.
+// The two methods share an identical parameter signature — each receives
+// the full configuration, pricing data, event bus, and logger needed
+// to construct a provider client or failover chain.
+//
+// Concrete implementations live in internal/infrastructure/llm.
+type ClientFactory interface {
+	NewClient(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger Logger) (llm.ExtendedClient, error)
+	NewFailoverChain(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger Logger) (llm.ExtendedClient, error)
+}
+
+// ClientFactoryFunc adapts a single-client factory function to the ClientFactory
+// interface. NewFailoverChain returns nil, nil — callers fall back to NewClient.
+//
+// This adapter preserves backward compatibility with all existing tests that
+// assign anonymous functions to BootstrapperConfig.ClientFactory.
+type ClientFactoryFunc func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger Logger) (llm.ExtendedClient, error)
+
+func (f ClientFactoryFunc) NewClient(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger Logger) (llm.ExtendedClient, error) {
+	return f(cfg, pricingData, bus, logger)
+}
+
+func (f ClientFactoryFunc) NewFailoverChain(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger Logger) (llm.ExtendedClient, error) {
+	return nil, nil
 }
