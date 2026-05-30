@@ -115,7 +115,7 @@ func TestNewClient(t *testing.T) {
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			eventstest.CleanupBus(t, bus)
 
-			client, err := NewClient(cfg, pData, bus, nil)
+			client, err := newClient(cfg, pData, bus, nil)
 
 			if tt.expectErr {
 				require.Error(t, err)

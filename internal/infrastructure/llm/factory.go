@@ -29,7 +29,7 @@ import (
 // Pinned by TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning.
 const softMaxTokensCeiling = 200_000
 
-// NewClient is the central factory for creating LLM provider clients.
+// newClient is the central factory for creating LLM provider clients.
 //
 // It inspects cfg.GetActiveProvider() to determine the provider type
 // ("openai", "deepseek", "anthropic", "google", "gemini"), creates the
@@ -50,7 +50,7 @@ const softMaxTokensCeiling = 200_000
 // Returns an llm.ExtendedClient ready for concurrent use, or an error
 // if no provider is configured or authentication setup fails. Unknown
 // provider types fall back to Gemini for backward compatibility.
-func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+func newClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 	p := cfg.GetActiveProvider()
 
 	if logger == nil {
@@ -130,17 +130,17 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	return NewResilientClient(baseClient), nil
 }
 
-// NewFailoverChain creates a FailoverGateway from the configured failover
+// newFailoverChain creates a FailoverGateway from the configured failover
 // provider order. It constructs a resilientClient for each provider in the
 // chain and wraps them in a FailoverGateway for transparent failover.
 //
 // When cfg.FailoverOrder is empty, this returns nil, nil — callers should
-// fall back to NewClient for single-provider operation.
+// fall back to newClient for single-provider operation.
 //
 // Each client in the chain is independently constructed via the same
-// per-provider logic as NewClient (authenticator, timeout, thinking budget,
+// per-provider logic as newClient (authenticator, timeout, thinking budget,
 // headers), but wrapped in a resilientClient instead of returned directly.
-func NewFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (*FailoverGateway, error) {
+func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (*FailoverGateway, error) {
 	providers := cfg.GetFailoverProviders()
 	if len(providers) == 0 {
 		return nil, nil
@@ -308,22 +308,22 @@ func CreateAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 }
 
 // DefaultClientFactory implements ports.ClientFactory by delegating to
-// the canonical package-level constructor functions (NewClient and
-// NewFailoverChain). It is the production implementation wired by
+// the canonical package-level constructor functions (newClient and
+// newFailoverChain). It is the production implementation wired by
 // DefaultBootstrapperConfig.
 type DefaultClientFactory struct{}
 
-// NewClient delegates to the package-level NewClient constructor.
+// NewClient delegates to the package-level newClient constructor.
 func (f *DefaultClientFactory) NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-	return NewClient(cfg, pData, bus, logger)
+	return newClient(cfg, pData, bus, logger)
 }
 
-// NewFailoverChain delegates to the package-level NewFailoverChain constructor.
+// NewFailoverChain delegates to the package-level newFailoverChain constructor.
 // The nil-return convention is preserved: when no failover providers are
-// configured, the underlying NewFailoverChain returns (nil, nil), and this
+// configured, the underlying newFailoverChain returns (nil, nil), and this
 // method propagates that through the llm.ExtendedClient interface.
 func (f *DefaultClientFactory) NewFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-	gw, err := NewFailoverChain(cfg, pData, bus, logger)
+	gw, err := newFailoverChain(cfg, pData, bus, logger)
 	if err != nil {
 		return nil, err
 	}

@@ -15,61 +15,65 @@ import (
 	"testing"
 )
 
-// setupHotReloadSingleProcessMock returns an httptest.Server implementing a
-// multi-turn Google-format mock and an atomic call counter. The server:
-//
-//   - Turn 0 (first LLM call)  → list_files tool call
-//   - Turn 1 (second LLM call) → rewrites configPath to MAX_TURNS: 3,
-//     then returns read_files tool call
-//   - Turn 2+                    → text response "Done."
-//
-// The config path must be known before creating the mock so the handler
-// can mutate it mid-session. The mock URL is obtained from server.URL at
-// handler invocation time.
-//
-// The turn index is derived from the Google API contents array length:
-//
-//	idx := (len(contents) - 1) / 2
-func setupHotReloadSingleProcessMock(t *testing.T, configPath string) (*httptest.Server, *atomic.Int32) {
-	t.Helper()
+// hotReloadHandlerState holds the mutable state shared between
+// setupHotReloadSingleProcessMock and the HTTP handler it creates.
+type hotReloadHandlerState struct {
+	t               *testing.T
+	configPath      string
+	callCount       *atomic.Int32
+	configRewritten *atomic.Bool
+	serverPtr       *atomic.Pointer[httptest.Server]
+}
 
-	var callCount atomic.Int32
-	var configRewritten atomic.Bool
-	var serverPtr atomic.Pointer[httptest.Server]
+// readBodyAndIndex reads the request body, parses it as JSON, and extracts
+// the turn index from the Google API contents array. It returns (idx, false)
+// if reading or parsing fails, signalling the caller to abort.
+func readBodyAndIndex(r *http.Request, t *testing.T) (int, bool) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Logf("HOTRELOAD_MOCK: failed to read body: %v", err)
+		return 0, false
+	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := callCount.Add(1)
+	var body map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Logf("HOTRELOAD_MOCK: failed to parse JSON: %v", err)
+		return 0, false
+	}
 
-		bodyBytes, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Logf("HOTRELOAD_MOCK: failed to read body: %v", err)
-			return
-		}
+	contents, ok := body["contents"].([]interface{})
+	if !ok {
+		contents = nil
+	}
 
-		var body map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &body); err != nil {
-			t.Logf("HOTRELOAD_MOCK: failed to parse JSON: %v", err)
-			return
-		}
+	idx := (len(contents) - 1) / 2
+	if idx < 0 {
+		idx = 0
+	}
+	return idx, true
+}
 
-		contents, ok := body["contents"].([]interface{})
+// hotReloadHandler is the HTTP handler for the hot-reload mock server.
+// It implements a multi-turn Google-format mock where turn 0 returns a
+// list_files tool call, turn 1 rewrites the config file then returns a
+// read_files tool call, and turn 2+ returns "Done.".
+func hotReloadHandler(s *hotReloadHandlerState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		count := s.callCount.Add(1)
+
+		idx, ok := readBodyAndIndex(r, s.t)
 		if !ok {
-			contents = nil
-		}
-
-		idx := (len(contents) - 1) / 2
-		if idx < 0 {
-			idx = 0
+			return
 		}
 
 		// On the second LLM call (turn 1), rewrite config to MAX_TURNS: 3
 		// before returning the read_files tool call. The agent will detect
 		// the ModTime change via ConfigWatcher.Refresh() before executing
 		// the tool, allowing the read_files call to succeed.
-		if count == 2 && !configRewritten.Swap(true) {
-			srv := serverPtr.Load()
+		if count == 2 && !s.configRewritten.Swap(true) {
+			srv := s.serverPtr.Load()
 			if srv != nil {
-				writeConfig(t, configPath, srv.URL, 3)
+				writeConfig(s.t, s.configPath, srv.URL, 3)
 			}
 		}
 
@@ -91,14 +95,41 @@ func setupHotReloadSingleProcessMock(t *testing.T, configPath string) (*httptest
 
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := fmt.Fprint(w, response); err != nil {
-			t.Logf("HOTRELOAD_MOCK: failed to write response: %v", err)
+			s.t.Logf("HOTRELOAD_MOCK: failed to write response: %v", err)
 		}
-	}))
+	}
+}
 
-	// Store the server pointer for the handler closure to use.
-	serverPtr.Store(server)
+// setupHotReloadSingleProcessMock returns an httptest.Server implementing a
+// multi-turn Google-format mock and an atomic call counter. The server:
+//
+//   - Turn 0 (first LLM call)  → list_files tool call
+//   - Turn 1 (second LLM call) → rewrites configPath to MAX_TURNS: 3,
+//     then returns read_files tool call
+//   - Turn 2+                    → text response "Done."
+//
+// The config path must be known before creating the mock so the handler
+// can mutate it mid-session. The mock URL is obtained from server.URL at
+// handler invocation time.
+//
+// The turn index is derived from the Google API contents array length:
+//
+//	idx := (len(contents) - 1) / 2
+func setupHotReloadSingleProcessMock(t *testing.T, configPath string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
 
-	return server, &callCount
+	state := &hotReloadHandlerState{
+		t:               t,
+		configPath:      configPath,
+		callCount:       new(atomic.Int32),
+		configRewritten: new(atomic.Bool),
+		serverPtr:       new(atomic.Pointer[httptest.Server]),
+	}
+
+	server := httptest.NewServer(hotReloadHandler(state))
+	state.serverPtr.Store(server)
+
+	return server, state.callCount
 }
 
 // writeConfig writes a YAML configuration file at path with the given

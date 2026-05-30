@@ -7,7 +7,7 @@
 //
 // Factory (factory.go):
 //
-//	NewClient is the central factory that inspects configuration and
+//	newClient is the central factory that inspects configuration and
 //	instantiates the appropriate provider client (OpenAI, Anthropic, or
 //	Google Gemini). It handles authentication, timeout resolution,
 //	thinking budget, and wraps the result in a resilient client.
