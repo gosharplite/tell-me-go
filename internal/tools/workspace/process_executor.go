@@ -236,6 +236,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	}
 
 	if err = p.start(); err != nil {
+		p.closePipes()  // Close pipes to unblock running commands
 		_, _ = p.wait() // Ensure started processes are cleaned up
 		return executionResult{ExitCode: 1}, fmt.Errorf("pipeline failed to start: %w", err)
 	}

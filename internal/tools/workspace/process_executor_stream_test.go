@@ -805,6 +805,50 @@ func TestPipeline_StartFailure(t *testing.T) {
 	})
 }
 
+// TestPipeline_StartFailureDeadlock verifies that when p.start() fails after
+// a previous command has started and is producing output, the error path
+// does not deadlock. It uses a pipe-filling command that writes 200KB to
+// stdout (exceeding the OS pipe buffer) paired with a nonexistent second
+// command whose Start() fails. Without the p.closePipes() fix in the error
+// path, the first command blocks on the pipe write and p.wait() hangs forever.
+func TestPipeline_StartFailureDeadlock(t *testing.T) {
+	e := newprocessExecutor()
+
+	pipedParts := [][]string{
+		{helperPath, "pipe-fill"},                 // writes 200KB to stdout, blocks when pipe buffer full
+		{"/nonexistent/binary_xyz_31415", "arg1"}, // Start() fails, but cmd[0] is already running
+	}
+
+	done := make(chan struct{})
+	var res executionResult
+	var runErr error
+
+	go func() {
+		res, runErr = e.RunPipeline(context.Background(), pipedParts, executionConfig{})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success: RunPipeline returned without deadlocking
+	case <-time.After(2 * time.Second):
+		t.Fatal("deadlock: RunPipeline did not return within 2 seconds — p.wait() is blocked on a pipe-saturated command")
+	}
+
+	if runErr == nil {
+		t.Fatal("expected error from pipeline start failure")
+	}
+	if !strings.Contains(runErr.Error(), "pipeline failed to start") {
+		t.Errorf("expected 'pipeline failed to start' in error, got: %v", runErr)
+	}
+	if !strings.Contains(runErr.Error(), "command 1 failed to start") {
+		t.Errorf("expected 'command 1 failed to start' in error, got: %v", runErr)
+	}
+	if res.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", res.ExitCode)
+	}
+}
+
 // TestRunCommand_NonExitErrorWaitPath directly exercises the non-*exec.ExitError
 // wait path in RunCommand by testing formatPipelineResult with a signal-style
 // error that is not an ExitError. This is the code path at lines 82-84.
