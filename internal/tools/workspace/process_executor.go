@@ -236,6 +236,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	}
 
 	if err = p.start(); err != nil {
+		p.closePipes()  // Close pipes to unblock running commands
 		_, _ = p.wait() // Ensure started processes are cleaned up
 		return executionResult{ExitCode: 1}, fmt.Errorf("pipeline failed to start: %w", err)
 	}
@@ -278,12 +279,40 @@ func (e *processExecutor) formatPipelineResult(stdoutStr, stderrStr string, trun
 	}, nil
 }
 
-// resolveAndValidateOutputPath converts a cleaned relative path to an absolute path,
-// validating that it does not escape the current working directory.
-// originalPath is used only for the error message.
+// resolveAndValidateOutputPath converts a cleaned path to an absolute path,
+// validating that it does not escape the current working directory or the
+// system temporary directory. originalPath is used only for the error message.
 func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, error) {
+	// withinParent checks whether target is inside the given parent directory.
+	withinParent := func(parent, target string) bool {
+		rel, err := filepath.Rel(parent, target)
+		if err != nil {
+			return false
+		}
+		if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+			return false
+		}
+		return true
+	}
+
 	if filepath.IsAbs(cleanedPath) {
-		return cleanedPath, nil
+		// 1. Check CWD boundary.
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("failed to get current directory: %w", err)
+		}
+		if withinParent(cwd, cleanedPath) {
+			return cleanedPath, nil
+		}
+
+		// 2. Check os.TempDir() boundary (skip if empty).
+		if tmpDir := os.TempDir(); tmpDir != "" {
+			if withinParent(tmpDir, cleanedPath) {
+				return cleanedPath, nil
+			}
+		}
+
+		return "", fmt.Errorf("output file path cannot escape current directory: %q", originalPath)
 	}
 
 	cwd, err := os.Getwd()

@@ -21,6 +21,7 @@ var commands = map[string]func([]string){
 	"grep":          handleGrep,
 	"deadlock-test": handleDeadlockTest,
 	"multi-line":    handleMultiLine,
+	"pipe-fill":     handlePipeFill,
 	"printf":        handlePrintf,
 	"stress-output": handleStressOutput,
 	"diff":          handleDiff,
@@ -150,6 +151,14 @@ func handleMultiLine(args []string) {
 		_, _ = fmt.Fprintf(os.Stdout, "STDOUT_LINE_%d\n", i)
 		_, _ = fmt.Fprintf(os.Stderr, "STDERR_LINE_%d\n", i)
 	}
+}
+
+func handlePipeFill(_ []string) {
+	data := make([]byte, 200*1024)
+	for i := range data {
+		data[i] = 'x'
+	}
+	_, _ = os.Stdout.Write(data)
 }
 
 func handlePrintf(args []string) {
