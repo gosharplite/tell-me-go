@@ -415,6 +415,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
+	@echo "=== verify-adr-index ==="
+	@$(MAKE) verify-adr-index
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="
