@@ -1,4 +1,4 @@
-# ADR-029: Lazy Implementation Index — eager→lazy contract change for `computeImplementations`
+# ADR-039: Lazy Implementation Index — eager→lazy contract change for `computeImplementations`
 
 ## Status
 Accepted (2026-05)
@@ -78,7 +78,7 @@ For interactive tooling (TUI, long-running agent), a `WarmImplementations(ctx co
 This is deferred until a consumer demonstrates measurable UX impact from first-call latency.
 
 ## Related ADRs
-- **ADR-022**: Test-Only Access via `agentinternal` Bridge — same "fail loud, never silently degrade" principle that motivated this change (race detector must pass).
+- **ADR-037**: Test-Only Access via `agentinternal` Bridge — same "fail loud, never silently degrade" principle that motivated this change (race detector must pass).
 - **ADR-021**: Test Doubles in `*test` Sub-Packages — PR #357 injected `mockDeadCodeAnalyzer` in `health_test.go` following this convention.
 
 ## References

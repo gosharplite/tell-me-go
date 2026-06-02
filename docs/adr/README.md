@@ -29,6 +29,10 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-021** | Test Doubles Live in `*test` Sub-Packages, Not a Centralized `testutil` | 2026-04 | Accepted | [2026-04-test-doubles-in-pkgtest-subpackages.md](2026-04-test-doubles-in-pkgtest-subpackages.md) |
 | **ADR-022** | Tool-Result Error Convention | 2026-04 | Accepted | [2026-04-tool-result-error-convention.md](2026-04-tool-result-error-convention.md) |
 | **ADR-023** | Reasoning-Token Accounting for OpenAI-Compatible Providers | 2026-04 | Accepted | [2026-04-reasoning-token-accounting.md](2026-04-reasoning-token-accounting.md) |
+| **ADR-024** | OpenAI Chat-vs-Responses Budget-Field Divergence | 2026-04 | Accepted | [2026-04-openai-budget-field-divergence.md](2026-04-openai-budget-field-divergence.md) |
+| **ADR-025** | Decompose UIBridge God Object into Composable Sub-Components | 2026-04 | Accepted | [2026-04-uibridge-decomposition.md](2026-04-uibridge-decomposition.md) |
+| **ADR-026** | Decompose `agent/session` Package via `context/` Sub-Package Extraction | 2026-04 | Accepted | [2026-04-session-context-subpackage-extraction.md](2026-04-session-context-subpackage-extraction.md) |
+| **ADR-027** | Continue Sub-Package Extraction — Integrations (ado/atlassian) and Session (ui/) | 2026-05 | Accepted | [2026-05-integrations-and-session-ui-subpackage-extraction.md](2026-05-integrations-and-session-ui-subpackage-extraction.md) |
 | **ADR-028** | Delegate Registration Logic to Integration Sub-Packages | 2026-05 | Accepted | [2026-05-subpackage-registration-pattern.md](2026-05-subpackage-registration-pattern.md) |
 | **ADR-029** | Fallible `Reconfigure` Delegate Chain in Agent Hot-Reload | 2026-05 | Accepted | [2026-05-fallible-reconfigure-delegate-chain.md](2026-05-fallible-reconfigure-delegate-chain.md) |
 | **ADR-030** | Release Branch Synchronization Policy | 2026-05 | Accepted | [2026-05-release-branch-synchronization-policy.md](2026-05-release-branch-synchronization-policy.md) |
@@ -38,6 +42,12 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-034** | Cosmetic Lint Fixes Must Be Submitted as Standalone PRs | 2026-05 | Accepted | [2026-05-cosmetic-lint-fix-pr-separation.md](2026-05-cosmetic-lint-fix-pr-separation.md) |
 | **ADR-035** | Per-Request Goroutine Model for Capturer Reads | 2026-05 | Accepted | [2026-05-capturer-per-request-goroutine.md](2026-05-capturer-per-request-goroutine.md) |
 | **ADR-036** | Test Determinism Standards (No-Sleep, Race-Safe Mocks, Deterministic Time) | 2026-05 | Accepted | [2026-05-test-determinism-standards.md](2026-05-test-determinism-standards.md) |
+| **ADR-037** | Test-Only Access via `agentinternal` Bridge & `*ForInternalUse` Branding | 2026-04 | Accepted | [2026-04-test-only-access-via-agentinternal-bridge.md](2026-04-test-only-access-via-agentinternal-bridge.md) |
+| **ADR-038** | astCache Path Resolution via Injected baseDir | 2026-05 | Accepted | [2026-05-astcache-path-resolution.md](2026-05-astcache-path-resolution.md) |
+| **ADR-039** | Lazy Implementation Index — eager→lazy contract change for `computeImplementations` | 2026-05 | Accepted | [2026-05-lazy-implementation-index.md](2026-05-lazy-implementation-index.md) |
+| **ADR-040** | Complete Session Subpackage Extraction (config_watcher, skill_injector) | 2026-05 | Accepted | [2026-05-session-extraction-completion.md](2026-05-session-extraction-completion.md) |
+| **ADR-041** | DI Composition Root — Sub-Provider Decomposition | 2026-05 | Accepted | [2026-05-di-composition-root-decomposition.md](2026-05-di-composition-root-decomposition.md) |
+| **ADR-042** | Pipeline Presentation Extraction via PipelineFormatter Interface | 2026-05 | Accepted | [2026-05-ado-pipeline-formatter.md](2026-05-ado-pipeline-formatter.md) |
 
 ## How to Create a New ADR
 

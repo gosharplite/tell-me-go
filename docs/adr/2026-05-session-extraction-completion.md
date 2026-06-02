@@ -1,4 +1,4 @@
-# ADR-030: Complete Session Subpackage Extraction (config_watcher, skill_injector)
+# ADR-040: Complete Session Subpackage Extraction (config_watcher, skill_injector)
 
 **Date**: 2026-05-08
 **Status**: Accepted

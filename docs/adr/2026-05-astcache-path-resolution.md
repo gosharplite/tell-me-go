@@ -1,4 +1,4 @@
-# ADR-022: astCache path resolution via injected baseDir
+# ADR-038: astCache path resolution via injected baseDir
 
 **Status:** Accepted
 **Date:** 2026-05
