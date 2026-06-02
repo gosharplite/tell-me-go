@@ -21,6 +21,18 @@ type NamedClient struct {
 // list of provider clients on Generate, falling through on transient errors.
 // Non-Generate methods (SendChat, GenerateImages, RefreshAuth) delegate to the
 // primary (first) client.
+//
+// Separation of concerns:
+//
+//	ResilientClient (wraps each provider) — single-provider retry, auth refresh,
+//	connection resetting, and raw error → domain sentinel classification via
+//	llmerr.Classify. Every client in the failover chain MUST be wrapped in
+//	ResilientClient (this is enforced by newFailoverChain in factory.go).
+//
+//	FailoverGateway (this type) — provider iteration and routing decisions based
+//	solely on the domain sentinels returned by ResilientClient. It does NOT
+//	repeat error classification; it only checks IsTransient() to decide whether
+//	to try the next provider or abort the chain.
 type FailoverGateway struct {
 	clients []NamedClient // clients[0] is primary
 }
@@ -41,11 +53,14 @@ func NewFailoverGateway(clients []NamedClient) *FailoverGateway {
 
 // Generate implements the core failover logic.
 //
-// It iterates through fg.clients in order:
+// Each client in the chain is expected to return domain-classified errors
+// (via ResilientClient / llmerr.Classify). FailoverGateway only routes
+// based on the error category:
 //   - On success: sets metrics.Provider to the client's name and returns.
-//   - On auth or terminal error: wraps and returns immediately (no fallback).
-//   - On transient error (including rate limits): records the error and tries
-//     the next provider.
+//   - On transient (including rate limits): records the error and tries the
+//     next provider in the chain.
+//   - On any non-transient error (auth, terminal, unrecognized): aborts
+//     immediately — no further providers are tried.
 //   - If all providers are exhausted: returns the last error wrapped as terminal.
 func (fg *FailoverGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	var lastErr error
@@ -62,18 +77,17 @@ func (fg *FailoverGateway) Generate(ctx context.Context, input []*llm.Content, t
 			return content, metrics, nil
 		}
 
-		if llm.IsAuth(err) || llm.IsTerminal(err) {
+		// ResilientClient already classified this error as a domain sentinel
+		// (ErrAuth / ErrTransient / ErrRateLimit / ErrTerminal) via llmerr.Classify.
+		// FailoverGateway only decides whether to retry the next provider.
+		if !llm.IsTransient(err) {
+			// Auth, terminal, context-limit, and any unclassified errors abort the chain.
 			return nil, nil, fmt.Errorf("failover: provider %q: %w", nc.Name, err)
 		}
 
-		// IsTransient covers both ErrTransient and ErrRateLimit
-		if llm.IsTransient(err) {
-			lastErr = err
-			continue
-		}
-
-		// Any unrecognised error is treated as terminal
-		return nil, nil, fmt.Errorf("failover: provider %q: %w", nc.Name, err)
+		// IsTransient covers both ErrTransient and ErrRateLimit — try next provider.
+		lastErr = err
+		continue
 	}
 
 	// All providers exhausted — wrap last error as terminal

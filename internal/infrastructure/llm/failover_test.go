@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
 // mockExtendedClient implements llm.ExtendedClient with configurable behaviour.
@@ -530,5 +531,134 @@ func TestFailoverGateway_SendChat_ContextCancelled(t *testing.T) {
 	}
 	if primary.sendChatCalled != 0 {
 		t.Errorf("primary.sendChatCalled = %d, want 0", primary.sendChatCalled)
+	}
+}
+
+func TestFailoverGateway_Generate_Routing(t *testing.T) {
+	unrecognizedErr := errors.New("unknown protocol error")
+
+	tests := []struct {
+		name       string
+		primaryErr error
+		wantErr    error // expected sentinel in the returned error (nil = success)
+	}{
+		{
+			name:       "success passes through",
+			primaryErr: nil,
+			wantErr:    nil,
+		},
+		{
+			name:       "transient falls through to secondary",
+			primaryErr: llm.ErrTransient,
+			wantErr:    nil, // secondary succeeds (default mock behavior)
+		},
+		{
+			name:       "rate limit falls through to secondary",
+			primaryErr: llm.ErrRateLimit,
+			wantErr:    nil, // secondary succeeds
+		},
+		{
+			name:       "auth aborts immediately",
+			primaryErr: llm.ErrAuth,
+			wantErr:    llm.ErrAuth,
+		},
+		{
+			name:       "terminal aborts immediately",
+			primaryErr: llm.ErrTerminal,
+			wantErr:    llm.ErrTerminal,
+		},
+		{
+			name:       "unrecognized error aborts immediately",
+			primaryErr: unrecognizedErr,
+			wantErr:    unrecognizedErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			primary := &mockExtendedClient{
+				name: "primary",
+				generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					if tt.primaryErr != nil {
+						return nil, nil, tt.primaryErr
+					}
+					return successContent(), successMetrics(), nil
+				},
+			}
+			secondary := &mockExtendedClient{
+				name: "secondary",
+				generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					return successContent(), successMetrics(), nil
+				},
+			}
+
+			fg := NewFailoverGateway([]NamedClient{
+				{Name: primary.name, Client: primary},
+				{Name: secondary.name, Client: secondary},
+			})
+
+			_, _, err := fg.Generate(context.Background(), nil, nil, nil)
+
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("expected error wrapping %v, got %v", tt.wantErr, err)
+			}
+
+			// For non-transient errors, secondary must NOT be called
+			if !llm.IsTransient(tt.primaryErr) && secondary.generateCalled != 0 {
+				t.Errorf("secondary should not be called for non-transient error, called %d times", secondary.generateCalled)
+			}
+
+			// For transient errors, secondary MUST be called
+			if llm.IsTransient(tt.primaryErr) && secondary.generateCalled != 1 {
+				t.Errorf("secondary should be called for transient error, called %d times", secondary.generateCalled)
+			}
+		})
+	}
+}
+
+func TestFailoverGateway_WithResilientClient_ClassifiesAndRoutes(t *testing.T) {
+	// Primary returns a raw HTTP 429 that ResilientClient classifies as ErrRateLimit.
+	// FailoverGateway should see IsTransient=true and fall through to secondary.
+	primaryRaw := &mockLLMClient{
+		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, &llmerr.APIError{Status: 429, Body: "Too Many Requests"}
+		},
+	}
+	primaryResilient := NewResilientClient(primaryRaw)
+
+	secondary := &mockExtendedClient{
+		name: "secondary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return successContent(), successMetrics(), nil
+		},
+	}
+
+	fg := NewFailoverGateway([]NamedClient{
+		{Name: "primary", Client: primaryResilient},
+		{Name: "secondary", Client: secondary},
+	})
+
+	content, metrics, err := fg.Generate(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content.Parts[0].Text != "success" {
+		t.Errorf("got %q, want %q", content.Parts[0].Text, "success")
+	}
+	if metrics.Provider != "secondary" {
+		t.Errorf("got provider %q, want %q", metrics.Provider, "secondary")
+	}
+	if secondary.generateCalled != 1 {
+		t.Errorf("secondary.generateCalled = %d, want 1", secondary.generateCalled)
 	}
 }
