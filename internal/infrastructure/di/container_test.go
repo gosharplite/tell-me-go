@@ -64,6 +64,27 @@ func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, tool
 	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
+// mockClientFactory implements ports.ClientFactory for testing failover paths.
+type mockClientFactory struct {
+	mock.Mock
+}
+
+func (m *mockClientFactory) NewClient(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	args := m.Called(cfg, pricingData, bus, logger)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(llm.ExtendedClient), args.Error(1)
+}
+
+func (m *mockClientFactory) NewFailoverChain(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	args := m.Called(cfg, pricingData, bus, logger)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(llm.ExtendedClient), args.Error(1)
+}
+
 type mockConfigurableSecurityManager struct {
 	mock.Mock
 }
@@ -1409,4 +1430,113 @@ func TestNewBootstrapper_DefaultFallbacks(t *testing.T) {
 	assert.NotNil(t, b.GetHistoryBrowser())
 	assert.NotNil(t, b.GetUIRenderer())
 	assert.NotNil(t, b.GetHistoryRenderer())
+}
+
+func TestBuildSessionDependencies_FailoverChain(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	simulatedErr := errors.New("failover init failed")
+
+	testCfg := &config.Config{
+		Mode:          "assistant",
+		Model:         "test-model",
+		FailoverOrder: []string{"provider-a", "provider-b"},
+	}
+
+	tests := []struct {
+		name            string
+		mockSetup       func(factory *mockClientFactory, gwClient *mockExtendedClient)
+		expectNewClient bool
+		expectGwUsed    bool
+		wantGenerateErr error
+	}{
+		{
+			name: "NewFailoverChain_ReturnsError",
+			mockSetup: func(factory *mockClientFactory, gwClient *mockExtendedClient) {
+				factory.On("NewFailoverChain", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+					Return(nil, simulatedErr)
+			},
+			expectNewClient: false,
+			expectGwUsed:    false,
+			wantGenerateErr: simulatedErr,
+		},
+		{
+			name: "NewFailoverChain_ReturnsNilNil_FallsBackToNewClient",
+			mockSetup: func(factory *mockClientFactory, gwClient *mockExtendedClient) {
+				factory.On("NewFailoverChain", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+					Return(nil, nil)
+				factory.On("NewClient", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+					Return(gwClient, nil)
+				gwClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+					Return(&llm.Content{}, &llm.Metrics{}, nil)
+			},
+			expectNewClient: true,
+			expectGwUsed:    true,
+			wantGenerateErr: nil,
+		},
+		{
+			name: "NewFailoverChain_ReturnsGateway_UsesGateway",
+			mockSetup: func(factory *mockClientFactory, gwClient *mockExtendedClient) {
+				factory.On("NewFailoverChain", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+					Return(gwClient, nil)
+				gwClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+					Return(&llm.Content{}, &llm.Metrics{}, nil)
+			},
+			expectNewClient: false,
+			expectGwUsed:    true,
+			wantGenerateErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := new(mockConfigurableSecurityManager)
+			setupDefaultSMExpectations(sm)
+			sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+			sm.On("SetBypassActive", mock.Anything).Return().Maybe()
+
+			gwClient := new(mockExtendedClient)
+			factory := new(mockClientFactory)
+			if tt.mockSetup != nil {
+				tt.mockSetup(factory, gwClient)
+			}
+
+			bcfg := DefaultBootstrapperConfig()
+			bcfg.HomeDir = tempDir
+			bcfg.SM = sm
+			bcfg.Version = "1.0.0"
+			bcfg.Stdout = io.Discard
+			bcfg.Stderr = io.Discard
+			bcfg.ClientFactory = factory
+			b := NewBootstrapper(bcfg)
+
+			deps, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
+			require.NoError(t, err)
+			require.NotNil(t, deps)
+			defer func() { _ = cleanup(ctx) }()
+
+			// Trigger lazy client initialization
+			gw := deps.GetGateway()
+			_, _, genErr := gw.Generate(ctx, nil, nil, nil)
+
+			if tt.wantGenerateErr != nil {
+				require.Error(t, genErr)
+				assert.ErrorIs(t, genErr, tt.wantGenerateErr,
+					"Generate should propagate the failover chain error")
+				assert.Contains(t, genErr.Error(), "LLM provider initialization failed")
+			} else {
+				require.NoError(t, genErr)
+			}
+
+			if tt.expectNewClient {
+				factory.AssertCalled(t, "NewClient", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			} else {
+				factory.AssertNotCalled(t, "NewClient", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			}
+
+			if tt.expectGwUsed {
+				gwClient.AssertExpectations(t)
+			}
+		})
+	}
 }
