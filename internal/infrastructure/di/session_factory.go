@@ -24,18 +24,19 @@ type sessionFactory interface {
 }
 
 type defaultSessionFactory struct {
-	HomeDir         string
-	FileSystem      infra_persistence.FileSystem
-	SM              ConfigurableSecurityManager
-	Stderr          io.Writer
-	Stdout          io.Writer
-	Logger          *slog.Logger
-	RotateSession   func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error
-	NewSessionState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
+	HomeDir           string
+	FileSystem        infra_persistence.FileSystem
+	SM                ConfigurableSecurityManager
+	Stderr            io.Writer
+	Stdout            io.Writer
+	Logger            *slog.Logger
+	RotateSession     func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error
+	NewSessionState   func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
+	setupSecurityFunc func(paths *persistence.Paths, configPath string) error
 }
 
 func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) sessionFactory {
-	return &defaultSessionFactory{
+	f := &defaultSessionFactory{
 		HomeDir:         homeDir,
 		FileSystem:      fs,
 		SM:              sm,
@@ -45,6 +46,8 @@ func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm Confi
 		RotateSession:   rotate,
 		NewSessionState: newState,
 	}
+	f.setupSecurityFunc = f.setupSecurity
+	return f
 }
 
 func (f *defaultSessionFactory) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(stdctx.Context) error, error) {
@@ -142,7 +145,7 @@ func (f *defaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Con
 		return nil, nil, nil, fmt.Errorf("%w: failed to ensure directories for %s: %w", errInfraInit, cfg.Mode, err)
 	}
 
-	if err := f.setupSecurity(paths, configPath); err != nil {
+	if err := f.setupSecurityFunc(paths, configPath); err != nil {
 		return nil, nil, nil, fmt.Errorf("%w: security setup: %w", errInfraInit, err)
 	}
 

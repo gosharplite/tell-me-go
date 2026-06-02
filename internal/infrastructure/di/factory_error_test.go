@@ -26,6 +26,7 @@ import (
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockFailingFS struct {
@@ -233,6 +234,7 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 		{
 			name: "EnsureDirectoriesFailure",
 			setup: func(f *defaultSessionFactory) {
+				f.setupSecurityFunc = f.setupSecurity
 				f.FileSystem = &mockFailingFS{mkdirErr: simulatedErr}
 			},
 			wantErr: errInfraInit,
@@ -240,9 +242,20 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 		{
 			name: "SessionStateInitializationFailure",
 			setup: func(f *defaultSessionFactory) {
+				f.setupSecurityFunc = f.setupSecurity
 				f.FileSystem = &infra_persistence.OSFileSystem{}
 				f.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 					return nil, simulatedErr
+				}
+			},
+			wantErr: errInfraInit,
+		},
+		{
+			name: "SetupSecurityFailure",
+			setup: func(f *defaultSessionFactory) {
+				f.FileSystem = &infra_persistence.OSFileSystem{}
+				f.setupSecurityFunc = func(paths *persistence.Paths, configPath string) error {
+					return simulatedErr
 				}
 			},
 			wantErr: errInfraInit,
@@ -412,6 +425,19 @@ type failingProgramRunner struct{ err error }
 
 func (r *failingProgramRunner) Run() (tea.Model, error) { return nil, r.err }
 
+// quitModel is a minimal bubbletea Model that immediately quits.
+type quitModel struct{}
+
+func (m quitModel) Init() tea.Cmd { return tea.Quit }
+func (m quitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg.(type) {
+	case tea.QuitMsg:
+		return m, tea.Quit
+	}
+	return m, nil
+}
+func (m quitModel) View() string { return "" }
+
 func TestTUIHistoryBrowser_Browse_LoggerCloseError(t *testing.T) {
 	ctx := context.Background()
 	simulatedErr := errors.New("disk full")
@@ -485,4 +511,37 @@ func TestTUIHistoryBrowser_Browse_ProgramRunError(t *testing.T) {
 	// The warning log should NOT contain any close error since we skipped the logger
 	logOutput := logBuf.String()
 	assert.NotContains(t, logOutput, "failed to close tui logger")
+}
+
+func TestTeaProgramRunner_Run(t *testing.T) {
+	p := tea.NewProgram(quitModel{}, tea.WithoutRenderer(), tea.WithInput(nil))
+	runner := &teaProgramRunner{p: p}
+
+	model, err := runner.Run()
+
+	require.NoError(t, err, "teaProgramRunner.Run should not error with a simple model")
+	require.NotNil(t, model)
+	_, ok := model.(quitModel)
+	assert.True(t, ok, "Run should return the model passed to NewProgram")
+}
+
+func TestDefaultUIFactory_HistoryBrowser_Constructor(t *testing.T) {
+	sm := new(mockConfigurableSecurityManager)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	factory := newUIFactory(sm, io.Discard, io.Discard, logger)
+
+	browser := factory.HistoryBrowser()
+	require.NotNil(t, browser)
+
+	tuiBrowser, ok := browser.(*tuiHistoryBrowser)
+	require.True(t, ok, "HistoryBrowser should return *tuiHistoryBrowser")
+
+	assert.Equal(t, logger, tuiBrowser.logger)
+	assert.NotNil(t, tuiBrowser.initLogger, "initLogger should be the real tui.InitLogger")
+	assert.NotNil(t, tuiBrowser.newProgram, "newProgram should be the real closure")
+
+	runner := tuiBrowser.newProgram(quitModel{})
+	require.NotNil(t, runner)
+	_, ok = runner.(*teaProgramRunner)
+	assert.True(t, ok, "newProgram should return a *teaProgramRunner")
 }
