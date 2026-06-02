@@ -1,4 +1,4 @@
-# ADR: Pipeline Presentation Extraction via PipelineFormatter Interface
+# ADR-042: Pipeline Presentation Extraction via PipelineFormatter Interface
 
 **Status:** Accepted  
 **Date:** 2026-05-01  

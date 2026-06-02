@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-no-test-sleep verify-architecture lint vulncheck dead-code check check-full bench
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -415,6 +415,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
+	@echo "=== verify-adr-index ==="
+	@$(MAKE) verify-adr-index
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="
@@ -441,3 +443,27 @@ else
 	@findstr /V /R "internal/agent/agenttest/ internal/agent/orchestrator/orchestratortest/ internal/agent/session/sessiontest/ internal/domain/config/configtest/ internal/tools/analysis/analysistest/ internal/infrastructure/testing/" coverage.raw > coverage.out
 endif
 	go tool cover -func=coverage.out
+
+# Verify every ADR file on disk is indexed in docs/adr/README.md
+# and no ADR number is claimed by more than one file.
+.PHONY: verify-adr-index
+verify-adr-index:
+	@echo "Checking ADR index consistency..."
+	@errors=0; \
+	for f in docs/adr/2*.md; do \
+		basename=$$(basename $$f); \
+		if ! grep -q "$$basename" docs/adr/README.md; then \
+			echo "MISSING from index: $$basename"; \
+			errors=$$((errors+1)); \
+		fi; \
+	done; \
+	dupes=$$(grep -h '^# ADR-[0-9]*:' docs/adr/*.md | sed 's/# ADR-//;s/:.*//' | sort -n | uniq -d); \
+	if [ -n "$$dupes" ]; then \
+		echo "DUPLICATE ADR numbers: $$dupes"; \
+		errors=$$((errors+1)); \
+	fi; \
+	if [ $$errors -gt 0 ]; then \
+		echo "ADR index is inconsistent ($$errors errors)."; \
+		exit 1; \
+	fi; \
+	echo "ADR index is consistent."

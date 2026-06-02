@@ -1,4 +1,4 @@
-# ADR-0001: DI Composition Root — Sub-Provider Decomposition
+# ADR-041: DI Composition Root — Sub-Provider Decomposition
 
 ## Status
 

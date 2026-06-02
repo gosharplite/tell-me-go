@@ -1,4 +1,4 @@
-# ADR-022: Test-Only Access via `agentinternal` Bridge & `*ForInternalUse` Branding
+# ADR-037: Test-Only Access via `agentinternal` Bridge & `*ForInternalUse` Branding
 
 > **Update (post-merge of issue #136):** The `GetTracker` exception
 > documented below was resolved. `InternalAccessor.GetTracker()` was
