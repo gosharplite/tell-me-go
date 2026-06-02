@@ -80,9 +80,21 @@ func TestOpenOutputFile_Security(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "absolute path",
+			name:    "absolute path within workspace",
 			path:    filepath.Join(tmpDir, "absolute.txt"),
 			wantErr: false,
+		},
+		{
+			name:       "absolute path to etc passwd",
+			path:       "/etc/passwd",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
+		},
+		{
+			name:       "absolute path to etc outside both boundaries",
+			path:       "/etc/cron.d/evil",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
 		},
 		{
 			name:       "nested relative up",
@@ -179,9 +191,21 @@ func TestResolveAndValidateOutputPath_Escape(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "absolute path",
-			path:    "/tmp/foo",
+			name:       "absolute path outside both cwd and temp",
+			path:       "/etc/shadow",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
+		},
+		{
+			name:    "absolute path within cwd",
+			path:    func() string { wd, _ := os.Getwd(); return filepath.Join(wd, "safe_output.txt") }(),
 			wantErr: false,
+		},
+		{
+			name:       "absolute path to etc passwd",
+			path:       "/etc/passwd",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
 		},
 	}
 
