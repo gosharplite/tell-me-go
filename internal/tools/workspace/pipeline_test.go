@@ -5,7 +5,6 @@ package workspace
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os/exec"
 	"strings"
