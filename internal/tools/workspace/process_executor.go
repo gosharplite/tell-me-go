@@ -55,11 +55,7 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 		return executionResult{ExitCode: 1}, setupErr
 	}
 	if file != nil {
-		defer func() {
-			if cerr := file.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("failed to close output file: %w", cerr)
-			}
-		}()
+		defer closeFile(file, &err)
 	}
 
 	if err = cmd.Start(); err != nil {
@@ -228,11 +224,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 
 	file := e.prepareOutputFile(config)
 	if file != nil {
-		defer func() {
-			if cerr := file.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("failed to close output file: %w", cerr)
-			}
-		}()
+		defer closeFile(file, &err)
 	}
 
 	if err = p.start(); err != nil {
@@ -414,6 +406,15 @@ func truncateToValidUTF8(s string, maxBytes int) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// closeFile closes a closer and promotes any close error to *err when
+// *err is nil. This prevents close failures from being silently swallowed
+// when the primary operation succeeded.
+func closeFile(closer io.Closer, err *error) {
+	if cerr := closer.Close(); cerr != nil && *err == nil {
+		*err = fmt.Errorf("failed to close output file: %w", cerr)
+	}
 }
 
 // Output runs the command and returns its standard output.

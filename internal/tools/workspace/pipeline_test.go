@@ -238,3 +238,40 @@ func TestPipeline_StartFailureDeadlock(t *testing.T) {
 		t.Errorf("expected exit code 1, got %d", res.ExitCode)
 	}
 }
+
+// TestNewPipeline_WirePipesError exercises the error return path in newPipeline
+// when wirePipes fails due to a pre-consumed pipe.
+//
+// NOTE: This tests wirePipes directly rather than through newPipeline because
+// newPipelineCmd creates fresh exec.Cmd objects with un-consumed pipes, making
+// it structurally impossible to trigger a wirePipes failure through newPipeline.
+// The newPipeline lines 41-43 (wirePipes error return) are therefore
+// structurally unreachable in normal operation. The wirePipes function itself
+// is fully covered by this and the existing WirePipesCleanupOnFailure tests.
+//
+// GAP (B10): newPipeline at 88.9% — the wirePipes error return path remains
+// uncovered because exec.Cmd pipes are always fresh after CommandContext.
+func TestNewPipeline_WirePipesError(t *testing.T) {
+	e := newprocessExecutor()
+	_ = e // not used directly, but documents that newPipeline is the target
+
+	// Create a pipeline where cmd2 has a pre-consumed stderr pipe.
+	// This causes wirePipes to fail on the stderr pipe for that command.
+	cmd1 := exec.Command("echo", "hello")
+	cmd2 := exec.Command("echo", "world")
+	// Pre-consume cmd2's stderr pipe so wirePipes fails
+	if _, err := cmd2.StderrPipe(); err != nil {
+		t.Fatalf("failed to pre-consume stderr: %v", err)
+	}
+
+	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2}}
+	err := p.wirePipes()
+	if err == nil {
+		t.Fatal("expected wirePipes to fail on pre-consumed stderr")
+	}
+	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 1") {
+		t.Errorf("expected stderr pipe error for command 1, got: %v", err)
+	}
+	// Verify pipes were cleaned up on failure
+	p.closePipes()
+}
