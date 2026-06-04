@@ -5,6 +5,8 @@ package workspace
 
 import (
 	"context"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -213,5 +215,150 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 		if _, err := executor.RunPipeline(context.Background(), pipedParts, config); err != nil {
 			t.Logf("Feedback race run %d error: %v", i, err)
 		}
+	}
+}
+
+// TestSetupCommand covers the error and env-propagation branches of setupCommand.
+//
+// Three structurally unreachable branches are intentionally untested:
+//   - Lines 126-128: cmd.StdoutPipe() failure — exec.CommandContext always returns a
+//     valid pipe reader on the first call; only fails if called twice on the same cmd.
+//   - Lines 130-132: cmd.StderrPipe() failure — same reason.
+//   - Lines 107-109: Windows cmd.Cancel — platform-gated taskkill logic cannot be
+//     unit-tested cross-platform. Covered implicitly by integration tests on Windows CI.
+func TestSetupCommand(t *testing.T) {
+	executor := &processExecutor{}
+	ctx := context.Background()
+
+	t.Run("empty parts returns error", func(t *testing.T) {
+		t.Parallel()
+
+		cmd, stdout, stderr, file, err := executor.setupCommand(ctx, []string{}, executionConfig{})
+
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "empty command") {
+			t.Errorf("expected error to contain 'empty command', got: %v", err)
+		}
+		if cmd != nil {
+			t.Error("expected nil cmd")
+		}
+		if stdout != nil {
+			t.Error("expected nil stdout")
+		}
+		if stderr != nil {
+			t.Error("expected nil stderr")
+		}
+		if file != nil {
+			t.Error("expected nil file")
+		}
+	})
+
+	t.Run("valid command returns cmd with pipes", func(t *testing.T) {
+		t.Parallel()
+
+		cmd, stdout, stderr, _, err := executor.setupCommand(ctx, []string{"echo", "hello"}, executionConfig{})
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cmd == nil {
+			t.Fatal("expected non-nil *exec.Cmd")
+		}
+		if stdout == nil {
+			t.Error("expected non-nil stdout io.ReadCloser")
+		}
+		if stderr == nil {
+			t.Error("expected non-nil stderr io.ReadCloser")
+		}
+	})
+
+	t.Run("custom env vars are propagated", func(t *testing.T) {
+		t.Parallel()
+
+		const envKey = "TELL_ME_TEST_665"
+		const envVal = "task2_value"
+		cmd, _, _, _, err := executor.setupCommand(ctx, []string{"echo", "hello"}, executionConfig{
+			Env: map[string]string{envKey: envVal},
+		})
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		want := envKey + "=" + envVal
+		if !slices.Contains(cmd.Env, want) {
+			t.Errorf("expected cmd.Env to contain %q", want)
+		}
+	})
+}
+
+// TestWithinParent covers withinParent(parent, target string) bool.
+//
+// The filepath.Rel error branch (line 279) is only triggerable on Windows when
+// parent and target reside on different drive letters (e.g. C:\ vs D:\).
+// On Linux/macOS, filepath.Rel essentially never errors with absolute paths,
+// so that branch is platform-gated. The "different drives error" subtest
+// includes a runtime.GOOS skip for non-Windows.
+func TestWithinParent(t *testing.T) {
+	tests := []struct {
+		name    string
+		parent  string
+		target  string
+		want    bool
+		skip    bool // platform-gated skip reason
+		skipMsg string
+	}{
+		{
+			name:   "target inside parent",
+			parent: "/home/user",
+			target: "/home/user/docs/file.txt",
+			want:   true,
+		},
+		{
+			name:   "target outside parent",
+			parent: "/home/user",
+			target: "/etc/passwd",
+			want:   false,
+		},
+		{
+			name:   "parent equals target",
+			parent: "/home/user",
+			target: "/home/user",
+			want:   true,
+		},
+		{
+			name:   "target is ancestor of parent",
+			parent: "/home/user/docs",
+			target: "/home/user",
+			want:   false,
+		},
+		{
+			name:   "rel returns ..",
+			parent: "/home/user",
+			target: "/home",
+			want:   false,
+		},
+		{
+			name:    "different drives error",
+			parent:  "C:\\foo",
+			target:  "D:\\bar",
+			want:    false,
+			skip:    runtime.GOOS != "windows",
+			skipMsg: "filepath.Rel only errors with different drive letters on Windows",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skip {
+				t.Skip(tt.skipMsg)
+			}
+			got := withinParent(tt.parent, tt.target)
+			if got != tt.want {
+				t.Errorf("withinParent(%q, %q) = %v; want %v", tt.parent, tt.target, got, tt.want)
+			}
+		})
 	}
 }

@@ -1549,3 +1549,48 @@ func TestListFiles_SecurityError(t *testing.T) {
 		t.Errorf("expected 'security' in error, got: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TestReadFiles_ProcessSingleFileError
+// Tests the defensive error-return path in readFiles at line ~240.
+//
+// NOTE: processSingleFile always returns nil in production — every internal
+// error is written to sb as an inline diagnostic. The error-return in
+// readFiles is architectural dead code that guards against future changes.
+// The processSingleFileFn override on fileReader enables testing this path.
+// ---------------------------------------------------------------------------
+
+func TestReadFiles_ProcessSingleFileError(t *testing.T) {
+	t.Run("processSingleFile error is propagated", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, "test.txt")
+		if err := os.WriteFile(path, []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
+		r := &fileReader{
+			sm:     sm,
+			fs:     persistencetest.NewPlainOSFileSystem(),
+			policy: infra_persistence.NewWorkspacePolicy(),
+			processSingleFileFn: func(ctx context.Context, p string, sb *strings.Builder) error {
+				// Write a header to sb so the partial result is non-empty
+				fmt.Fprintf(sb, "--- File: %s ---\n", p)
+				return fmt.Errorf("simulated I/O failure")
+			},
+		}
+
+		ctx := context.Background()
+		_, err := r.readFiles(ctx, map[string]interface{}{
+			"filepaths": []interface{}{path},
+			"reason":    "testing error propagation",
+		}, nil)
+
+		if err == nil {
+			t.Fatal("expected error from processSingleFile, got nil")
+		}
+		if !strings.Contains(err.Error(), "simulated I/O failure") {
+			t.Errorf("expected 'simulated I/O failure' in error, got: %v", err)
+		}
+	})
+}
