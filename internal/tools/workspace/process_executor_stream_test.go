@@ -781,5 +781,3 @@ func TestRunCommand_NonExitErrorWaitPath(t *testing.T) {
 		}
 	})
 }
-
-

@@ -239,6 +239,49 @@ func TestPipeline_StartFailureDeadlock(t *testing.T) {
 	}
 }
 
+// TestRunPipeline_EnvPropagation verifies that custom environment variables
+// set via executionConfig.Env are visible to commands executed inside a pipeline.
+func TestRunPipeline_EnvPropagation(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "custom env var propagates through pipeline",
+			env:  map[string]string{"TELL_ME_TEST_661": "pipeline_value_661"},
+			want: "pipeline_value_661",
+		},
+		{
+			name: "empty env map does not crash",
+			env:  map[string]string{},
+			want: "", // printenv outputs nothing for missing var
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pipedParts := [][]string{
+				{helperPath, "printenv", "TELL_ME_TEST_661"},
+				{helperPath, "cat"},
+			}
+			res, err := e.RunPipeline(ctx, pipedParts, executionConfig{Env: tt.env})
+			if err != nil {
+				t.Fatalf("RunPipeline failed: %v", err)
+			}
+			if tt.want != "" && !strings.Contains(res.Output, tt.want) {
+				t.Errorf("expected output to contain %q, got %q", tt.want, res.Output)
+			}
+			if tt.want == "" && strings.Contains(res.Output, "TELL_ME_TEST_661") {
+				t.Errorf("expected no env var output, got %q", res.Output)
+			}
+		})
+	}
+}
+
 // TestNewPipeline_WirePipesError exercises the error return path in newPipeline
 // when wirePipes fails due to a pre-consumed pipe.
 //
