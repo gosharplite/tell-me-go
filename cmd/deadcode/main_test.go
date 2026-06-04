@@ -30,7 +30,11 @@ func TestRun_ErrorPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	t.Cleanup(func() { os.Chdir(oldWd) })
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Logf("cleanup: failed to restore working directory: %v", err)
+		}
+	})
 
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatalf("chdir: %v", err)
@@ -46,9 +50,13 @@ func TestRun_ErrorPath(t *testing.T) {
 
 	exitCode := run()
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Errorf("close stderr pipe writer: %v", err)
+	}
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Errorf("read stderr pipe: %v", err)
+	}
 
 	if exitCode != 1 {
 		t.Errorf("exit code = %d, want 1", exitCode)
@@ -69,9 +77,13 @@ func TestRun_Success(t *testing.T) {
 
 	exitCode := run()
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Errorf("close stdout pipe writer: %v", err)
+	}
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Errorf("read stdout pipe: %v", err)
+	}
 
 	if exitCode != 0 {
 		t.Errorf("exit code = %d, want 0", exitCode)
