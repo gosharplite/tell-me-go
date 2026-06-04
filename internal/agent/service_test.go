@@ -631,27 +631,6 @@ type stubDiagComposer struct {
 
 func (s *stubDiagComposer) GetHealthManager() ports.HealthCheckManager { return s.HealthManager }
 
-// mockHealthCheckManager is a mock of ports.HealthCheckManager for RunDiagnostics tests.
-type mockHealthCheckManager struct {
-	mock.Mock
-}
-
-func (m *mockHealthCheckManager) CheckAll(ctx context.Context) (*ports.HealthReport, error) {
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*ports.HealthReport), args.Error(1)
-}
-
-func (m *mockHealthCheckManager) CheckComponent(ctx context.Context, comp ports.Component) (*ports.ComponentReport, error) {
-	args := m.Called(ctx, comp)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*ports.ComponentReport), args.Error(1)
-}
-
 // mockUIRendererForDiag embeds StubUIRenderer and overrides methods needed for RunDiagnostics assertions.
 type mockUIRendererForDiag struct {
 	agenttest.StubUIRenderer
@@ -690,7 +669,7 @@ func TestRunDiagnostics(t *testing.T) {
 	tests := []struct {
 		name       string
 		jsonOutput bool
-		setupMock  func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag)
+		setupMock  func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag)
 		wantErr    bool
 		errMsg     string
 		checkOut   func(t *testing.T, stdout string)
@@ -698,7 +677,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name:       "success UI output",
 			jsonOutput: false,
-			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -716,7 +695,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name:       "success JSON output",
 			jsonOutput: true,
-			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -735,7 +714,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name:       "JSON marshal error",
 			jsonOutput: true,
-			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -764,7 +743,7 @@ func TestRunDiagnostics(t *testing.T) {
 		},
 		{
 			name: "build deps error",
-			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(nil, nil, (func(context.Context) error)(nil), errBuild)
 			},
@@ -773,7 +752,7 @@ func TestRunDiagnostics(t *testing.T) {
 		},
 		{
 			name: "nil health manager",
-			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -785,7 +764,7 @@ func TestRunDiagnostics(t *testing.T) {
 		},
 		{
 			name: "CheckAll error",
-			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -801,7 +780,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name:       "unhealthy report",
 			jsonOutput: false,
-			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -826,7 +805,7 @@ func TestRunDiagnostics(t *testing.T) {
 			sf := &agentinternal.MockSessionLifecycleManager{}
 			deps := &stubDiagComposer{StubChatterComposer: &agenttest.StubChatterComposer{}}
 			bus := &agenttest.StubEventBus{}
-			hcm := &mockHealthCheckManager{}
+			hcm := &agenttest.MockHealthCheckManager{}
 			uir := &mockUIRendererForDiag{}
 
 			if tt.setupMock != nil {
