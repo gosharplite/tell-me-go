@@ -16,27 +16,33 @@ import (
 
 // persistenceTools provides tool wrappers for persistence services.
 type persistenceTools struct {
-	tasks ports.TaskStore
-	state ports.SessionProvider
-	reg   tools.ToolMetadataProvider
+	tasks         ports.TaskStore
+	state         ports.SessionProvider
+	reg           tools.ToolMetadataProvider
+	marshalIndent func(v any, prefix, indent string) ([]byte, error)
 }
 
 // newpersistenceTools creates a new persistenceTools instance.
 func newpersistenceTools(state ports.SessionProvider, reg tools.ToolMetadataProvider) *persistenceTools {
 	if state == nil {
-		return &persistenceTools{}
+		return &persistenceTools{
+			marshalIndent: json.MarshalIndent,
+		}
 	}
 
 	// Handle interface-nil-pointer trap
 	v := reflect.ValueOf(state)
 	if v.Kind() == reflect.Pointer && v.IsNil() {
-		return &persistenceTools{}
+		return &persistenceTools{
+			marshalIndent: json.MarshalIndent,
+		}
 	}
 
 	return &persistenceTools{
-		tasks: state.GetTasks(),
-		state: state,
-		reg:   reg,
+		tasks:         state.GetTasks(),
+		state:         state,
+		reg:           reg,
+		marshalIndent: json.MarshalIndent,
 	}
 }
 
@@ -44,7 +50,7 @@ func newpersistenceTools(state ports.SessionProvider, reg tools.ToolMetadataProv
 func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	info := t.state.GetInfo()
 
-	data, err := json.MarshalIndent(info, "", "  ")
+	data, err := t.marshalIndent(info, "", "  ")
 	if err != nil {
 		return tools.ToolResult{}, err
 	}

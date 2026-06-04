@@ -7,10 +7,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -543,35 +545,71 @@ func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
 	}
 }
 
-// TestSetupCommand_EnvPropagation verifies that setupCommand correctly
-// propagates custom environment variables from executionConfig.Env into
-// the resulting exec.Cmd.
-func TestSetupCommand_EnvPropagation(t *testing.T) {
-	executor := newprocessExecutor()
-	ctx := context.Background()
-	config := executionConfig{Env: map[string]string{"TEST_VAR": "test_val"}}
-	cmd, stdout, stderr, file, err := executor.setupCommand(ctx, []string{"echo", "hello"}, config)
-	if err != nil {
-		t.Fatalf("setupCommand failed: %v", err)
+// stubCloser implements io.Closer and can be configured to return an error.
+type stubCloser struct{ err error }
+
+func (s *stubCloser) Close() error { return s.err }
+
+func TestCloseFile(t *testing.T) {
+	tests := []struct {
+		name      string
+		closeErr  error
+		priorErr  error
+		wantErr   bool
+		wantPrior bool // true: prior error preserved; false: close error promoted
+	}{
+		{
+			name:     "close succeeds with no prior error",
+			closeErr: nil,
+			priorErr: nil,
+			wantErr:  false,
+		},
+		{
+			name:      "close fails with no prior error - promoted",
+			closeErr:  fmt.Errorf("disk full"),
+			priorErr:  nil,
+			wantErr:   true,
+			wantPrior: false,
+		},
+		{
+			name:      "close fails with prior error - close error suppressed",
+			closeErr:  fmt.Errorf("disk full"),
+			priorErr:  fmt.Errorf("command failed"),
+			wantErr:   true,
+			wantPrior: true,
+		},
+		{
+			name:      "close succeeds with prior error - prior error preserved",
+			closeErr:  nil,
+			priorErr:  fmt.Errorf("command failed"),
+			wantErr:   true,
+			wantPrior: true,
+		},
 	}
-	if stdout == nil {
-		t.Error("expected non-nil stdout pipe")
-	}
-	if stderr == nil {
-		t.Error("expected non-nil stderr pipe")
-	}
-	if file != nil {
-		_ = file.Close()
-	}
-	found := false
-	for _, e := range cmd.Env {
-		if e == "TEST_VAR=test_val" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected TEST_VAR=test_val in cmd.Env")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			closer := &stubCloser{err: tt.closeErr}
+			err := tt.priorErr
+			closeFile(closer, &err)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("closeFile() err = %v, wantErr = %v", err, tt.wantErr)
+			}
+			if tt.wantErr && tt.wantPrior {
+				if !errors.Is(err, tt.priorErr) {
+					t.Errorf("expected prior error %v preserved, got %v", tt.priorErr, err)
+				}
+			}
+			if tt.wantErr && !tt.wantPrior && tt.priorErr == nil {
+				if !strings.Contains(err.Error(), "failed to close output file") {
+					t.Errorf("expected 'failed to close output file' in error, got %v", err)
+				}
+				if !strings.Contains(err.Error(), tt.closeErr.Error()) {
+					t.Errorf("expected wrapped close error, got %v", err)
+				}
+			}
+		})
 	}
 }
 
@@ -595,5 +633,132 @@ func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 		if cancelErr != nil {
 			t.Errorf("cmd.Cancel() with nil Process should return nil, got: %v", cancelErr)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// withinParent bare ".." case (Gap B7)
+// ---------------------------------------------------------------------------
+
+// TestWithinParent_BareDotDot exercises the "rel == '..'" case
+// in withinParent (process_executor.go line 293).
+func TestWithinParent_BareDotDot(t *testing.T) {
+	// withinParent("/a/b", "/a"): rel = "..", returns false
+	if withinParent("/a/b", "/a") {
+		t.Error("expected false for bare dot-dot case")
+	}
+
+	// withinParent("/a/b", "/a/b/c/d"): rel = "c/d", returns true (sanity check)
+	if !withinParent("/a/b", "/a/b/c/d") {
+		t.Error("expected true for nested path")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Path validation tests: validateAbsPath / validateAndResolveRelPath (B8 + B9)
+// ---------------------------------------------------------------------------
+
+// TestValidateAbsPath_SecurityBoundaries exercises all reachable branches
+// of validateAbsPath: CWD boundary hit, TempDir boundary hit, and escape.
+//
+// NOTE: The os.Getwd() failure paths (lines 291-293) are NOT covered here
+// because they require catastrophic filesystem conditions (CWD deleted or
+// permissions revoked). Go provides no mechanism to inject a failing Getwd,
+// making these lines structurally unreachable in normal operation.
+func TestValidateAbsPath_SecurityBoundaries(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd failed: %v", err)
+	}
+
+	tempDir := os.TempDir()
+
+	tests := []struct {
+		name        string
+		cleanedPath string
+		wantErr     bool
+	}{
+		{
+			name:        "path inside cwd is allowed",
+			cleanedPath: filepath.Join(cwd, "subdir", "file.txt"),
+			wantErr:     false,
+		},
+		{
+			name:        "path inside temp dir is allowed",
+			cleanedPath: filepath.Join(tempDir, "subdir", "file.txt"),
+			wantErr:     false,
+		},
+		{
+			name:        "path outside cwd and temp is rejected",
+			cleanedPath: "/etc/passwd",
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			absPath, err := validateAbsPath(tt.cleanedPath, tt.cleanedPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateAbsPath(%q) error = %v, wantErr = %v", tt.cleanedPath, err, tt.wantErr)
+			}
+			if !tt.wantErr && absPath != tt.cleanedPath {
+				t.Errorf("expected absPath = %q, got %q", tt.cleanedPath, absPath)
+			}
+		})
+	}
+}
+
+// TestValidateAndResolveRelPath_Boundaries exercises all reachable branches
+// of validateAndResolveRelPath.
+//
+// NOTE: The os.Getwd() failure path (lines 312-314) is NOT covered here
+// for the same reason as validateAbsPath — it requires catastrophic
+// filesystem conditions and Go provides no injection mechanism.
+func TestValidateAndResolveRelPath_Boundaries(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd failed: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		cleanedPath string
+		wantErr     bool
+		wantAbsPath string // set only for success cases
+	}{
+		{
+			name:        "simple relative subdirectory is allowed",
+			cleanedPath: "subdir/file.txt",
+			wantErr:     false,
+			wantAbsPath: filepath.Join(cwd, "subdir", "file.txt"),
+		},
+		{
+			name:        "dot-dot escape is rejected",
+			cleanedPath: "../outside.txt",
+			wantErr:     true,
+		},
+		{
+			name:        "bare dot is allowed (resolves to cwd)",
+			cleanedPath: ".",
+			wantErr:     false,
+			wantAbsPath: cwd,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			absPath, err := validateAndResolveRelPath(tt.cleanedPath, tt.cleanedPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateAndResolveRelPath(%q) error = %v, wantErr = %v", tt.cleanedPath, err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				if !filepath.IsAbs(absPath) {
+					t.Errorf("expected absolute path, got %q", absPath)
+				}
+				if absPath != tt.wantAbsPath {
+					t.Errorf("expected absPath = %q, got %q", tt.wantAbsPath, absPath)
+				}
+			}
+		})
 	}
 }

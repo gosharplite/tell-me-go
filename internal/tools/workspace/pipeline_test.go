@@ -238,3 +238,171 @@ func TestPipeline_StartFailureDeadlock(t *testing.T) {
 		t.Errorf("expected exit code 1, got %d", res.ExitCode)
 	}
 }
+
+// TestRunPipeline_EnvPropagation verifies that custom environment variables
+// set via executionConfig.Env are visible to commands executed inside a pipeline.
+func TestRunPipeline_EnvPropagation(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "custom env var propagates through pipeline",
+			env:  map[string]string{"TELL_ME_TEST_661": "pipeline_value_661"},
+			want: "pipeline_value_661",
+		},
+		{
+			name: "empty env map does not crash",
+			env:  map[string]string{},
+			want: "", // printenv outputs nothing for missing var
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pipedParts := [][]string{
+				{helperPath, "printenv", "TELL_ME_TEST_661"},
+				{helperPath, "cat"},
+			}
+			res, err := e.RunPipeline(ctx, pipedParts, executionConfig{Env: tt.env})
+			if err != nil {
+				t.Fatalf("RunPipeline failed: %v", err)
+			}
+			if tt.want != "" && !strings.Contains(res.Output, tt.want) {
+				t.Errorf("expected output to contain %q, got %q", tt.want, res.Output)
+			}
+			if tt.want == "" && strings.Contains(res.Output, "TELL_ME_TEST_661") {
+				t.Errorf("expected no env var output, got %q", res.Output)
+			}
+		})
+	}
+}
+
+// TestNewPipeline_WirePipesError exercises the error return path in newPipeline
+// when wirePipes fails due to a pre-consumed pipe.
+//
+// NOTE: This tests wirePipes directly rather than through newPipeline because
+// newPipelineCmd creates fresh exec.Cmd objects with un-consumed pipes, making
+// it structurally impossible to trigger a wirePipes failure through newPipeline.
+// The newPipeline lines 41-43 (wirePipes error return) are therefore
+// structurally unreachable in normal operation. The wirePipes function itself
+// is fully covered by this and the existing WirePipesCleanupOnFailure tests.
+//
+// GAP (B10): newPipeline at 88.9% — the wirePipes error return path remains
+// uncovered because exec.Cmd pipes are always fresh after CommandContext.
+func TestNewPipeline_WirePipesError(t *testing.T) {
+	e := newprocessExecutor()
+	_ = e // not used directly, but documents that newPipeline is the target
+
+	// Create a pipeline where cmd2 has a pre-consumed stderr pipe.
+	// This causes wirePipes to fail on the stderr pipe for that command.
+	cmd1 := exec.Command("echo", "hello")
+	cmd2 := exec.Command("echo", "world")
+	// Pre-consume cmd2's stderr pipe so wirePipes fails
+	if _, err := cmd2.StderrPipe(); err != nil {
+		t.Fatalf("failed to pre-consume stderr: %v", err)
+	}
+
+	p := &pipeline{cmds: []*exec.Cmd{cmd1, cmd2}}
+	err := p.wirePipes()
+	if err == nil {
+		t.Fatal("expected wirePipes to fail on pre-consumed stderr")
+	}
+	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 1") {
+		t.Errorf("expected stderr pipe error for command 1, got: %v", err)
+	}
+	// Verify pipes were cleaned up on failure
+	p.closePipes()
+}
+
+// TestNewPipelineCmd exercises error and success branches of newPipelineCmd.
+//
+// NOTE: The Windows Cancel branch (pipeline.go:57-59, taskkill proc kill)
+// is platform-gated via runtime.GOOS and untestable on Linux — same pattern
+// as setupCommand. Structurally unreachable on this platform.
+func TestNewPipelineCmd(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		parts   []string
+		index   int
+		config  executionConfig
+		wantErr string
+		wantCmd bool
+		wantEnv string
+	}{
+		{
+			name:    "empty parts at index 0",
+			parts:   []string{},
+			index:   0,
+			config:  executionConfig{},
+			wantErr: "empty command at index 0",
+		},
+		{
+			name:    "empty parts at non-zero index",
+			parts:   []string{},
+			index:   3,
+			config:  executionConfig{},
+			wantErr: "empty command at index 3",
+		},
+		{
+			name:    "valid command returns cmd",
+			parts:   []string{"echo", "hello"},
+			index:   0,
+			config:  executionConfig{},
+			wantCmd: true,
+		},
+		{
+			name:    "custom env vars are propagated",
+			parts:   []string{"echo", "hello"},
+			index:   0,
+			config:  executionConfig{Env: map[string]string{"PIPELINE_TEST_665": "task3"}},
+			wantCmd: true,
+			wantEnv: "PIPELINE_TEST_665=task3",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt // capture
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd, err := e.newPipelineCmd(ctx, tt.parts, tt.index, tt.config)
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantCmd && cmd == nil {
+				t.Fatal("expected non-nil *exec.Cmd")
+			}
+			if tt.wantEnv != "" {
+				found := false
+				for _, e := range cmd.Env {
+					if e == tt.wantEnv {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected cmd.Env to contain %q", tt.wantEnv)
+				}
+			}
+		})
+	}
+}

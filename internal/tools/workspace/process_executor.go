@@ -55,11 +55,7 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 		return executionResult{ExitCode: 1}, setupErr
 	}
 	if file != nil {
-		defer func() {
-			if cerr := file.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("failed to close output file: %w", cerr)
-			}
-		}()
+		defer closeFile(file, &err)
 	}
 
 	if err = cmd.Start(); err != nil {
@@ -228,11 +224,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 
 	file := e.prepareOutputFile(config)
 	if file != nil {
-		defer func() {
-			if cerr := file.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("failed to close output file: %w", cerr)
-			}
-		}()
+		defer closeFile(file, &err)
 	}
 
 	if err = p.start(); err != nil {
@@ -279,42 +271,43 @@ func (e *processExecutor) formatPipelineResult(stdoutStr, stderrStr string, trun
 	}, nil
 }
 
-// resolveAndValidateOutputPath converts a cleaned path to an absolute path,
-// validating that it does not escape the current working directory or the
-// system temporary directory. originalPath is used only for the error message.
-func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, error) {
-	// withinParent checks whether target is inside the given parent directory.
-	withinParent := func(parent, target string) bool {
-		rel, err := filepath.Rel(parent, target)
-		if err != nil {
-			return false
-		}
-		if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-			return false
-		}
-		return true
+// withinParent reports whether target resides inside the parent directory.
+func withinParent(parent, target string) bool {
+	rel, err := filepath.Rel(parent, target)
+	if err != nil {
+		return false
+	}
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return false
+	}
+	return true
+}
+
+// validateAbsPath checks an absolute cleanedPath against CWD and TempDir boundaries.
+// originalPath is used only for error messages.
+func validateAbsPath(cleanedPath, originalPath string) (string, error) {
+	// 1. Check CWD boundary.
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+	if withinParent(cwd, cleanedPath) {
+		return cleanedPath, nil
 	}
 
-	if filepath.IsAbs(cleanedPath) {
-		// 1. Check CWD boundary.
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("failed to get current directory: %w", err)
-		}
-		if withinParent(cwd, cleanedPath) {
+	// 2. Check os.TempDir() boundary (skip if empty).
+	if tmpDir := os.TempDir(); tmpDir != "" {
+		if withinParent(tmpDir, cleanedPath) {
 			return cleanedPath, nil
 		}
-
-		// 2. Check os.TempDir() boundary (skip if empty).
-		if tmpDir := os.TempDir(); tmpDir != "" {
-			if withinParent(tmpDir, cleanedPath) {
-				return cleanedPath, nil
-			}
-		}
-
-		return "", fmt.Errorf("output file path cannot escape current directory: %q", originalPath)
 	}
 
+	return "", fmt.Errorf("output file path cannot escape current directory: %q", originalPath)
+}
+
+// validateAndResolveRelPath resolves a relative cleanedPath against CWD
+// and checks that it does not escape. originalPath is used only for error messages.
+func validateAndResolveRelPath(cleanedPath, originalPath string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current directory: %w", err)
@@ -322,11 +315,21 @@ func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, err
 
 	absPath := filepath.Join(cwd, cleanedPath)
 
-	rel, err := filepath.Rel(cwd, absPath)
-	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+	if !withinParent(cwd, absPath) {
 		return "", fmt.Errorf("output file path cannot escape current directory: %q", originalPath)
 	}
 	return absPath, nil
+}
+
+// resolveAndValidateOutputPath converts a cleaned path to an absolute path,
+// validating that it does not escape the current working directory or the
+// system temporary directory. originalPath is used only for the error message.
+func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, error) {
+	if filepath.IsAbs(cleanedPath) {
+		return validateAbsPath(cleanedPath, originalPath)
+	}
+
+	return validateAndResolveRelPath(cleanedPath, originalPath)
 }
 
 func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, error) {
@@ -403,6 +406,15 @@ func truncateToValidUTF8(s string, maxBytes int) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// closeFile closes a closer and promotes any close error to *err when
+// *err is nil. This prevents close failures from being silently swallowed
+// when the primary operation succeeded.
+func closeFile(closer io.Closer, err *error) {
+	if cerr := closer.Close(); cerr != nil && *err == nil {
+		*err = fmt.Errorf("failed to close output file: %w", cerr)
+	}
 }
 
 // Output runs the command and returns its standard output.

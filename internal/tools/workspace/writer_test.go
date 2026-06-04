@@ -867,6 +867,86 @@ func TestAppendText_SyncCloseError(t *testing.T) {
 	}
 }
 
+func TestAppendText_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.appendText(ctx, map[string]interface{}{"content": 123, "filepath": "/tmp/test.txt"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for invalid content type")
+	}
+}
+
+func TestAppendText_SnapshotError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "append_snap.txt")
+	if err := os.WriteFile(path, []byte("existing"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	bm := newBackupManager(sm, &mockFS_ReadFileError{
+		FileSystem:  persistencetest.NewPlainOSFileSystem(),
+		readFileErr: fmt.Errorf("snapshot I/O failure"),
+	}, 10)
+
+	w := &fileWriter{sm: sm, bm: bm, fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "new data",
+		"reason":   "testing",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected snapshot error, got nil")
+	}
+	if !strings.Contains(err.Error(), "snapshot I/O failure") {
+		t.Errorf("expected 'snapshot I/O failure' in error, got: %v", err)
+	}
+}
+
+func TestAppendText_WriteCloseError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "append_both_fail.txt")
+	if err := os.WriteFile(path, []byte("init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	mfs := &mockFS_AppendWriteClose{
+		FileSystem: persistencetest.NewPlainOSFileSystem(),
+		writeErr:   fmt.Errorf("write failure"),
+		closeErr:   fmt.Errorf("close failure"),
+	}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+	ctx := context.Background()
+
+	_, err := w.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "test",
+		"reason":   "testing",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// Must return the write error, not the close error
+	if !strings.Contains(err.Error(), "write failure") {
+		t.Errorf("expected 'write failure' in error, got: %v", err)
+	}
+	// Must NOT contain the close error (it was correctly suppressed by err == nil guard)
+	if strings.Contains(err.Error(), "close failure") {
+		t.Errorf("close error should not leak when write already failed, got: %v", err)
+	}
+}
+
 type mockFS_CloseError struct {
 	persistence.FileSystem
 	closeErr error
@@ -892,6 +972,47 @@ func (m *mockFileCloseErr) Close() error {
 
 func (m *mockFileCloseErr) ReadDir(n int) ([]os.DirEntry, error) {
 	return nil, fmt.Errorf("not a directory")
+}
+
+// mockFileWriteCloseErr is a File that fails both Write and Close.
+// Used to verify that when Write fails first, the deferred Close error
+// is correctly suppressed by the err == nil guard in the defer.
+type mockFileWriteCloseErr struct {
+	*os.File
+	writeErr error
+	closeErr error
+}
+
+func (m *mockFileWriteCloseErr) Write(p []byte) (n int, err error) {
+	if m.writeErr != nil {
+		return 0, m.writeErr
+	}
+	return m.File.Write(p)
+}
+
+func (m *mockFileWriteCloseErr) Close() error {
+	_ = m.File.Close()
+	return m.closeErr
+}
+
+func (m *mockFileWriteCloseErr) ReadDir(n int) ([]os.DirEntry, error) {
+	return nil, fmt.Errorf("not a directory")
+}
+
+// mockFS_AppendWriteClose is a FileSystem whose OpenFile returns a
+// mockFileWriteCloseErr with configurable Write and Close errors.
+type mockFS_AppendWriteClose struct {
+	persistence.FileSystem
+	writeErr error
+	closeErr error
+}
+
+func (m *mockFS_AppendWriteClose) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
+	f, err := os.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return &mockFileWriteCloseErr{File: f, writeErr: m.writeErr, closeErr: m.closeErr}, nil
 }
 
 func TestWriteFile_SecurityError(t *testing.T) {

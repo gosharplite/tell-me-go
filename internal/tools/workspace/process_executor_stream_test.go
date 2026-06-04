@@ -612,14 +612,14 @@ func TestRunCommand_NonExitError_CommandNotFound(t *testing.T) {
 }
 
 // TestRunCommand_OutputFileCloseError verifies the Close error propagation
-// path in RunCommand. When the output file's Close() fails (e.g., full disk
-// or NFS disconnect), the error is promoted to the return value while the
-// command output is still preserved.
+// path in RunCommand via the closeFile helper. When the output file's Close()
+// fails (e.g., full disk or NFS disconnect), the error is promoted to the
+// return value while the command output is still preserved.
 //
 // NOTE: Forcing *os.File.Close() to fail in a unit test is fragile and
 // platform-dependent. This test verifies the happy path (Close succeeds)
 // and validates the return semantics. The error promotion behavior is
-// verified through code review of the deferred function at lines 57-61.
+// verified through TestCloseFile in the unit test file using a stubCloser.
 func TestRunCommand_OutputFileCloseError(t *testing.T) {
 	e := newprocessExecutor()
 	ctx := context.Background()
@@ -650,9 +650,43 @@ func TestRunCommand_OutputFileCloseError(t *testing.T) {
 	}
 }
 
+// TestRunCommand_CloseFileIntegration verifies the closeFile helper is
+// exercised in production through RunCommand with a real output file.
+// The test confirms that:
+//  1. The file is properly created and written during command execution
+//  2. The file is closed (and thus flushable/readable) after RunCommand returns
+//  3. No spurious close errors are returned for a normal, successful command
+func TestRunCommand_CloseFileIntegration(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "close_integration.txt")
+
+	res, err := e.RunCommand(ctx, []string{helperPath, "echo", "integration-test"}, executionConfig{
+		OutputFile: outputPath,
+	})
+	if err != nil {
+		t.Fatalf("RunCommand failed: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", res.ExitCode)
+	}
+	if !strings.Contains(res.Output, "integration-test") {
+		t.Errorf("expected output to contain 'integration-test', got %q", res.Output)
+	}
+
+	// Verify file was created and properly closed (readable after RunCommand returns)
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("failed to read output file after RunCommand: %v", err)
+	}
+	if !strings.Contains(string(content), "integration-test") {
+		t.Errorf("expected file to contain 'integration-test', got %q", string(content))
+	}
+}
+
 // TestRunPipeline_OutputFileCloseError verifies the Close error propagation
-// path in RunPipeline. Same pattern as RunCommand: when Close fails, the
-// error is promoted while pipeline output is preserved.
+// path in RunPipeline via the closeFile helper.
 func TestRunPipeline_OutputFileCloseError(t *testing.T) {
 	e := newprocessExecutor()
 	ctx := context.Background()
@@ -688,9 +722,17 @@ func TestRunPipeline_OutputFileCloseError(t *testing.T) {
 }
 
 // TestPipeline_StartFailure and TestPipeline_StartFailureDeadlock moved to pipeline_test.go
-// TestRunCommand_NonExitErrorWaitPath directly exercises the non-*exec.ExitError
-// wait path in RunCommand by testing formatPipelineResult with a signal-style
-// error that is not an ExitError. This is the code path at lines 82-84.
+// TestRunCommand_NonExitErrorWaitPath exercises the non-*exec.ExitError
+// wait path via two approaches:
+//  1. "signal kill via formatPipelineResult" — directly tests
+//     formatPipelineResult with a signal-style error (not ExitError).
+//  2. "OS-level kill context preserved" — exercises the context-priority
+//     path in RunCommand (lines 77-79), where ctx.Err() is non-nil
+//     before the non-ExitError branch is reached.
+//
+// For coverage of the actual non-ExitError branch in RunCommand
+// (lines 82-84), see TestRunCommand_NonExitErrorWaitPath_SIGKILL,
+// which uses context.Background() to bypass the context check.
 func TestRunCommand_NonExitErrorWaitPath(t *testing.T) {
 	e := newprocessExecutor()
 
@@ -715,7 +757,8 @@ func TestRunCommand_NonExitErrorWaitPath(t *testing.T) {
 
 	t.Run("OS-level kill context preserved", func(t *testing.T) {
 		// RunCommand path: when cmd.Wait() returns a non-ExitError (e.g., signal),
-		// the code at line 82-84 returns the partial output + the raw error
+		// the context check at lines 77-79 takes priority and returns ctx.Err()
+		// before the non-ExitError branch at lines 82-84 is reached.
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
