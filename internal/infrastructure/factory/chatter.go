@@ -40,7 +40,7 @@ func resolveSkillsDir(paths *persistence.Paths) string {
 
 // registerReadOnlySkillsPath registers the skills directory with the security
 // manager if it supports the RegisterReadOnlyPath method.
-func registerReadOnlySkillsPath(deps ports.SessionDependencies, dir string) {
+func registerReadOnlySkillsPath(deps ports.ChatterComposer, dir string) {
 	if sm, ok := deps.GetSecurityManager().(interface {
 		RegisterReadOnlyPath(path string)
 	}); ok {
@@ -51,7 +51,7 @@ func registerReadOnlySkillsPath(deps ports.SessionDependencies, dir string) {
 // validateChatterDeps returns an error if any required dependency is nil.
 // CostTracker and SecurityManager are intentionally excluded — both may
 // be nil by design and have downstream guards in agent.NewAgent.
-func validateChatterDeps(deps ports.SessionDependencies) error {
+func validateChatterDeps(deps ports.ChatterComposer) error {
 	if deps.GetEventBus() == nil {
 		return fmt.Errorf("event bus is required")
 	}
@@ -68,7 +68,7 @@ func validateChatterDeps(deps ports.SessionDependencies) error {
 }
 
 // NewChatter builds the object graph for the orchestration layer.
-func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
 	if err := validateChatterDeps(deps); err != nil {
 		return nil, err
 	}

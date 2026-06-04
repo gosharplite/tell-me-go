@@ -83,7 +83,7 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(stdctx.Context) error, error) {
 	b.cfg.Logger.Debug("Building session dependencies",
 		slog.String("config_model", cfg.Model),
 		slog.String("config_path", configPath),
@@ -130,7 +130,6 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		hManager:         hManager,
 		sm:               b.cfg.SM,
 		tracker:          tracker,
-		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
 		logger:           telemetry.NewSlogLogger(b.cfg.Logger),
@@ -165,7 +164,6 @@ type sessionDeps struct {
 	hManager         ports.HistoryManager
 	sm               security.Manager
 	tracker          pricing.CostTracker
-	pricingData      pricing.PricingData
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
 	logger           ports.Logger
@@ -200,7 +198,6 @@ func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides
 }
 func (d *sessionDeps) GetTracker() pricing.CostTracker            { return d.tracker }
-func (d *sessionDeps) GetPricingData() pricing.PricingData        { return d.pricingData }
 func (d *sessionDeps) GetHealthManager() ports.HealthCheckManager { return d.health }
 func (d *sessionDeps) GetClient() llm.LLMClient {
 	return d.lazyClient
@@ -212,7 +209,7 @@ func (b *Bootstrapper) GetAgentFactory() ports.ChatterFactory {
 }
 
 // FinalizeSession saves history and records session cost.
-func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *config.Config) error {
 	var errs []error
 
 	if saveErr := hManager.Save(ctx); saveErr != nil {

@@ -98,7 +98,7 @@ type ChatterConfig struct {
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.
-type ChatterFactory func(ctx context.Context, deps SessionDependencies, cfg ChatterConfig) (Chatter, error)
+type ChatterFactory func(ctx context.Context, deps ChatterComposer, cfg ChatterConfig) (Chatter, error)
 
 // SessionConfig defines the configuration interface for a session.
 type SessionConfig interface {
@@ -123,45 +123,37 @@ type SessionConfig interface {
 	GetConfig() *config.Config
 }
 
-// LLMDependencyProvider provides access to LLM-related services.
-type LLMDependencyProvider interface {
-	// GetGateway returns the LLM gateway used for generating responses.
-	GetGateway() llm.LLMGateway
-
-	// GetPricingOverrides returns user-configured pricing overrides
-	// that supplement or replace the built-in pricing data.
-	GetPricingOverrides() map[string]pricing.ModelPricing
-
-	// GetTracker returns the cost tracker for monitoring cumulative
-	// token usage and estimated spend.
-	GetTracker() pricing.CostTracker
-
-	// GetPricingData returns the built-in pricing data for all known models.
-	GetPricingData() pricing.PricingData
-}
-
-// PersistenceDependencyProvider provides access to history and persistence paths.
-type PersistenceDependencyProvider interface {
-	GetHistoryManager() HistoryManager
-	GetPaths() *persistence.Paths
-}
-
-// InfrastructureDependencyProvider provides access to cross-cutting infrastructure.
-type InfrastructureDependencyProvider interface {
-	GetRegistry() (tools.Registry, error)
-	GetSecurityManager() security.Manager
-	GetEventBus() events.EventBus
-	GetLogger() Logger
-	GetTurnsLogger() TurnsLogger
-	GetSessionProvider() SessionProvider
+// HealthCheckManagerAccessor provides access to the health check manager.
+// It is a narrow interface for components that only need to run health checks
+// without depending on the full ChatterComposer.
+type HealthCheckManagerAccessor interface {
 	GetHealthManager() HealthCheckManager
 }
 
-// SessionDependencies defines the dependencies required for a session.
-type SessionDependencies interface {
-	LLMDependencyProvider
-	PersistenceDependencyProvider
-	InfrastructureDependencyProvider
+// ChatterComposer defines the dependencies required to construct a Chatter
+// via a ChatterFactory. It is the narrowest interface needed by
+// factory.NewChatter.
+type ChatterComposer interface {
+	GetGateway() llm.LLMGateway
+	GetEventBus() events.EventBus
+	GetPaths() *persistence.Paths
+	GetHistoryManager() HistoryManager
+	GetLogger() Logger
+	GetTracker() pricing.CostTracker
+	GetPricingOverrides() map[string]pricing.ModelPricing
+	GetSessionProvider() SessionProvider
+	GetTurnsLogger() TurnsLogger
+	GetSecurityManager() security.Manager
+	GetRegistry() (tools.Registry, error)
+}
+
+// SessionFinalizer defines the dependencies required to finalize a session
+// (record costs, save history). It is the narrowest interface needed by
+// Bootstrapper.FinalizeSession.
+type SessionFinalizer interface {
+	GetTracker() pricing.CostTracker
+	GetPaths() *persistence.Paths
+	GetPricingOverrides() map[string]pricing.ModelPricing
 }
 
 // ContextMetadata contains diagnostics and auxiliary data produced by the

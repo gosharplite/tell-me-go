@@ -15,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
-	"github.com/gosharplite/tell-me-go/internal/agent/session/sessiontest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -179,7 +178,7 @@ func (m *mockFailingUIRenderer) RenderHealthReport(ctx context.Context, report *
 }
 
 func TestSessionManager_ConfigError(t *testing.T) {
-	agentFactory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+	agentFactory := func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
@@ -191,7 +190,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := sessiontest.New(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
+	sd := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {

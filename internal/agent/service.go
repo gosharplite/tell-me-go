@@ -23,8 +23,8 @@ import (
 
 // SessionLifecycleManager defines the interface for building and finalizing sessions.
 type SessionLifecycleManager interface {
-	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error)
-	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
+	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error)
+	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error
 }
 
 // LogFileOpener defines the minimal interface required to open session log files.
@@ -135,7 +135,7 @@ func (s *chatService) handleRetryConfirmation(ctx context.Context, hManager port
 }
 
 // cleanupSession encapsulates the logic for shutting down session resources.
-func (s *chatService) cleanupSession(deps ports.SessionDependencies, cleanup func(context.Context) error) {
+func (s *chatService) cleanupSession(deps ports.ChatterComposer, cleanup func(context.Context) error) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
 	defer cancel()
 
@@ -192,7 +192,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 }
 
 // finalizeSessionState handles the terminal session transitions and error aggregation.
-func (s *chatService) finalizeSessionState(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config, runErr error) error {
+func (s *chatService) finalizeSessionState(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config, runErr error) error {
 	finalizeErr := s.LifecycleManager.FinalizeSession(ctx, hManager, deps, cfg)
 	if finalizeErr == nil {
 		return runErr
@@ -268,12 +268,15 @@ func (s *chatService) RunDiagnostics(ctx context.Context, cfg *domain_config.Con
 	defer s.cleanupSession(deps, cleanup)
 
 	// 2. Perform health check
-	health := deps.GetHealthManager()
-	if health == nil {
+	type healthChecker interface {
+		GetHealthManager() ports.HealthCheckManager
+	}
+	hc, ok := deps.(healthChecker)
+	if !ok || hc.GetHealthManager() == nil {
 		return errors.New("health check manager not available")
 	}
 
-	report, err := health.CheckAll(ctx)
+	report, err := hc.GetHealthManager().CheckAll(ctx)
 	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
 	}

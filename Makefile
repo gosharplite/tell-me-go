@@ -438,9 +438,9 @@ check-full: fmt tidy build
 test-coverage:
 	go test -coverprofile=coverage.raw ./...
 ifeq ($(IS_POSIX),true)
-	@grep -v -E "(internal/agent/agenttest/|internal/agent/orchestrator/orchestratortest/|internal/agent/session/sessiontest/|internal/domain/config/configtest/|internal/tools/analysis/analysistest/|internal/infrastructure/testing/)" coverage.raw > coverage.out
+	@grep -v -E "(internal/agent/agenttest/|internal/agent/orchestrator/orchestratortest/|internal/domain/config/configtest/|internal/tools/analysis/analysistest/|internal/infrastructure/testing/)" coverage.raw > coverage.out
 else
-	@findstr /V /R "internal/agent/agenttest/ internal/agent/orchestrator/orchestratortest/ internal/agent/session/sessiontest/ internal/domain/config/configtest/ internal/tools/analysis/analysistest/ internal/infrastructure/testing/" coverage.raw > coverage.out
+	@findstr /V /R "internal/agent/agenttest/ internal/agent/orchestrator/orchestratortest/ internal/domain/config/configtest/ internal/tools/analysis/analysistest/ internal/infrastructure/testing/" coverage.raw > coverage.out
 endif
 	go tool cover -func=coverage.out
 

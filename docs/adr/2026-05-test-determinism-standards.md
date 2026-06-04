@@ -163,7 +163,19 @@ contexts) and leaked a serialization concern into pure domain logic.
 `test-race`, `lint` (via `golangci-lint`), and the architecture verification suite. Any
 PR that does not pass `make check-full` is blocked from merge.
 
-**Planned enhancement**: A `grep`-based gate in the `Makefile` that scans `*_test.go`
-files for `time.Sleep` calls not accompanied by a `// Simulating latency:` comment. This
-will be added as a `verify-no-sleep-in-tests` target and invoked as part of `check-full`.
-Until then, reviewers enforce this standard manually.
+### Automated Gate: `verify-no-test-sleep`
+
+The `verify-no-test-sleep` Makefile target (invoked by both `make check` and
+`make check-full`) enforces the no-`time.Sleep` rule mechanically via `grep`:
+
+- **Zero tolerance** for `internal/ui/` — any `time.Sleep` in UI test files is a hard
+  violation with no allow-list.
+- **`config/watcher_test.go`** — allowed only when the sleep is accompanied by a
+  `// simulates I/O latency` inline comment.
+- **`telemetry/system_metrics_darwin_test.go`** — allowed as a file-level exception for
+  Darwin kernel tick observation (hardware sampling, not synchronization).
+- Cross-platform: POSIX (shell) and Windows (PowerShell) implementations both gate on
+  the same rules.
+
+Any other `time.Sleep` in a `*_test.go` file fails the build. New allow-list entries
+require an amendment to this ADR.

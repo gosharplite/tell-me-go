@@ -555,7 +555,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 	t.Run("BuildSessionDependencies/all non-nil", func(t *testing.T) {
 		m := new(MockSessionLifecycleManager)
 
-		deps := &agenttest.StubSessionDependencies{}
+		deps := &agenttest.StubChatterComposer{}
 		hm := &agenttest.MockHistoryManager{}
 		cleanup := func(ctx context.Context) error { return nil }
 
@@ -576,7 +576,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 		)
 
 		assert.NoError(t, err)
-		assert.Same(t, deps, gotDeps, "SessionDependencies should be the same pointer")
+		assert.Same(t, deps, gotDeps, "ChatterComposer should be the same pointer")
 		assert.Same(t, hm, gotHM, "HistoryManager should be the same pointer")
 		assert.NotNil(t, gotCleanup, "cleanup function should be non-nil")
 		m.AssertExpectations(t)
@@ -625,7 +625,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 		err := m.FinalizeSession(
 			context.Background(),
 			&agenttest.MockHistoryManager{},
-			&agenttest.StubSessionDependencies{},
+			&agenttest.StubSessionFinalizer{},
 			&domain_config.Config{},
 		)
 
@@ -646,7 +646,7 @@ func TestMockSessionLifecycleManager(t *testing.T) {
 		err := m.FinalizeSession(
 			context.Background(),
 			&agenttest.MockHistoryManager{},
-			&agenttest.StubSessionDependencies{},
+			&agenttest.StubSessionFinalizer{},
 			&domain_config.Config{},
 		)
 

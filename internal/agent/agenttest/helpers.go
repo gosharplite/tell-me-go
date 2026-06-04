@@ -106,118 +106,54 @@ func (m *mockServiceSecurityManager) Close() error         { return m.Called().E
 // MockServiceSecurityManager is a mock of Manager.
 type MockServiceSecurityManager = mockServiceSecurityManager
 
-// StubSessionDependencies is a manual stub implementing ports.SessionDependencies.
-// Each exported field corresponds to a getter method; set the fields your test needs
-// and leave the rest nil / zero-valued.
-type StubSessionDependencies struct {
+// StubChatterComposer is a manual stub implementing ports.ChatterComposer.
+// Use this when a test only needs to construct a Chatter (e.g., via
+// factory.NewChatter). Set only the fields your test uses; leave the rest nil.
+type StubChatterComposer struct {
 	Gateway          llm.LLMGateway
-	Client           llm.LLMClient // optional; nil in all current call sites
-	PricingOverrides map[string]pricing.ModelPricing
-	Tracker          pricing.CostTracker
-	PricingData      pricing.PricingData
-	HistoryManager   ports.HistoryManager
+	EventBus         events.EventBus
 	Paths            *persistence.Paths
+	HistoryManager   ports.HistoryManager
+	Logger           ports.Logger
+	Tracker          pricing.CostTracker
+	PricingOverrides map[string]pricing.ModelPricing
+	SessionProvider  ports.SessionProvider
+	TurnsLogger      ports.TurnsLogger
+	SecurityManager  security.Manager
 	Registry         tools.Registry
 	RegistryErr      error
-	SecurityManager  security.Manager
-	EventBus         events.EventBus
-	Logger           ports.Logger
-	TurnsLogger      ports.TurnsLogger
-	SessionProvider  ports.SessionProvider
-	HealthManager    ports.HealthCheckManager
 }
 
-var _ ports.SessionDependencies = (*StubSessionDependencies)(nil)
+var _ ports.ChatterComposer = (*StubChatterComposer)(nil)
 
-func (s *StubSessionDependencies) GetGateway() llm.LLMGateway {
-	return s.Gateway
-}
-
-func (s *StubSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing {
+func (s *StubChatterComposer) GetGateway() llm.LLMGateway              { return s.Gateway }
+func (s *StubChatterComposer) GetEventBus() events.EventBus            { return s.EventBus }
+func (s *StubChatterComposer) GetPaths() *persistence.Paths            { return s.Paths }
+func (s *StubChatterComposer) GetHistoryManager() ports.HistoryManager { return s.HistoryManager }
+func (s *StubChatterComposer) GetLogger() ports.Logger                 { return s.Logger }
+func (s *StubChatterComposer) GetTracker() pricing.CostTracker         { return s.Tracker }
+func (s *StubChatterComposer) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return s.PricingOverrides
 }
+func (s *StubChatterComposer) GetSessionProvider() ports.SessionProvider { return s.SessionProvider }
+func (s *StubChatterComposer) GetTurnsLogger() ports.TurnsLogger         { return s.TurnsLogger }
+func (s *StubChatterComposer) GetSecurityManager() security.Manager      { return s.SecurityManager }
+func (s *StubChatterComposer) GetRegistry() (tools.Registry, error)      { return s.Registry, s.RegistryErr }
 
-func (s *StubSessionDependencies) GetTracker() pricing.CostTracker {
-	return s.Tracker
+// StubSessionFinalizer is a manual stub implementing ports.SessionFinalizer.
+// Use this when a test only needs to finalize a session (record costs).
+type StubSessionFinalizer struct {
+	Tracker          pricing.CostTracker
+	Paths            *persistence.Paths
+	PricingOverrides map[string]pricing.ModelPricing
 }
 
-func (s *StubSessionDependencies) GetPricingData() pricing.PricingData {
-	return s.PricingData
-}
+var _ ports.SessionFinalizer = (*StubSessionFinalizer)(nil)
 
-func (s *StubSessionDependencies) GetHistoryManager() ports.HistoryManager {
-	return s.HistoryManager
-}
-
-func (s *StubSessionDependencies) GetPaths() *persistence.Paths {
-	return s.Paths
-}
-
-func (s *StubSessionDependencies) GetRegistry() (tools.Registry, error) {
-	return s.Registry, s.RegistryErr
-}
-
-func (s *StubSessionDependencies) GetSecurityManager() security.Manager {
-	return s.SecurityManager
-}
-
-func (s *StubSessionDependencies) GetEventBus() events.EventBus {
-	return s.EventBus
-}
-
-func (s *StubSessionDependencies) GetLogger() ports.Logger {
-	return s.Logger
-}
-
-func (s *StubSessionDependencies) GetTurnsLogger() ports.TurnsLogger {
-	return s.TurnsLogger
-}
-
-func (s *StubSessionDependencies) GetSessionProvider() ports.SessionProvider {
-	return s.SessionProvider
-}
-
-func (s *StubSessionDependencies) GetHealthManager() ports.HealthCheckManager {
-	return s.HealthManager
-}
-
-// NewStubSessionDependencies constructs a StubSessionDependencies from
-// positional parameters, matching the legacy sessiontest.New() signature.
-// Prefer struct-literal initialization for new code:
-//
-//	&StubSessionDependencies{HistoryManager: hm, EventBus: bus, ...}
-func NewStubSessionDependencies(
-	paths *persistence.Paths,
-	hManager ports.HistoryManager,
-	client llm.LLMClient,
-	gw llm.LLMGateway,
-	reg tools.Registry,
-	sm security.Manager,
-	tracker pricing.CostTracker,
-	pData pricing.PricingData,
-	overrides map[string]pricing.ModelPricing,
-	bus events.EventBus,
-	logger ports.Logger,
-	turnsLogger ports.TurnsLogger,
-	sessionProvider ports.SessionProvider,
-	health ports.HealthCheckManager,
-) *StubSessionDependencies {
-	return &StubSessionDependencies{
-		Paths:            paths,
-		HistoryManager:   hManager,
-		Client:           client,
-		Gateway:          gw,
-		Registry:         reg,
-		SecurityManager:  sm,
-		Tracker:          tracker,
-		PricingData:      pData,
-		PricingOverrides: overrides,
-		EventBus:         bus,
-		Logger:           logger,
-		TurnsLogger:      turnsLogger,
-		SessionProvider:  sessionProvider,
-		HealthManager:    health,
-	}
+func (s *StubSessionFinalizer) GetTracker() pricing.CostTracker { return s.Tracker }
+func (s *StubSessionFinalizer) GetPaths() *persistence.Paths    { return s.Paths }
+func (s *StubSessionFinalizer) GetPricingOverrides() map[string]pricing.ModelPricing {
+	return s.PricingOverrides
 }
 
 // StubEventBus is a stub implementation of events.EventBus for testing.
