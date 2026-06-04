@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -225,4 +226,171 @@ func TestStreamProcessor_processLine_EdgeCases(t *testing.T) {
 			t.Errorf("expected sb to contain 'typed-nil', got %q", sb.String())
 		}
 	})
+}
+
+// TestStreamProcessor_processLine_TruncationBoundaries verifies that processLine
+// correctly handles lines that fit exactly, exceed remaining capacity, or arrive
+// after the capture limit has already been reached.
+func TestStreamProcessor_processLine_TruncationBoundaries(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxCapture    int
+		totalCaptured int
+		rawLine       []byte
+		wantTruncated bool
+		wantContent   string
+	}{
+		{
+			name:          "a — Exact fit, no truncation",
+			maxCapture:    100,
+			totalCaptured: 91,
+			rawLine:       []byte("12345678"),
+			wantTruncated: false,
+			wantContent:   "12345678\n",
+		},
+		{
+			name:          "b — One byte over, truncation stored",
+			maxCapture:    100,
+			totalCaptured: 94,
+			rawLine:       []byte("123456"),
+			wantTruncated: true,
+			wantContent:   "123456",
+		},
+		{
+			name:          "c — Already at max, no content written",
+			maxCapture:    100,
+			totalCaptured: 100,
+			rawLine:       []byte("data"),
+			wantTruncated: true,
+			wantContent:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mu := &sync.Mutex{}
+			truncated := &atomic.Bool{}
+			totalCaptured := tt.totalCaptured
+
+			sp := &streamProcessor{
+				stdoutStr:     &strings.Builder{},
+				mu:            mu,
+				truncated:     truncated,
+				totalCaptured: &totalCaptured,
+				maxCapture:    tt.maxCapture,
+				file:          nil,
+				feedback:      nil,
+			}
+
+			var sb strings.Builder
+			sp.processLine(&sb, tt.rawLine, "", nil)
+
+			// Check truncation flag
+			if sp.truncated.Load() != tt.wantTruncated {
+				t.Errorf("truncated = %v, want %v", sp.truncated.Load(), tt.wantTruncated)
+			}
+
+			// Check content
+			gotContent := sb.String()
+			if gotContent != tt.wantContent {
+				t.Errorf("sb = %q, want %q", gotContent, tt.wantContent)
+			}
+
+			// Verify totalCaptured never exceeds maxCapture
+			if *sp.totalCaptured > tt.maxCapture {
+				t.Errorf("totalCaptured = %d, exceeds maxCapture = %d", *sp.totalCaptured, tt.maxCapture)
+			}
+		})
+	}
+}
+
+// TestStreamProcessor_processLine_WithFileOutput verifies that processLine writes
+// to a real file (sp.file != nil path) via writeTracker, and optionally writes
+// to a feedback buffer.
+func TestStreamProcessor_processLine_WithFileOutput(t *testing.T) {
+	tests := []struct {
+		name         string
+		rawLine      string
+		prefix       string
+		wantFile     string
+		wantSB       string
+		wantFeedback string
+		useFeedback  bool
+	}{
+		{
+			name:     "plain line",
+			rawLine:  "hello world",
+			prefix:   "",
+			wantFile: "hello world\n",
+			wantSB:   "hello world",
+		},
+		{
+			name:         "with stderr prefix + feedback",
+			rawLine:      "error msg",
+			prefix:       "[stderr]",
+			wantFile:     "error msg\n",
+			wantSB:       "[stderr] error msg",
+			wantFeedback: "[stderr] error msg",
+			useFeedback:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a temp file for testing file output.
+			tmpPath := filepath.Join(t.TempDir(), "output.txt")
+			f, err := os.Create(tmpPath)
+			if err != nil {
+				t.Fatalf("failed to create temp file: %v", err)
+			}
+			defer func() { _ = f.Close() }()
+
+			mu := &sync.Mutex{}
+			truncated := &atomic.Bool{}
+			totalCaptured := 0
+
+			var fb *bytes.Buffer
+			var fbWriter io.Writer
+			if tt.useFeedback {
+				fb = &bytes.Buffer{}
+				fbWriter = fb
+			}
+
+			sp := &streamProcessor{
+				stdoutStr:     &strings.Builder{},
+				mu:            mu,
+				truncated:     truncated,
+				totalCaptured: &totalCaptured,
+				maxCapture:    1024, // large enough to avoid truncation
+				file:          f,
+				wt:            &writeTracker{},
+				feedback:      fbWriter,
+			}
+
+			var sb strings.Builder
+			sp.processLine(&sb, []byte(tt.rawLine), tt.prefix, fbWriter)
+
+			// Verify sb contains wantSB
+			if !strings.Contains(sb.String(), tt.wantSB) {
+				t.Errorf("sb = %q, expected to contain %q", sb.String(), tt.wantSB)
+			}
+
+			// Close file before reading so content is flushed
+			_ = f.Close()
+			fileContent, err := os.ReadFile(tmpPath)
+			if err != nil {
+				t.Fatalf("failed to read file: %v", err)
+			}
+			if !strings.Contains(string(fileContent), tt.wantFile) {
+				t.Errorf("file = %q, expected to contain %q", string(fileContent), tt.wantFile)
+			}
+
+			// Verify feedback buffer
+			if tt.useFeedback && fb != nil {
+				if !strings.Contains(fb.String(), tt.wantFeedback) {
+					t.Errorf("feedback = %q, expected to contain %q", fb.String(), tt.wantFeedback)
+				}
+			}
+		})
+	}
 }
