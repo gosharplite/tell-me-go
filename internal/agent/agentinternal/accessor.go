@@ -186,7 +186,7 @@ func (a *AgentInternal) SetRuntimeConfigForTest(snap RuntimeSnapshot) {
 }
 
 // ---------------------------------------------------------------------
-// Mocks (unchanged from the previous incarnation of this file).
+// Mocks
 // ---------------------------------------------------------------------
 
 // mockSessionLifecycleManager is a mock of agent.SessionLifecycleManager.
@@ -197,11 +197,11 @@ type mockSessionLifecycleManager struct {
 	mock.Mock
 }
 
-func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
+func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
-	var deps ports.SessionDependencies
-	if args.Get(0) != nil {
-		deps = args.Get(0).(ports.SessionDependencies)
+	var deps ports.ChatterComposer
+	if raw := args.Get(0); raw != nil {
+		deps = raw.(ports.ChatterComposer)
 	}
 	var hManager ports.HistoryManager
 	if args.Get(1) != nil {
@@ -210,7 +210,7 @@ func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Conte
 	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
 }
 
-func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error {
+func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
 	args := m.Called(ctx, hManager, deps, cfg)
 	return args.Error(0)
 }

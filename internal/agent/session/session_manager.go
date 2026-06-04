@@ -100,7 +100,7 @@ func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdo
 }
 
 // Run executes the session orchestration.
-func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) (err error) {
+func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer, ic ports.Capturer) (err error) {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -180,7 +180,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 }
 
 // Rollback deletes the specified number of turns from history.
-func (o *sessionManager) Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies) error {
+func (o *sessionManager) Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer) error {
 	if sc.GetBackN() <= 0 {
 		return nil
 	}
@@ -210,7 +210,7 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 	})
 }
 
-func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*ui.Bridge, error) {
+func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer) (*ui.Bridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	logger := sd.GetLogger()
@@ -271,7 +271,7 @@ type RunParams struct {
 	RawOutput       bool
 	Prompt          string
 	Config          *config.Config
-	Deps            ports.SessionDependencies
+	Deps            ports.ChatterComposer
 	Capturer        ports.Capturer
 }
 
