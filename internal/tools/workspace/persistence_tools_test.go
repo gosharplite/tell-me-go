@@ -6,6 +6,7 @@ package workspace
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -162,21 +163,65 @@ func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 }
 
 func TestPersistenceTools_GetSessionInfo(t *testing.T) {
-	pt, provider := setupPersistenceTools()
-	provider.info.Model = "test-model"
-
-	res, err := pt.GetSessionInfo(context.Background(), nil, nil)
-	if err != nil {
-		t.Fatalf("GetSessionInfo failed: %v", err)
+	tests := []struct {
+		name        string
+		setup       func(*persistenceTools, *mockSessionProvider)
+		wantModel   string
+		wantErr     bool
+		wantErrText string
+	}{
+		{
+			name: "success",
+			setup: func(pt *persistenceTools, p *mockSessionProvider) {
+				p.info.Model = "test-model"
+			},
+			wantModel: "test-model",
+		},
+		{
+			name: "marshal error",
+			setup: func(pt *persistenceTools, p *mockSessionProvider) {
+				pt.marshalIndent = func(v any, prefix, indent string) ([]byte, error) {
+					return nil, errors.New("marshal exploded")
+				}
+			},
+			wantErr:     true,
+			wantErrText: "marshal exploded",
+		},
 	}
 
-	var info ports.SessionInfo
-	if err := json.Unmarshal([]byte(res.Text), &info); err != nil {
-		t.Fatalf("Failed to unmarshal result: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pt, provider := setupPersistenceTools()
+			tt.setup(pt, provider)
 
-	if info.Model != "test-model" {
-		t.Errorf("Expected model test-model, got %s", info.Model)
+			res, err := pt.GetSessionInfo(context.Background(), nil, nil)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErrText) {
+					t.Errorf("error = %q; want containing %q", err.Error(), tt.wantErrText)
+				}
+				// Verify ToolResult is zero-valued on error
+				if res.Text != "" {
+					t.Errorf("expected empty result on error, got Text=%q", res.Text)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			var info ports.SessionInfo
+			if err := json.Unmarshal([]byte(res.Text), &info); err != nil {
+				t.Fatalf("failed to unmarshal result: %v", err)
+			}
+			if info.Model != tt.wantModel {
+				t.Errorf("Model = %q; want %q", info.Model, tt.wantModel)
+			}
+		})
 	}
 }
 
