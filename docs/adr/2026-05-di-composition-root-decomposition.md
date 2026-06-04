@@ -52,8 +52,13 @@ fields directly rather than closures that close over the half-constructed `Boots
   time rather than through closures
 
 ### Neutral
-- The `Bootstrapper` still has 17 exported fields (HomeDir, SM, Version, etc.). Further decomposition
-  into a `BootstrapperConfig` value object is deferred to a future ADR.
+- The `Bootstrapper` constructor accepts a `BootstrapperConfig` value object with 14 fields.
+  Four of these are function-typed (`RegisterAllTools`, `RegisterMetrics`, `RotateSession`,
+  `NewSessionState`). Each is a direct pass-through reference — not a closure — consumed by
+  exactly one sub-factory behind an unexported interface. The sub-factories (`sessionFactory`,
+  `toolchainFactory`, etc.) are the encapsulation boundary; further interface-wrapping of these
+  function fields was reviewed post-implementation (2026-05-19) and rejected as over-engineering:
+  it would add indirection with zero benefit given the 1:1 producer:consumer relationship.
 
 ## Alternatives Considered
 
@@ -64,3 +69,23 @@ fields directly rather than closures that close over the half-constructed `Boots
 3. **Move sub-factories into separate packages.** Rejected: the interfaces are package-private
    and tightly coupled to the `di` package's parameter types (`toolchainParams`, etc.). Exporting
    them would create unnecessary public API surface.
+
+## Post-Implementation Review (2026-05-19)
+
+The original "Neutral" consequence noted a possible future ADR to further decompose
+`BootstrapperConfig`. On review, no further work is needed:
+
+- **`BootstrapperConfig` is already a value object.** It holds configuration data and function
+  references; it has no behavior or lifecycle logic.
+- **The four function fields are pass-through references**, not closures. They flow from
+  `BootstrapperConfig` → sub-factory constructor → sub-factory struct field → single call site.
+  Each has exactly one producer (`DefaultBootstrapperConfig()`) and one consumer (its respective
+  sub-factory). There is no N:M coupling to untangle.
+- **The sub-factories are the encapsulation boundary.** `sessionFactory`, `toolchainFactory`,
+  `telemetryFactory`, etc. are unexported interfaces with unexported default implementations.
+  Wrapping the function fields in additional single-method interfaces would add indirection
+  with zero architectural benefit.
+- **The lazy-initialization closure problem was already solved** by `LazyClient` and
+  `LazyRegistry` types, each with their own `sync.Once`-guarded factory.
+
+**Verdict: ADR-041 is complete. No follow-up ADR needed.**
