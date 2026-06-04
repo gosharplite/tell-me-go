@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -981,4 +982,163 @@ func TestShellTool_SplitPipelineErrors(t *testing.T) {
 		}
 		_ = res
 	})
+}
+
+func TestShellWrapper_Wrap(t *testing.T) {
+	posix := &posixShellWrapper{}
+	windows := &windowsShellWrapper{}
+
+	tests := []struct {
+		name    string
+		wrapper shellWrapper
+		command string
+		parts   []string
+		want    []string
+		checkFn func(*testing.T, []string) // custom assertion for non-deterministic cases
+	}{
+		{
+			name:    "posix/any command",
+			wrapper: posix,
+			command: "echo hello",
+			parts:   []string{"echo", "hello"},
+			want:    []string{"sh", "-c", "echo hello"},
+		},
+		{
+			name:    "windows/powershell verb-noun",
+			wrapper: windows,
+			command: "Get-ChildItem .",
+			parts:   []string{"Get-ChildItem", "."},
+			checkFn: assertPowerShellWrapping("Get-ChildItem ."),
+		},
+		{
+			name:    "windows/powershell env-var indicator",
+			wrapper: windows,
+			command: "echo $env:PATH",
+			parts:   []string{"echo", "$env:PATH"},
+			checkFn: assertPowerShellWrapping("echo $env:PATH"),
+		},
+		{
+			name:    "windows/powershell subexpression",
+			wrapper: windows,
+			command: "echo $(whoami)",
+			parts:   []string{"echo", "$(whoami)"},
+			checkFn: assertPowerShellWrapping("echo $(whoami)"),
+		},
+		{
+			name:    "windows/powershell cmdlet substring",
+			wrapper: windows,
+			command: "ls | Select-String foo",
+			parts:   []string{"ls", "|", "Select-String", "foo"},
+			checkFn: assertPowerShellWrapping("ls | Select-String foo"),
+		},
+		{
+			name:    "windows/powershell ps alias",
+			wrapper: windows,
+			command: "cat file.txt",
+			parts:   []string{"cat", "file.txt"},
+			checkFn: assertPowerShellWrapping("cat file.txt"),
+		},
+		{
+			name:    "windows/plain command",
+			wrapper: windows,
+			command: "dir /b",
+			parts:   []string{"dir", "/b"},
+			want:    []string{"cmd.exe", "/c", "dir /b"},
+		},
+		{
+			name:    "windows/empty parts",
+			wrapper: windows,
+			command: "",
+			parts:   []string{},
+			want:    []string{"cmd.exe", "/c", ""},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.wrapper.Wrap(tt.command, tt.parts)
+			if tt.checkFn != nil {
+				tt.checkFn(t, got)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Wrap() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// assertPowerShellWrapping returns a check function that validates PowerShell-style
+// wrapping without hardcoding the shell binary (pwsh vs powershell is host-dependent).
+func assertPowerShellWrapping(expectedCommand string) func(*testing.T, []string) {
+	return func(t *testing.T, got []string) {
+		t.Helper()
+		if len(got) < 5 {
+			t.Fatalf("expected at least 5 elements, got %d: %v", len(got), got)
+		}
+
+		// First element must be pwsh or powershell (host-dependent via exec.LookPath)
+		shell := got[0]
+		if shell != "pwsh" && shell != "powershell" {
+			t.Errorf("expected shell to be 'pwsh' or 'powershell', got %q", shell)
+		}
+
+		// Flags must appear in order
+		if got[1] != "-NoProfile" {
+			t.Errorf("expected -NoProfile at position 1, got %q", got[1])
+		}
+		if got[2] != "-NonInteractive" {
+			t.Errorf("expected -NonInteractive at position 2, got %q", got[2])
+		}
+		if got[3] != "-Command" {
+			t.Errorf("expected -Command at position 3, got %q", got[3])
+		}
+
+		// The command argument must carry the UTF-8 encoding prefix
+		const utf8Prefix = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+		last := got[4]
+		if !strings.HasPrefix(last, utf8Prefix) {
+			t.Errorf("expected last element to start with %q, got %q", utf8Prefix, last)
+		}
+		if !strings.HasSuffix(last, expectedCommand) {
+			t.Errorf("expected last element to end with %q, got %q", expectedCommand, last)
+		}
+	}
+}
+
+// TestWindowsShellWrapper_Wrap_PwshFound covers the pwsh LookPath success branch.
+// It places a fake pwsh executable on PATH so that exec.LookPath("pwsh") succeeds.
+// Cannot use t.Parallel() because t.Setenv is incompatible with parallel tests.
+func TestWindowsShellWrapper_Wrap_PwshFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	pwshPath := filepath.Join(tmpDir, "pwsh")
+	if err := os.WriteFile(pwshPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("failed to create fake pwsh: %v", err)
+	}
+	t.Setenv("PATH", tmpDir+":"+os.Getenv("PATH"))
+
+	w := &windowsShellWrapper{}
+	got := w.Wrap("Get-ChildItem .", []string{"Get-ChildItem", "."})
+
+	if len(got) == 0 {
+		t.Fatal("expected non-empty result")
+	}
+	if got[0] != "pwsh" {
+		t.Errorf("expected shell to be 'pwsh' when pwsh is on PATH, got %q", got[0])
+	}
+	if got[1] != "-NoProfile" {
+		t.Errorf("expected -NoProfile at position 1, got %q", got[1])
+	}
+	if got[2] != "-NonInteractive" {
+		t.Errorf("expected -NonInteractive at position 2, got %q", got[2])
+	}
+	if got[3] != "-Command" {
+		t.Errorf("expected -Command at position 3, got %q", got[3])
+	}
+	const utf8Prefix = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+	if !strings.HasPrefix(got[4], utf8Prefix) {
+		t.Errorf("expected UTF-8 prefix, got %q", got[4])
+	}
 }

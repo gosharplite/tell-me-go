@@ -318,3 +318,91 @@ func TestNewPipeline_WirePipesError(t *testing.T) {
 	// Verify pipes were cleaned up on failure
 	p.closePipes()
 }
+
+// TestNewPipelineCmd exercises error and success branches of newPipelineCmd.
+//
+// NOTE: The Windows Cancel branch (pipeline.go:57-59, taskkill proc kill)
+// is platform-gated via runtime.GOOS and untestable on Linux — same pattern
+// as setupCommand. Structurally unreachable on this platform.
+func TestNewPipelineCmd(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		parts   []string
+		index   int
+		config  executionConfig
+		wantErr string
+		wantCmd bool
+		wantEnv string
+	}{
+		{
+			name:    "empty parts at index 0",
+			parts:   []string{},
+			index:   0,
+			config:  executionConfig{},
+			wantErr: "empty command at index 0",
+		},
+		{
+			name:    "empty parts at non-zero index",
+			parts:   []string{},
+			index:   3,
+			config:  executionConfig{},
+			wantErr: "empty command at index 3",
+		},
+		{
+			name:    "valid command returns cmd",
+			parts:   []string{"echo", "hello"},
+			index:   0,
+			config:  executionConfig{},
+			wantCmd: true,
+		},
+		{
+			name:    "custom env vars are propagated",
+			parts:   []string{"echo", "hello"},
+			index:   0,
+			config:  executionConfig{Env: map[string]string{"PIPELINE_TEST_665": "task3"}},
+			wantCmd: true,
+			wantEnv: "PIPELINE_TEST_665=task3",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt // capture
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd, err := e.newPipelineCmd(ctx, tt.parts, tt.index, tt.config)
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantCmd && cmd == nil {
+				t.Fatal("expected non-nil *exec.Cmd")
+			}
+			if tt.wantEnv != "" {
+				found := false
+				for _, e := range cmd.Env {
+					if e == tt.wantEnv {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected cmd.Env to contain %q", tt.wantEnv)
+				}
+			}
+		})
+	}
+}

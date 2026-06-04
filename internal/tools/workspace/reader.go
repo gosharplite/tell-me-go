@@ -27,6 +27,11 @@ type fileReader struct {
 	fs       persistence.FileSystem
 	executor commandExecutor
 	policy   services.WorkspacePolicy
+
+	// processSingleFileFn, if non-nil, overrides the processSingleFile method
+	// when called from readFiles. This exists solely to enable testing of the
+	// defensive error-return path at line 236-238.
+	processSingleFileFn func(ctx context.Context, path string, sb *strings.Builder) error
 }
 
 func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -233,7 +238,12 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{},
 		if i%5 == 0 && hb != nil {
 			sendHeartbeat(ctx, hb)
 		}
-		if err := r.processSingleFile(ctx, path, &sb); err != nil {
+
+		psf := r.processSingleFile
+		if r.processSingleFileFn != nil {
+			psf = r.processSingleFileFn
+		}
+		if err := psf(ctx, path, &sb); err != nil {
 			return tools.ToolResult{}, err
 		}
 	}
