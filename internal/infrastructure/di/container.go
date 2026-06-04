@@ -16,23 +16,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
-
-// ConfigurableSecurityManager extends the domain security manager with configuration methods.
-type ConfigurableSecurityManager interface {
-	security.Manager
-	SetCommandsLogFile(path string)
-	RegisterSafePath(path string)
-	RegisterReadOnlyPath(path string)
-	SetBypassActive(active bool)
-	RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error
-}
 
 // Bootstrapper handles the instantiation and wiring of system components.
 type Bootstrapper struct {
@@ -84,16 +72,7 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(stdctx.Context) error, error) {
-	b.cfg.Logger.Debug("Building session dependencies",
-		slog.String("config_model", cfg.Model),
-		slog.String("config_path", configPath),
-		slog.Int("config_models_count", len(cfg.Models)))
-
-	for k, v := range cfg.Models {
-		b.cfg.Logger.Debug("Config model details",
-			slog.String("model", k),
-			slog.Float64("pricing_comp", v.Pricing.Comp))
-	}
+	b.logBuildStart(cfg, configPath)
 
 	pricingOverrides := b.getPricingOverrides(cfg)
 	sessionProvider, paths, cleanup, err := b.sessionFactory.BuildSession(ctx, cfg, configPath, newSession, pricingOverrides)
@@ -107,12 +86,56 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
+	bus, logger := b.wireInfrastructure(ctx)
+	pricingData, tracker, turnsLogger, cleanup := b.wireTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
+	lazyClient := b.wireLLMClient(cfg, pricingData, bus, logger)
+
+	deps := &sessionDeps{
+		infraProvider: infraProvider{
+			paths: paths, sm: b.cfg.SM, bus: bus, logger: logger, turnsLogger: turnsLogger,
+		},
+		telemetryProvider:    telemetryProvider{tracker: tracker, pricingOverrides: pricingOverrides},
+		sessionStateProvider: sessionStateProvider{hManager: hManager, sessionProvider: sessionProvider, workspacePolicy: b.cfg.WorkspacePolicy},
+		lazyProvider:         lazyProvider{client: lazyClient},
+	}
+
+	deps.health = b.wireHealth(cfg, sessionProvider, lazyClient)
+	deps.registry = b.wireToolRegistry(paths, sessionProvider, deps.health, lazyClient, bus, cfg, pricingOverrides, capturer)
+
+	return deps, hManager, cleanup, nil
+}
+
+// logBuildStart emits debug-level diagnostics about the configuration being used.
+func (b *Bootstrapper) logBuildStart(cfg *config.Config, configPath string) {
+	b.cfg.Logger.Debug("Building session dependencies",
+		slog.String("config_model", cfg.Model),
+		slog.String("config_path", configPath),
+		slog.Int("config_models_count", len(cfg.Models)))
+
+	for k, v := range cfg.Models {
+		b.cfg.Logger.Debug("Config model details",
+			slog.String("model", k),
+			slog.Float64("pricing_comp", v.Pricing.Comp))
+	}
+}
+
+// wireInfrastructure creates the event bus and slog-backed logger.
+func (b *Bootstrapper) wireInfrastructure(ctx stdctx.Context) (events.EventBus, ports.Logger) {
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.cfg.Logger), events.WithAsync(false))
-
-	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
-
 	logger := telemetry.NewSlogLogger(b.cfg.Logger)
-	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
+	return bus, logger
+}
+
+// wireTelemetry delegates to the telemetryFactory to build pricing data,
+// cost tracking, and turns logging.
+func (b *Bootstrapper) wireTelemetry(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, cleanup func(stdctx.Context) error) (pricing.PricingData, pricing.CostTracker, ports.TurnsLogger, func(stdctx.Context) error) {
+	return b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
+}
+
+// wireLLMClient creates a lazily-initialized LLM client. The underlying
+// provider client is not constructed until the first Generate/SendChat call.
+func (b *Bootstrapper) wireLLMClient(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) *lazyClient {
+	return newLazyClient(func() (llm.ExtendedClient, error) {
 		if len(cfg.FailoverOrder) > 0 {
 			gw, err := b.cfg.ClientFactory.NewFailoverChain(cfg, pricingData, bus, logger)
 			if err != nil {
@@ -124,28 +147,23 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		}
 		return b.cfg.ClientFactory.NewClient(cfg, pricingData, bus, logger)
 	})
+}
 
-	deps := &sessionDeps{
-		paths:            paths,
-		hManager:         hManager,
-		sm:               b.cfg.SM,
-		tracker:          tracker,
-		pricingOverrides: pricingOverrides,
-		bus:              bus,
-		logger:           telemetry.NewSlogLogger(b.cfg.Logger),
-		turnsLogger:      turnsLogger,
-		sessionProvider:  sessionProvider,
-		workspacePolicy:  b.cfg.WorkspacePolicy,
-		lazyClient:       lazyClient,
-	}
+// wireHealth builds the health check manager wired with persistence,
+// LLM provider, and toolchain health checkers.
+func (b *Bootstrapper) wireHealth(cfg *config.Config, sessionProvider ports.SessionProvider, lazyClient llm.ExtendedClient) ports.HealthCheckManager {
+	return b.healthFactory.BuildHealthManager(cfg, sessionProvider, lazyClient, b.toolchainFactory)
+}
 
-	deps.health = b.healthFactory.BuildHealthManager(cfg, sessionProvider, lazyClient, b.toolchainFactory)
-
-	lazyRegistry := newLazyRegistry(func() (tools.Registry, error) {
+// wireToolRegistry creates a lazily-initialized tool registry. Tool
+// registration (filesystem scanning, binary discovery, security policy
+// evaluation) is deferred until the first call to GetRegistry.
+func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvider ports.SessionProvider, health ports.HealthCheckManager, lazyClient *lazyClient, bus events.EventBus, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, capturer agent.CapturerInteractor) *lazyRegistry {
+	return newLazyRegistry(func() (tools.Registry, error) {
 		return b.toolchainFactory.BuildRegistry(toolchainParams{
 			Paths:            paths,
 			SessionProvider:  sessionProvider,
-			HealthManager:    deps.health,
+			HealthManager:    health,
 			Client:           lazyClient,
 			Bus:              bus,
 			Model:            cfg.Model,
@@ -154,53 +172,14 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 			Capturer:         capturer,
 		})
 	}, telemetry.NewSlogLogger(b.cfg.Logger))
-	deps.lazyRegistry = lazyRegistry
-
-	return deps, hManager, cleanup, nil
 }
 
 type sessionDeps struct {
-	paths            *persistence.Paths
-	hManager         ports.HistoryManager
-	sm               security.Manager
-	tracker          pricing.CostTracker
-	pricingOverrides map[string]pricing.ModelPricing
-	bus              events.EventBus
-	logger           ports.Logger
-	turnsLogger      ports.TurnsLogger
-	sessionProvider  ports.SessionProvider
-	workspacePolicy  services.WorkspacePolicy
-	health           ports.HealthCheckManager
-
-	lazyClient   *lazyClient
-	lazyRegistry *lazyRegistry
-}
-
-func (d *sessionDeps) GetGateway() llm.LLMGateway {
-	return d.lazyClient
-}
-func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
-func (d *sessionDeps) GetRegistry() (tools.Registry, error) {
-	return d.lazyRegistry.get()
-}
-func (d *sessionDeps) GetSecurityManager() security.Manager { return d.sm }
-func (d *sessionDeps) GetEventBus() events.EventBus         { return d.bus }
-func (d *sessionDeps) GetLogger() ports.Logger              { return d.logger }
-func (d *sessionDeps) GetTurnsLogger() ports.TurnsLogger    { return d.turnsLogger }
-func (d *sessionDeps) GetPaths() *persistence.Paths         { return d.paths }
-func (d *sessionDeps) GetSessionProvider() ports.SessionProvider {
-	return d.sessionProvider
-}
-func (d *sessionDeps) GetWorkspacePolicy() services.WorkspacePolicy {
-	return d.workspacePolicy
-}
-func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
-	return d.pricingOverrides
-}
-func (d *sessionDeps) GetTracker() pricing.CostTracker            { return d.tracker }
-func (d *sessionDeps) GetHealthManager() ports.HealthCheckManager { return d.health }
-func (d *sessionDeps) GetClient() llm.LLMClient {
-	return d.lazyClient
+	infraProvider
+	telemetryProvider
+	sessionStateProvider
+	lazyProvider
+	healthProvider
 }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
