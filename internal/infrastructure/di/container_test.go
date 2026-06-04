@@ -608,16 +608,26 @@ func TestSessionDeps_Getters(t *testing.T) {
 	}, &ports.NoOpLogger{})
 
 	deps := &sessionDeps{
-		paths:           paths,
-		hManager:        hManager,
-		sm:              sm,
-		bus:             bus,
-		tracker:         tracker,
-		sessionProvider: sessionProvider,
-		workspacePolicy: infra_persistence.NewWorkspacePolicy(),
-		health:          factory.NewHealthCheckManager(nil),
-		lazyClient:      lazyClient,
-		lazyRegistry:    lazyRegistry,
+		infraProvider: infraProvider{
+			paths: paths,
+			sm:    sm,
+			bus:   bus,
+		},
+		telemetryProvider: telemetryProvider{
+			tracker: tracker,
+		},
+		sessionStateProvider: sessionStateProvider{
+			hManager:        hManager,
+			sessionProvider: sessionProvider,
+			workspacePolicy: infra_persistence.NewWorkspacePolicy(),
+		},
+		lazyProvider: lazyProvider{
+			client:   lazyClient,
+			registry: lazyRegistry,
+		},
+		healthProvider: healthProvider{
+			health: factory.NewHealthCheckManager(nil),
+		},
 	}
 
 	assert.NotNil(t, deps.GetGateway())
@@ -1193,9 +1203,11 @@ func TestGetHistoryManager_Failure(t *testing.T) {
 
 func TestSessionDeps_GetRegistry_Failure(t *testing.T) {
 	deps := &sessionDeps{
-		lazyRegistry: newLazyRegistry(func() (tools.Registry, error) {
-			return nil, errors.New("registry failed")
-		}, telemetry.NewSlogLogger(nil)),
+		lazyProvider: lazyProvider{
+			registry: newLazyRegistry(func() (tools.Registry, error) {
+				return nil, errors.New("registry failed")
+			}, telemetry.NewSlogLogger(nil)),
+		},
 	}
 	reg, err := deps.GetRegistry()
 	assert.Error(t, err)
@@ -1535,4 +1547,152 @@ func TestBuildSessionDependencies_FailoverChain(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWireInfrastructure(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := &Bootstrapper{cfg: BootstrapperConfig{Logger: logger}}
+
+	bus, log := b.wireInfrastructure(ctx)
+
+	assert.NotNil(t, bus, "event bus should not be nil")
+	assert.NotNil(t, log, "logger should not be nil")
+}
+
+func TestWireTelemetry(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	tf := newTelemetryFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, nil)
+	b := &Bootstrapper{telemetryFactory: tf}
+
+	paths := &persistence.Paths{TurnsLogPath: filepath.Join(tempDir, "turns.log")}
+	cfg := &config.Config{Model: "test-model"}
+
+	origCleanup := func(ctx context.Context) error { return nil }
+	pricingData, tracker, turnsLogger, cleanup := b.wireTelemetry(ctx, paths, cfg, nil, origCleanup)
+
+	assert.NotNil(t, pricingData)
+	assert.NotNil(t, tracker)
+	assert.NotNil(t, turnsLogger)
+	assert.NotNil(t, cleanup)
+}
+
+func TestWireLLMClient(t *testing.T) {
+	ctx := context.Background()
+
+	client := new(mockLLMClient)
+	client.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&llm.Content{}, &llm.Metrics{}, nil)
+
+	cf := ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return client, nil
+	})
+	b := &Bootstrapper{cfg: BootstrapperConfig{ClientFactory: cf}}
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+	logger := telemetry.NewSlogLogger(nil)
+	cfg := &config.Config{Model: "test-model"}
+
+	lc := b.wireLLMClient(cfg, pricing.PricingData{}, bus, logger)
+
+	assert.NotNil(t, lc)
+	// Verify lazy init works by calling Generate, which triggers factory init
+	_, _, err := lc.Generate(ctx, nil, nil, nil)
+	assert.NoError(t, err)
+	client.AssertCalled(t, "Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestWireHealth(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+
+	mockSP := new(mockSessionProvider)
+	mockKV := new(mockKVStore)
+	mockSP.On("GetSettings").Return(mockKV).Maybe()
+	mockSP.On("GetHealthChecker").Return(nil).Maybe()
+
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	cfg := &config.Config{Mode: "assistant"}
+	hm := b.wireHealth(cfg, mockSP, lc)
+
+	assert.NotNil(t, hm)
+}
+
+func TestWireToolRegistry(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	bcfg := DefaultBootstrapperConfig()
+	bcfg.HomeDir = tempDir
+	bcfg.SM = sm
+	bcfg.Version = "1.0.0"
+	bcfg.Stdout = io.Discard
+	bcfg.Stderr = io.Discard
+	b := NewBootstrapper(bcfg)
+
+	paths := &persistence.Paths{LogPath: filepath.Join(tempDir, "test.log"), TracePath: filepath.Join(tempDir, "test.trace.jsonl")}
+	mockSP := new(mockSessionProvider)
+	mockKV := new(mockKVStore)
+	mockSP.On("GetSettings").Return(mockKV).Maybe()
+	mockSP.On("GetHealthChecker").Return(nil).Maybe()
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	hm := b.wireHealth(&config.Config{Mode: "assistant"}, mockSP, lc)
+
+	cfg := &config.Config{Model: "test-model", Mode: "assistant"}
+	lr := b.wireToolRegistry(paths, mockSP, hm, lc, bus, cfg, nil, nil)
+
+	assert.NotNil(t, lr)
+	// Verify lazy init works
+	reg, err := lr.get()
+	assert.NoError(t, err)
+	assert.NotNil(t, reg)
+}
+
+func TestLogBuildStart(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	b := &Bootstrapper{cfg: BootstrapperConfig{Logger: logger}}
+
+	cfg := &config.Config{
+		Model: "test-model",
+		Models: map[string]config.ModelConfig{
+			"test-model": {Pricing: pricing.ModelPricing{Comp: 0.01}},
+		},
+	}
+
+	b.logBuildStart(cfg, "/path/to/config.yaml")
+
+	output := buf.String()
+	assert.Contains(t, output, "Building session dependencies")
+	assert.Contains(t, output, "test-model")
+	assert.Contains(t, output, "/path/to/config.yaml")
 }

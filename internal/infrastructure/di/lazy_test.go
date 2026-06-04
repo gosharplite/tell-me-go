@@ -243,8 +243,10 @@ func TestLazyClient_InitializationFailure_RefreshAuth(t *testing.T) {
 
 func TestSessionDeps_AdditionalGetters(t *testing.T) {
 	deps := &sessionDeps{
-		logger:      telemetry.NewSlogLogger(nil),
-		turnsLogger: nil, // We'll just check if it's there
+		infraProvider: infraProvider{
+			logger:      telemetry.NewSlogLogger(nil),
+			turnsLogger: nil,
+		},
 	}
 
 	assert.NotNil(t, deps.GetLogger())
