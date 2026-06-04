@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
-	sessiontest "github.com/gosharplite/tell-me-go/internal/agent/session/sessiontest"
 	sessionui "github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -22,7 +21,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/gosharplite/tell-me-go/internal/ui"
@@ -98,7 +96,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, mEventBus)
 
-	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+	factory := func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
 	}
 
@@ -159,7 +157,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		Mode:             "mode",
 		SelectedProvider: "provider",
 	})
-	deps := sessiontest.New(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(agenttest.MockSessionProvider), nil)
+	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	assert.NoError(t, err)

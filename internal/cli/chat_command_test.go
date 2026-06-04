@@ -64,11 +64,11 @@ type mockBootstrapper struct {
 	mock.Mock
 }
 
-func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(stdctx.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
-	var deps ports.SessionDependencies
+	var deps ports.ChatterComposer
 	if args.Get(0) != nil {
-		deps = args.Get(0).(ports.SessionDependencies)
+		deps = args.Get(0).(ports.ChatterComposer)
 	}
 	var hManager ports.HistoryManager
 	if args.Get(1) != nil {
@@ -77,7 +77,7 @@ func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *con
 	return deps, hManager, args.Get(2).(func(stdctx.Context) error), args.Error(3)
 }
 
-func (m *mockBootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+func (m *mockBootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *config.Config) error {
 	return m.Called(ctx, hManager, deps, cfg).Error(0)
 }
 

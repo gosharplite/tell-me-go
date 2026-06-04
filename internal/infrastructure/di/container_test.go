@@ -500,7 +500,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 }
 
 type mockSessionDeps struct {
-	ports.SessionDependencies
+	ports.ChatterComposer
 	gw              llm.LLMGateway
 	hManager        ports.HistoryManager
 	reg             tools.Registry
@@ -518,7 +518,6 @@ func (m *mockSessionDeps) GetPaths() *persistence.Paths {
 	}
 	return m.paths
 }
-func (m *mockSessionDeps) GetPricingData() pricing.PricingData     { return pricing.PricingData{} }
 func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
 func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
 func (m *mockSessionDeps) GetRegistry() (tools.Registry, error)    { return m.reg, nil }
@@ -599,7 +598,6 @@ func TestSessionDeps_Getters(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	tracker := &mockTracker{}
-	pData := pricing.PricingData{}
 	sessionProvider := new(mockSessionProvider)
 
 	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
@@ -615,7 +613,6 @@ func TestSessionDeps_Getters(t *testing.T) {
 		sm:              sm,
 		bus:             bus,
 		tracker:         tracker,
-		pricingData:     pData,
 		sessionProvider: sessionProvider,
 		workspacePolicy: infra_persistence.NewWorkspacePolicy(),
 		health:          factory.NewHealthCheckManager(nil),
@@ -632,7 +629,6 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.Equal(t, bus, deps.GetEventBus())
 	assert.Equal(t, paths, deps.GetPaths())
 	assert.Equal(t, tracker, deps.GetTracker())
-	assert.Equal(t, pData, deps.GetPricingData())
 	assert.NotNil(t, deps.GetClient())
 	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
 	assert.NotNil(t, deps.GetHealthManager())

@@ -16,7 +16,7 @@ type Capturer interface {
 
 // SessionManager defines the entry point for running a chat session.
 type SessionManager interface {
-	Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) error
-	Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies) error
+	Run(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer, ic ports.Capturer) error
+	Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer) error
 	RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool)
 }
