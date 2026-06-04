@@ -243,18 +243,18 @@ func TestStreamProcessor_processLine_TruncationBoundaries(t *testing.T) {
 		{
 			name:          "a — Exact fit, no truncation",
 			maxCapture:    100,
-			totalCaptured: 90,
-			rawLine:       []byte("hello"),
+			totalCaptured: 91,
+			rawLine:       []byte("12345678"),
 			wantTruncated: false,
-			wantContent:   "hello",
+			wantContent:   "12345678\n",
 		},
 		{
 			name:          "b — One byte over, truncation stored",
 			maxCapture:    100,
-			totalCaptured: 95,
-			rawLine:       []byte("hello world"),
+			totalCaptured: 94,
+			rawLine:       []byte("123456"),
 			wantTruncated: true,
-			wantContent:   "hello",
+			wantContent:   "123456",
 		},
 		{
 			name:          "c — Already at max, no content written",
@@ -292,12 +292,8 @@ func TestStreamProcessor_processLine_TruncationBoundaries(t *testing.T) {
 
 			// Check content
 			gotContent := sb.String()
-			if tt.wantContent == "" {
-				if gotContent != "" {
-					t.Errorf("expected empty sb, got %q", gotContent)
-				}
-			} else if !strings.Contains(gotContent, tt.wantContent) {
-				t.Errorf("expected sb to contain %q, got %q", tt.wantContent, gotContent)
+			if gotContent != tt.wantContent {
+				t.Errorf("sb = %q, want %q", gotContent, tt.wantContent)
 			}
 
 			// Verify totalCaptured never exceeds maxCapture
