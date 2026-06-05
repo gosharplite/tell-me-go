@@ -92,6 +92,82 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 	}
 }
 
+func TestFilterExcludedBlocks(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		blocks    []uncoveredBlock
+		excluded  []string
+		wantLen   int
+		wantFiles []string // expected File values in result, in order
+	}{
+		{
+			name:      "nil excluded returns all",
+			blocks:    []uncoveredBlock{{File: "pkg/a.go"}, {File: "pkg/b.go"}},
+			excluded:  nil,
+			wantLen:   2,
+			wantFiles: []string{"pkg/a.go", "pkg/b.go"},
+		},
+		{
+			name:      "empty excluded returns all",
+			blocks:    []uncoveredBlock{{File: "pkg/a.go"}},
+			excluded:  []string{},
+			wantLen:   1,
+			wantFiles: []string{"pkg/a.go"},
+		},
+		{
+			name: "single pattern match excludes block",
+			blocks: []uncoveredBlock{
+				{File: "internal/agent/agenttest/mock.go"},
+				{File: "pkg/real.go"},
+			},
+			excluded:  []string{"agenttest"},
+			wantLen:   1,
+			wantFiles: []string{"pkg/real.go"},
+		},
+		{
+			name: "multiple patterns partial match",
+			blocks: []uncoveredBlock{
+				{File: "internal/agent/agenttest/a.go"},
+				{File: "internal/infrastructure/testing/b.go"},
+				{File: "internal/domain/logic.go"},
+			},
+			excluded:  []string{"agenttest", "testing"},
+			wantLen:   1,
+			wantFiles: []string{"internal/domain/logic.go"},
+		},
+		{
+			name:      "no match retains all",
+			blocks:    []uncoveredBlock{{File: "pkg/a.go"}, {File: "pkg/b.go"}},
+			excluded:  []string{"nomatch"},
+			wantLen:   2,
+			wantFiles: []string{"pkg/a.go", "pkg/b.go"},
+		},
+		{
+			name:      "empty blocks returns empty",
+			blocks:    nil,
+			excluded:  []string{"test"},
+			wantLen:   0,
+			wantFiles: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := filterExcludedBlocks(tt.blocks, tt.excluded)
+			if len(got) != tt.wantLen {
+				t.Errorf("filterExcludedBlocks() len = %d, want %d", len(got), tt.wantLen)
+			}
+			for i, f := range tt.wantFiles {
+				if i >= len(got) || got[i].File != f {
+					t.Errorf("filterExcludedBlocks()[%d].File = %q, want %q", i, got[i].File, f)
+				}
+			}
+		})
+	}
+}
+
 func TestParseCoverageLine(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -460,7 +536,7 @@ func TestGetDetailedCoverageReport(t *testing.T) {
 	}
 	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
-	_, err := hea.getDetailedCoverageReport(ctx, "./non-existent", nil)
+	_, err := hea.getDetailedCoverageReport(ctx, "./non-existent", nil, nil)
 	if err == nil {
 		t.Error("expected error for non-existent package, got nil")
 	}
@@ -741,7 +817,7 @@ func TestGetDetailedCoverageReport_Success(t *testing.T) {
 	}
 	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
-	report, err := hea.getDetailedCoverageReport(ctx, ".", nil)
+	report, err := hea.getDetailedCoverageReport(ctx, ".", nil, nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverageReport failed: %v", err)
 	}
@@ -1058,7 +1134,7 @@ func TestGetDetailedCoverageReport_ErrorWithData(t *testing.T) {
 	}
 	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
-	report, err := hea.getDetailedCoverageReport(ctx, ".", nil)
+	report, err := hea.getDetailedCoverageReport(ctx, ".", nil, nil)
 	// Should return BOTH report content AND nil error (error is embedded in report)
 	if err != nil {
 		t.Errorf("expected nil error (warning in report), got: %v", err)

@@ -466,6 +466,53 @@ func TestGetDetailedCoverage_DefaultPath(t *testing.T) {
 	}
 }
 
+func TestGetDetailedCoverage_ExcludedPackages(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					// Profile with blocks in both excluded and non-excluded paths
+					coverageContent := "mode: set\n" +
+						"github.com/user/repo/internal/agent/agenttest/mock_agent.go:10.0,12.0 3 0\n" +
+						"github.com/user/repo/internal/domain/logic.go:5.0,7.0 2 0\n"
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	m := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	args := map[string]interface{}{
+		"path":              ".",
+		"excluded_packages": []interface{}{"agenttest"},
+	}
+	result, err := m.GetDetailedCoverage(ctx, args, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// agenttest block should be excluded, logic.go should remain
+	if strings.Contains(result.Text, "mock_agent.go") {
+		t.Error("expected mock_agent.go to be excluded from report")
+	}
+	if !strings.Contains(result.Text, "logic.go") {
+		t.Error("expected logic.go to appear in report")
+	}
+	if !strings.Contains(result.Text, "Total Gaps: 1") {
+		t.Errorf("expected 1 total gap after exclusion, got: %s", result.Text)
+	}
+}
+
 func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

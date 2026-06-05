@@ -1,7 +1,7 @@
 # ADR-006: History Log Compaction and Bounded Contexts
 
 ## Status
-Implemented (v3.3.0)
+Accepted
 
 ## Context
 Historically, the system used an append-only event sourcing model for the conversation history, where all context turns (user inputs, LLM responses, and tool executions) were appended to a persistent `history.jsonl` file via the Context Manager. Upon a cache miss, the system loaded and parsed an unbounded `O(N)` history slice into memory.

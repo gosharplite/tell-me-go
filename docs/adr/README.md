@@ -11,7 +11,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-003** | Domain Decomposition of Chatter Orchestrator | 2026-01 | Accepted | [2026-01-domain-decomposition-strategy.md](2026-01-domain-decomposition-strategy.md) |
 | **ADR-004** | Elimination of ChatterParams God Object | 2026-01 | Accepted | [2026-01-chatterparams-elimination.md](2026-01-chatterparams-elimination.md) |
 | **ADR-005** | Skill Injection Architecture | 2026-01 | Accepted | [2026-01-skill-injection-architecture.md](2026-01-skill-injection-architecture.md) |
-| **ADR-006** | History Log Compaction and Bounded Contexts | 2026-01 | Implemented | [2026-01-history-log-compaction.md](2026-01-history-log-compaction.md) |
+| **ADR-006** | History Log Compaction and Bounded Contexts | 2026-01 | Accepted | [2026-01-history-log-compaction.md](2026-01-history-log-compaction.md) |
 | **ADR-007** | Extract Agent Configuration via Functional Options | 2026-02 | Accepted | [2026-02-agent-options-extraction.md](2026-02-agent-options-extraction.md) |
 | **ADR-008** | Bubble Tea Interactive History Browser | 2026-02 | Implemented | [2026-02-bubble-tea-history-browser.md](2026-02-bubble-tea-history-browser.md) |
 | **ADR-009** | TUI Interactive Prompt Mode with Auto-completion | 2026-02 | Implemented | [2026-02-tui-prompt-mode.md](2026-02-tui-prompt-mode.md) |
