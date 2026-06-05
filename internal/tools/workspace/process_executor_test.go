@@ -5,8 +5,10 @@ package workspace
 
 import (
 	"context"
+	"io"
+	"os"
+	"os/exec"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -230,68 +232,90 @@ func TestSetupCommand(t *testing.T) {
 	executor := &processExecutor{}
 	ctx := context.Background()
 
-	t.Run("empty parts returns error", func(t *testing.T) {
-		t.Parallel()
+	tests := []struct {
+		name            string
+		parts           []string
+		config          executionConfig
+		wantErr         string
+		expectNilCmd    bool
+		expectNilStdout bool
+		expectNilStderr bool
+		expectNilFile   bool
+		wantEnv         string
+	}{
+		{
+			name:            "empty parts returns error",
+			parts:           []string{},
+			config:          executionConfig{},
+			wantErr:         "empty command",
+			expectNilCmd:    true,
+			expectNilStdout: true,
+			expectNilStderr: true,
+			expectNilFile:   true,
+		},
+		{
+			name:          "valid command returns cmd with pipes",
+			parts:         []string{"echo", "hello"},
+			expectNilFile: true,
+		},
+		{
+			name:          "custom env vars are propagated",
+			parts:         []string{"echo", "hello"},
+			config:        executionConfig{Env: map[string]string{"TELL_ME_TEST_665": "task2_value"}},
+			wantEnv:       "TELL_ME_TEST_665=task2_value",
+			expectNilFile: true,
+		},
+	}
 
-		cmd, stdout, stderr, file, err := executor.setupCommand(ctx, []string{}, executionConfig{})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !strings.Contains(err.Error(), "empty command") {
-			t.Errorf("expected error to contain 'empty command', got: %v", err)
-		}
-		if cmd != nil {
-			t.Error("expected nil cmd")
-		}
-		if stdout != nil {
-			t.Error("expected nil stdout")
-		}
-		if stderr != nil {
-			t.Error("expected nil stderr")
-		}
-		if file != nil {
-			t.Error("expected nil file")
-		}
-	})
+			cmd, stdout, stderr, file, err := executor.setupCommand(ctx, tt.parts, tt.config)
 
-	t.Run("valid command returns cmd with pipes", func(t *testing.T) {
-		t.Parallel()
+			if tt.wantErr != "" {
+				assertPipelineCmdError(t, err, tt.wantErr)
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-		cmd, stdout, stderr, _, err := executor.setupCommand(ctx, []string{"echo", "hello"}, executionConfig{})
+			assertSetupCommandNils(t, cmd, stdout, stderr, file,
+				tt.expectNilCmd, tt.expectNilStdout, tt.expectNilStderr, tt.expectNilFile)
 
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cmd == nil {
-			t.Fatal("expected non-nil *exec.Cmd")
-		}
-		if stdout == nil {
-			t.Error("expected non-nil stdout io.ReadCloser")
-		}
-		if stderr == nil {
-			t.Error("expected non-nil stderr io.ReadCloser")
-		}
-	})
-
-	t.Run("custom env vars are propagated", func(t *testing.T) {
-		t.Parallel()
-
-		const envKey = "TELL_ME_TEST_665"
-		const envVal = "task2_value"
-		cmd, _, _, _, err := executor.setupCommand(ctx, []string{"echo", "hello"}, executionConfig{
-			Env: map[string]string{envKey: envVal},
+			if tt.wantEnv != "" {
+				assertEnvVarPresent(t, cmd.Env, tt.wantEnv)
+			}
 		})
+	}
+}
 
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		want := envKey + "=" + envVal
-		if !slices.Contains(cmd.Env, want) {
-			t.Errorf("expected cmd.Env to contain %q", want)
-		}
-	})
+// assertSetupCommandNils checks nil/non-nil expectations for all four return values.
+func assertSetupCommandNils(t *testing.T, cmd *exec.Cmd, stdout, stderr io.ReadCloser, file *os.File, expectNilCmd, expectNilStdout, expectNilStderr, expectNilFile bool) {
+	t.Helper()
+	if expectNilCmd && cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if !expectNilCmd && cmd == nil {
+		t.Error("expected non-nil *exec.Cmd")
+	}
+	if expectNilStdout && stdout != nil {
+		t.Error("expected nil stdout")
+	}
+	if !expectNilStdout && stdout == nil {
+		t.Error("expected non-nil stdout io.ReadCloser")
+	}
+	if expectNilStderr && stderr != nil {
+		t.Error("expected nil stderr")
+	}
+	if !expectNilStderr && stderr == nil {
+		t.Error("expected non-nil stderr io.ReadCloser")
+	}
+	if expectNilFile && file != nil {
+		t.Error("expected nil file")
+	}
+	if !expectNilFile && file == nil {
+		t.Error("expected non-nil *os.File")
+	}
 }
 
 // TestWithinParent covers withinParent(parent, target string) bool.

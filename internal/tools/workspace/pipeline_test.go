@@ -376,33 +376,49 @@ func TestNewPipelineCmd(t *testing.T) {
 			cmd, err := e.newPipelineCmd(ctx, tt.parts, tt.index, tt.config)
 
 			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
-				}
+				assertPipelineCmdError(t, err, tt.wantErr)
 				return
 			}
 
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if tt.wantCmd && cmd == nil {
-				t.Fatal("expected non-nil *exec.Cmd")
+			if tt.wantCmd {
+				assertCmdNotNil(t, cmd)
 			}
 			if tt.wantEnv != "" {
-				found := false
-				for _, e := range cmd.Env {
-					if e == tt.wantEnv {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("expected cmd.Env to contain %q", tt.wantEnv)
-				}
+				assertEnvVarPresent(t, cmd.Env, tt.wantEnv)
 			}
 		})
 	}
+}
+
+// assertPipelineCmdError checks that err is non-nil and contains wantSubstr.
+func assertPipelineCmdError(t *testing.T, err error, wantSubstr string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), wantSubstr) {
+		t.Errorf("expected error containing %q, got %q", wantSubstr, err.Error())
+	}
+}
+
+// assertCmdNotNil checks that cmd is non-nil.
+func assertCmdNotNil(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("expected non-nil *exec.Cmd")
+	}
+}
+
+// assertEnvVarPresent checks that the env slice contains the exact "KEY=VALUE" entry.
+func assertEnvVarPresent(t *testing.T, env []string, want string) {
+	t.Helper()
+	for _, e := range env {
+		if e == want {
+			return
+		}
+	}
+	t.Errorf("expected cmd.Env to contain %q", want)
 }
