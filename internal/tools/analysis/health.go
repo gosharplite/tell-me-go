@@ -347,7 +347,18 @@ func (m *healthManager) GetDetailedCoverage(ctx context.Context, args map[string
 		path = "./..."
 	}
 
-	report, err := m.getDetailedCoverageReport(ctx, path, hb)
+	var excludedPackages []string
+	if raw, ok := args["excluded_packages"]; ok {
+		if arr, ok := raw.([]interface{}); ok {
+			for _, item := range arr {
+				if s, ok := item.(string); ok {
+					excludedPackages = append(excludedPackages, s)
+				}
+			}
+		}
+	}
+
+	report, err := m.getDetailedCoverageReport(ctx, path, excludedPackages, hb)
 	if err != nil {
 		return tools.ToolResult{Text: "Error: " + err.Error()}, nil
 	}

@@ -414,11 +414,40 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath str
 	return blocks, nil
 }
 
+// filterExcludedBlocks removes blocks whose File path contains any of the
+// excluded package patterns. This matches the Makefile's grep -v exclusion
+// for *test packages (mocks, stubs, test doubles) whose error-return paths
+// are exercised via m.Called() — opaque to static coverage analysis.
+// When excluded is empty or nil, the original slice is returned unchanged.
+func filterExcludedBlocks(blocks []uncoveredBlock, excluded []string) []uncoveredBlock {
+	if len(excluded) == 0 {
+		return blocks
+	}
+	filtered := make([]uncoveredBlock, 0, len(blocks))
+	for _, b := range blocks {
+		skip := false
+		for _, pattern := range excluded {
+			if strings.Contains(b.File, pattern) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			filtered = append(filtered, b)
+		}
+	}
+	return filtered
+}
+
 // getDetailedCoverageReport generates a formatted report optimized for LLM consumption.
-func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePath string, hb chan<- struct{}) (string, error) {
+func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePath string, excludedPackages []string, hb chan<- struct{}) (string, error) {
 	blocks, err := m.getDetailedCoverage(ctx, packagePath, hb)
 	if err != nil && len(blocks) == 0 {
 		return "", err
+	}
+
+	if len(excludedPackages) > 0 {
+		blocks = filterExcludedBlocks(blocks, excludedPackages)
 	}
 
 	report := formatDetailedCoverageReport(packagePath, blocks)

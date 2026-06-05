@@ -50,6 +50,11 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
 						"path": {Type: "STRING", Description: "The package path to analyze (e.g., './internal/service/...')"},
+						"excluded_packages": {
+							Type:        "ARRAY",
+							Items:       &tools.Schema{Type: "STRING"},
+							Description: "Patterns of packages to ignore (e.g., 'agenttest', 'testing'). Matches substrings in file paths.",
+						},
 					},
 					Required: []string{"path"},
 				},
