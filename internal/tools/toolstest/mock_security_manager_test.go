@@ -74,18 +74,62 @@ func TestMockSecurityManager_IsPathSafe(t *testing.T) {
 	}
 }
 
-// --- IsPathWritable (1 subtest) ---
+// --- IsPathWritable (3 subtests) ---
 
 func TestMockSecurityManager_IsPathWritable(t *testing.T) {
 	t.Parallel()
 
-	mock := &MockSecurityManager{AllowAll: true}
-	path, err := mock.IsPathWritable("/any")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	tests := []struct {
+		name    string
+		mock    *MockSecurityManager
+		path    string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "AllowAll",
+			mock: &MockSecurityManager{AllowAll: true},
+			path: "/any",
+			want: "/any",
+		},
+		{
+			name: "default",
+			mock: &MockSecurityManager{},
+			path: "/any",
+			want: "/any",
+		},
+		{
+			name: "with_func",
+			mock: &MockSecurityManager{
+				IsWritableFunc: func(path string) (string, error) {
+					return "writable:" + path, errors.New("writable error")
+				},
+			},
+			path:    "/x",
+			want:    "writable:/x",
+			wantErr: "writable error",
+		},
 	}
-	if path != "/any" {
-		t.Errorf("got %q; want '/any'", path)
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := tt.mock.IsPathWritable(tt.path)
+
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Errorf("got error %v; want %q", err, tt.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+			if got != tt.want {
+				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -144,7 +188,7 @@ func TestMockSecurityManager_Authorize(t *testing.T) {
 	}
 }
 
-// --- IsCommandAllowed (3 subtests) ---
+// --- IsCommandAllowed (4 subtests) ---
 
 func TestMockSecurityManager_IsCommandAllowed(t *testing.T) {
 	t.Parallel()
@@ -158,6 +202,12 @@ func TestMockSecurityManager_IsCommandAllowed(t *testing.T) {
 		{
 			name:   "AllowAll",
 			mock:   &MockSecurityManager{AllowAll: true},
+			cmd:    "rm",
+			wantOk: true,
+		},
+		{
+			name:   "BypassActive",
+			mock:   &MockSecurityManager{BypassActive: true},
 			cmd:    "rm",
 			wantOk: true,
 		},
@@ -214,10 +264,22 @@ func TestMockSecurityManager_BypassActive(t *testing.T) {
 	})
 }
 
-// --- Confirm (2 subtests: interactor + func override) ---
+// --- Confirm (3 subtests: default, interactor, func override) ---
 
 func TestMockSecurityManager_Confirm(t *testing.T) {
 	t.Parallel()
+
+	t.Run("default", func(t *testing.T) {
+		t.Parallel()
+		mock := &MockSecurityManager{}
+		ok, err := mock.Confirm(context.Background(), "msg")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !ok {
+			t.Error("expected true from default fallthrough")
+		}
+	})
 
 	t.Run("with_interactor", func(t *testing.T) {
 		t.Parallel()
@@ -252,6 +314,84 @@ func TestMockSecurityManager_Confirm(t *testing.T) {
 		}
 		if ok {
 			t.Error("expected false from custom ConfirmFunc")
+		}
+	})
+}
+
+// --- No-ops (LogAudit, Close, TerminalLock, TerminalUnlock, Prompt, Warn, RegisterSafePath) ---
+
+func TestMockSecurityManager_Noops(t *testing.T) {
+	t.Parallel()
+
+	mock := &MockSecurityManager{}
+
+	// Must not panic
+	t.Run("LogAudit", func(t *testing.T) {
+		t.Parallel()
+		mock.LogAudit("test", "arg1", "arg2")
+	})
+
+	t.Run("Close", func(t *testing.T) {
+		t.Parallel()
+		if err := mock.Close(); err != nil {
+			t.Errorf("Close() = %v; want nil", err)
+		}
+	})
+
+	t.Run("TerminalLock", func(t *testing.T) {
+		t.Parallel()
+		mock.TerminalLock()
+	})
+
+	t.Run("TerminalUnlock", func(t *testing.T) {
+		t.Parallel()
+		mock.TerminalUnlock()
+	})
+
+	t.Run("Prompt", func(t *testing.T) {
+		t.Parallel()
+		mock.Prompt("test prompt")
+	})
+
+	t.Run("Warn", func(t *testing.T) {
+		t.Parallel()
+		mock.Warn("test warning")
+	})
+
+	t.Run("RegisterSafePath", func(t *testing.T) {
+		t.Parallel()
+		mock.RegisterSafePath("/tmp")
+	})
+}
+
+// --- ReadLine (2 subtests: default + with interactor) ---
+
+func TestMockSecurityManager_ReadLine(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default", func(t *testing.T) {
+		t.Parallel()
+		mock := &MockSecurityManager{}
+		line, err := mock.ReadLine(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if line != "" {
+			t.Errorf("got %q; want empty string", line)
+		}
+	})
+
+	t.Run("with_interactor", func(t *testing.T) {
+		t.Parallel()
+		mock := &MockSecurityManager{
+			Interactor: &MockInteractor{Answer: "user input"},
+		}
+		line, err := mock.ReadLine(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if line != "user input" {
+			t.Errorf("got %q; want 'user input'", line)
 		}
 	})
 }

@@ -44,3 +44,21 @@ func TestMockExecutor(t *testing.T) {
 		assert.Equal(t, []string{"foo"}, m.CommandArgs)
 	})
 }
+
+func TestMockExecutor_LookPath(t *testing.T) {
+	t.Parallel()
+	t.Run("valid_file", func(t *testing.T) {
+		t.Parallel()
+		m := &toolstest.MockExecutor{}
+		path, err := m.LookPath("git")
+		assert.NoError(t, err)
+		assert.Equal(t, "/usr/bin/git", path)
+	})
+	t.Run("empty_file", func(t *testing.T) {
+		t.Parallel()
+		m := &toolstest.MockExecutor{}
+		path, err := m.LookPath("")
+		assert.NoError(t, err)
+		assert.Equal(t, "/usr/bin/", path)
+	})
+}
