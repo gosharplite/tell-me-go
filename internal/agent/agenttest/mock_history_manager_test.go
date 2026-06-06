@@ -268,3 +268,254 @@ func TestMockHistoryManager_SetContents_WithError(t *testing.T) {
 		t.Errorf("got error %v; want 'fail'", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// GetLastUserMessage
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_GetLastUserMessage_Defaults(t *testing.T) {
+	t.Parallel()
+
+	m := &MockHistoryManager{}
+	text, idx, err := m.GetLastUserMessage(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if text != "" {
+		t.Errorf("got text=%q; want \"\"", text)
+	}
+	if idx != 0 {
+		t.Errorf("got idx=%d; want 0", idx)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Archive
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_Archive_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	m := &MockHistoryManager{}
+	err := m.Archive(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMockHistoryManager_Archive_NonNilContents(t *testing.T) {
+	t.Parallel()
+
+	m := &MockHistoryManager{}
+	contents := seedContents(2)
+	err := m.Archive(context.Background(), contents)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AppendParts
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_AppendParts_ValidIndex(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(1) // 1 content with 1 part
+
+	extra := []*llm.Part{{Text: "appended"}}
+	err := m.AppendParts(context.Background(), 0, extra)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	contents := m.GetContents()
+	if len(contents) != 1 {
+		t.Fatalf("got %d contents; want 1", len(contents))
+	}
+	if len(contents[0].Parts) != 2 {
+		t.Errorf("got %d parts; want 2", len(contents[0].Parts))
+	}
+	if contents[0].Parts[1].Text != "appended" {
+		t.Errorf("got part[1].Text=%q; want \"appended\"", contents[0].Parts[1].Text)
+	}
+}
+
+func TestMockHistoryManager_AppendParts_NegativeIndex(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(1) // 1 content with 1 part
+
+	extra := []*llm.Part{{Text: "should-not-be-added"}}
+	err := m.AppendParts(context.Background(), -1, extra)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	contents := m.GetContents()
+	if len(contents) != 1 {
+		t.Fatalf("got %d contents; want 1", len(contents))
+	}
+	if len(contents[0].Parts) != 1 {
+		t.Errorf("got %d parts; want 1 (negative index -> no-op)", len(contents[0].Parts))
+	}
+}
+
+func TestMockHistoryManager_AppendParts_OutOfBounds(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(1) // 1 content with 1 part
+
+	extra := []*llm.Part{{Text: "should-not-be-added"}}
+	err := m.AppendParts(context.Background(), 5, extra)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	contents := m.GetContents()
+	if len(contents) != 1 {
+		t.Fatalf("got %d contents; want 1", len(contents))
+	}
+	if len(contents[0].Parts) != 1 {
+		t.Errorf("got %d parts; want 1 (out-of-bounds index -> no-op)", len(contents[0].Parts))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GetResolver
+// ---------------------------------------------------------------------------
+
+type stubResolver struct{}
+
+func (stubResolver) Resolve(_ context.Context, _ string) ([]byte, error) {
+	return nil, nil
+}
+
+func TestMockHistoryManager_GetResolver_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	m := &MockHistoryManager{}
+	res := &stubResolver{}
+	m.resolver = res
+
+	got := m.GetResolver()
+	if got == nil {
+		t.Fatal("expected non-nil resolver")
+	}
+	if got != res {
+		t.Error("GetResolver did not return the seeded resolver")
+	}
+}
+
+func TestMockHistoryManager_GetResolver_NilByDefault(t *testing.T) {
+	t.Parallel()
+
+	m := &MockHistoryManager{}
+	got := m.GetResolver()
+	if got != nil {
+		t.Errorf("got %v; want nil resolver by default", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetPinned
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_SetPinned_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(3)
+	err := m.SetPinned(context.Background(), 1, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Save
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_Save_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(2)
+	err := m.Save(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Sync
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_Sync_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(2)
+	err := m.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GetFilePath
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_GetFilePath_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	m := &MockHistoryManager{}
+	path := m.GetFilePath()
+	if path != "" {
+		t.Errorf("got path=%q; want \"\"", path)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetInternalContents
+// ---------------------------------------------------------------------------
+
+func TestMockHistoryManager_SetInternalContents_StoresContents(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(2) // pre-seed with 2 entries
+
+	replacement := seedContents(3) // replace with 3 different entries
+	m.SetInternalContents(replacement)
+
+	got := m.GetContents()
+	if len(got) != 3 {
+		t.Fatalf("got %d contents; want 3", len(got))
+	}
+	// Verify logical equivalence for each content (role and parts).
+	for i, want := range replacement {
+		if got[i].Role != want.Role {
+			t.Errorf("content[%d].Role = %q; want %q", i, got[i].Role, want.Role)
+		}
+		if len(got[i].Parts) != len(want.Parts) {
+			t.Errorf("content[%d] has %d parts; want %d", i, len(got[i].Parts), len(want.Parts))
+		}
+	}
+}
+
+func TestMockHistoryManager_SetInternalContents_DeepCopyCheck(t *testing.T) {
+	t.Parallel()
+
+	m := &MockHistoryManager{}
+	replacement := seedContents(1)
+	m.SetInternalContents(replacement)
+
+	// GetContents returns a deep copy; mutating it must not affect internal state.
+	got := m.GetContents()
+	if len(got) != 1 {
+		t.Fatalf("got %d contents; want 1", len(got))
+	}
+	got[0].Parts[0].Text = "mutated"
+
+	gotAgain := m.GetContents()
+	if gotAgain[0].Parts[0].Text == "mutated" {
+		t.Error("SetInternalContents/GetContents did not deep-copy; internal state was mutated")
+	}
+}

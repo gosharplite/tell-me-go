@@ -5,11 +5,14 @@ package orchestratortest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -25,6 +28,17 @@ func (f *fakeT) Errorf(format string, args ...any) {
 }
 
 func (f *fakeT) Helper() {}
+
+// cleanupRecordingT extends fakeT with cleanup tracking for verifying
+// that SetupTurnEngineTest registers a cleanup function.
+type cleanupRecordingT struct {
+	fakeT
+	cleanupFuncs []func()
+}
+
+func (c *cleanupRecordingT) Cleanup(f func()) {
+	c.cleanupFuncs = append(c.cleanupFuncs, f)
+}
 
 // ────────────────────────────── MockHook ──────────────────────────────
 
@@ -295,6 +309,171 @@ func TestNewCostCapturer(t *testing.T) {
 		cc.AssertTurnCosts(ft, []float64{1.0})
 		if len(ft.errs) == 0 {
 			t.Error("expected length mismatch error but got none")
+		}
+	})
+}
+
+// ──────────────────────── TestNewTestContextManager ──────────────────
+
+func TestNewTestContextManager(t *testing.T) {
+	t.Parallel()
+
+	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	hManager := &agenttest.MockHistoryManager{}
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	defer func() { _ = bus.Shutdown(context.Background()) }()
+
+	cm := NewTestContextManager(strategy, hManager, bus)
+
+	t.Run("creates_non_nil_manager", func(t *testing.T) {
+		if cm == nil {
+			t.Fatal("expected non-nil manager")
+		}
+		if cm.Pipeline == nil {
+			t.Error("expected non-nil Pipeline")
+		}
+	})
+
+	t.Run("strategy_is_set", func(t *testing.T) {
+		if cm.Strategy != strategy {
+			t.Errorf("Strategy does not match input")
+		}
+	})
+
+	t.Run("bus_is_set", func(t *testing.T) {
+		if cm.Events != bus {
+			t.Errorf("Events field does not match input bus")
+		}
+	})
+}
+
+// ─────────────────────── TestSetupTurnEngineTest ──────────────────────
+
+func TestSetupTurnEngineTest(t *testing.T) {
+	t.Parallel()
+
+	rt := &cleanupRecordingT{}
+	env := SetupTurnEngineTest(rt)
+
+	t.Run("returns_populated_env", func(t *testing.T) {
+		if env.Gw == nil {
+			t.Error("Gw is nil")
+		}
+		if env.Reg == nil {
+			t.Error("Reg is nil")
+		}
+		if env.Bus == nil {
+			t.Error("Bus is nil")
+		}
+		if env.Cm == nil {
+			t.Error("Cm is nil")
+		}
+		if env.HManager == nil {
+			t.Error("HManager is nil")
+		}
+	})
+
+	t.Run("seeds_default_prompt", func(t *testing.T) {
+		if n := env.HManager.GetTotalEntries(); n != 1 {
+			t.Errorf("GetTotalEntries() = %d; want 1", n)
+		}
+	})
+
+	t.Run("cleanup_registered", func(t *testing.T) {
+		if len(rt.cleanupFuncs) == 0 {
+			t.Error("expected at least one cleanup to be registered")
+		}
+	})
+}
+
+// ──────────────────────── TestSetupTransitionTurn ────────────────────
+
+func TestSetupTransitionTurn(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no_tools_inference_phase", func(t *testing.T) {
+		t.Parallel()
+		turn := SetupTransitionTurn(false, orchestrator.PhaseInference, nil)
+		if turn.State.HasToolCalls {
+			t.Error("HasToolCalls = true; want false")
+		}
+		if turn.Gateway == nil {
+			t.Error("Gateway is nil")
+		}
+		if turn.Executor == nil {
+			t.Error("Executor is nil")
+		}
+		if turn.Registry == nil {
+			t.Error("Registry is nil")
+		}
+		if turn.TokenCounter == nil {
+			t.Error("TokenCounter is nil")
+		}
+		if turn.Clock == nil {
+			t.Error("Clock is nil")
+		}
+	})
+
+	t.Run("has_tools_inference_phase", func(t *testing.T) {
+		t.Parallel()
+		turn := SetupTransitionTurn(true, orchestrator.PhaseInference, nil)
+		if !turn.State.HasToolCalls {
+			t.Error("HasToolCalls = false; want true")
+		}
+	})
+
+	t.Run("with_exec_error", func(t *testing.T) {
+		t.Parallel()
+		turn := SetupTransitionTurn(true, orchestrator.PhaseInference, errors.New("boom"))
+		_, err := turn.Executor.Execute(context.Background(), &llm.Content{}, 0, 0)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if err.Error() != "boom" {
+			t.Errorf("error = %q; want %q", err.Error(), "boom")
+		}
+	})
+
+	t.Run("guard_phase_has_pipeline", func(t *testing.T) {
+		t.Parallel()
+		turn := SetupTransitionTurn(false, orchestrator.PhaseGuard, nil)
+		if turn.CtxManager.Pipeline == nil {
+			t.Error("Pipeline is nil for guard phase; want non-nil")
+		}
+	})
+
+	t.Run("refining_phase_has_pipeline", func(t *testing.T) {
+		t.Parallel()
+		turn := SetupTransitionTurn(false, orchestrator.PhaseRefining, nil)
+		if turn.CtxManager.Pipeline == nil {
+			t.Error("Pipeline is nil for refining phase; want non-nil")
+		}
+	})
+
+	t.Run("executing_phase_no_pipeline", func(t *testing.T) {
+		t.Parallel()
+		turn := SetupTransitionTurn(false, orchestrator.PhaseExecuting, nil)
+		if turn.CtxManager.Pipeline != nil {
+			t.Error("Pipeline is non-nil for executing phase; want nil")
+		}
+	})
+
+	t.Run("turn_state_metadata", func(t *testing.T) {
+		t.Parallel()
+		turn := SetupTransitionTurn(false, orchestrator.PhaseInference, nil)
+		meta := turn.State.Metadata
+		if meta == nil {
+			t.Fatal("Metadata is nil")
+		}
+		if len(meta.History) != 1 {
+			t.Fatalf("Metadata.History length = %d; want 1", len(meta.History))
+		}
+		entry := meta.History[0]
+		if entry.Role != "user" {
+			t.Errorf("role = %q; want %q", entry.Role, "user")
+		}
+		if len(entry.Parts) == 0 || entry.Parts[0].Text != "test" {
+			t.Error("text does not match expected 'test'")
 		}
 	})
 }
