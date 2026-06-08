@@ -132,71 +132,110 @@ func TestStubHistoryBrowser_Browse(t *testing.T) {
 // D. StubChatterComposer (11 getters + RegistryErr)
 // ---------------------------------------------------------------------------
 
-func TestStubChatterComposer_Getters(t *testing.T) {
+// newPopulatedStubChatterComposer returns a StubChatterComposer with all fields
+// set to non-nil mock values, used by TestStubChatterComposer_Getters_* tests.
+func newPopulatedStubChatterComposer() *StubChatterComposer {
+	return &StubChatterComposer{
+		Gateway:          new(MockGateway),
+		EventBus:         &StubEventBus{},
+		Paths:            &persistence.Paths{ModeDir: "/tmp"},
+		HistoryManager:   new(MockHistoryManager),
+		Logger:           &ports.NoOpLogger{},
+		Tracker:          new(MockCostTracker),
+		PricingOverrides: map[string]pricing.ModelPricing{"gpt-4": {Hit: 0.03, Miss: 0.06}},
+		SessionProvider:  new(MockSessionProvider),
+		TurnsLogger:      &ports.NoOpTurnsLogger{},
+		SecurityManager:  new(MockServiceSecurityManager),
+		Registry:         NewMockToolRegistry(),
+	}
+}
+
+func TestStubChatterComposer_Getters_Gateway(t *testing.T) {
 	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetGateway(); got != c.Gateway {
+		t.Errorf("GetGateway mismatch: got %v, want %v", got, c.Gateway)
+	}
+}
 
-	gw := new(MockGateway)
-	eb := &StubEventBus{}
-	p := &persistence.Paths{ModeDir: "/tmp"}
-	hm := new(MockHistoryManager)
-	logger := &ports.NoOpLogger{}
-	tracker := new(MockCostTracker)
-	overrides := map[string]pricing.ModelPricing{
-		"gpt-4": {Hit: 0.03, Miss: 0.06},
+func TestStubChatterComposer_Getters_EventBus(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetEventBus(); got != c.EventBus {
+		t.Errorf("GetEventBus mismatch: got %v, want %v", got, c.EventBus)
 	}
-	sp := new(MockSessionProvider)
-	tl := &ports.NoOpTurnsLogger{}
-	sm := new(MockServiceSecurityManager)
-	reg := NewMockToolRegistry()
+}
 
-	c := &StubChatterComposer{
-		Gateway:          gw,
-		EventBus:         eb,
-		Paths:            p,
-		HistoryManager:   hm,
-		Logger:           logger,
-		Tracker:          tracker,
-		PricingOverrides: overrides,
-		SessionProvider:  sp,
-		TurnsLogger:      tl,
-		SecurityManager:  sm,
-		Registry:         reg,
+func TestStubChatterComposer_Getters_Paths(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetPaths(); got != c.Paths {
+		t.Errorf("GetPaths mismatch: got %v, want %v", got, c.Paths)
 	}
+}
 
-	if c.GetGateway() != gw {
-		t.Error("GetGateway mismatch")
+func TestStubChatterComposer_Getters_HistoryManager(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetHistoryManager(); got != c.HistoryManager {
+		t.Errorf("GetHistoryManager mismatch: got %v, want %v", got, c.HistoryManager)
 	}
-	if c.GetEventBus() != eb {
-		t.Error("GetEventBus mismatch")
+}
+
+func TestStubChatterComposer_Getters_Logger(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetLogger(); got != c.Logger {
+		t.Errorf("GetLogger mismatch: got %v, want %v", got, c.Logger)
 	}
-	if c.GetPaths() != p {
-		t.Error("GetPaths mismatch")
+}
+
+func TestStubChatterComposer_Getters_Tracker(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetTracker(); got != c.Tracker {
+		t.Errorf("GetTracker mismatch: got %v, want %v", got, c.Tracker)
 	}
-	if c.GetHistoryManager() != hm {
-		t.Error("GetHistoryManager mismatch")
-	}
-	if c.GetLogger() != logger {
-		t.Error("GetLogger mismatch")
-	}
-	if c.GetTracker() != tracker {
-		t.Error("GetTracker mismatch")
-	}
-	if c.GetPricingOverrides() == nil {
+}
+
+func TestStubChatterComposer_Getters_PricingOverrides(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetPricingOverrides(); got == nil {
 		t.Error("GetPricingOverrides should not be nil")
 	}
-	if c.GetSessionProvider() != sp {
-		t.Error("GetSessionProvider mismatch")
-	}
-	if c.GetTurnsLogger() != tl {
-		t.Error("GetTurnsLogger mismatch")
-	}
-	if c.GetSecurityManager() != sm {
-		t.Error("GetSecurityManager mismatch")
-	}
+}
 
+func TestStubChatterComposer_Getters_SessionProvider(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetSessionProvider(); got != c.SessionProvider {
+		t.Errorf("GetSessionProvider mismatch: got %v, want %v", got, c.SessionProvider)
+	}
+}
+
+func TestStubChatterComposer_Getters_TurnsLogger(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetTurnsLogger(); got != c.TurnsLogger {
+		t.Errorf("GetTurnsLogger mismatch: got %v, want %v", got, c.TurnsLogger)
+	}
+}
+
+func TestStubChatterComposer_Getters_SecurityManager(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
+	if got := c.GetSecurityManager(); got != c.SecurityManager {
+		t.Errorf("GetSecurityManager mismatch: got %v, want %v", got, c.SecurityManager)
+	}
+}
+
+func TestStubChatterComposer_Getters_Registry(t *testing.T) {
+	t.Parallel()
+	c := newPopulatedStubChatterComposer()
 	gotReg, gotErr := c.GetRegistry()
-	if gotReg != reg {
-		t.Error("GetRegistry mismatch")
+	if gotReg != c.Registry {
+		t.Errorf("GetRegistry mismatch: got %v, want %v", gotReg, c.Registry)
 	}
 	if gotErr != nil {
 		t.Errorf("GetRegistry unexpected error: %v", gotErr)
@@ -218,42 +257,90 @@ func TestStubChatterComposer_RegistryErr(t *testing.T) {
 	}
 }
 
-func TestStubChatterComposer_NilFields(t *testing.T) {
+func TestStubChatterComposer_NilFields_Gateway(t *testing.T) {
 	t.Parallel()
-
 	c := &StubChatterComposer{}
-
 	if c.GetGateway() != nil {
 		t.Error("nil Gateway should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_EventBus(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetEventBus() != nil {
 		t.Error("nil EventBus should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_Paths(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetPaths() != nil {
 		t.Error("nil Paths should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_HistoryManager(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetHistoryManager() != nil {
 		t.Error("nil HistoryManager should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_Logger(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetLogger() != nil {
 		t.Error("nil Logger should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_Tracker(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetTracker() != nil {
 		t.Error("nil Tracker should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_PricingOverrides(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	overrides := c.GetPricingOverrides()
 	if overrides != nil {
 		t.Errorf("nil PricingOverrides should return nil, got %v", overrides)
 	}
+}
+
+func TestStubChatterComposer_NilFields_SessionProvider(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetSessionProvider() != nil {
 		t.Error("nil SessionProvider should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_TurnsLogger(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetTurnsLogger() != nil {
 		t.Error("nil TurnsLogger should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_SecurityManager(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	if c.GetSecurityManager() != nil {
 		t.Error("nil SecurityManager should return nil")
 	}
+}
+
+func TestStubChatterComposer_NilFields_Registry(t *testing.T) {
+	t.Parallel()
+	c := &StubChatterComposer{}
 	gotReg, gotErr := c.GetRegistry()
 	if gotReg != nil {
 		t.Errorf("nil Registry should return nil, got %v", gotReg)

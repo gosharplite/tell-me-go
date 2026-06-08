@@ -534,6 +534,43 @@ func TestFailoverGateway_SendChat_ContextCancelled(t *testing.T) {
 	}
 }
 
+// assertRoutingResult validates the outcome of a failover Generate call based on
+// whether the primary error is transient (→ secondary must be called) or
+// terminal/auth/unrecognized (→ secondary must NOT be called, error must match).
+func assertRoutingResult(t *testing.T, err error, wantErr error, primaryErr error, secondary *mockExtendedClient) {
+	t.Helper()
+	if wantErr == nil {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return
+	}
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("expected error wrapping %v, got %v", wantErr, err)
+	}
+
+	assertSecondaryCallCount(t, primaryErr, secondary)
+}
+
+// assertSecondaryCallCount verifies that the secondary client was called exactly
+// once for transient errors and zero times for non-transient errors.
+func assertSecondaryCallCount(t *testing.T, primaryErr error, secondary *mockExtendedClient) {
+	t.Helper()
+	// For non-transient errors, secondary must NOT be called
+	if !llm.IsTransient(primaryErr) && secondary.generateCalled != 0 {
+		t.Errorf("secondary should not be called for non-transient error, called %d times", secondary.generateCalled)
+	}
+
+	// For transient errors, secondary MUST be called exactly once
+	if llm.IsTransient(primaryErr) && secondary.generateCalled != 1 {
+		t.Errorf("secondary should be called for transient error, called %d times", secondary.generateCalled)
+	}
+}
+
 func TestFailoverGateway_Generate_Routing(t *testing.T) {
 	unrecognizedErr := errors.New("unknown protocol error")
 
@@ -598,30 +635,7 @@ func TestFailoverGateway_Generate_Routing(t *testing.T) {
 			})
 
 			_, _, err := fg.Generate(context.Background(), nil, nil, nil)
-
-			if tt.wantErr == nil {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				return
-			}
-
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("expected error wrapping %v, got %v", tt.wantErr, err)
-			}
-
-			// For non-transient errors, secondary must NOT be called
-			if !llm.IsTransient(tt.primaryErr) && secondary.generateCalled != 0 {
-				t.Errorf("secondary should not be called for non-transient error, called %d times", secondary.generateCalled)
-			}
-
-			// For transient errors, secondary MUST be called
-			if llm.IsTransient(tt.primaryErr) && secondary.generateCalled != 1 {
-				t.Errorf("secondary should be called for transient error, called %d times", secondary.generateCalled)
-			}
+			assertRoutingResult(t, err, tt.wantErr, tt.primaryErr, secondary)
 		})
 	}
 }
