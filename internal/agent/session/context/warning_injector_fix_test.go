@@ -125,3 +125,155 @@ func TestWarningInjector_Idempotency(t *testing.T) {
 		}
 	}
 }
+
+// TestWarningInjector_GatherWarnings_Empty verifies that gatherWarnings returns
+// ("", nil) when getWarnings() produces an empty slice (no limits are reached).
+func TestWarningInjector_GatherWarnings_Empty(t *testing.T) {
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	// Huge limits so no warnings trigger — token ratio 10/100000 = 0.0001, turn ratio 1/100 = 0.01
+	strategy.SetLimits(100000, 100, 100)
+
+	injector := &WarningInjector{Strategy: strategy}
+
+	req := &request{
+		Turn: 1,
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+		},
+	}
+	req.Metadata.FinalTokenCount = 10
+
+	combined, list := injector.gatherWarnings(req, 10, 1)
+
+	if combined != "" {
+		t.Errorf("expected empty combined, got %q", combined)
+	}
+	if list != nil {
+		t.Errorf("expected nil list, got %v", list)
+	}
+}
+
+// TestWarningInjector_InjectWarning_EmptyHistory verifies that injectWarning is
+// a no-op (no panic) when req.History is empty.
+func TestWarningInjector_InjectWarning_EmptyHistory(t *testing.T) {
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	injector := &WarningInjector{Strategy: strategy}
+
+	req := &request{
+		History: []*llm.Content{},
+	}
+
+	// Must not panic; must not modify history
+	injector.injectWarning(req, "some warning text")
+
+	if len(req.History) != 0 {
+		t.Errorf("expected history to remain empty, got %d messages", len(req.History))
+	}
+}
+
+// TestWarningInjector_InjectWarning_TransientPartsDedup verifies the
+// TransientParts idempotency check: if the last message already has the warning
+// text in its TransientParts, no new message is appended.
+func TestWarningInjector_InjectWarning_TransientPartsDedup(t *testing.T) {
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	injector := &WarningInjector{Strategy: strategy}
+
+	warningText := "WARNING: some warning"
+
+	req := &request{
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "first message"}}},
+			{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "second message"}},
+				TransientParts: []*llm.Part{
+					{Text: "\n\n" + warningText},
+				},
+			},
+		},
+	}
+
+	originalLen := len(req.History)
+	originalTransientCount := len(req.History[1].TransientParts)
+
+	injector.injectWarning(req, warningText)
+
+	if len(req.History) != originalLen {
+		t.Errorf("expected history length %d, got %d", originalLen, len(req.History))
+	}
+
+	if len(req.History[1].TransientParts) != originalTransientCount {
+		t.Errorf("expected TransientParts count %d, got %d",
+			originalTransientCount, len(req.History[1].TransientParts))
+	}
+}
+
+// TestWarningInjector_GatherWarnings_Multiple verifies that gatherWarnings
+// concatenates multiple warnings with "\n" when two or more warning types
+// trigger simultaneously. This covers the multi-warning concatenation path
+// at warning_injector.go:68-70 (combined += "\n").
+func TestWarningInjector_GatherWarnings_Multiple(t *testing.T) {
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	// maxHistoryTokens=1000, maxToolTurns=3, maxHistoryTurns=100
+	strategy.SetLimits(1000, 3, 100)
+
+	injector := &WarningInjector{Strategy: strategy}
+
+	req := &request{
+		Turn: 0, // remaining = 3-0 = 3 → triggers turn warning "3 turns remaining"
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+		},
+	}
+	req.Metadata.FinalTokenCount = 910 // ratio = 910/1000 = 0.91 > 0.90 → triggers token warning
+
+	// Call gatherWarnings directly with tokens=910, turns=0
+	combined, list := injector.gatherWarnings(req, 910, 0)
+
+	// Verify both warnings are present and separated by newline
+	if !strings.Contains(combined, "\n") {
+		t.Errorf("expected combined to contain newline separator between two warnings, got %q", combined)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 warnings in list, got %d: %v", len(list), list)
+	}
+
+	// Verify the two specific warning substrings
+	if !strings.Contains(list[0], "3 turns remaining") {
+		t.Errorf("expected turn warning in list[0], got %q", list[0])
+	}
+	if !strings.Contains(list[1], "90% capacity") {
+		t.Errorf("expected token warning in list[1], got %q", list[1])
+	}
+}
+
+// TestWarningInjector_GatherWarnings_Clogged verifies that gatherWarnings returns
+// the clogged warning when SummarizationAttempted is true and tokens exceed 85% of max.
+// This covers the uncovered branch at warning_injector.go:55-57.
+func TestWarningInjector_GatherWarnings_Clogged(t *testing.T) {
+	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
+	strategy.SetLimits(1000, 10, 20) // maxTokens=1000, threshold=850
+
+	injector := &WarningInjector{Strategy: strategy}
+
+	req := &request{
+		Turn: 1,
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+		},
+	}
+	req.Metadata.SummarizationAttempted = true
+	req.Metadata.FinalTokenCount = 860 // > 850 threshold
+
+	combined, list := injector.gatherWarnings(req, 860, 1)
+
+	if combined == "" {
+		t.Error("expected non-empty combined warning, got empty")
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 warning in list, got %d: %v", len(list), list)
+	}
+	if !strings.Contains(list[0], "summarization failed to significantly reduce") {
+		t.Errorf("expected clogged warning, got %q", list[0])
+	}
+}

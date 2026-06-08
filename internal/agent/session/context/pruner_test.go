@@ -6,12 +6,15 @@ package context
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -161,4 +164,25 @@ func TestCompositePruningPolicy_MarkTurns_ErrorPropagation(t *testing.T) {
 
 	_, err := composite.MarkTurns(context.Background(), turns, keep)
 	require.ErrorIs(t, err, mockErr)
+}
+
+func TestHistoryPruner_GetLogger_NonNil(t *testing.T) {
+	customLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	pruner := &HistoryPruner{
+		Logger: customLogger,
+	}
+	result := pruner.getLogger()
+	assert.Same(t, customLogger, result)
+}
+
+func TestHistoryPruner_Transform_EmptyHistory(t *testing.T) {
+	pruner := &HistoryPruner{
+		Policy: &SlidingWindowPolicy{MaxTurns: 1},
+	}
+	req := &ports.ContextRequest{
+		History: nil,
+	}
+	err := pruner.Transform(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, 0, req.Metadata.PrunedTurns)
 }

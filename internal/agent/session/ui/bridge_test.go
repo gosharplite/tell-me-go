@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -849,3 +850,15 @@ func (p *panicFakeEnqueuer) isInputClosed() bool                                
 func (p *panicFakeEnqueuer) closeInput()                                              {}
 func (p *panicFakeEnqueuer) recv() <-chan events.Event                                { return nil }
 func (p *panicFakeEnqueuer) drainRemainingEvents(func(context.Context, events.Event)) {}
+
+func TestWithBridgeClock(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(agenttest.MockUIRenderer)
+	bridge := NewBridge(mRenderer,
+		WithBridgeClock(clock.RealClock{}),
+	)
+	bridge.AbortStart()
+	defer bridge.Cleanup()
+
+	assert.NotNil(t, bridge.clock, "bridge.clock should not be nil after WithBridgeClock")
+}

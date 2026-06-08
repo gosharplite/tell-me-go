@@ -475,3 +475,23 @@ func TestTokenGatekeeper_PublishSystemEvent_ErrBusNotInitialized(t *testing.T) {
 
 	require.Empty(t, logger.GetErrors(), "ErrBusNotInitialized should be silently swallowed, not logged")
 }
+
+func TestCheckWindowSize_EndIdxZero(t *testing.T) {
+	hm := &agenttest.MockHistoryManager{
+		Contents: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		},
+	}
+
+	strategy := NewStrategy(&agenttest.MockTokenCounter{})
+	cm := NewManager(strategy, hm, nil, nil)
+
+	ctx := context.Background()
+	found, subset, endIdx, err := cm.checkWindowSize(ctx, 2, 5, 2)
+
+	require.True(t, found)
+	require.Nil(t, subset)
+	require.Equal(t, 0, endIdx)
+	require.NoError(t, err)
+}
