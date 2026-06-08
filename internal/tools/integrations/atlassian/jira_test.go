@@ -12,22 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-type mockJiraClient struct {
-	mock.Mock
-}
-
-func (m *mockJiraClient) Do(req *http.Request) (*http.Response, error) {
-	args := m.Called(req)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*http.Response), args.Error(1)
-}
 
 func TestJiraManager_JiraSearchIssues(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
@@ -177,13 +165,15 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockJiraClient)
+			mockClient := &toolstest.MockHTTPClient{}
 			m, err := NewJiraManager(nil, mockClient)
 			assert.NoError(t, err)
 			m.provider.BaseDelay = 1 * time.Microsecond
 
 			if tt.mockResp != nil || tt.mockErr != nil {
-				mockClient.On("Do", mock.Anything).Return(tt.mockResp, tt.mockErr)
+				mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+					return tt.mockResp, tt.mockErr
+				}
 			}
 
 			ctx := tt.ctx
@@ -306,13 +296,15 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockJiraClient)
+			mockClient := &toolstest.MockHTTPClient{}
 			m, err := NewJiraManager(nil, mockClient)
 			assert.NoError(t, err)
 			m.provider.BaseDelay = 1 * time.Microsecond
 
 			if tt.mockResp != nil || tt.mockErr != nil {
-				mockClient.On("Do", mock.Anything).Return(tt.mockResp, tt.mockErr)
+				mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+					return tt.mockResp, tt.mockErr
+				}
 			}
 
 			result, err := m.JiraGetIssue(context.Background(), tt.args, nil)
@@ -510,7 +502,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 
@@ -531,16 +523,18 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 		m.provider.BaseDelay = 1 * time.Microsecond
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusUnauthorized,
-			Status:     "401 Unauthorized",
-			Body:       io.NopCloser(strings.NewReader("Unauthorized")),
-		}, nil)
+		mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Status:     "401 Unauthorized",
+				Body:       io.NopCloser(strings.NewReader("Unauthorized")),
+			}, nil
+		}
 
 		_, err = m.JiraSearchIssues(context.Background(), map[string]interface{}{"jql": "project = PROJ"}, nil)
 		assert.Error(t, err)
@@ -552,16 +546,18 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 		m.provider.BaseDelay = 1 * time.Microsecond
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusForbidden,
-			Status:     "403 Forbidden",
-			Body:       io.NopCloser(strings.NewReader("Forbidden")),
-		}, nil)
+		mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Status:     "403 Forbidden",
+				Body:       io.NopCloser(strings.NewReader("Forbidden")),
+			}, nil
+		}
 
 		_, err = m.JiraSearchIssues(context.Background(), map[string]interface{}{"jql": "project = PROJ"}, nil)
 		assert.Error(t, err)
@@ -573,16 +569,18 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 		m.provider.BaseDelay = 1 * time.Microsecond
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Status:     "500 Internal Server Error",
-			Body:       io.NopCloser(&errorReader{err: errors.New("read failure")}),
-		}, nil)
+		mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Status:     "500 Internal Server Error",
+				Body:       io.NopCloser(&errorReader{err: errors.New("read failure")}),
+			}, nil
+		}
 
 		_, err = m.JiraSearchIssues(context.Background(), map[string]interface{}{"jql": "project = PROJ"}, nil)
 		assert.Error(t, err)
@@ -595,16 +593,18 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 		m.provider.BaseDelay = 1 * time.Microsecond
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusUnauthorized,
-			Status:     "401 Unauthorized",
-			Body:       io.NopCloser(strings.NewReader("Unauthorized")),
-		}, nil)
+		mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Status:     "401 Unauthorized",
+				Body:       io.NopCloser(strings.NewReader("Unauthorized")),
+			}, nil
+		}
 
 		_, err = m.JiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
 		assert.Error(t, err)
@@ -616,16 +616,18 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 		m.provider.BaseDelay = 1 * time.Microsecond
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusForbidden,
-			Status:     "403 Forbidden",
-			Body:       io.NopCloser(strings.NewReader("Forbidden")),
-		}, nil)
+		mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Status:     "403 Forbidden",
+				Body:       io.NopCloser(strings.NewReader("Forbidden")),
+			}, nil
+		}
 
 		_, err = m.JiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
 		assert.Error(t, err)
@@ -638,7 +640,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 
@@ -653,7 +655,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-		mockClient := new(mockJiraClient)
+		mockClient := &toolstest.MockHTTPClient{}
 		m, err := NewJiraManager(nil, mockClient)
 		require.NoError(t, err)
 
