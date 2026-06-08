@@ -10,7 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/stretchr/testify/mock"
 )
 
 // Exported for external tests
@@ -26,8 +25,6 @@ func AsSessionManagerInternal(sm SessionManager) *sessionManager {
 	return sm.(*sessionManager)
 }
 
-func SyncBridge(t *testing.T, b *ui.Bridge, m interface {
-	On(methodName string, arguments ...interface{}) *mock.Call
-}) {
+func SyncBridge(t *testing.T, b *ui.Bridge, m *agenttest.MockUIRenderer) {
 	syncBridge(t, b, m)
 }

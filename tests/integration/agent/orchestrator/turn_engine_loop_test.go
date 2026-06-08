@@ -9,16 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
@@ -29,9 +30,9 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	counter := &sessctx.HeuristicTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
-	gw := &limitMockLLMGateway{}
-	exec := &limitMockExecutor{}
-	reg := &limitMockRegistry{}
+	gw := &agenttest.MockGateway{}
+	exec := &agenttest.MockAgentExecutor{}
+	reg := &agenttest.MockToolRegistry{}
 
 	factory := &sessctx.Factory{
 		History:   h,
@@ -46,27 +47,29 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
 
-	// Sequence of responses: A -> B -> A
+	// Sequence of responses: A -> B -> A -> final
 	// Turn 0: returns "A"
-	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-
 	// Turn 1: returns "B"
-	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-
-	// Turn 2: returns "A" again
-	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp0, &llm.Metrics{}, nil).Once()
-
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp1, &llm.Metrics{}, nil).Once()
-
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp2, &llm.Metrics{}, nil).Once()
-
+	// Turn 2: returns "A" again → loop breaker triggers
 	// Turn 3: final response after loop breaker
-	resp3 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp3, &llm.Metrics{}, nil).Once()
+	gwCallCount := 0
+	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		gwCallCount++
+		switch gwCallCount {
+		case 1:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}, &llm.Metrics{}, nil
+		case 2:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}, &llm.Metrics{}, nil
+		case 3:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}, &llm.Metrics{}, nil
+		default:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}, &llm.Metrics{}, nil
+		}
+	}
 
-	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil)
+	exec.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+		return &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil
+	}
 
 	err := engine.Run(ctx, time.Now())
 	assert.NoError(t, err)
@@ -91,9 +94,9 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	counter := &sessctx.HeuristicTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
-	gw := &limitMockLLMGateway{}
-	exec := &limitMockExecutor{}
-	reg := &limitMockRegistry{}
+	gw := &agenttest.MockGateway{}
+	exec := &agenttest.MockAgentExecutor{}
+	reg := &agenttest.MockToolRegistry{}
 
 	factory := &sessctx.Factory{
 		History:   h,
@@ -108,27 +111,29 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
 
-	// Sequence of tool-only responses: Tool A -> Tool B -> Tool A
+	// Sequence of tool-only responses: Tool A -> Tool B -> Tool A -> final
 	// Turn 0: returns Tool A
-	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
-
 	// Turn 1: returns Tool B
-	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}
-
-	// Turn 2: returns Tool A again
-	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
-
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp0, &llm.Metrics{}, nil).Once()
-
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp1, &llm.Metrics{}, nil).Once()
-
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp2, &llm.Metrics{}, nil).Once()
-
+	// Turn 2: returns Tool A again → loop breaker triggers
 	// Turn 3: final response after loop breaker
-	resp3 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp3, &llm.Metrics{}, nil).Once()
+	gwCallCount := 0
+	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		gwCallCount++
+		switch gwCallCount {
+		case 1:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}, &llm.Metrics{}, nil
+		case 2:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}, &llm.Metrics{}, nil
+		case 3:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}, &llm.Metrics{}, nil
+		default:
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}, &llm.Metrics{}, nil
+		}
+	}
 
-	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil)
+	exec.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+		return &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil
+	}
 
 	err := engine.Run(ctx, time.Now())
 	assert.NoError(t, err)

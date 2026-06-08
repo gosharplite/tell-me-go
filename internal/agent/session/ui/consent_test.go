@@ -12,7 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,17 +20,24 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	mRenderer := new(agenttest.MockUIRenderer)
 	block := make(chan struct{})
 
-	// Setup a block to freeze the actor loop
-	mRenderer.On("LogSystemMessage", mock.Anything, "BLOCK", mock.Anything).Run(func(_ mock.Arguments) {
-		<-block
-	}).Return().Once()
+	// Track spinner statuses for later assertion
+	var spinnerStatuses []string
+	var mu sync.Mutex
 
-	// Handle other expected calls with .Maybe() to prevent panic masking.
-	// We use a specific matcher to avoid overlap with SYNC_SENTINEL used by syncBridge.
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.MatchedBy(func(s string) bool {
-		return s != "BLOCK" && s != "SYNC_SENTINEL"
-	}), mock.Anything).Return().Maybe()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
+	// Setup a block to freeze the actor loop
+	mRenderer.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
+		if msg == "BLOCK" {
+			<-block
+		}
+	}
+
+	// Handle spinner calls
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		mu.Lock()
+		spinnerStatuses = append(spinnerStatuses, status)
+		mu.Unlock()
+		return func() {}
+	}
 
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	_, _, _ = startListen(t, bridge)
@@ -51,9 +57,17 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	close(block)
 	syncBridge(t, bridge, mRenderer)
 
-	// 3. Assert it was eventually resumed. .Maybe() recorded it, so AssertCalled will find it.
-	mRenderer.AssertCalled(t, "StartSpinnerWithStatus", mock.Anything, " Compressing context...")
-	mRenderer.AssertExpectations(t)
+	// 3. Assert it was eventually resumed.
+	found := false
+	mu.Lock()
+	for _, s := range spinnerStatuses {
+		if s == " Compressing context..." {
+			found = true
+			break
+		}
+	}
+	mu.Unlock()
+	assert.True(t, found, "expected StartSpinnerWithStatus to be called with ' Compressing context...'")
 }
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
@@ -72,15 +86,28 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	syncBridge(t, bridge, mRenderer)
 
 	// 2. System message arrives during consent
-	mRenderer.On("LogSystemMessage", mock.Anything, "Hello", "info").Return().Once()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
+	systemMsgCalled := make(chan struct{})
+	mRenderer.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
+		if msg == "Hello" {
+			close(systemMsgCalled)
+		}
+	}
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() { return func() {} }
 	_ = bridge.HandleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
 	syncBridge(t, bridge, mRenderer)
 
-	// Should NOT start a spinner because isWaitingForConsent is true
-	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
+	// Verify the system message was processed
+	select {
+	case <-systemMsgCalled:
+	default:
+		t.Error("expected LogSystemMessage to be called for 'Hello'")
+	}
 
-	mRenderer.AssertExpectations(t)
+	// Should NOT start a spinner because isWaitingForConsent is true
+	snap := mRenderer.Snapshot()
+	if snap.StartSpinnerWithStatus > 0 {
+		t.Error("StartSpinnerWithStatus should not have been called during consent")
+	}
 }
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
@@ -103,13 +130,11 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		}
 	}
 
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.MatchedBy(func(s string) bool {
-		return s != "SYNC_SENTINEL"
-	}), mock.Anything).Return().Maybe()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(startSpinner).Maybe()
-
-	mRenderer.Test(t)
+	mRenderer.LogTurnStatusFn = func(ctx context.Context, status events.TurnStatus) {}
+	mRenderer.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {}
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		return startSpinner()
+	}
 
 	testCtx := context.Background()
 

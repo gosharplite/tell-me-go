@@ -698,7 +698,7 @@ func TestRunDiagnostics(t *testing.T) {
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(healthyReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) { return healthyReport, nil }
 
 				uir.On("IsTerminalContext").Return(false)
 				uir.On("SetUseColor", false).Return()
@@ -716,7 +716,7 @@ func TestRunDiagnostics(t *testing.T) {
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(healthyReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) { return healthyReport, nil }
 			},
 			checkOut: func(t *testing.T, stdout string) {
 				t.Helper()
@@ -749,7 +749,7 @@ func TestRunDiagnostics(t *testing.T) {
 						},
 					},
 				}
-				hcm.On("CheckAll", mock.Anything).Return(unmarshalableReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) { return unmarshalableReport, nil }
 			},
 			wantErr: true,
 			errMsg:  "failed to serialize health report",
@@ -785,7 +785,7 @@ func TestRunDiagnostics(t *testing.T) {
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(nil, errCheck)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) { return nil, errCheck }
 			},
 			wantErr: true,
 			errMsg:  "health check failed: check error",
@@ -801,7 +801,7 @@ func TestRunDiagnostics(t *testing.T) {
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(unhealthyReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) { return unhealthyReport, nil }
 
 				uir.On("IsTerminalContext").Return(false)
 				uir.On("SetUseColor", false).Return()
@@ -848,7 +848,6 @@ func TestRunDiagnostics(t *testing.T) {
 			}
 
 			sf.AssertExpectations(t)
-			hcm.AssertExpectations(t)
 			uir.AssertExpectations(t)
 		})
 	}

@@ -11,18 +11,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/stretchr/testify/mock"
 )
 
-func syncBridge(t *testing.T, b *Bridge, m interface {
-	On(methodName string, arguments ...interface{}) *mock.Call
-}) {
+func syncBridge(t *testing.T, b *Bridge, m *agenttest.MockUIRenderer) {
 	t.Helper()
 	done := make(chan struct{})
-	m.On("LogSystemMessage", mock.Anything, "SYNC_SENTINEL", "info").Run(func(_ mock.Arguments) {
-		close(done)
-	}).Return().Once()
+	prev := m.LogSystemMessageFn
+	m.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
+		if prev != nil {
+			prev(ctx, msg, level)
+		}
+		if msg == "SYNC_SENTINEL" {
+			close(done)
+		}
+	}
+	defer func() { m.LogSystemMessageFn = prev }()
 
 	if err := b.HandleEvent(context.Background(), events.SystemMessageEvent{Message: "SYNC_SENTINEL", Level: "info"}); err != nil {
 		t.Fatalf("Failed to queue sync sentinel: %v", err)
