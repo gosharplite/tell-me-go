@@ -691,3 +691,29 @@ func TestValidateSinglePath_WarnBranches(t *testing.T) {
 	})
 
 }
+
+func TestValidateSinglePath_InteractorWarnFallback(t *testing.T) {
+	t.Parallel()
+	// When SecurityManager is nil, the warning should be delivered via the interactor.
+	mi := &mockInteractor{Answer: "n"}
+	cv := NewCommandValidator(nil, mi).(*commandValidator)
+
+	safe, reason := cv.validateSinglePath("/etc/passwd")
+	if safe {
+		t.Error("expected false for unsafe path")
+	}
+	if !strings.Contains(reason, "path safety check failed") {
+		t.Errorf("reason should contain 'path safety check failed', got: %s", reason)
+	}
+
+	found := false
+	for _, w := range mi.Warns {
+		if strings.Contains(w, "[Safety]") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected Warns to contain '[Safety]', got: %v", mi.Warns)
+	}
+}

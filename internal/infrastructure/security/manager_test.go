@@ -216,3 +216,14 @@ func TestSecurityManager_Confirm_Bypass(t *testing.T) {
 		t.Errorf("Confirm(user=n, ctx_approved=true) = %v, %v; want true, nil", ok, err)
 	}
 }
+
+func TestSecurityManager_Prompt(t *testing.T) {
+	t.Parallel()
+	mi := &mockInteractor{Answer: "y"}
+	sm := NewSecurityManager(func() domain.UserInteractor { return mi })
+	sm.Prompt("test prompt message")
+
+	if len(mi.Warns) == 0 || !strings.Contains(mi.Warns[0], "test prompt message") {
+		t.Errorf("expected Prompt to delegate to interactor, got warns: %v", mi.Warns)
+	}
+}
