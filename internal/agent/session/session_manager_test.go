@@ -47,7 +47,7 @@ func TestSessionManager_Run_Success(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	mTurnsLogger := new(agenttest.MockTurnsLogger)
+	mTurnsLogger := &agenttest.MockTurnsLogger{}
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
@@ -65,14 +65,13 @@ func TestSessionManager_Run_Success(t *testing.T) {
 
 	// Verify TurnsLogger interaction during Run
 	// (SessionManager now subscribes it directly)
-	mTurnsLogger.On("HandleEvent", mock.Anything, mock.Anything).Return().Maybe()
+	mTurnsLogger.HandleEventFunc = func(ctx context.Context, e events.Event) {}
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
 
 	mChatter.AssertExpectations(t)
 	mCapturer.AssertExpectations(t)
-	mTurnsLogger.AssertExpectations(t)
 }
 
 func TestSessionManager_Run_Error(t *testing.T) {

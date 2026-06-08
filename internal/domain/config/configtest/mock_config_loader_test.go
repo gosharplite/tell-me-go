@@ -13,67 +13,54 @@ import (
 func TestMockConfigLoader_Load(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		path    string
-		setup   func(m *MockConfigLoader)
-		wantNil bool
-		wantErr bool
-	}{
-		{
-			name: "success path: non-nil args.Get(0) returns config and nil error",
-			path: "/test/config.yaml",
-			setup: func(m *MockConfigLoader) {
-				m.On("Load", "/test/config.yaml").Return(&config.Config{}, nil)
+	t.Run("success path", func(t *testing.T) {
+		t.Parallel()
+		m := &MockConfigLoader{
+			LoadFunc: func(path string) (*config.Config, error) {
+				return &config.Config{}, nil
 			},
-			wantNil: false,
-			wantErr: false,
-		},
-		{
-			name: "error path with typed nil: args.Get(0) != nil, returns typed nil config and error",
-			path: "/test/typed-nil.yaml",
-			setup: func(m *MockConfigLoader) {
-				m.On("Load", "/test/typed-nil.yaml").Return((*config.Config)(nil), errors.New("load failed"))
+		}
+		cfg, err := m.Load("/test/config.yaml")
+		if cfg == nil {
+			t.Error("expected non-nil config")
+		}
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if snap := m.Snapshot(); snap["Load"] != 1 {
+			t.Errorf("expected 1 Load call, got %d", snap["Load"])
+		}
+	})
+
+	t.Run("error path", func(t *testing.T) {
+		t.Parallel()
+		wantErr := errors.New("load failed")
+		m := &MockConfigLoader{
+			LoadFunc: func(path string) (*config.Config, error) {
+				return nil, wantErr
 			},
-			wantNil: true,
-			wantErr: true,
-		},
-		{
-			name: "defensive nil path: args.Get(0) == nil returns hardcoded nil config and error",
-			path: "/test/defensive.yaml",
-			setup: func(m *MockConfigLoader) {
-				// Passing nil through an explicit interface{} variable
-				// preserves the untyped nil so args.Get(0) == nil is true,
-				// triggering the defensive nil-guard branch.
-				var nilCfg interface{}
-				m.On("Load", "/test/defensive.yaml").Return(nilCfg, errors.New("defensive load failed"))
-			},
-			wantNil: true,
-			wantErr: true,
-		},
-	}
+		}
+		cfg, err := m.Load("/test/error.yaml")
+		if cfg != nil {
+			t.Error("expected nil config on error")
+		}
+		if err != wantErr {
+			t.Errorf("got %v, want %v", err, wantErr)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := new(MockConfigLoader)
-			tt.setup(m)
-
-			cfg, err := m.Load(tt.path)
-
-			if tt.wantNil && cfg != nil {
-				t.Errorf("expected nil config, got %+v", cfg)
-			}
-			if !tt.wantNil && cfg == nil {
-				t.Error("expected non-nil config, got nil")
-			}
-			if tt.wantErr && err == nil {
-				t.Error("expected error, got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-
-			m.AssertExpectations(t)
-		})
-	}
+	t.Run("defensive nil path (LoadFunc unset)", func(t *testing.T) {
+		t.Parallel()
+		m := &MockConfigLoader{} // zero value — LoadFunc is nil
+		cfg, err := m.Load("/test/defensive.yaml")
+		if cfg != nil {
+			t.Error("expected nil config when LoadFunc is nil")
+		}
+		if err != nil {
+			t.Errorf("expected nil error, got %v", err)
+		}
+		if snap := m.Snapshot(); snap["Load"] != 1 {
+			t.Errorf("expected 1 Load call, got %d", snap["Load"])
+		}
+	})
 }

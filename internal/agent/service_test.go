@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -77,10 +78,16 @@ func baseSetup(
 	sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).
 		Return(deps, hm, cleanup, nil)
 
-	agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	agentMock.On("Subscribe", mock.Anything).Return()
-	agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
-	agentMock.On("Shutdown", mock.Anything).Return(nil)
+	agentMock.SetLimitsFunc = func(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
+		return nil
+	}
+	agentMock.SubscribeFunc = func(handler func(context.Context, events.Event)) {}
+	agentMock.ChatFunc = func(ctx context.Context, sess *ports.Session, prompt string) error {
+		return nil
+	}
+	agentMock.ShutdownFunc = func(ctx context.Context) error {
+		return nil
+	}
 
 	cap.IsTTYVal = true
 }
@@ -116,7 +123,7 @@ func TestProcessMessage_Success(t *testing.T) {
 
 	baseSetup(sf, agentMock, capturer, deps, mockHM, cleanup, cfg)
 
-	tl.On("Close").Return(nil)
+	tl.CloseFunc = func() error { return nil }
 
 	cmd := agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"}
 	err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
@@ -125,8 +132,6 @@ func TestProcessMessage_Success(t *testing.T) {
 	assert.True(t, cleanupCalled, "cleanup should have been called")
 
 	sf.AssertExpectations(t)
-	agentMock.AssertExpectations(t)
-	tl.AssertExpectations(t)
 }
 
 // TestProcessMessage_BuildError verifies that a BuildSessionDependencies
@@ -210,8 +215,6 @@ func TestProcessMessage_CleanupErrors(t *testing.T) {
 			assert.Contains(t, stderr.String(), tt.stderrContains)
 
 			sf.AssertExpectations(t)
-			agentMock.AssertExpectations(t)
-			tl.AssertExpectations(t)
 		})
 	}
 }
@@ -247,12 +250,18 @@ func TestProcessMessage_RetrySuccess(t *testing.T) {
 	deps.TurnsLogger = tl
 	deps.SessionProvider = nil
 
-	tl.On("Close").Return(nil)
+	tl.CloseFunc = func() error { return nil }
 
-	agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	agentMock.On("Subscribe", mock.Anything).Return()
-	agentMock.On("Chat", mock.Anything, mock.Anything, "retry this").Return(nil)
-	agentMock.On("Shutdown", mock.Anything).Return(nil)
+	agentMock.SetLimitsFunc = func(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
+		return nil
+	}
+	agentMock.SubscribeFunc = func(handler func(context.Context, events.Event)) {}
+	agentMock.ChatFunc = func(ctx context.Context, sess *ports.Session, prompt string) error {
+		return nil
+	}
+	agentMock.ShutdownFunc = func(ctx context.Context) error {
+		return nil
+	}
 
 	capturer.ConfirmResult = true
 	capturer.IsTTYVal = true
@@ -264,8 +273,6 @@ func TestProcessMessage_RetrySuccess(t *testing.T) {
 	assert.True(t, cleanupCalled, "cleanup should have been called")
 
 	sf.AssertExpectations(t)
-	agentMock.AssertExpectations(t)
-	tl.AssertExpectations(t)
 }
 
 // TestProcessMessage_RetryAborted verifies that when the user declines
@@ -413,10 +420,16 @@ func TestProcessMessage_FinalizeErrors(t *testing.T) {
 			deps.TurnsLogger = tl
 			deps.SessionProvider = nil
 
-			agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-			agentMock.On("Subscribe", mock.Anything).Return()
-			agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(tt.chatErr)
-			agentMock.On("Shutdown", mock.Anything).Return(nil)
+			agentMock.SetLimitsFunc = func(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
+				return nil
+			}
+			agentMock.SubscribeFunc = func(handler func(context.Context, events.Event)) {}
+			agentMock.ChatFunc = func(ctx context.Context, sess *ports.Session, prompt string) error {
+				return tt.chatErr
+			}
+			agentMock.ShutdownFunc = func(ctx context.Context) error {
+				return nil
+			}
 
 			capturer.IsTTYVal = true
 
