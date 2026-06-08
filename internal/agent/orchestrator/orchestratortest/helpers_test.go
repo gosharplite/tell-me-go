@@ -386,35 +386,45 @@ func TestSetupTurnEngineTest(t *testing.T) {
 	})
 }
 
-// ──────────────────────── TestSetupTransitionTurn ────────────────────
+// assertFieldsNonNil checks that the standard Turn fields populated by
+// SetupTransitionTurn are non-nil. Used by field-integrity tests.
+func assertFieldsNonNil(t *testing.T, turn *orchestrator.Turn) {
+	t.Helper()
+	if turn.Gateway == nil {
+		t.Error("Gateway is nil")
+	}
+	if turn.Executor == nil {
+		t.Error("Executor is nil")
+	}
+	if turn.Registry == nil {
+		t.Error("Registry is nil")
+	}
+	if turn.TokenCounter == nil {
+		t.Error("TokenCounter is nil")
+	}
+	if turn.Clock == nil {
+		t.Error("Clock is nil")
+	}
+}
 
-func TestSetupTransitionTurn(t *testing.T) {
+// TestSetupTransitionTurn_FieldIntegrity verifies that SetupTransitionTurn
+// populates all core Turn fields (non-nil) and correctly sets HasToolCalls
+// based on the hasTools parameter.
+func TestSetupTransitionTurn_FieldIntegrity(t *testing.T) {
+	t.Parallel()
+	turn := SetupTransitionTurn(false, orchestrator.PhaseInference, nil)
+	if turn.State.HasToolCalls {
+		t.Error("HasToolCalls = true; want false")
+	}
+	assertFieldsNonNil(t, turn)
+}
+
+// TestSetupTransitionTurn_ToolCalls verifies HasToolCalls propagation and
+// executor error passthrough.
+func TestSetupTransitionTurn_ToolCalls(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no_tools_inference_phase", func(t *testing.T) {
-		t.Parallel()
-		turn := SetupTransitionTurn(false, orchestrator.PhaseInference, nil)
-		if turn.State.HasToolCalls {
-			t.Error("HasToolCalls = true; want false")
-		}
-		if turn.Gateway == nil {
-			t.Error("Gateway is nil")
-		}
-		if turn.Executor == nil {
-			t.Error("Executor is nil")
-		}
-		if turn.Registry == nil {
-			t.Error("Registry is nil")
-		}
-		if turn.TokenCounter == nil {
-			t.Error("TokenCounter is nil")
-		}
-		if turn.Clock == nil {
-			t.Error("Clock is nil")
-		}
-	})
-
-	t.Run("has_tools_inference_phase", func(t *testing.T) {
+	t.Run("has_tools", func(t *testing.T) {
 		t.Parallel()
 		turn := SetupTransitionTurn(true, orchestrator.PhaseInference, nil)
 		if !turn.State.HasToolCalls {
@@ -422,7 +432,7 @@ func TestSetupTransitionTurn(t *testing.T) {
 		}
 	})
 
-	t.Run("with_exec_error", func(t *testing.T) {
+	t.Run("exec_error", func(t *testing.T) {
 		t.Parallel()
 		turn := SetupTransitionTurn(true, orchestrator.PhaseInference, errors.New("boom"))
 		_, err := turn.Executor.Execute(context.Background(), &llm.Content{}, 0, 0)
@@ -433,47 +443,51 @@ func TestSetupTransitionTurn(t *testing.T) {
 			t.Errorf("error = %q; want %q", err.Error(), "boom")
 		}
 	})
+}
 
-	t.Run("guard_phase_has_pipeline", func(t *testing.T) {
-		t.Parallel()
-		turn := SetupTransitionTurn(false, orchestrator.PhaseGuard, nil)
-		if turn.CtxManager.Pipeline == nil {
-			t.Error("Pipeline is nil for guard phase; want non-nil")
-		}
-	})
+// TestSetupTransitionTurn_PipelinePhases verifies that CtxManager.Pipeline
+// is set for guard and refining phases, and nil for executing phase.
+func TestSetupTransitionTurn_PipelinePhases(t *testing.T) {
+	t.Parallel()
 
-	t.Run("refining_phase_has_pipeline", func(t *testing.T) {
-		t.Parallel()
-		turn := SetupTransitionTurn(false, orchestrator.PhaseRefining, nil)
-		if turn.CtxManager.Pipeline == nil {
-			t.Error("Pipeline is nil for refining phase; want non-nil")
-		}
-	})
+	tests := []struct {
+		name         string
+		phase        orchestrator.TurnPhase
+		wantPipeline bool
+	}{
+		{"guard", orchestrator.PhaseGuard, true},
+		{"refining", orchestrator.PhaseRefining, true},
+		{"executing", orchestrator.PhaseExecuting, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			turn := SetupTransitionTurn(false, tt.phase, nil)
+			hasPipeline := turn.CtxManager.Pipeline != nil
+			if hasPipeline != tt.wantPipeline {
+				t.Errorf("Pipeline = %v; want %v", hasPipeline, tt.wantPipeline)
+			}
+		})
+	}
+}
 
-	t.Run("executing_phase_no_pipeline", func(t *testing.T) {
-		t.Parallel()
-		turn := SetupTransitionTurn(false, orchestrator.PhaseExecuting, nil)
-		if turn.CtxManager.Pipeline != nil {
-			t.Error("Pipeline is non-nil for executing phase; want nil")
-		}
-	})
-
-	t.Run("turn_state_metadata", func(t *testing.T) {
-		t.Parallel()
-		turn := SetupTransitionTurn(false, orchestrator.PhaseInference, nil)
-		meta := turn.State.Metadata
-		if meta == nil {
-			t.Fatal("Metadata is nil")
-		}
-		if len(meta.History) != 1 {
-			t.Fatalf("Metadata.History length = %d; want 1", len(meta.History))
-		}
-		entry := meta.History[0]
-		if entry.Role != "user" {
-			t.Errorf("role = %q; want %q", entry.Role, "user")
-		}
-		if len(entry.Parts) == 0 || entry.Parts[0].Text != "test" {
-			t.Error("text does not match expected 'test'")
-		}
-	})
+// TestSetupTransitionTurn_Metadata verifies the Turn's State.Metadata
+// is populated with a single user-history entry containing "test" text.
+func TestSetupTransitionTurn_Metadata(t *testing.T) {
+	t.Parallel()
+	turn := SetupTransitionTurn(false, orchestrator.PhaseInference, nil)
+	meta := turn.State.Metadata
+	if meta == nil {
+		t.Fatal("Metadata is nil")
+	}
+	if len(meta.History) != 1 {
+		t.Fatalf("Metadata.History length = %d; want 1", len(meta.History))
+	}
+	entry := meta.History[0]
+	if entry.Role != "user" {
+		t.Errorf("role = %q; want %q", entry.Role, "user")
+	}
+	if len(entry.Parts) == 0 || entry.Parts[0].Text != "test" {
+		t.Error("text does not match expected 'test'")
+	}
 }
