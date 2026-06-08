@@ -11,8 +11,8 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations/ado"
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations/atlassian"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 type ioErrorReader struct{}
@@ -25,24 +25,17 @@ func (e *ioErrorReader) Close() error {
 	return nil
 }
 
-type mockHttpClient struct {
-	mock.Mock
-}
-
-func (m *mockHttpClient) Do(req *http.Request) (*http.Response, error) {
-	args := m.Called(req)
-	return args.Get(0).(*http.Response), args.Error(1)
-}
-
 func TestAzureDevOps_IOError(t *testing.T) {
-	mockClient := new(mockHttpClient)
+	mockClient := &toolstest.MockHTTPClient{}
 	m := ado.NewADOManager(nil, ado.WithHTTPClient(mockClient), ado.WithToken("test-pat"))
 
-	mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool { return true })).Return(&http.Response{
-		StatusCode: http.StatusInternalServerError,
-		Status:     "500 Internal Server Error",
-		Body:       &ioErrorReader{},
-	}, nil)
+	mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       &ioErrorReader{},
+		}, nil
+	}
 
 	err := m.CheckResponseError(&http.Response{
 		StatusCode: http.StatusInternalServerError,
@@ -58,15 +51,17 @@ func TestJira_IOError(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	t.Setenv("ATLASSIAN_BASE_URL", "https://jira.com")
-	mockClient := new(mockHttpClient)
+	mockClient := &toolstest.MockHTTPClient{}
 	m, err := atlassian.NewJiraManager(nil, mockClient)
 	assert.NoError(t, err)
 
-	mockClient.On("Do", mock.Anything).Return(&http.Response{
-		StatusCode: http.StatusInternalServerError,
-		Status:     "500 Internal Server Error",
-		Body:       &ioErrorReader{},
-	}, nil)
+	mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       &ioErrorReader{},
+		}, nil
+	}
 
 	ctx := context.Background()
 
@@ -85,15 +80,17 @@ func TestConfluence_IOError(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	t.Setenv("ATLASSIAN_BASE_URL", "https://confluence.com")
-	mockClient := new(mockHttpClient)
+	mockClient := &toolstest.MockHTTPClient{}
 	m, err := atlassian.NewConfluenceManager(nil, mockClient)
 	assert.NoError(t, err)
 
-	mockClient.On("Do", mock.Anything).Return(&http.Response{
-		StatusCode: http.StatusInternalServerError,
-		Status:     "500 Internal Server Error",
-		Body:       &ioErrorReader{},
-	}, nil)
+	mockClient.DoFunc = func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       &ioErrorReader{},
+		}, nil
+	}
 
 	ctx := context.Background()
 
