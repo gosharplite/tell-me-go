@@ -25,7 +25,6 @@ import (
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,79 +67,152 @@ func (m *mockFailingFS) ReadFile(ctx context.Context, name string) ([]byte, erro
 	return nil, errors.New("not implemented")
 }
 
+// mockUnifiedHistoryProvider is a hand-rolled test double for ports.UnifiedHistoryProvider.
 type mockUnifiedHistoryProvider struct {
-	mock.Mock
+	GetHistoryStreamFunc  func(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error)
+	getHistoryStreamCalls int
 }
 
 func (m *mockUnifiedHistoryProvider) GetHistoryStream(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
-	args := m.Called(ctx, limit, cursor)
-	return args.Get(0).([]ports.HistoryViewDTO), args.String(1), args.Error(2)
+	m.getHistoryStreamCalls++
+	if m.GetHistoryStreamFunc != nil {
+		return m.GetHistoryStreamFunc(ctx, limit, cursor)
+	}
+	return nil, "", nil
 }
 
+// mockHistoryManagerFull is a hand-rolled test double for ports.HistoryManager.
 type mockHistoryManagerFull struct {
-	mock.Mock
+	GetWindowFunc           func(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error)
+	GetTotalEntriesFunc     func() int
+	GetLastUserMessageFunc  func(ctx context.Context) (string, int, error)
+	GetResolverFunc         func() llm.AssetResolver
+	SetContentsFunc         func(ctx context.Context, contents []*llm.Content) error
+	AddContentFunc          func(ctx context.Context, content *llm.Content) error
+	AppendPartsFunc         func(ctx context.Context, index int, parts []*llm.Part) error
+	SaveFunc                func(ctx context.Context) error
+	SyncFunc                func(ctx context.Context) error
+	ArchiveFunc             func(ctx context.Context, contents []*llm.Content) error
+	SetPinnedFunc           func(ctx context.Context, turnIndex int, pinned bool) error
+	GetFilePathFunc         func() string
+	RollbackTurnsFunc       func(ctx context.Context, turns int) (int, int, int, error)
+	getWindowCalls          int
+	getTotalEntriesCalls    int
+	getLastUserMessageCalls int
+	getResolverCalls        int
+	setContentsCalls        int
+	addContentCalls         int
+	appendPartsCalls        int
+	saveCalls               int
+	syncCalls               int
+	archiveCalls            int
+	setPinnedCalls          int
+	getFilePathCalls        int
+	rollbackTurnsCalls      int
 }
 
 func (m *mockHistoryManagerFull) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
-	args := m.Called(ctx, startIdx, endIdx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	m.getWindowCalls++
+	if m.GetWindowFunc != nil {
+		return m.GetWindowFunc(ctx, startIdx, endIdx)
 	}
-	return args.Get(0).([]*llm.Content), args.Error(1)
+	return nil, nil
 }
 
 func (m *mockHistoryManagerFull) GetTotalEntries() int {
-	return m.Called().Int(0)
+	m.getTotalEntriesCalls++
+	if m.GetTotalEntriesFunc != nil {
+		return m.GetTotalEntriesFunc()
+	}
+	return 0
 }
 
 func (m *mockHistoryManagerFull) GetLastUserMessage(ctx context.Context) (string, int, error) {
-	args := m.Called(ctx)
-	return args.String(0), args.Int(1), args.Error(2)
+	m.getLastUserMessageCalls++
+	if m.GetLastUserMessageFunc != nil {
+		return m.GetLastUserMessageFunc(ctx)
+	}
+	return "", 0, nil
 }
 
 func (m *mockHistoryManagerFull) GetResolver() llm.AssetResolver {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
+	m.getResolverCalls++
+	if m.GetResolverFunc != nil {
+		return m.GetResolverFunc()
 	}
-	return args.Get(0).(llm.AssetResolver)
+	return nil
 }
 
 func (m *mockHistoryManagerFull) SetContents(ctx context.Context, contents []*llm.Content) error {
-	return m.Called(ctx, contents).Error(0)
+	m.setContentsCalls++
+	if m.SetContentsFunc != nil {
+		return m.SetContentsFunc(ctx, contents)
+	}
+	return nil
 }
 
 func (m *mockHistoryManagerFull) AddContent(ctx context.Context, content *llm.Content) error {
-	return m.Called(ctx, content).Error(0)
+	m.addContentCalls++
+	if m.AddContentFunc != nil {
+		return m.AddContentFunc(ctx, content)
+	}
+	return nil
 }
 
 func (m *mockHistoryManagerFull) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
-	return m.Called(ctx, index, parts).Error(0)
+	m.appendPartsCalls++
+	if m.AppendPartsFunc != nil {
+		return m.AppendPartsFunc(ctx, index, parts)
+	}
+	return nil
 }
 
 func (m *mockHistoryManagerFull) Save(ctx context.Context) error {
-	return m.Called(ctx).Error(0)
+	m.saveCalls++
+	if m.SaveFunc != nil {
+		return m.SaveFunc(ctx)
+	}
+	return nil
 }
 
 func (m *mockHistoryManagerFull) Sync(ctx context.Context) error {
-	return m.Called(ctx).Error(0)
+	m.syncCalls++
+	if m.SyncFunc != nil {
+		return m.SyncFunc(ctx)
+	}
+	return nil
 }
 
 func (m *mockHistoryManagerFull) Archive(ctx context.Context, contents []*llm.Content) error {
-	return m.Called(ctx, contents).Error(0)
+	m.archiveCalls++
+	if m.ArchiveFunc != nil {
+		return m.ArchiveFunc(ctx, contents)
+	}
+	return nil
 }
 
 func (m *mockHistoryManagerFull) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
-	return m.Called(ctx, turnIndex, pinned).Error(0)
+	m.setPinnedCalls++
+	if m.SetPinnedFunc != nil {
+		return m.SetPinnedFunc(ctx, turnIndex, pinned)
+	}
+	return nil
 }
 
 func (m *mockHistoryManagerFull) GetFilePath() string {
-	return m.Called().String(0)
+	m.getFilePathCalls++
+	if m.GetFilePathFunc != nil {
+		return m.GetFilePathFunc()
+	}
+	return ""
 }
 
 func (m *mockHistoryManagerFull) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
-	args := m.Called(ctx, turns)
-	return args.Int(0), args.Int(1), args.Int(2), args.Error(3)
+	m.rollbackTurnsCalls++
+	if m.RollbackTurnsFunc != nil {
+		return m.RollbackTurnsFunc(ctx, turns)
+	}
+	return 0, 0, 0, nil
 }
 
 func TestGetHistoryManager_FailurePaths(t *testing.T) {
@@ -265,7 +337,6 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := new(mockConfigurableSecurityManager)
-			setupDefaultSMExpectations(sm)
 
 			// Initialize with a real but dummy filesystem to avoid nil panics in EnsureDirectories
 			factory := newSessionFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, io.Discard, io.Discard, nil, nil, nil).(*defaultSessionFactory)
@@ -291,12 +362,12 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		setup   func(f *defaultToolchainFactory)
+		setup   func(f *defaultToolchainFactory, sm *mockConfigurableSecurityManager)
 		wantErr error
 	}{
 		{
 			name: "RegisterAllToolsFailure",
-			setup: func(f *defaultToolchainFactory) {
+			setup: func(f *defaultToolchainFactory, sm *mockConfigurableSecurityManager) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
 					return simulatedErr
 				}
@@ -305,7 +376,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 		},
 		{
 			name: "RegisterMetricsFailure",
-			setup: func(f *defaultToolchainFactory) {
+			setup: func(f *defaultToolchainFactory, sm *mockConfigurableSecurityManager) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error { return nil }
 				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 					return simulatedErr
@@ -315,12 +386,15 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 		},
 		{
 			name: "RegisterPolicyToolsFailure",
-			setup: func(f *defaultToolchainFactory) {
+			setup: func(f *defaultToolchainFactory, sm *mockConfigurableSecurityManager) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error { return nil }
 				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 					return nil
 				}
 				// Policy tools registration is done via SM
+				sm.RegisterPolicyToolsFunc = func(r tools.Registry, kv ports.KVStore) error {
+					return simulatedErr
+				}
 			},
 			wantErr: errInfraInit,
 		},
@@ -329,20 +403,17 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := new(mockConfigurableSecurityManager)
-			if tt.name == "RegisterPolicyToolsFailure" {
-				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(simulatedErr)
-			} else {
-				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-			}
 
 			factory := newToolchainFactory(tempDir, nil, sm, nil, nil, nil).(*defaultToolchainFactory)
 			if tt.setup != nil {
-				tt.setup(factory)
+				tt.setup(factory, sm)
 			}
 
-			mockSP := new(mockSessionProvider)
-			mockKV := new(mockKVStore)
-			mockSP.On("GetSettings").Return(mockKV).Maybe()
+			mockSP := &mockSessionProvider{
+				GetSettingsFunc: func() ports.KVStore {
+					return &mockKVStore{}
+				},
+			}
 
 			params := toolchainParams{
 				Paths:           &persistence.Paths{},
@@ -447,14 +518,14 @@ func TestTUIHistoryBrowser_Browse_LoggerCloseError(t *testing.T) {
 	testLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	// Mock provider and manager — never actually called because Run() is stubbed
-	provider := new(mockUnifiedHistoryProvider)
-	provider.On("GetHistoryStream", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(
-		[]ports.HistoryViewDTO{}, "", nil,
-	)
-
-	hManager := new(mockHistoryManagerFull)
-	hManager.On("GetFilePath", mock.Anything).Maybe().Return("")
-	// All other methods are optional — never called when Run() is stubbed
+	provider := &mockUnifiedHistoryProvider{
+		GetHistoryStreamFunc: func(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+			return []ports.HistoryViewDTO{}, "", nil
+		},
+	}
+	hManager := &mockHistoryManagerFull{
+		GetFilePathFunc: func() string { return "" },
+	}
 
 	browser := &tuiHistoryBrowser{
 		logger: testLogger,
@@ -482,13 +553,14 @@ func TestTUIHistoryBrowser_Browse_ProgramRunError(t *testing.T) {
 	testLogger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	// Mock provider and manager — never actually called because Run() is stubbed
-	provider := new(mockUnifiedHistoryProvider)
-	provider.On("GetHistoryStream", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(
-		[]ports.HistoryViewDTO{}, "", nil,
-	)
-
-	hManager := new(mockHistoryManagerFull)
-	hManager.On("GetFilePath", mock.Anything).Maybe().Return("")
+	provider := &mockUnifiedHistoryProvider{
+		GetHistoryStreamFunc: func(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+			return []ports.HistoryViewDTO{}, "", nil
+		},
+	}
+	hManager := &mockHistoryManagerFull{
+		GetFilePathFunc: func() string { return "" },
+	}
 
 	browser := &tuiHistoryBrowser{
 		logger: testLogger,

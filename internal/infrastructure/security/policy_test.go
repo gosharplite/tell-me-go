@@ -13,34 +13,61 @@ import (
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/assert"
 )
 
+// mockKVStore is a hand-rolled test double for ports.KVStore.
+// When a Func field is nil, the method returns its natural zero value.
+// Call counters enable count-based assertions.
 type mockKVStore struct {
-	mock.Mock
+	GetFunc    func(ctx context.Context, key string) (string, error)
+	SetFunc    func(ctx context.Context, key, val string) error
+	DeleteFunc func(ctx context.Context, key string) error
+	GetAllFunc func(ctx context.Context) (map[string]string, error)
+
+	// Call counters for assertion
+	GetCalls    int
+	SetCalls    int
+	DeleteCalls int
+	GetAllCalls int
 }
 
 func (m *mockKVStore) Get(ctx context.Context, key string) (string, error) {
-	args := m.Called(ctx, key)
-	return args.String(0), args.Error(1)
+	m.GetCalls++
+	if m.GetFunc != nil {
+		return m.GetFunc(ctx, key)
+	}
+	return "", nil
 }
+
 func (m *mockKVStore) Set(ctx context.Context, key, val string) error {
-	args := m.Called(ctx, key, val)
-	return args.Error(0)
+	m.SetCalls++
+	if m.SetFunc != nil {
+		return m.SetFunc(ctx, key, val)
+	}
+	return nil
 }
+
 func (m *mockKVStore) Delete(ctx context.Context, key string) error {
-	args := m.Called(ctx, key)
-	return args.Error(0)
+	m.DeleteCalls++
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(ctx, key)
+	}
+	return nil
 }
+
 func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(map[string]string), args.Error(1)
+	m.GetAllCalls++
+	if m.GetAllFunc != nil {
+		return m.GetAllFunc(ctx)
+	}
+	return map[string]string{}, nil
 }
 
 func setupPolicyTestWithAnswer(t *testing.T, answer string) (*SecurityManager, *policyTool, context.Context) {
 	t.Helper()
 	mockKV := new(mockKVStore)
-	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	// SetFunc is nil → returns nil error (equivalent to .Maybe() with success)
 	sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: answer} })
 	p, err := newPolicyTool(sm, mockKV)
 	if err != nil {
@@ -58,8 +85,9 @@ func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Conte
 // is expected exactly once during the test).
 func setupPolicyWithKVError(t *testing.T, err error) (*SecurityManager, *policyTool, context.Context) {
 	t.Helper()
-	mockKV := new(mockKVStore)
-	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(err)
+	mockKV := &mockKVStore{
+		SetFunc: func(ctx context.Context, key, val string) error { return err },
+	}
 	sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
 	p, pErr := newPolicyTool(sm, mockKV)
 	if pErr != nil {
@@ -74,7 +102,7 @@ func setupPolicyWithKVError(t *testing.T, err error) (*SecurityManager, *policyT
 func setupPolicyWithInteractorError(t *testing.T, err error) (*SecurityManager, *policyTool, context.Context) {
 	t.Helper()
 	mockKV := new(mockKVStore)
-	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	// SetFunc is nil → returns nil error
 	mi := &mockInteractor{Answer: "y", Err: err}
 	sm := NewSecurityManager(func() domain.UserInteractor { return mi })
 	p, pErr := newPolicyTool(sm, mockKV)
@@ -90,11 +118,18 @@ func setupPolicyWithInteractorError(t *testing.T, err error) (*SecurityManager, 
 // The caller must still call Register*Path to consume the first expectation.
 func setupPolicyWithKVRemoveError(t *testing.T, err error) (*SecurityManager, *policyTool, context.Context) {
 	t.Helper()
-	mockKV := new(mockKVStore)
-	// First Set: consumed by Register*Path → must succeed
-	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-	// Second Set: consumed by Remove*Path → returns the given error
-	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(err).Once()
+	mockKV := &mockKVStore{
+		SetFunc: func() func(ctx context.Context, key, val string) error {
+			var call int
+			return func(ctx context.Context, key, val string) error {
+				call++
+				if call == 1 {
+					return nil
+				}
+				return err
+			}
+		}(),
+	}
 	sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
 	p, pErr := newPolicyTool(sm, mockKV)
 	if pErr != nil {
@@ -333,7 +368,11 @@ func TestPolicyTool_SessionSettings_Update(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
 		mockKV := p.kv.(*mockKVStore)
-		mockKV.On("Set", ctx, "test_key", "test_val").Return(nil)
+		mockKV.SetFunc = func(ctx context.Context, key, val string) error {
+			assert.Equal(t, "test_key", key)
+			assert.Equal(t, "test_val", val)
+			return nil
+		}
 
 		res, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
 			"key":   "test_key",
@@ -345,7 +384,7 @@ func TestPolicyTool_SessionSettings_Update(t *testing.T) {
 		if !strings.Contains(res.Text, "updated to 'test_val'") {
 			t.Errorf("Unexpected result text: %q", res.Text)
 		}
-		mockKV.AssertExpectations(t)
+		assert.Equal(t, 1, mockKV.SetCalls, "expected Set to be called once")
 	})
 
 	t.Run("Update Session Setting missing key", func(t *testing.T) {
@@ -406,7 +445,9 @@ func TestPolicyTool_SessionSettings_List(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
 		mockKV := p.kv.(*mockKVStore)
-		mockKV.On("GetAll", ctx).Return(map[string]string{"k1": "v1", "k2": "v2"}, nil)
+		mockKV.GetAllFunc = func(ctx context.Context) (map[string]string, error) {
+			return map[string]string{"k1": "v1", "k2": "v2"}, nil
+		}
 
 		res, err := p.ListSessionSettings(ctx, nil, nil)
 		if err != nil {
@@ -415,14 +456,16 @@ func TestPolicyTool_SessionSettings_List(t *testing.T) {
 		if !strings.Contains(res.Text, "k1") || !strings.Contains(res.Text, "v2") {
 			t.Error("Expected settings k1 and v2 in list")
 		}
-		mockKV.AssertExpectations(t)
+		assert.Equal(t, 1, mockKV.GetAllCalls, "expected GetAll to be called once")
 	})
 
 	t.Run("List Session Settings empty", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
 		mockKV := p.kv.(*mockKVStore)
-		mockKV.On("GetAll", ctx).Return(map[string]string{}, nil)
+		mockKV.GetAllFunc = func(ctx context.Context) (map[string]string, error) {
+			return map[string]string{}, nil
+		}
 
 		res, err := p.ListSessionSettings(ctx, nil, nil)
 		if err != nil {
@@ -431,20 +474,22 @@ func TestPolicyTool_SessionSettings_List(t *testing.T) {
 		if !strings.Contains(res.Text, "No persistent session settings") {
 			t.Errorf("Expected empty message, got %q", res.Text)
 		}
-		mockKV.AssertExpectations(t)
+		assert.Equal(t, 1, mockKV.GetAllCalls, "expected GetAll to be called once")
 	})
 
 	t.Run("List Session Settings error", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
 		mockKV := p.kv.(*mockKVStore)
-		mockKV.On("GetAll", ctx).Return(map[string]string(nil), fmt.Errorf("storage error"))
+		mockKV.GetAllFunc = func(ctx context.Context) (map[string]string, error) {
+			return nil, fmt.Errorf("storage error")
+		}
 
 		_, err := p.ListSessionSettings(ctx, nil, nil)
 		if err == nil {
 			t.Error("expected error from GetAll")
 		}
-		mockKV.AssertExpectations(t)
+		assert.Equal(t, 1, mockKV.GetAllCalls, "expected GetAll to be called once")
 	})
 }
 
