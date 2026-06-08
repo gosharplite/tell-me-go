@@ -331,9 +331,6 @@ func (m *mockConfigurableSecurityManager) IsBypassActive() bool {
 	return false
 }
 
-// setupDefaultSMExpectations is now a no-op — hand-rolled mocks have safe zero values.
-func setupDefaultSMExpectations(m *mockConfigurableSecurityManager) {}
-
 // ---- Tests ----
 
 func TestBuildSessionDependencies(t *testing.T) {

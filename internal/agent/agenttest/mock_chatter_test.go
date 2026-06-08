@@ -170,9 +170,9 @@ func TestMockChatter_Snapshot(t *testing.T) {
 	m := new(MockChatter)
 
 	// Perform various calls out of order.
-	m.Shutdown(ctx)
-	m.Chat(ctx, sess, "hi")
-	m.SetLimits(ctx, 1, 2, 3)
+	_ = m.Shutdown(ctx)
+	_ = m.Chat(ctx, sess, "hi")
+	_ = m.SetLimits(ctx, 1, 2, 3)
 	m.Subscribe(func(ctx context.Context, ev events.Event) {})
 
 	chat, setLimits, subscribe, shutdown, methods := m.Snapshot()

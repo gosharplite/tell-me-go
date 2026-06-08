@@ -207,9 +207,6 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
 		mService.ChatCalled = true
 		mService.LastParams = cmd
-		if !cmd.Retry {
-			// unexpected — let test assertions catch it
-		}
 		return nil
 	}
 
