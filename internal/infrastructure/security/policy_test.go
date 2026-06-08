@@ -602,6 +602,33 @@ func TestPolicy_Register(t *testing.T) {
 	}
 }
 
+// errorRegistry implements tools.Registry and returns an error on Register.
+type errorRegistry struct {
+	tools.Registry
+}
+
+func (r *errorRegistry) Register(decl *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return fmt.Errorf("registration rejected")
+}
+
+func (r *errorRegistry) RegisterWithOptions(decl *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return fmt.Errorf("registration rejected")
+}
+
+func TestRegisterPolicyTools_RegistrationError(t *testing.T) {
+	t.Parallel()
+	sm, p, _ := setupPolicyTest(t)
+	r := &errorRegistry{}
+
+	err := sm.RegisterPolicyTools(r, p.kv)
+	if err == nil {
+		t.Error("expected error from failed tool registration, got nil")
+	}
+	if !strings.Contains(err.Error(), "registration rejected") {
+		t.Errorf("expected 'registration rejected' error, got: %v", err)
+	}
+}
+
 func TestNewPolicyTool_ValidationErrors(t *testing.T) {
 	t.Parallel()
 

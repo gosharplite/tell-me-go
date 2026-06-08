@@ -485,15 +485,18 @@ func (v *commandValidator) validateSinglePath(arg string) (bool, string) {
 		return true, ""
 	}
 
-	if _, err := v.sm.IsPathSafe(arg); err != nil {
-		if v.looksLikePath(arg) {
-			if v.sm != nil {
+	if v.sm != nil {
+		if _, err := v.sm.IsPathSafe(arg); err != nil {
+			if v.looksLikePath(arg) {
 				v.sm.Warn(fmt.Sprintf("[Safety] %v", err))
-			} else if v.interactor != nil {
-				v.interactor.Warn(fmt.Sprintf("[Safety] %v", err))
+				return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)
 			}
-			return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)
 		}
+	} else if v.looksLikePath(arg) {
+		if v.interactor != nil {
+			v.interactor.Warn(fmt.Sprintf("[Safety] path safety check failed for argument '%s': no security manager", arg))
+		}
+		return false, fmt.Sprintf("path safety check failed for argument '%s': no security manager", arg)
 	}
 	return true, ""
 }

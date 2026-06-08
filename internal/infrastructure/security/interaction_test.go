@@ -225,6 +225,7 @@ func TestNoOpInteractor(t *testing.T) {
 	}
 
 	ni.Warn("test")
+	ni.Prompt("test prompt")
 
 	key, err := ni.ReadSingleKey(ctx)
 	if err != nil || key != "" {

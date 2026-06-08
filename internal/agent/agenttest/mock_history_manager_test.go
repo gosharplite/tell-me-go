@@ -69,6 +69,56 @@ func TestMockHistoryManager_AddContent_Appends(t *testing.T) {
 	}
 }
 
+func TestMockHistoryManager_AddContent_FuncOverride(t *testing.T) {
+	t.Parallel()
+
+	t.Run("AddContentFunc returns error", func(t *testing.T) {
+		injectedErr := errors.New("injected AddContent error")
+		m := &MockHistoryManager{
+			AddContentFunc: func(ctx context.Context, content *llm.Content) error {
+				return injectedErr
+			},
+		}
+
+		err := m.AddContent(context.Background(), &llm.Content{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: "should not be stored"}},
+		})
+
+		if err != injectedErr {
+			t.Errorf("expected injectedErr, got %v", err)
+		}
+		if m.GetTotalEntries() != 0 {
+			t.Errorf("expected 0 entries after error, got %d", m.GetTotalEntries())
+		}
+	})
+
+	t.Run("AddContentFunc returns nil", func(t *testing.T) {
+		m := &MockHistoryManager{}
+		m.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
+			// Custom behavior: store only if role is "user"
+			if content.Role == "user" {
+				m.Mu.Lock()
+				m.Contents = append(m.Contents, llm.CloneContent(content))
+				m.Mu.Unlock()
+			}
+			return nil
+		}
+
+		err := m.AddContent(context.Background(), &llm.Content{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: "hello"}},
+		})
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m.GetTotalEntries() != 1 {
+			t.Errorf("expected 1 entry, got %d", m.GetTotalEntries())
+		}
+	})
+}
+
 // ---------------------------------------------------------------------------
 // GetWindow
 // ---------------------------------------------------------------------------

@@ -1032,3 +1032,88 @@ func TestExecutionStep_PayloadValidation_GuardBranches(t *testing.T) {
 		assert.Equal(t, "event_publish_failed", errors[0])
 	})
 }
+
+func TestEngine_GetConfig(t *testing.T) {
+	t.Run("after NewEngine returns configured values", func(t *testing.T) {
+		gw := &agenttest.MockGateway{}
+		ex := &agenttest.MockAgentExecutor{}
+		reg := &agenttest.MockToolRegistry{}
+		counter := &agenttest.MockTokenCounter{}
+		bus := &eventstest.MockEventBus{}
+		hMock := &agenttest.MockHistoryManager{}
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+		e := NewEngine(gw, ex, cm, reg, bus, counter,
+			WithEngineConfig(&noopSecurityManager{}, "provider-a", "model-a", "mode-a", nil),
+		)
+
+		snap := e.GetConfig()
+		assert.Equal(t, "provider-a", snap.ProviderName)
+		assert.Equal(t, "model-a", snap.Model)
+		assert.Equal(t, "mode-a", snap.Mode)
+	})
+
+	t.Run("after Reconfigure returns updated values", func(t *testing.T) {
+		gw := &agenttest.MockGateway{}
+		ex := &agenttest.MockAgentExecutor{}
+		reg := &agenttest.MockToolRegistry{}
+		counter := &agenttest.MockTokenCounter{}
+		bus := &eventstest.MockEventBus{}
+		hMock := &agenttest.MockHistoryManager{}
+		cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+		e := NewEngine(gw, ex, cm, reg, bus, counter,
+			WithEngineConfig(&noopSecurityManager{}, "provider-a", "model-a", "mode-a", nil),
+		)
+
+		err := e.Reconfigure(RuntimeConfig{
+			ProviderName: "provider-b",
+			Model:        "model-b",
+			Mode:         "mode-b",
+		}, nil)
+		require.NoError(t, err)
+
+		snap := e.GetConfig()
+		assert.Equal(t, "provider-b", snap.ProviderName)
+		assert.Equal(t, "model-b", snap.Model)
+		assert.Equal(t, "mode-b", snap.Mode)
+	})
+}
+
+func TestExecutionStep_Process_MetricsNil_DoesNotPanic(t *testing.T) {
+	step := &ExecutionStep{}
+	ctx := context.Background()
+
+	bus := &eventstest.MockEventBus{}
+	ex := &agenttest.MockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+			return &llm.Content{Role: "tool"}, nil
+		},
+	}
+	counter := &agenttest.MockTokenCounter{}
+	hMock := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+	turn := &Turn{
+		Events:       bus,
+		Executor:     ex,
+		TokenCounter: counter,
+		CtxManager:   cm,
+		Clock:        &agenttest.MockClock{},
+		State: &TurnState{
+			HasToolCalls: true,
+			Response: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
+			},
+			Metrics: nil, // <-- triggers early-return in recordToolMetrics
+		},
+	}
+
+	res, err := step.Process(ctx, turn)
+
+	assert.NoError(t, err)
+	assert.Equal(t, PhasePersisting, res.NextPhase)
+	assert.NotNil(t, turn.State.ToolResponse)
+	assert.Nil(t, turn.State.Metrics, "Metrics must remain nil when not set by inference")
+}

@@ -292,30 +292,19 @@ func TestSetupCommand(t *testing.T) {
 // assertSetupCommandNils checks nil/non-nil expectations for all four return values.
 func assertSetupCommandNils(t *testing.T, cmd *exec.Cmd, stdout, stderr io.ReadCloser, file *os.File, expectNilCmd, expectNilStdout, expectNilStderr, expectNilFile bool) {
 	t.Helper()
-	if expectNilCmd && cmd != nil {
-		t.Error("expected nil cmd")
+	checkNil := func(name string, isNil, expectNil bool) {
+		t.Helper()
+		if expectNil && !isNil {
+			t.Errorf("expected nil %s", name)
+		}
+		if !expectNil && isNil {
+			t.Errorf("expected non-nil %s", name)
+		}
 	}
-	if !expectNilCmd && cmd == nil {
-		t.Error("expected non-nil *exec.Cmd")
-	}
-	if expectNilStdout && stdout != nil {
-		t.Error("expected nil stdout")
-	}
-	if !expectNilStdout && stdout == nil {
-		t.Error("expected non-nil stdout io.ReadCloser")
-	}
-	if expectNilStderr && stderr != nil {
-		t.Error("expected nil stderr")
-	}
-	if !expectNilStderr && stderr == nil {
-		t.Error("expected non-nil stderr io.ReadCloser")
-	}
-	if expectNilFile && file != nil {
-		t.Error("expected nil file")
-	}
-	if !expectNilFile && file == nil {
-		t.Error("expected non-nil *os.File")
-	}
+	checkNil("cmd", cmd == nil, expectNilCmd)
+	checkNil("stdout", stdout == nil, expectNilStdout)
+	checkNil("stderr", stderr == nil, expectNilStderr)
+	checkNil("file", file == nil, expectNilFile)
 }
 
 // TestWithinParent covers withinParent(parent, target string) bool.

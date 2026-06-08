@@ -6,7 +6,9 @@ package persistence
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -189,6 +191,105 @@ func (s *failingTaskStore) Query(ctx context.Context, filter ports.ListFilter, l
 }
 func (s *failingTaskStore) Count(ctx context.Context) (int, error) {
 	return 0, errors.New("simulated count failure")
+}
+
+func TestSessionState_HydrateInfo_CorruptedStateFile(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	ctx := context.Background()
+
+	// Write corrupted JSON into state.json — this exercises the
+	// json.Unmarshal error branch inside hydrateInfo.
+	corrupted := []byte("{invalid json}}}}")
+	if err := os.WriteFile(filepath.Join(tempDir, "state.json"), corrupted, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatalf("NewSessionState should succeed with corrupted state file, got: %v", err)
+	}
+	defer func() { _ = state.Close() }()
+
+	info := state.GetInfo()
+
+	// Corrupted unmarshal is silently swallowed; defaults must be populated.
+	if info.Env == nil {
+		t.Error("expected non-nil Env map (default fallback)")
+	}
+	if info.Env["STORAGE_TYPE"] != "sqlite" {
+		t.Errorf("expected STORAGE_TYPE to be sqlite, got %s", info.Env["STORAGE_TYPE"])
+	}
+
+	if info.Paths == nil {
+		t.Error("expected non-nil Paths map (default fallback)")
+	}
+	if info.Paths["config_dir"] != tempDir {
+		t.Errorf("expected config_dir to be %s, got %s", tempDir, info.Paths["config_dir"])
+	}
+
+	if info.ActiveToolkits == nil {
+		t.Error("expected non-nil ActiveToolkits slice (default fallback)")
+	}
+	if len(info.ActiveToolkits) != 0 {
+		t.Errorf("expected empty ActiveToolkits, got %v", info.ActiveToolkits)
+	}
+
+	if info.Model != "" {
+		t.Errorf("expected Model to be empty, got %q", info.Model)
+	}
+	if info.Provider != "" {
+		t.Errorf("expected Provider to be empty, got %q", info.Provider)
+	}
+}
+
+func TestSessionState_SetInfo_PersistError(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file creation on Windows")
+	}
+
+	if os.Geteuid() == 0 {
+		t.Skip("skipping permission test: running as root")
+	}
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	state, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.Close() }()
+
+	// Create a read-only directory to make AtomicWrite fail.
+	readOnlyDir := filepath.Join(t.TempDir(), "readonly")
+	if err := os.Mkdir(readOnlyDir, 0755); err != nil {
+		t.Fatalf("failed to create read-only dir: %v", err)
+	}
+	if err := os.Chmod(readOnlyDir, 0555); err != nil {
+		t.Fatalf("failed to chmod dir: %v", err)
+	}
+	defer func() { _ = os.Chmod(readOnlyDir, 0755) }()
+
+	// Point statePath inside the read-only directory so persistence fails.
+	ss := state.(*sessionState)
+	ss.statePath = filepath.Join(readOnlyDir, "state.json")
+
+	// Build updated info — copy from current so Env/Paths are intact.
+	info := ss.GetInfo()
+	info.ActiveToolkits = []string{"git", "k8s", "ado"}
+
+	// SetInfo must not panic even when persistence fails.
+	state.SetInfo(info)
+
+	// In-memory state is updated regardless of persistence outcome.
+	restored := state.GetInfo()
+	if len(restored.ActiveToolkits) != 3 {
+		t.Errorf("expected 3 active toolkits in memory, got %d", len(restored.ActiveToolkits))
+	}
 }
 
 func TestInitServices_InitializeFailure(t *testing.T) {

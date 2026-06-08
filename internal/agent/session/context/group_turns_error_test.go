@@ -204,3 +204,17 @@ func (m *mockTokenCounterWithFn) Count(contents []*llm.Content) int {
 	}
 	return 0
 }
+
+func TestGroupTurns_NilHistory(t *testing.T) {
+	_, err := groupTurns(context.Background(), nil)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidPayload)
+	require.Contains(t, err.Error(), "groupTurns")
+}
+
+func TestGroupTurns_EmptyHistory(t *testing.T) {
+	turns, err := groupTurns(context.Background(), []*llm.Content{})
+	require.NoError(t, err)
+	require.Nil(t, turns)
+	require.Len(t, turns, 0)
+}
