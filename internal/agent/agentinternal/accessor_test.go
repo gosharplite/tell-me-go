@@ -5,12 +5,12 @@ package agentinternal
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"reflect"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -552,105 +552,90 @@ func TestAgentInternal_Actions(t *testing.T) {
 // exercises the nil-guarded type assertions in BuildSessionDependencies
 // to ensure they don't panic when testify returns nil values.
 func TestMockSessionLifecycleManager(t *testing.T) {
-	t.Run("BuildSessionDependencies/all non-nil", func(t *testing.T) {
+	t.Run("BuildSessionDependencies", func(t *testing.T) {
 		m := new(MockSessionLifecycleManager)
-
-		deps := &agenttest.StubChatterComposer{}
-		hm := &agenttest.MockHistoryManager{}
-		cleanup := func(ctx context.Context) error { return nil }
-
-		m.On("BuildSessionDependencies",
-			mock.Anything,
-			mock.AnythingOfType("*config.Config"),
-			mock.AnythingOfType("string"),
-			mock.AnythingOfType("bool"),
-			mock.Anything,
-		).Return(deps, hm, cleanup, nil)
-
-		gotDeps, gotHM, gotCleanup, err := m.BuildSessionDependencies(
-			context.Background(),
-			&domain_config.Config{},
-			"/some/path",
-			true,
-			nil, // CapturerInteractor — nil is fine with mock.Anything
-		)
-
-		assert.NoError(t, err)
-		assert.Same(t, deps, gotDeps, "ChatterComposer should be the same pointer")
-		assert.Same(t, hm, gotHM, "HistoryManager should be the same pointer")
-		assert.NotNil(t, gotCleanup, "cleanup function should be non-nil")
-		m.AssertExpectations(t)
+		m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+			return nil, nil, nil, nil
+		}
+		_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		snap := m.Snapshot()
+		if snap["BuildSessionDependencies"] != 1 {
+			t.Errorf("BuildSessionDependencies calls: got %d, want 1", snap["BuildSessionDependencies"])
+		}
+		if snap["FinalizeSession"] != 0 {
+			t.Errorf("FinalizeSession calls: got %d, want 0", snap["FinalizeSession"])
+		}
 	})
 
-	t.Run("BuildSessionDependencies/nil deps and hm", func(t *testing.T) {
+	t.Run("BuildSessionDependencies returns values", func(t *testing.T) {
 		m := new(MockSessionLifecycleManager)
-
-		cleanup := func(ctx context.Context) error { return nil }
-
-		m.On("BuildSessionDependencies",
-			mock.Anything,
-			mock.AnythingOfType("*config.Config"),
-			mock.AnythingOfType("string"),
-			mock.AnythingOfType("bool"),
-			mock.Anything,
-		).Return(nil, nil, cleanup, nil)
-
-		gotDeps, gotHM, gotCleanup, err := m.BuildSessionDependencies(
-			context.Background(),
-			&domain_config.Config{},
-			"/some/path",
-			false,
-			nil,
-		)
-
-		// The nil guards in BuildSessionDependencies must prevent panics
-		// and leave the returned interface values as nil.
-		assert.NoError(t, err)
-		assert.Nil(t, gotDeps, "nil guard: deps should be nil")
-		assert.Nil(t, gotHM, "nil guard: hm should be nil")
-		assert.NotNil(t, gotCleanup, "cleanup function should be non-nil")
-		m.AssertExpectations(t)
+		wantCleanup := func(context.Context) error { return nil }
+		m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+			return nil, nil, wantCleanup, nil
+		}
+		_, _, cleanup, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cleanup == nil {
+			t.Fatal("cleanup should not be nil")
+		}
 	})
 
-	t.Run("FinalizeSession/success", func(t *testing.T) {
+	t.Run("BuildSessionDependencies returns error", func(t *testing.T) {
 		m := new(MockSessionLifecycleManager)
-
-		m.On("FinalizeSession",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Return(nil)
-
-		err := m.FinalizeSession(
-			context.Background(),
-			&agenttest.MockHistoryManager{},
-			&agenttest.StubSessionFinalizer{},
-			&domain_config.Config{},
-		)
-
-		assert.NoError(t, err)
-		m.AssertExpectations(t)
+		wantErr := errors.New("build failed")
+		m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+			return nil, nil, nil, wantErr
+		}
+		_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+		if err != wantErr {
+			t.Errorf("got %v; want %v", err, wantErr)
+		}
 	})
 
-	t.Run("FinalizeSession/error", func(t *testing.T) {
+	t.Run("FinalizeSession", func(t *testing.T) {
 		m := new(MockSessionLifecycleManager)
+		m.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
+			return nil
+		}
+		err := m.FinalizeSession(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		snap := m.Snapshot()
+		if snap["FinalizeSession"] != 1 {
+			t.Errorf("FinalizeSession calls: got %d, want 1", snap["FinalizeSession"])
+		}
+	})
 
-		m.On("FinalizeSession",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Return(assert.AnError)
+	t.Run("FinalizeSession returns error", func(t *testing.T) {
+		m := new(MockSessionLifecycleManager)
+		wantErr := errors.New("finalize failed")
+		m.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
+			return wantErr
+		}
+		err := m.FinalizeSession(context.Background(), nil, nil, nil)
+		if err != wantErr {
+			t.Errorf("got %v; want %v", err, wantErr)
+		}
+	})
 
-		err := m.FinalizeSession(
-			context.Background(),
-			&agenttest.MockHistoryManager{},
-			&agenttest.StubSessionFinalizer{},
-			&domain_config.Config{},
-		)
-
-		assert.Error(t, err)
-		m.AssertExpectations(t)
+	t.Run("default behavior when Fn is nil", func(t *testing.T) {
+		m := new(MockSessionLifecycleManager)
+		deps, hm, cleanup, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if deps != nil || hm != nil || cleanup != nil {
+			t.Error("expected nil returns when Fn is nil")
+		}
+		err = m.FinalizeSession(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
 }

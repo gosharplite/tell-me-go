@@ -20,20 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
-
-type mockToolExecutor struct {
-	mock.Mock
-}
-
-func (m *mockToolExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-	args := m.Called(ctx, respContent, turn, maxToolTurns)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*llm.Content), args.Error(1)
-}
 
 func TestExecuteTurn_TraceEvent(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -69,7 +56,7 @@ func TestExecuteTurn_TraceEvent(t *testing.T) {
 func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	// Mock components needed for Engine
 	gw := &agenttest.MockGateway{}
-	ex := &mockToolExecutor{}
+	ex := &agenttest.MockAgentExecutor{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
@@ -535,7 +522,7 @@ func TestEngineHooks_Coverage(t *testing.T) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Hello"}}}, &llm.Metrics{}, nil
 		},
 	}
-	ex := &mockToolExecutor{}
+	ex := &agenttest.MockAgentExecutor{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
@@ -721,7 +708,7 @@ func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 
 func TestEngineRun_Error(t *testing.T) {
 	gw := &agenttest.MockGateway{}
-	ex := &mockToolExecutor{}
+	ex := &agenttest.MockAgentExecutor{}
 	reg := &agenttest.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
