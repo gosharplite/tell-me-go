@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -130,4 +131,17 @@ func TestAgent_Chat_ConfigRefreshHook_OnPhaseTransition(t *testing.T) {
 	require.GreaterOrEqual(t, spy.afterCalls, 1, "AfterTurn should be called at least once")
 	require.Contains(t, spy.transitions, "Inference->Executing")
 	require.True(t, configUpdatedReceived)
+}
+
+func TestConfigRefreshHook_BeforeTurn_NoOp(t *testing.T) {
+	h := &configRefreshHook{}
+	// Must not panic — BeforeTurn is an intentional no-op.
+	h.BeforeTurn(nil)
+}
+
+func TestConfigRefreshHook_AfterTurn_NoOp(t *testing.T) {
+	h := &configRefreshHook{}
+	// Must not panic — AfterTurn is an intentional no-op, even with an error.
+	h.AfterTurn(nil, nil)
+	h.AfterTurn(nil, errors.New("some error"))
 }

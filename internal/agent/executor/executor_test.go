@@ -816,3 +816,205 @@ func TestDispatcher_Execute_ErrTerminal_PropagatesErrorWithResponse(t *testing.T
 	assert.Error(t, execErr)
 	assert.True(t, errors.Is(execErr, llm.ErrTerminal), "error should be ErrTerminal")
 }
+
+func TestSuggestTool(t *testing.T) {
+	tests := []struct {
+		name         string
+		hallucinated string
+		validTools   []string
+		want         string
+	}{
+		{
+			name:         "exact match returns tool name",
+			hallucinated: "read_file",
+			validTools:   []string{"write_file", "read_file", "delete_file"},
+			want:         "read_file",
+		},
+		{
+			name:         "close match within distance threshold",
+			hallucinated: "read_files",
+			validTools:   []string{"write_file", "read_file", "delete_file"},
+			want:         "read_file",
+		},
+		{
+			name:         "no match exceeds distance threshold",
+			hallucinated: "zzzzzzzzz",
+			validTools:   []string{"write_file", "read_file", "delete_file"},
+			want:         "",
+		},
+		{
+			name:         "empty valid tools returns empty",
+			hallucinated: "anything",
+			validTools:   []string{},
+			want:         "",
+		},
+		{
+			name:         "case insensitive match",
+			hallucinated: "READ_FILE",
+			validTools:   []string{"write_file", "read_file", "delete_file"},
+			want:         "read_file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SuggestTool(tt.hallucinated, tt.validTools)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestHandleClassifiedError(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      string
+		msg         string
+		err         error
+		resultErr   error
+		wantResult  tools.ToolResult
+		wantHandled bool
+	}{
+		{
+			name:        "user_declined returns nil error",
+			status:      "user_declined",
+			msg:         "User denied action.",
+			err:         tools.ErrUserDeclined,
+			resultErr:   nil,
+			wantResult:  tools.ToolResult{Text: "User denied action.", Error: nil},
+			wantHandled: true,
+		},
+		{
+			name:        "security_blocked with err non-nil",
+			status:      "security_blocked",
+			msg:         "Blocked by policy.",
+			err:         tools.ErrSecurityPolicy,
+			resultErr:   nil,
+			wantResult:  tools.ToolResult{Text: "Blocked by policy.", Error: tools.ErrSecurityPolicy},
+			wantHandled: true,
+		},
+		{
+			name:        "security_blocked with resultErr non-nil and err nil",
+			status:      "security_blocked",
+			msg:         "Blocked by policy.",
+			err:         nil,
+			resultErr:   tools.ErrSecurityPolicy,
+			wantResult:  tools.ToolResult{Text: "Blocked by policy.", Error: tools.ErrSecurityPolicy},
+			wantHandled: true,
+		},
+		{
+			name:        "security_blocked with both errors nil falls back to ErrSecurityPolicy",
+			status:      "security_blocked",
+			msg:         "Blocked by policy.",
+			err:         nil,
+			resultErr:   nil,
+			wantResult:  tools.ToolResult{Text: "Blocked by policy.", Error: tools.ErrSecurityPolicy},
+			wantHandled: true,
+		},
+		{
+			name:        "unclassified status error returns not handled",
+			status:      "error",
+			msg:         "",
+			err:         errors.New("some error"),
+			resultErr:   nil,
+			wantResult:  tools.ToolResult{},
+			wantHandled: false,
+		},
+		{
+			name:        "empty status returns not handled",
+			status:      "",
+			msg:         "",
+			err:         nil,
+			resultErr:   nil,
+			wantResult:  tools.ToolResult{},
+			wantHandled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, handled := handleClassifiedError(tt.status, tt.msg, tt.err, tt.resultErr)
+			assert.Equal(t, tt.wantHandled, handled)
+			assert.Equal(t, tt.wantResult.Text, got.Text)
+			if tt.wantResult.Error == nil {
+				assert.NoError(t, got.Error)
+			} else {
+				assert.ErrorIs(t, got.Error, tt.wantResult.Error)
+			}
+		})
+	}
+}
+
+func TestAssembleResponse_BinaryData(t *testing.T) {
+	t.Parallel()
+
+	calls := []*llm.FunctionCall{
+		{ID: "1", Name: "text_tool"},
+		{ID: "2", Name: "image_tool"},
+	}
+
+	results := []tools.ToolResult{
+		{Text: "text output"},
+		{
+			Text: "image generated",
+			BinaryData: []tools.BinaryData{
+				{MIMEType: "image/png", Data: []byte{0x89, 0x50, 0x4E, 0x47}},
+				{MIMEType: "image/jpeg", Data: []byte{0xFF, 0xD8}},
+			},
+		},
+	}
+
+	// Create a Dispatcher with the default markdownStrategy
+	d := &Dispatcher{strategy: &markdownStrategy{}}
+
+	result := d.AssembleResponse(calls, results)
+
+	assert.Equal(t, "user", result.Role)
+
+	// Expected parts:
+	// 1. FunctionResponse for text_tool (from strategy.Format)
+	// 2. FunctionResponse for image_tool (from strategy.Format)
+	// 3. InlineData for image/png
+	// 4. InlineData for image/jpeg
+	assert.Len(t, result.Parts, 4)
+
+	// Verify function response parts exist for each call
+	var frCount int
+	for _, part := range result.Parts {
+		if part.FunctionResponse != nil {
+			frCount++
+		}
+	}
+	assert.Equal(t, 2, frCount, "expected one FunctionResponse per function call")
+
+	// Verify binary parts are present with correct data
+	var binaryCount int
+	for _, part := range result.Parts {
+		if part.InlineData != nil {
+			binaryCount++
+			assert.NotEmpty(t, part.InlineData.MIMEType)
+			assert.NotEmpty(t, part.InlineData.Data)
+		}
+	}
+	assert.Equal(t, 2, binaryCount, "expected two InlineData parts for the two BinaryData entries")
+}
+
+func TestAssembleResponse_NoBinaryData(t *testing.T) {
+	t.Parallel()
+
+	calls := []*llm.FunctionCall{
+		{ID: "1", Name: "text_tool"},
+	}
+
+	results := []tools.ToolResult{
+		{Text: "text output", BinaryData: nil},
+	}
+
+	d := &Dispatcher{strategy: &markdownStrategy{}}
+
+	result := d.AssembleResponse(calls, results)
+
+	assert.Equal(t, "user", result.Role)
+	assert.Len(t, result.Parts, 1, "no InlineData parts when BinaryData is empty")
+	assert.NotNil(t, result.Parts[0].FunctionResponse)
+	assert.Nil(t, result.Parts[0].InlineData)
+}
