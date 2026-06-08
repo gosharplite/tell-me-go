@@ -574,6 +574,50 @@ func TestAuthInvalidate_Additional(t *testing.T) {
 	})
 }
 
+func TestEmptyCredentials_NoHeaderAdded(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("APIKeyAuth empty key", func(t *testing.T) {
+		t.Parallel()
+		auth := &APIKeyAuth{APIKey: ""}
+		req := &Request{Headers: make(map[string]string)}
+		err := auth.Apply(ctx, req)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(req.Headers) != 0 {
+			t.Errorf("expected no headers with empty API key, got: %v", req.Headers)
+		}
+	})
+
+	t.Run("BearerAuth empty token", func(t *testing.T) {
+		t.Parallel()
+		auth := &BearerAuth{Token: ""}
+		req := &Request{Headers: make(map[string]string)}
+		err := auth.Apply(ctx, req)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(req.Headers) != 0 {
+			t.Errorf("expected no headers with empty token, got: %v", req.Headers)
+		}
+	})
+
+	t.Run("AnthropicAuth empty key", func(t *testing.T) {
+		t.Parallel()
+		auth := &AnthropicAuth{APIKey: ""}
+		req := &Request{Headers: make(map[string]string)}
+		err := auth.Apply(ctx, req)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(req.Headers) != 0 {
+			t.Errorf("expected no headers with empty API key, got: %v", req.Headers)
+		}
+	})
+}
+
 func TestVertexAuth_GetToken_ExpiredCache(t *testing.T) {
 	ctx := context.Background()
 	tmpDir := t.TempDir()

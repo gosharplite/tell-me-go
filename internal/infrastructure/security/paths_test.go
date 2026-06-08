@@ -4,9 +4,11 @@
 package security
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -655,4 +657,59 @@ func TestCheckBoundary_EvalSymlinksError(t *testing.T) {
 	} else {
 		t.Logf("ValidatePath accepted path (tmpDir is within default boundaries): %s", validated)
 	}
+}
+
+func TestBoundaryChecks_ErrorLogging(t *testing.T) {
+	t.Parallel()
+
+	// Capture log output to verify log.Printf side effects.
+	var logBuf strings.Builder
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
+
+	p := newPathPolicy(nil)
+
+	// ---- checkSafePaths ----
+	// Directly inject a NUL-byte boundary. RegisterPath rejects it because
+	// filepath.Abs also fails on NUL bytes, so we set the map entry directly.
+	p.safePaths["/valid/\x00boundary"] = struct{}{}
+	ok, err := p.checkSafePaths("/some/target", false)
+	if ok {
+		t.Error("expected false for path outside NUL-byte boundary")
+	}
+	// checkSafePaths returns nil error even when checkBoundary fails — the
+	// error is only logged, not returned (by design).
+	if err != nil {
+		t.Errorf("expected nil error from checkSafePaths, got: %v", err)
+	}
+	if logBuf.Len() == 0 {
+		// filepath.Abs may not error on NUL bytes on all platforms.
+		t.Skip("[SYSTEM-DEPENDENT] filepath.Abs did not error on NUL byte; log line unreachable on this platform")
+	}
+	if !strings.Contains(logBuf.String(), "boundary check error for safe path") {
+		t.Errorf("expected log containing 'boundary check error for safe path', got: %q", logBuf.String())
+	}
+
+	logBuf.Reset()
+
+	// ---- checkReadOnlyPaths ----
+	p.readOnlyPaths["/valid/\x00roboundary"] = struct{}{}
+	ok, err = p.checkReadOnlyPaths("/some/target", false)
+	if ok {
+		t.Error("expected false for path outside NUL-byte RO boundary")
+	}
+	if err != nil {
+		t.Errorf("expected nil error from checkReadOnlyPaths, got: %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "boundary check error for read-only path") {
+		t.Errorf("expected log containing 'boundary check error for read-only path', got: %q", logBuf.String())
+	}
+
+	// ---- checkDefaultBoundaries (documentation only) ----
+	// The error-logging branches in checkDefaultBoundaries (paths.go lines
+	// 58-60, 69-71, 76-78) are [SYSTEM-DEPENDENT] unreachable: os.Getwd(),
+	// os.TempDir(), and getExtraTempDirs() always return valid paths that
+	// pass filepath.Abs without error. These branches exist as defensive
+	// coding but cannot be triggered in normal or test operation.
+	t.Log("[DOCUMENTED] checkDefaultBoundaries error-log branches are unreachable: all default boundaries are always valid paths")
 }
