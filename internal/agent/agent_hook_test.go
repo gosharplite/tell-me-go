@@ -136,12 +136,12 @@ func TestAgent_Chat_ConfigRefreshHook_OnPhaseTransition(t *testing.T) {
 func TestConfigRefreshHook_BeforeTurn_NoOp(t *testing.T) {
 	h := &configRefreshHook{}
 	// Must not panic — BeforeTurn is an intentional no-op.
-	h.BeforeTurn(nil)
+	require.NotPanics(t, func() { h.BeforeTurn(nil) })
 }
 
 func TestConfigRefreshHook_AfterTurn_NoOp(t *testing.T) {
 	h := &configRefreshHook{}
 	// Must not panic — AfterTurn is an intentional no-op, even with an error.
-	h.AfterTurn(nil, nil)
-	h.AfterTurn(nil, errors.New("some error"))
+	require.NotPanics(t, func() { h.AfterTurn(nil, nil) })
+	require.NotPanics(t, func() { h.AfterTurn(nil, errors.New("some error")) })
 }

@@ -818,6 +818,7 @@ func TestDispatcher_Execute_ErrTerminal_PropagatesErrorWithResponse(t *testing.T
 }
 
 func TestSuggestTool(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		hallucinated string
@@ -865,6 +866,7 @@ func TestSuggestTool(t *testing.T) {
 }
 
 func TestHandleClassifiedError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		status      string
