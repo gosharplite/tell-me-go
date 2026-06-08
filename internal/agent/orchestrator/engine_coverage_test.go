@@ -911,3 +911,39 @@ func TestRunPhaseLoop_ContextRefinerError_TransitionsToRecovery(t *testing.T) {
 		mu.Unlock()
 	})
 }
+
+func TestInferenceStep_UpdateState_NilMetrics(t *testing.T) {
+	ctx := context.Background()
+
+	gw := &agenttest.MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Hello"}},
+			}, nil, nil // nil metrics — triggers the if metrics != nil guard in updateState
+		},
+	}
+
+	bus := &eventstest.MockEventBus{}
+	hMock := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+	turn := &Turn{
+		Gateway:    gw,
+		Events:     bus,
+		CtxManager: cm,
+		State:      &TurnState{},
+		Clock:      &agenttest.MockClock{},
+		Registry:   &agenttest.MockToolRegistry{},
+	}
+
+	step := &InferenceStep{}
+	res, err := step.Process(ctx, turn)
+
+	assert.NoError(t, err)
+	assert.Equal(t, PhasePersisting, res.NextPhase)
+	assert.NotNil(t, turn.State.Response)
+	assert.Nil(t, turn.State.Metrics, "Metrics must remain nil when gateway returns nil metrics")
+	assert.Equal(t, 0, turn.State.Tokens, "Tokens must remain 0 when metrics is nil")
+	assert.False(t, turn.State.HasToolCalls)
+}
