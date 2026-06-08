@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,9 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 		{
 			name: "Build Session Dependencies Failure",
 			setup: func(sf *agentinternal.MockSessionLifecycleManager) {
-				sf.On("BuildSessionDependencies", context.Background(), &config.Config{}, "config.yaml", false, nil).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
+				sf.BuildSessionDepsFunc = func(_ context.Context, _ *config.Config, _ string, _ bool, _ agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return nil, nil, func(context.Context) error { return nil }, errBuild
+				}
 			},
 			wantErr: "build error",
 		},

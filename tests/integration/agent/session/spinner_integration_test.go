@@ -25,7 +25,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 // controlledTicker allows us to trigger ticks manually for spinner frames.
@@ -106,19 +105,14 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	// When Chat is called, it will emit events via the event bus.
 	// Since we are testing the SessionManager's wiring, we need to capture the bridge's handleEvent function.
 	var capturedHandler func(context.Context, events.Event)
-	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
-		sub := args.Get(0).(func(context.Context, events.Event))
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {
 		capturedHandler = sub
-	}).Return()
+	}
 
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
-	mCapturer.On("IsTTY", mock.Anything).Return(true)
+	mCapturer.IsTTYFn = func(v any) bool { return true }
 
 	// Simulate a "Thinking" process during Chat
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Run(func(args mock.Arguments) {
-		ctx := args.Get(0).(context.Context)
-
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
 		// Phase A: Inference Starts
 		capturedHandler(ctx, events.InferenceStartedEvent{})
 
@@ -149,7 +143,8 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		capturedHandler(ctx, events.ResponseEvent{
 			Content: &llm.Content{Parts: []*llm.Part{{Text: "The Answer"}}},
 		})
-	}).Return(nil)
+		return nil
+	}
 
 	// 3. Execution
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{

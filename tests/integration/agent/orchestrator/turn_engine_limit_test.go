@@ -5,6 +5,7 @@ package orchestrator_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,19 +20,20 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 type limitMockLLMGateway struct {
-	mock.Mock
+	GenerateQueue []func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	generateIdx   int
 }
 
 func (m *limitMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	args := m.Called(ctx, input, tools, resolver)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
+	if m.generateIdx < len(m.GenerateQueue) {
+		fn := m.GenerateQueue[m.generateIdx]
+		m.generateIdx++
+		return fn(ctx, input, tools, resolver)
 	}
-	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+	return nil, nil, errors.New("unexpected Generate call: queue exhausted")
 }
 
 func (m *limitMockLLMGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -45,66 +47,19 @@ func (m *limitMockLLMGateway) GenerateImages(ctx context.Context, model, prompt 
 func (m *limitMockLLMGateway) RefreshAuth() error { return nil }
 
 type limitMockExecutor struct {
-	mock.Mock
+	ExecuteFn        func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
+	ExecuteCallCount int
 }
 
-func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Content, Turn int, maxToolTurns int) (*llm.Content, error) {
-	args := m.Called(ctx, respContent, Turn, maxToolTurns)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+	m.ExecuteCallCount++
+	if m.ExecuteFn != nil {
+		return m.ExecuteFn(ctx, respContent, turn, maxToolTurns)
 	}
-	return args.Get(0).(*llm.Content), args.Error(1)
+	return nil, nil
 }
 
-func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	eventstest.CleanupBus(t, bus)
-	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
-	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
-
-	counter := &sessctx.HeuristicTokenCounter{}
-	strategy := sessctx.NewStrategy(counter)
-	strategy.SetLimits(1000, 2, 10) // Limit to 2 tool turns
-
-	gw := &limitMockLLMGateway{}
-	exec := &limitMockExecutor{}
-
-	// Pipeline factory
-	factory := &sessctx.Factory{
-		History:   h,
-		Events:    bus,
-		Estimator: strategy,
-	}
-
-	cm := sessctx.NewManager(strategy, h, bus, factory)
-	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
-
-	reg := &limitMockRegistry{}
-	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
-
-	ctx := context.Background()
-
-	// Initial user prompt
-	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial prompt"}}})
-
-	// Turn 0, 1, 2: Model returns a tool call with unique arguments to avoid loop detector
-	for i := 0; i < 3; i++ {
-		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}
-		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{}, nil).Once()
-	}
-
-	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, 2).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil).Times(3)
-
-	// Turn 2: Should be rejected by checkLimits
-	err := engine.Run(ctx, time.Now())
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, llm.ErrMaxTurnsReached)
-}
-
-type limitMockRegistry struct {
-	mock.Mock
-}
+type limitMockRegistry struct{}
 
 func (m *limitMockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return nil
@@ -128,6 +83,81 @@ func (m *limitMockRegistry) IsSerial(name string) bool {
 
 func (m *limitMockRegistry) IsLongRunning(name string) bool {
 	return false
+}
+
+func (m *limitMockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *limitMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *limitMockRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
+func (m *limitMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *limitMockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *limitMockRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}
+
+func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
+	t.Parallel()
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
+	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
+
+	counter := &sessctx.HeuristicTokenCounter{}
+	strategy := sessctx.NewStrategy(counter)
+	strategy.SetLimits(1000, 2, 10) // Limit to 2 tool turns
+
+	gw := &limitMockLLMGateway{}
+	exec := &limitMockExecutor{
+		ExecuteFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+			return &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil
+		},
+	}
+
+	// Pipeline factory
+	factory := &sessctx.Factory{
+		History:   h,
+		Events:    bus,
+		Estimator: strategy,
+	}
+
+	cm := sessctx.NewManager(strategy, h, bus, factory)
+	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
+
+	reg := &limitMockRegistry{}
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
+
+	ctx := context.Background()
+
+	// Initial user prompt
+	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial prompt"}}})
+
+	// Turn 0, 1, 2: Model returns a tool call with unique arguments to avoid loop detector
+	for i := 0; i < 3; i++ {
+		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}
+		resp := modelResp
+		gw.GenerateQueue = append(gw.GenerateQueue, func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return resp, &llm.Metrics{}, nil
+		})
+	}
+
+	// Turn 2: Should be rejected by checkLimits
+	err := engine.Run(ctx, time.Now())
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, llm.ErrMaxTurnsReached)
 }
 
 func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
@@ -186,10 +216,11 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			eventstest.CleanupBus(t, bus)
 
-			exec := &limitMockExecutor{}
-			// ExecutionStep.Process calls Execute, then validatePayloadLimits.
-			// We mock Execute to return our toolResponse.
-			exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(toolResponse, nil)
+			exec := &limitMockExecutor{
+				ExecuteFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+					return toolResponse, nil
+				},
+			}
 
 			Turn := &orchestrator.Turn{
 				CtxManager:   cm,
@@ -226,28 +257,4 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 			}
 		})
 	}
-}
-
-func (m *limitMockRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
-}
-
-func (m *limitMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	return m.Register(def, handler)
-}
-
-func (m *limitMockRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return m.RegisterWithOptions(def, handler, opts)
-}
-
-func (m *limitMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *limitMockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *limitMockRegistry) ListAvailableToolkits() []string {
-	return []string{"core"}
 }
