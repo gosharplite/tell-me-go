@@ -20,8 +20,10 @@ import (
 
 // spyRenderer records calls for assertion without depending on testify/mock.
 type spyRenderer struct {
-	logToolCallCalls   []logToolCallArgs
-	logToolResultCalls []logToolResultArgs
+	logToolCallCalls             []logToolCallArgs
+	logToolResultCalls           []logToolResultArgs
+	startSpinnerWithMetricsCalls int
+	startSpinnerWithStatusCalls  int
 }
 
 type logToolCallArgs struct {
@@ -46,9 +48,15 @@ func (s *spyRenderer) LogToolResult(_ context.Context, name string, result tools
 }
 
 // Remaining ports.UIRenderer methods — no-op stubs
-func (s *spyRenderer) StartSpinner(_ context.Context) func()                       { return func() {} }
-func (s *spyRenderer) StartSpinnerWithStatus(_ context.Context, _ string) func()   { return func() {} }
-func (s *spyRenderer) StartSpinnerWithMetrics(_ context.Context, _ string) func()  { return func() {} }
+func (s *spyRenderer) StartSpinner(_ context.Context) func() { return func() {} }
+func (s *spyRenderer) StartSpinnerWithStatus(_ context.Context, _ string) func() {
+	s.startSpinnerWithStatusCalls++
+	return func() {}
+}
+func (s *spyRenderer) StartSpinnerWithMetrics(_ context.Context, _ string) func() {
+	s.startSpinnerWithMetricsCalls++
+	return func() {}
+}
 func (s *spyRenderer) RenderResponse(_ context.Context, _ *llm.Content, _, _ bool) {}
 func (s *spyRenderer) LogTurnStatus(_ context.Context, _ events.TurnStatus)        {}
 func (s *spyRenderer) LogUsage(_ context.Context, _ *llm.Metrics, _ string, _ time.Time) {
@@ -222,4 +230,141 @@ func TestEnsureContext(t *testing.T) {
 			t.Error("expected context.TODO() to pass through unchanged")
 		}
 	})
+}
+
+func TestStartSpinnerForPhase_WithMetrics(t *testing.T) {
+	t.Parallel()
+
+	renderer := &spyRenderer{}
+	logger := &testfixtures.SpyLogger{}
+	sc := newSpinnerCoord(renderer, logger)
+
+	// ToolExecutionStartedEvent has withMetrics: true in getSpinnerInfo.
+	e := events.ToolExecutionStartedEvent{ToolNames: []string{"test"}}
+
+	started := sc.startSpinnerForPhase(context.Background(), e, stateIdle, nil)
+
+	assert.True(t, started, "expected spinner to be started")
+	assert.Equal(t, 1, renderer.startSpinnerWithMetricsCalls, "StartSpinnerWithMetrics should be called once")
+	assert.Equal(t, 0, renderer.startSpinnerWithStatusCalls, "StartSpinnerWithStatus should not be called")
+}
+
+func TestStartSpinnerForPhase_ResetRendering(t *testing.T) {
+	t.Parallel()
+
+	renderer := &spyRenderer{}
+	logger := &testfixtures.SpyLogger{}
+	sc := newSpinnerCoord(renderer, logger)
+
+	// SummarizationStartedEvent has resetRendering: true, withMetrics: false.
+	e := events.SummarizationStartedEvent{}
+
+	var callbackCalled bool
+	resetFn := func() uiState {
+		callbackCalled = true
+		return stateIdle
+	}
+
+	started := sc.startSpinnerForPhase(context.Background(), e, stateRendering, resetFn)
+
+	assert.True(t, started, "expected spinner to be started after rendering reset")
+	assert.True(t, callbackCalled, "expected resetRendering callback to be invoked")
+	assert.Equal(t, 1, renderer.startSpinnerWithStatusCalls, "StartSpinnerWithStatus should be called once")
+	assert.Equal(t, 0, renderer.startSpinnerWithMetricsCalls, "StartSpinnerWithMetrics should not be called")
+}
+
+func TestHandleUsageMetrics_ResumesSpinner(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newTestDispatcher(t)
+
+	// Set an active phase so resumeActiveSpinner returns true.
+	d.spinner.activePhase = events.InferenceStartedEvent{Model: "gpt-4"}
+
+	d.dispatch(context.Background(), events.UsageMetricsEvent{
+		Metrics:   &llm.Metrics{PromptTokens: 10},
+		StartTime: time.Now(),
+		Context:   context.Background(),
+	})
+
+	assert.Equal(t, stateThinking, d.stateMachine.current())
+}
+
+func TestHandleToolEvents_ToolResult_ResumesSpinner(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newTestDispatcher(t)
+
+	// Set an active phase so resumeActiveSpinner returns true.
+	d.spinner.activePhase = events.InferenceStartedEvent{}
+
+	d.dispatch(context.Background(), events.ToolResultEvent{
+		Name:   "search",
+		Result: tools.ToolResult{Text: "ok"},
+	})
+
+	assert.Equal(t, stateThinking, d.stateMachine.current())
+}
+
+func TestHandleSystemMessage_StatusUpdate_ResumesSpinner(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newTestDispatcher(t)
+
+	// Set an active phase so resumeActiveSpinner returns true.
+	d.spinner.activePhase = events.InferenceStartedEvent{}
+
+	d.dispatch(context.Background(), events.StatusUpdate{
+		Message: "msg",
+		Level:   "info",
+	})
+
+	assert.Equal(t, stateThinking, d.stateMachine.current())
+}
+
+func TestHandleSystemMessage_SystemMessageEvent_ResumesSpinner(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newTestDispatcher(t)
+
+	// Set an active phase so resumeActiveSpinner returns true.
+	d.spinner.activePhase = events.InferenceStartedEvent{}
+
+	d.dispatch(context.Background(), events.SystemMessageEvent{
+		Message: "msg",
+		Level:   "info",
+	})
+
+	assert.Equal(t, stateThinking, d.stateMachine.current())
+}
+
+func TestHandleSystemMessage_DefaultCase(t *testing.T) {
+	t.Parallel()
+
+	d, renderer, _ := newTestDispatcher(t)
+
+	// TurnStarted is neither SystemMessageEvent nor StatusUpdate,
+	// so handleSystemMessage hits the default: return at dispatcher.go:173-174.
+	d.handleSystemMessage(context.Background(), events.TurnStarted{})
+
+	// Verify no renderer methods were called — the default case returns silently.
+	assert.Empty(t, renderer.logToolCallCalls)
+	assert.Empty(t, renderer.logToolResultCalls)
+	assert.Equal(t, 0, renderer.startSpinnerWithMetricsCalls)
+	assert.Equal(t, 0, renderer.startSpinnerWithStatusCalls)
+}
+
+func TestStartSpinnerForPhase_UnknownEvent(t *testing.T) {
+	t.Parallel()
+
+	renderer := &spyRenderer{}
+	logger := &testfixtures.SpyLogger{}
+	sc := newSpinnerCoord(renderer, logger)
+
+	// TurnStarted is not a spinner event → getSpinnerInfo returns spinnerInfo{}, false.
+	started := sc.startSpinnerForPhase(context.Background(), events.TurnStarted{}, stateIdle, nil)
+
+	assert.False(t, started, "expected spinner not to be started for unknown event")
+	assert.Equal(t, 0, renderer.startSpinnerWithMetricsCalls)
+	assert.Equal(t, 0, renderer.startSpinnerWithStatusCalls)
 }

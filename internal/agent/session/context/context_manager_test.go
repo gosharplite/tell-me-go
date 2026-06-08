@@ -844,3 +844,33 @@ func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 		})
 	}
 }
+
+func TestNewManager_WithFactorySummarizer(t *testing.T) {
+	tc := &agenttest.MockTokenCounter{}
+	strategy := sessctx.NewStrategy(tc)
+	mockSum := &agenttest.MockSummarizer{}
+	factory := &sessctx.Factory{
+		Estimator:  strategy,
+		Summarizer: mockSum,
+	}
+	history := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(strategy, history, nil, factory)
+
+	require.NotNil(t, cm.Summarizer)
+	assert.Same(t, mockSum, cm.Summarizer, "Summarizer should be the same pointer as factory.Summarizer")
+	assert.NotNil(t, factory.Logger, "factory.Logger should be set to the manager's logger")
+}
+
+// stubSessionProvider is a minimal implementation of ports.SessionProvider
+// whose methods panic if called. It exists solely to satisfy the type system
+// for testing WithSessionProvider.
+type stubSessionProvider struct {
+	ports.SessionProvider
+}
+
+func TestWithSessionProvider(t *testing.T) {
+	cm := sessctx.NewManager(nil, nil, nil, nil,
+		sessctx.WithSessionProvider(&stubSessionProvider{}),
+	)
+	assert.NotNil(t, cm.SessionProvider)
+}

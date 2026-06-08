@@ -532,3 +532,15 @@ func TestEmitHeartbeats_TickerPaths(t *testing.T) {
 		testEmitHeartbeatsPath(t, make(chan struct{}, 1), true)
 	})
 }
+
+func TestProdHeartbeatHooks_OnTick(t *testing.T) {
+	// Verify the production no-op doesn't panic.
+	prodHeartbeatHooks{}.onTick()
+}
+
+func TestNewInternalTools_NilLogger(t *testing.T) {
+	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, nil)
+	require.NotNil(t, it.logger, "nil logger should fall back to NoOpLogger")
+	_, ok := it.logger.(*ports.NoOpLogger)
+	require.True(t, ok, "nil logger should fall back to *ports.NoOpLogger")
+}
