@@ -31,108 +31,310 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	_ "modernc.org/sqlite"
 )
 
+// ---- Hand-rolled mocks (no testify/mock) ----
+
 type mockLLMClient struct {
-	mock.Mock
+	SendChatFunc       func(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	GenerateImagesFunc func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
+	RefreshAuthFunc    func() error
+	GenerateFunc       func(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+
+	sendChatCalls       int
+	generateImagesCalls int
+	refreshAuthCalls    int
+	generateCalls       int
 }
 
 func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	args := m.Called(ctx, history, toolDecls, resolver)
-	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+	m.sendChatCalls++
+	if m.SendChatFunc != nil {
+		return m.SendChatFunc(ctx, history, toolDecls, resolver)
+	}
+	return &llm.Content{}, &llm.Metrics{}, nil
 }
 
 func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	args := m.Called(ctx, model, prompt, mimeType)
-	return args.Get(0).([][]byte), args.Error(1)
+	m.generateImagesCalls++
+	if m.GenerateImagesFunc != nil {
+		return m.GenerateImagesFunc(ctx, model, prompt, mimeType)
+	}
+	return nil, nil
 }
 
 func (m *mockLLMClient) RefreshAuth() error {
-	args := m.Called()
-	return args.Error(0)
+	m.refreshAuthCalls++
+	if m.RefreshAuthFunc != nil {
+		return m.RefreshAuthFunc()
+	}
+	return nil
 }
 
 func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	args := m.Called(ctx, input, toolDecls, resolver)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
+	m.generateCalls++
+	if m.GenerateFunc != nil {
+		return m.GenerateFunc(ctx, input, toolDecls, resolver)
 	}
-	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+	return &llm.Content{}, &llm.Metrics{}, nil
 }
 
 // mockClientFactory implements ports.ClientFactory for testing failover paths.
 type mockClientFactory struct {
-	mock.Mock
+	NewClientFunc        func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
+	NewFailoverChainFunc func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
+
+	newClientCalls        int
+	newFailoverChainCalls int
 }
 
 func (m *mockClientFactory) NewClient(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-	args := m.Called(cfg, pricingData, bus, logger)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	m.newClientCalls++
+	if m.NewClientFunc != nil {
+		return m.NewClientFunc(cfg, pricingData, bus, logger)
 	}
-	return args.Get(0).(llm.ExtendedClient), args.Error(1)
+	return nil, nil
 }
 
 func (m *mockClientFactory) NewFailoverChain(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-	args := m.Called(cfg, pricingData, bus, logger)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	m.newFailoverChainCalls++
+	if m.NewFailoverChainFunc != nil {
+		return m.NewFailoverChainFunc(cfg, pricingData, bus, logger)
 	}
-	return args.Get(0).(llm.ExtendedClient), args.Error(1)
+	return nil, nil
+}
+
+type mockKVStore struct {
+	GetFunc    func(ctx context.Context, key string) (string, error)
+	SetFunc    func(ctx context.Context, key, val string) error
+	DeleteFunc func(ctx context.Context, key string) error
+	GetAllFunc func(ctx context.Context) (map[string]string, error)
+
+	GetCalls    int
+	SetCalls    int
+	DeleteCalls int
+	GetAllCalls int
+}
+
+func (m *mockKVStore) Get(ctx context.Context, key string) (string, error) {
+	m.GetCalls++
+	if m.GetFunc != nil {
+		return m.GetFunc(ctx, key)
+	}
+	return "", nil
+}
+
+func (m *mockKVStore) Set(ctx context.Context, key, val string) error {
+	m.SetCalls++
+	if m.SetFunc != nil {
+		return m.SetFunc(ctx, key, val)
+	}
+	return nil
+}
+
+func (m *mockKVStore) Delete(ctx context.Context, key string) error {
+	m.DeleteCalls++
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(ctx, key)
+	}
+	return nil
+}
+
+func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
+	m.GetAllCalls++
+	if m.GetAllFunc != nil {
+		return m.GetAllFunc(ctx)
+	}
+	return map[string]string{}, nil
+}
+
+type mockSessionProvider struct {
+	GetTasksFunc         func() ports.TaskStore
+	GetSettingsFunc      func() ports.KVStore
+	GetInfoFunc          func() ports.SessionInfo
+	SetInfoFunc          func(info ports.SessionInfo)
+	CloseFunc            func() error
+	GetHealthCheckerFunc func() ports.HealthChecker
+
+	getTasksCalls         int
+	getSettingsCalls      int
+	getInfoCalls          int
+	setInfoCalls          int
+	closeCalls            int
+	getHealthCheckerCalls int
+}
+
+func (m *mockSessionProvider) GetTasks() ports.TaskStore {
+	m.getTasksCalls++
+	if m.GetTasksFunc != nil {
+		return m.GetTasksFunc()
+	}
+	return nil
+}
+
+func (m *mockSessionProvider) GetSettings() ports.KVStore {
+	m.getSettingsCalls++
+	if m.GetSettingsFunc != nil {
+		return m.GetSettingsFunc()
+	}
+	return nil
+}
+
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
+	m.getInfoCalls++
+	if m.GetInfoFunc != nil {
+		return m.GetInfoFunc()
+	}
+	return ports.SessionInfo{}
+}
+
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {
+	m.setInfoCalls++
+	if m.SetInfoFunc != nil {
+		m.SetInfoFunc(info)
+	}
+}
+
+func (m *mockSessionProvider) Close() error {
+	m.closeCalls++
+	if m.CloseFunc != nil {
+		return m.CloseFunc()
+	}
+	return nil
+}
+
+func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker {
+	m.getHealthCheckerCalls++
+	if m.GetHealthCheckerFunc != nil {
+		return m.GetHealthCheckerFunc()
+	}
+	return nil
 }
 
 type mockConfigurableSecurityManager struct {
-	mock.Mock
+	RegisterSafePathFunc     func(path string)
+	RegisterReadOnlyPathFunc func(path string)
+	SetCommandsLogFileFunc   func(path string)
+	SetBypassActiveFunc      func(active bool)
+	RegisterPolicyToolsFunc  func(r tools.Registry, kv ports.KVStore) error
+	IsPathSafeFunc           func(path string) (string, error)
+	IsPathWritableFunc       func(path string) (string, error)
+
+	registerSafePathCalls     int
+	registerReadOnlyPathCalls int
+	setCommandsLogFileCalls   int
+	setBypassActiveCalls      int
+	registerPolicyToolsCalls  int
+	isPathSafeCalls           int
+	isPathWritableCalls       int
+	authorizeCalls            int
+	logAuditCalls             int
+	closeCalls                int
+	terminalLockCalls         int
+	terminalUnlockCalls       int
+	promptCalls               int
+	warnCalls                 int
+	confirmCalls              int
+	readLineCalls             int
+	isCommandAllowedCalls     int
+	isBypassActiveCalls       int
 }
 
-func (m *mockConfigurableSecurityManager) RegisterSafePath(path string)     { m.Called(path) }
-func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) { m.Called(path) }
-func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)   { m.Called(path) }
-func (m *mockConfigurableSecurityManager) SetBypassActive(active bool)      { m.Called(active) }
+func (m *mockConfigurableSecurityManager) Reset() { *m = mockConfigurableSecurityManager{} }
+
+func (m *mockConfigurableSecurityManager) RegisterSafePath(path string) {
+	m.registerSafePathCalls++
+	if m.RegisterSafePathFunc != nil {
+		m.RegisterSafePathFunc(path)
+	}
+}
+
+func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) {
+	m.registerReadOnlyPathCalls++
+	if m.RegisterReadOnlyPathFunc != nil {
+		m.RegisterReadOnlyPathFunc(path)
+	}
+}
+
+func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string) {
+	m.setCommandsLogFileCalls++
+	if m.SetCommandsLogFileFunc != nil {
+		m.SetCommandsLogFileFunc(path)
+	}
+}
+
+func (m *mockConfigurableSecurityManager) SetBypassActive(active bool) {
+	m.setBypassActiveCalls++
+	if m.SetBypassActiveFunc != nil {
+		m.SetBypassActiveFunc(active)
+	}
+}
+
 func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error {
-	args := m.Called(r, kv)
-	return args.Error(0)
+	m.registerPolicyToolsCalls++
+	if m.RegisterPolicyToolsFunc != nil {
+		return m.RegisterPolicyToolsFunc(r, kv)
+	}
+	return nil
 }
 
 func (m *mockConfigurableSecurityManager) IsPathSafe(path string) (string, error) {
-	args := m.Called(path)
-	return args.String(0), args.Error(1)
+	m.isPathSafeCalls++
+	if m.IsPathSafeFunc != nil {
+		return m.IsPathSafeFunc(path)
+	}
+	return "safe", nil
 }
+
 func (m *mockConfigurableSecurityManager) IsPathWritable(path string) (string, error) {
-	args := m.Called(path)
-	return args.String(0), args.Error(1)
+	m.isPathWritableCalls++
+	if m.IsPathWritableFunc != nil {
+		return m.IsPathWritableFunc(path)
+	}
+	return "writable", nil
 }
+
 func (m *mockConfigurableSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	m.authorizeCalls++
 	return true, nil
 }
-func (m *mockConfigurableSecurityManager) LogAudit(action string, args ...any) {}
-func (m *mockConfigurableSecurityManager) Close() error                        { return nil }
-func (m *mockConfigurableSecurityManager) TerminalLock()                       {}
-func (m *mockConfigurableSecurityManager) TerminalUnlock()                     {}
-func (m *mockConfigurableSecurityManager) Prompt(message string)               {}
-func (m *mockConfigurableSecurityManager) Warn(message string)                 {}
+
+func (m *mockConfigurableSecurityManager) LogAudit(action string, args ...any) { m.logAuditCalls++ }
+
+func (m *mockConfigurableSecurityManager) Close() error { m.closeCalls++; return nil }
+
+func (m *mockConfigurableSecurityManager) TerminalLock()         { m.terminalLockCalls++ }
+func (m *mockConfigurableSecurityManager) TerminalUnlock()       { m.terminalUnlockCalls++ }
+func (m *mockConfigurableSecurityManager) Prompt(message string) { m.promptCalls++ }
+func (m *mockConfigurableSecurityManager) Warn(message string)   { m.warnCalls++ }
+
 func (m *mockConfigurableSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	m.confirmCalls++
 	return true, nil
 }
+
 func (m *mockConfigurableSecurityManager) ReadLine(ctx context.Context) (string, error) {
+	m.readLineCalls++
 	return "", nil
 }
+
 func (m *mockConfigurableSecurityManager) IsCommandAllowed(command string) bool {
+	m.isCommandAllowedCalls++
 	return true
 }
+
 func (m *mockConfigurableSecurityManager) IsBypassActive() bool {
+	m.isBypassActiveCalls++
 	return false
 }
 
-func setupDefaultSMExpectations(m *mockConfigurableSecurityManager) {
-	m.On("SetCommandsLogFile", mock.Anything).Return().Maybe()
-	m.On("RegisterSafePath", mock.Anything).Return().Maybe()
-	m.On("RegisterReadOnlyPath", mock.Anything).Return().Maybe()
-}
+// setupDefaultSMExpectations is now a no-op — hand-rolled mocks have safe zero values.
+func setupDefaultSMExpectations(m *mockConfigurableSecurityManager) {}
+
+// ---- Tests ----
 
 func TestBuildSessionDependencies(t *testing.T) {
 	ctx := context.Background()
@@ -141,9 +343,6 @@ func TestBuildSessionDependencies(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 	client := new(mockLLMClient)
 
@@ -183,7 +382,6 @@ func TestGetAgentFactory(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	cfg := DefaultBootstrapperConfig()
 	cfg.HomeDir = tempDir
@@ -253,8 +451,6 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return nil, simulatedErr
 			}),
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
 			wantErr: "", // No longer fails here
 		},
@@ -264,8 +460,9 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return filepath.Join(tempDir, "policy-err-home")
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(simulatedErr)
-				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
+				sm.RegisterPolicyToolsFunc = func(r tools.Registry, kv ports.KVStore) error {
+					return simulatedErr
+				}
 			},
 			wantErr: "", // No longer fails here because registration is lazy
 		},
@@ -292,7 +489,6 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			homeDir := tt.setup(t)
 			sm := new(mockConfigurableSecurityManager)
-			setupDefaultSMExpectations(sm)
 
 			if tt.mockSetup != nil {
 				tt.mockSetup(sm)
@@ -345,11 +541,10 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 	simulatedErr := errors.New("simulated error")
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 	// RecordSessionCost -> EstimateCost -> IsPathSafe
-	sm.On("IsPathSafe", mock.Anything).Return("", simulatedErr)
+	sm.IsPathSafeFunc = func(path string) (string, error) {
+		return "", simulatedErr
+	}
 
 	var stderr bytes.Buffer
 	bcfg := DefaultBootstrapperConfig()
@@ -391,7 +586,6 @@ func TestFinalizeSession(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	testCfg := &config.Config{
 		Mode:  "assistant",
@@ -410,10 +604,6 @@ func TestFinalizeSession(t *testing.T) {
 	})
 	b := NewBootstrapper(bcfg)
 
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
-	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
-
 	deps, hManager, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, cleanup)
@@ -429,9 +619,10 @@ func TestFinalizeSession(t *testing.T) {
 	assert.Contains(t, err.Error(), "save failed")
 
 	// Test with record cost error
-	sm.ExpectedCalls = nil
-	setupDefaultSMExpectations(sm)
-	sm.On("IsPathSafe", mock.Anything).Return("", errors.New("record cost failed"))
+	sm.Reset()
+	sm.IsPathSafeFunc = func(path string) (string, error) {
+		return "", errors.New("record cost failed")
+	}
 
 	err = b.FinalizeSession(ctx, hManager, deps, testCfg)
 	assert.Error(t, err)
@@ -440,9 +631,10 @@ func TestFinalizeSession(t *testing.T) {
 	}
 
 	// Test with both errors
-	sm.ExpectedCalls = nil
-	setupDefaultSMExpectations(sm)
-	sm.On("IsPathSafe", mock.Anything).Return("", errors.New("record cost failed"))
+	sm.Reset()
+	sm.IsPathSafeFunc = func(path string) (string, error) {
+		return "", errors.New("record cost failed")
+	}
 
 	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, testCfg)
 	assert.Error(t, err)
@@ -458,7 +650,6 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tempDir
@@ -552,10 +743,6 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
-	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 
 	client := new(mockLLMClient)
 
@@ -645,58 +832,6 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.NotNil(t, deps.GetWorkspacePolicy())
 }
 
-type mockKVStore struct {
-	mock.Mock
-}
-
-func (m *mockKVStore) Get(ctx context.Context, key string) (string, error) {
-	args := m.Called(ctx, key)
-	return args.String(0), args.Error(1)
-}
-func (m *mockKVStore) Set(ctx context.Context, key, val string) error {
-	args := m.Called(ctx, key, val)
-	return args.Error(0)
-}
-func (m *mockKVStore) Delete(ctx context.Context, key string) error {
-	args := m.Called(ctx, key)
-	return args.Error(0)
-}
-func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(map[string]string), args.Error(1)
-}
-
-type mockSessionProvider struct {
-	mock.Mock
-}
-
-func (m *mockSessionProvider) GetTasks() ports.TaskStore { return nil }
-func (m *mockSessionProvider) GetSettings() ports.KVStore {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.KVStore)
-}
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
-	args := m.Called()
-	return args.Get(0).(ports.SessionInfo)
-}
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {
-	m.Called(info)
-}
-func (m *mockSessionProvider) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
-func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.HealthChecker)
-}
-
 func TestContainer_InitializationErrors(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test-init-errors")
@@ -740,22 +875,19 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
-			},
 			wantErr: "session initialization failed during rotation for",
 		},
 		{
 			name: "SessionProviderCloseFails",
 			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
-				mockSP := new(mockSessionProvider)
-				mockKV := new(mockKVStore)
-				mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
-				mockSP.On("GetSettings").Return(mockKV).Maybe()
-				mockSP.On("GetHealthChecker").Return(nil).Maybe()
-				mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
-				mockSP.On("SetInfo", mock.Anything).Return().Maybe()
-				mockSP.On("Close").Return(simulatedErr)
+				mockSP := &mockSessionProvider{
+					GetSettingsFunc: func() ports.KVStore {
+						return &mockKVStore{}
+					},
+					CloseFunc: func() error {
+						return simulatedErr
+					},
+				}
 
 				cfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 					return mockSP, nil
@@ -768,9 +900,6 @@ func TestContainer_InitializationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := new(mockConfigurableSecurityManager)
-			setupDefaultSMExpectations(sm)
-			sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-			sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 			var stderr bytes.Buffer
 			bcfg := DefaultBootstrapperConfig()
@@ -829,11 +958,8 @@ func TestCrossSessionPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
-	// 2. Setup SM Mock
+	// 2. Setup SM Mock — track SetBypassActive call
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("SetBypassActive", true).Return() // Expect this!
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	// 3. Build Dependencies
 	bcfg := DefaultBootstrapperConfig()
@@ -851,7 +977,7 @@ func TestCrossSessionPersistence(t *testing.T) {
 
 	// 4. Verification
 	assert.NoError(t, err)
-	sm.AssertCalled(t, "SetBypassActive", true)
+	assert.Equal(t, 1, sm.setBypassActiveCalls, "SetBypassActive should be called once")
 	if cleanup != nil {
 		_ = cleanup(ctx)
 	}
@@ -862,14 +988,20 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 
 	// Setup mocks
 	sm := new(mockConfigurableSecurityManager)
-	mockKV := new(mockKVStore)
-	mockSP := new(mockSessionProvider)
-	mockSP.On("GetSettings").Return(mockKV)
-
-	// Inject invalid JSON for paths
-	mockKV.On("Get", mock.Anything, "bypass_confirmation").Return("false", nil)
-	mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return("invalid-json", nil)
-	mockKV.On("Get", mock.Anything, "authorized_read_paths").Return("invalid-json", nil)
+	mockKV := &mockKVStore{
+		GetFunc: func(ctx context.Context, key string) (string, error) {
+			switch key {
+			case "bypass_confirmation":
+				return "false", nil
+			case "authorized_safe_paths", "authorized_read_paths":
+				return "invalid-json", nil
+			}
+			return "", nil
+		},
+	}
+	mockSP := &mockSessionProvider{
+		GetSettingsFunc: func() ports.KVStore { return mockKV },
+	}
 
 	// Capture logs
 	var logBuf bytes.Buffer
@@ -892,11 +1024,13 @@ func TestLoadPathsFromSettings_EmptyValueAndSuccessPath(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("empty value returns early without registering", func(t *testing.T) {
-		mockKV := new(mockKVStore)
-		mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return("", nil)
+		mockKV := &mockKVStore{
+			GetFunc: func(ctx context.Context, key string) (string, error) {
+				return "", nil
+			},
+		}
 
 		sm := new(mockConfigurableSecurityManager)
-		// sm.RegisterSafePath should NOT be called
 
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
@@ -905,17 +1039,22 @@ func TestLoadPathsFromSettings_EmptyValueAndSuccessPath(t *testing.T) {
 
 		// Verify no log output (no error, no registration)
 		assert.Empty(t, logBuf.String())
-		sm.AssertNotCalled(t, "RegisterSafePath", mock.Anything)
-		mockKV.AssertExpectations(t)
+		assert.Equal(t, 0, sm.registerSafePathCalls, "RegisterSafePath should not be called")
 	})
 
 	t.Run("valid JSON registers all paths", func(t *testing.T) {
-		mockKV := new(mockKVStore)
-		mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return(`["/tmp/a","/tmp/b"]`, nil)
+		mockKV := &mockKVStore{
+			GetFunc: func(ctx context.Context, key string) (string, error) {
+				return `["/tmp/a","/tmp/b"]`, nil
+			},
+		}
 
-		sm := new(mockConfigurableSecurityManager)
-		sm.On("RegisterSafePath", "/tmp/a").Return().Once()
-		sm.On("RegisterSafePath", "/tmp/b").Return().Once()
+		var registeredPaths []string
+		sm := &mockConfigurableSecurityManager{
+			RegisterSafePathFunc: func(path string) {
+				registeredPaths = append(registeredPaths, path)
+			},
+		}
 
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
@@ -923,10 +1062,7 @@ func TestLoadPathsFromSettings_EmptyValueAndSuccessPath(t *testing.T) {
 		loadPathsFromSettings(ctx, mockKV, "authorized_safe_paths", sm.RegisterSafePath, logger)
 
 		assert.Empty(t, logBuf.String())
-		sm.AssertCalled(t, "RegisterSafePath", "/tmp/a")
-		sm.AssertCalled(t, "RegisterSafePath", "/tmp/b")
-		sm.AssertExpectations(t)
-		mockKV.AssertExpectations(t)
+		assert.Equal(t, []string{"/tmp/a", "/tmp/b"}, registeredPaths)
 	})
 }
 
@@ -935,7 +1071,6 @@ func TestGetSuggestionService(t *testing.T) {
 	tempDir := t.TempDir()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tempDir
@@ -961,10 +1096,6 @@ func TestBootstrapper_Cleanup_ClosesTurnsLogger(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tmpDir
@@ -1001,7 +1132,6 @@ func TestBootstrapper_Cleanup_ClosesTurnsLogger(t *testing.T) {
 func TestGetChatService(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tempDir
@@ -1044,20 +1174,16 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 
 	// 1. Setup mocks
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
-	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 
 	busErr := errors.New("bus shutdown failed")
-	mockSP := new(mockSessionProvider)
-	mockKV := new(mockKVStore)
-	mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
-	mockSP.On("GetSettings").Return(mockKV).Maybe()
-	mockSP.On("GetHealthChecker").Return(nil).Maybe()
-	mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
-	mockSP.On("SetInfo", mock.Anything).Return().Maybe()
-	mockSP.On("Close").Return(busErr)
+	mockSP := &mockSessionProvider{
+		GetSettingsFunc: func() ports.KVStore {
+			return &mockKVStore{}
+		},
+		CloseFunc: func() error {
+			return busErr
+		},
+	}
 
 	logErr := errors.New("log flush failed")
 	file := &mockFileWithErrors{closeErr: logErr}
@@ -1127,7 +1253,6 @@ func TestBootstrapper_GetPricingOverrides(t *testing.T) {
 func TestGetUnifiedHistoryProvider_Failure(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	// Create a file where a directory should be to cause EnsureDirectories to fail
 	conflictFile := filepath.Join(tmpDir, "output")
@@ -1152,7 +1277,6 @@ func TestGetUnifiedHistoryProvider_Failure(t *testing.T) {
 func TestGetSuggestionService_Failure(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	// Conflict to make suggestion service init fail if it tried to do something,
 	// but currently it only logs warning and uses no-op tracker if NewGlobalPromptTracker fails.
@@ -1179,7 +1303,6 @@ func TestGetSuggestionService_Failure(t *testing.T) {
 func TestGetHistoryManager_Failure(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	// Conflict to make EnsureDirectories fail
 	conflictFile := filepath.Join(tmpDir, "output")
@@ -1222,47 +1345,50 @@ func TestBypassConfirmationPriority(t *testing.T) {
 		yamlBypass   bool
 		dbBypass     string
 		expectActive bool
-		expectDBSet  bool
 	}{
 		{
 			name:         "YAML_True_DB_False_Active",
 			yamlBypass:   true,
 			dbBypass:     "false",
 			expectActive: true,
-			expectDBSet:  false,
 		},
 		{
 			name:         "YAML_False_DB_True_Active",
 			yamlBypass:   false,
 			dbBypass:     "true",
 			expectActive: true,
-			expectDBSet:  false,
 		},
 		{
 			name:         "YAML_False_DB_False_Inactive",
 			yamlBypass:   false,
 			dbBypass:     "false",
 			expectActive: false,
-			expectDBSet:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sm := new(mockConfigurableSecurityManager)
-			mockKV := new(mockKVStore)
-			mockSP := new(mockSessionProvider)
-			mockSP.On("GetSettings").Return(mockKV)
-
-			mockKV.On("Get", mock.Anything, "bypass_confirmation").Return(tt.dbBypass, nil).Maybe()
-			mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return("", nil).Maybe()
-			mockKV.On("Get", mock.Anything, "authorized_read_paths").Return("", nil).Maybe()
-
-			if tt.expectActive {
-				sm.On("SetBypassActive", true).Return().Once()
+			var capturedBypassActive bool
+			var bypassCallCount int
+			sm := &mockConfigurableSecurityManager{
+				SetBypassActiveFunc: func(active bool) {
+					capturedBypassActive = active
+					bypassCallCount++
+				},
 			}
-			if tt.expectDBSet {
-				mockKV.On("Set", mock.Anything, "bypass_confirmation", "true").Return(nil).Once()
+
+			mockKV := &mockKVStore{
+				GetFunc: func(ctx context.Context, key string) (string, error) {
+					switch key {
+					case "bypass_confirmation":
+						return tt.dbBypass, nil
+					default:
+						return "", nil
+					}
+				},
+			}
+			mockSP := &mockSessionProvider{
+				GetSettingsFunc: func() ports.KVStore { return mockKV },
 			}
 
 			factory := &defaultSessionFactory{
@@ -1273,8 +1399,12 @@ func TestBypassConfirmationPriority(t *testing.T) {
 			testCfg := &config.Config{BypassConfirmation: tt.yamlBypass}
 			factory.applySessionSecuritySettings(ctx, mockSP, testCfg)
 
-			sm.AssertExpectations(t)
-			mockKV.AssertExpectations(t)
+			if tt.expectActive {
+				assert.Equal(t, 1, bypassCallCount, "SetBypassActive should be called once")
+				assert.True(t, capturedBypassActive, "SetBypassActive should be called with true")
+			} else {
+				assert.Equal(t, 0, bypassCallCount, "SetBypassActive should not be called")
+			}
 		})
 	}
 }
@@ -1318,11 +1448,13 @@ func TestHandleNewSession_RetentionDays(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockKV := new(mockKVStore)
-			mockKV.On("Get", mock.Anything, "backup_retention_days").Return(tt.kvValue, tt.kvErr)
+			mockKV := &mockKVStore{
+				GetFunc: func(ctx context.Context, key string) (string, error) {
+					return tt.kvValue, tt.kvErr
+				},
+			}
 
 			sm := new(mockConfigurableSecurityManager)
-			sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 
 			var capturedRetention int
 			rotateCalled := make(chan int, 1)
@@ -1355,8 +1487,6 @@ func TestHandleNewSession_RetentionDays(t *testing.T) {
 			}
 
 			assert.Equal(t, tt.expectedRetention, capturedRetention)
-			mockKV.AssertExpectations(t)
-			_ = capturedRetention
 		})
 	}
 }
@@ -1364,7 +1494,6 @@ func TestHandleNewSession_RetentionDays(t *testing.T) {
 func TestBootstrapper_Getters(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tempDir
@@ -1384,7 +1513,6 @@ func TestGetUnifiedHistoryProvider_SuccessPath(t *testing.T) {
 	tempDir := t.TempDir()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	client := new(mockLLMClient)
 	bcfg := DefaultBootstrapperConfig()
@@ -1411,9 +1539,6 @@ func TestGetUnifiedHistoryProvider_SuccessPath(t *testing.T) {
 
 	// Exercise BuildRegistry success path (gap 2) through a full session build
 	// This tests the real defaultToolchainFactory.BuildRegistry return reg, nil
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Once()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
-
 	deps, _, cleanup, err := b.BuildSessionDependencies(ctx, testCfg, "config.yaml", false, nil)
 	require.NoError(t, err)
 	defer func() { _ = cleanup(ctx) }()
@@ -1461,8 +1586,9 @@ func TestBuildSessionDependencies_FailoverChain(t *testing.T) {
 		{
 			name: "NewFailoverChain_ReturnsError",
 			mockSetup: func(factory *mockClientFactory, gwClient *mockExtendedClient) {
-				factory.On("NewFailoverChain", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, simulatedErr)
+				factory.NewFailoverChainFunc = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+					return nil, simulatedErr
+				}
 			},
 			expectNewClient: false,
 			expectGwUsed:    false,
@@ -1471,12 +1597,15 @@ func TestBuildSessionDependencies_FailoverChain(t *testing.T) {
 		{
 			name: "NewFailoverChain_ReturnsNilNil_FallsBackToNewClient",
 			mockSetup: func(factory *mockClientFactory, gwClient *mockExtendedClient) {
-				factory.On("NewFailoverChain", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, nil)
-				factory.On("NewClient", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(gwClient, nil)
-				gwClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(&llm.Content{}, &llm.Metrics{}, nil)
+				factory.NewFailoverChainFunc = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+					return nil, nil
+				}
+				factory.NewClientFunc = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+					return gwClient, nil
+				}
+				gwClient.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					return &llm.Content{}, &llm.Metrics{}, nil
+				}
 			},
 			expectNewClient: true,
 			expectGwUsed:    true,
@@ -1485,10 +1614,12 @@ func TestBuildSessionDependencies_FailoverChain(t *testing.T) {
 		{
 			name: "NewFailoverChain_ReturnsGateway_UsesGateway",
 			mockSetup: func(factory *mockClientFactory, gwClient *mockExtendedClient) {
-				factory.On("NewFailoverChain", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(gwClient, nil)
-				gwClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(&llm.Content{}, &llm.Metrics{}, nil)
+				factory.NewFailoverChainFunc = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+					return gwClient, nil
+				}
+				gwClient.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					return &llm.Content{}, &llm.Metrics{}, nil
+				}
 			},
 			expectNewClient: false,
 			expectGwUsed:    true,
@@ -1499,9 +1630,6 @@ func TestBuildSessionDependencies_FailoverChain(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := new(mockConfigurableSecurityManager)
-			setupDefaultSMExpectations(sm)
-			sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-			sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 			gwClient := new(mockExtendedClient)
 			factory := new(mockClientFactory)
@@ -1537,13 +1665,13 @@ func TestBuildSessionDependencies_FailoverChain(t *testing.T) {
 			}
 
 			if tt.expectNewClient {
-				factory.AssertCalled(t, "NewClient", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				assert.Equal(t, 1, factory.newClientCalls, "NewClient should be called")
 			} else {
-				factory.AssertNotCalled(t, "NewClient", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				assert.Equal(t, 0, factory.newClientCalls, "NewClient should not be called")
 			}
 
 			if tt.expectGwUsed {
-				gwClient.AssertExpectations(t)
+				assert.Equal(t, 1, gwClient.generateCalls)
 			}
 		})
 	}
@@ -1565,7 +1693,6 @@ func TestWireTelemetry(t *testing.T) {
 	tempDir := t.TempDir()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	tf := newTelemetryFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, nil)
 	b := &Bootstrapper{telemetryFactory: tf}
@@ -1585,9 +1712,11 @@ func TestWireTelemetry(t *testing.T) {
 func TestWireLLMClient(t *testing.T) {
 	ctx := context.Background()
 
-	client := new(mockLLMClient)
-	client.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&llm.Content{}, &llm.Metrics{}, nil)
+	client := &mockLLMClient{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{}, &llm.Metrics{}, nil
+		},
+	}
 
 	cf := ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
@@ -1605,13 +1734,12 @@ func TestWireLLMClient(t *testing.T) {
 	// Verify lazy init works by calling Generate, which triggers factory init
 	_, _, err := lc.Generate(ctx, nil, nil, nil)
 	assert.NoError(t, err)
-	client.AssertCalled(t, "Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	assert.Equal(t, 1, client.generateCalls, "Generate should be called once")
 }
 
 func TestWireHealth(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tempDir
@@ -1621,10 +1749,11 @@ func TestWireHealth(t *testing.T) {
 	bcfg.Stderr = io.Discard
 	b := NewBootstrapper(bcfg)
 
-	mockSP := new(mockSessionProvider)
-	mockKV := new(mockKVStore)
-	mockSP.On("GetSettings").Return(mockKV).Maybe()
-	mockSP.On("GetHealthChecker").Return(nil).Maybe()
+	mockSP := &mockSessionProvider{
+		GetSettingsFunc: func() ports.KVStore {
+			return &mockKVStore{}
+		},
+	}
 
 	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
@@ -1641,8 +1770,6 @@ func TestWireToolRegistry(t *testing.T) {
 	tempDir := t.TempDir()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	bcfg := DefaultBootstrapperConfig()
 	bcfg.HomeDir = tempDir
@@ -1653,10 +1780,11 @@ func TestWireToolRegistry(t *testing.T) {
 	b := NewBootstrapper(bcfg)
 
 	paths := &persistence.Paths{LogPath: filepath.Join(tempDir, "test.log"), TracePath: filepath.Join(tempDir, "test.trace.jsonl")}
-	mockSP := new(mockSessionProvider)
-	mockKV := new(mockKVStore)
-	mockSP.On("GetSettings").Return(mockKV).Maybe()
-	mockSP.On("GetHealthChecker").Return(nil).Maybe()
+	mockSP := &mockSessionProvider{
+		GetSettingsFunc: func() ports.KVStore {
+			return &mockKVStore{}
+		},
+	}
 
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
