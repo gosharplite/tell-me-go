@@ -621,8 +621,9 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 func TestEngine_StartTelemetry(t *testing.T) {
 	bus := &eventstest.MockEventBus{}
 
-	tl := &agenttest.MockTurnsLogger{}
-	tl.On("Listen", mock.Anything).Return(nil)
+	tl := &agenttest.MockTurnsLogger{
+		ListenFunc: func(ctx context.Context) error { return nil },
+	}
 
 	e := &Engine{
 		events:      bus,
@@ -635,7 +636,10 @@ func TestEngine_StartTelemetry(t *testing.T) {
 	err := e.StartTelemetry(ctx)
 	assert.ErrorIs(t, err, context.Canceled)
 
-	tl.AssertCalled(t, "Listen", mock.Anything)
+	snap := tl.Snapshot()
+	if snap["Listen"] != 1 {
+		t.Errorf("expected 1 Listen call, got %d", snap["Listen"])
+	}
 }
 
 func TestEngine_Run(t *testing.T) {

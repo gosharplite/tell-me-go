@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/stretchr/testify/mock"
 )
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ func newPopulatedStubChatterComposer() *StubChatterComposer {
 		PricingOverrides: map[string]pricing.ModelPricing{"gpt-4": {Hit: 0.03, Miss: 0.06}},
 		SessionProvider:  new(MockSessionProvider),
 		TurnsLogger:      &ports.NoOpTurnsLogger{},
-		SecurityManager:  new(MockServiceSecurityManager),
+		SecurityManager:  &MockServiceSecurityManager{},
 		Registry:         NewMockToolRegistry(),
 	}
 }
@@ -616,15 +616,17 @@ func TestStubCapturer_NoOpMethods(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// H. mockServiceSecurityManager (13 testify mock methods)
+// H. mockServiceSecurityManager (13 hand-rolled spy methods)
 // ---------------------------------------------------------------------------
 
 func TestMockServiceSecurityManager_IsPathSafe(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("IsPathSafe", "/safe/path").Return("/safe/path", nil)
-
+	m := &MockServiceSecurityManager{
+		IsPathSafeFunc: func(path string) (string, error) {
+			return path, nil
+		},
+	}
 	got, err := m.IsPathSafe("/safe/path")
 	if got != "/safe/path" {
 		t.Errorf("IsPathSafe = %q, want %q", got, "/safe/path")
@@ -632,15 +634,20 @@ func TestMockServiceSecurityManager_IsPathSafe(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["IsPathSafe"] != 1 {
+		t.Errorf("expected 1 IsPathSafe call, got %d", snap["IsPathSafe"])
+	}
 }
 
 func TestMockServiceSecurityManager_IsPathWritable(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("IsPathWritable", "/tmp").Return("/tmp", nil)
-
+	m := &MockServiceSecurityManager{
+		IsPathWritableFunc: func(path string) (string, error) {
+			return path, nil
+		},
+	}
 	got, err := m.IsPathWritable("/tmp")
 	if got != "/tmp" {
 		t.Errorf("IsPathWritable = %q, want %q", got, "/tmp")
@@ -648,16 +655,21 @@ func TestMockServiceSecurityManager_IsPathWritable(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["IsPathWritable"] != 1 {
+		t.Errorf("expected 1 IsPathWritable call, got %d", snap["IsPathWritable"])
+	}
 }
 
 func TestMockServiceSecurityManager_Authorize(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	m := new(MockServiceSecurityManager)
-	m.On("Authorize", ctx, "label", "detail", "reason", true).Return(true, nil)
-
+	m := &MockServiceSecurityManager{
+		AuthorizeFunc: func(_ context.Context, _, _, _ string, _ bool) (bool, error) {
+			return true, nil
+		},
+	}
 	got, err := m.Authorize(ctx, "label", "detail", "reason", true)
 	if !got {
 		t.Error("Authorize should return true")
@@ -665,16 +677,21 @@ func TestMockServiceSecurityManager_Authorize(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Authorize"] != 1 {
+		t.Errorf("expected 1 Authorize call, got %d", snap["Authorize"])
+	}
 }
 
 func TestMockServiceSecurityManager_Authorize_Denied(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	m := new(MockServiceSecurityManager)
-	m.On("Authorize", ctx, "label", "detail", "reason", false).Return(false, nil)
-
+	m := &MockServiceSecurityManager{
+		AuthorizeFunc: func(_ context.Context, _, _, _ string, _ bool) (bool, error) {
+			return false, nil
+		},
+	}
 	got, err := m.Authorize(ctx, "label", "detail", "reason", false)
 	if got {
 		t.Error("Authorize should return false")
@@ -682,7 +699,10 @@ func TestMockServiceSecurityManager_Authorize_Denied(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Authorize"] != 1 {
+		t.Errorf("expected 1 Authorize call, got %d", snap["Authorize"])
+	}
 }
 
 func TestMockServiceSecurityManager_Authorize_Error(t *testing.T) {
@@ -690,9 +710,11 @@ func TestMockServiceSecurityManager_Authorize_Error(t *testing.T) {
 
 	ctx := context.Background()
 	want := errors.New("auth failed")
-	m := new(MockServiceSecurityManager)
-	m.On("Authorize", ctx, "label", "detail", "reason", false).Return(false, want)
-
+	m := &MockServiceSecurityManager{
+		AuthorizeFunc: func(_ context.Context, _, _, _ string, _ bool) (bool, error) {
+			return false, want
+		},
+	}
 	got, err := m.Authorize(ctx, "label", "detail", "reason", false)
 	if got {
 		t.Error("Authorize should return false on error")
@@ -700,67 +722,98 @@ func TestMockServiceSecurityManager_Authorize_Error(t *testing.T) {
 	if err != want {
 		t.Errorf("Authorize error = %v, want %v", err, want)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Authorize"] != 1 {
+		t.Errorf("expected 1 Authorize call, got %d", snap["Authorize"])
+	}
 }
 
 func TestMockServiceSecurityManager_LogAudit(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("LogAudit", "action", mock.Anything).Return()
-
-	// Must not panic.
+	called := false
+	m := &MockServiceSecurityManager{
+		LogAuditFunc: func(_ string, _ ...any) {
+			called = true
+		},
+	}
 	m.LogAudit("action", "arg1", "arg2")
-	m.AssertCalled(t, "LogAudit", "action", mock.Anything)
+	if !called {
+		t.Error("LogAuditFunc was not called")
+	}
+	snap := m.Snapshot()
+	if snap["LogAudit"] != 1 {
+		t.Errorf("expected 1 LogAudit call, got %d", snap["LogAudit"])
+	}
 }
 
 func TestMockServiceSecurityManager_TerminalLock(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("TerminalLock").Return()
-
+	m := &MockServiceSecurityManager{
+		TerminalLockFunc: func() {},
+	}
 	m.TerminalLock()
-	m.AssertCalled(t, "TerminalLock")
+	snap := m.Snapshot()
+	if snap["TerminalLock"] != 1 {
+		t.Errorf("expected 1 TerminalLock call, got %d", snap["TerminalLock"])
+	}
 }
 
 func TestMockServiceSecurityManager_TerminalUnlock(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("TerminalUnlock").Return()
-
+	m := &MockServiceSecurityManager{
+		TerminalUnlockFunc: func() {},
+	}
 	m.TerminalUnlock()
-	m.AssertCalled(t, "TerminalUnlock")
+	snap := m.Snapshot()
+	if snap["TerminalUnlock"] != 1 {
+		t.Errorf("expected 1 TerminalUnlock call, got %d", snap["TerminalUnlock"])
+	}
 }
 
 func TestMockServiceSecurityManager_Prompt(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("Prompt", "message").Return()
-
+	m := &MockServiceSecurityManager{
+		PromptFunc: func(_ string) {},
+	}
 	m.Prompt("message")
-	m.AssertCalled(t, "Prompt", "message")
+	if m.lastPrompt != "message" {
+		t.Errorf("lastPrompt = %q, want %q", m.lastPrompt, "message")
+	}
+	snap := m.Snapshot()
+	if snap["Prompt"] != 1 {
+		t.Errorf("expected 1 Prompt call, got %d", snap["Prompt"])
+	}
 }
 
 func TestMockServiceSecurityManager_Warn(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("Warn", "warning").Return()
-
+	m := &MockServiceSecurityManager{
+		WarnFunc: func(_ string) {},
+	}
 	m.Warn("warning")
-	m.AssertCalled(t, "Warn", "warning")
+	if m.lastWarn != "warning" {
+		t.Errorf("lastWarn = %q, want %q", m.lastWarn, "warning")
+	}
+	snap := m.Snapshot()
+	if snap["Warn"] != 1 {
+		t.Errorf("expected 1 Warn call, got %d", snap["Warn"])
+	}
 }
 
 func TestMockServiceSecurityManager_Confirm(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	m := new(MockServiceSecurityManager)
-	m.On("Confirm", ctx, "proceed?").Return(true, nil)
-
+	m := &MockServiceSecurityManager{
+		ConfirmFunc: func(_ context.Context, _ string) (bool, error) {
+			return true, nil
+		},
+	}
 	got, err := m.Confirm(ctx, "proceed?")
 	if !got {
 		t.Error("Confirm should return true")
@@ -768,16 +821,21 @@ func TestMockServiceSecurityManager_Confirm(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Confirm"] != 1 {
+		t.Errorf("expected 1 Confirm call, got %d", snap["Confirm"])
+	}
 }
 
 func TestMockServiceSecurityManager_ReadLine(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	m := new(MockServiceSecurityManager)
-	m.On("ReadLine", ctx).Return("input", nil)
-
+	m := &MockServiceSecurityManager{
+		ReadLineFunc: func(_ context.Context) (string, error) {
+			return "input", nil
+		},
+	}
 	got, err := m.ReadLine(ctx)
 	if got != "input" {
 		t.Errorf("ReadLine = %q, want %q", got, "input")
@@ -785,60 +843,83 @@ func TestMockServiceSecurityManager_ReadLine(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["ReadLine"] != 1 {
+		t.Errorf("expected 1 ReadLine call, got %d", snap["ReadLine"])
+	}
 }
 
 func TestMockServiceSecurityManager_IsCommandAllowed(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("IsCommandAllowed", "ls").Return(true)
-
+	m := &MockServiceSecurityManager{
+		IsCommandAllowedFunc: func(_ string) bool {
+			return true
+		},
+	}
 	if !m.IsCommandAllowed("ls") {
 		t.Error("IsCommandAllowed should return true")
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["IsCommandAllowed"] != 1 {
+		t.Errorf("expected 1 IsCommandAllowed call, got %d", snap["IsCommandAllowed"])
+	}
 }
 
 func TestMockServiceSecurityManager_IsBypassActive(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("IsBypassActive").Return(false)
-
+	m := &MockServiceSecurityManager{
+		IsBypassActiveFunc: func() bool {
+			return false
+		},
+	}
 	if m.IsBypassActive() {
 		t.Error("IsBypassActive should return false")
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["IsBypassActive"] != 1 {
+		t.Errorf("expected 1 IsBypassActive call, got %d", snap["IsBypassActive"])
+	}
 }
 
 func TestMockServiceSecurityManager_Close(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockServiceSecurityManager)
-	m.On("Close").Return(nil)
-
+	m := &MockServiceSecurityManager{
+		CloseFunc: func() error {
+			return nil
+		},
+	}
 	if err := m.Close(); err != nil {
 		t.Errorf("Close unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Close"] != 1 {
+		t.Errorf("expected 1 Close call, got %d", snap["Close"])
+	}
 }
 
 func TestMockServiceSecurityManager_Close_Error(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("close failed")
-	m := new(MockServiceSecurityManager)
-	m.On("Close").Return(want)
-
+	m := &MockServiceSecurityManager{
+		CloseFunc: func() error {
+			return want
+		},
+	}
 	if err := m.Close(); err != want {
 		t.Errorf("Close error = %v, want %v", err, want)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Close"] != 1 {
+		t.Errorf("expected 1 Close call, got %d", snap["Close"])
+	}
 }
 
 // ---------------------------------------------------------------------------
-// I. mockServiceAgent (4 testify mock methods)
+// I. mockServiceAgent (4 hand-rolled spy methods)
 // ---------------------------------------------------------------------------
 
 func TestMockServiceAgent_Chat(t *testing.T) {
@@ -846,14 +927,19 @@ func TestMockServiceAgent_Chat(t *testing.T) {
 
 	ctx := context.Background()
 	sess := &ports.Session{ID: "s1"}
-	m := new(MockServiceAgent)
-	m.On("Chat", ctx, sess, "hello").Return(nil)
-
+	m := &MockServiceAgent{
+		ChatFunc: func(_ context.Context, _ *ports.Session, _ string) error {
+			return nil
+		},
+	}
 	err := m.Chat(ctx, sess, "hello")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Chat"] != 1 {
+		t.Errorf("expected 1 Chat call, got %d", snap["Chat"])
+	}
 }
 
 func TestMockServiceAgent_Chat_Error(t *testing.T) {
@@ -862,28 +948,38 @@ func TestMockServiceAgent_Chat_Error(t *testing.T) {
 	ctx := context.Background()
 	sess := &ports.Session{ID: "s1"}
 	want := errors.New("chat failed")
-	m := new(MockServiceAgent)
-	m.On("Chat", ctx, sess, "hello").Return(want)
-
+	m := &MockServiceAgent{
+		ChatFunc: func(_ context.Context, _ *ports.Session, _ string) error {
+			return want
+		},
+	}
 	err := m.Chat(ctx, sess, "hello")
 	if err != want {
 		t.Errorf("Chat error = %v, want %v", err, want)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Chat"] != 1 {
+		t.Errorf("expected 1 Chat call, got %d", snap["Chat"])
+	}
 }
 
 func TestMockServiceAgent_SetLimits(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	m := new(MockServiceAgent)
-	m.On("SetLimits", ctx, 5, 1000, 10).Return(nil)
-
+	m := &MockServiceAgent{
+		SetLimitsFunc: func(_ context.Context, _, _, _ int) error {
+			return nil
+		},
+	}
 	err := m.SetLimits(ctx, 5, 1000, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["SetLimits"] != 1 {
+		t.Errorf("expected 1 SetLimits call, got %d", snap["SetLimits"])
+	}
 }
 
 func TestMockServiceAgent_SetLimits_Error(t *testing.T) {
@@ -891,39 +987,55 @@ func TestMockServiceAgent_SetLimits_Error(t *testing.T) {
 
 	ctx := context.Background()
 	want := errors.New("limits invalid")
-	m := new(MockServiceAgent)
-	m.On("SetLimits", ctx, -1, 1000, 10).Return(want)
-
+	m := &MockServiceAgent{
+		SetLimitsFunc: func(_ context.Context, _, _, _ int) error {
+			return want
+		},
+	}
 	err := m.SetLimits(ctx, -1, 1000, 10)
 	if err != want {
 		t.Errorf("SetLimits error = %v, want %v", err, want)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["SetLimits"] != 1 {
+		t.Errorf("expected 1 SetLimits call, got %d", snap["SetLimits"])
+	}
 }
 
 func TestMockServiceAgent_Subscribe(t *testing.T) {
 	t.Parallel()
 
 	sub := func(ctx context.Context, ev events.Event) {}
-	m := new(MockServiceAgent)
-	m.On("Subscribe", mock.Anything).Return()
-
+	m := &MockServiceAgent{
+		SubscribeFunc: func(_ func(context.Context, events.Event)) {},
+	}
 	m.Subscribe(sub)
-	m.AssertCalled(t, "Subscribe", mock.Anything)
+	if m.lastSubscribeHandler == nil {
+		t.Error("lastSubscribeHandler should not be nil after Subscribe")
+	}
+	snap := m.Snapshot()
+	if snap["Subscribe"] != 1 {
+		t.Errorf("expected 1 Subscribe call, got %d", snap["Subscribe"])
+	}
 }
 
 func TestMockServiceAgent_Shutdown(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	m := new(MockServiceAgent)
-	m.On("Shutdown", ctx).Return(nil)
-
+	m := &MockServiceAgent{
+		ShutdownFunc: func(_ context.Context) error {
+			return nil
+		},
+	}
 	err := m.Shutdown(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Shutdown"] != 1 {
+		t.Errorf("expected 1 Shutdown call, got %d", snap["Shutdown"])
+	}
 }
 
 func TestMockServiceAgent_Shutdown_Error(t *testing.T) {
@@ -931,18 +1043,23 @@ func TestMockServiceAgent_Shutdown_Error(t *testing.T) {
 
 	ctx := context.Background()
 	want := errors.New("shutdown failed")
-	m := new(MockServiceAgent)
-	m.On("Shutdown", ctx).Return(want)
-
+	m := &MockServiceAgent{
+		ShutdownFunc: func(_ context.Context) error {
+			return want
+		},
+	}
 	err := m.Shutdown(ctx)
 	if err != want {
 		t.Errorf("Shutdown error = %v, want %v", err, want)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Shutdown"] != 1 {
+		t.Errorf("expected 1 Shutdown call, got %d", snap["Shutdown"])
+	}
 }
 
 // ---------------------------------------------------------------------------
-// J. mockTurnsLogger (3 testify mock methods)
+// J. mockTurnsLogger (3 hand-rolled spy methods)
 // ---------------------------------------------------------------------------
 
 func TestMockTurnsLogger_HandleEvent(t *testing.T) {
@@ -950,25 +1067,36 @@ func TestMockTurnsLogger_HandleEvent(t *testing.T) {
 
 	ctx := context.Background()
 	ev := events.TurnStatusEvent{}
-	m := new(MockTurnsLogger)
-	m.On("HandleEvent", ctx, ev).Return()
-
+	m := &MockTurnsLogger{
+		HandleEventFunc: func(_ context.Context, _ events.Event) {},
+	}
 	m.HandleEvent(ctx, ev)
-	m.AssertCalled(t, "HandleEvent", ctx, ev)
+	snap := m.Snapshot()
+	if snap["HandleEvent"] != 1 {
+		t.Errorf("expected 1 HandleEvent call, got %d", snap["HandleEvent"])
+	}
+	if !reflect.DeepEqual(m.lastHandleEvent, ev) {
+		t.Errorf("lastHandleEvent = %v, want %v", m.lastHandleEvent, ev)
+	}
 }
 
 func TestMockTurnsLogger_Listen(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	m := new(MockTurnsLogger)
-	m.On("Listen", ctx).Return(nil)
-
+	m := &MockTurnsLogger{
+		ListenFunc: func(_ context.Context) error {
+			return nil
+		},
+	}
 	err := m.Listen(ctx)
 	if err != nil {
 		t.Errorf("Listen unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Listen"] != 1 {
+		t.Errorf("expected 1 Listen call, got %d", snap["Listen"])
+	}
 }
 
 func TestMockTurnsLogger_Listen_Error(t *testing.T) {
@@ -976,37 +1104,52 @@ func TestMockTurnsLogger_Listen_Error(t *testing.T) {
 
 	ctx := context.Background()
 	want := errors.New("listen failed")
-	m := new(MockTurnsLogger)
-	m.On("Listen", ctx).Return(want)
-
+	m := &MockTurnsLogger{
+		ListenFunc: func(_ context.Context) error {
+			return want
+		},
+	}
 	err := m.Listen(ctx)
 	if err != want {
 		t.Errorf("Listen error = %v, want %v", err, want)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Listen"] != 1 {
+		t.Errorf("expected 1 Listen call, got %d", snap["Listen"])
+	}
 }
 
 func TestMockTurnsLogger_Close(t *testing.T) {
 	t.Parallel()
 
-	m := new(MockTurnsLogger)
-	m.On("Close").Return(nil)
-
+	m := &MockTurnsLogger{
+		CloseFunc: func() error {
+			return nil
+		},
+	}
 	if err := m.Close(); err != nil {
 		t.Errorf("Close unexpected error: %v", err)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Close"] != 1 {
+		t.Errorf("expected 1 Close call, got %d", snap["Close"])
+	}
 }
 
 func TestMockTurnsLogger_Close_Error(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("close failed")
-	m := new(MockTurnsLogger)
-	m.On("Close").Return(want)
-
+	m := &MockTurnsLogger{
+		CloseFunc: func() error {
+			return want
+		},
+	}
 	if err := m.Close(); err != want {
 		t.Errorf("Close error = %v, want %v", err, want)
 	}
-	m.AssertExpectations(t)
+	snap := m.Snapshot()
+	if snap["Close"] != 1 {
+		t.Errorf("expected 1 Close call, got %d", snap["Close"])
+	}
 }
