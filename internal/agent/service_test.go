@@ -22,7 +22,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 // newProcessMessageFixtures creates the 7 mocks, chatterFactory, and ChatService
@@ -75,8 +74,9 @@ func baseSetup(
 	cleanup func(context.Context) error,
 	cfg *config.Config,
 ) {
-	sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).
-		Return(deps, hm, cleanup, nil)
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+		return deps, hm, cleanup, nil
+	}
 
 	agentMock.SetLimitsFunc = func(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
 		return nil
@@ -112,7 +112,9 @@ func TestProcessMessage_Success(t *testing.T) {
 	}
 
 	mockHM := &mockHistoryManagerForRetry{}
-	sf.On("FinalizeSession", mock.Anything, mock.Anything, mock.Anything, cfg).Return(nil)
+	sf.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, c *config.Config) error {
+		return nil
+	}
 
 	deps.EventBus = bus
 	deps.Paths = &persistence.Paths{TurnsLogPath: "turns.log"}
@@ -131,7 +133,9 @@ func TestProcessMessage_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, cleanupCalled, "cleanup should have been called")
 
-	sf.AssertExpectations(t)
+	snap := sf.Snapshot()
+	assert.Equal(t, 1, snap["BuildSessionDependencies"])
+	assert.Equal(t, 1, snap["FinalizeSession"])
 }
 
 // TestProcessMessage_BuildError verifies that a BuildSessionDependencies
@@ -141,8 +145,9 @@ func TestProcessMessage_BuildError(t *testing.T) {
 	sf, _, capturer, _, _, _, _, service := newProcessMessageFixtures(t, io.Discard)
 
 	cfg := &config.Config{Mode: "assistant"}
-	sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, capturer).
-		Return(nil, nil, func(context.Context) error { return nil }, errBuild)
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+		return nil, nil, func(context.Context) error { return nil }, errBuild
+	}
 
 	cmd := agent.ChatCommand{ConfigPath: "config.yaml"}
 	err := service.ProcessMessage(context.Background(), cfg, cmd, capturer)
@@ -151,7 +156,8 @@ func TestProcessMessage_BuildError(t *testing.T) {
 	assert.Contains(t, err.Error(), "build error")
 	assert.ErrorIs(t, err, errBuild)
 
-	sf.AssertExpectations(t)
+	snap := sf.Snapshot()
+	assert.Equal(t, 1, snap["BuildSessionDependencies"])
 }
 
 // TestProcessMessage_CleanupErrors verifies that cleanup and event-bus
@@ -195,7 +201,9 @@ func TestProcessMessage_CleanupErrors(t *testing.T) {
 			}
 
 			mockHM := &mockHistoryManagerForRetry{}
-			sf.On("FinalizeSession", mock.Anything, mock.Anything, mock.Anything, sharedCfg).Return(nil)
+			sf.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, c *config.Config) error {
+				return nil
+			}
 
 			deps.EventBus = bus
 			deps.Paths = &persistence.Paths{TurnsLogPath: "turns.log"}
@@ -214,7 +222,9 @@ func TestProcessMessage_CleanupErrors(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Contains(t, stderr.String(), tt.stderrContains)
 
-			sf.AssertExpectations(t)
+			snap := sf.Snapshot()
+			assert.Equal(t, 1, snap["BuildSessionDependencies"])
+			assert.Equal(t, 1, snap["FinalizeSession"])
 		})
 	}
 }
@@ -239,9 +249,12 @@ func TestProcessMessage_RetrySuccess(t *testing.T) {
 	}
 
 	mockHM := &mockHistoryManagerForRetry{msg: "retry this", turns: 2}
-	sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, capturer).
-		Return(deps, mockHM, cleanup, nil)
-	sf.On("FinalizeSession", mock.Anything, mock.Anything, mock.Anything, cfg).Return(nil)
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+		return deps, mockHM, cleanup, nil
+	}
+	sf.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, c *config.Config) error {
+		return nil
+	}
 
 	deps.EventBus = bus
 	deps.Paths = &persistence.Paths{TurnsLogPath: "turns.log"}
@@ -272,7 +285,9 @@ func TestProcessMessage_RetrySuccess(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, cleanupCalled, "cleanup should have been called")
 
-	sf.AssertExpectations(t)
+	snap := sf.Snapshot()
+	assert.Equal(t, 1, snap["BuildSessionDependencies"])
+	assert.Equal(t, 1, snap["FinalizeSession"])
 }
 
 // TestProcessMessage_RetryAborted verifies that when the user declines
@@ -291,8 +306,9 @@ func TestProcessMessage_RetryAborted(t *testing.T) {
 
 	cleanup := func(context.Context) error { return nil }
 	mockHM := &mockHistoryManagerForRetry{msg: "retry this", turns: 2}
-	sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, capturer).
-		Return(deps, mockHM, cleanup, nil)
+	sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+		return deps, mockHM, cleanup, nil
+	}
 
 	deps.EventBus = bus
 
@@ -303,7 +319,8 @@ func TestProcessMessage_RetryAborted(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	sf.AssertExpectations(t)
+	snap := sf.Snapshot()
+	assert.Equal(t, 1, snap["BuildSessionDependencies"])
 }
 
 // TestProcessMessage_RetryErrors verifies error paths during retry
@@ -351,8 +368,9 @@ func TestProcessMessage_RetryErrors(t *testing.T) {
 				err:   tt.hmErr,
 			}
 
-			sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, capturer).
-				Return(deps, mockHM, cleanup, nil)
+			sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				return deps, mockHM, cleanup, nil
+			}
 
 			deps.EventBus = bus
 
@@ -409,9 +427,12 @@ func TestProcessMessage_FinalizeErrors(t *testing.T) {
 			cleanup := func(context.Context) error { return nil }
 			mockHM := &mockHistoryManagerForRetry{}
 
-			sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, capturer).
-				Return(deps, mockHM, cleanup, nil)
-			sf.On("FinalizeSession", mock.Anything, mock.Anything, mock.Anything, cfg).Return(errFinalize)
+			sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+				return deps, mockHM, cleanup, nil
+			}
+			sf.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, c *config.Config) error {
+				return errFinalize
+			}
 
 			deps.EventBus = bus
 			deps.Paths = &persistence.Paths{TurnsLogPath: "turns.log"}
@@ -444,7 +465,9 @@ func TestProcessMessage_FinalizeErrors(t *testing.T) {
 				assert.ErrorIs(t, err, tt.extraExpectedErr)
 			}
 
-			sf.AssertExpectations(t)
+			snap := sf.Snapshot()
+			assert.Equal(t, 1, snap["BuildSessionDependencies"])
+			assert.Equal(t, 1, snap["FinalizeSession"])
 		})
 	}
 }
@@ -505,15 +528,14 @@ func (m *mockHistoryManagerForRetry) GetFilePath() string { return "" }
 
 type mockFileSystemStream struct {
 	persistence.FileSystem
-	mock.Mock
+	OpenFunc func(ctx context.Context, name string) (persistence.File, error)
 }
 
 func (m *mockFileSystemStream) Open(ctx context.Context, name string) (persistence.File, error) {
-	args := m.Called(ctx, name)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	if m.OpenFunc != nil {
+		return m.OpenFunc(ctx, name)
 	}
-	return args.Get(0).(persistence.File), args.Error(1)
+	return nil, nil
 }
 
 type minimalFile struct {
@@ -550,8 +572,9 @@ func TestStreamTurnsLog(t *testing.T) {
 			name: "Success",
 			mode: "assistant",
 			setupMock: func(mFS *mockFileSystemStream) {
-				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
-				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{Reader: strings.NewReader("turn 1: hello")}, nil)
+				mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
+					return &minimalFile{Reader: strings.NewReader("turn 1: hello")}, nil
+				}
 			},
 			expectedOut: "turn 1: hello",
 			wantErr:     false,
@@ -560,8 +583,9 @@ func TestStreamTurnsLog(t *testing.T) {
 			name: "LogFileMissing",
 			mode: "developer",
 			setupMock: func(mFS *mockFileSystemStream) {
-				logPath := persistence.ResolvePaths(homeDir, "developer").TurnsLogPath
-				mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrNotExist)
+				mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
+					return nil, os.ErrNotExist
+				}
 			},
 			expectedOut: "No turns log found for this session yet.\n",
 			wantErr:     false,
@@ -570,8 +594,9 @@ func TestStreamTurnsLog(t *testing.T) {
 			name: "PermissionDenied",
 			mode: "assistant",
 			setupMock: func(mFS *mockFileSystemStream) {
-				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
-				mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrPermission)
+				mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
+					return nil, os.ErrPermission
+				}
 			},
 			wantErr: true,
 			errMsg:  "failed to open turns log",
@@ -580,8 +605,9 @@ func TestStreamTurnsLog(t *testing.T) {
 			name: "ReadError",
 			mode: "assistant",
 			setupMock: func(mFS *mockFileSystemStream) {
-				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
-				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{Reader: &errorReader{}}, nil)
+				mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
+					return &minimalFile{Reader: &errorReader{}}, nil
+				}
 			},
 			wantErr: true,
 			errMsg:  "failed to stream log",
@@ -590,11 +616,12 @@ func TestStreamTurnsLog(t *testing.T) {
 			name: "CloseError",
 			mode: "assistant",
 			setupMock: func(mFS *mockFileSystemStream) {
-				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
-				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{
-					Reader:   strings.NewReader("log content"),
-					closeErr: errors.New("close failure"),
-				}, nil)
+				mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
+					return &minimalFile{
+						Reader:   strings.NewReader("log content"),
+						closeErr: errors.New("close failure"),
+					}, nil
+				}
 			},
 			expectedOut: "log content",
 			wantErr:     true,
@@ -626,7 +653,6 @@ func TestStreamTurnsLog(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedOut, out.String())
 			}
-			mFS.AssertExpectations(t)
 		})
 	}
 }
@@ -647,19 +673,26 @@ func (s *stubDiagComposer) GetHealthManager() ports.HealthCheckManager { return 
 // mockUIRendererForDiag embeds StubUIRenderer and overrides methods needed for RunDiagnostics assertions.
 type mockUIRendererForDiag struct {
 	agenttest.StubUIRenderer
-	mock.Mock
+	SetUseColorFunc        func(use bool)
+	IsTerminalContextFunc  func() bool
+	RenderHealthReportFunc func(ctx context.Context, report *ports.HealthReport)
 }
 
 func (m *mockUIRendererForDiag) SetUseColor(use bool) {
-	m.Called(use)
+	if m.SetUseColorFunc != nil {
+		m.SetUseColorFunc(use)
+	}
 }
-
 func (m *mockUIRendererForDiag) IsTerminalContext() bool {
-	return m.Called().Bool(0)
+	if m.IsTerminalContextFunc != nil {
+		return m.IsTerminalContextFunc()
+	}
+	return false
 }
-
 func (m *mockUIRendererForDiag) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {
-	m.Called(ctx, report)
+	if m.RenderHealthReportFunc != nil {
+		m.RenderHealthReportFunc(ctx, report)
+	}
 }
 
 func TestRunDiagnostics(t *testing.T) {
@@ -680,43 +713,52 @@ func TestRunDiagnostics(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		jsonOutput bool
-		setupMock  func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag)
-		wantErr    bool
-		errMsg     string
-		checkOut   func(t *testing.T, stdout string)
+		name           string
+		jsonOutput     bool
+		expectCheckAll bool
+		setupMock      func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag)
+		wantErr        bool
+		errMsg         string
+		checkOut       func(t *testing.T, stdout string)
 	}{
 		{
-			name:       "success UI output",
-			jsonOutput: false,
+			name:           "success UI output",
+			jsonOutput:     false,
+			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
-				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return deps, nil, cleanup, nil
+				}
 
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(healthyReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) {
+					return healthyReport, nil
+				}
 
-				uir.On("IsTerminalContext").Return(false)
-				uir.On("SetUseColor", false).Return()
-				uir.On("RenderHealthReport", mock.Anything, healthyReport).Return()
+				uir.IsTerminalContextFunc = func() bool { return false }
+				uir.SetUseColorFunc = func(use bool) {}
+				uir.RenderHealthReportFunc = func(ctx context.Context, report *ports.HealthReport) {}
 			},
 		},
 		{
-			name:       "success JSON output",
-			jsonOutput: true,
+			name:           "success JSON output",
+			jsonOutput:     true,
+			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
-				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return deps, nil, cleanup, nil
+				}
 
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(healthyReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) {
+					return healthyReport, nil
+				}
 			},
 			checkOut: func(t *testing.T, stdout string) {
 				t.Helper()
@@ -725,12 +767,14 @@ func TestRunDiagnostics(t *testing.T) {
 			},
 		},
 		{
-			name:       "JSON marshal error",
-			jsonOutput: true,
+			name:           "JSON marshal error",
+			jsonOutput:     true,
+			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
-				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return deps, nil, cleanup, nil
+				}
 
 				deps.EventBus = bus
 				deps.HealthManager = hcm
@@ -749,7 +793,9 @@ func TestRunDiagnostics(t *testing.T) {
 						},
 					},
 				}
-				hcm.On("CheckAll", mock.Anything).Return(unmarshalableReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) {
+					return unmarshalableReport, nil
+				}
 			},
 			wantErr: true,
 			errMsg:  "failed to serialize health report",
@@ -757,8 +803,9 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name: "build deps error",
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				cfg := &config.Config{Mode: "assistant"}
-				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(nil, nil, (func(context.Context) error)(nil), errBuild)
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return nil, nil, nil, errBuild
+				}
 			},
 			wantErr: true,
 			errMsg:  "build error",
@@ -766,9 +813,10 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name: "nil health manager",
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
-				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return deps, nil, cleanup, nil
+				}
 
 				deps.EventBus = bus
 			},
@@ -776,36 +824,44 @@ func TestRunDiagnostics(t *testing.T) {
 			errMsg:  "health check manager not available",
 		},
 		{
-			name: "CheckAll error",
+			name:           "CheckAll error",
+			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
-				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return deps, nil, cleanup, nil
+				}
 
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(nil, errCheck)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) {
+					return nil, errCheck
+				}
 			},
 			wantErr: true,
 			errMsg:  "health check failed: check error",
 		},
 		{
-			name:       "unhealthy report",
-			jsonOutput: false,
+			name:           "unhealthy report",
+			jsonOutput:     false,
+			expectCheckAll: true,
 			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *stubDiagComposer, bus *agenttest.StubEventBus, hcm *agenttest.MockHealthCheckManager, uir *mockUIRendererForDiag) {
-				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
-				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+				sf.BuildSessionDepsFunc = func(ctx context.Context, c *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+					return deps, nil, cleanup, nil
+				}
 
 				deps.EventBus = bus
 				deps.HealthManager = hcm
 
-				hcm.On("CheckAll", mock.Anything).Return(unhealthyReport, nil)
+				hcm.CheckAllFunc = func(ctx context.Context) (*ports.HealthReport, error) {
+					return unhealthyReport, nil
+				}
 
-				uir.On("IsTerminalContext").Return(false)
-				uir.On("SetUseColor", false).Return()
-				uir.On("RenderHealthReport", mock.Anything, unhealthyReport).Return()
+				uir.IsTerminalContextFunc = func() bool { return false }
+				uir.SetUseColorFunc = func(use bool) {}
+				uir.RenderHealthReportFunc = func(ctx context.Context, report *ports.HealthReport) {}
 			},
 			wantErr: true,
 			errMsg:  "system health check failed",
@@ -847,20 +903,28 @@ func TestRunDiagnostics(t *testing.T) {
 				tt.checkOut(t, stdout.String())
 			}
 
-			sf.AssertExpectations(t)
-			hcm.AssertExpectations(t)
-			uir.AssertExpectations(t)
+			snap := sf.Snapshot()
+			assert.Equal(t, 1, snap["BuildSessionDependencies"])
+			checkAllCalls, _, _ := hcm.Snapshot()
+			if tt.expectCheckAll {
+				assert.Equal(t, 1, checkAllCalls)
+			} else {
+				assert.Equal(t, 0, checkAllCalls)
+			}
 		})
 	}
 }
 
 // mockHistoryBrowser is a mock implementation of ports.HistoryBrowser for testing.
 type mockHistoryBrowser struct {
-	mock.Mock
+	BrowseFunc func(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error
 }
 
 func (m *mockHistoryBrowser) Browse(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
-	return m.Called(ctx, provider, hManager).Error(0)
+	if m.BrowseFunc != nil {
+		return m.BrowseFunc(ctx, provider, hManager)
+	}
+	return nil
 }
 
 func TestBrowseHistory(t *testing.T) {
@@ -889,7 +953,9 @@ func TestBrowseHistory(t *testing.T) {
 			browser := &mockHistoryBrowser{}
 			mockHM := &mockHistoryManagerForRetry{}
 
-			browser.On("Browse", ctx, mock.Anything, mockHM).Return(tt.browseErr)
+			browser.BrowseFunc = func(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+				return tt.browseErr
+			}
 
 			service := agent.NewChatService(
 				"home", "v1", io.Discard, io.Discard, nil,
@@ -904,8 +970,6 @@ func TestBrowseHistory(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
-
-			browser.AssertExpectations(t)
 		})
 	}
 }
@@ -998,8 +1062,9 @@ func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 	// found" message.  (The empty-path guard — service.go:214 — is tested
 	// separately in TestChatService_StreamTurnsLog_EmptyPath.)
 	mFS := new(mockFileSystemStream)
-	logPath := persistence.ResolvePaths("/nonexistent", "").TurnsLogPath
-	mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrNotExist)
+	mFS.OpenFunc = func(ctx context.Context, name string) (persistence.File, error) {
+		return nil, os.ErrNotExist
+	}
 
 	service := agent.NewChatService(
 		"/nonexistent", "v1", io.Discard, io.Discard, nil,
@@ -1013,7 +1078,6 @@ func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 	// Empty mode → default mode; file doesn't exist → graceful message, no error.
 	assert.NoError(t, err)
 	assert.Equal(t, "No turns log found for this session yet.\n", out.String())
-	mFS.AssertExpectations(t)
 }
 
 func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {

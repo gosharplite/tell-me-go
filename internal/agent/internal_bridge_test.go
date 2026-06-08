@@ -9,46 +9,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/stretchr/testify/mock"
 )
-
-// mockCostTracker is a minimal mock of domain_pricing.CostTracker used
-// by bridge tests that only need a concrete value to inject/extract
-// — no method expectations are set.
-type mockCostTracker struct {
-	mock.Mock
-}
-
-func (m *mockCostTracker) GetTotalCost(ctx context.Context) float64 {
-	return m.Called(ctx).Get(0).(float64)
-}
-
-func (m *mockCostTracker) GetDailyCost(ctx context.Context) float64 {
-	return m.Called(ctx).Get(0).(float64)
-}
-
-func (m *mockCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
-	args := m.Called(ctx)
-	return args.Get(0).(domain_pricing.UsageStats), args.Get(1).(float64)
-}
-
-func (m *mockCostTracker) Accumulate(mt llm.Metrics) {
-	m.Called(mt)
-}
-
-func (m *mockCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
-	return m.Called(mt).Get(0).(float64)
-}
-
-func (m *mockCostTracker) Warmup() {
-	m.Called()
-}
-
-var _ domain_pricing.CostTracker = (*mockCostTracker)(nil)
 
 // TestInternalBridge_GettersAndSetters verifies that the five orphan
 // bridge methods on *agent — GetTrackerForInternalUse,
@@ -63,7 +28,7 @@ var _ domain_pricing.CostTracker = (*mockCostTracker)(nil)
 func TestInternalBridge_GettersAndSetters(t *testing.T) {
 	t.Run("Getter/GetTrackerForInternalUse", func(t *testing.T) {
 		a := &agent{}
-		tracker := &mockCostTracker{}
+		tracker := &agenttest.MockCostTracker{}
 		a.tracker = tracker
 
 		got := a.GetTrackerForInternalUse()
@@ -107,7 +72,7 @@ func TestInternalBridge_GettersAndSetters(t *testing.T) {
 
 	t.Run("Setter/SetTrackerForInternalUse", func(t *testing.T) {
 		a := &agent{}
-		tracker := &mockCostTracker{}
+		tracker := &agenttest.MockCostTracker{}
 
 		a.SetTrackerForInternalUse(tracker)
 		if a.tracker != tracker {
