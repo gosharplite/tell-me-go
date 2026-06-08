@@ -69,6 +69,44 @@ func TestMockUIRenderer_StartSpinnerWithStatus(t *testing.T) {
 	m.AssertExpectations(t)
 }
 
+func TestMockUIRenderer_StartSpinnerWithStatus_NilStopFunc(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	status := "loading"
+
+	m := new(MockUIRenderer)
+	// Return nil → should return a no-op func() (not nil).
+	m.On("StartSpinnerWithStatus", ctx, status).Return(nil)
+
+	stop := m.StartSpinnerWithStatus(ctx, status)
+	if stop == nil {
+		t.Fatal("got nil stop func; want non-nil no-op")
+	}
+	// Must not panic.
+	stop()
+	m.AssertExpectations(t)
+}
+
+func TestMockUIRenderer_StartSpinnerWithMetrics_NilStopFunc(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	status := "processing"
+
+	m := new(MockUIRenderer)
+	// Return nil → should return a no-op func() (not nil).
+	m.On("StartSpinnerWithMetrics", ctx, status).Return(nil)
+
+	stop := m.StartSpinnerWithMetrics(ctx, status)
+	if stop == nil {
+		t.Fatal("got nil stop func; want non-nil no-op")
+	}
+	// Must not panic.
+	stop()
+	m.AssertExpectations(t)
+}
+
 func TestMockUIRenderer_StartSpinnerWithMetrics(t *testing.T) {
 	t.Parallel()
 
