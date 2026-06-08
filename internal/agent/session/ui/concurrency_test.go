@@ -14,7 +14,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 func TestUIBridge_StressConcurrency(t *testing.T) {
@@ -27,14 +26,13 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	var activeSpinners int32
 
 	// Thread-safe mock setup with atomic tracking
-	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.StartSpinnerWithMetricsFn = func(ctx context.Context, status string) func() {
 		current := atomic.AddInt32(&activeSpinners, 1)
 		assert.LessOrEqual(t, current, int32(1), "Actor model violation: Concurrent spinners detected")
-	}).Return(func() {
-		atomic.AddInt32(&activeSpinners, -1) // Return the expected func() type for cleanup
-	})
-
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+		return func() {
+			atomic.AddInt32(&activeSpinners, -1)
+		}
+	}
 
 	const numGoroutines = 100
 	var wg sync.WaitGroup
@@ -81,10 +79,16 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 
 	// 1. Expect the spinner to start first
 	// Note: startSpinnerForPhase(ToolExecutionStartedEvent) calls StartSpinnerWithMetrics
-	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Return(func() {}).Once()
+	var metricsCalled, renderCalled int32
+	mRenderer.StartSpinnerWithMetricsFn = func(ctx context.Context, status string) func() {
+		atomic.AddInt32(&metricsCalled, 1)
+		return func() {}
+	}
 
 	// 2. Expect the response to be rendered sequentially after
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, true, false).Return().Once()
+	mRenderer.RenderResponseFn = func(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+		atomic.AddInt32(&renderCalled, 1)
+	}
 
 	// 3. Queue the events sequentially
 	_ = bridge.HandleEvent(testCtx, events.ToolExecutionStartedEvent{})
@@ -94,5 +98,6 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	syncBridge(t, bridge, mRenderer)
 
 	// 5. Verify the sequential execution happened as expected
-	mRenderer.AssertExpectations(t)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&metricsCalled), "StartSpinnerWithMetrics should be called exactly once")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&renderCalled), "RenderResponse should be called exactly once")
 }

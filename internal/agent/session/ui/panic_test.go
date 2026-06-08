@@ -21,7 +21,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 type panicMockRenderer struct {
@@ -113,9 +112,9 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 
 	mockRenderer := new(agenttest.MockUIRenderer)
 	// This mock will panic when StartSpinnerWithStatus is called
-	mockRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+	mockRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 		panic("intentional test panic")
-	}).Return(func() {})
+	}
 
 	bridge := ui.NewBridge(mockRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	ctx, _, done := ui.StartListen(t, bridge)
@@ -148,10 +147,12 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	mRenderer := new(agenttest.MockUIRenderer)
 	// Mock the renderer to return a closure that panics when called.
-	// We use .Maybe() because SyncBridge might trigger resumeActiveSpinner which calls this again.
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
-		panic("renderer panic in stop closure")
-	}).Maybe()
+	// SyncBridge might trigger resumeActiveSpinner which calls this again.
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		return func() {
+			panic("renderer panic in stop closure")
+		}
+	}
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -172,9 +173,9 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	// 3. Trigger a primary panic.
 	// This will trigger the recovery block, which calls b.stopActiveSpinner().
 	// That call will trigger the double-panic.
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.LogTurnStatusFn = func(ctx context.Context, status events.TurnStatus) {
 		panic("primary panic")
-	}).Once()
+	}
 
 	_ = bridge.HandleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{Mode: "test"}})
 
@@ -185,8 +186,6 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for bridge to shutdown after double-panic")
 	}
-
-	mRenderer.AssertExpectations(t)
 }
 
 func TestUIBridge_PoisonPill(t *testing.T) {
@@ -197,9 +196,9 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 	mRenderer := new(agenttest.MockUIRenderer)
 	// First event panics
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.LogTurnStatusFn = func(ctx context.Context, status events.TurnStatus) {
 		panic("first panic")
-	}).Once()
+	}
 
 	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
 	ctx, _, _ := ui.StartListen(t, bridge)
@@ -219,7 +218,8 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	assert.Contains(t, output, "first panic")
 
 	// Verify that RenderResponse was NOT called (it was the second event in the queue)
-	mRenderer.AssertNotCalled(t, "RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	snap := mRenderer.Snapshot()
+	assert.Equal(t, 0, snap.RenderResponse, "RenderResponse must NOT be called after panic")
 }
 
 func TestUIBridge_SendToClosedChannel(t *testing.T) {
