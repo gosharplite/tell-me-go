@@ -15,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/stretchr/testify/mock"
 )
 
 // controllableUIRenderer provides synchronization hooks for testing bridge backpressure.
@@ -156,7 +155,6 @@ func newUIBridgeFixture(t *testing.T, opts ...bridgeOption) *uiBridgeFixture {
 // BlockLoop sends a TurnStatusEvent and waits for the renderer to be entered and blocked.
 func (f *uiBridgeFixture) BlockLoop(t *testing.T) {
 	t.Helper()
-	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 
 	if err := f.bridge.HandleEvent(context.Background(), events.TurnStatusEvent{}); err != nil {
 		t.Fatalf("failed to send blocking event: %v", err)
