@@ -142,13 +142,15 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 	}
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
 
 	err := session.Run(context.Background(), params)
 	require.NoError(t, err)
 
 	mCapturer.AssertExpectations(t)
-	mHistoryRenderer.AssertExpectations(t)
+	calls, _ := mHistoryRenderer.Snapshot()
+	if calls != 1 {
+		t.Errorf("Render calls: got %d, want 1", calls)
+	}
 }
 
 func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
@@ -861,10 +863,11 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 
 	mClock := &agenttest.MockClock{}
 	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
-	mEntropy := new(agenttest.MockEntropySource)
-
-	// Entropy source fails
-	mEntropy.On("Read", mock.Anything).Return(nil, 0, fmt.Errorf("entropy failure"))
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			return 0, fmt.Errorf("entropy failure")
+		},
+	}
 
 	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())
 
@@ -901,7 +904,6 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	if now < 1 {
 		t.Errorf("expected Now() to be called at least once, got %d", now)
 	}
-	mEntropy.AssertExpectations(t)
 	mChatter.AssertExpectations(t)
 }
 
@@ -914,10 +916,14 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	eventstest.CleanupBus(t, mEventBus)
 
 	mClock := &agenttest.MockClock{}
-	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedEntropy := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-	mEntropy.On("Read", mock.Anything).Return(fixedEntropy, len(fixedEntropy), nil)
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			copy(p, fixedEntropy)
+			return len(fixedEntropy), nil
+		},
+	}
 
 	expectedSessionID := "session-0102030405060708"
 
@@ -950,7 +956,6 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
 
-	mEntropy.AssertExpectations(t)
 	mChatter.AssertExpectations(t)
 }
 
@@ -964,16 +969,20 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	mClock := &agenttest.MockClock{}
 	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
-	mEntropy := new(agenttest.MockEntropySource)
 
 	// Entropy source returns a short read (e.g., only 4 bytes instead of 8)
 	shortEntropy := []byte{0x01, 0x02, 0x03, 0x04}
-	mEntropy.On("Read", mock.Anything).Return(shortEntropy, len(shortEntropy), nil).Once()
-	// io.ReadFull will call Read again if it didn't get enough bytes,
-	// or it might fail immediately depending on the reader.
-	// For most readers, it calls until full or error.
-	// If we want to simulate EOF or short read that doesn't continue:
-	mEntropy.On("Read", mock.Anything).Return(nil, 0, io.EOF).Maybe()
+	var readCount int
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			readCount++
+			if readCount == 1 {
+				copy(p, shortEntropy)
+				return len(shortEntropy), nil
+			}
+			return 0, io.EOF
+		},
+	}
 
 	// Since it's a short read, it should fallback to timestamp-based ID
 	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())

@@ -5,6 +5,7 @@ package agenttest
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -54,6 +55,14 @@ func checkGenerateDefault(t *testing.T, m *MockGateway) {
 	if metrics == nil {
 		t.Error("expected non-nil Metrics")
 	}
+
+	gen, chat, _ := m.Snapshot()
+	if gen != 1 {
+		t.Errorf("Generate calls: got %d, want 1", gen)
+	}
+	if chat != 0 {
+		t.Errorf("SendChat calls: got %d, want 0", chat)
+	}
 }
 
 // checkGenerateWithOverride asserts that a MockGateway with GenerateFunc
@@ -73,6 +82,14 @@ func checkGenerateWithOverride(t *testing.T, m *MockGateway) {
 	if metrics.TotalTokens != 42 {
 		t.Errorf("got TotalTokens %d; want 42", metrics.TotalTokens)
 	}
+
+	gen, chat, _ := m.Snapshot()
+	if gen != 1 {
+		t.Errorf("Generate calls: got %d, want 1", gen)
+	}
+	if chat != 0 {
+		t.Errorf("SendChat calls: got %d, want 0", chat)
+	}
 }
 
 // checkSendChatDefault asserts that a MockGateway with no overrides
@@ -89,6 +106,14 @@ func checkSendChatDefault(t *testing.T, m *MockGateway) {
 	if len(content.Parts) != 1 || content.Parts[0].Text != "generated" {
 		t.Errorf("got parts %+v; want [Text:generated]", content.Parts)
 	}
+
+	gen, chat, _ := m.Snapshot()
+	if gen != 0 {
+		t.Errorf("Generate calls: got %d, want 0", gen)
+	}
+	if chat != 1 {
+		t.Errorf("SendChat calls: got %d, want 1", chat)
+	}
 }
 
 // checkSendChatWithOverride asserts that a MockGateway with SendChatFn
@@ -104,6 +129,14 @@ func checkSendChatWithOverride(t *testing.T, m *MockGateway) {
 	}
 	if content.Parts[0].Text != "custom_chat" {
 		t.Errorf("got text %q; want %q", content.Parts[0].Text, "custom_chat")
+	}
+
+	gen, chat, _ := m.Snapshot()
+	if gen != 0 {
+		t.Errorf("Generate calls: got %d, want 0", gen)
+	}
+	if chat != 1 {
+		t.Errorf("SendChat calls: got %d, want 1", chat)
 	}
 }
 
@@ -144,5 +177,37 @@ func TestMockGateway(t *testing.T) {
 			m := tt.setup()
 			tt.check(t, m)
 		})
+	}
+}
+
+// TestMockGateway_RaceDetection verifies that concurrent calls to
+// Generate, SendChat, and SetGenerateFn do not trigger the race
+// detector. This test is a precondition for the mutex-based spy pattern.
+func TestMockGateway_RaceDetection(t *testing.T) {
+	m := &MockGateway{}
+
+	var wg sync.WaitGroup
+	const goroutines = 5
+	const iterations = 20
+
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_, _, _ = m.Generate(context.Background(), nil, nil, nil)
+				_, _, _ = m.SendChat(context.Background(), nil, nil, nil)
+				m.SetGenerateFn(nil)
+			}
+		}()
+	}
+	wg.Wait()
+
+	gen, chat, _ := m.Snapshot()
+	if gen != goroutines*iterations {
+		t.Errorf("Generate calls: got %d, want %d", gen, goroutines*iterations)
+	}
+	if chat != goroutines*iterations {
+		t.Errorf("SendChat calls: got %d, want %d", chat, goroutines*iterations)
 	}
 }
