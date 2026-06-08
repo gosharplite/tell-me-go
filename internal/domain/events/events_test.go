@@ -964,6 +964,87 @@ func TestSimpleEventBus_FlushCancellations(t *testing.T) {
 	})
 }
 
+// TestSimpleEventBus_Flush_BusContextCancellation exercises the <-b.ctx.Done()
+// path in Flush's dual select (line 109-110 of event_bus_lifecycle.go).
+//
+// The existing BusClosedDuringFlush test publishes only 1 event, so
+// decPending() fires before the subscriber blocks — pendingCount drops
+// to 0, flushWaiter closes done immediately, and the select picks <-done
+// instead of <-b.ctx.Done(). This test publishes 2 events to keep
+// pendingCount > 0 while a worker is blocked, ensuring the Flush select
+// is forced into the <-b.ctx.Done() branch when Shutdown cancels the bus.
+func TestSimpleEventBus_Flush_BusContextCancellation(t *testing.T) {
+	ctx := context.Background()
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true), events.WithQueueSize(2))
+
+	// Start the listener so workers pick up events.
+	listenCtx, listenCancel := context.WithCancel(ctx)
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		if err := bus.Listen(listenCtx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("Listen returned: %v", err)
+		}
+	}()
+	bus.WaitStarted()
+
+	// Create a slow subscriber that signals when the worker is blocked.
+	block := make(chan struct{})
+	started := make(chan struct{}, 2)
+	bus.SubscribeGlobal(&uncooperativeSubscriber{
+		block:             block,
+		startedProcessing: started,
+	})
+
+	// Publish 2 events. The worker dequeues event #1, calls decPending()
+	// (pendingCount goes from 2 to 1), then blocks in Handle. Event #2
+	// stays in the queue, so pendingCount remains at 1.
+	if err := bus.Publish(ctx, testEvent{typeName: "slow-1"}); err != nil {
+		close(block)
+		listenCancel()
+		t.Fatalf("Publish event 1 failed: %v", err)
+	}
+	if err := bus.Publish(ctx, testEvent{typeName: "slow-2"}); err != nil {
+		close(block)
+		listenCancel()
+		t.Fatalf("Publish event 2 failed: %v", err)
+	}
+
+	// Wait for the worker to pick up event #1 and block in Handle.
+	select {
+	case <-started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("worker did not start processing")
+	}
+
+	// Flush in a goroutine. With pendingCount > 0, flushWaiter enters
+	// the cond.Wait() loop instead of closing done immediately.
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- bus.Flush(ctx)
+	}()
+
+	// Shutdown cancels the bus context (b.ctx), which triggers
+	// <-b.ctx.Done() in Flush's select.
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		_ = bus.Shutdown(ctx)
+	}()
+
+	err := <-errChan
+	if !errors.Is(err, events.ErrBusClosed) {
+		t.Errorf("expected ErrBusClosed from <-b.ctx.Done() path, got %v", err)
+	}
+
+	// Cleanup: unblock the subscriber so the worker drains, allowing
+	// Shutdown and Listen to return cleanly without goroutine leaks.
+	close(block)
+	listenCancel()
+	<-listenDone
+	<-shutdownDone
+}
+
 func TestSimpleEventBus_ListenDefensive_NilBus(t *testing.T) {
 	t.Parallel()
 
