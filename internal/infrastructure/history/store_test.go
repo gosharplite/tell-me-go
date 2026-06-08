@@ -1591,3 +1591,25 @@ func TestSync_IsNotExist_ReturnsNil(t *testing.T) {
 		t.Errorf("Sync on non-existent file should return nil, got %v", err)
 	}
 }
+
+func TestJSONLStore_Sync_OpenFileError(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "history.jsonl")
+
+	// Create the file so it exists (not IsNotExist)
+	if err := os.WriteFile(filePath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	openErr := errors.New("permission denied")
+	mfs := &mockFS{FileSystem: infrapersistence.NewOSFileSystem(), openErr: openErr}
+
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+
+	err := store.Sync(context.Background())
+	if err == nil {
+		t.Error("expected error from Sync when OpenFile fails, got nil")
+	} else if !errors.Is(err, openErr) {
+		t.Errorf("expected error %v, got %v", openErr, err)
+	}
+}

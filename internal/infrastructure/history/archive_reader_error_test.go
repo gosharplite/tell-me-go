@@ -81,7 +81,50 @@ func TestJSONLArchiveReader_EnsureIndex_AlreadyIndexed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Gap 10 — ctx.Done() cancellation in readPageInternal loop
+// Gap 10 — ReadPrevious error propagation when readPageInternal fails
+// Code path: archive_reader.go L90-92
+//   dtos, _, err := r.readPageInternal(...)
+//   if err != nil { return nil, 0, err }
+// ---------------------------------------------------------------------------
+
+func TestJSONLArchiveReader_ReadPrevious_ReadPageInternalError(t *testing.T) {
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive.jsonl")
+
+	baseFS := persistence.NewOSFileSystem()
+	// Seed with 2 valid JSON lines so ensureIndex builds a non-empty index
+	if err := baseFS.WriteFile(context.Background(), archivePath,
+		[]byte(
+			`{"role":"user","parts":[{"text":"line1"}]}`+"\n"+
+				`{"role":"model","parts":[{"text":"line2"}]}`+"\n",
+		), 0644); err != nil {
+		t.Fatalf("failed to seed archive: %v", err)
+	}
+
+	// readAtErr causes ReadAt in readPageInternal → SectionReader → bufio to fail
+	mfs := &mockFS{FileSystem: baseFS, readAtErr: errors.New("injected readat error")}
+
+	reader := &jsonlArchiveReader{
+		fs:          mfs,
+		archivePath: archivePath,
+	}
+
+	// ReadPrevious(ctx, 10, -1):
+	//   1. ensureIndex succeeds (Open on real FS works)
+	//   2. startOffset computed from index
+	//   3. readPageInternal fails because mockFS.Open returns file with readAtErr
+	_, _, err := reader.ReadPrevious(context.Background(), 10, -1)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "injected readat error") {
+		t.Errorf("expected error containing %q, got %q", "injected readat error", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Gap 11 — ctx.Done() cancellation in readPageInternal loop
 // Code path: archive_reader.go L178-179
 //   select { case <-ctx.Done(): return nil, 0, ctx.Err() ... }
 // ---------------------------------------------------------------------------

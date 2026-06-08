@@ -158,6 +158,56 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 			wantCursor: "archive:-1",
 			wantDTOs:   nil,
 		},
+		{
+			name:   "nil content in active history",
+			limit:  10,
+			cursor: "",
+			activeHist: []*llm.Content{
+				{
+					Role: "user",
+					Parts: []*llm.Part{
+						{Text: "First"},
+					},
+				},
+				nil, // Should be skipped by fetchActiveHistory nil check
+				{
+					Role: "model",
+					Parts: []*llm.Part{
+						{Text: "Second"},
+					},
+				},
+			},
+			wantDTOs: []ports.HistoryViewDTO{
+				{
+					Role:           "user",
+					ContentPreview: "First",
+					IsArchived:     false,
+					OriginalIndex:  0,
+					ToolCalls:      nil,
+				},
+				{
+					Role:           "model",
+					ContentPreview: "Second",
+					IsArchived:     false,
+					OriginalIndex:  2,
+					ToolCalls:      nil,
+				},
+			},
+			wantCursor: "archive:-1",
+		},
+		{
+			name:   "archive read with zero nextOffset returns EOF cursor",
+			limit:  5,
+			cursor: "archive:100",
+			archived: []ports.HistoryViewDTO{
+				{Role: "user", ContentPreview: "Archived msg", IsArchived: true},
+			},
+			nextOffset: 0,
+			wantDTOs: []ports.HistoryViewDTO{
+				{Role: "user", ContentPreview: "Archived msg", IsArchived: true},
+			},
+			wantCursor: "EOF",
+		},
 	}
 
 	for _, tt := range tests {

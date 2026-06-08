@@ -195,6 +195,47 @@ func TestHistoryManager_FileCreation(t *testing.T) {
 	}
 }
 
+func TestHistoryManager_SetPinned_WithSystemMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "pin_sys.json")
+	archiveFile := filepath.Join(tmpDir, "pin_sys.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	// Setup: system message + 1 turn (3 messages total)
+	_ = m.addEntry(ctx, "system", "System instruction")
+	_ = m.addEntry(ctx, "user", "U1")
+	_ = m.addEntry(ctx, "model", "M1")
+
+	t.Run("Pin", func(t *testing.T) {
+		if err := m.SetPinned(ctx, 0, true); err != nil {
+			t.Fatalf("SetPinned(0, true) failed: %v", err)
+		}
+
+		contents, _ := m.GetWindow(ctx, 0, -1)
+		if len(contents) != 3 {
+			t.Fatalf("expected 3 messages, got %d", len(contents))
+		}
+		if contents[0].Pinned {
+			t.Error("system message (index 0) should NOT be pinned")
+		}
+		if !contents[1].Pinned || !contents[2].Pinned {
+			t.Error("Turn 0 (messages 1 and 2) should be pinned")
+		}
+	})
+
+	t.Run("Unpin", func(t *testing.T) {
+		if err := m.SetPinned(ctx, 0, false); err != nil {
+			t.Fatalf("SetPinned(0, false) failed: %v", err)
+		}
+
+		contents, _ := m.GetWindow(ctx, 0, -1)
+		if contents[1].Pinned || contents[2].Pinned {
+			t.Error("Turn 0 should be unpinned")
+		}
+	})
+}
+
 func TestHistoryManager_PinValidTurn(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "pin_valid.json")
