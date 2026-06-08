@@ -611,6 +611,61 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
+func TestSendChat_ClassifyError_Integration(t *testing.T) {
+	tests := []struct {
+		name         string
+		statusCode   int
+		body         string
+		wantSentinel error
+	}{
+		// The GenAI SDK returns genai.APIError for HTTP errors, which formats as
+		// "Error {Code}, Message: {Message}, Status: {Status}, Details: ...".
+		// llmerr.Classify catches these through classifyString's regex/keyword
+		// matching. For 401 we include "unauthenticated" in the message so that
+		// classifyString's UNAUTHENTICATED check fires.
+		{"HTTP 401 → ErrAuth", http.StatusUnauthorized, `{"error":{"code":401,"message":"unauthenticated"}}`, llm.ErrAuth},
+		{"HTTP 429 → ErrRateLimit", http.StatusTooManyRequests, `{"error":{"code":429,"message":"Resource exhausted"}}`, llm.ErrRateLimit},
+		{"HTTP 503 → ErrTransient", http.StatusServiceUnavailable, `{"error":{"code":503,"message":"Unavailable"}}`, llm.ErrTransient},
+		{"HTTP 400 → ErrTerminal", http.StatusBadRequest, `{"error":{"code":400,"message":"Bad request"}}`, llm.ErrTerminal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+			eventstest.CleanupBus(t, bus)
+
+			client, err := NewClient(
+				apiURL,
+				"test-model",
+				&auth.BearerAuth{Token: "test"},
+				WithEventBus(bus),
+				WithTimeout(5*time.Second),
+			)
+			if err != nil {
+				t.Fatalf("NewClient failed: %v", err)
+			}
+
+			_, _, err = client.SendChat(context.Background(),
+				[]*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
+				nil, nil)
+
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !errors.Is(err, tt.wantSentinel) {
+				t.Errorf("expected error wrapping %v, got: %v", tt.wantSentinel, err)
+			}
+		})
+	}
+}
+
 func TestToSDKTool(t *testing.T) {
 
 	tests := []struct {
@@ -720,6 +775,205 @@ func TestApplyThinkingBudget(t *testing.T) {
 		msgEvent, ok := firstEvent.(events.SystemMessageEvent)
 		if !ok || msgEvent.Level != "warning" {
 			t.Errorf("expected warning SystemMessageEvent")
+		}
+	})
+}
+
+// captureErrorLogger implements ports.Logger and captures the last Error call.
+type captureErrorLogger struct {
+	errorFn func(msg string, args ...any)
+}
+
+func (l *captureErrorLogger) Debug(msg string, args ...any) {}
+func (l *captureErrorLogger) Info(msg string, args ...any)  {}
+func (l *captureErrorLogger) Warn(msg string, args ...any)  {}
+func (l *captureErrorLogger) Error(msg string, args ...any) {
+	if l.errorFn != nil {
+		l.errorFn(msg, args...)
+	}
+}
+
+func TestApplyThinkingBudget_PublishError(t *testing.T) {
+	t.Run("logs error when SafePublish returns non-ErrBusNotInitialized error", func(t *testing.T) {
+		var capturedMsg string
+		var capturedKV []any
+		captureLogger := &captureErrorLogger{
+			errorFn: func(msg string, args ...any) {
+				capturedMsg = msg
+				capturedKV = args
+			},
+		}
+
+		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+		eventstest.CleanupBus(t, bus)
+
+		c := &Client{
+			eventBus:          bus,
+			logger:            captureLogger,
+			thinkingBudget:    3000,
+			maxThinkingBudget: 1024,
+			model:             "test-model",
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		config := &genai.ThinkingConfig{}
+		c.applyThinkingBudget(ctx, config, 3000, 1024, "test-model")
+
+		// Budget must still be capped
+		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1024 {
+			t.Errorf("expected budget capped at 1024, got %v", config.ThinkingBudget)
+		}
+
+		// Logger.Error must have been called with "event_publish_failed"
+		if capturedMsg != "event_publish_failed" {
+			t.Errorf("expected Error log 'event_publish_failed', got %q", capturedMsg)
+		}
+
+		// Verify KV args contain expected keys
+		var foundEventType, foundError bool
+		for i := 0; i+1 < len(capturedKV); i += 2 {
+			key, ok := capturedKV[i].(string)
+			if !ok {
+				continue
+			}
+			switch key {
+			case "event_type":
+				if val, ok := capturedKV[i+1].(string); ok && val == "SystemMessageEvent" {
+					foundEventType = true
+				}
+			case "error":
+				foundError = true
+			}
+		}
+		if !foundEventType {
+			t.Error("expected event_type=SystemMessageEvent in log args")
+		}
+		if !foundError {
+			t.Error("expected error key in log args")
+		}
+	})
+}
+
+func TestConfigureThinking_LevelOnly(t *testing.T) {
+	t.Run("level-only activates ThinkingLevel without budget", func(t *testing.T) {
+		var capturedThinkingConfig map[string]any
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("failed to decode request body: %v", err)
+			}
+			if gc, ok := body["generationConfig"].(map[string]any); ok {
+				if tc, ok := gc["thinkingConfig"].(map[string]any); ok {
+					capturedThinkingConfig = tc
+				}
+			}
+
+			resp := genai.GenerateContentResponse{
+				Candidates: []*genai.Candidate{{
+					Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}},
+				}},
+			}
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Errorf("failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(server.Close)
+
+		apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+		authenticator := &auth.BearerAuth{Token: "test-token"}
+		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+		eventstest.CleanupBus(t, bus)
+
+		client, err := NewClient(
+			apiURL, "test-model", authenticator,
+			WithThinking(0, "high", 0),
+			WithEventBus(bus),
+			WithTimeout(5*time.Second),
+		)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		history := []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+		}
+		content, _, err := client.SendChat(context.Background(), history, nil, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+		if content.Parts[0].Text != "OK" {
+			t.Errorf("expected 'OK', got %q", content.Parts[0].Text)
+		}
+
+		if capturedThinkingConfig == nil {
+			t.Fatal("expected thinkingConfig in request")
+		}
+		if includeThoughts, _ := capturedThinkingConfig["includeThoughts"].(bool); !includeThoughts {
+			t.Error("expected includeThoughts=true")
+		}
+		if level, _ := capturedThinkingConfig["thinkingLevel"].(string); level != "high" {
+			t.Errorf("expected thinkingLevel='high', got %q", level)
+		}
+		if _, hasBudget := capturedThinkingConfig["thinkingBudget"]; hasBudget {
+			t.Error("expected thinkingBudget to be absent when budget=0")
+		}
+	})
+
+	t.Run("no thinking config when both budget and level are zero/empty", func(t *testing.T) {
+		var capturedThinkingConfig map[string]any
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("failed to decode request body: %v", err)
+			}
+			if gc, ok := body["generationConfig"].(map[string]any); ok {
+				if tc, ok := gc["thinkingConfig"].(map[string]any); ok {
+					capturedThinkingConfig = tc
+				}
+			}
+
+			resp := genai.GenerateContentResponse{
+				Candidates: []*genai.Candidate{{
+					Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}},
+				}},
+			}
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Errorf("failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(server.Close)
+
+		apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+		authenticator := &auth.BearerAuth{Token: "test-token"}
+		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+		eventstest.CleanupBus(t, bus)
+
+		client, err := NewClient(
+			apiURL, "test-model", authenticator,
+			WithEventBus(bus),
+			WithTimeout(5*time.Second),
+		)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		history := []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+		}
+		content, _, err := client.SendChat(context.Background(), history, nil, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+		if content.Parts[0].Text != "OK" {
+			t.Errorf("expected 'OK', got %q", content.Parts[0].Text)
+		}
+
+		if capturedThinkingConfig != nil {
+			t.Errorf("expected no thinkingConfig, got %+v", capturedThinkingConfig)
 		}
 	})
 }
