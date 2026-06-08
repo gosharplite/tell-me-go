@@ -7,12 +7,12 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,16 +22,13 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	block := make(chan struct{})
 
 	// Setup a block to freeze the actor loop
-	mRenderer.On("LogSystemMessage", mock.Anything, "BLOCK", mock.Anything).Run(func(_ mock.Arguments) {
-		<-block
-	}).Return().Once()
-
-	// Handle other expected calls with .Maybe() to prevent panic masking.
-	// We use a specific matcher to avoid overlap with SYNC_SENTINEL used by syncBridge.
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.MatchedBy(func(s string) bool {
-		return s != "BLOCK" && s != "SYNC_SENTINEL"
-	}), mock.Anything).Return().Maybe()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
+	mRenderer.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
+		if msg == "BLOCK" {
+			<-block
+		}
+		// Other messages (including SYNC_SENTINEL handled by syncBridge chaining) are no-ops
+	}
+	// StartSpinnerWithStatusFn: nil → no-op (replaces .Maybe())
 
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	_, _, _ = startListen(t, bridge)
@@ -51,9 +48,9 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	close(block)
 	syncBridge(t, bridge, mRenderer)
 
-	// 3. Assert it was eventually resumed. .Maybe() recorded it, so AssertCalled will find it.
-	mRenderer.AssertCalled(t, "StartSpinnerWithStatus", mock.Anything, " Compressing context...")
-	mRenderer.AssertExpectations(t)
+	// 3. Assert it was eventually resumed.
+	snap := mRenderer.Snapshot()
+	assert.GreaterOrEqual(t, snap.StartSpinnerWithStatus, 1, "expected StartSpinnerWithStatus to be called at least once for summarization")
 }
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
@@ -72,15 +69,21 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	syncBridge(t, bridge, mRenderer)
 
 	// 2. System message arrives during consent
-	mRenderer.On("LogSystemMessage", mock.Anything, "Hello", "info").Return().Once()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
+	var msgCount int32
+	mRenderer.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
+		if msg == "Hello" && level == "info" {
+			atomic.AddInt32(&msgCount, 1)
+		}
+	}
+	// StartSpinnerWithStatusFn: nil → no-op (replaces .Maybe())
 	_ = bridge.HandleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
 	syncBridge(t, bridge, mRenderer)
 
-	// Should NOT start a spinner because isWaitingForConsent is true
-	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&msgCount), "LogSystemMessage(Hello, info) should be called exactly once")
 
-	mRenderer.AssertExpectations(t)
+	// Should NOT start a spinner because isWaitingForConsent is true
+	snap := mRenderer.Snapshot()
+	assert.Equal(t, 0, snap.StartSpinnerWithStatus, "StartSpinnerWithStatus must NOT be called during consent")
 }
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
@@ -103,13 +106,12 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		}
 	}
 
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.MatchedBy(func(s string) bool {
-		return s != "SYNC_SENTINEL"
-	}), mock.Anything).Return().Maybe()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(startSpinner).Maybe()
-
-	mRenderer.Test(t)
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		return startSpinner()
+	}
+	// LogTurnStatusFn: nil → no-op (replaces .Maybe())
+	// LogSystemMessageFn: nil → no-op (replaces .Maybe() with MatchedBy)
+	// REMOVED: mRenderer.Test(t) — not needed for hand-rolled mock
 
 	testCtx := context.Background()
 

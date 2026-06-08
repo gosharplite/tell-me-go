@@ -8,13 +8,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/mock"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 )
 
 // SyncBridge is exported for use by external test packages (package ui_test).
-func SyncBridge(t *testing.T, b *Bridge, m interface {
-	On(methodName string, arguments ...interface{}) *mock.Call
-}) {
+func SyncBridge(t *testing.T, b *Bridge, m *agenttest.MockUIRenderer) {
 	syncBridge(t, b, m)
 }
 

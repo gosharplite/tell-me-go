@@ -13,7 +13,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 // TestEventQueue_EnqueueNonCritical_CtxDone covers the ctx.Done() branch
@@ -22,10 +21,6 @@ import (
 func TestEventQueue_EnqueueNonCritical_CtxDone(t *testing.T) {
 	t.Parallel()
 	f := newUIBridgeFixture(t, withBridgeQueueCapacity(1))
-
-	// TurnStatusEvent sent via sendDirect will be consumed by Listen;
-	// the mock must be set up before it arrives.
-	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 
 	// Fill the single-slot channel so the send case would block
 	f.bridge.queue.(*eventQueue).sendDirect(events.TurnStatusEvent{})
@@ -44,10 +39,6 @@ func TestEventQueue_EnqueueNonCritical_CtxDone(t *testing.T) {
 func TestEventQueue_EnqueueNonCritical_ActorDead(t *testing.T) {
 	t.Parallel()
 	f := newUIBridgeFixture(t, withBridgeQueueCapacity(1))
-
-	// TurnStatusEvent sent via sendDirect will be consumed by Listen;
-	// the mock must be set up before it arrives.
-	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 
 	// Fill the single-slot channel so the send case would block
 	f.bridge.queue.(*eventQueue).sendDirect(events.TurnStatusEvent{})

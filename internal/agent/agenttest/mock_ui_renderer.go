@@ -18,6 +18,9 @@ import (
 // Override function fields to script behaviour. All methods record
 // invocation counts and names accessible via Snapshot(). The spinner
 // methods return a no-op func() when their function field is nil.
+//
+// All methods are safe for concurrent use. Function fields are captured
+// under the mutex and invoked outside it to avoid deadlocks.
 type MockUIRenderer struct {
 	mu                            sync.Mutex
 	calledStartSpinner            int
@@ -91,10 +94,11 @@ func (m *MockUIRenderer) StartSpinner(ctx context.Context) func() {
 	m.mu.Lock()
 	m.calledStartSpinner++
 	m.calledMethods = append(m.calledMethods, "StartSpinner")
+	fn := m.StartSpinnerFn
 	m.mu.Unlock()
 
-	if m.StartSpinnerFn != nil {
-		return m.StartSpinnerFn(ctx)
+	if fn != nil {
+		return fn(ctx)
 	}
 	return func() {}
 }
@@ -103,10 +107,11 @@ func (m *MockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status stri
 	m.mu.Lock()
 	m.calledStartSpinnerWithStatus++
 	m.calledMethods = append(m.calledMethods, "StartSpinnerWithStatus")
+	fn := m.StartSpinnerWithStatusFn
 	m.mu.Unlock()
 
-	if m.StartSpinnerWithStatusFn != nil {
-		return m.StartSpinnerWithStatusFn(ctx, status)
+	if fn != nil {
+		return fn(ctx, status)
 	}
 	return func() {}
 }
@@ -115,10 +120,11 @@ func (m *MockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status str
 	m.mu.Lock()
 	m.calledStartSpinnerWithMetrics++
 	m.calledMethods = append(m.calledMethods, "StartSpinnerWithMetrics")
+	fn := m.StartSpinnerWithMetricsFn
 	m.mu.Unlock()
 
-	if m.StartSpinnerWithMetricsFn != nil {
-		return m.StartSpinnerWithMetricsFn(ctx, status)
+	if fn != nil {
+		return fn(ctx, status)
 	}
 	return func() {}
 }
@@ -127,10 +133,11 @@ func (m *MockUIRenderer) RenderResponse(ctx context.Context, content *llm.Conten
 	m.mu.Lock()
 	m.calledRenderResponse++
 	m.calledMethods = append(m.calledMethods, "RenderResponse")
+	fn := m.RenderResponseFn
 	m.mu.Unlock()
 
-	if m.RenderResponseFn != nil {
-		m.RenderResponseFn(ctx, content, showThoughts, rawOutput)
+	if fn != nil {
+		fn(ctx, content, showThoughts, rawOutput)
 	}
 }
 
@@ -140,10 +147,11 @@ func (m *MockUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnSt
 	m.mu.Lock()
 	m.calledLogTurnStatus++
 	m.calledMethods = append(m.calledMethods, "LogTurnStatus")
+	fn := m.LogTurnStatusFn
 	m.mu.Unlock()
 
-	if m.LogTurnStatusFn != nil {
-		m.LogTurnStatusFn(ctx, status)
+	if fn != nil {
+		fn(ctx, status)
 	}
 }
 
@@ -151,10 +159,11 @@ func (m *MockUIRenderer) LogSystemMessage(ctx context.Context, msg string, level
 	m.mu.Lock()
 	m.calledLogSystemMessage++
 	m.calledMethods = append(m.calledMethods, "LogSystemMessage")
+	fn := m.LogSystemMessageFn
 	m.mu.Unlock()
 
-	if m.LogSystemMessageFn != nil {
-		m.LogSystemMessageFn(ctx, msg, level)
+	if fn != nil {
+		fn(ctx, msg, level)
 	}
 }
 
@@ -162,10 +171,11 @@ func (m *MockUIRenderer) RenderHealthReport(ctx context.Context, report *ports.H
 	m.mu.Lock()
 	m.calledRenderHealthReport++
 	m.calledMethods = append(m.calledMethods, "RenderHealthReport")
+	fn := m.RenderHealthReportFn
 	m.mu.Unlock()
 
-	if m.RenderHealthReportFn != nil {
-		m.RenderHealthReportFn(ctx, report)
+	if fn != nil {
+		fn(ctx, report)
 	}
 }
 
@@ -175,10 +185,11 @@ func (m *MockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, log
 	m.mu.Lock()
 	m.calledLogUsage++
 	m.calledMethods = append(m.calledMethods, "LogUsage")
+	fn := m.LogUsageFn
 	m.mu.Unlock()
 
-	if m.LogUsageFn != nil {
-		m.LogUsageFn(ctx, metrics, logFile, startTime)
+	if fn != nil {
+		fn(ctx, metrics, logFile, startTime)
 	}
 }
 
@@ -188,10 +199,11 @@ func (m *MockUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionC
 	m.mu.Lock()
 	m.calledLogToolCall++
 	m.calledMethods = append(m.calledMethods, "LogToolCall")
+	fn := m.LogToolCallFn
 	m.mu.Unlock()
 
-	if m.LogToolCallFn != nil {
-		m.LogToolCallFn(ctx, calls, turn, maxTurns, showTools)
+	if fn != nil {
+		fn(ctx, calls, turn, maxTurns, showTools)
 	}
 }
 
@@ -199,23 +211,35 @@ func (m *MockUIRenderer) LogToolResult(ctx context.Context, name string, result 
 	m.mu.Lock()
 	m.calledLogToolResult++
 	m.calledMethods = append(m.calledMethods, "LogToolResult")
+	fn := m.LogToolResultFn
 	m.mu.Unlock()
 
-	if m.LogToolResultFn != nil {
-		m.LogToolResultFn(ctx, name, result, showTools)
+	if fn != nil {
+		fn(ctx, name, result, showTools)
 	}
 }
 
 // ---- RendererConfigurator methods ----
 
+// SwapLogSystemMessageFn atomically replaces LogSystemMessageFn and returns
+// the previous value. Safe for concurrent use with method calls.
+func (m *MockUIRenderer) SwapLogSystemMessageFn(fn func(ctx context.Context, msg string, level string)) func(ctx context.Context, msg string, level string) {
+	m.mu.Lock()
+	prev := m.LogSystemMessageFn
+	m.LogSystemMessageFn = fn
+	m.mu.Unlock()
+	return prev
+}
+
 func (m *MockUIRenderer) SetUseColor(use bool) {
 	m.mu.Lock()
 	m.calledSetUseColor++
 	m.calledMethods = append(m.calledMethods, "SetUseColor")
+	fn := m.SetUseColorFn
 	m.mu.Unlock()
 
-	if m.SetUseColorFn != nil {
-		m.SetUseColorFn(use)
+	if fn != nil {
+		fn(use)
 	}
 }
 
@@ -223,10 +247,11 @@ func (m *MockUIRenderer) SetForceSpinner(force bool) {
 	m.mu.Lock()
 	m.calledSetForceSpinner++
 	m.calledMethods = append(m.calledMethods, "SetForceSpinner")
+	fn := m.SetForceSpinnerFn
 	m.mu.Unlock()
 
-	if m.SetForceSpinnerFn != nil {
-		m.SetForceSpinnerFn(force)
+	if fn != nil {
+		fn(force)
 	}
 }
 
@@ -234,10 +259,11 @@ func (m *MockUIRenderer) IsTerminalContext() bool {
 	m.mu.Lock()
 	m.calledIsTerminalContext++
 	m.calledMethods = append(m.calledMethods, "IsTerminalContext")
+	fn := m.IsTerminalContextFn
 	m.mu.Unlock()
 
-	if m.IsTerminalContextFn != nil {
-		return m.IsTerminalContextFn()
+	if fn != nil {
+		return fn()
 	}
 	return false
 }
