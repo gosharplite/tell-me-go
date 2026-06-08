@@ -216,7 +216,7 @@ func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
 func testYamlLoading(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(configtest.MockConfigLoader)
+	mockLoader := &configtest.MockConfigLoader{}
 	cw.Loader = mockLoader
 
 	yamlContent := `
@@ -227,10 +227,12 @@ MAX_TURNS: 5
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
-		MaxHistoryTokens: 500,
-		MaxToolTurns:     5,
-	}, nil)
+	mockLoader.LoadFunc = func(p string) (*domain_config.Config, error) {
+		return &domain_config.Config{
+			MaxHistoryTokens: 500,
+			MaxToolTurns:     5,
+		}, nil
+	}
 
 	cw.Refresh("default")
 	tokens, toolTurns, _ := cw.GetLimits()
@@ -246,7 +248,7 @@ MAX_TURNS: 5
 func testModelIsolation(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(configtest.MockConfigLoader)
+	mockLoader := &configtest.MockConfigLoader{}
 	cw.Loader = mockLoader
 
 	yamlContent := `
@@ -258,11 +260,13 @@ MODELS:
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
-		Models: map[string]domain_config.ModelConfig{
-			"model-a": {ContextWindow: 1000},
-		},
-	}, nil)
+	mockLoader.LoadFunc = func(p string) (*domain_config.Config, error) {
+		return &domain_config.Config{
+			Models: map[string]domain_config.ModelConfig{
+				"model-a": {ContextWindow: 1000},
+			},
+		}, nil
+	}
 
 	// Refresh with model-b (NOT in YAML) first to ensure it doesn't pick up model-a's values
 	cw.Refresh("model-b")
@@ -292,7 +296,7 @@ MODELS:
 func testPrecedenceRules(t *testing.T) {
 	fcw, mainPath, sessionPath := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(configtest.MockConfigLoader)
+	mockLoader := &configtest.MockConfigLoader{}
 	cw.Loader = mockLoader
 
 	yamlContent := `
@@ -303,10 +307,12 @@ MAX_TURNS: 5
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
-		MaxHistoryTokens: 500,
-		MaxToolTurns:     5,
-	}, nil)
+	mockLoader.LoadFunc = func(p string) (*domain_config.Config, error) {
+		return &domain_config.Config{
+			MaxHistoryTokens: 500,
+			MaxToolTurns:     5,
+		}, nil
+	}
 
 	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 999}`), 0644); err != nil {
 		t.Fatal(err)
@@ -325,7 +331,7 @@ MAX_TURNS: 5
 func testDeletionRobustness(t *testing.T) {
 	fcw, mainPath, _ := setupConfigWatcherTest(t)
 	cw := fcw.(*fileConfigWatcher)
-	mockLoader := new(configtest.MockConfigLoader)
+	mockLoader := &configtest.MockConfigLoader{}
 	cw.Loader = mockLoader
 
 	yamlContent := `
@@ -336,10 +342,12 @@ MAX_TURNS: 5
 		t.Fatal(err)
 	}
 
-	mockLoader.On("Load", mainPath).Return(&domain_config.Config{
-		MaxHistoryTokens: 500,
-		MaxToolTurns:     5,
-	}, nil)
+	mockLoader.LoadFunc = func(p string) (*domain_config.Config, error) {
+		return &domain_config.Config{
+			MaxHistoryTokens: 500,
+			MaxToolTurns:     5,
+		}, nil
+	}
 
 	cw.Refresh("model-a")
 

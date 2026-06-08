@@ -17,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,9 +25,6 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 	tempDir := t.TempDir()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 	testCfg := &config.Config{
 		Mode:  "assistant",
@@ -92,9 +88,6 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	tempDir := t.TempDir()
 
 	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 	testCfg := &config.Config{
 		Mode:  "assistant",
@@ -110,11 +103,15 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	b := NewBootstrapper(bcfg)
 
 	callCount := 0
-	mockToolchain := new(mockToolchainFactory)
-	mockToolchain.On("BuildRegistry", mock.Anything).Run(func(args mock.Arguments) {
-		callCount++
-	}).Return(nil, nil)
-	mockToolchain.On("BuildHealthChecker").Return(&stubHealthChecker{})
+	mockToolchain := &mockToolchainFactory{
+		BuildRegistryFunc: func(params toolchainParams) (tools.Registry, error) {
+			callCount++
+			return nil, nil
+		},
+		BuildHealthCheckerFunc: func() ports.HealthChecker {
+			return &stubHealthChecker{}
+		},
+	}
 	b.toolchainFactory = mockToolchain
 
 	// 1. BuildSessionDependencies should NOT trigger registry construction
@@ -136,24 +133,29 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	assert.Equal(t, 1, callCount)
 }
 
+// mockToolchainFactory is a hand-rolled test double for toolchainFactory.
 type mockToolchainFactory struct {
-	mock.Mock
+	BuildRegistryFunc      func(params toolchainParams) (tools.Registry, error)
+	BuildHealthCheckerFunc func() ports.HealthChecker
+
+	buildRegistryCalls      int
+	buildHealthCheckerCalls int
 }
 
 func (m *mockToolchainFactory) BuildRegistry(params toolchainParams) (tools.Registry, error) {
-	args := m.Called(params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	m.buildRegistryCalls++
+	if m.BuildRegistryFunc != nil {
+		return m.BuildRegistryFunc(params)
 	}
-	return args.Get(0).(tools.Registry), args.Error(1)
+	return nil, nil
 }
 
 func (m *mockToolchainFactory) BuildHealthChecker() ports.HealthChecker {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
+	m.buildHealthCheckerCalls++
+	if m.BuildHealthCheckerFunc != nil {
+		return m.BuildHealthCheckerFunc()
 	}
-	return args.Get(0).(ports.HealthChecker)
+	return nil
 }
 
 // stubHealthChecker is a minimal ports.HealthChecker for tests.
@@ -163,48 +165,78 @@ func (s *stubHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, 
 	return &ports.ComponentReport{Status: ports.StatusHealthy}, nil
 }
 
+// mockExtendedClient is a hand-rolled test double for llm.ExtendedClient.
+// When a Func field is nil, the method returns its natural zero value.
 type mockExtendedClient struct {
-	mock.Mock
+	GenerateFunc       func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	SendChatFunc       func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	GenerateImagesFunc func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
+	RefreshAuthFunc    func() error
+	CloseFunc          func() error
+	GetModelFunc       func() string
+
+	generateCalls       int
+	sendChatCalls       int
+	generateImagesCalls int
+	refreshAuthCalls    int
+	closeCalls          int
+	getModelCalls       int
 }
 
 func (m *mockExtendedClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	args := m.Called(ctx, input, tools, resolver)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
+	m.generateCalls++
+	if m.GenerateFunc != nil {
+		return m.GenerateFunc(ctx, input, tools, resolver)
 	}
-	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+	return &llm.Content{}, &llm.Metrics{}, nil
 }
 
 func (m *mockExtendedClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	args := m.Called(ctx, history, tools, resolver)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
+	m.sendChatCalls++
+	if m.SendChatFunc != nil {
+		return m.SendChatFunc(ctx, history, tools, resolver)
 	}
-	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+	return &llm.Content{}, &llm.Metrics{}, nil
 }
 
 func (m *mockExtendedClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	args := m.Called(ctx, model, prompt, mimeType)
-	return args.Get(0).([][]byte), args.Error(1)
+	m.generateImagesCalls++
+	if m.GenerateImagesFunc != nil {
+		return m.GenerateImagesFunc(ctx, model, prompt, mimeType)
+	}
+	return nil, nil
 }
 
 func (m *mockExtendedClient) RefreshAuth() error {
-	args := m.Called()
-	return args.Error(0)
+	m.refreshAuthCalls++
+	if m.RefreshAuthFunc != nil {
+		return m.RefreshAuthFunc()
+	}
+	return nil
 }
 
 func (m *mockExtendedClient) Close() error {
-	args := m.Called()
-	return args.Error(0)
+	m.closeCalls++
+	if m.CloseFunc != nil {
+		return m.CloseFunc()
+	}
+	return nil
 }
 
 func (m *mockExtendedClient) GetModel() string {
-	return m.Called().String(0)
+	m.getModelCalls++
+	if m.GetModelFunc != nil {
+		return m.GetModelFunc()
+	}
+	return ""
 }
 
 func TestLazyClient_GenerateImages(t *testing.T) {
-	mockClient := new(mockExtendedClient)
-	mockClient.On("GenerateImages", mock.Anything, "test-model", "test-prompt", "image/png").Return([][]byte{{0x01}}, nil)
+	mockClient := &mockExtendedClient{
+		GenerateImagesFunc: func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+			return [][]byte{{0x01}}, nil
+		},
+	}
 
 	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
@@ -213,12 +245,13 @@ func TestLazyClient_GenerateImages(t *testing.T) {
 	images, err := lc.GenerateImages(context.Background(), "test-model", "test-prompt", "image/png")
 	assert.NoError(t, err)
 	assert.Len(t, images, 1)
-	mockClient.AssertExpectations(t)
+	assert.Equal(t, 1, mockClient.generateImagesCalls)
 }
 
 func TestLazyClient_RefreshAuth(t *testing.T) {
-	mockClient := new(mockExtendedClient)
-	mockClient.On("RefreshAuth").Return(nil)
+	mockClient := &mockExtendedClient{
+		RefreshAuthFunc: func() error { return nil },
+	}
 
 	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
@@ -226,7 +259,7 @@ func TestLazyClient_RefreshAuth(t *testing.T) {
 
 	err := lc.RefreshAuth()
 	assert.NoError(t, err)
-	mockClient.AssertExpectations(t)
+	assert.Equal(t, 1, mockClient.refreshAuthCalls)
 }
 
 func TestLazyClient_InitializationFailure_RefreshAuth(t *testing.T) {
@@ -255,8 +288,11 @@ func TestSessionDeps_AdditionalGetters(t *testing.T) {
 }
 
 func TestLazyClient_Generate(t *testing.T) {
-	mockClient := new(mockExtendedClient)
-	mockClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
+	mockClient := &mockExtendedClient{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{}, &llm.Metrics{}, nil
+		},
+	}
 
 	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
@@ -264,12 +300,15 @@ func TestLazyClient_Generate(t *testing.T) {
 
 	_, _, err := lc.Generate(context.Background(), nil, nil, nil)
 	assert.NoError(t, err)
-	mockClient.AssertExpectations(t)
+	assert.Equal(t, 1, mockClient.generateCalls)
 }
 
 func TestLazyClient_SendChat(t *testing.T) {
-	mockClient := new(mockExtendedClient)
-	mockClient.On("SendChat", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
+	mockClient := &mockExtendedClient{
+		SendChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{}, &llm.Metrics{}, nil
+		},
+	}
 
 	lc := newLazyClient(func() (llm.ExtendedClient, error) {
 		return mockClient, nil
@@ -277,7 +316,7 @@ func TestLazyClient_SendChat(t *testing.T) {
 
 	_, _, err := lc.SendChat(context.Background(), nil, nil, nil)
 	assert.NoError(t, err)
-	mockClient.AssertExpectations(t)
+	assert.Equal(t, 1, mockClient.sendChatCalls)
 }
 
 func TestLazyClient_InitializationFailure_SendChat(t *testing.T) {

@@ -27,7 +27,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,7 +46,7 @@ func TestSessionManager_Run_Success(t *testing.T) {
 
 	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 	mUIRenderer := new(agenttest.MockUIRenderer)
-	mTurnsLogger := new(agenttest.MockTurnsLogger)
+	mTurnsLogger := &agenttest.MockTurnsLogger{}
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
@@ -56,23 +55,19 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: mTurnsLogger, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	// Verify TurnsLogger interaction during Run
 	// (SessionManager now subscribes it directly)
-	mTurnsLogger.On("HandleEvent", mock.Anything, mock.Anything).Return().Maybe()
+	mTurnsLogger.HandleEventFunc = func(ctx context.Context, e events.Event) {}
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
-
-	mChatter.AssertExpectations(t)
-	mCapturer.AssertExpectations(t)
-	mTurnsLogger.AssertExpectations(t)
 }
 
 func TestSessionManager_Run_Error(t *testing.T) {
@@ -97,18 +92,18 @@ func TestSessionManager_Run_Error(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(fmt.Errorf("chat error"))
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		return fmt.Errorf("chat error")
+	}
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "chat error")
-
-	mChatter.AssertExpectations(t)
 }
 
 func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
@@ -141,14 +136,15 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 		Capturer:        mCapturer,
 	}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
 
 	err := session.Run(context.Background(), params)
 	require.NoError(t, err)
 
-	mCapturer.AssertExpectations(t)
-	mHistoryRenderer.AssertExpectations(t)
+	calls, _ := mHistoryRenderer.Snapshot()
+	if calls != 1 {
+		t.Errorf("Render calls: got %d, want 1", calls)
+	}
 }
 
 func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
@@ -166,10 +162,12 @@ func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	}
 	paths := &persistence.Paths{}
 
-	mCapturer.On("IsTTY", mock.Anything).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
+	mCapturer.IsTTYFn = func(v any) bool { return true }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+		return fmt.Errorf("limits error")
+	}
 
 	deps := &agenttest.StubChatterComposer{Paths: paths, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
@@ -196,171 +194,218 @@ func (t *behaviorTracker) record(name string) {
 }
 
 type behaviorMockChatter struct {
-	mock.Mock
-	tracker *behaviorTracker
+	ChatFn      func(ctx context.Context, s *ports.Session, prompt string) error
+	SetLimitsFn func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error
+	SubscribeFn func(sub func(context.Context, events.Event))
+	ShutdownFn  func(ctx context.Context) error
+	tracker     *behaviorTracker
 }
 
 func (m *behaviorMockChatter) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	m.tracker.record("Chatter.Chat")
-	args := m.Called(ctx, s, prompt)
-	return args.Error(0)
+	if m.ChatFn != nil {
+		return m.ChatFn(ctx, s, prompt)
+	}
+	return nil
 }
 
 func (m *behaviorMockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	m.tracker.record("Chatter.SetLimits")
-	args := m.Called(ctx, toolTurns, historyTokens, historyTurns)
-	return args.Error(0)
+	if m.SetLimitsFn != nil {
+		return m.SetLimitsFn(ctx, toolTurns, historyTokens, historyTurns)
+	}
+	return nil
 }
 
 func (m *behaviorMockChatter) Subscribe(sub func(context.Context, events.Event)) {
 	m.tracker.record("Chatter.Subscribe")
-	m.Called(sub)
+	if m.SubscribeFn != nil {
+		m.SubscribeFn(sub)
+	}
 }
 
 func (m *behaviorMockChatter) Shutdown(ctx context.Context) error {
 	m.tracker.record("Chatter.Shutdown")
-	args := m.Called(ctx)
-	return args.Error(0)
+	if m.ShutdownFn != nil {
+		return m.ShutdownFn(ctx)
+	}
+	return nil
 }
 
 type behaviorMockHistoryRenderer struct {
-	mock.Mock
-	tracker *behaviorTracker
+	RenderFn func(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions)
+	tracker  *behaviorTracker
 }
 
 func (m *behaviorMockHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	m.tracker.record("HistoryRenderer.Render")
-	m.Called(w, h, n, options)
+	if m.RenderFn != nil {
+		m.RenderFn(w, h, n, options)
+	}
 }
 
 type behaviorMockUIRenderer struct {
-	mock.Mock
-	tracker *behaviorTracker
+	StartSpinnerFn            func(ctx context.Context) func()
+	StartSpinnerWithStatusFn  func(ctx context.Context, status string) func()
+	StartSpinnerWithMetricsFn func(ctx context.Context, status string) func()
+	RenderResponseFn          func(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool)
+	LogTurnStatusFn           func(ctx context.Context, status events.TurnStatus)
+	LogUsageFn                func(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time)
+	LogToolCallFn             func(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
+	LogToolResultFn           func(ctx context.Context, name string, result tools.ToolResult, showTools bool)
+	LogSystemMessageFn        func(ctx context.Context, msg string, level string)
+	RenderHealthReportFn      func(ctx context.Context, report *ports.HealthReport)
+	SetUseColorFn             func(use bool)
+	SetForceSpinnerFn         func(force bool)
+	IsTerminalContextFn       func() bool
+	tracker                   *behaviorTracker
 }
 
 func (m *behaviorMockUIRenderer) StartSpinner(ctx context.Context) func() {
 	m.tracker.record("UIRenderer.StartSpinner")
-	args := m.Called(ctx)
-	var internalFn func()
-	if fn, ok := args.Get(0).(func()); ok {
-		internalFn = fn
+	if m.StartSpinnerFn != nil {
+		return m.StartSpinnerFn(ctx)
 	}
-	return func() {
-		m.tracker.record("UIRenderer.StopSpinner")
-		if internalFn != nil {
-			internalFn()
-		}
-	}
+	return func() {}
 }
 
 func (m *behaviorMockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
 	m.tracker.record("UIRenderer.StartSpinnerWithStatus")
-	args := m.Called(ctx, status)
-	var internalFn func()
-	if fn, ok := args.Get(0).(func()); ok {
-		internalFn = fn
-	}
-	return func() {
-		m.tracker.record("UIRenderer.StopSpinner")
-		if internalFn != nil {
-			internalFn()
+	if m.StartSpinnerWithStatusFn != nil {
+		fn := m.StartSpinnerWithStatusFn(ctx, status)
+		return func() {
+			m.tracker.record("UIRenderer.StopSpinner")
+			if fn != nil {
+				fn()
+			}
 		}
 	}
+	return func() { m.tracker.record("UIRenderer.StopSpinner") }
 }
 
 func (m *behaviorMockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
 	m.tracker.record("UIRenderer.StartSpinnerWithMetrics")
-	args := m.Called(ctx, status)
-	var internalFn func()
-	if fn, ok := args.Get(0).(func()); ok {
-		internalFn = fn
-	}
-	return func() {
-		m.tracker.record("UIRenderer.StopSpinner")
-		if internalFn != nil {
-			internalFn()
+	if m.StartSpinnerWithMetricsFn != nil {
+		fn := m.StartSpinnerWithMetricsFn(ctx, status)
+		return func() {
+			m.tracker.record("UIRenderer.StopSpinner")
+			if fn != nil {
+				fn()
+			}
 		}
 	}
+	return func() { m.tracker.record("UIRenderer.StopSpinner") }
 }
 
 func (m *behaviorMockUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
 	m.tracker.record("UIRenderer.RenderResponse")
-	m.Called(ctx, content, showThoughts, rawOutput)
+	if m.RenderResponseFn != nil {
+		m.RenderResponseFn(ctx, content, showThoughts, rawOutput)
+	}
 }
 
 func (m *behaviorMockUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
 	m.tracker.record("UIRenderer.LogTurnStatus")
-	m.Called(ctx, status)
+	if m.LogTurnStatusFn != nil {
+		m.LogTurnStatusFn(ctx, status)
+	}
 }
 
 func (m *behaviorMockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 	m.tracker.record("UIRenderer.LogUsage")
-	m.Called(ctx, metrics, logFile, startTime)
+	if m.LogUsageFn != nil {
+		m.LogUsageFn(ctx, metrics, logFile, startTime)
+	}
 }
 
 func (m *behaviorMockUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 	m.tracker.record("UIRenderer.LogToolCall")
-	m.Called(ctx, calls, turn, maxTurns, showTools)
+	if m.LogToolCallFn != nil {
+		m.LogToolCallFn(ctx, calls, turn, maxTurns, showTools)
+	}
 }
 
 func (m *behaviorMockUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 	m.tracker.record("UIRenderer.LogToolResult")
-	m.Called(ctx, name, result, showTools)
+	if m.LogToolResultFn != nil {
+		m.LogToolResultFn(ctx, name, result, showTools)
+	}
 }
 
 func (m *behaviorMockUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
 	m.tracker.record("UIRenderer.LogSystemMessage")
-	m.Called(ctx, msg, level)
+	if m.LogSystemMessageFn != nil {
+		m.LogSystemMessageFn(ctx, msg, level)
+	}
 }
 
 func (m *behaviorMockUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {
 	m.tracker.record("UIRenderer.RenderHealthReport")
-	m.Called(ctx, report)
+	if m.RenderHealthReportFn != nil {
+		m.RenderHealthReportFn(ctx, report)
+	}
 }
 
 func (m *behaviorMockUIRenderer) SetUseColor(use bool) {
 	m.tracker.record("UIRenderer.SetUseColor")
-	m.Called(use)
+	if m.SetUseColorFn != nil {
+		m.SetUseColorFn(use)
+	}
 }
 
 func (m *behaviorMockUIRenderer) SetForceSpinner(force bool) {
 	m.tracker.record("UIRenderer.SetForceSpinner")
-	m.Called(force)
+	if m.SetForceSpinnerFn != nil {
+		m.SetForceSpinnerFn(force)
+	}
 }
 
 func (m *behaviorMockUIRenderer) IsTerminalContext() bool {
 	m.tracker.record("UIRenderer.IsTerminalContext")
-	args := m.Called()
-	return args.Bool(0)
+	if m.IsTerminalContextFn != nil {
+		return m.IsTerminalContextFn()
+	}
+	return false
 }
 
 type behaviorMockCapturer struct {
-	mock.Mock
-	tracker *behaviorTracker
+	IsTTYFn         func(v any) bool
+	CapturePromptFn func(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error)
+	ConfirmFn       func(ctx context.Context, message string) (bool, error)
+	CloseFn         func(ctx context.Context) error
+	tracker         *behaviorTracker
 }
 
 func (m *behaviorMockCapturer) IsTTY(v any) bool {
 	m.tracker.record("Capturer.IsTTY")
-	args := m.Called(v)
-	return args.Bool(0)
+	if m.IsTTYFn != nil {
+		return m.IsTTYFn(v)
+	}
+	return false
 }
 
 func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	m.tracker.record("Capturer.CapturePrompt")
-	callArgs := m.Called(ctx, args, opts)
-	return callArgs.String(0), callArgs.Error(1)
+	if m.CapturePromptFn != nil {
+		return m.CapturePromptFn(ctx, args, opts...)
+	}
+	return "", nil
 }
 
 func (m *behaviorMockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
 	m.tracker.record("Capturer.Confirm")
-	args := m.Called(ctx, message)
-	return args.Bool(0), args.Error(1)
+	if m.ConfirmFn != nil {
+		return m.ConfirmFn(ctx, message)
+	}
+	return false, nil
 }
 
 func (m *behaviorMockCapturer) Close(ctx context.Context) error {
 	m.tracker.record("Capturer.Close")
-	args := m.Called(ctx)
-	return args.Error(0)
+	if m.CloseFn != nil {
+		return m.CloseFn(ctx)
+	}
+	return nil
 }
 
 func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
@@ -400,30 +445,31 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 		Capturer: mCapturer,
 	}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
-	mUIRenderer.On("SetUseColor", true).Return()
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mHistoryRenderer.RenderFn = func(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {}
+	mUIRenderer.SetUseColorFn = func(use bool) {}
 
 	var uiSub func(context.Context, events.Event)
-	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
-		uiSub = args.Get(0).(func(context.Context, events.Event))
-	}).Return()
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {
+		uiSub = sub
+	}
 
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
 
 	spinnerStarted := make(chan struct{})
-	mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Run(func(args mock.Arguments) {
+	mUIRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 		close(spinnerStarted)
-	}).Return(func() {})
+		return func() {}
+	}
 
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Run(func(args mock.Arguments) {
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
 		if uiSub != nil {
 			uiSub(context.Background(), events.InferenceStartedEvent{Model: "gpt-4o"})
 		}
-		// Ensure spinner is active before finishing chat to guarantee it's recorded before Shutdown
 		<-spinnerStarted
-	}).Return(nil)
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+		return nil
+	}
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	// Execute high-level Run function to cover it
 	err := session.Run(context.Background(), params)
@@ -445,11 +491,6 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 	}
 
 	assert.Equal(t, expectedSequence, tracker.sequence, "SessionManager must follow exact coordination sequence")
-
-	mChatter.AssertExpectations(t)
-	mCapturer.AssertExpectations(t)
-	mUIRenderer.AssertExpectations(t)
-	mHistoryRenderer.AssertExpectations(t)
 }
 
 func TestSessionDependencies_Accessors(t *testing.T) {
@@ -496,7 +537,7 @@ func TestSessionManager_AgentFactory_Error(t *testing.T) {
 	sc := &session.SessionConfigInternal{Config: &config.Config{}}
 
 	mCapturer := new(agenttest.MockCapturer)
-	mCapturer.On("IsTTY", mock.Anything).Return(true)
+	mCapturer.IsTTYFn = func(v any) bool { return true }
 
 	err := o.Run(context.Background(), sc, deps, mCapturer)
 
@@ -600,17 +641,19 @@ func TestRun_Routing(t *testing.T) {
 		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
 		mChatter := new(agenttest.MockChatter)
-		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
 		p.Prompt = ""
 
-		mCapturer.On("IsTTY", io.Discard).Return(true).Once()
+		mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
 
 		err := session.Run(context.Background(), p)
 		assert.NoError(t, err)
 		assert.Equal(t, 2, mHistory.GetTotalEntries()) // 1 turn removed (2 messages)
-		mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
+		// Verify Chat was not called
+		chatCalls, _, _, _, _ := mChatter.Snapshot()
+		assert.Equal(t, 0, chatCalls, "Chat should not be called during rollback-only")
 	})
 
 	t.Run("Rollback and Chat", func(t *testing.T) {
@@ -624,17 +667,16 @@ func TestRun_Routing(t *testing.T) {
 		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
 		mChatter := new(agenttest.MockChatter)
-		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
 		p.Prompt = "hello"
 
-		mCapturer.On("IsTTY", io.Discard).Return(true)
-		mUIRenderer.On("SetUseColor", true).Return()
-		mChatter.On("Subscribe", mock.Anything).Return()
-		mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-		mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
-		mChatter.On("Shutdown", mock.Anything).Return(nil)
+		mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+		mUIRenderer.SetUseColorFn = func(use bool) {}
+		mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+		mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+		mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
+		mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 		err := session.Run(context.Background(), p)
 		assert.NoError(t, err)
@@ -652,19 +694,20 @@ func TestRun_Routing(t *testing.T) {
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
 		mHistory.SetRollbackErr(fmt.Errorf("rollback failed"))
 		mChatter := new(agenttest.MockChatter)
-		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
 		p.Prompt = "hello"
 
-		mCapturer.On("IsTTY", io.Discard).Return(true)
+		mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
 
 		err := session.Run(context.Background(), p)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "rollback failed")
 
 		// Verify that Chatter.Chat was NOT called
-		mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
+		chatCalls, _, _, _, _ := mChatter.Snapshot()
+		assert.Equal(t, 0, chatCalls, "Chat should not be called when rollback fails")
 	})
 }
 
@@ -722,30 +765,31 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			})
 			deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-			mCapturer.On("IsTTY", io.Discard).Return(true)
-			mUIRenderer.On("SetUseColor", true).Return()
+			mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+			mUIRenderer.SetUseColorFn = func(use bool) {}
 
 			spinnerStarted := make(chan struct{})
 			spinnerStopped := make(chan struct{})
-			mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(args mock.Arguments) {
+			mUIRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 				close(spinnerStarted)
-			}).Return(func() { close(spinnerStopped) })
+				return func() { close(spinnerStopped) }
+			}
 
-			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
-				sub := args.Get(0).(func(context.Context, events.Event))
+			mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {
 				// Simulate spinner start before chat fails
 				sub(context.Background(), events.InferenceStartedEvent{})
-			}).Return()
+			}
 
-			mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-			mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Run(func(args mock.Arguments) {
+			mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+			mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
 				// Wait for the spinner to start before failing chat to avoid racing with fast-drain
 				select {
 				case <-spinnerStarted:
 				case <-time.After(2 * time.Second):
 				}
-			}).Return(tt.chatErr)
-			mChatter.On("Shutdown", mock.Anything).Return(nil)
+				return tt.chatErr
+			}
+			mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 			err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 			require.Error(t, err)
@@ -763,9 +807,6 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			case <-time.After(2 * time.Second):
 				t.Error("Expected spinner to be stopped via deferred Cleanup on error")
 			}
-
-			mChatter.AssertExpectations(t)
-			mCapturer.AssertExpectations(t)
 		})
 	}
 }
@@ -794,12 +835,12 @@ func TestSessionManager_Run_ShutdownError(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)        // Chat succeeds
-	mChatter.On("Shutdown", mock.Anything).Return(fmt.Errorf("shutdown timeout")) // Shutdown fails
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil } // Chat succeeds
+	mChatter.ShutdownFn = func(ctx context.Context) error { return fmt.Errorf("shutdown timeout") }   // Shutdown fails
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 
@@ -807,8 +848,6 @@ func TestSessionManager_Run_ShutdownError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent shutdown failed")
 	require.Contains(t, err.Error(), "shutdown timeout")
 	require.Contains(t, stderrBuf.String(), "Warning: Agent shutdown failed: shutdown timeout")
-
-	mChatter.AssertExpectations(t)
 }
 
 func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
@@ -833,11 +872,19 @@ func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+		return fmt.Errorf("limits error")
+	}
+
+	// Track whether Shutdown was called
+	var shutdownCalled bool
+	mChatter.ShutdownFn = func(ctx context.Context) error {
+		shutdownCalled = true
+		return nil
+	}
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 
@@ -846,9 +893,10 @@ func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
 	require.Contains(t, err.Error(), "limits error")
 
 	// Chat must never be called — Run returns early before the agent loop
-	mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
+	chatCalls, _, _, _, _ := mChatter.Snapshot()
+	assert.Equal(t, 0, chatCalls, "Chat should not be called when config fails")
 	// Shutdown must still be called — the defer always runs
-	mChatter.AssertCalled(t, "Shutdown", mock.Anything)
+	assert.True(t, shutdownCalled, "Shutdown should be called via defer")
 }
 
 func TestSessionManager_SessionID_Fallback(t *testing.T) {
@@ -861,10 +909,11 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 
 	mClock := &agenttest.MockClock{}
 	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
-	mEntropy := new(agenttest.MockEntropySource)
-
-	// Entropy source fails
-	mEntropy.On("Read", mock.Anything).Return(nil, 0, fmt.Errorf("entropy failure"))
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			return 0, fmt.Errorf("entropy failure")
+		},
+	}
 
 	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())
 
@@ -882,17 +931,20 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
 
 	// Exact match on Session ID
-	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
-		return s.ID == expectedSessionID
-	}), "hello").Return(nil)
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		if s.ID != expectedSessionID {
+			t.Errorf("Chat Session.ID = %q, want %q", s.ID, expectedSessionID)
+		}
+		return nil
+	}
 
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
@@ -901,8 +953,6 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	if now < 1 {
 		t.Errorf("expected Now() to be called at least once, got %d", now)
 	}
-	mEntropy.AssertExpectations(t)
-	mChatter.AssertExpectations(t)
 }
 
 func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
@@ -914,10 +964,14 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	eventstest.CleanupBus(t, mEventBus)
 
 	mClock := &agenttest.MockClock{}
-	mEntropy := new(agenttest.MockEntropySource)
 
 	fixedEntropy := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-	mEntropy.On("Read", mock.Anything).Return(fixedEntropy, len(fixedEntropy), nil)
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			copy(p, fixedEntropy)
+			return len(fixedEntropy), nil
+		},
+	}
 
 	expectedSessionID := "session-0102030405060708"
 
@@ -935,23 +989,23 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
 
 	// Exact match on Session ID
-	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
-		return s.ID == expectedSessionID
-	}), "hello").Return(nil)
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		if s.ID != expectedSessionID {
+			t.Errorf("Chat Session.ID = %q, want %q", s.ID, expectedSessionID)
+		}
+		return nil
+	}
 
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
-
-	mEntropy.AssertExpectations(t)
-	mChatter.AssertExpectations(t)
 }
 
 func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
@@ -964,16 +1018,20 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	mClock := &agenttest.MockClock{}
 	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
-	mEntropy := new(agenttest.MockEntropySource)
 
 	// Entropy source returns a short read (e.g., only 4 bytes instead of 8)
 	shortEntropy := []byte{0x01, 0x02, 0x03, 0x04}
-	mEntropy.On("Read", mock.Anything).Return(shortEntropy, len(shortEntropy), nil).Once()
-	// io.ReadFull will call Read again if it didn't get enough bytes,
-	// or it might fail immediately depending on the reader.
-	// For most readers, it calls until full or error.
-	// If we want to simulate EOF or short read that doesn't continue:
-	mEntropy.On("Read", mock.Anything).Return(nil, 0, io.EOF).Maybe()
+	var readCount int
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			readCount++
+			if readCount == 1 {
+				copy(p, shortEntropy)
+				return len(shortEntropy), nil
+			}
+			return 0, io.EOF
+		},
+	}
 
 	// Since it's a short read, it should fallback to timestamp-based ID
 	expectedSessionID := fmt.Sprintf("session-%d", mClock.CurrentTime().UnixNano())
@@ -992,16 +1050,19 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
 
-	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
-		return s.ID == expectedSessionID
-	}), "hello").Return(nil)
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		if s.ID != expectedSessionID {
+			t.Errorf("Chat Session.ID = %q, want %q", s.ID, expectedSessionID)
+		}
+		return nil
+	}
 
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
@@ -1010,7 +1071,6 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	if now < 1 {
 		t.Errorf("expected Now() to be called at least once, got %d", now)
 	}
-	mChatter.AssertExpectations(t)
 }
 
 func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
@@ -1079,16 +1139,16 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 
 			mChatter := new(agenttest.MockChatter)
 			var uiSub func(context.Context, events.Event)
-			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
-				uiSub = args.Get(0).(func(context.Context, events.Event))
-			}).Return()
-			mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {
+				uiSub = sub
+			}
+			mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
 
 			mUIRenderer := new(agenttest.MockUIRenderer)
-			mUIRenderer.On("SetUseColor", mock.Anything).Return()
+			mUIRenderer.SetUseColorFn = func(use bool) {}
 
 			mCapturer := new(agenttest.MockCapturer)
-			mCapturer.On("IsTTY", mock.Anything).Return(true)
+			mCapturer.IsTTYFn = func(v any) bool { return true }
 
 			mHistoryRenderer := new(agenttest.MockHistoryRenderer)
 			orch := session.NewSessionManager("home", "1.0.0", nil,

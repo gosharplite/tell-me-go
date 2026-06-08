@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/cli/clitest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/config/configtest"
 	"github.com/spf13/cobra"
 )
 
@@ -33,10 +36,21 @@ AIMODEL: "test-model"
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mb, ml, mService := setupMocks()
-	// Override setupMocks to return our actual config from loader mock
-	ml.ExpectedCalls = nil
-	ml.On("Load", configPath).Return(&config.Config{UseTUIPrompt: true}, nil)
+	mb := &clitest.MockBootstrapper{}
+	ml := &configtest.MockConfigLoader{
+		LoadFunc: func(path string) (*config.Config, error) {
+			if path == configPath {
+				return &config.Config{UseTUIPrompt: true}, nil
+			}
+			return &config.Config{}, nil
+		},
+	}
+	mService := &clitest.MockChatService{}
+	mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+		mService.ChatCalled = true
+		mService.LastParams = cmd
+		return nil
+	}
 
 	cmdCtx := &context{
 		Version:      "1.0.0",
@@ -64,11 +78,11 @@ AIMODEL: "test-model"
 		t.Errorf("Execute failed: %v", err)
 	}
 
-	if !mService.chatCalled {
+	if !mService.ChatCalled {
 		t.Error("expected chat service to be called")
 	}
 
-	if !mService.lastParams.UseTUIPrompt {
+	if !mService.LastParams.UseTUIPrompt {
 		t.Error("expected UseTUIPrompt to be true from config merge")
 	}
 }
@@ -102,10 +116,18 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr strings.Builder
 			sm := &mockSM{}
-			mb, ml, mService := setupMocks()
-			ml.ExpectedCalls = nil
-			// Mock default config load
-			ml.On("Load", "").Return(&config.Config{UseTUIPrompt: false}, nil).Maybe()
+			mb := &clitest.MockBootstrapper{}
+			ml := &configtest.MockConfigLoader{
+				LoadFunc: func(path string) (*config.Config, error) {
+					return &config.Config{UseTUIPrompt: false}, nil
+				},
+			}
+			mService := &clitest.MockChatService{}
+			mService.ProcessMessageFunc = func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+				mService.ChatCalled = true
+				mService.LastParams = cmd
+				return nil
+			}
 
 			cmdCtx := &context{
 				Version:      "1.0.0",
@@ -130,8 +152,8 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 				t.Errorf("Execute failed: %v", err)
 			}
 
-			if mService.lastParams.UseTUIPrompt != tt.wantTUI {
-				t.Errorf("expected UseTUIPrompt to be %v, got %v", tt.wantTUI, mService.lastParams.UseTUIPrompt)
+			if mService.LastParams.UseTUIPrompt != tt.wantTUI {
+				t.Errorf("expected UseTUIPrompt to be %v, got %v", tt.wantTUI, mService.LastParams.UseTUIPrompt)
 			}
 		})
 	}

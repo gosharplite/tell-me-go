@@ -25,6 +25,7 @@ package agentinternal
 
 import (
 	"context"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
@@ -32,7 +33,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/stretchr/testify/mock"
 )
 
 // AgentInternal wraps an agent.InternalAccessor with typed, read-only
@@ -189,30 +189,52 @@ func (a *AgentInternal) SetRuntimeConfigForTest(snap RuntimeSnapshot) {
 // Mocks
 // ---------------------------------------------------------------------
 
-// mockSessionLifecycleManager is a mock of agent.SessionLifecycleManager.
+// mockSessionLifecycleManager is a hand-rolled mock of agent.SessionLifecycleManager.
 // It must live in this package (rather than in agenttest) because its
 // BuildSessionDependencies signature references agent.CapturerInteractor,
 // which is a distinct interface declared in internal/agent.
 type mockSessionLifecycleManager struct {
-	mock.Mock
+	mu sync.Mutex
+
+	// Func fields — set by test author.
+	BuildSessionDepsFunc func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error)
+	FinalizeSessionFunc  func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error
+
+	// Call counters.
+	calledBuild    int
+	calledFinalize int
+}
+
+// Snapshot returns a race-safe copy of call counts.
+func (m *mockSessionLifecycleManager) Snapshot() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return map[string]int{
+		"BuildSessionDependencies": m.calledBuild,
+		"FinalizeSession":          m.calledFinalize,
+	}
 }
 
 func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
-	args := m.Called(ctx, cfg, configPath, newSession, capturer)
-	var deps ports.ChatterComposer
-	if raw := args.Get(0); raw != nil {
-		deps = raw.(ports.ChatterComposer)
+	m.mu.Lock()
+	m.calledBuild++
+	fn := m.BuildSessionDepsFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, cfg, configPath, newSession, capturer)
 	}
-	var hManager ports.HistoryManager
-	if args.Get(1) != nil {
-		hManager = args.Get(1).(ports.HistoryManager)
-	}
-	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
+	return nil, nil, nil, nil
 }
 
 func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
-	args := m.Called(ctx, hManager, deps, cfg)
-	return args.Error(0)
+	m.mu.Lock()
+	m.calledFinalize++
+	fn := m.FinalizeSessionFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, hManager, deps, cfg)
+	}
+	return nil
 }
 
 // MockSessionLifecycleManager is a mock of agent.SessionLifecycleManager.

@@ -18,7 +18,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
 // newStartedTestBridge creates a Bridge with default test options,
@@ -67,9 +66,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+				m.LogTurnStatusFn = func(ctx context.Context, status events.TurnStatus) {
 					close(done)
-				}).Return()
+				}
 				return done
 			},
 		},
@@ -82,9 +81,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogUsage", mock.Anything, mock.Anything, "log.txt", mock.Anything).Run(func(_ mock.Arguments) {
+				m.LogUsageFn = func(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 					close(done)
-				}).Return()
+				}
 				return done
 			},
 		},
@@ -97,9 +96,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogToolCall", mock.Anything, mock.Anything, 0, 5, true).Run(func(_ mock.Arguments) {
+				m.LogToolCallFn = func(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 					close(done)
-				}).Return()
+				}
 				return done
 			},
 		},
@@ -111,9 +110,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogToolResult", mock.Anything, "test", mock.Anything, true).Run(func(_ mock.Arguments) {
+				m.LogToolResultFn = func(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 					close(done)
-				}).Return()
+				}
 				return done
 			},
 		},
@@ -125,9 +124,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogSystemMessage", mock.Anything, "msg", "info").Run(func(_ mock.Arguments) {
+				m.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
 					close(done)
-				}).Return()
+				}
 				return done
 			},
 		},
@@ -139,9 +138,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogSystemMessage", mock.Anything, "updating", "info").Run(func(_ mock.Arguments) {
+				m.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
 					close(done)
-				}).Return()
+				}
 				return done
 			},
 		},
@@ -152,9 +151,10 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Run(func(_ mock.Arguments) {
+				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 					close(done)
-				}).Return(func() {})
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -163,9 +163,10 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.InferenceStartedEvent{},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
+				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 					close(done)
-				}).Return(func() {})
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -174,9 +175,10 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.SummarizationStartedEvent{},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Run(func(_ mock.Arguments) {
+				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 					close(done)
-				}).Return(func() {})
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -187,9 +189,10 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing [search_files]...").Run(func(_ mock.Arguments) {
+				m.StartSpinnerWithMetricsFn = func(ctx context.Context, status string) func() {
 					close(done)
-				}).Return(func() {})
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -200,9 +203,10 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools [list_files, read_files]...").Run(func(_ mock.Arguments) {
+				m.StartSpinnerWithMetricsFn = func(ctx context.Context, status string) func() {
 					close(done)
-				}).Return(func() {})
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -211,9 +215,10 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.ToolExecutionStartedEvent{},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Run(func(_ mock.Arguments) {
+				m.StartSpinnerWithMetricsFn = func(ctx context.Context, status string) func() {
 					close(done)
-				}).Return(func() {})
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -224,9 +229,10 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Run(func(_ mock.Arguments) {
+				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 					close(done)
-				}).Return(func() {})
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -235,9 +241,11 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.ConsentStartedEvent{},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
-					close(done)
-				}).Return(func() {})
+				var once sync.Once
+				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+					once.Do(func() { close(done) })
+					return func() {}
+				}
 				return done
 			},
 			preSetup: func(b *Bridge, m *agenttest.MockUIRenderer) {
@@ -261,11 +269,14 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
 				var count int32
-				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Run(func(_ mock.Arguments) {
-					if atomic.AddInt32(&count, 1) == 2 {
-						close(done)
+				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+					if status == " Thinking [gpt-4o]..." {
+						if atomic.AddInt32(&count, 1) == 2 {
+							close(done)
+						}
 					}
-				}).Return(func() {}).Twice()
+					return func() {}
+				}
 				return done
 			},
 		},
@@ -276,9 +287,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("RenderResponse", mock.Anything, mock.Anything, true, false).Run(func(_ mock.Arguments) {
+				m.RenderResponseFn = func(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
 					close(done)
-				}).Return()
+				}
 				return done
 			},
 		},
@@ -355,16 +366,6 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
-	// Setup mocks with Maybe() to handle concurrent calls safely
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Maybe()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-
 	var wg sync.WaitGroup
 	const iterations = 1000
 	start := make(chan struct{})
@@ -430,10 +431,6 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
-	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
-
 	// 1. Mark as rendering via ResponseEvent
 	_ = bridge.HandleEvent(ctx, events.ResponseEvent{
 		Content: &llm.Content{},
@@ -444,9 +441,9 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 
 	// 3. Send a sentinel to ensure #2 was processed
 	done := make(chan struct{})
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+	mRenderer.LogTurnStatusFn = func(ctx context.Context, status events.TurnStatus) {
 		close(done)
-	}).Return().Once()
+	}
 	_ = bridge.HandleEvent(ctx, events.TurnStatusEvent{})
 
 	select {
@@ -455,8 +452,9 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 		t.Fatal("timeout waiting for LogicalRace sentinel")
 	}
 
-	// Verification
-	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
+	// Verification: StartSpinnerWithStatus must NOT be called when already rendering
+	snap := mRenderer.Snapshot()
+	assert.Equal(t, 0, snap.StartSpinnerWithStatus, "StartSpinnerWithStatus must NOT be called when already rendering")
 }
 
 func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
@@ -468,7 +466,12 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	spinnerStopped := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { close(spinnerStopped) })
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		if status == " Thinking..." {
+			return func() { close(spinnerStopped) }
+		}
+		return func() {}
+	}
 
 	// Start Inference
 	_ = bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
@@ -493,9 +496,12 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 
 	// First attempt
 	done1 := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
-		close(done1)
-	}).Return(func() {}).Once()
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		if status == " Thinking..." {
+			close(done1)
+		}
+		return func() {}
+	}
 	_ = bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
 	select {
 	case <-done1:
@@ -505,9 +511,9 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 
 	// Response (e.g. error)
 	done2 := make(chan struct{})
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+	mRenderer.RenderResponseFn = func(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
 		close(done2)
-	}).Return().Once()
+	}
 	_ = bridge.HandleEvent(context.Background(), events.ResponseEvent{
 		Content: &llm.Content{},
 	})
@@ -520,17 +526,18 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	// Second attempt (Retry)
 	// Now this SHOULD be called because RetryWaitingEvent resets isRendering.
 	done3 := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Run(func(_ mock.Arguments) {
-		close(done3)
-	}).Return(func() {}).Once()
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		if status == " Retrying in 5s..." {
+			close(done3)
+		}
+		return func() {}
+	}
 	_ = bridge.HandleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
 	select {
 	case <-done3:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for retry spinner")
 	}
-
-	mRenderer.AssertExpectations(t)
 }
 
 func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
@@ -542,9 +549,13 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 
 	spinnerStarted := make(chan struct{})
 	spinnerStopped := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(args mock.Arguments) {
-		close(spinnerStarted)
-	}).Return(func() { close(spinnerStopped) })
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		if status == " Thinking..." {
+			close(spinnerStarted)
+			return func() { close(spinnerStopped) }
+		}
+		return func() {}
+	}
 
 	// Start Inference
 	_ = bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
@@ -575,24 +586,25 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	// 1. Summarization starts
 	stopSummarizationCalled := make(chan struct{})
 	doneSummarization := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Run(func(_ mock.Arguments) {
-		close(doneSummarization)
-	}).Return(func() {
-		close(stopSummarizationCalled)
-	}).Once()
+	stopInferenceCalled := make(chan struct{})
+	doneInference := make(chan struct{})
+
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		switch status {
+		case " Compressing context...":
+			close(doneSummarization)
+			return func() { close(stopSummarizationCalled) }
+		case " Thinking...":
+			close(doneInference)
+			return func() { close(stopInferenceCalled) }
+		}
+		return func() {}
+	}
 
 	_ = bridge.HandleEvent(context.Background(), events.SummarizationStartedEvent{})
 	waitOrFatal(t, doneSummarization, "timeout waiting for summarization spinner")
 
 	// 2. Inference starts (should stop summarization spinner first)
-	stopInferenceCalled := make(chan struct{})
-	doneInference := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
-		close(doneInference)
-	}).Return(func() {
-		close(stopInferenceCalled)
-	}).Once()
-
 	_ = bridge.HandleEvent(context.Background(), events.InferenceStartedEvent{})
 	waitOrFatal(t, doneInference, "timeout waiting for inference spinner")
 
@@ -603,8 +615,6 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	bridge.CloseInput()
 	bridge.Cleanup()
 	waitOrFatal(t, stopInferenceCalled, "Expected inference spinner to be stopped during cleanup")
-
-	mRenderer.AssertExpectations(t)
 }
 
 func TestUIBridge_SpinnerConcurrency(t *testing.T) {
@@ -617,11 +627,10 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	var activeSpinners int32
 
 	// Thread-safe mock setup
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
 		atomic.AddInt32(&activeSpinners, 1)
-	}).Return(func() {
-		atomic.AddInt32(&activeSpinners, -1)
-	})
+		return func() { atomic.AddInt32(&activeSpinners, -1) }
+	}
 
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {

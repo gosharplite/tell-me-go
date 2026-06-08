@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,11 +53,18 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 	t.Parallel()
 	f := newUIBridgeFixture(t)
-	f.BlockLoop(t)
-
 	// We expect all events to be processed during graceful drain
-	f.renderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
-	f.renderer.On("LogSystemMessage", mock.Anything, "processed", "warn").Return().Once()
+	var renderCalled, sysMsgCalled bool
+	f.renderer.RenderResponseFn = func(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+		renderCalled = true
+	}
+	f.renderer.LogSystemMessageFn = func(ctx context.Context, msg string, level string) {
+		if msg == "processed" && level == "warn" {
+			sysMsgCalled = true
+		}
+	}
+
+	f.BlockLoop(t)
 
 	// Send events that MUST be drained
 	_ = f.bridge.HandleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
@@ -83,7 +89,8 @@ func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 		t.Fatal("Cleanup did not finish even after unblocking; pipeline is deadlocked")
 	}
 
-	f.renderer.AssertExpectations(t)
+	assert.True(t, renderCalled, "expected RenderResponse to be called during graceful drain")
+	assert.True(t, sysMsgCalled, "expected LogSystemMessage(processed, warn) to be called")
 }
 
 func TestUIBridge_QoSRouting(t *testing.T) {
@@ -143,12 +150,6 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			}
 
 			f := newUIBridgeFixture(t)
-			f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-			f.renderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			f.renderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			f.renderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			f.renderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			f.renderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 			f.BlockLoop(t)
 			f.FillQueue(events.TurnStatusEvent{})
@@ -177,9 +178,6 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	}
 
 	f := newUIBridgeFixture(t)
-	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	f.renderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	f.renderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	f.BlockLoop(t)
 	f.FillQueue(events.ResponseEvent{})

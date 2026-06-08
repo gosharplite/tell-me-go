@@ -32,7 +32,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -839,16 +838,12 @@ func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 	h := &agenttest.MockHistoryManager{}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
-	// Use testify mock for the registry to simulate failures
-	mockRegistry := &mockToolRegistryWithExpectations{}
+	// Use hand-rolled mock registry to simulate registration failure
+	mockRegistry := agenttest.NewMockToolRegistry()
 	expectedErr := errors.New("duplicate tool schema")
+	mockRegistry.SetRegisterErr(expectedErr)
 
-	// Force the mock's registration method to return a predefined error
-	// Architectural Instruction: The pattern provided uses "RegisterInternal".
-	// Since session.RegisterInternal calls RegisterWithOptions, we bridge them here.
-	mockRegistry.On("RegisterInternal", mock.Anything).Return(expectedErr)
-
-	// Attempt to create the agent (adjust parameters to match your actual constructor)
+	// Attempt to create the agent
 	agentObj, err := agent.NewAgent(mockClient, bus, mockRegistry,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
@@ -856,52 +851,9 @@ func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 		agent.WithInternalTools(),
 	)
 
-	// Architectural mandate: Ensure initialization fails fast and propagates the error
+	// Ensure initialization fails fast and propagates the error
 	assert.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, agentObj)
-	mockRegistry.AssertExpectations(t)
-}
-
-// mockToolRegistryWithExpectations implements Registry using testify/mock.
-type mockToolRegistryWithExpectations struct {
-	mock.Mock
-}
-
-func (m *mockToolRegistryWithExpectations) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
-	args := m.Called(declaration, implementation)
-	return args.Error(0)
-}
-
-func (m *mockToolRegistryWithExpectations) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	// To satisfy the required pattern "On('RegisterInternal', ...)",
-	// we delegate to a mockable RegisterInternal method.
-	return m.RegisterInternal(def)
-}
-
-func (m *mockToolRegistryWithExpectations) RegisterInternal(declaration interface{}) error {
-	args := m.Called(declaration)
-	return args.Error(0)
-}
-
-func (m *mockToolRegistryWithExpectations) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	call := m.Called(ctx, name, args)
-	return call.Get(0).(tools.ToolResult), call.Error(1)
-}
-
-func (m *mockToolRegistryWithExpectations) GetDeclarations() []*tools.ToolDeclaration {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).([]*tools.ToolDeclaration)
-}
-
-func (m *mockToolRegistryWithExpectations) IsSerial(name string) bool {
-	return m.Called(name).Bool(0)
-}
-
-func (m *mockToolRegistryWithExpectations) IsLongRunning(name string) bool {
-	return m.Called(name).Bool(0)
 }
 
 func TestAgent_Shutdown_FlushError(t *testing.T) {
@@ -928,28 +880,4 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	output := buf.String()
 	require.Contains(t, output, "event bus flush incomplete during shutdown")
 	require.Contains(t, output, "flush failed")
-}
-
-func (m *mockToolRegistryWithExpectations) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
-}
-
-func (m *mockToolRegistryWithExpectations) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	return m.Register(def, handler)
-}
-
-func (m *mockToolRegistryWithExpectations) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return m.RegisterWithOptions(def, handler, opts)
-}
-
-func (m *mockToolRegistryWithExpectations) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *mockToolRegistryWithExpectations) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *mockToolRegistryWithExpectations) ListAvailableToolkits() []string {
-	return []string{"core"}
 }

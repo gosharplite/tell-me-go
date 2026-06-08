@@ -152,14 +152,14 @@ func TestAgent_Shutdown(t *testing.T) {
 	t.Run("Normal shutdown", func(t *testing.T) {
 		sm := &mockSecurityManager{AllowAll: true}
 		tl := &agenttest.MockTurnsLogger{}
-		tl.On("Close").Return(nil)
+		tl.CloseFunc = func() error { return nil }
 
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl))
 		require.NoError(t, err)
 
 		err = chatter.Shutdown(ctx)
 		assert.NoError(t, err)
-		tl.AssertCalled(t, "Close")
+		assert.Equal(t, 1, tl.Snapshot()["Close"], "Close should have been called once")
 	})
 
 	t.Run("Graceful handling of nil components", func(t *testing.T) {
@@ -178,7 +178,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	t.Run("TurnsLogger.Close error", func(t *testing.T) {
 		sm := &mockSecurityManager{AllowAll: true}
 		tl := &agenttest.MockTurnsLogger{}
-		tl.On("Close").Return(assert.AnError)
+		tl.CloseFunc = func() error { return assert.AnError }
 
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl))
 		require.NoError(t, err)

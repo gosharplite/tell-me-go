@@ -22,7 +22,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -621,8 +620,9 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 func TestEngine_StartTelemetry(t *testing.T) {
 	bus := &eventstest.MockEventBus{}
 
-	tl := &agenttest.MockTurnsLogger{}
-	tl.On("Listen", mock.Anything).Return(nil)
+	tl := &agenttest.MockTurnsLogger{
+		ListenFunc: func(ctx context.Context) error { return nil },
+	}
 
 	e := &Engine{
 		events:      bus,
@@ -635,7 +635,10 @@ func TestEngine_StartTelemetry(t *testing.T) {
 	err := e.StartTelemetry(ctx)
 	assert.ErrorIs(t, err, context.Canceled)
 
-	tl.AssertCalled(t, "Listen", mock.Anything)
+	snap := tl.Snapshot()
+	if snap["Listen"] != 1 {
+		t.Errorf("expected 1 Listen call, got %d", snap["Listen"])
+	}
 }
 
 func TestEngine_Run(t *testing.T) {
@@ -788,21 +791,18 @@ func TestTruncateSafe(t *testing.T) {
 	}
 }
 
+// mockTurnHook is a simple mock implementation of TurnHook using counters,
+// matching the same pattern as orchestratortest.MockHook (which cannot be
+// imported here due to import cycle with the same-package test).
 type mockTurnHook struct {
-	mock.Mock
+	BeforeCalled int
+	AfterCalled  int
+	TransCalled  int
 }
 
-func (m *mockTurnHook) BeforeTurn(turn *Turn) {
-	m.Called(turn)
-}
-
-func (m *mockTurnHook) AfterTurn(turn *Turn, err error) {
-	m.Called(turn, err)
-}
-
-func (m *mockTurnHook) OnPhaseTransition(from, to TurnPhase, state *TurnState) {
-	m.Called(from, to, state)
-}
+func (m *mockTurnHook) BeforeTurn(turn *Turn)                                  { m.BeforeCalled++ }
+func (m *mockTurnHook) AfterTurn(turn *Turn, err error)                        { m.AfterCalled++ }
+func (m *mockTurnHook) OnPhaseTransition(from, to TurnPhase, state *TurnState) { m.TransCalled++ }
 
 func TestExecuteTurn_TraceEventBusError(t *testing.T) {
 	bus := &eventstest.MockEventBus{}

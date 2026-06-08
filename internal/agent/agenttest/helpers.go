@@ -6,6 +6,7 @@ package agenttest
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -15,7 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/stretchr/testify/mock"
 )
 
 // stubUIRenderer is a stub implementation of ports.UIRenderer for testing.
@@ -67,41 +67,219 @@ type StubHistoryBrowser = stubHistoryBrowser
 
 // mockServiceSecurityManager is a mock of Manager.
 type mockServiceSecurityManager struct {
-	mock.Mock
+	mu sync.Mutex
+
+	// Func fields — when nil, the method returns zero values.
+	IsPathSafeFunc       func(path string) (string, error)
+	IsPathWritableFunc   func(path string) (string, error)
+	AuthorizeFunc        func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
+	LogAuditFunc         func(action string, args ...any)
+	TerminalLockFunc     func()
+	TerminalUnlockFunc   func()
+	PromptFunc           func(message string)
+	WarnFunc             func(message string)
+	ConfirmFunc          func(ctx context.Context, message string) (bool, error)
+	ReadLineFunc         func(ctx context.Context) (string, error)
+	IsCommandAllowedFunc func(command string) bool
+	IsBypassActiveFunc   func() bool
+	CloseFunc            func() error
+
+	// Call counters.
+	calledIsPathSafe       int
+	calledIsPathWritable   int
+	calledAuthorize        int
+	calledLogAudit         int
+	calledTerminalLock     int
+	calledTerminalUnlock   int
+	calledPrompt           int
+	calledWarn             int
+	calledConfirm          int
+	calledReadLine         int
+	calledIsCommandAllowed int
+	calledIsBypassActive   int
+	calledClose            int
+
+	// Last-arg capture fields for argument inspection in tests.
+	lastIsPathSafe      string
+	lastAuthorizeLabel  string
+	lastAuthorizeDetail string
+	lastAuthorizeReason string
+	lastLogAudit        string
+	lastPrompt          string
+	lastWarn            string
+	lastConfirmCtx      context.Context
+	lastConfirmMessage  string
+	lastCommand         string
+}
+
+// Snapshot returns a race-safe copy of all call counts.
+func (m *mockServiceSecurityManager) Snapshot() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return map[string]int{
+		"IsPathSafe":       m.calledIsPathSafe,
+		"IsPathWritable":   m.calledIsPathWritable,
+		"Authorize":        m.calledAuthorize,
+		"LogAudit":         m.calledLogAudit,
+		"TerminalLock":     m.calledTerminalLock,
+		"TerminalUnlock":   m.calledTerminalUnlock,
+		"Prompt":           m.calledPrompt,
+		"Warn":             m.calledWarn,
+		"Confirm":          m.calledConfirm,
+		"ReadLine":         m.calledReadLine,
+		"IsCommandAllowed": m.calledIsCommandAllowed,
+		"IsBypassActive":   m.calledIsBypassActive,
+		"Close":            m.calledClose,
+	}
 }
 
 func (m *mockServiceSecurityManager) IsPathSafe(path string) (string, error) {
-	args := m.Called(path)
-	return args.String(0), args.Error(1)
+	m.mu.Lock()
+	m.calledIsPathSafe++
+	m.lastIsPathSafe = path
+	fn := m.IsPathSafeFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(path)
+	}
+	return "", nil
 }
+
 func (m *mockServiceSecurityManager) IsPathWritable(path string) (string, error) {
-	args := m.Called(path)
-	return args.String(0), args.Error(1)
+	m.mu.Lock()
+	m.calledIsPathWritable++
+	fn := m.IsPathWritableFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(path)
+	}
+	return "", nil
 }
+
 func (m *mockServiceSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
-	args := m.Called(ctx, label, detail, reason, isSafe)
-	return args.Bool(0), args.Error(1)
+	m.mu.Lock()
+	m.calledAuthorize++
+	m.lastAuthorizeLabel = label
+	m.lastAuthorizeDetail = detail
+	m.lastAuthorizeReason = reason
+	fn := m.AuthorizeFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, label, detail, reason, isSafe)
+	}
+	return false, nil
 }
+
 func (m *mockServiceSecurityManager) LogAudit(action string, args ...any) {
-	m.Called(action, args)
+	m.mu.Lock()
+	m.calledLogAudit++
+	m.lastLogAudit = action
+	fn := m.LogAuditFunc
+	m.mu.Unlock()
+	if fn != nil {
+		fn(action, args...)
+	}
 }
-func (m *mockServiceSecurityManager) TerminalLock()         { m.Called() }
-func (m *mockServiceSecurityManager) TerminalUnlock()       { m.Called() }
-func (m *mockServiceSecurityManager) Prompt(message string) { m.Called(message) }
-func (m *mockServiceSecurityManager) Warn(message string)   { m.Called(message) }
+
+func (m *mockServiceSecurityManager) TerminalLock() {
+	m.mu.Lock()
+	m.calledTerminalLock++
+	fn := m.TerminalLockFunc
+	m.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func (m *mockServiceSecurityManager) TerminalUnlock() {
+	m.mu.Lock()
+	m.calledTerminalUnlock++
+	fn := m.TerminalUnlockFunc
+	m.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func (m *mockServiceSecurityManager) Prompt(message string) {
+	m.mu.Lock()
+	m.calledPrompt++
+	m.lastPrompt = message
+	fn := m.PromptFunc
+	m.mu.Unlock()
+	if fn != nil {
+		fn(message)
+	}
+}
+
+func (m *mockServiceSecurityManager) Warn(message string) {
+	m.mu.Lock()
+	m.calledWarn++
+	m.lastWarn = message
+	fn := m.WarnFunc
+	m.mu.Unlock()
+	if fn != nil {
+		fn(message)
+	}
+}
+
 func (m *mockServiceSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	args := m.Called(ctx, message)
-	return args.Bool(0), args.Error(1)
+	m.mu.Lock()
+	m.calledConfirm++
+	m.lastConfirmCtx = ctx
+	m.lastConfirmMessage = message
+	fn := m.ConfirmFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, message)
+	}
+	return false, nil
 }
+
 func (m *mockServiceSecurityManager) ReadLine(ctx context.Context) (string, error) {
-	args := m.Called(ctx)
-	return args.String(0), args.Error(1)
+	m.mu.Lock()
+	m.calledReadLine++
+	fn := m.ReadLineFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx)
+	}
+	return "", nil
 }
+
 func (m *mockServiceSecurityManager) IsCommandAllowed(command string) bool {
-	return m.Called(command).Bool(0)
+	m.mu.Lock()
+	m.calledIsCommandAllowed++
+	m.lastCommand = command
+	fn := m.IsCommandAllowedFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(command)
+	}
+	return false
 }
-func (m *mockServiceSecurityManager) IsBypassActive() bool { return m.Called().Bool(0) }
-func (m *mockServiceSecurityManager) Close() error         { return m.Called().Error(0) }
+
+func (m *mockServiceSecurityManager) IsBypassActive() bool {
+	m.mu.Lock()
+	m.calledIsBypassActive++
+	fn := m.IsBypassActiveFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn()
+	}
+	return false
+}
+
+func (m *mockServiceSecurityManager) Close() error {
+	m.mu.Lock()
+	m.calledClose++
+	fn := m.CloseFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn()
+	}
+	return nil
+}
 
 // MockServiceSecurityManager is a mock of Manager.
 type MockServiceSecurityManager = mockServiceSecurityManager
@@ -207,35 +385,148 @@ func (s *StubCapturer) ReadLine(ctx context.Context) (string, error)      { retu
 
 // mockServiceAgent is a mock of Chatter.
 type mockServiceAgent struct {
-	mock.Mock
+	mu sync.Mutex
+
+	// Func fields — when nil, the method returns zero values.
+	ChatFunc      func(ctx context.Context, sess *ports.Session, prompt string) error
+	SetLimitsFunc func(ctx context.Context, maxTurns, contextWindow, historyTurns int) error
+	SubscribeFunc func(handler func(context.Context, events.Event))
+	ShutdownFunc  func(ctx context.Context) error
+
+	// Call counters.
+	calledChat      int
+	calledSetLimits int
+	calledSubscribe int
+	calledShutdown  int
+
+	// Last-arg capture fields for argument inspection in tests.
+	lastChatCtx          context.Context
+	lastChatSess         *ports.Session
+	lastChatPrompt       string
+	lastSubscribeHandler func(context.Context, events.Event)
+}
+
+// Snapshot returns a race-safe copy of all call counts.
+func (m *mockServiceAgent) Snapshot() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return map[string]int{
+		"Chat":      m.calledChat,
+		"SetLimits": m.calledSetLimits,
+		"Subscribe": m.calledSubscribe,
+		"Shutdown":  m.calledShutdown,
+	}
 }
 
 func (m *mockServiceAgent) Chat(ctx context.Context, sess *ports.Session, prompt string) error {
-	return m.Called(ctx, sess, prompt).Error(0)
+	m.mu.Lock()
+	m.calledChat++
+	m.lastChatCtx = ctx
+	m.lastChatSess = sess
+	m.lastChatPrompt = prompt
+	fn := m.ChatFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, sess, prompt)
+	}
+	return nil
 }
+
 func (m *mockServiceAgent) SetLimits(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
-	return m.Called(ctx, maxTurns, contextWindow, historyTurns).Error(0)
+	m.mu.Lock()
+	m.calledSetLimits++
+	fn := m.SetLimitsFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, maxTurns, contextWindow, historyTurns)
+	}
+	return nil
 }
-func (m *mockServiceAgent) Subscribe(handler func(context.Context, events.Event)) { m.Called(handler) }
-func (m *mockServiceAgent) Shutdown(ctx context.Context) error                    { return m.Called(ctx).Error(0) }
+
+func (m *mockServiceAgent) Subscribe(handler func(context.Context, events.Event)) {
+	m.mu.Lock()
+	m.calledSubscribe++
+	m.lastSubscribeHandler = handler
+	fn := m.SubscribeFunc
+	m.mu.Unlock()
+	if fn != nil {
+		fn(handler)
+	}
+}
+
+func (m *mockServiceAgent) Shutdown(ctx context.Context) error {
+	m.mu.Lock()
+	m.calledShutdown++
+	fn := m.ShutdownFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx)
+	}
+	return nil
+}
 
 // MockServiceAgent is a mock of Chatter.
 type MockServiceAgent = mockServiceAgent
 
 type mockTurnsLogger struct {
-	mock.Mock
+	mu sync.Mutex
+
+	// Func fields — when nil, the method returns zero values.
+	HandleEventFunc func(ctx context.Context, e events.Event)
+	ListenFunc      func(ctx context.Context) error
+	CloseFunc       func() error
+
+	// Call counters.
+	calledHandleEvent int
+	calledListen      int
+	calledClose       int
+
+	// Last-arg capture field for argument inspection in tests.
+	lastHandleEvent events.Event
+}
+
+// Snapshot returns a race-safe copy of all call counts.
+func (m *mockTurnsLogger) Snapshot() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return map[string]int{
+		"HandleEvent": m.calledHandleEvent,
+		"Listen":      m.calledListen,
+		"Close":       m.calledClose,
+	}
 }
 
 func (m *mockTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {
-	m.Called(ctx, e)
+	m.mu.Lock()
+	m.calledHandleEvent++
+	m.lastHandleEvent = e
+	fn := m.HandleEventFunc
+	m.mu.Unlock()
+	if fn != nil {
+		fn(ctx, e)
+	}
 }
 
 func (m *mockTurnsLogger) Listen(ctx context.Context) error {
-	return m.Called(ctx).Error(0)
+	m.mu.Lock()
+	m.calledListen++
+	fn := m.ListenFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx)
+	}
+	return nil
 }
 
 func (m *mockTurnsLogger) Close() error {
-	return m.Called().Error(0)
+	m.mu.Lock()
+	m.calledClose++
+	fn := m.CloseFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn()
+	}
+	return nil
 }
 
 // MockTurnsLogger is a mock of TurnsLogger.

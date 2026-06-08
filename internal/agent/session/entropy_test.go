@@ -20,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,10 +32,11 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 
 	mClock := &agenttest.MockClock{}
 	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
-	mEntropy := new(agenttest.MockEntropySource)
-
-	entropyErr := fmt.Errorf("os entropy exhaustion")
-	mEntropy.On("Read", mock.Anything).Return(nil, 0, entropyErr)
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			return 0, fmt.Errorf("os entropy exhaustion")
+		},
+	}
 
 	var stderr bytes.Buffer
 
@@ -54,12 +54,12 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
 
-	mCapturer.On("IsTTY", io.Discard).Return(true)
-	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
-	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
-	mChatter.On("Shutdown", mock.Anything).Return(nil)
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)

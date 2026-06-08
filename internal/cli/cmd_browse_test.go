@@ -10,12 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/cli/clitest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/config/configtest"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -210,51 +212,69 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupMocks  func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService)
+		setupMocks  func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService)
 		wantErr     string
 		wantNoError bool
 	}{
 		{
 			name: "config load error",
-			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
-				ml.On("Load", "test-config.yaml").Return(nil, errors.New("config not found"))
+			setupMocks: func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService) {
+				ml.LoadFunc = func(path string) (*config.Config, error) { return nil, errors.New("config not found") }
 			},
 			wantErr: "error loading config",
 		},
 		{
 			name: "history manager error",
-			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
-				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
-				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, errors.New("hm failed"))
+			setupMocks: func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService) {
+				ml.LoadFunc = func(path string) (*config.Config, error) { return &config.Config{}, nil }
+				mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+					return nil, errors.New("hm failed")
+				}
 			},
 			wantErr: "failed to get history manager",
 		},
 		{
 			name: "history provider error",
-			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
-				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
-				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(&stubHistoryManager{}, nil)
-				mb.On("GetUnifiedHistoryProvider", mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("provider failed"))
+			setupMocks: func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService) {
+				ml.LoadFunc = func(path string) (*config.Config, error) { return &config.Config{}, nil }
+				mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+					return &stubHistoryManager{}, nil
+				}
+				mb.GetUnifiedHistoryProviderFunc = func(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
+					return nil, errors.New("provider failed")
+				}
 			},
 			wantErr: "failed to get unified history provider",
 		},
 		{
 			name: "BrowseHistory error",
-			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
-				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
-				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(&stubHistoryManager{}, nil)
-				mb.On("GetUnifiedHistoryProvider", mock.Anything, mock.Anything, mock.Anything).Return(&stubUnifiedHistoryProvider{}, nil)
-				ms.On("BrowseHistory", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("browse crash"))
+			setupMocks: func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService) {
+				ml.LoadFunc = func(path string) (*config.Config, error) { return &config.Config{}, nil }
+				mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+					return &stubHistoryManager{}, nil
+				}
+				mb.GetUnifiedHistoryProviderFunc = func(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
+					return &stubUnifiedHistoryProvider{}, nil
+				}
+				ms.BrowseHistoryFunc = func(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+					return errors.New("browse crash")
+				}
 			},
 			wantErr: "browse crash",
 		},
 		{
 			name: "success",
-			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
-				ml.On("Load", "test-config.yaml").Return(&config.Config{}, nil)
-				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(&stubHistoryManager{}, nil)
-				mb.On("GetUnifiedHistoryProvider", mock.Anything, mock.Anything, mock.Anything).Return(&stubUnifiedHistoryProvider{}, nil)
-				ms.On("BrowseHistory", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			setupMocks: func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService) {
+				ml.LoadFunc = func(path string) (*config.Config, error) { return &config.Config{}, nil }
+				mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+					return &stubHistoryManager{}, nil
+				}
+				mb.GetUnifiedHistoryProviderFunc = func(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
+					return &stubUnifiedHistoryProvider{}, nil
+				}
+				ms.BrowseHistoryFunc = func(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+					return nil
+				}
 			},
 			wantNoError: true,
 		},
@@ -264,9 +284,9 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr strings.Builder
 			sm := &mockSM{}
-			ml := &chatMockLoader{}
-			mb := &mockBootstrapper{}
-			ms := &mockChatService{}
+			ml := &configtest.MockConfigLoader{}
+			mb := &clitest.MockBootstrapper{}
+			ms := &clitest.MockChatService{}
 
 			tt.setupMocks(ml, mb, ms)
 

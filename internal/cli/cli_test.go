@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/cli/clitest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/stretchr/testify/mock"
 )
 
 func TestApp_Run_Version(t *testing.T) {
@@ -64,9 +64,11 @@ func TestApp_Run_UnknownFlag(t *testing.T) {
 func TestApp_Run_ContextCanceled(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
-	mService := &mockChatService{}
-	// Mock ChatService to return context.Canceled
-	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(stdctx.Canceled).Maybe()
+	mService := &clitest.MockChatService{
+		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+			return stdctx.Canceled
+		},
+	}
 
 	deps := defaultTestDeps()
 	deps.Stderr = stderr
@@ -93,9 +95,11 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 
 func TestApp_Run_CommandError(t *testing.T) {
 	customErr := errors.New("custom error")
-	mService := &mockChatService{}
-	// Mock ChatService to return custom error
-	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(customErr).Maybe()
+	mService := &clitest.MockChatService{
+		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+			return customErr
+		},
+	}
 
 	deps := defaultTestDeps()
 	deps.ChatService = mService
@@ -155,7 +159,7 @@ func defaultTestDeps() AppDependencies {
 		SM:           &mockSM{},
 		Bootstrapper: &simpleMockBootstrapper{},
 		ConfigLoader: &cliMockLoader{},
-		ChatService:  &mockChatService{},
+		ChatService:  &clitest.MockChatService{},
 		Stdin:        strings.NewReader(""),
 		Stdout:       new(bytes.Buffer),
 		Stderr:       new(bytes.Buffer),
@@ -251,8 +255,11 @@ func TestApp_Run_SMCloseError(t *testing.T) {
 func TestApp_Run_SMCloseOnContextCancel(t *testing.T) {
 	sm := &mockSMWithTracking{}
 
-	mService := &mockChatService{}
-	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(stdctx.Canceled).Maybe()
+	mService := &clitest.MockChatService{
+		ProcessMessageFunc: func(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
+			return stdctx.Canceled
+		},
+	}
 
 	deps := defaultTestDeps()
 	deps.SM = sm
