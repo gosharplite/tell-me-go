@@ -30,7 +30,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/stretchr/testify/mock"
 	"google.golang.org/genai"
 )
 
@@ -256,8 +255,11 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	bus := &eventstest.TestEventBus{}
 
 	// Use real summarizer but mock gateway
-	mockG := &agenttest.MockGateway{}
-	mockG.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "summary"}}}, &domain_llm.Metrics{}, nil)
+	mockG := &agenttest.MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*domain_llm.Content, _ []*tools.ToolDeclaration, _ domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
+			return &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "summary"}}}, &domain_llm.Metrics{}, nil
+		},
+	}
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 
 	cm := sessctx.NewManager(strategy, hManager, bus, nil)

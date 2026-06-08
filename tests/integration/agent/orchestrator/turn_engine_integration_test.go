@@ -26,34 +26,31 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 // integrationMockExecutor defines a mock for ToolExecutor interaction.
 type integrationMockExecutor struct {
-	mock.Mock
+	ExecuteFn func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
 func (m *integrationMockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-	args := m.Called(ctx, respContent, turn, maxToolTurns)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	if m.ExecuteFn != nil {
+		return m.ExecuteFn(ctx, respContent, turn, maxToolTurns)
 	}
-	return args.Get(0).(*llm.Content), args.Error(1)
+	return nil, nil
 }
 
 // integrationMockLLMGateway defines a mock for LLM interaction.
 type integrationMockLLMGateway struct {
-	mock.Mock
+	GenerateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 }
 
 func (m *integrationMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	args := m.Called(ctx, input, tools, resolver)
-	if args.Get(0) == nil {
-		return nil, nil, args.Error(2)
+	if m.GenerateFn != nil {
+		return m.GenerateFn(ctx, input, tools, resolver)
 	}
-	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+	return nil, nil, nil
 }
 
 func (m *integrationMockLLMGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -128,11 +125,15 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 		// 2. Action: Model returns tool call
 		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "read_files", Args: map[string]interface{}{"path": "huge.txt"}}}}}
-		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{PromptTokens: 100}, nil)
+		gw.GenerateFn = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return modelResp, &llm.Metrics{PromptTokens: 100}, nil
+		}
 
 		// 3. Action: Tool returns massive payload
 		toolResp := &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "read_files", Response: map[string]any{"content": "massive string..."}}}}}
-		exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(toolResp, nil)
+		exec.ExecuteFn = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+			return toolResp, nil
+		}
 
 		// Set counter to return 6000 when it sees toolResp
 		counter.trigger = toolResp
@@ -213,12 +214,16 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 		// 2. Action: Model returns tool call
 		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "search", Args: map[string]interface{}{"q": "something"}}}}}
-		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{PromptTokens: 8500}, nil)
+		gw.GenerateFn = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return modelResp, &llm.Metrics{PromptTokens: 8500}, nil
+		}
 
 		// 3. Action: Tool returns moderate payload (1000 tokens)
 		// Total will be 8500 + 1000 = 9500. 90% of 10000 is 9000. 9500 > 9000 -> Truncate.
 		toolResp := &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "search", Response: map[string]any{"results": "some results"}}}}}
-		exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(toolResp, nil)
+		exec.ExecuteFn = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+			return toolResp, nil
+		}
 
 		// Set counter for toolResponse (Scenario B)
 		counter.trigger = toolResp
@@ -324,7 +329,9 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 			{FunctionCall: &llm.FunctionCall{Name: "tool2", Args: map[string]any{"id": 2}}},
 		},
 	}
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{PromptTokens: 100}, nil)
+	gw.GenerateFn = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		return modelResp, &llm.Metrics{PromptTokens: 100}, nil
+	}
 
 	// 3. Execute turn in goroutine
 	errCh := make(chan error, 1)
