@@ -33,10 +33,11 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 
 	mClock := &agenttest.MockClock{}
 	mClock.SetCurrentTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
-	mEntropy := new(agenttest.MockEntropySource)
-
-	entropyErr := fmt.Errorf("os entropy exhaustion")
-	mEntropy.On("Read", mock.Anything).Return(nil, 0, entropyErr)
+	mEntropy := &agenttest.MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			return 0, fmt.Errorf("os entropy exhaustion")
+		},
+	}
 
 	var stderr bytes.Buffer
 

@@ -5,28 +5,57 @@ package agenttest
 
 import (
 	"context"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/stretchr/testify/mock"
 )
 
-// MockHealthCheckManager is a testify mock for ports.HealthCheckManager.
+// MockHealthCheckManager is a hand-rolled mutex-guarded spy for ports.HealthCheckManager.
 type MockHealthCheckManager struct {
-	mock.Mock
+	mu sync.Mutex
+
+	CheckAllFunc       func(ctx context.Context) (*ports.HealthReport, error)
+	CheckComponentFunc func(ctx context.Context, comp ports.Component) (*ports.ComponentReport, error)
+
+	checkAllCalls       int
+	checkComponentCalls int
+	calledMethods       []string
 }
 
+var _ ports.HealthCheckManager = (*MockHealthCheckManager)(nil)
+
 func (m *MockHealthCheckManager) CheckAll(ctx context.Context) (*ports.HealthReport, error) {
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	m.mu.Lock()
+	m.checkAllCalls++
+	m.calledMethods = append(m.calledMethods, "CheckAll")
+	fn := m.CheckAllFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx)
 	}
-	return args.Get(0).(*ports.HealthReport), args.Error(1)
+	return nil, nil
 }
 
 func (m *MockHealthCheckManager) CheckComponent(ctx context.Context, comp ports.Component) (*ports.ComponentReport, error) {
-	args := m.Called(ctx, comp)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	m.mu.Lock()
+	m.checkComponentCalls++
+	m.calledMethods = append(m.calledMethods, "CheckComponent")
+	fn := m.CheckComponentFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, comp)
 	}
-	return args.Get(0).(*ports.ComponentReport), args.Error(1)
+	return nil, nil
+}
+
+// Snapshot returns a consistent view of call counters and called method names.
+// The returned slice is a copy and safe to inspect without holding the lock.
+func (m *MockHealthCheckManager) Snapshot() (checkAllCalls int, checkComponentCalls int, methods []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.calledMethods))
+	copy(out, m.calledMethods)
+	return m.checkAllCalls, m.checkComponentCalls, out
 }

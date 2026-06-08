@@ -55,6 +55,14 @@ func checkSetGenerateFn(t *testing.T, m *MockGateway) {
 	if content.Parts[0].Text != "from_setgen" {
 		t.Errorf("got text %q; want %q", content.Parts[0].Text, "from_setgen")
 	}
+
+	gen, chat, _ := m.Snapshot()
+	if gen != 1 {
+		t.Errorf("Generate calls: got %d, want 1", gen)
+	}
+	if chat != 0 {
+		t.Errorf("SendChat calls: got %d, want 0", chat)
+	}
 }
 
 // checkSetGenerateFnOverrides verifies that calling SetGenerateFn twice
@@ -80,6 +88,14 @@ func checkSetGenerateFnOverrides(t *testing.T, m *MockGateway) {
 	}
 	if content.Parts[0].Text != "second" {
 		t.Errorf("got text %q; want %q", content.Parts[0].Text, "second")
+	}
+
+	gen, chat, _ := m.Snapshot()
+	if gen != 1 {
+		t.Errorf("Generate calls: got %d, want 1", gen)
+	}
+	if chat != 0 {
+		t.Errorf("SendChat calls: got %d, want 0", chat)
 	}
 }
 
