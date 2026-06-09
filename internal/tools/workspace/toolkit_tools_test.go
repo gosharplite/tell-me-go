@@ -130,3 +130,43 @@ func TestHandleLoadToolkit(t *testing.T) {
 		})
 	}
 }
+
+// TestHandleLoadToolkit_UnmarshalError verifies that passing malformed args
+// (where "names" is not []string) triggers an UnmarshalArgs failure, and the
+// returned ToolResult is zero-valued.
+func TestHandleLoadToolkit_UnmarshalError(t *testing.T) {
+	t.Parallel()
+
+	sp := &mockToolkitSessionProvider{
+		info: ports.SessionInfo{},
+	}
+	mp := &mockMetadataProvider{
+		toolkits: []string{"core", "git"},
+	}
+
+	pt := newpersistenceTools(sp, mp)
+
+	// "names" should be []string but we pass an int
+	args := map[string]interface{}{
+		"names": 42,
+	}
+
+	res, err := pt.handleLoadToolkit(context.Background(), args, nil)
+	if err == nil {
+		t.Fatal("expected error for malformed args, got nil")
+	}
+
+	// ToolResult should be zero-valued on error
+	if res.Text != "" {
+		t.Errorf("expected empty Text on error, got %q", res.Text)
+	}
+	if res.Error != nil {
+		t.Errorf("expected nil Error field, got %v", res.Error)
+	}
+	if len(res.BinaryData) != 0 {
+		t.Errorf("expected empty BinaryData, got %v", res.BinaryData)
+	}
+	if len(res.Metadata) != 0 {
+		t.Errorf("expected empty Metadata, got %v", res.Metadata)
+	}
+}

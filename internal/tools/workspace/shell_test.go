@@ -1142,3 +1142,76 @@ func TestWindowsShellWrapper_Wrap_PwshFound(t *testing.T) {
 		t.Errorf("expected UTF-8 prefix, got %q", got[4])
 	}
 }
+
+// TestShellTool_ExecuteCommand_UnmarshalError covers the error-handling path
+// in ExecuteCommand when tools.UnmarshalArgs fails (shell.go:207-209).
+// Passing "not_an_int" for the Timeout (int) field triggers a JSON unmarshal
+// failure, which the function must surface as a non-nil ToolResult.Error
+// with an "Error:"-prefixed Text and a nil Go error.
+func TestShellTool_ExecuteCommand_UnmarshalError(t *testing.T) {
+	t.Parallel()
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	tool := newTestShellTool(sm, &toolstest.MockCommandValidator{})
+	ctx := context.Background()
+
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"timeout": "not_an_int",
+	}, nil)
+
+	if err != nil {
+		t.Errorf("expected nil Go error (domain outcome), got: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatal("expected res.Error to be non-nil")
+	}
+	if !strings.Contains(res.Text, "Error:") {
+		t.Errorf("expected 'Error:' prefix in Text, got: %q", res.Text)
+	}
+}
+
+// TestShellTool_PipeCommands_SplitPipelineError covers the splitPipeline
+// error-handling path in PipeCommands (shell.go:306-308). When
+// authorizeAndAuditPipeline passes but splitPipeline fails on a command,
+// the function must return a non-nil ToolResult.Error with an "Error:"-
+// prefixed Text and a nil Go error.
+func TestShellTool_PipeCommands_SplitPipelineError(t *testing.T) {
+	t.Parallel()
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+
+	// SplitFunc fails for empty-string commands, triggering the
+	// splitPipeline error branch inside PipeCommands.
+	validator := &toolstest.MockCommandValidator{
+		SplitFunc: func(cmd string) ([]string, error) {
+			if cmd == "" {
+				return nil, fmt.Errorf("split: empty command")
+			}
+			return strings.Fields(cmd), nil
+		},
+	}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	// Two entries pass len(commands) >= 2 in authorizeAndAuditPipeline,
+	// but the second is empty and will fail Split in splitPipeline.
+	res, err := tool.PipeCommands(ctx, map[string]interface{}{
+		"commands": []interface{}{"echo hello", ""},
+		"reason":   "testing split pipeline error",
+	}, nil)
+
+	if err != nil {
+		t.Errorf("expected nil Go error (domain outcome), got: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatal("expected res.Error to be non-nil from splitPipeline failure")
+	}
+	if !strings.Contains(res.Text, "Error:") {
+		t.Errorf("expected 'Error:' prefix in Text, got: %q", res.Text)
+	}
+	if !strings.Contains(res.Error.Error(), "split: empty command") {
+		t.Errorf("expected 'split: empty command' in res.Error, got: %v", res.Error)
+	}
+}
