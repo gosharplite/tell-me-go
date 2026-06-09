@@ -15,8 +15,10 @@ func TestMockConfigLoader_Load(t *testing.T) {
 
 	t.Run("success path", func(t *testing.T) {
 		t.Parallel()
+		var called bool
 		m := &MockConfigLoader{
 			LoadFunc: func(path string) (*config.Config, error) {
+				called = true
 				return &config.Config{}, nil
 			},
 		}
@@ -27,8 +29,8 @@ func TestMockConfigLoader_Load(t *testing.T) {
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
-		if snap := m.Snapshot(); snap["Load"] != 1 {
-			t.Errorf("expected 1 Load call, got %d", snap["Load"])
+		if !called {
+			t.Error("expected LoadFunc to be called")
 		}
 	})
 
@@ -59,8 +61,26 @@ func TestMockConfigLoader_Load(t *testing.T) {
 		if err != nil {
 			t.Errorf("expected nil error, got %v", err)
 		}
-		if snap := m.Snapshot(); snap["Load"] != 1 {
-			t.Errorf("expected 1 Load call, got %d", snap["Load"])
+	})
+
+	t.Run("defensive nil path (LoadFunc set, returns nil,nil)", func(t *testing.T) {
+		t.Parallel()
+		var called bool
+		m := &MockConfigLoader{
+			LoadFunc: func(path string) (*config.Config, error) {
+				called = true
+				return nil, nil
+			},
+		}
+		cfg, err := m.Load("/test/defensive-set.yaml")
+		if cfg != nil {
+			t.Error("expected nil config when LoadFunc returns nil")
+		}
+		if err != nil {
+			t.Errorf("expected nil error, got %v", err)
+		}
+		if !called {
+			t.Error("expected LoadFunc to be called")
 		}
 	})
 }

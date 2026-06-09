@@ -21,21 +21,8 @@ import (
 // it never blocks. NewTicker() returns a *MockTicker fed from the
 // same After() channel.
 type MockClock struct {
-	mu            sync.Mutex
-	currentTime   time.Time
-	calledNow     int
-	calledMethods []string
-}
-
-// Snapshot returns a race-safe copy of the observable call state.
-// now is the count of Now() calls; methods is a defensive copy
-// of the called-methods log (ordered by first call).
-func (m *MockClock) Snapshot() (now int, methods []string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]string, len(m.calledMethods))
-	copy(out, m.calledMethods)
-	return m.calledNow, out
+	mu          sync.Mutex
+	currentTime time.Time
 }
 
 // SetCurrentTime safely sets the fixed clock time for tests.
@@ -55,8 +42,6 @@ func (m *MockClock) CurrentTime() time.Time {
 
 func (m *MockClock) Now() time.Time {
 	m.mu.Lock()
-	m.calledNow++
-	m.calledMethods = append(m.calledMethods, "Now")
 	t := m.currentTime
 	m.mu.Unlock()
 
@@ -72,14 +57,12 @@ func (m *MockClock) Since(t time.Time) time.Duration {
 
 func (m *MockClock) Sleep(d time.Duration) {
 	m.mu.Lock()
-	m.calledMethods = append(m.calledMethods, "Sleep")
 	m.currentTime = m.currentTime.Add(d)
 	m.mu.Unlock()
 }
 
 func (m *MockClock) After(d time.Duration) <-chan time.Time {
 	m.mu.Lock()
-	m.calledMethods = append(m.calledMethods, "After")
 	t := m.currentTime.Add(d)
 	m.mu.Unlock()
 
@@ -89,18 +72,10 @@ func (m *MockClock) After(d time.Duration) <-chan time.Time {
 }
 
 func (m *MockClock) NewTicker(d time.Duration) clock.Ticker {
-	m.mu.Lock()
-	m.calledMethods = append(m.calledMethods, "NewTicker")
-	m.mu.Unlock()
-
 	return &MockTicker{CVal: m.After(d)}
 }
 
 func (m *MockClock) Jitter(base float64) float64 {
-	m.mu.Lock()
-	m.calledMethods = append(m.calledMethods, "Jitter")
-	m.mu.Unlock()
-
 	return base
 }
 

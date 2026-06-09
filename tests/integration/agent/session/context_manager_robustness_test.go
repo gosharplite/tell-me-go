@@ -389,10 +389,10 @@ func setupSummarizationTest(t *testing.T) (*sessctx.Manager, *[]*domain_llm.Cont
 	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	capturedInput := new([]*domain_llm.Content)
 	g := &agenttest.MockGateway{}
-	g.SetGenerateFn(func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
+	g.GenerateFunc = func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 		*capturedInput = input
 		return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
-	})
+	}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	cm := sessctx.NewManager(sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(&agenttest.MockToolRegistry{})), hManager, bus, nil)

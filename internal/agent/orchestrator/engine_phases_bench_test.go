@@ -42,8 +42,8 @@ func (b *benchEventBus) Listen(ctx context.Context) error {
 }
 
 // benchClock is a zero-allocation clock.Clock for benchmarks.
-// After returns a buffered, immediately-readable channel with no
-// call-tracking slice, avoiding the unbounded memory growth of MockClock.
+// After returns a buffered, immediately-readable channel avoiding
+// the mutex contention of MockClock under high concurrency.
 type benchClock struct{}
 
 func (benchClock) Now() time.Time                  { return time.Time{} }
@@ -75,8 +75,8 @@ func newBenchTurn() *Turn {
 
 // newBenchTurnWithClock is like newBenchTurn but accepts an explicit
 // clock.Clock. Benchmarks that exercise the clock hot path (e.g.,
-// retry_with_backoff) should inject benchClock{} to avoid unbounded
-// allocation from MockClock's call-tracking slice.
+// retry_with_backoff) should inject benchClock{} to avoid
+// mutex contention from MockClock.
 func newBenchTurnWithClock(c clock.Clock) *Turn {
 	counter := &agenttest.MockTokenCounter{Tokens: 500}
 	hMock := &agenttest.MockHistoryManager{

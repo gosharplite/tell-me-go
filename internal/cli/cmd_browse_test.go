@@ -314,6 +314,31 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.wantErr)
 			}
+
+			// ADR-021: Snapshot assertions for bootstrapper call counts.
+			snap := mb.Snapshot()
+			if snap.BuildSessionDependencies != 0 {
+				t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+			}
+
+			switch tt.name {
+			case "config load error":
+				// Config load fails before bootstrapper is reached.
+			case "history manager error":
+				if snap.GetHistoryManager != 1 {
+					t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+				}
+				if snap.GetUnifiedHistoryProvider != 0 {
+					t.Errorf("GetUnifiedHistoryProvider: expected 0, got %d", snap.GetUnifiedHistoryProvider)
+				}
+			case "history provider error", "BrowseHistory error", "success":
+				if snap.GetHistoryManager != 1 {
+					t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+				}
+				if snap.GetUnifiedHistoryProvider != 1 {
+					t.Errorf("GetUnifiedHistoryProvider: expected 1, got %d", snap.GetUnifiedHistoryProvider)
+				}
+			}
 		})
 	}
 }

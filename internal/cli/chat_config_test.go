@@ -85,6 +85,19 @@ AIMODEL: "test-model"
 	if !mService.LastParams.UseTUIPrompt {
 		t.Error("expected UseTUIPrompt to be true from config merge")
 	}
+
+	// ADR-021: TUI from config triggers GetHistoryManager and
+	// GetSuggestionService during capturer setup.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
+	if snap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+	}
+	if snap.GetSuggestionService != 1 {
+		t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+	}
 }
 
 func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
@@ -154,6 +167,20 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 
 			if mService.LastParams.UseTUIPrompt != tt.wantTUI {
 				t.Errorf("expected UseTUIPrompt to be %v, got %v", tt.wantTUI, mService.LastParams.UseTUIPrompt)
+			}
+
+			// ADR-021: TUI path calls GetHistoryManager and GetSuggestionService.
+			snap := mb.Snapshot()
+			if snap.BuildSessionDependencies != 0 {
+				t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+			}
+			if tt.wantTUI {
+				if snap.GetHistoryManager != 1 {
+					t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+				}
+				if snap.GetSuggestionService != 1 {
+					t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+				}
 			}
 		})
 	}

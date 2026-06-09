@@ -390,6 +390,17 @@ Only then proceed to Phase 3.
 
 Run the full quality pipeline:
 
+> ⛔ **TIMEOUT**: `make check-full` runs all 10 quality steps sequentially
+> (build, lint, verify-architecture, vulncheck, test, race, coverage...).
+> This is a long-running process. **Always** invoke it with `timeout: 900`:
+>
+> ```
+> execute_command → command: "make check-full"
+>                   timeout: 900
+> ```
+>
+> The default 15-second timeout **will** kill it mid-flight.
+
 ```bash
 make check-full
 ```
@@ -419,7 +430,7 @@ This executes, in order:
    accordingly (TASK → Coder via `--new`, REVISION → Coder via
    `--new`, ambiguous → follow-up).
 5. Retrieve Coder's result → forward to Architect for review.
-6. Re-run `make check-full`.
+6. Re-run `make check-full` (with `timeout: 900`).
 7. Repeat until all checks pass.
 
 **If the target is a specific package** (e.g., `internal/cli/`), also verify the coverage target was met:
@@ -499,7 +510,7 @@ gh pr create \
 | Architect issues a task that is too large or ambiguous | Ask Architect to break it down further before forwarding to Coder |
 | Coder produces incorrect or incomplete output | Send Coder's output to Architect for review; Architect will issue a revision task |
 | Coder hits an error it cannot resolve | Send the error to Architect (no `--new`); Architect diagnoses and issues a corrected task |
-| `make check-full` fails | Failure output → Architect (no `--new`) for diagnosis; Architect issues fix task → Coder (`--new`) |
+| `make check-full` fails | ⛔ Re-run with `timeout: 900`. Failure output → Architect (no `--new`) for diagnosis; Architect issues fix task → Coder (`--new`) |
 | Coverage target not met | Remaining gaps → Architect for coverage plan → Coder (`--new`) for additional tests |
 | Coder times out or produces no output | Check `tell-me-go -t -c ${CODER_CONFIG} \| tail -5` for errors; re-send task with fresh `--new` session |
 | Architect times out or produces no output during Phase 2 dispatch | Check `tell-me-go -t -c ${ARCHITECT_CONFIG} \| tail -5` for errors; re-send the last prompt with same session (no `--new`); if it happens twice, restart Architect with `--new` and a summary of current state |
@@ -518,7 +529,7 @@ gh pr create \
 - [ ] Coder implementation completed (all gaps addressed)
 - [ ] Issue checklist cross-checked (3e): every acceptance criterion maps to a change
 - [ ] No task exceeded 3 consecutive retries without escalation
-- [ ] `make check-full` passes (all 10 steps)
+- [ ] `make check-full` passes (all 10 steps) — invoked with `timeout: 900`
 - [ ] Target coverage met (if package-specific)
 - [ ] `git diff dev` reviewed — only expected changes
 - [ ] Commit message follows [Git Workflow](../standards/git_workflow.md)

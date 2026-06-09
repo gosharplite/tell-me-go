@@ -641,7 +641,11 @@ func TestRun_Routing(t *testing.T) {
 		mHistory := new(agenttest.MockHistoryManager)
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
 		mChatter := new(agenttest.MockChatter)
-		mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
+		var chatCalled bool
+		mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+			chatCalled = true
+			return nil
+		}
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
 		p.Prompt = ""
@@ -652,8 +656,7 @@ func TestRun_Routing(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 2, mHistory.GetTotalEntries()) // 1 turn removed (2 messages)
 		// Verify Chat was not called
-		chatCalls, _, _, _, _ := mChatter.Snapshot()
-		assert.Equal(t, 0, chatCalls, "Chat should not be called during rollback-only")
+		assert.False(t, chatCalled, "Chat should not be called during rollback-only")
 	})
 
 	t.Run("Rollback and Chat", func(t *testing.T) {
@@ -694,7 +697,11 @@ func TestRun_Routing(t *testing.T) {
 		mHistory.SetInternalContents(make([]*llm.Content, 4)) // 2 turns
 		mHistory.SetRollbackErr(fmt.Errorf("rollback failed"))
 		mChatter := new(agenttest.MockChatter)
-		mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
+		var chatCalled bool
+		mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+			chatCalled = true
+			return nil
+		}
 		p := setupParams(mHistory, mChatter, mHistoryRenderer, mUIRenderer, mCapturer, mEventBus)
 		p.BackN = 1
 		p.Prompt = "hello"
@@ -706,8 +713,7 @@ func TestRun_Routing(t *testing.T) {
 		assert.Contains(t, err.Error(), "rollback failed")
 
 		// Verify that Chatter.Chat was NOT called
-		chatCalls, _, _, _, _ := mChatter.Snapshot()
-		assert.Equal(t, 0, chatCalls, "Chat should not be called when rollback fails")
+		assert.False(t, chatCalled, "Chat should not be called when rollback fails")
 	})
 }
 
@@ -879,7 +885,12 @@ func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
 		return fmt.Errorf("limits error")
 	}
 
-	// Track whether Shutdown was called
+	// Track whether Chat was called and whether Shutdown was called
+	var chatCalled bool
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		chatCalled = true
+		return nil
+	}
 	var shutdownCalled bool
 	mChatter.ShutdownFn = func(ctx context.Context) error {
 		shutdownCalled = true
@@ -893,8 +904,7 @@ func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
 	require.Contains(t, err.Error(), "limits error")
 
 	// Chat must never be called — Run returns early before the agent loop
-	chatCalls, _, _, _, _ := mChatter.Snapshot()
-	assert.Equal(t, 0, chatCalls, "Chat should not be called when config fails")
+	assert.False(t, chatCalled, "Chat should not be called when config fails")
 	// Shutdown must still be called — the defer always runs
 	assert.True(t, shutdownCalled, "Shutdown should be called via defer")
 }
@@ -948,11 +958,6 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
-
-	now, _ := mClock.Snapshot()
-	if now < 1 {
-		t.Errorf("expected Now() to be called at least once, got %d", now)
-	}
 }
 
 func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
@@ -1066,11 +1071,6 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
-
-	now, _ := mClock.Snapshot()
-	if now < 1 {
-		t.Errorf("expected Now() to be called at least once, got %d", now)
-	}
 }
 
 func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {

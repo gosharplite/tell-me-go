@@ -97,6 +97,14 @@ func TestChatCommand_Execute(t *testing.T) {
 	if mService.LastParams.Prompt != "hello" {
 		t.Errorf("expected prompt 'hello', got %q", mService.LastParams.Prompt)
 	}
+
+	// ADR-021: Snapshot verifies bootstrapping orchestration.
+	// Bootstrapping is a pre-CLI DI concern, so no methods are
+	// expected to be called during command execution.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
 }
 
 func TestChatCommand_Execute_LastN(t *testing.T) {
@@ -128,6 +136,12 @@ func TestChatCommand_Execute_LastN(t *testing.T) {
 
 	if mService.LastParams.LastN != 5 {
 		t.Errorf("expected LastN 5, got %d", mService.LastParams.LastN)
+	}
+
+	// ADR-021: Bootstrapping is a pre-CLI DI concern.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
 	}
 }
 
@@ -161,6 +175,12 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 	if mService.LastParams.BackN != 2 {
 		t.Errorf("expected BackN 2, got %d", mService.LastParams.BackN)
 	}
+
+	// ADR-021: Bootstrapping is a pre-CLI DI concern.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
 }
 
 func TestChatCommand_Execute_Retry(t *testing.T) {
@@ -192,6 +212,12 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 
 	if !mService.LastParams.Retry {
 		t.Error("expected Retry to be true")
+	}
+
+	// ADR-021: Bootstrapping is a pre-CLI DI concern.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
 	}
 }
 
@@ -232,6 +258,12 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 
 	if !mService.LastParams.Retry {
 		t.Error("expected Retry to be true")
+	}
+
+	// ADR-021: Bootstrapping is a pre-CLI DI concern.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
 	}
 }
 
@@ -276,6 +308,20 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 	if mService.LastParams.Prompt != "fallback test" {
 		t.Errorf("expected prompt 'fallback test', got %q", mService.LastParams.Prompt)
 	}
+
+	// ADR-021: TUI path calls GetHistoryManager and GetSuggestionService
+	// during capturer setup. Bootstrapping (BuildSessionDependencies) is
+	// a pre-CLI DI concern.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
+	if snap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+	}
+	if snap.GetSuggestionService != 1 {
+		t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+	}
 }
 
 func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
@@ -308,6 +354,12 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 	require.NoError(t, err, "Execute should not fail")
 	assert.Equal(t, "turn 1: hello\nturn 2: world", stdout.String())
 	assert.False(t, mService.ChatCalled, "expected chat service NOT to be called")
+
+	// ADR-021: Turns-log path does not touch the bootstrapper.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
 }
 
 func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
@@ -340,7 +392,17 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var loaded bool
 			ms, ml := tt.setupMock()
+
+			// Wrap LoadFunc to capture if Load was called
+			if ml.LoadFunc != nil {
+				orig := ml.LoadFunc
+				ml.LoadFunc = func(path string) (*config.Config, error) {
+					loaded = true
+					return orig(path)
+				}
+			}
 
 			cmdCtx := &context{
 				Loader:      ml,
@@ -357,9 +419,8 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 				if snap.StreamTurnsLog != 1 {
 					t.Errorf("expected StreamTurnsLog to be called once, got %d", snap.StreamTurnsLog)
 				}
-				snapML := ml.Snapshot()
-				if snapML["Load"] != 1 {
-					t.Errorf("expected Load to be called once, got %d", snapML["Load"])
+				if !loaded {
+					t.Error("expected Load to be called once")
 				}
 			} else {
 				if snap.StreamTurnsLog != 0 {
@@ -399,6 +460,12 @@ func TestChatCommand_Execute_LastN_Positional(t *testing.T) {
 
 	if mService.LastParams.LastN != 5 {
 		t.Errorf("expected LastN 5, got %d", mService.LastParams.LastN)
+	}
+
+	// ADR-021: Bootstrapping is a pre-CLI DI concern.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
 	}
 }
 
@@ -478,17 +545,39 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 			var stdout, stderr strings.Builder
 			cmdCtx := &context{
 				Version:      "1.0.0",
-				Stdin:        strings.NewReader(""),
+				Stdin:        strings.NewReader("test\n"),
 				Stdout:       &stdout,
 				Stderr:       &stderr,
 				SM:           sm,
 				ChatService:  ms,
 				Bootstrapper: mb,
 				Loader:       ml,
+				HomeDir:      t.TempDir(),
 			}
 
 			err := executeChatCommand(cmdCtx, tt.args)
-			require.ErrorContains(t, err, tt.expectedError)
+			if tt.expectedError != "" {
+				require.ErrorContains(t, err, tt.expectedError)
+				// ADR-021: Config load fails before bootstrapper is reached.
+				snap := mb.Snapshot()
+				if snap.BuildSessionDependencies != 0 {
+					t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+				}
+			} else {
+				require.NoError(t, err)
+				// ADR-021: TUI path calls GetHistoryManager and GetSuggestionService
+				// during capturer setup.
+				snap := mb.Snapshot()
+				if snap.BuildSessionDependencies != 0 {
+					t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+				}
+				if snap.GetHistoryManager != 1 {
+					t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+				}
+				if snap.GetSuggestionService != 1 {
+					t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+				}
+			}
 		})
 	}
 }
@@ -523,6 +612,12 @@ func TestChatCommand_Execute_Diagnostic(t *testing.T) {
 	if snap.RunDiagnostics != 1 {
 		t.Errorf("expected RunDiagnostics to be called once, got %d", snap.RunDiagnostics)
 	}
+
+	// ADR-021: Diagnostic path does not touch the bootstrapper.
+	bootSnap := mb.Snapshot()
+	if bootSnap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", bootSnap.BuildSessionDependencies)
+	}
 }
 
 func TestChatCommand_Execute_Diagnostic_JSON(t *testing.T) {
@@ -556,6 +651,12 @@ func TestChatCommand_Execute_Diagnostic_JSON(t *testing.T) {
 	require.NoError(t, err, "Execute should not fail")
 	if !gotJSON {
 		t.Error("expected jsonOutput to be true")
+	}
+
+	// ADR-021: Diagnostic path does not touch the bootstrapper.
+	bootSnap := mb.Snapshot()
+	if bootSnap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", bootSnap.BuildSessionDependencies)
 	}
 }
 
@@ -592,6 +693,19 @@ func TestChatCommand_Execute_TUIPrompt_PopulatesInteractorRef(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected InteractorRef to be populated after --interactive run, got nil")
 	}
+
+	// ADR-021: TUI path calls GetHistoryManager and GetSuggestionService
+	// during capturer setup.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
+	if snap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+	}
+	if snap.GetSuggestionService != 1 {
+		t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+	}
 }
 
 func TestChatCommand_Execute_NonTUI_PopulatesInteractorRef(t *testing.T) {
@@ -623,6 +737,12 @@ func TestChatCommand_Execute_NonTUI_PopulatesInteractorRef(t *testing.T) {
 	if ref.Get() == nil {
 		t.Fatal("expected InteractorRef to be populated after non-TUI run, got nil")
 	}
+
+	// ADR-021: Non-TUI path does not touch the bootstrapper.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
 }
 
 func TestChatCommand_NilInteractorRef_DoesNotPanic(t *testing.T) {
@@ -650,6 +770,12 @@ func TestChatCommand_NilInteractorRef_DoesNotPanic(t *testing.T) {
 
 	if err := executeChatCommand(cmdCtx, []string{"hello"}); err != nil {
 		t.Fatalf("unexpected error with nil InteractorRef: %v", err)
+	}
+
+	// ADR-021: Non-TUI path does not touch the bootstrapper.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
 	}
 }
 
@@ -684,6 +810,19 @@ func TestChatCommand_CleanupErrorPropagation(t *testing.T) {
 	require.NoError(t, err, "chat command should not fail on cleanup error")
 	require.Contains(t, stderr.String(), "Warning: failed to close capturer")
 	require.Contains(t, stderr.String(), "capturer close failed")
+
+	// ADR-021: TUI path calls GetHistoryManager and GetSuggestionService
+	// during capturer setup, even when cleanup later fails.
+	snap := mb.Snapshot()
+	if snap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
+	}
+	if snap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+	}
+	if snap.GetSuggestionService != 1 {
+		t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+	}
 }
 
 // TestChatCommand_SetupCapturer_CleanupError verifies that when the

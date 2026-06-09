@@ -112,8 +112,8 @@ type mockServiceSecurityManager struct {
 	lastCommand         string
 }
 
-// Snapshot returns a race-safe copy of all call counts.
-func (m *mockServiceSecurityManager) Snapshot() map[string]int {
+// snapshot returns a race-safe copy of all call counts.
+func (m *mockServiceSecurityManager) snapshot() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return map[string]int{
@@ -318,19 +318,19 @@ func (s *StubChatterComposer) GetTurnsLogger() ports.TurnsLogger         { retur
 func (s *StubChatterComposer) GetSecurityManager() security.Manager      { return s.SecurityManager }
 func (s *StubChatterComposer) GetRegistry() (tools.Registry, error)      { return s.Registry, s.RegistryErr }
 
-// StubSessionFinalizer is a manual stub implementing ports.SessionFinalizer.
+// stubSessionFinalizer is a manual stub implementing ports.SessionFinalizer.
 // Use this when a test only needs to finalize a session (record costs).
-type StubSessionFinalizer struct {
+type stubSessionFinalizer struct {
 	Tracker          pricing.CostTracker
 	Paths            *persistence.Paths
 	PricingOverrides map[string]pricing.ModelPricing
 }
 
-var _ ports.SessionFinalizer = (*StubSessionFinalizer)(nil)
+var _ ports.SessionFinalizer = (*stubSessionFinalizer)(nil)
 
-func (s *StubSessionFinalizer) GetTracker() pricing.CostTracker { return s.Tracker }
-func (s *StubSessionFinalizer) GetPaths() *persistence.Paths    { return s.Paths }
-func (s *StubSessionFinalizer) GetPricingOverrides() map[string]pricing.ModelPricing {
+func (s *stubSessionFinalizer) GetTracker() pricing.CostTracker { return s.Tracker }
+func (s *stubSessionFinalizer) GetPaths() *persistence.Paths    { return s.Paths }
+func (s *stubSessionFinalizer) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return s.PricingOverrides
 }
 
@@ -406,8 +406,8 @@ type mockServiceAgent struct {
 	lastSubscribeHandler func(context.Context, events.Event)
 }
 
-// Snapshot returns a race-safe copy of all call counts.
-func (m *mockServiceAgent) Snapshot() map[string]int {
+// snapshot returns a race-safe copy of all call counts.
+func (m *mockServiceAgent) snapshot() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return map[string]int{

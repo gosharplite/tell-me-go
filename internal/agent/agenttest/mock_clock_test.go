@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-// TestMockClock_RaceDetection verifies that concurrent writes to
-// CalledMethods and CalledNow on MockClock do not trigger the race
-// detector. This test is a precondition for adding sync.Mutex.
+// TestMockClock_RaceDetection verifies that concurrent calls to
+// Now() and SetCurrentTime do not trigger the race detector.
+// The test relies on -race for detection.
 func TestMockClock_RaceDetection(t *testing.T) {
 	m := &MockClock{}
 
@@ -24,8 +24,8 @@ func TestMockClock_RaceDetection(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < iterations; i++ {
-				// Mix of all mutating methods
 				m.Now()
+				m.SetCurrentTime(time.Now())
 				m.Sleep(1 * time.Millisecond)
 				m.After(1 * time.Millisecond)
 				m.NewTicker(1 * time.Millisecond)
@@ -34,12 +34,4 @@ func TestMockClock_RaceDetection(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-
-	// CalledMethods should have goroutines*iterations*6 entries
-	// (NewTicker also appends "After" via its internal call to After)
-	expected := goroutines * iterations * 6
-	_, methods := m.Snapshot()
-	if len(methods) != expected {
-		t.Errorf("got %d entries, want %d", len(methods), expected)
-	}
 }

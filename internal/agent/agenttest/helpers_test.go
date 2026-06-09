@@ -351,10 +351,10 @@ func TestStubChatterComposer_NilFields_Registry(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// E. StubSessionFinalizer (3 getters)
+// E. stubSessionFinalizer (3 getters)
 // ---------------------------------------------------------------------------
 
-func TestStubSessionFinalizer_Getters(t *testing.T) {
+func Test_stubSessionFinalizer_Getters(t *testing.T) {
 	t.Parallel()
 
 	tracker := new(MockCostTracker)
@@ -363,7 +363,7 @@ func TestStubSessionFinalizer_Getters(t *testing.T) {
 		"claude": {Hit: 0.01, Miss: 0.05},
 	}
 
-	s := &StubSessionFinalizer{
+	s := &stubSessionFinalizer{
 		Tracker:          tracker,
 		Paths:            p,
 		PricingOverrides: overrides,
@@ -380,10 +380,10 @@ func TestStubSessionFinalizer_Getters(t *testing.T) {
 	}
 }
 
-func TestStubSessionFinalizer_NilFields(t *testing.T) {
+func Test_stubSessionFinalizer_NilFields(t *testing.T) {
 	t.Parallel()
 
-	s := &StubSessionFinalizer{}
+	s := &stubSessionFinalizer{}
 
 	if s.GetTracker() != nil {
 		t.Error("nil Tracker should return nil")
@@ -634,7 +634,7 @@ func TestMockServiceSecurityManager_IsPathSafe(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["IsPathSafe"] != 1 {
 		t.Errorf("expected 1 IsPathSafe call, got %d", snap["IsPathSafe"])
 	}
@@ -655,7 +655,7 @@ func TestMockServiceSecurityManager_IsPathWritable(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["IsPathWritable"] != 1 {
 		t.Errorf("expected 1 IsPathWritable call, got %d", snap["IsPathWritable"])
 	}
@@ -677,7 +677,7 @@ func TestMockServiceSecurityManager_Authorize(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Authorize"] != 1 {
 		t.Errorf("expected 1 Authorize call, got %d", snap["Authorize"])
 	}
@@ -699,7 +699,7 @@ func TestMockServiceSecurityManager_Authorize_Denied(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Authorize"] != 1 {
 		t.Errorf("expected 1 Authorize call, got %d", snap["Authorize"])
 	}
@@ -722,7 +722,7 @@ func TestMockServiceSecurityManager_Authorize_Error(t *testing.T) {
 	if err != want {
 		t.Errorf("Authorize error = %v, want %v", err, want)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Authorize"] != 1 {
 		t.Errorf("expected 1 Authorize call, got %d", snap["Authorize"])
 	}
@@ -741,7 +741,7 @@ func TestMockServiceSecurityManager_LogAudit(t *testing.T) {
 	if !called {
 		t.Error("LogAuditFunc was not called")
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["LogAudit"] != 1 {
 		t.Errorf("expected 1 LogAudit call, got %d", snap["LogAudit"])
 	}
@@ -754,7 +754,7 @@ func TestMockServiceSecurityManager_TerminalLock(t *testing.T) {
 		TerminalLockFunc: func() {},
 	}
 	m.TerminalLock()
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["TerminalLock"] != 1 {
 		t.Errorf("expected 1 TerminalLock call, got %d", snap["TerminalLock"])
 	}
@@ -767,7 +767,7 @@ func TestMockServiceSecurityManager_TerminalUnlock(t *testing.T) {
 		TerminalUnlockFunc: func() {},
 	}
 	m.TerminalUnlock()
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["TerminalUnlock"] != 1 {
 		t.Errorf("expected 1 TerminalUnlock call, got %d", snap["TerminalUnlock"])
 	}
@@ -783,7 +783,7 @@ func TestMockServiceSecurityManager_Prompt(t *testing.T) {
 	if m.lastPrompt != "message" {
 		t.Errorf("lastPrompt = %q, want %q", m.lastPrompt, "message")
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Prompt"] != 1 {
 		t.Errorf("expected 1 Prompt call, got %d", snap["Prompt"])
 	}
@@ -799,7 +799,7 @@ func TestMockServiceSecurityManager_Warn(t *testing.T) {
 	if m.lastWarn != "warning" {
 		t.Errorf("lastWarn = %q, want %q", m.lastWarn, "warning")
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Warn"] != 1 {
 		t.Errorf("expected 1 Warn call, got %d", snap["Warn"])
 	}
@@ -821,7 +821,7 @@ func TestMockServiceSecurityManager_Confirm(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Confirm"] != 1 {
 		t.Errorf("expected 1 Confirm call, got %d", snap["Confirm"])
 	}
@@ -843,7 +843,7 @@ func TestMockServiceSecurityManager_ReadLine(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["ReadLine"] != 1 {
 		t.Errorf("expected 1 ReadLine call, got %d", snap["ReadLine"])
 	}
@@ -860,7 +860,7 @@ func TestMockServiceSecurityManager_IsCommandAllowed(t *testing.T) {
 	if !m.IsCommandAllowed("ls") {
 		t.Error("IsCommandAllowed should return true")
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["IsCommandAllowed"] != 1 {
 		t.Errorf("expected 1 IsCommandAllowed call, got %d", snap["IsCommandAllowed"])
 	}
@@ -877,7 +877,7 @@ func TestMockServiceSecurityManager_IsBypassActive(t *testing.T) {
 	if m.IsBypassActive() {
 		t.Error("IsBypassActive should return false")
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["IsBypassActive"] != 1 {
 		t.Errorf("expected 1 IsBypassActive call, got %d", snap["IsBypassActive"])
 	}
@@ -894,7 +894,7 @@ func TestMockServiceSecurityManager_Close(t *testing.T) {
 	if err := m.Close(); err != nil {
 		t.Errorf("Close unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Close"] != 1 {
 		t.Errorf("expected 1 Close call, got %d", snap["Close"])
 	}
@@ -912,7 +912,7 @@ func TestMockServiceSecurityManager_Close_Error(t *testing.T) {
 	if err := m.Close(); err != want {
 		t.Errorf("Close error = %v, want %v", err, want)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Close"] != 1 {
 		t.Errorf("expected 1 Close call, got %d", snap["Close"])
 	}
@@ -936,7 +936,7 @@ func TestMockServiceAgent_Chat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Chat"] != 1 {
 		t.Errorf("expected 1 Chat call, got %d", snap["Chat"])
 	}
@@ -957,7 +957,7 @@ func TestMockServiceAgent_Chat_Error(t *testing.T) {
 	if err != want {
 		t.Errorf("Chat error = %v, want %v", err, want)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Chat"] != 1 {
 		t.Errorf("expected 1 Chat call, got %d", snap["Chat"])
 	}
@@ -976,7 +976,7 @@ func TestMockServiceAgent_SetLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["SetLimits"] != 1 {
 		t.Errorf("expected 1 SetLimits call, got %d", snap["SetLimits"])
 	}
@@ -996,7 +996,7 @@ func TestMockServiceAgent_SetLimits_Error(t *testing.T) {
 	if err != want {
 		t.Errorf("SetLimits error = %v, want %v", err, want)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["SetLimits"] != 1 {
 		t.Errorf("expected 1 SetLimits call, got %d", snap["SetLimits"])
 	}
@@ -1013,7 +1013,7 @@ func TestMockServiceAgent_Subscribe(t *testing.T) {
 	if m.lastSubscribeHandler == nil {
 		t.Error("lastSubscribeHandler should not be nil after Subscribe")
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Subscribe"] != 1 {
 		t.Errorf("expected 1 Subscribe call, got %d", snap["Subscribe"])
 	}
@@ -1032,7 +1032,7 @@ func TestMockServiceAgent_Shutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Shutdown"] != 1 {
 		t.Errorf("expected 1 Shutdown call, got %d", snap["Shutdown"])
 	}
@@ -1052,7 +1052,7 @@ func TestMockServiceAgent_Shutdown_Error(t *testing.T) {
 	if err != want {
 		t.Errorf("Shutdown error = %v, want %v", err, want)
 	}
-	snap := m.Snapshot()
+	snap := m.snapshot()
 	if snap["Shutdown"] != 1 {
 		t.Errorf("expected 1 Shutdown call, got %d", snap["Shutdown"])
 	}

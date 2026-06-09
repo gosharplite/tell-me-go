@@ -10,63 +10,43 @@ package agenttest
 
 import (
 	"context"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// MockGateway is a test double for the LLM gateway port. It records the
-// requests it receives and returns scripted responses provided by the
-// test author through GenerateFunc and SendChatFn. Both function fields
-// are optional: when nil, the mock returns a benign default
-// "generated" response so that tests focused on other concerns need not
-// stub out the gateway.
+// MockGateway is a test double for the LLM gateway port. It returns
+// scripted responses provided by the test author through GenerateFunc
+// and SendChatFn. Both function fields are optional: when nil, the
+// mock returns a benign default "generated" response so that tests
+// focused on other concerns need not stub out the gateway.
+//
+// To set or replace a function override, assign directly to the field:
+//
+//	m.GenerateFunc = func(ctx context.Context, ...) (*llm.Content, *llm.Metrics, error) { ... }
+//
+// Direct assignment is safe for aligned pointer-sized values and is
+// the idiomatic Go pattern.
 //
 // MockGateway satisfies llm.LLMGateway.
 type MockGateway struct {
-	mu             sync.Mutex
-	GenerateFunc   func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	SendChatFn     func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	calledGenerate int
-	calledSendChat int
-	calledMethods  []string
+	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	SendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 }
 
 // compile-time interface satisfaction
 var _ llm.LLMGateway = (*MockGateway)(nil)
 
-// Snapshot returns a race-safe copy of the observable call state.
-func (m *MockGateway) Snapshot() (generateCalls int, sendChatCalls int, methods []string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]string, len(m.calledMethods))
-	copy(out, m.calledMethods)
-	return m.calledGenerate, m.calledSendChat, out
-}
-
 func (m *MockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	m.mu.Lock()
-	m.calledGenerate++
-	m.calledMethods = append(m.calledMethods, "Generate")
-	fn := m.GenerateFunc
-	m.mu.Unlock()
-
-	if fn != nil {
-		return fn(ctx, input, tools, resolver)
+	if m.GenerateFunc != nil {
+		return m.GenerateFunc(ctx, input, tools, resolver)
 	}
 	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
 }
 
 func (m *MockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	m.mu.Lock()
-	m.calledSendChat++
-	m.calledMethods = append(m.calledMethods, "SendChat")
-	fn := m.SendChatFn
-	m.mu.Unlock()
-
-	if fn != nil {
-		return fn(ctx, history, tools, resolver)
+	if m.SendChatFn != nil {
+		return m.SendChatFn(ctx, history, tools, resolver)
 	}
 	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
 }
@@ -81,10 +61,3 @@ func (m *MockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 // RefreshAuth is a stub that always returns nil. It is not used by
 // current consumers and does not participate in spy logging.
 func (m *MockGateway) RefreshAuth() error { return nil }
-
-// SetGenerateFn safely sets the GenerateFunc field under lock.
-func (m *MockGateway) SetGenerateFn(fn func(context.Context, []*llm.Content, []*tools.ToolDeclaration, llm.AssetResolver) (*llm.Content, *llm.Metrics, error)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.GenerateFunc = fn
-}
