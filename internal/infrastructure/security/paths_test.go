@@ -312,6 +312,43 @@ func TestPathPolicy_IsSystemDirectory_Internal(t *testing.T) {
 	}
 }
 
+// TestCheckSystemDirectoryMatch_CaseInsensitive directly tests the
+// case-insensitive branch of checkSystemDirectoryMatch (paths.go:229-234).
+// On Linux, isCaseSensitive() returns true, so this branch is never reached
+// through the normal isSystemDirectory → checkSystemDirectoryMatch call path.
+// This test calls checkSystemDirectoryMatch with caseSensitive=false to
+// achieve coverage of the strings.ToLower normalization logic.
+func TestCheckSystemDirectoryMatch_CaseInsensitive(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	tests := []struct {
+		name          string
+		absPath       string
+		sysDir        string
+		caseSensitive bool
+		want          bool
+	}{
+		{"exact match case-insensitive", "/etc/passwd", "/etc/passwd", false, true},
+		{"prefix match", "/etc/passwd", "/etc", false, true},
+		{"uppercase exact match", "/ETC/PASSWD", "/etc/passwd", false, true},
+		{"uppercase prefix match", "/ETC/SUB/FILE", "/etc", false, true},
+		{"no match", "/home/user", "/etc", false, false},
+		{"shorter target", "/etc", "/etc/passwd", false, false},
+		{"case-sensitive mismatch", "/ETC/PASSWD", "/etc/passwd", true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := p.checkSystemDirectoryMatch(tt.absPath, tt.sysDir, tt.caseSensitive)
+			if got != tt.want {
+				t.Errorf("checkSystemDirectoryMatch(%q, %q, %v) = %v, want %v",
+					tt.absPath, tt.sysDir, tt.caseSensitive, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPathPolicy_RegisterPath_Idempotency(t *testing.T) {
 	t.Parallel()
 	p := newPathPolicy(nil)
@@ -712,4 +749,58 @@ func TestBoundaryChecks_ErrorLogging(t *testing.T) {
 	// pass filepath.Abs without error. These branches exist as defensive
 	// coding but cannot be triggered in normal or test operation.
 	t.Log("[DOCUMENTED] checkDefaultBoundaries error-log branches are unreachable: all default boundaries are always valid paths")
+}
+
+// TestResolveSymlinks_RecursiveFallback covers the recursive fallback branch
+// of resolveSymlinks (paths.go:328-332). When filepath.EvalSymlinks fails
+// because a path component doesn't exist, resolveSymlinks walks up the
+// directory tree recursively until it finds a resolvable ancestor, then
+// reconstructs the path with filepath.Join.
+//
+// The function never returns an error — it's a fail-secure best-effort
+// resolver. Verification: result is non-empty and preserves the base filename.
+func TestResolveSymlinks_RecursiveFallback(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "non-existent subdir — recursive resolution",
+			path: filepath.Join(tmpDir, "nonexistent_subdir", "file.txt"),
+		},
+		{
+			name: "deeply nested non-existent",
+			path: filepath.Join(tmpDir, "a", "b", "c", "d.txt"),
+		},
+		{
+			name: "non-existent file at root — dir==path stops recursion",
+			path: func() string {
+				if runtime.GOOS == "windows" {
+					return `C:\nonexistent_root_file_xyz`
+				}
+				return "/nonexistent_root_file_xyz"
+			}(),
+		},
+		{
+			name: "bare filename — dir==. stops recursion",
+			path: "nonexistent_file_xyz",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := p.resolveSymlinks(tt.path)
+			if result == "" {
+				t.Error("resolveSymlinks returned empty string")
+			}
+			if filepath.Base(result) != filepath.Base(tt.path) {
+				t.Errorf("resolveSymlinks(%q) base = %q, want %q",
+					tt.path, filepath.Base(result), filepath.Base(tt.path))
+			}
+		})
+	}
 }

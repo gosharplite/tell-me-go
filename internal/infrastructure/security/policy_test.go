@@ -674,6 +674,36 @@ func TestRegisterPolicyTools_RegistrationError(t *testing.T) {
 	}
 }
 
+// plainRegisterErrorRegistry implements tools.Registry.
+// RegisterWithOptions succeeds (allowing tools with opts to pass through),
+// but plain Register fails — triggering the uncovered error path in the
+// RegisterPolicyTools loop for tools that use the standard Register path.
+type plainRegisterErrorRegistry struct {
+	tools.Registry
+}
+
+func (r *plainRegisterErrorRegistry) Register(decl *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return fmt.Errorf("plain register rejected")
+}
+
+func (r *plainRegisterErrorRegistry) RegisterWithOptions(decl *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
+}
+
+func TestRegisterPolicyTools_PlainRegisterError(t *testing.T) {
+	t.Parallel()
+	sm, p, _ := setupPolicyTest(t)
+	r := &plainRegisterErrorRegistry{}
+
+	err := sm.RegisterPolicyTools(r, p.kv)
+	if err == nil {
+		t.Error("expected error from failed plain Register, got nil")
+	}
+	if !strings.Contains(err.Error(), "plain register rejected") {
+		t.Errorf("expected 'plain register rejected' error, got: %v", err)
+	}
+}
+
 func TestNewPolicyTool_ValidationErrors(t *testing.T) {
 	t.Parallel()
 
