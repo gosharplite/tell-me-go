@@ -115,7 +115,7 @@ func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, boo
 		return c.toolUseBlock(p)
 	case p.FunctionResponse != nil:
 		return c.toolResultBlock(p)
-	case p.IsThought:
+	case p.IsThought && role == "assistant":
 		return c.thinkingBlock(p, role)
 	case p.Text != "":
 		return c.textBlock(p)
@@ -157,9 +157,6 @@ func (c *client) toolResultBlock(p *llm.Part) (contentBlock, bool, error) {
 }
 
 func (c *client) thinkingBlock(p *llm.Part, role string) (contentBlock, bool, error) {
-	if role != "assistant" {
-		return contentBlock{}, false, nil
-	}
 	return contentBlock{
 		Type:      "thinking",
 		Thinking:  p.Text,

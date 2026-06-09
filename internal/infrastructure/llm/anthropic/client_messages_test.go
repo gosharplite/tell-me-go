@@ -282,6 +282,18 @@ func TestPartToContentBlock(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "Thinking - non-assistant role falls through to text",
+			part: &llm.Part{
+				IsThought:        true,
+				Text:             "think",
+				ThoughtSignature: []byte("sig"),
+			},
+			role:     "user",
+			wantType: "text",
+			wantOk:   true,
+			wantErr:  false,
+		},
+		{
 			name: "Text block",
 			part: &llm.Part{
 				Text: "hello",
@@ -425,7 +437,7 @@ func TestConvertParts(t *testing.T) {
 		}
 	})
 
-	t.Run("thinking parts filtered for non-assistant role", func(t *testing.T) {
+	t.Run("thinking parts become text blocks for non-assistant role", func(t *testing.T) {
 		parts := []*llm.Part{
 			{IsThought: true, Text: "think", ThoughtSignature: []byte("sig")},
 			{Text: "visible"},
@@ -434,11 +446,14 @@ func TestConvertParts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(blocks) != 1 {
-			t.Fatalf("expected 1 block (thinking filtered), got %d", len(blocks))
+		if len(blocks) != 2 {
+			t.Fatalf("expected 2 blocks (thought becomes text for non-assistant), got %d", len(blocks))
 		}
-		if blocks[0].Text != "visible" {
-			t.Errorf("expected text block 'visible', got %q", blocks[0].Text)
+		if blocks[0].Type != "text" || blocks[0].Text != "think" {
+			t.Errorf("expected first block to be text block 'think', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
+		}
+		if blocks[1].Type != "text" || blocks[1].Text != "visible" {
+			t.Errorf("expected second block to be text block 'visible', got type=%q text=%q", blocks[1].Type, blocks[1].Text)
 		}
 	})
 

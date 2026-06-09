@@ -271,15 +271,15 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	}
 
 	if endpoint == "/responses" {
-		return c.decodeResponsesAPIResponse(resp, startTime, ttfb)
+		return c.decodeResponsesAPIResponse(resp, startTime, ttfb, endpoint)
 	}
-	return c.decodeStandardResponse(resp, startTime, ttfb)
+	return c.decodeStandardResponse(resp, startTime, ttfb, endpoint)
 }
 
 // decodeStandardResponse decodes a /chat/completions JSON response from
 // resp.Body, emits a timing debug log, and converts the API shape into
 // domain types via fromOpenAIResponse.
-func (c *client) decodeStandardResponse(resp *http.Response, startTime time.Time, ttfb time.Duration) (*llm.Content, *llm.Metrics, error) {
+func (c *client) decodeStandardResponse(resp *http.Response, startTime time.Time, ttfb time.Duration, endpoint string) (*llm.Content, *llm.Metrics, error) {
 	bodyReadStart := time.Now()
 	var chatResp chatResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
@@ -296,7 +296,7 @@ func (c *client) decodeStandardResponse(resp *http.Response, startTime time.Time
 		"ttfb_ms", ttfb.Milliseconds(),
 		"body_read_ms", bodyReadTime.Milliseconds(),
 		"total_ms", totalDuration.Milliseconds(),
-		"endpoint", "/chat/completions",
+		"endpoint", endpoint,
 	)
 
 	return c.fromOpenAIResponse(&chatResp, totalDuration.Seconds())
@@ -305,7 +305,7 @@ func (c *client) decodeStandardResponse(resp *http.Response, startTime time.Time
 // decodeResponsesAPIResponse decodes a /responses JSON response from
 // resp.Body, emits a timing debug log, and converts the API shape into
 // domain types via fromResponsesAPIResponse.
-func (c *client) decodeResponsesAPIResponse(resp *http.Response, startTime time.Time, ttfb time.Duration) (*llm.Content, *llm.Metrics, error) {
+func (c *client) decodeResponsesAPIResponse(resp *http.Response, startTime time.Time, ttfb time.Duration, endpoint string) (*llm.Content, *llm.Metrics, error) {
 	bodyReadStart := time.Now()
 	var chatResp responsesAPIResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
@@ -322,7 +322,7 @@ func (c *client) decodeResponsesAPIResponse(resp *http.Response, startTime time.
 		"ttfb_ms", ttfb.Milliseconds(),
 		"body_read_ms", bodyReadTime.Milliseconds(),
 		"total_ms", totalDuration.Milliseconds(),
-		"endpoint", "/responses",
+		"endpoint", endpoint,
 	)
 
 	return c.fromResponsesAPIResponse(&chatResp, totalDuration.Seconds())
