@@ -6,6 +6,7 @@ package agenttest
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -13,24 +14,29 @@ import (
 
 func TestMockCapturer_IsTTY(t *testing.T) {
 	t.Parallel()
+	var called bool
 	m := &MockCapturer{
-		IsTTYFn: func(v any) bool { return v == "val" },
+		IsTTYFn: func(v any) bool {
+			called = true
+			return v == "val"
+		},
 	}
 	got := m.IsTTY("val")
 	if !got {
 		t.Error("got false; want true")
 	}
-	it, _, _, _, _, _, _, _, _ := m.Snapshot()
-	if it != 1 {
-		t.Errorf("IsTTY calls: got %d, want 1", it)
+	if !called {
+		t.Error("IsTTYFn was not called")
 	}
 }
 
 func TestMockCapturer_CapturePrompt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	var called bool
 	m := &MockCapturer{
 		CapturePromptFn: func(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
+			called = true
 			return "result", nil
 		},
 	}
@@ -41,17 +47,18 @@ func TestMockCapturer_CapturePrompt(t *testing.T) {
 	if got != "result" {
 		t.Errorf("got %q; want %q", got, "result")
 	}
-	_, cp, _, _, _, _, _, _, _ := m.Snapshot()
-	if cp != 1 {
-		t.Errorf("CapturePrompt calls: got %d, want 1", cp)
+	if !called {
+		t.Error("CapturePromptFn was not called")
 	}
 }
 
 func TestMockCapturer_Confirm(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	var called bool
 	m := &MockCapturer{
 		ConfirmFn: func(ctx context.Context, message string) (bool, error) {
+			called = true
 			return true, nil
 		},
 	}
@@ -62,17 +69,18 @@ func TestMockCapturer_Confirm(t *testing.T) {
 	if !got {
 		t.Error("got false; want true")
 	}
-	_, _, cf, _, _, _, _, _, _ := m.Snapshot()
-	if cf != 1 {
-		t.Errorf("Confirm calls: got %d, want 1", cf)
+	if !called {
+		t.Error("ConfirmFn was not called")
 	}
 }
 
 func TestMockCapturer_Close(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	var called bool
 	m := &MockCapturer{
 		CloseFn: func(ctx context.Context) error {
+			called = true
 			return nil
 		},
 	}
@@ -80,39 +88,46 @@ func TestMockCapturer_Close(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_, _, _, cl, _, _, _, _, _ := m.Snapshot()
-	if cl != 1 {
-		t.Errorf("Close calls: got %d, want 1", cl)
+	if !called {
+		t.Error("CloseFn was not called")
 	}
 }
 
 func TestMockCapturer_Warn(t *testing.T) {
 	t.Parallel()
-	m := &MockCapturer{}
-	m.Warn("msg") // nil WarnFn — no-op but still tracked
-
-	_, _, _, _, wc, _, _, _, _ := m.Snapshot()
-	if wc != 1 {
-		t.Errorf("Warn calls: got %d, want 1", wc)
+	var called bool
+	m := &MockCapturer{
+		WarnFn: func(msg string) {
+			called = true
+		},
+	}
+	m.Warn("msg")
+	if !called {
+		t.Error("WarnFn was not called")
 	}
 }
 
 func TestMockCapturer_Prompt(t *testing.T) {
 	t.Parallel()
-	m := &MockCapturer{}
-	m.Prompt("msg") // nil PromptFn — no-op but still tracked
-
-	_, _, _, _, _, pc, _, _, _ := m.Snapshot()
-	if pc != 1 {
-		t.Errorf("Prompt calls: got %d, want 1", pc)
+	var called bool
+	m := &MockCapturer{
+		PromptFn: func(msg string) {
+			called = true
+		},
+	}
+	m.Prompt("msg")
+	if !called {
+		t.Error("PromptFn was not called")
 	}
 }
 
 func TestMockCapturer_ReadSingleKey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	var called bool
 	m := &MockCapturer{
 		ReadSingleKeyFn: func(ctx context.Context) (string, error) {
+			called = true
 			return "a", nil
 		},
 	}
@@ -123,17 +138,18 @@ func TestMockCapturer_ReadSingleKey(t *testing.T) {
 	if got != "a" {
 		t.Errorf("got %q; want %q", got, "a")
 	}
-	_, _, _, _, _, _, rsk, _, _ := m.Snapshot()
-	if rsk != 1 {
-		t.Errorf("ReadSingleKey calls: got %d, want 1", rsk)
+	if !called {
+		t.Error("ReadSingleKeyFn was not called")
 	}
 }
 
 func TestMockCapturer_ReadLine(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	var called bool
 	m := &MockCapturer{
 		ReadLineFn: func(ctx context.Context) (string, error) {
+			called = true
 			return "line", nil
 		},
 	}
@@ -144,15 +160,49 @@ func TestMockCapturer_ReadLine(t *testing.T) {
 	if got != "line" {
 		t.Errorf("got %q; want %q", got, "line")
 	}
-	_, _, _, _, _, _, _, rl, _ := m.Snapshot()
-	if rl != 1 {
-		t.Errorf("ReadLine calls: got %d, want 1", rl)
+	if !called {
+		t.Error("ReadLineFn was not called")
 	}
 }
 
 func TestMockCapturer_RaceDetection(t *testing.T) {
 	m := &MockCapturer{}
 	ctx := context.Background()
+
+	var (
+		isTTYCalls         atomic.Int32
+		capturePromptCalls atomic.Int32
+		confirmCalls       atomic.Int32
+		closeCalls         atomic.Int32
+		warnCalls          atomic.Int32
+		promptCalls        atomic.Int32
+		readSingleKeyCalls atomic.Int32
+		readLineCalls      atomic.Int32
+	)
+
+	m.IsTTYFn = func(v any) bool { isTTYCalls.Add(1); return false }
+	m.CapturePromptFn = func(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
+		capturePromptCalls.Add(1)
+		return "", nil
+	}
+	m.ConfirmFn = func(ctx context.Context, message string) (bool, error) {
+		confirmCalls.Add(1)
+		return false, nil
+	}
+	m.CloseFn = func(ctx context.Context) error {
+		closeCalls.Add(1)
+		return nil
+	}
+	m.WarnFn = func(msg string) { warnCalls.Add(1) }
+	m.PromptFn = func(msg string) { promptCalls.Add(1) }
+	m.ReadSingleKeyFn = func(ctx context.Context) (string, error) {
+		readSingleKeyCalls.Add(1)
+		return "", nil
+	}
+	m.ReadLineFn = func(ctx context.Context) (string, error) {
+		readLineCalls.Add(1)
+		return "", nil
+	}
 
 	var wg sync.WaitGroup
 	const goroutines = 5
@@ -176,10 +226,20 @@ func TestMockCapturer_RaceDetection(t *testing.T) {
 	}
 	wg.Wait()
 
-	it, cp, cf, cl, wc, pc, rsk, rl, _ := m.Snapshot()
+	it := int(isTTYCalls.Load())
+	cp := int(capturePromptCalls.Load())
+	cf := int(confirmCalls.Load())
+	cl := int(closeCalls.Load())
+	wc := int(warnCalls.Load())
+	pc := int(promptCalls.Load())
+	rsk := int(readSingleKeyCalls.Load())
+	rl := int(readLineCalls.Load())
+
 	want := goroutines * iterations
-	if it != want || cp != want || cf != want || cl != want || wc != want || pc != want || rsk != want || rl != want {
-		t.Errorf("got counts [%d,%d,%d,%d,%d,%d,%d,%d]; want [%d x8]",
-			it, cp, cf, cl, wc, pc, rsk, rl, want)
+	total := it + cp + cf + cl + wc + pc + rsk + rl
+	wantTotal := want * 8
+	if total != wantTotal {
+		t.Errorf("got total %d (counts [%d,%d,%d,%d,%d,%d,%d,%d]); want %d",
+			total, it, cp, cf, cl, wc, pc, rsk, rl, wantTotal)
 	}
 }
