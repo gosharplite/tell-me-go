@@ -103,22 +103,32 @@ func classifyGRPC(err error) (error, bool) {
 	return nil, false
 }
 
+// httpStatusToDomain maps HTTP status codes to domain error sentinels.
+// It is extracted from classifyHTTP to keep both functions below the
+// cyclomatic complexity threshold (≤10).
+func httpStatusToDomain(status int) error {
+	switch {
+	case status == 401:
+		return llm.ErrAuth
+	case status == 429:
+		return llm.ErrRateLimit
+	case status == 499 || status == 408:
+		return llm.ErrTransient
+	case status >= 500:
+		return llm.ErrTransient
+	case status >= 400 && status < 500:
+		return llm.ErrTerminal
+	}
+	return nil
+}
+
 func classifyHTTP(err error) (error, bool) {
 	var httpErr HTTPStatusErr
-	if errors.As(err, &httpErr) {
-		status := httpErr.StatusCode()
-		switch {
-		case status == 401:
-			return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
-		case status == 429:
-			return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
-		case status == 499 || status == 408:
-			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
-		case status >= 500:
-			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
-		case status >= 400 && status < 500:
-			return fmt.Errorf("%w: %w", llm.ErrTerminal, err), true
-		}
+	if !errors.As(err, &httpErr) {
+		return nil, false
+	}
+	if domainErr := httpStatusToDomain(httpErr.StatusCode()); domainErr != nil {
+		return fmt.Errorf("%w: %w", domainErr, err), true
 	}
 	return nil, false
 }
