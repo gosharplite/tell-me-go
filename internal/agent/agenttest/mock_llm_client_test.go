@@ -34,7 +34,7 @@ func TestMockLLMClient_SendChat_Default(t *testing.T) {
 		t.Errorf("got metrics %+v; want nil", metrics)
 	}
 
-	sendChat, genImg, refreshAuth, generate, methods := m.Snapshot()
+	sendChat, genImg, refreshAuth, generate, methods := m.snapshot()
 	if sendChat != 1 {
 		t.Errorf("sendChat = %d; want 1", sendChat)
 	}
@@ -78,7 +78,7 @@ func TestMockLLMClient_SendChat_Override(t *testing.T) {
 		}
 	}
 
-	sendChat, genImg, refreshAuth, generate, methods := m.Snapshot()
+	sendChat, genImg, refreshAuth, generate, methods := m.snapshot()
 	if sendChat != 2 {
 		t.Errorf("sendChat = %d; want 2", sendChat)
 	}
@@ -120,7 +120,7 @@ func TestMockLLMClient_SendChat_Override_Error(t *testing.T) {
 		t.Errorf("got metrics %+v; want nil", metrics)
 	}
 
-	sendChat, _, _, _, _ := m.Snapshot()
+	sendChat, _, _, _, _ := m.snapshot()
 	if sendChat != 1 {
 		t.Errorf("sendChat = %d; want 1", sendChat)
 	}
@@ -138,7 +138,7 @@ func TestMockLLMClient_GenerateImages(t *testing.T) {
 		t.Fatalf("got data %v; want nil", data)
 	}
 
-	sendChat, genImg, refreshAuth, generate, methods := m.Snapshot()
+	sendChat, genImg, refreshAuth, generate, methods := m.snapshot()
 	if sendChat != 0 {
 		t.Errorf("sendChat = %d; want 0", sendChat)
 	}
@@ -165,7 +165,7 @@ func TestMockLLMClient_RefreshAuth_Default(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	sendChat, genImg, refreshAuth, generate, _ := m.Snapshot()
+	sendChat, genImg, refreshAuth, generate, _ := m.snapshot()
 	if sendChat != 0 {
 		t.Errorf("sendChat = %d; want 0", sendChat)
 	}
@@ -192,7 +192,7 @@ func TestMockLLMClient_RefreshAuth_Override(t *testing.T) {
 		t.Fatalf("got error %v; want %v", err, wantErr)
 	}
 
-	sendChat, genImg, refreshAuth, generate, _ := m.Snapshot()
+	sendChat, genImg, refreshAuth, generate, _ := m.snapshot()
 	if sendChat != 0 {
 		t.Errorf("sendChat = %d; want 0", sendChat)
 	}
@@ -225,7 +225,7 @@ func TestMockLLMClient_Generate_DelegatesToSendChat(t *testing.T) {
 		t.Fatalf("got content %+v; want %+v", content, wantContent)
 	}
 
-	sendChat, genImg, refreshAuth, generate, methods := m.Snapshot()
+	sendChat, genImg, refreshAuth, generate, methods := m.snapshot()
 	if sendChat != 1 {
 		t.Errorf("sendChat = %d; want 1", sendChat)
 	}
@@ -279,7 +279,7 @@ func TestMockLLMClient_Concurrency(t *testing.T) {
 
 	wg.Wait()
 
-	sendChat, _, _, _, _ := m.Snapshot()
+	sendChat, _, _, _, _ := m.snapshot()
 	if sendChat != goroutines {
 		t.Errorf("sendChat = %d; want %d", sendChat, goroutines)
 	}

@@ -30,8 +30,8 @@ type MockLLMClient struct {
 	RefreshAuthFn func() error
 }
 
-// Snapshot returns a race-safe copy of observable call state.
-func (m *MockLLMClient) Snapshot() (sendChat, generateImages, refreshAuth, generate int, methods []string) {
+// snapshot returns a race-safe copy of observable call state.
+func (m *MockLLMClient) snapshot() (sendChat, generateImages, refreshAuth, generate int, methods []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]string, len(m.calledMethods))

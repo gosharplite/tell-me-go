@@ -112,8 +112,8 @@ type mockServiceSecurityManager struct {
 	lastCommand         string
 }
 
-// Snapshot returns a race-safe copy of all call counts.
-func (m *mockServiceSecurityManager) Snapshot() map[string]int {
+// snapshot returns a race-safe copy of all call counts.
+func (m *mockServiceSecurityManager) snapshot() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return map[string]int{
@@ -406,8 +406,8 @@ type mockServiceAgent struct {
 	lastSubscribeHandler func(context.Context, events.Event)
 }
 
-// Snapshot returns a race-safe copy of all call counts.
-func (m *mockServiceAgent) Snapshot() map[string]int {
+// snapshot returns a race-safe copy of all call counts.
+func (m *mockServiceAgent) snapshot() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return map[string]int{
