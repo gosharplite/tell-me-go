@@ -214,6 +214,22 @@ func TestSessionState_HydrateInfo_CorruptedStateFile(t *testing.T) {
 
 	info := state.GetInfo()
 
+	t.Run("env_defaults", func(t *testing.T) {
+		runHydrateInfoCheckEnv(t, info)
+	})
+	t.Run("paths_defaults", func(t *testing.T) {
+		runHydrateInfoCheckPaths(t, info, tempDir)
+	})
+	t.Run("active_toolkits_default", func(t *testing.T) {
+		runHydrateInfoCheckToolkits(t, info)
+	})
+	t.Run("model_provider_defaults", func(t *testing.T) {
+		runHydrateInfoCheckModelProvider(t, info)
+	})
+}
+
+func runHydrateInfoCheckEnv(t *testing.T, info ports.SessionInfo) {
+	t.Helper()
 	// Corrupted unmarshal is silently swallowed; defaults must be populated.
 	if info.Env == nil {
 		t.Error("expected non-nil Env map (default fallback)")
@@ -221,21 +237,30 @@ func TestSessionState_HydrateInfo_CorruptedStateFile(t *testing.T) {
 	if info.Env["STORAGE_TYPE"] != "sqlite" {
 		t.Errorf("expected STORAGE_TYPE to be sqlite, got %s", info.Env["STORAGE_TYPE"])
 	}
+}
 
+func runHydrateInfoCheckPaths(t *testing.T, info ports.SessionInfo, tempDir string) {
+	t.Helper()
 	if info.Paths == nil {
 		t.Error("expected non-nil Paths map (default fallback)")
 	}
 	if info.Paths["config_dir"] != tempDir {
 		t.Errorf("expected config_dir to be %s, got %s", tempDir, info.Paths["config_dir"])
 	}
+}
 
+func runHydrateInfoCheckToolkits(t *testing.T, info ports.SessionInfo) {
+	t.Helper()
 	if info.ActiveToolkits == nil {
 		t.Error("expected non-nil ActiveToolkits slice (default fallback)")
 	}
 	if len(info.ActiveToolkits) != 0 {
 		t.Errorf("expected empty ActiveToolkits, got %v", info.ActiveToolkits)
 	}
+}
 
+func runHydrateInfoCheckModelProvider(t *testing.T, info ports.SessionInfo) {
+	t.Helper()
 	if info.Model != "" {
 		t.Errorf("expected Model to be empty, got %q", info.Model)
 	}
