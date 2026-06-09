@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -128,6 +130,15 @@ func TestCreateHTTPRequest_MarshalError(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to marshal request") {
 		t.Errorf("expected 'failed to marshal request', got %q", err.Error())
 	}
+}
+
+// customRoundTripper is an http.RoundTripper that is NOT *http.Transport.
+// It is used to exercise the else branch in NewClient when
+// http.DefaultTransport is not type-assertable to *http.Transport.
+type customRoundTripper struct{}
+
+func (c *customRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, errors.New("not a real transport")
 }
 
 // errorReader is an io.ReadCloser whose Read always fails.
@@ -703,4 +714,34 @@ func getStandardToolDecl() *tools.ToolDeclaration {
 			Required: []string{"param"},
 		},
 	}
+}
+
+// TestNewClient_DefaultTransportFallback covers the else branch in NewClient
+// (client.go:102-130) where http.DefaultTransport is not type-assertable to
+// *http.Transport. In standard Go, DefaultTransport is always *http.Transport,
+// but it is a mutable package variable that tests or middleware may replace
+// with a custom http.RoundTripper. This test verifies the fallback path does
+// not panic and produces a functional client.
+func TestNewClient_DefaultTransportFallback(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = &customRoundTripper{}
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
+	c := NewClient("http://127.0.0.1:1", "test-model", &auth.BearerAuth{Token: "test-key"})
+
+	if c == nil {
+		t.Fatal("expected non-nil client from NewClient")
+	}
+
+	if c.httpClient == nil {
+		t.Fatal("expected non-nil httpClient on the client")
+	}
+
+	if c.transport == nil {
+		t.Fatal("expected non-nil transport on the client")
+	}
+
+	// Verify the client is minimally functional (RefreshAuth should not panic).
+	err := c.RefreshAuth()
+	require.NoError(t, err)
 }

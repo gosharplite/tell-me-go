@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -131,6 +133,40 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	// 3. Subsequent calls should NOT trigger it again
 	_, _ = deps.GetRegistry()
 	assert.Equal(t, 1, callCount)
+}
+
+func TestLazyRegistry_ConcurrentInit_ErrorCached(t *testing.T) {
+	var initCount atomic.Int32
+	simulatedErr := errors.New("registry init failed")
+
+	lr := newLazyRegistry(func() (tools.Registry, error) {
+		initCount.Add(1)
+		return nil, simulatedErr
+	}, &ports.NoOpLogger{})
+
+	const numGoroutines = 10
+	var wg sync.WaitGroup
+	regs := make([]tools.Registry, numGoroutines)
+	errs := make([]error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			regs[idx], errs[idx] = lr.get()
+		}(i)
+	}
+	wg.Wait()
+
+	// Factory must be called exactly once
+	assert.Equal(t, int32(1), initCount.Load())
+
+	for i := 0; i < numGoroutines; i++ {
+		require.Error(t, errs[i], "goroutine %d should have received an error", i)
+		assert.ErrorIs(t, errs[i], simulatedErr,
+			"goroutine %d error should wrap the original init error", i)
+		assert.Nil(t, regs[i], "goroutine %d should have received nil registry", i)
+	}
 }
 
 // mockToolchainFactory is a hand-rolled test double for toolchainFactory.
@@ -350,4 +386,38 @@ func TestLazyClient_InitializationFailure_GenerateImages(t *testing.T) {
 	_, err := lc.GenerateImages(context.Background(), "", "", "")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, simulatedErr)
+}
+
+func TestLazyClient_ConcurrentInit_ErrorCached(t *testing.T) {
+	var initCount atomic.Int32
+	simulatedErr := errors.New("init failed")
+
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		initCount.Add(1)
+		return nil, simulatedErr
+	})
+
+	const numGoroutines = 10
+	var wg sync.WaitGroup
+	errs := make([]error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _, errs[idx] = lc.Generate(context.Background(), nil, nil, nil)
+		}(i)
+	}
+	wg.Wait()
+
+	// Factory must be called exactly once
+	assert.Equal(t, int32(1), initCount.Load())
+
+	for i := 0; i < numGoroutines; i++ {
+		require.Error(t, errs[i], "goroutine %d should have received an error", i)
+		assert.Contains(t, errs[i].Error(), "LLM provider initialization failed",
+			"goroutine %d error should contain wrapping prefix", i)
+		assert.ErrorIs(t, errs[i], simulatedErr,
+			"goroutine %d error should wrap the original init error", i)
+	}
 }
