@@ -642,30 +642,48 @@ func TestMemoryListStore_ReadAll_CompletedTruncation(t *testing.T) {
 	}
 
 	t.Run("total_count", func(t *testing.T) {
-		if len(items) != 502 {
-			t.Errorf("expected 502 items (2 active + 500 most recent completed), got %d", len(items))
-		}
+		runReadAllTotalCount(t, items)
 	})
-
 	t.Run("active_present", func(t *testing.T) {
-		if len(items) < 2 {
-			t.Fatalf("expected at least 2 items, got %d", len(items))
-		}
-		if items[0].ID != 1 || items[0].Status != "pending" {
-			t.Errorf("first item should be active task ID 1, got ID %d status %s", items[0].ID, items[0].Status)
-		}
-		if items[1].ID != 2 || items[1].Status != "pending" {
-			t.Errorf("second item should be active task ID 2, got ID %d status %s", items[1].ID, items[1].Status)
-		}
+		runReadAllActivePresent(t, items)
 	})
-
 	t.Run("completed_truncation", func(t *testing.T) {
-		// The remaining 500 should be completed tasks IDs 103–602
-		completedSlice := items[2:]
+		runReadAllCompletedTruncation(t, items)
+	})
+}
+
+func runReadAllTotalCount(t *testing.T, items []ports.Task) {
+	t.Helper()
+	if len(items) != 502 {
+		t.Errorf("expected 502 items (2 active + 500 most recent completed), got %d", len(items))
+	}
+}
+
+func runReadAllActivePresent(t *testing.T, items []ports.Task) {
+	t.Helper()
+	if len(items) < 2 {
+		t.Fatalf("expected at least 2 items, got %d", len(items))
+	}
+	if items[0].ID != 1 || items[0].Status != "pending" {
+		t.Errorf("first item should be active task ID 1, got ID %d status %s", items[0].ID, items[0].Status)
+	}
+	if items[1].ID != 2 || items[1].Status != "pending" {
+		t.Errorf("second item should be active task ID 2, got ID %d status %s", items[1].ID, items[1].Status)
+	}
+}
+
+func runReadAllCompletedTruncation(t *testing.T, items []ports.Task) {
+	t.Helper()
+	// The remaining 500 should be completed tasks IDs 103–602
+	completedSlice := items[2:]
+
+	t.Run("slice_length", func(t *testing.T) {
 		if len(completedSlice) != 500 {
 			t.Fatalf("expected 500 completed items, got %d", len(completedSlice))
 		}
+	})
 
+	t.Run("slice_boundaries", func(t *testing.T) {
 		// Verify first completed is ID 103 (oldest retained)
 		if completedSlice[0].ID != 103 {
 			t.Errorf("first completed item should be ID 103, got ID %d", completedSlice[0].ID)
@@ -674,14 +692,18 @@ func TestMemoryListStore_ReadAll_CompletedTruncation(t *testing.T) {
 		if completedSlice[499].ID != 602 {
 			t.Errorf("last completed item should be ID 602, got ID %d", completedSlice[499].ID)
 		}
+	})
 
+	t.Run("all_status_completed", func(t *testing.T) {
 		// Verify all items in completed slice have status "completed"
 		for _, item := range completedSlice {
 			if item.Status != "completed" {
 				t.Errorf("item ID %d has status %q, want %q", item.ID, item.Status, "completed")
 			}
 		}
+	})
 
+	t.Run("oldest_truncated", func(t *testing.T) {
 		// Verify oldest completed tasks (IDs 3–102) are NOT present
 		ids := make(map[int64]bool, len(items))
 		for _, item := range items {

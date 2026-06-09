@@ -546,96 +546,89 @@ func TestAgentInternal_Actions(t *testing.T) {
 	}
 }
 
-// TestMockSessionLifecycleManager verifies that the testify-based
-// mockSessionLifecycleManager (defined in accessor.go) behaves correctly
-// with the standard .On(...).Return(...) pattern. In particular, it
-// exercises the nil-guarded type assertions in BuildSessionDependencies
-// to ensure they don't panic when testify returns nil values.
-func TestMockSessionLifecycleManager(t *testing.T) {
-	t.Run("BuildSessionDependencies", func(t *testing.T) {
-		m := new(MockSessionLifecycleManager)
-		m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
-			return nil, nil, nil, nil
-		}
-		_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		snap := m.Snapshot()
-		if snap["BuildSessionDependencies"] != 1 {
-			t.Errorf("BuildSessionDependencies calls: got %d, want 1", snap["BuildSessionDependencies"])
-		}
-		if snap["FinalizeSession"] != 0 {
-			t.Errorf("FinalizeSession calls: got %d, want 0", snap["FinalizeSession"])
-		}
-	})
+func TestMockSessionLifecycleManager_BuildSessionDeps(t *testing.T) {
+	m := new(MockSessionLifecycleManager)
+	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+		return nil, nil, nil, nil
+	}
+	_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	snap := m.Snapshot()
+	if snap["BuildSessionDependencies"] != 1 {
+		t.Errorf("BuildSessionDependencies calls: got %d, want 1", snap["BuildSessionDependencies"])
+	}
+	if snap["FinalizeSession"] != 0 {
+		t.Errorf("FinalizeSession calls: got %d, want 0", snap["FinalizeSession"])
+	}
+}
 
-	t.Run("BuildSessionDependencies returns values", func(t *testing.T) {
-		m := new(MockSessionLifecycleManager)
-		wantCleanup := func(context.Context) error { return nil }
-		m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
-			return nil, nil, wantCleanup, nil
-		}
-		_, _, cleanup, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cleanup == nil {
-			t.Fatal("cleanup should not be nil")
-		}
-	})
+func TestMockSessionLifecycleManager_BuildSessionDeps_ReturnsValues(t *testing.T) {
+	m := new(MockSessionLifecycleManager)
+	wantCleanup := func(context.Context) error { return nil }
+	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+		return nil, nil, wantCleanup, nil
+	}
+	_, _, cleanup, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cleanup == nil {
+		t.Fatal("cleanup should not be nil")
+	}
+}
 
-	t.Run("BuildSessionDependencies returns error", func(t *testing.T) {
-		m := new(MockSessionLifecycleManager)
-		wantErr := errors.New("build failed")
-		m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
-			return nil, nil, nil, wantErr
-		}
-		_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
-		if err != wantErr {
-			t.Errorf("got %v; want %v", err, wantErr)
-		}
-	})
+func TestMockSessionLifecycleManager_BuildSessionDeps_ReturnsError(t *testing.T) {
+	m := new(MockSessionLifecycleManager)
+	wantErr := errors.New("build failed")
+	m.BuildSessionDepsFunc = func(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.ChatterComposer, ports.HistoryManager, func(context.Context) error, error) {
+		return nil, nil, nil, wantErr
+	}
+	_, _, _, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+	if err != wantErr {
+		t.Errorf("got %v; want %v", err, wantErr)
+	}
+}
 
-	t.Run("FinalizeSession", func(t *testing.T) {
-		m := new(MockSessionLifecycleManager)
-		m.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
-			return nil
-		}
-		err := m.FinalizeSession(context.Background(), nil, nil, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		snap := m.Snapshot()
-		if snap["FinalizeSession"] != 1 {
-			t.Errorf("FinalizeSession calls: got %d, want 1", snap["FinalizeSession"])
-		}
-	})
+func TestMockSessionLifecycleManager_FinalizeSession(t *testing.T) {
+	m := new(MockSessionLifecycleManager)
+	m.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
+		return nil
+	}
+	err := m.FinalizeSession(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	snap := m.Snapshot()
+	if snap["FinalizeSession"] != 1 {
+		t.Errorf("FinalizeSession calls: got %d, want 1", snap["FinalizeSession"])
+	}
+}
 
-	t.Run("FinalizeSession returns error", func(t *testing.T) {
-		m := new(MockSessionLifecycleManager)
-		wantErr := errors.New("finalize failed")
-		m.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
-			return wantErr
-		}
-		err := m.FinalizeSession(context.Background(), nil, nil, nil)
-		if err != wantErr {
-			t.Errorf("got %v; want %v", err, wantErr)
-		}
-	})
+func TestMockSessionLifecycleManager_FinalizeSession_Error(t *testing.T) {
+	m := new(MockSessionLifecycleManager)
+	wantErr := errors.New("finalize failed")
+	m.FinalizeSessionFunc = func(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionFinalizer, cfg *domain_config.Config) error {
+		return wantErr
+	}
+	err := m.FinalizeSession(context.Background(), nil, nil, nil)
+	if err != wantErr {
+		t.Errorf("got %v; want %v", err, wantErr)
+	}
+}
 
-	t.Run("default behavior when Fn is nil", func(t *testing.T) {
-		m := new(MockSessionLifecycleManager)
-		deps, hm, cleanup, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if deps != nil || hm != nil || cleanup != nil {
-			t.Error("expected nil returns when Fn is nil")
-		}
-		err = m.FinalizeSession(context.Background(), nil, nil, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
+func TestMockSessionLifecycleManager_DefaultBehavior(t *testing.T) {
+	m := new(MockSessionLifecycleManager)
+	deps, hm, cleanup, err := m.BuildSessionDependencies(context.Background(), nil, "", false, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deps != nil || hm != nil || cleanup != nil {
+		t.Error("expected nil returns when Fn is nil")
+	}
+	err = m.FinalizeSession(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }

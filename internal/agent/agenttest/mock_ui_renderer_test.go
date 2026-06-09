@@ -666,7 +666,7 @@ func TestMockUIRenderer_IsTerminalContext(t *testing.T) {
 // Snapshot integration test
 // ---------------------------------------------------------------------------
 
-func TestMockUIRenderer_Snapshot_AllMethods(t *testing.T) {
+func TestMockUIRenderer_Snapshot_CalledMethods(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -697,6 +697,22 @@ func TestMockUIRenderer_Snapshot_AllMethods(t *testing.T) {
 	if snap.LogToolCall != 1 {
 		t.Errorf("LogToolCall = %d; want 1", snap.LogToolCall)
 	}
+}
+
+func TestMockUIRenderer_Snapshot_UncalledMethods(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	m := &MockUIRenderer{}
+
+	// Call one method from each sub-interface.
+	m.SetUseColor(true)                                     // RendererConfigurator
+	m.StartSpinner(ctx)                                     // ResponseRenderer
+	m.LogTurnStatus(ctx, events.TurnStatus{})               // StatusLogger
+	m.LogUsage(ctx, &llm.Metrics{}, "/tmp/log", time.Now()) // UsageLogger
+	m.LogToolCall(ctx, nil, 0, 0, false)                    // ToolLogger
+
+	snap := m.Snapshot()
 
 	// Uncalled counters must be 0.
 	if snap.StartSpinnerWithStatus != 0 {
@@ -723,6 +739,22 @@ func TestMockUIRenderer_Snapshot_AllMethods(t *testing.T) {
 	if snap.IsTerminalContext != 0 {
 		t.Errorf("IsTerminalContext = %d; want 0", snap.IsTerminalContext)
 	}
+}
+
+func TestMockUIRenderer_Snapshot_MethodOrder(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	m := &MockUIRenderer{}
+
+	// Call one method from each sub-interface.
+	m.SetUseColor(true)                                     // RendererConfigurator
+	m.StartSpinner(ctx)                                     // ResponseRenderer
+	m.LogTurnStatus(ctx, events.TurnStatus{})               // StatusLogger
+	m.LogUsage(ctx, &llm.Metrics{}, "/tmp/log", time.Now()) // UsageLogger
+	m.LogToolCall(ctx, nil, 0, 0, false)                    // ToolLogger
+
+	snap := m.Snapshot()
 
 	// Methods slice must have correct order and length.
 	wantMethods := []string{"SetUseColor", "StartSpinner", "LogTurnStatus", "LogUsage", "LogToolCall"}

@@ -793,109 +793,167 @@ func (l *captureErrorLogger) Error(msg string, args ...any) {
 	}
 }
 
+// runApplyThinkingBudgetWithCanceledCtx creates a Client with thinkingBudget=3000,
+// maxThinkingBudget=1024, and a captureErrorLogger. It calls applyThinkingBudget
+// with a canceled context and returns the captured log message, KV args, and the
+// config (so callers can inspect the capped budget).
+func runApplyThinkingBudgetWithCanceledCtx(t *testing.T) (capturedMsg string, capturedKV []any, config *genai.ThinkingConfig) {
+	t.Helper()
+
+	captureLogger := &captureErrorLogger{
+		errorFn: func(msg string, args ...any) {
+			capturedMsg = msg
+			capturedKV = args
+		},
+	}
+
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+
+	c := &Client{
+		eventBus:          bus,
+		logger:            captureLogger,
+		thinkingBudget:    3000,
+		maxThinkingBudget: 1024,
+		model:             "test-model",
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	config = &genai.ThinkingConfig{}
+	c.applyThinkingBudget(ctx, config, 3000, 1024, "test-model")
+
+	return capturedMsg, capturedKV, config
+}
+
+// newThinkingCaptureServer creates an httptest server that captures the
+// thinkingConfig from the incoming request's generationConfig and responds
+// with a minimal valid GenerateContentResponse.
+// Returns the server and a pointer to the captured config map.
+func newThinkingCaptureServer(t *testing.T) (*httptest.Server, *map[string]any) {
+	t.Helper()
+	var captured map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("failed to decode request body: %v", err)
+		}
+		if gc, ok := body["generationConfig"].(map[string]any); ok {
+			if tc, ok := gc["thinkingConfig"].(map[string]any); ok {
+				captured = tc
+			}
+		}
+		resp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{{
+				Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}},
+			}},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server, &captured
+}
+
+// newGeminiClientForThinking creates a Client pointed at the given server
+// with standard Vertex AI URL construction and common options.
+func newGeminiClientForThinking(t *testing.T, server *httptest.Server, opts ...geminiOption) *Client {
+	t.Helper()
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	authenticator := &auth.BearerAuth{Token: "test-token"}
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+	opts = append(opts, WithEventBus(bus), WithTimeout(5*time.Second))
+	client, err := NewClient(apiURL, "test-model", authenticator, opts...)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	return client
+}
+
+// assertThinkingConfigLevelOnly validates the captured thinking config
+// for the "level-only, budget=0" scenario.
+func assertThinkingConfigLevelOnly(t *testing.T, captured *map[string]any) {
+	t.Helper()
+	if *captured == nil {
+		t.Fatal("expected thinkingConfig in request")
+	}
+	if includeThoughts, _ := (*captured)["includeThoughts"].(bool); !includeThoughts {
+		t.Error("expected includeThoughts=true")
+	}
+	if level, _ := (*captured)["thinkingLevel"].(string); level != "high" {
+		t.Errorf("expected thinkingLevel='high', got %q", level)
+	}
+	if _, hasBudget := (*captured)["thinkingBudget"]; hasBudget {
+		t.Error("expected thinkingBudget to be absent when budget=0")
+	}
+}
+
+// assertNoThinkingConfig validates that no thinkingConfig was sent.
+func assertNoThinkingConfig(t *testing.T, captured *map[string]any) {
+	t.Helper()
+	if *captured != nil {
+		t.Errorf("expected no thinkingConfig, got %+v", *captured)
+	}
+}
+
+// assertLogArgsContainEventTypeAndError validates that the captured KV log args
+// contain event_type=SystemMessageEvent and an error key.
+func assertLogArgsContainEventTypeAndError(t *testing.T, capturedKV []any) {
+	t.Helper()
+	var foundEventType, foundError bool
+	for i := 0; i+1 < len(capturedKV); i += 2 {
+		key, ok := capturedKV[i].(string)
+		if !ok {
+			continue
+		}
+		switch key {
+		case "event_type":
+			if val, ok := capturedKV[i+1].(string); ok && val == "SystemMessageEvent" {
+				foundEventType = true
+			}
+		case "error":
+			foundError = true
+		}
+	}
+	if !foundEventType {
+		t.Error("expected event_type=SystemMessageEvent in log args")
+	}
+	if !foundError {
+		t.Error("expected error key in log args")
+	}
+}
+
 func TestApplyThinkingBudget_PublishError(t *testing.T) {
 	t.Run("logs error when SafePublish returns non-ErrBusNotInitialized error", func(t *testing.T) {
-		var capturedMsg string
-		var capturedKV []any
-		captureLogger := &captureErrorLogger{
-			errorFn: func(msg string, args ...any) {
-				capturedMsg = msg
-				capturedKV = args
-			},
-		}
 
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
-		c := &Client{
-			eventBus:          bus,
-			logger:            captureLogger,
-			thinkingBudget:    3000,
-			maxThinkingBudget: 1024,
-			model:             "test-model",
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-
-		config := &genai.ThinkingConfig{}
-		c.applyThinkingBudget(ctx, config, 3000, 1024, "test-model")
-
-		// Budget must still be capped
-		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1024 {
-			t.Errorf("expected budget capped at 1024, got %v", config.ThinkingBudget)
-		}
-
-		// Logger.Error must have been called with "event_publish_failed"
-		if capturedMsg != "event_publish_failed" {
-			t.Errorf("expected Error log 'event_publish_failed', got %q", capturedMsg)
-		}
-
-		// Verify KV args contain expected keys
-		var foundEventType, foundError bool
-		for i := 0; i+1 < len(capturedKV); i += 2 {
-			key, ok := capturedKV[i].(string)
-			if !ok {
-				continue
+		t.Run("caps_budget_at_max", func(t *testing.T) {
+			_, _, config := runApplyThinkingBudgetWithCanceledCtx(t)
+			if config.ThinkingBudget == nil || *config.ThinkingBudget != 1024 {
+				t.Errorf("expected budget capped at 1024, got %v", config.ThinkingBudget)
 			}
-			switch key {
-			case "event_type":
-				if val, ok := capturedKV[i+1].(string); ok && val == "SystemMessageEvent" {
-					foundEventType = true
-				}
-			case "error":
-				foundError = true
+		})
+
+		t.Run("logs_event_publish_failed", func(t *testing.T) {
+			capturedMsg, _, _ := runApplyThinkingBudgetWithCanceledCtx(t)
+			if capturedMsg != "event_publish_failed" {
+				t.Errorf("expected Error log 'event_publish_failed', got %q", capturedMsg)
 			}
-		}
-		if !foundEventType {
-			t.Error("expected event_type=SystemMessageEvent in log args")
-		}
-		if !foundError {
-			t.Error("expected error key in log args")
-		}
+		})
+
+		t.Run("log_args_contain_event_type_and_error", func(t *testing.T) {
+			_, capturedKV, _ := runApplyThinkingBudgetWithCanceledCtx(t)
+			assertLogArgsContainEventTypeAndError(t, capturedKV)
+		})
 	})
 }
 
 func TestConfigureThinking_LevelOnly(t *testing.T) {
-	t.Run("level-only activates ThinkingLevel without budget", func(t *testing.T) {
-		var capturedThinkingConfig map[string]any
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Errorf("failed to decode request body: %v", err)
-			}
-			if gc, ok := body["generationConfig"].(map[string]any); ok {
-				if tc, ok := gc["thinkingConfig"].(map[string]any); ok {
-					capturedThinkingConfig = tc
-				}
-			}
-
-			resp := genai.GenerateContentResponse{
-				Candidates: []*genai.Candidate{{
-					Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}},
-				}},
-			}
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
-				t.Errorf("failed to encode response: %v", err)
-			}
-		}))
-		t.Cleanup(server.Close)
-
-		apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-		authenticator := &auth.BearerAuth{Token: "test-token"}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
-		client, err := NewClient(
-			apiURL, "test-model", authenticator,
-			WithThinking(0, "high", 0),
-			WithEventBus(bus),
-			WithTimeout(5*time.Second),
-		)
-		if err != nil {
-			t.Fatalf("failed to create client: %v", err)
-		}
+	t.Run("level_only", func(t *testing.T) {
+		server, captured := newThinkingCaptureServer(t)
+		client := newGeminiClientForThinking(t, server, WithThinking(0, "high", 0))
 
 		history := []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
@@ -908,58 +966,12 @@ func TestConfigureThinking_LevelOnly(t *testing.T) {
 			t.Errorf("expected 'OK', got %q", content.Parts[0].Text)
 		}
 
-		if capturedThinkingConfig == nil {
-			t.Fatal("expected thinkingConfig in request")
-		}
-		if includeThoughts, _ := capturedThinkingConfig["includeThoughts"].(bool); !includeThoughts {
-			t.Error("expected includeThoughts=true")
-		}
-		if level, _ := capturedThinkingConfig["thinkingLevel"].(string); level != "high" {
-			t.Errorf("expected thinkingLevel='high', got %q", level)
-		}
-		if _, hasBudget := capturedThinkingConfig["thinkingBudget"]; hasBudget {
-			t.Error("expected thinkingBudget to be absent when budget=0")
-		}
+		assertThinkingConfigLevelOnly(t, captured)
 	})
 
-	t.Run("no thinking config when both budget and level are zero/empty", func(t *testing.T) {
-		var capturedThinkingConfig map[string]any
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Errorf("failed to decode request body: %v", err)
-			}
-			if gc, ok := body["generationConfig"].(map[string]any); ok {
-				if tc, ok := gc["thinkingConfig"].(map[string]any); ok {
-					capturedThinkingConfig = tc
-				}
-			}
-
-			resp := genai.GenerateContentResponse{
-				Candidates: []*genai.Candidate{{
-					Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}},
-				}},
-			}
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
-				t.Errorf("failed to encode response: %v", err)
-			}
-		}))
-		t.Cleanup(server.Close)
-
-		apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-		authenticator := &auth.BearerAuth{Token: "test-token"}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
-		client, err := NewClient(
-			apiURL, "test-model", authenticator,
-			WithEventBus(bus),
-			WithTimeout(5*time.Second),
-		)
-		if err != nil {
-			t.Fatalf("failed to create client: %v", err)
-		}
+	t.Run("zero_empty", func(t *testing.T) {
+		server, captured := newThinkingCaptureServer(t)
+		client := newGeminiClientForThinking(t, server) // no WithThinking
 
 		history := []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
@@ -972,9 +984,7 @@ func TestConfigureThinking_LevelOnly(t *testing.T) {
 			t.Errorf("expected 'OK', got %q", content.Parts[0].Text)
 		}
 
-		if capturedThinkingConfig != nil {
-			t.Errorf("expected no thinkingConfig, got %+v", capturedThinkingConfig)
-		}
+		assertNoThinkingConfig(t, captured)
 	})
 }
 
