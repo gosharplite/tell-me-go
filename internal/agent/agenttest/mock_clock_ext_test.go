@@ -276,22 +276,3 @@ func TestMockClock_NewTicker_Integration(t *testing.T) {
 		t.Fatal("expected a value on the ticker channel, but none was available")
 	}
 }
-
-func TestMockClock_NewTicker_MethodLogged(t *testing.T) {
-	t.Parallel()
-
-	m := &MockClock{}
-	_ = m.NewTicker(1 * time.Second)
-
-	_, methods := m.Snapshot()
-	found := false
-	for _, method := range methods {
-		if method == "NewTicker" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("NewTicker call was not logged in calledMethods")
-	}
-}

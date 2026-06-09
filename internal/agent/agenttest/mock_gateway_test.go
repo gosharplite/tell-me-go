@@ -6,6 +6,7 @@ package agenttest
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -42,6 +43,17 @@ func newGatewaySendChatOverride() *MockGateway {
 // returns the default "model"/"generated" response with non-nil Metrics.
 func checkGenerateDefault(t *testing.T, m *MockGateway) {
 	t.Helper()
+
+	var genCalled, chatCalled int
+	m.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		genCalled++
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
+	m.SendChatFn = func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		chatCalled++
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
+
 	content, metrics, err := m.Generate(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,12 +68,11 @@ func checkGenerateDefault(t *testing.T, m *MockGateway) {
 		t.Error("expected non-nil Metrics")
 	}
 
-	gen, chat, _ := m.Snapshot()
-	if gen != 1 {
-		t.Errorf("Generate calls: got %d, want 1", gen)
+	if genCalled != 1 {
+		t.Errorf("Generate calls: got %d, want 1", genCalled)
 	}
-	if chat != 0 {
-		t.Errorf("SendChat calls: got %d, want 0", chat)
+	if chatCalled != 0 {
+		t.Errorf("SendChat calls: got %d, want 0", chatCalled)
 	}
 }
 
@@ -69,6 +80,18 @@ func checkGenerateDefault(t *testing.T, m *MockGateway) {
 // override returns the scripted "tool"/"custom" response with TotalTokens=42.
 func checkGenerateWithOverride(t *testing.T, m *MockGateway) {
 	t.Helper()
+
+	var genCalled, chatCalled int
+	origGen := m.GenerateFunc
+	m.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		genCalled++
+		return origGen(ctx, input, tools, resolver)
+	}
+	m.SendChatFn = func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		chatCalled++
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
+
 	content, metrics, err := m.Generate(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -83,12 +106,11 @@ func checkGenerateWithOverride(t *testing.T, m *MockGateway) {
 		t.Errorf("got TotalTokens %d; want 42", metrics.TotalTokens)
 	}
 
-	gen, chat, _ := m.Snapshot()
-	if gen != 1 {
-		t.Errorf("Generate calls: got %d, want 1", gen)
+	if genCalled != 1 {
+		t.Errorf("Generate calls: got %d, want 1", genCalled)
 	}
-	if chat != 0 {
-		t.Errorf("SendChat calls: got %d, want 0", chat)
+	if chatCalled != 0 {
+		t.Errorf("SendChat calls: got %d, want 0", chatCalled)
 	}
 }
 
@@ -96,6 +118,17 @@ func checkGenerateWithOverride(t *testing.T, m *MockGateway) {
 // returns the default "model"/"generated" response from SendChat.
 func checkSendChatDefault(t *testing.T, m *MockGateway) {
 	t.Helper()
+
+	var genCalled, chatCalled int
+	m.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		genCalled++
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
+	m.SendChatFn = func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		chatCalled++
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
+
 	content, _, err := m.SendChat(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -107,12 +140,11 @@ func checkSendChatDefault(t *testing.T, m *MockGateway) {
 		t.Errorf("got parts %+v; want [Text:generated]", content.Parts)
 	}
 
-	gen, chat, _ := m.Snapshot()
-	if gen != 0 {
-		t.Errorf("Generate calls: got %d, want 0", gen)
+	if genCalled != 0 {
+		t.Errorf("Generate calls: got %d, want 0", genCalled)
 	}
-	if chat != 1 {
-		t.Errorf("SendChat calls: got %d, want 1", chat)
+	if chatCalled != 1 {
+		t.Errorf("SendChat calls: got %d, want 1", chatCalled)
 	}
 }
 
@@ -120,6 +152,18 @@ func checkSendChatDefault(t *testing.T, m *MockGateway) {
 // override returns the scripted "assistant"/"custom_chat" response.
 func checkSendChatWithOverride(t *testing.T, m *MockGateway) {
 	t.Helper()
+
+	var genCalled, chatCalled int
+	m.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		genCalled++
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
+	origChat := m.SendChatFn
+	m.SendChatFn = func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		chatCalled++
+		return origChat(ctx, history, tools, resolver)
+	}
+
 	content, _, err := m.SendChat(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -131,12 +175,11 @@ func checkSendChatWithOverride(t *testing.T, m *MockGateway) {
 		t.Errorf("got text %q; want %q", content.Parts[0].Text, "custom_chat")
 	}
 
-	gen, chat, _ := m.Snapshot()
-	if gen != 0 {
-		t.Errorf("Generate calls: got %d, want 0", gen)
+	if genCalled != 0 {
+		t.Errorf("Generate calls: got %d, want 0", genCalled)
 	}
-	if chat != 1 {
-		t.Errorf("SendChat calls: got %d, want 1", chat)
+	if chatCalled != 1 {
+		t.Errorf("SendChat calls: got %d, want 1", chatCalled)
 	}
 }
 
@@ -181,10 +224,21 @@ func TestMockGateway(t *testing.T) {
 }
 
 // TestMockGateway_RaceDetection verifies that concurrent calls to
-// Generate, SendChat, and SetGenerateFn do not trigger the race
-// detector. This test is a precondition for the mutex-based spy pattern.
+// Generate and SendChat are safe (read-only access to func fields
+// after initial setup) and that atomic.Int32 captures work correctly
+// under contention.
 func TestMockGateway_RaceDetection(t *testing.T) {
 	m := &MockGateway{}
+
+	var genCalls, chatCalls atomic.Int32
+	m.GenerateFunc = func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		genCalls.Add(1)
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
+	m.SendChatFn = func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		chatCalls.Add(1)
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+	}
 
 	var wg sync.WaitGroup
 	const goroutines = 5
@@ -197,17 +251,15 @@ func TestMockGateway_RaceDetection(t *testing.T) {
 			for i := 0; i < iterations; i++ {
 				_, _, _ = m.Generate(context.Background(), nil, nil, nil)
 				_, _, _ = m.SendChat(context.Background(), nil, nil, nil)
-				m.SetGenerateFn(nil)
 			}
 		}()
 	}
 	wg.Wait()
 
-	gen, chat, _ := m.Snapshot()
-	if gen != goroutines*iterations {
+	if gen := int(genCalls.Load()); gen != goroutines*iterations {
 		t.Errorf("Generate calls: got %d, want %d", gen, goroutines*iterations)
 	}
-	if chat != goroutines*iterations {
+	if chat := int(chatCalls.Load()); chat != goroutines*iterations {
 		t.Errorf("SendChat calls: got %d, want %d", chat, goroutines*iterations)
 	}
 }

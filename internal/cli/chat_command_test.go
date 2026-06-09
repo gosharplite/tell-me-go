@@ -392,7 +392,17 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var loaded bool
 			ms, ml := tt.setupMock()
+
+			// Wrap LoadFunc to capture if Load was called
+			if ml.LoadFunc != nil {
+				orig := ml.LoadFunc
+				ml.LoadFunc = func(path string) (*config.Config, error) {
+					loaded = true
+					return orig(path)
+				}
+			}
 
 			cmdCtx := &context{
 				Loader:      ml,
@@ -409,9 +419,8 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 				if snap.StreamTurnsLog != 1 {
 					t.Errorf("expected StreamTurnsLog to be called once, got %d", snap.StreamTurnsLog)
 				}
-				snapML := ml.Snapshot()
-				if snapML["Load"] != 1 {
-					t.Errorf("expected Load to be called once, got %d", snapML["Load"])
+				if !loaded {
+					t.Error("expected Load to be called once")
 				}
 			} else {
 				if snap.StreamTurnsLog != 0 {

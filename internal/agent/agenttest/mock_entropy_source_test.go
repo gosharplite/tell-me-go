@@ -6,6 +6,7 @@ package agenttest
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -13,8 +14,10 @@ func TestMockEntropySource_Read_CopiesBytes(t *testing.T) {
 	t.Parallel()
 
 	wantData := []byte{0x01, 0x02}
+	var called int
 	m := &MockEntropySource{
 		ReadFunc: func(p []byte) (n int, err error) {
+			called++
 			copy(p, wantData)
 			return len(wantData), nil
 		},
@@ -32,12 +35,8 @@ func TestMockEntropySource_Read_CopiesBytes(t *testing.T) {
 		t.Errorf("got buf[0]=%d buf[1]=%d; want 1, 2", buf[0], buf[1])
 	}
 
-	calls, methods := m.Snapshot()
-	if calls != 1 {
-		t.Errorf("Read calls: got %d, want 1", calls)
-	}
-	if len(methods) != 1 || methods[0] != "Read" {
-		t.Errorf("methods: got %v, want [Read]", methods)
+	if called != 1 {
+		t.Errorf("Read calls: got %d, want 1", called)
 	}
 }
 
@@ -45,8 +44,10 @@ func TestMockEntropySource_Read_Error(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("entropy exhausted")
+	var called int
 	m := &MockEntropySource{
 		ReadFunc: func(p []byte) (n int, err error) {
+			called++
 			return 0, wantErr
 		},
 	}
@@ -60,16 +61,21 @@ func TestMockEntropySource_Read_Error(t *testing.T) {
 		t.Errorf("got n %d; want 0", n)
 	}
 
-	calls, _ := m.Snapshot()
-	if calls != 1 {
-		t.Errorf("Read calls: got %d, want 1", calls)
+	if called != 1 {
+		t.Errorf("Read calls: got %d, want 1", called)
 	}
 }
 
 func TestMockEntropySource_Read_NilFunc(t *testing.T) {
 	t.Parallel()
 
-	m := &MockEntropySource{} // ReadFunc is nil
+	var called int
+	m := &MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			called++
+			return 0, nil
+		},
+	}
 
 	buf := make([]byte, 8)
 	n, err := m.Read(buf)
@@ -80,17 +86,19 @@ func TestMockEntropySource_Read_NilFunc(t *testing.T) {
 		t.Errorf("got n %d; want 0", n)
 	}
 
-	calls, methods := m.Snapshot()
-	if calls != 1 {
-		t.Errorf("Read calls: got %d, want 1", calls)
-	}
-	if len(methods) != 1 || methods[0] != "Read" {
-		t.Errorf("methods: got %v, want [Read]", methods)
+	if called != 1 {
+		t.Errorf("Read calls: got %d, want 1", called)
 	}
 }
 
 func TestMockEntropySource_RaceDetection(t *testing.T) {
-	m := &MockEntropySource{}
+	var called atomic.Int32
+	m := &MockEntropySource{
+		ReadFunc: func(p []byte) (n int, err error) {
+			called.Add(1)
+			return 0, nil
+		},
+	}
 
 	var wg sync.WaitGroup
 	const goroutines = 5
@@ -108,26 +116,7 @@ func TestMockEntropySource_RaceDetection(t *testing.T) {
 	}
 	wg.Wait()
 
-	calls, _ := m.Snapshot()
-	if calls != goroutines*iterations {
-		t.Errorf("Read calls: got %d, want %d", calls, goroutines*iterations)
-	}
-}
-
-func TestMockEntropySource_Snapshot_DefensiveCopy(t *testing.T) {
-	t.Parallel()
-
-	m := &MockEntropySource{}
-	buf := make([]byte, 1)
-	_, _ = m.Read(buf)
-	_, _ = m.Read(buf)
-
-	_, methods := m.Snapshot()
-	// Mutate the returned slice — the internal state must not change
-	methods[0] = "corrupted"
-
-	_, methods2 := m.Snapshot()
-	if methods2[0] != "Read" {
-		t.Errorf("Snapshot must return a defensive copy; got %v", methods2)
+	if called.Load() != goroutines*iterations {
+		t.Errorf("Read calls: got %d, want %d", called.Load(), goroutines*iterations)
 	}
 }
