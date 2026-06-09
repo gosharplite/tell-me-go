@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
+	domainLLM "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
@@ -519,13 +520,67 @@ func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
 	}
 }
 
+// newOpenAIMockServer creates an httptest server that responds with a minimal
+// valid OpenAI chat completion response.
+func newOpenAIMockServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// newTestBus creates a simple synchronous event bus for tests.
+func newTestBus(t *testing.T) events.EventBus {
+	t.Helper()
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, bus)
+	return bus
+}
+
+// assertNewClientError validates the error-path contract for DefaultClientFactory.NewClient:
+// returns nil client and non-nil error when createAuthenticator fails.
+func assertNewClientError(t *testing.T, client domainLLM.ExtendedClient, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error for provider with missing API key")
+	}
+	if client != nil {
+		t.Errorf("expected nil client on error, got %v", client)
+	}
+}
+
+// assertFailoverChainAuthError validates the error-path contract for
+// DefaultClientFactory.NewFailoverChain when a provider has a missing API key.
+func assertFailoverChainAuthError(t *testing.T, gw domainLLM.ExtendedClient, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error for provider with missing API key")
+	}
+	if !strings.Contains(err.Error(), `failover chain`) {
+		t.Errorf("expected error to contain 'failover chain', got: %v", err)
+	}
+	if gw != nil {
+		t.Errorf("expected nil gateway on error, got %v", gw)
+	}
+}
+
+// assertFailoverChainEmptyOrder validates the empty failover order contract:
+// returns non-nil gateway (Go nil-interface quirk documented in code) and nil error.
+func assertFailoverChainEmptyOrder(t *testing.T, gw domainLLM.ExtendedClient, err error) {
+	t.Helper()
+	if gw != nil {
+		t.Log("known Go nil-interface behavior: nil *FailoverGateway stored in llm.ExtendedClient is non-nil")
+	}
+	if err != nil {
+		t.Errorf("expected nil error for empty failover order, got %v", err)
+	}
+}
+
 func TestDefaultClientFactory(t *testing.T) {
 	t.Run("NewClient delegates and returns client", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-		}))
-		defer server.Close()
-
+		server := newOpenAIMockServer(t)
 		cfg := &config.Config{
 			SelectedProvider: "openai",
 			Providers: map[string]config.LLMProvider{
@@ -537,9 +592,7 @@ func TestDefaultClientFactory(t *testing.T) {
 				},
 			},
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		factory := &DefaultClientFactory{}
 		client, err := factory.NewClient(cfg, pricing.PricingData{}, bus, nil)
 		if err != nil {
@@ -548,8 +601,6 @@ func TestDefaultClientFactory(t *testing.T) {
 		if client == nil {
 			t.Fatal("NewClient() returned nil client")
 		}
-
-		// Verify the client is functional.
 		_, _, sendErr := client.SendChat(context.Background(), nil, nil, nil)
 		if sendErr != nil {
 			t.Errorf("SendChat on constructed client failed: %v", sendErr)
@@ -566,25 +617,14 @@ func TestDefaultClientFactory(t *testing.T) {
 				},
 			},
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		factory := &DefaultClientFactory{}
 		client, err := factory.NewClient(cfg, pricing.PricingData{}, bus, nil)
-		if err == nil {
-			t.Fatal("expected error for provider with missing API key")
-		}
-		if client != nil {
-			t.Errorf("expected nil client on error, got %v", client)
-		}
+		assertNewClientError(t, client, err)
 	})
 
 	t.Run("NewFailoverChain delegates and returns gateway", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-		}))
-		defer server.Close()
-
+		server := newOpenAIMockServer(t)
 		cfg := &config.Config{
 			FailoverOrder: []string{"openai"},
 			Providers: map[string]config.LLMProvider{
@@ -596,9 +636,7 @@ func TestDefaultClientFactory(t *testing.T) {
 				},
 			},
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		factory := &DefaultClientFactory{}
 		gw, err := factory.NewFailoverChain(cfg, pricing.PricingData{}, bus, nil)
 		if err != nil {
@@ -607,8 +645,6 @@ func TestDefaultClientFactory(t *testing.T) {
 		if gw == nil {
 			t.Fatal("NewFailoverChain() returned nil gateway")
 		}
-
-		// Verify the gateway is functional.
 		_, _, sendErr := gw.SendChat(context.Background(), nil, nil, nil)
 		if sendErr != nil {
 			t.Errorf("SendChat on constructed gateway failed: %v", sendErr)
@@ -616,26 +652,15 @@ func TestDefaultClientFactory(t *testing.T) {
 	})
 
 	t.Run("NewFailoverChain returns nil,nil for empty order", func(t *testing.T) {
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		factory := &DefaultClientFactory{}
 		cfg := &config.Config{FailoverOrder: nil}
 		gw, err := factory.NewFailoverChain(cfg, pricing.PricingData{}, bus, nil)
-		if gw != nil {
-			t.Log("known Go nil-interface behavior: nil *FailoverGateway stored in llm.ExtendedClient is non-nil")
-		}
-		if err != nil {
-			t.Errorf("expected nil error for empty failover order, got %v", err)
-		}
+		assertFailoverChainEmptyOrder(t, gw, err)
 	})
 
 	t.Run("NewFailoverChain returns error for auth failure", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-		}))
-		defer server.Close()
-
+		server := newOpenAIMockServer(t)
 		cfg := &config.Config{
 			FailoverOrder: []string{"openai", "anthropic"},
 			Providers: map[string]config.LLMProvider{
@@ -652,21 +677,58 @@ func TestDefaultClientFactory(t *testing.T) {
 				},
 			},
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		factory := &DefaultClientFactory{}
 		gw, err := factory.NewFailoverChain(cfg, pricing.PricingData{}, bus, nil)
-		if err == nil {
-			t.Fatal("expected error for provider with missing API key")
-		}
-		if !strings.Contains(err.Error(), `failover chain`) {
-			t.Errorf("expected error to contain 'failover chain', got: %v", err)
+		assertFailoverChainAuthError(t, gw, err)
+	})
+}
+
+// assertNewFailoverChainEmpty validates the empty failover order result:
+// gw must be nil, err must be nil.
+func assertNewFailoverChainEmpty(t *testing.T, gw *FailoverGateway, err error) {
+	t.Helper()
+	if gw != nil {
+		t.Errorf("expected nil gateway for empty failover order, got %v", gw)
+	}
+	if err != nil {
+		t.Errorf("expected nil error for empty failover order, got %v", err)
+	}
+}
+
+// assertNewFailoverChainAuthError validates the auth error result:
+// gw must be nil, err must contain the expected wrapped message.
+func assertNewFailoverChainAuthError(t *testing.T, gw *FailoverGateway, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error for provider with missing API key")
+	}
+	if !strings.Contains(err.Error(), `failover chain: provider "anthropic"`) {
+		t.Errorf("expected error to contain 'failover chain: provider \"anthropic\"', got: %v", err)
+	}
+	if gw != nil {
+		t.Errorf("expected nil gateway on error, got %v", gw)
+	}
+}
+
+// assertNewFailoverChainGeminiResult validates the Gemini SDK init result.
+// When ADC is available the SDK init succeeds (gw non-nil, err nil);
+// when ADC is unavailable it fails with a wrapped error.
+func assertNewFailoverChainGeminiResult(t *testing.T, gw *FailoverGateway, err error) {
+	t.Helper()
+	if err != nil {
+		if !strings.Contains(err.Error(), `failover chain: provider "gemini"`) {
+			t.Errorf("expected error to contain 'failover chain: provider \"gemini\"', got: %v", err)
 		}
 		if gw != nil {
 			t.Errorf("expected nil gateway on error, got %v", gw)
 		}
-	})
+	} else {
+		t.Log("ADC available — Gemini SDK init succeeded, error path not hit")
+		if gw == nil {
+			t.Error("expected non-nil gateway when SDK init succeeds")
+		}
+	}
 }
 
 func TestNewFailoverChain(t *testing.T) {
@@ -674,24 +736,13 @@ func TestNewFailoverChain(t *testing.T) {
 		cfg := &config.Config{
 			FailoverOrder: nil,
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
-		if gw != nil {
-			t.Errorf("expected nil gateway for empty failover order, got %v", gw)
-		}
-		if err != nil {
-			t.Errorf("expected nil error for empty failover order, got %v", err)
-		}
+		assertNewFailoverChainEmpty(t, gw, err)
 	})
 
 	t.Run("single valid provider constructs gateway", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-		}))
-		defer server.Close()
-
+		server := newOpenAIMockServer(t)
 		cfg := &config.Config{
 			FailoverOrder: []string{"openai"},
 			Providers: map[string]config.LLMProvider{
@@ -703,9 +754,7 @@ func TestNewFailoverChain(t *testing.T) {
 				},
 			},
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -713,8 +762,6 @@ func TestNewFailoverChain(t *testing.T) {
 		if gw == nil {
 			t.Fatal("expected non-nil gateway")
 		}
-
-		// Verify the gateway is functional by calling SendChat.
 		_, _, sendErr := gw.SendChat(context.Background(), nil, nil, nil)
 		if sendErr != nil {
 			t.Errorf("SendChat on constructed gateway failed: %v", sendErr)
@@ -722,11 +769,7 @@ func TestNewFailoverChain(t *testing.T) {
 	})
 
 	t.Run("auth error in chain provider returns wrapped error", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-		}))
-		defer server.Close()
-
+		server := newOpenAIMockServer(t)
 		cfg := &config.Config{
 			FailoverOrder: []string{"openai", "anthropic"},
 			Providers: map[string]config.LLMProvider{
@@ -743,27 +786,13 @@ func TestNewFailoverChain(t *testing.T) {
 				},
 			},
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
-		if err == nil {
-			t.Fatal("expected error for provider with missing API key")
-		}
-		if !strings.Contains(err.Error(), `failover chain: provider "anthropic"`) {
-			t.Errorf("expected error to contain 'failover chain: provider \"anthropic\"', got: %v", err)
-		}
-		if gw != nil {
-			t.Errorf("expected nil gateway on error, got %v", gw)
-		}
+		assertNewFailoverChainAuthError(t, gw, err)
 	})
 
 	t.Run("Gemini SDK init error in chain provider returns wrapped error", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-		}))
-		defer server.Close()
-
+		server := newOpenAIMockServer(t)
 		cfg := &config.Config{
 			FailoverOrder: []string{"openai", "gemini"},
 			Providers: map[string]config.LLMProvider{
@@ -781,22 +810,8 @@ func TestNewFailoverChain(t *testing.T) {
 				},
 			},
 		}
-		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, bus)
-
+		bus := newTestBus(t)
 		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
-		if err != nil {
-			if !strings.Contains(err.Error(), `failover chain: provider "gemini"`) {
-				t.Errorf("expected error to contain 'failover chain: provider \"gemini\"', got: %v", err)
-			}
-			if gw != nil {
-				t.Errorf("expected nil gateway on error, got %v", gw)
-			}
-		} else {
-			t.Log("ADC available — Gemini SDK init succeeded, error path not hit")
-			if gw == nil {
-				t.Error("expected non-nil gateway when SDK init succeeds")
-			}
-		}
+		assertNewFailoverChainGeminiResult(t, gw, err)
 	})
 }
