@@ -207,21 +207,48 @@ func TestBrowseCommand_NilInteractorRef_DoesNotPanic(t *testing.T) {
 	// Should not panic with nil InteractorRef
 }
 
+// assertSnapHistoryManagerError asserts bootstrapper snapshot for the
+// "history manager error" case: GetHistoryManager was called once but
+// GetUnifiedHistoryProvider was never reached.
+func assertSnapHistoryManagerError(t *testing.T, snap clitest.BootstrapperSnapshot) {
+	t.Helper()
+	if snap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+	}
+	if snap.GetUnifiedHistoryProvider != 0 {
+		t.Errorf("GetUnifiedHistoryProvider: expected 0, got %d", snap.GetUnifiedHistoryProvider)
+	}
+}
+
+// assertSnapBothCalled asserts bootstrapper snapshot for cases where both
+// GetHistoryManager and GetUnifiedHistoryProvider are expected to be called once.
+func assertSnapBothCalled(t *testing.T, snap clitest.BootstrapperSnapshot) {
+	t.Helper()
+	if snap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+	}
+	if snap.GetUnifiedHistoryProvider != 1 {
+		t.Errorf("GetUnifiedHistoryProvider: expected 1, got %d", snap.GetUnifiedHistoryProvider)
+	}
+}
+
 func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		setupMocks  func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService)
-		wantErr     string
-		wantNoError bool
+		name           string
+		setupMocks     func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService)
+		wantErr        string
+		wantNoError    bool
+		assertSnapshot func(t *testing.T, snap clitest.BootstrapperSnapshot)
 	}{
 		{
 			name: "config load error",
 			setupMocks: func(ml *configtest.MockConfigLoader, mb *clitest.MockBootstrapper, ms *clitest.MockChatService) {
 				ml.LoadFunc = func(path string) (*config.Config, error) { return nil, errors.New("config not found") }
 			},
-			wantErr: "error loading config",
+			wantErr:        "error loading config",
+			assertSnapshot: nil,
 		},
 		{
 			name: "history manager error",
@@ -231,7 +258,8 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 					return nil, errors.New("hm failed")
 				}
 			},
-			wantErr: "failed to get history manager",
+			wantErr:        "failed to get history manager",
+			assertSnapshot: assertSnapHistoryManagerError,
 		},
 		{
 			name: "history provider error",
@@ -244,7 +272,8 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 					return nil, errors.New("provider failed")
 				}
 			},
-			wantErr: "failed to get unified history provider",
+			wantErr:        "failed to get unified history provider",
+			assertSnapshot: assertSnapBothCalled,
 		},
 		{
 			name: "BrowseHistory error",
@@ -260,7 +289,8 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 					return errors.New("browse crash")
 				}
 			},
-			wantErr: "browse crash",
+			wantErr:        "browse crash",
+			assertSnapshot: assertSnapBothCalled,
 		},
 		{
 			name: "success",
@@ -276,7 +306,8 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 					return nil
 				}
 			},
-			wantNoError: true,
+			wantNoError:    true,
+			assertSnapshot: assertSnapBothCalled,
 		},
 	}
 
@@ -321,23 +352,8 @@ func TestBrowseCommand_RunBrowse_PostTTY(t *testing.T) {
 				t.Errorf("BuildSessionDependencies: expected 0, got %d", snap.BuildSessionDependencies)
 			}
 
-			switch tt.name {
-			case "config load error":
-				// Config load fails before bootstrapper is reached.
-			case "history manager error":
-				if snap.GetHistoryManager != 1 {
-					t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
-				}
-				if snap.GetUnifiedHistoryProvider != 0 {
-					t.Errorf("GetUnifiedHistoryProvider: expected 0, got %d", snap.GetUnifiedHistoryProvider)
-				}
-			case "history provider error", "BrowseHistory error", "success":
-				if snap.GetHistoryManager != 1 {
-					t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
-				}
-				if snap.GetUnifiedHistoryProvider != 1 {
-					t.Errorf("GetUnifiedHistoryProvider: expected 1, got %d", snap.GetUnifiedHistoryProvider)
-				}
+			if tt.assertSnapshot != nil {
+				tt.assertSnapshot(t, snap)
 			}
 		})
 	}

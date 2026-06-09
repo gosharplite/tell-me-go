@@ -551,66 +551,56 @@ type stubCloser struct{ err error }
 func (s *stubCloser) Close() error { return s.err }
 
 func TestCloseFile(t *testing.T) {
-	tests := []struct {
-		name      string
-		closeErr  error
-		priorErr  error
-		wantErr   bool
-		wantPrior bool // true: prior error preserved; false: close error promoted
-	}{
-		{
-			name:     "close succeeds with no prior error",
-			closeErr: nil,
-			priorErr: nil,
-			wantErr:  false,
-		},
-		{
-			name:      "close fails with no prior error - promoted",
-			closeErr:  fmt.Errorf("disk full"),
-			priorErr:  nil,
-			wantErr:   true,
-			wantPrior: false,
-		},
-		{
-			name:      "close fails with prior error - close error suppressed",
-			closeErr:  fmt.Errorf("disk full"),
-			priorErr:  fmt.Errorf("command failed"),
-			wantErr:   true,
-			wantPrior: true,
-		},
-		{
-			name:      "close succeeds with prior error - prior error preserved",
-			closeErr:  nil,
-			priorErr:  fmt.Errorf("command failed"),
-			wantErr:   true,
-			wantPrior: true,
-		},
-	}
+	t.Run("close succeeds with no prior error", func(t *testing.T) {
+		closer := &stubCloser{err: nil}
+		err := error(nil)
+		closeFile(closer, &err)
+		if err != nil {
+			t.Fatalf("closeFile() err = %v, want nil", err)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			closer := &stubCloser{err: tt.closeErr}
-			err := tt.priorErr
-			closeFile(closer, &err)
+	t.Run("close fails with no prior error - promoted", func(t *testing.T) {
+		closeErr := fmt.Errorf("disk full")
+		closer := &stubCloser{err: closeErr}
+		err := error(nil)
+		closeFile(closer, &err)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to close output file") {
+			t.Errorf("expected 'failed to close output file' in error, got %v", err)
+		}
+		if !strings.Contains(err.Error(), closeErr.Error()) {
+			t.Errorf("expected wrapped close error, got %v", err)
+		}
+	})
 
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("closeFile() err = %v, wantErr = %v", err, tt.wantErr)
-			}
-			if tt.wantErr && tt.wantPrior {
-				if !errors.Is(err, tt.priorErr) {
-					t.Errorf("expected prior error %v preserved, got %v", tt.priorErr, err)
-				}
-			}
-			if tt.wantErr && !tt.wantPrior && tt.priorErr == nil {
-				if !strings.Contains(err.Error(), "failed to close output file") {
-					t.Errorf("expected 'failed to close output file' in error, got %v", err)
-				}
-				if !strings.Contains(err.Error(), tt.closeErr.Error()) {
-					t.Errorf("expected wrapped close error, got %v", err)
-				}
-			}
-		})
-	}
+	t.Run("close fails with prior error - close error suppressed", func(t *testing.T) {
+		priorErr := fmt.Errorf("command failed")
+		closer := &stubCloser{err: fmt.Errorf("disk full")}
+		err := priorErr
+		closeFile(closer, &err)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(err, priorErr) {
+			t.Errorf("expected prior error %v preserved, got %v", priorErr, err)
+		}
+	})
+
+	t.Run("close succeeds with prior error - prior error preserved", func(t *testing.T) {
+		priorErr := fmt.Errorf("command failed")
+		closer := &stubCloser{err: nil}
+		err := priorErr
+		closeFile(closer, &err)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(err, priorErr) {
+			t.Errorf("expected prior error %v preserved, got %v", priorErr, err)
+		}
+	})
 }
 
 // TestNewPipelineCmd_CancelGuard verifies that newPipelineCmd sets the
