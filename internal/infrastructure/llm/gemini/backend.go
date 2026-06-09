@@ -35,19 +35,7 @@ func (c *Client) initSDK(timeout time.Duration) error {
 	}
 	c.mu.RUnlock()
 
-	var tr http.RoundTripper
-	if c.testTransport != nil {
-		tr = c.testTransport
-	} else if defaultTr, ok := http.DefaultTransport.(*http.Transport); ok {
-		tr = defaultTr.Clone()
-	} else {
-		tr = http.DefaultTransport
-	}
-
-	httpClient := &http.Client{
-		Transport: tr,
-		Timeout:   timeout,
-	}
+	httpClient := c.buildHTTPClient(timeout)
 
 	clientConfig := &genai.ClientConfig{
 		Backend:  backend,
@@ -71,16 +59,39 @@ func (c *Client) initSDK(timeout time.Duration) error {
 	}
 
 	c.mu.Lock()
-	c.httpTransport = tr
+	c.httpTransport = httpClient.Transport
 	c.backend = backend
 	c.sdkClient = sdkClient
-
-	// Qualify the model if a publisher path is present
-	if publisherPath != "" && !strings.Contains(c.model, "/") {
-		c.model = strings.TrimSuffix(publisherPath, "/") + "/" + c.model
-	}
+	c.model = qualifyModelWithPublisher(c.model, publisherPath)
 	c.mu.Unlock()
 	return nil
+}
+
+// buildHTTPClient constructs an *http.Client with the given timeout, selecting
+// the transport from c.testTransport (injection), a cloned http.DefaultTransport,
+// or falling back to http.DefaultTransport directly.
+func (c *Client) buildHTTPClient(timeout time.Duration) *http.Client {
+	var tr http.RoundTripper
+	if c.testTransport != nil {
+		tr = c.testTransport
+	} else if defaultTr, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = defaultTr.Clone()
+	} else {
+		tr = http.DefaultTransport
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   timeout,
+	}
+}
+
+// qualifyModelWithPublisher prepends the publisher path to the model name
+// when a publisher path is present and the model does not already contain a "/".
+func qualifyModelWithPublisher(model, publisherPath string) string {
+	if publisherPath != "" && !strings.Contains(model, "/") {
+		return strings.TrimSuffix(publisherPath, "/") + "/" + model
+	}
+	return model
 }
 
 func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string, string, string) {
