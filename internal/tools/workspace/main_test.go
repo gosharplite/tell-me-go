@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 		target += ".exe"
 	}
 
-	cmd := exec.Command("go", "build", "-o", target, "../../infrastructure/testing/bin/helper/main.go")
+	cmd := exec.Command("go", "build", "-o", target, "../../infrastructure/testing/testdata/helper/main.go")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.RemoveAll(tmpDir)
 		log.Fatalf("failed to build test helper: %v\n%s", err, string(out))
