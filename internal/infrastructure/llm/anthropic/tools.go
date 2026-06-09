@@ -39,31 +39,40 @@ func toAnthropicSchema(s *tools.Schema) interface{} {
 	res := map[string]interface{}{
 		"type": strings.ToLower(s.Type),
 	}
-	if s.Description != "" {
-		res["description"] = s.Description
-	}
-	if len(s.Enum) > 0 {
-		res["enum"] = s.Enum
-	}
+	setSchemaDescription(res, s.Description)
+	setSchemaEnum(res, s.Enum)
+	setSchemaProperties(res, s.Properties)
+	setSchemaItems(res, s)
+	return res
+}
 
-	// Only add properties if there are entries
-	if len(s.Properties) > 0 {
-		props := make(map[string]interface{})
-		for k, v := range s.Properties {
-			props[k] = toAnthropicSchema(v)
+func setSchemaDescription(res map[string]interface{}, desc string) {
+	if desc != "" {
+		res["description"] = desc
+	}
+}
+
+func setSchemaEnum(res map[string]interface{}, enum []string) {
+	if len(enum) > 0 {
+		res["enum"] = enum
+	}
+}
+
+func setSchemaProperties(res map[string]interface{}, props map[string]*tools.Schema) {
+	if len(props) > 0 {
+		m := make(map[string]interface{})
+		for k, v := range props {
+			m[k] = toAnthropicSchema(v)
 		}
-		res["properties"] = props
+		res["properties"] = m
 	}
+}
 
-	// Only add required if there are entries
+func setSchemaItems(res map[string]interface{}, s *tools.Schema) {
 	if len(s.Required) > 0 {
 		res["required"] = s.Required
 	}
-
-	// Only add items for arrays
 	if strings.ToLower(s.Type) == "array" && s.Items != nil {
 		res["items"] = toAnthropicSchema(s.Items)
 	}
-
-	return res
 }
