@@ -21,6 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type panicMockRenderer struct {
@@ -74,7 +75,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := ui.NewBridge(mock, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	_, _, done := ui.StartListen(t, bridge)
+	_, _, done, _ := ui.StartListen(t, bridge)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -117,7 +118,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	}
 
 	bridge := ui.NewBridge(mockRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	ctx, _, done := ui.StartListen(t, bridge)
+	ctx, _, done, _ := ui.StartListen(t, bridge)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -157,7 +158,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	_, _, done := ui.StartListen(t, bridge)
+	_, _, done, _ := ui.StartListen(t, bridge)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -201,7 +202,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	}
 
 	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	ctx, _, _ := ui.StartListen(t, bridge)
+	ctx, _, _, _ := ui.StartListen(t, bridge)
 	bridge.WaitStarted()
 
 	// Send two events
@@ -228,7 +229,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	bridge := ui.NewBridge(mRenderer, ui.WithBridgeThoughts(true), ui.WithBridgeTools(true), ui.WithBridgeRawOutput(false), ui.WithBridgeColor(true), ui.WithBridgeLogFile("test.log"), ui.WithBridgeLogger(logger))
-	ctx, _, _ := ui.StartListen(t, bridge)
+	ctx, _, _, _ := ui.StartListen(t, bridge)
 	bridge.WaitStarted()
 
 	// Close the input to simulate a shutdown sequence.
@@ -252,4 +253,48 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 
 	// Clean up.
 	bridge.Cleanup()
+}
+
+func TestUIBridge_PanicErrorReturnValue(t *testing.T) {
+	t.Parallel()
+
+	mRenderer := new(agenttest.MockUIRenderer)
+	mRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		panic("intentional test panic for error return")
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bridge := ui.NewBridge(mRenderer,
+		ui.WithBridgeThoughts(true),
+		ui.WithBridgeTools(true),
+		ui.WithBridgeRawOutput(false),
+		ui.WithBridgeColor(true),
+		ui.WithBridgeLogFile("test.log"),
+		ui.WithBridgeLogger(logger),
+	)
+	ctx, _, done, errCh := ui.StartListen(t, bridge)
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
+
+	// Trigger the panic
+	_ = bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
+
+	// Wait for shutdown
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for bridge to shutdown after panic")
+	}
+
+	// Read the error from Listen
+	select {
+	case err := <-errCh:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "uibridge panicked:")
+		assert.Contains(t, err.Error(), "intentional test panic for error return")
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for Listen error")
+	}
 }

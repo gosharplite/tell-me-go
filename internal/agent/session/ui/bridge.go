@@ -101,8 +101,12 @@ type Bridge struct {
 	wg                 sync.WaitGroup
 	cleanupTimeout     time.Duration
 	queueCapacity      int
-	started            chan struct{}
-	startOnce          sync.Once
+	// cleanupWaitFn is nil in production. Tests set it to replace b.wg.Wait()
+	// with a function that can panic, enabling deterministic coverage of the
+	// Cleanup goroutine's panic-recovery path.
+	cleanupWaitFn func() //nolint:unused // test hook
+	started       chan struct{}
+	startOnce     sync.Once
 }
 
 // NewBridge creates a new Bridge.
@@ -170,7 +174,11 @@ func (b *Bridge) Cleanup() {
 					close(done)
 				}
 			}()
-			b.wg.Wait()
+			if b.cleanupWaitFn != nil {
+				b.cleanupWaitFn()
+			} else {
+				b.wg.Wait()
+			}
 			close(done)
 		}()
 

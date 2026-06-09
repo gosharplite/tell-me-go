@@ -19,9 +19,9 @@ func SyncBridge(t *testing.T, b *Bridge, m *agenttest.MockUIRenderer) {
 // StartListen is the exported wrapper around startListen for use by external
 // test packages (package ui_test). It launches bridge.Listen in a goroutine,
 // registers a t.Cleanup that surfaces non-cancellation errors, and returns
-// the listen context, its cancel function, and a channel that closes when
-// Listen exits.
-func StartListen(t *testing.T, b *Bridge) (context.Context, context.CancelFunc, <-chan struct{}) {
+// the listen context, its cancel function, a channel that closes when
+// Listen exits, and a channel that receives the exact error from Listen().
+func StartListen(t *testing.T, b *Bridge) (context.Context, context.CancelFunc, <-chan struct{}, <-chan error) {
 	t.Helper()
 	return startListen(t, b)
 }
@@ -39,4 +39,11 @@ func (b *Bridge) Wg() *sync.WaitGroup {
 // The hook is nil by default and has zero overhead in production.
 func (b *Bridge) SetBeforeBlockingSendHook(fn func()) {
 	b.queue.(*eventQueue).beforeBlockingSendHook = fn
+}
+
+// SetCleanupWaitFn installs a function that replaces b.wg.Wait() during
+// Cleanup. Nil in production; tests use it to inject panics for coverage
+// of the Cleanup goroutine's panic-recovery path.
+func (b *Bridge) SetCleanupWaitFn(fn func()) {
+	b.cleanupWaitFn = fn
 }
