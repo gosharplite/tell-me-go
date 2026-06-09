@@ -270,31 +270,17 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		}
 	}
 
-	// Stream the JSON decoding to avoid large memory allocations
-	bodyReadStart := time.Now()
-
 	if endpoint == "/responses" {
-		var chatResp responsesAPIResponse
-		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		bodyReadTime := time.Since(bodyReadStart)
-		totalDuration := time.Since(startTime)
-
-		c.logger.Debug("http_timing_breakdown",
-			"platform", runtime.GOOS,
-			"provider", "openai",
-			"model", c.model,
-			"ttfb_ms", ttfb.Milliseconds(),
-			"body_read_ms", bodyReadTime.Milliseconds(),
-			"total_ms", totalDuration.Milliseconds(),
-			"endpoint", endpoint,
-		)
-
-		return c.fromResponsesAPIResponse(&chatResp, totalDuration.Seconds())
+		return c.decodeResponsesAPIResponse(resp, startTime, ttfb, endpoint)
 	}
+	return c.decodeStandardResponse(resp, startTime, ttfb, endpoint)
+}
 
+// decodeStandardResponse decodes a /chat/completions JSON response from
+// resp.Body, emits a timing debug log, and converts the API shape into
+// domain types via fromOpenAIResponse.
+func (c *client) decodeStandardResponse(resp *http.Response, startTime time.Time, ttfb time.Duration, endpoint string) (*llm.Content, *llm.Metrics, error) {
+	bodyReadStart := time.Now()
 	var chatResp chatResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
@@ -314,4 +300,30 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	)
 
 	return c.fromOpenAIResponse(&chatResp, totalDuration.Seconds())
+}
+
+// decodeResponsesAPIResponse decodes a /responses JSON response from
+// resp.Body, emits a timing debug log, and converts the API shape into
+// domain types via fromResponsesAPIResponse.
+func (c *client) decodeResponsesAPIResponse(resp *http.Response, startTime time.Time, ttfb time.Duration, endpoint string) (*llm.Content, *llm.Metrics, error) {
+	bodyReadStart := time.Now()
+	var chatResp responsesAPIResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	bodyReadTime := time.Since(bodyReadStart)
+	totalDuration := time.Since(startTime)
+
+	c.logger.Debug("http_timing_breakdown",
+		"platform", runtime.GOOS,
+		"provider", "openai",
+		"model", c.model,
+		"ttfb_ms", ttfb.Milliseconds(),
+		"body_read_ms", bodyReadTime.Milliseconds(),
+		"total_ms", totalDuration.Milliseconds(),
+		"endpoint", endpoint,
+	)
+
+	return c.fromResponsesAPIResponse(&chatResp, totalDuration.Seconds())
 }

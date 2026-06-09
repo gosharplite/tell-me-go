@@ -69,13 +69,17 @@ For CLI tooling (single invocation), the sawtooth is irrelevant — `GetImplemen
    *Rejected*: the 5s TTL serves correctness (stale index is worse than slow index). Increasing TTL trades correctness for latency. A separate ADR should decide TTL policy if needed.
 
 3. **Pre-compute implementations in a background goroutine after `Refresh()`**
-   *Partially accepted as future direction*: see `WarmImplementations(ctx)` below. Not implemented now because no consumer currently needs it, and background goroutine lifecycle management adds complexity.
+   *Rejected*: see `WarmImplementations(ctx)` below.
 
-## Future: `WarmImplementations(ctx)` Opt-In
+## Rejected: `WarmImplementations(ctx)` Opt-In (Won't Do)
 
-For interactive tooling (TUI, long-running agent), a `WarmImplementations(ctx context.Context)` method can be added to the `symbolIndex` interface. It would call `computeImplementationsLazy()` and discard the result, warming the cache as a side effect. Interactive consumers opt in; non-interactive consumers (CI) skip it.
+A `WarmImplementations(ctx context.Context)` method was considered for the `symbolIndex` interface to warm the implementation cache for interactive consumers. This is rejected because:
 
-This is deferred until a consumer demonstrates measurable UX impact from first-call latency.
+- No consumer has demonstrated measurable UX impact from the 5-second TTL sawtooth.
+- Background goroutine lifecycle management adds complexity disproportionate to the benefit.
+- The 5-second TTL is conservative; if "first call after TTL" latency ever becomes a UX issue, the simpler fix is to increase TTL or add a use-count-based invalidation policy rather than introducing a new API surface.
+
+This decision was finalized 2026-06 after a project-wide architecture review confirmed no pending work items require this capability.
 
 ## Related ADRs
 - **ADR-037**: Test-Only Access via `agentinternal` Bridge — same "fail loud, never silently degrade" principle that motivated this change (race detector must pass).

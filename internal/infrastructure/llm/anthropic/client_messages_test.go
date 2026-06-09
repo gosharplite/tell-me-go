@@ -282,6 +282,18 @@ func TestPartToContentBlock(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "Thinking - non-assistant role falls through to text",
+			part: &llm.Part{
+				IsThought:        true,
+				Text:             "think",
+				ThoughtSignature: []byte("sig"),
+			},
+			role:     "user",
+			wantType: "text",
+			wantOk:   true,
+			wantErr:  false,
+		},
+		{
 			name: "Text block",
 			part: &llm.Part{
 				Text: "hello",
@@ -327,4 +339,138 @@ func TestPartToContentBlock(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMapAnthropicRole(t *testing.T) {
+	tests := []struct {
+		name string
+		role string
+		want string
+	}{
+		{"model maps to assistant", "model", "assistant"},
+		{"tool maps to user", "tool", "user"},
+		{"assistant passes through", "assistant", "assistant"},
+		{"user passes through", "user", "user"},
+		{"system passes through", "system", "system"},
+		{"empty passes through", "", ""},
+		{"unknown passes through", "unknown_role", "unknown_role"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapAnthropicRole(tt.role)
+			if got != tt.want {
+				t.Errorf("mapAnthropicRole(%q) = %q; want %q", tt.role, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertParts(t *testing.T) {
+	c := &client{logger: &ports.NoOpLogger{}}
+
+	t.Run("empty parts returns empty blocks", func(t *testing.T) {
+		blocks, err := c.convertParts(nil, "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 0 {
+			t.Errorf("expected 0 blocks, got %d", len(blocks))
+		}
+	})
+
+	t.Run("nil slice returns empty blocks", func(t *testing.T) {
+		var parts []*llm.Part
+		blocks, err := c.convertParts(parts, "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 0 {
+			t.Errorf("expected 0 blocks, got %d", len(blocks))
+		}
+	})
+
+	t.Run("text parts are converted", func(t *testing.T) {
+		parts := []*llm.Part{
+			{Text: "hello"},
+			{Text: "world"},
+		}
+		blocks, err := c.convertParts(parts, "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 2 {
+			t.Fatalf("expected 2 blocks, got %d", len(blocks))
+		}
+		if blocks[0].Text != "hello" || blocks[1].Text != "world" {
+			t.Errorf("unexpected block texts: %+v", blocks)
+		}
+	})
+
+	t.Run("empty part is skipped (ok=false)", func(t *testing.T) {
+		parts := []*llm.Part{
+			{Text: "keep"},
+			{}, // empty — should be skipped
+			{Text: "also keep"},
+		}
+		blocks, err := c.convertParts(parts, "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 2 {
+			t.Fatalf("expected 2 blocks (empty skipped), got %d", len(blocks))
+		}
+	})
+
+	t.Run("error short-circuits", func(t *testing.T) {
+		parts := []*llm.Part{
+			{Text: "before error"},
+			{FunctionCall: &llm.FunctionCall{Name: "bad_tool"}}, // missing ID → error
+			{Text: "after error"},
+		}
+		blocks, err := c.convertParts(parts, "user")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if blocks != nil {
+			t.Errorf("expected nil blocks on error, got %+v", blocks)
+		}
+	})
+
+	t.Run("thinking parts become text blocks for non-assistant role", func(t *testing.T) {
+		parts := []*llm.Part{
+			{IsThought: true, Text: "think", ThoughtSignature: []byte("sig")},
+			{Text: "visible"},
+		}
+		blocks, err := c.convertParts(parts, "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 2 {
+			t.Fatalf("expected 2 blocks (thought becomes text for non-assistant), got %d", len(blocks))
+		}
+		if blocks[0].Type != "text" || blocks[0].Text != "think" {
+			t.Errorf("expected first block to be text block 'think', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
+		}
+		if blocks[1].Type != "text" || blocks[1].Text != "visible" {
+			t.Errorf("expected second block to be text block 'visible', got type=%q text=%q", blocks[1].Type, blocks[1].Text)
+		}
+	})
+
+	t.Run("thinking parts kept for assistant role", func(t *testing.T) {
+		parts := []*llm.Part{
+			{IsThought: true, Text: "think", ThoughtSignature: []byte("sig")},
+			{Text: "visible"},
+		}
+		blocks, err := c.convertParts(parts, "assistant")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 2 {
+			t.Fatalf("expected 2 blocks, got %d", len(blocks))
+		}
+		if blocks[0].Type != "thinking" {
+			t.Errorf("expected first block type 'thinking', got %q", blocks[0].Type)
+		}
+	})
 }
