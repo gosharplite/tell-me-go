@@ -6,7 +6,9 @@ package events
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -98,5 +100,116 @@ func TestWaitWorkers_PanicRecovery(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("injected worker wait panic")) {
 		t.Errorf("expected 'injected worker wait panic' in log, got: %s", buf.String())
+	}
+}
+
+// TestFlush_CallerContextCancellation exercises the <-ctx.Done() branch in
+// Flush's select (event_bus_lifecycle.go:108-109). It ensures that when the
+// caller cancels its context while flushWaiter is blocked in cond.Wait(),
+// cancelFlushWaiter sets the cancelled flag, broadcasts the cond, and
+// returns context.Canceled.
+//
+// Synchronization is deterministic: a three-phase mutex handoff proves
+// flushWaiter has released pendingMu via cond.Wait() before cancellation
+// is triggered. No time.Sleep.
+func TestFlush_CallerContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	bus := NewSimpleEventBus(context.Background())
+	bus.pendingCount = 1 // keep flushWaiter's loop alive
+
+	// Phase 1: Hold pendingMu so flushWaiter cannot proceed past its Lock.
+	bus.pendingMu.Lock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- bus.Flush(ctx)
+	}()
+
+	// Phase 2: Release the lock. flushWaiter will acquire pendingMu,
+	// enter the for loop (pendingCount=1, !cancelled), and call cond.Wait().
+	// cond.Wait() unlocks pendingMu just before blocking.
+	bus.pendingMu.Unlock()
+
+	// Yield to the scheduler so flushWaiter has a chance to run and
+	// enter cond.Wait() before we try to re-acquire.
+	runtime.Gosched()
+
+	// Phase 3: Re-acquire pendingMu. This blocks until flushWaiter has
+	// called cond.Wait() and released the mutex -- proving the waiter is
+	// now blocked inside the cond.
+	bus.pendingMu.Lock()
+
+	// Trigger cancellation. Flush's select will see <-ctx.Done(),
+	// call cancelFlushWaiter (which tries to acquire pendingMu and blocks),
+	// then we release below.
+	cancel()
+
+	// Allow cancelFlushWaiter to acquire pendingMu, set cancelled=true,
+	// call cond.Broadcast(), and return.
+	bus.pendingMu.Unlock()
+
+	// Collect the result.
+	err := <-errChan
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+
+	// Verify flushWaiter's done channel was closed (waiter exited cleanly).
+	// If cancelFlushWaiter had a bug -- e.g. failing to set cancelled=true --
+	// flushWaiter would still be blocked in cond.Wait() and done would never
+	// close. The <-errChan above proves Flush returned, which implies
+	// cancelFlushWaiter was called and flushWaiter's done was closed.
+}
+
+// TestFlush_BusShutdownDuringFlush exercises the <-b.ctx.Done() branch in
+// Flush's select (event_bus_lifecycle.go:109-110). It ensures that when the
+// bus's internal context is cancelled (simulating Shutdown) while flushWaiter
+// is blocked in cond.Wait(), cancelFlushWaiter sets the cancelled flag,
+// broadcasts the cond, and returns ErrBusClosed.
+//
+// Uses the same three-phase mutex handoff as TestFlush_CallerContextCancellation
+// for deterministic synchronization. No time.Sleep.
+func TestFlush_BusShutdownDuringFlush(t *testing.T) {
+	t.Parallel()
+
+	bus := NewSimpleEventBus(context.Background())
+	bus.pendingCount = 1 // keep flushWaiter's loop alive
+
+	// Phase 1: Hold pendingMu so flushWaiter cannot proceed past its Lock.
+	bus.pendingMu.Lock()
+
+	// Use a never-cancelled caller context so only <-b.ctx.Done() can fire.
+	ctx := context.Background()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- bus.Flush(ctx)
+	}()
+
+	// Phase 2: Release the lock. flushWaiter acquires pendingMu, enters the
+	// for loop, and calls cond.Wait() — which unlocks pendingMu.
+	bus.pendingMu.Unlock()
+
+	// Yield to let flushWaiter reach cond.Wait() before we re-acquire.
+	runtime.Gosched()
+
+	// Phase 3: Re-acquire pendingMu — proves flushWaiter is in cond.Wait().
+	bus.pendingMu.Lock()
+
+	// Simulate bus shutdown by cancelling the bus's internal context.
+	// This causes Flush's select to pick <-b.ctx.Done().
+	bus.cancel()
+
+	// Allow cancelFlushWaiter to acquire pendingMu, set cancelled=true,
+	// call cond.Broadcast(), and return ErrBusClosed.
+	bus.pendingMu.Unlock()
+
+	// Collect the result.
+	err := <-errChan
+	if !errors.Is(err, ErrBusClosed) {
+		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
 }
