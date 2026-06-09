@@ -351,10 +351,10 @@ func TestStubChatterComposer_NilFields_Registry(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// E. StubSessionFinalizer (3 getters)
+// E. stubSessionFinalizer (3 getters)
 // ---------------------------------------------------------------------------
 
-func TestStubSessionFinalizer_Getters(t *testing.T) {
+func Test_stubSessionFinalizer_Getters(t *testing.T) {
 	t.Parallel()
 
 	tracker := new(MockCostTracker)
@@ -363,7 +363,7 @@ func TestStubSessionFinalizer_Getters(t *testing.T) {
 		"claude": {Hit: 0.01, Miss: 0.05},
 	}
 
-	s := &StubSessionFinalizer{
+	s := &stubSessionFinalizer{
 		Tracker:          tracker,
 		Paths:            p,
 		PricingOverrides: overrides,
@@ -380,10 +380,10 @@ func TestStubSessionFinalizer_Getters(t *testing.T) {
 	}
 }
 
-func TestStubSessionFinalizer_NilFields(t *testing.T) {
+func Test_stubSessionFinalizer_NilFields(t *testing.T) {
 	t.Parallel()
 
-	s := &StubSessionFinalizer{}
+	s := &stubSessionFinalizer{}
 
 	if s.GetTracker() != nil {
 		t.Error("nil Tracker should return nil")
