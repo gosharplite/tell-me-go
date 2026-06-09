@@ -75,7 +75,11 @@ type uiBridgeFixture struct {
 }
 
 // startListen launches bridge.Listen in a goroutine and registers a t.Cleanup
-// that fails the test if Listen returned a non-cancellation error.
+// that fails the test if Listen returned an unexpected non-cancellation error.
+//
+// The returned error channel receives the exact error from Listen(), including
+// "uibridge panicked:" errors. Tests that intentionally trigger panics can
+// assert on this value.
 //
 // The returned cancel function should be deferred or called explicitly to
 // shut down the listener; t.Cleanup will then read the error channel exactly
@@ -83,35 +87,34 @@ type uiBridgeFixture struct {
 //
 // The returned done channel closes when Listen returns. Tests that need to
 // wait for Listen to exit mid-test (e.g., after a panic) can select on done.
-func startListen(t *testing.T, b *Bridge) (ctx context.Context, cancel context.CancelFunc, done <-chan struct{}) {
+func startListen(t *testing.T, b *Bridge) (ctx context.Context, cancel context.CancelFunc, done <-chan struct{}, errCh <-chan error) {
 	t.Helper()
 	ctx, cancel = context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
+	errChInternal := make(chan error, 1)
 	doneCh := make(chan struct{})
 	go func() {
-		defer close(errCh)
+		defer close(errChInternal)
 		defer close(doneCh)
-		if err := b.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			// Panics recovered by the bridge's internal recovery are
-			// expected when tests intentionally trigger panics. The
-			// test surfaces these via the done channel instead.
-			if !strings.Contains(err.Error(), "uibridge panicked:") {
-				errCh <- err
-			}
+		err := b.Listen(ctx)
+		if err != nil {
+			errChInternal <- err
 		}
 	}()
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case err, ok := <-errCh:
+		case err, ok := <-errChInternal:
 			if ok && err != nil {
-				t.Errorf("Listen returned unexpected error: %v", err)
+				// Surface unexpected errors (not context.Canceled, not uibridge panicked).
+				if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "uibridge panicked:") {
+					t.Errorf("Listen returned unexpected error: %v", err)
+				}
 			}
 		case <-time.After(2 * time.Second):
 			t.Errorf("Listen did not exit within 2s of cancel()")
 		}
 	})
-	return ctx, cancel, doneCh
+	return ctx, cancel, doneCh, errChInternal
 }
 
 // newUIBridgeFixture initializes a bridge with a controllable renderer and starts its listen loop.
@@ -128,7 +131,7 @@ func newUIBridgeFixture(t *testing.T, opts ...bridgeOption) *uiBridgeFixture {
 	opts = append(opts, WithBridgeLogger(logger))
 
 	bridge := NewBridge(renderer, opts...)
-	ctx, cancel, _ := startListen(t, bridge)
+	ctx, cancel, _, _ := startListen(t, bridge)
 
 	f := &uiBridgeFixture{
 		bridge:   bridge,

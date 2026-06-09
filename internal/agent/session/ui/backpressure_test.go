@@ -223,7 +223,7 @@ func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer)
-	ctx, _, _ := startListen(t, bridge)
+	ctx, _, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 
 	// Shutdown the bridge

@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,7 +35,7 @@ func newStartedTestBridge(t *testing.T) (*Bridge, context.CancelFunc, *agenttest
 		WithBridgeLogFile("log.txt"),
 		WithBridgeLogger(slog.Default()),
 	)
-	_, cancel, _ := startListen(t, bridge)
+	_, cancel, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	return bridge, cancel, mRenderer
 }
@@ -308,7 +309,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				WithBridgeLogFile("log.txt"),
 				WithBridgeLogger(slog.Default()),
 			)
-			_, _, _ = startListen(t, bridge)
+			_, _, _, _ = startListen(t, bridge)
 			bridge.WaitStarted()
 			defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 			// Set up expectations BEFORE preSetup
@@ -362,7 +363,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, _, _ := startListen(t, bridge)
+	ctx, _, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -427,7 +428,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	ctx, _, _ := startListen(t, bridge)
+	ctx, _, _, _ := startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -461,7 +462,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _, _ = startListen(t, bridge)
+	_, _, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -490,7 +491,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _, _ = startListen(t, bridge)
+	_, _, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -544,7 +545,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _, _ = startListen(t, bridge)
+	_, _, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	spinnerStarted := make(chan struct{})
@@ -621,7 +622,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
 	bridge := NewBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
-	_, _, _ = startListen(t, bridge)
+	_, _, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 
 	var activeSpinners int32
@@ -659,7 +660,7 @@ func TestUIBridge_NilLoggerFallback(t *testing.T) {
 	mRenderer := new(agenttest.MockUIRenderer)
 	// Instantiate without WithLogger
 	bridge := NewBridge(mRenderer)
-	_, _, _ = startListen(t, bridge)
+	_, _, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
@@ -668,21 +669,92 @@ func TestUIBridge_NilLoggerFallback(t *testing.T) {
 
 func TestUIBridge_CleanupTimeout(t *testing.T) {
 	t.Parallel()
+
+	tests := []struct {
+		name      string
+		unblockWG bool // if true, call wg.Done() after cancel to hit the fast <-done path
+		wantLog   string
+	}{
+		{
+			name:      "slow path — timeout fires, wg stays hung",
+			unblockWG: false,
+			wantLog:   "UI Bridge cleanup timed out",
+		},
+		{
+			name:      "fast path — cancel unblocks wg before 100ms elapses",
+			unblockWG: true,
+			wantLog:   "UI Bridge cleanup timed out",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mRenderer := new(agenttest.MockUIRenderer)
+			logger := new(testfixtures.SpyLogger)
+
+			bridge := NewBridge(mRenderer,
+				withBridgeCleanupTimeout(10*time.Millisecond),
+				WithBridgeLogger(logger),
+			)
+			_, _, _, _ = startListen(t, bridge)
+			bridge.WaitStarted()
+			bridgeCtx := bridge.getLoopContext()
+
+			// Hang the WaitGroup to force the timeout path
+			bridge.wg.Add(1)
+
+			// If testing the fast path, schedule a wg.Done() after a short delay
+			// so the goroutine unblocks after cancel() fires but before 100ms.
+			if tt.unblockWG {
+				time.AfterFunc(50*time.Millisecond, func() { bridge.wg.Done() })
+			} else {
+				defer bridge.wg.Done() // prevent goroutine leak
+			}
+
+			done := make(chan struct{})
+			go func() {
+				bridge.CloseInput()
+				bridge.Cleanup()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(1 * time.Second):
+				t.Fatal("Cleanup did not return within expected timeout")
+			}
+
+			// Verify context was cancelled
+			assert.Error(t, bridgeCtx.Err(), "Context should be cancelled after Cleanup timeout")
+
+			// Verify the Warn log
+			if tt.wantLog != "" {
+				assert.True(t, logger.CalledWith("Warn", tt.wantLog),
+					"expected Warn log %q", tt.wantLog)
+			}
+		})
+	}
+}
+
+func TestUIBridge_Cleanup_PanicInWaitGoroutine(t *testing.T) {
+	t.Parallel()
 	mRenderer := new(agenttest.MockUIRenderer)
+	logger := new(testfixtures.SpyLogger)
 
-	// Initialize bridge with a very small timeout via functional option
 	bridge := NewBridge(mRenderer,
-		withBridgeCleanupTimeout(10*time.Millisecond),
+		withBridgeCleanupTimeout(50*time.Millisecond),
+		WithBridgeLogger(logger),
 	)
-	_, _, _ = startListen(t, bridge)
+	_, _, _, _ = startListen(t, bridge)
 	bridge.WaitStarted()
-	bridgeCtx := bridge.getLoopContext() // Use the internal loop context for verification
 
-	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop
-	bridge.wg.Add(1)
-	defer bridge.wg.Done() // Ensure the hung WaitGroup is eventually released to prevent goroutine leaks in the test suite.
+	// Replace wg.Wait() with a function that panics.
+	bridge.SetCleanupWaitFn(func() {
+		panic("injected wg.Wait panic")
+	})
 
-	// Execute Cleanup. It should timeout after 10ms and return normally.
 	done := make(chan struct{})
 	go func() {
 		bridge.CloseInput()
@@ -692,13 +764,13 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 
 	select {
 	case <-done:
-		// Success: Cleanup returned even with a hung WaitGroup
 	case <-time.After(1 * time.Second):
-		t.Fatal("Cleanup did not return within expected timeout")
+		t.Fatal("Cleanup did not return after injected panic in wait goroutine")
 	}
 
-	// VERIFY: context should be cancelled now
-	assert.Error(t, bridgeCtx.Err(), "Context should be cancelled after Cleanup timeout")
+	// The panic recovery must have logged the error and closed the done channel.
+	assert.True(t, logger.CalledWith("Error", "panic in UI bridge cleanup wait"),
+		"expected Error log for panic in cleanup wait goroutine")
 }
 
 func TestUIBridge_HandleEvent_ContextCancelled(t *testing.T) {
@@ -870,4 +942,16 @@ func TestWithBridgeClock(t *testing.T) {
 	defer bridge.Cleanup()
 
 	assert.NotNil(t, bridge.clock, "bridge.clock should not be nil after WithBridgeClock")
+}
+
+func TestUIBridge_WithBridgeLoggerNil_FallbackToDefault(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(agenttest.MockUIRenderer)
+	// Explicitly inject a typed nil ports.Logger — NOT just omitting WithBridgeLogger.
+	bridge := NewBridge(mRenderer, WithBridgeLogger(nil))
+	bridge.AbortStart()
+	defer bridge.Cleanup()
+
+	// The nil-logger guard must restore slog.Default().
+	assert.NotNil(t, bridge.logger, "Logger should fall back to slog.Default() when WithBridgeLogger(nil) is passed")
 }
