@@ -332,6 +332,31 @@ func TestResilientClient_Generate_ResetConnections(t *testing.T) {
 	})
 }
 
+func TestResilientClient_Generate_AuthRefreshOk_RetryFailsTransient(t *testing.T) {
+	var sendChatCalls int
+	mock := &mockLLMClient{
+		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			sendChatCalls++
+			if sendChatCalls == 1 {
+				return nil, nil, llm.ErrAuth
+			}
+			return nil, nil, llm.ErrTransient
+		},
+		refreshAuthFn: func() error {
+			return nil // succeeds
+		},
+	}
+
+	client := NewResilientClient(mock)
+	_, _, err := client.Generate(context.Background(), nil, nil, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, llm.ErrTransient)
+	assert.Equal(t, 1, mock.authRefreshed)
+	assert.True(t, mock.resetCalled, "ResetConnections should be called on final attempt")
+	assert.Equal(t, 2, sendChatCalls)
+}
+
 func TestResilientClient_Generate_ResetsOnFinalAttempt(t *testing.T) {
 	var m *mockLLMClient
 	m = &mockLLMClient{

@@ -294,3 +294,13 @@ func TestMockInteractor_Errors(t *testing.T) {
 		t.Error("Expected error in ReadLine")
 	}
 }
+
+func TestNoOpInteractor_WarnAndPrompt(t *testing.T) {
+	t.Parallel()
+	ni := &noOpInteractor{}
+	// Must not panic — these are no-ops
+	ni.Warn("test warning")
+	ni.Prompt("test prompt")
+	ni.Warn("")
+	ni.Prompt("")
+}

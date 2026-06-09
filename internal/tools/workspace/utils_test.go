@@ -6,6 +6,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -340,5 +341,128 @@ func TestWalkHeartbeat(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestShouldSkipEntry(t *testing.T) {
+	t.Parallel()
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	policy := infra_persistence.NewWorkspacePolicy()
+
+	regularFile := &mockFileInfo{name: "main.go", isDir: false}
+	normalDir := &mockFileInfo{name: "src", isDir: true}
+	dotGitDir := &mockFileInfo{name: ".git", isDir: true}
+
+	tests := []struct {
+		name     string
+		ctx      context.Context
+		info     os.FileInfo
+		err      error
+		wantSkip bool
+		wantErr  error
+	}{
+		{
+			name:     "walk error returns skip",
+			ctx:      context.Background(),
+			info:     nil,
+			err:      errors.New("walk error"),
+			wantSkip: true,
+			wantErr:  nil,
+		},
+		{
+			name:     "cancelled context returns skip with Canceled",
+			ctx:      cancelCtx,
+			info:     nil,
+			err:      nil,
+			wantSkip: true,
+			wantErr:  context.Canceled,
+		},
+		{
+			name:     "regular file not skipped",
+			ctx:      context.Background(),
+			info:     regularFile,
+			err:      nil,
+			wantSkip: false,
+			wantErr:  nil,
+		},
+		{
+			name:     "directory skipped without error",
+			ctx:      context.Background(),
+			info:     normalDir,
+			err:      nil,
+			wantSkip: true,
+			wantErr:  nil,
+		},
+		{
+			name:     "ignored directory returns SkipDir",
+			ctx:      context.Background(),
+			info:     dotGitDir,
+			err:      nil,
+			wantSkip: true,
+			wantErr:  filepath.SkipDir,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotSkip, gotErr := shouldSkipEntry(tt.ctx, tt.info, tt.err, policy)
+
+			if gotSkip != tt.wantSkip {
+				t.Errorf("skip = %v, want %v", gotSkip, tt.wantSkip)
+			}
+			if gotErr != tt.wantErr {
+				t.Errorf("err = %v, want %v", gotErr, tt.wantErr)
+			}
+		})
+	}
+}
+
+// isPathSafeErrorSM is a test double that embeds MockSecurityManager and
+// overrides IsPathSafe to always return an error, simulating a security rejection.
+type isPathSafeErrorSM struct {
+	toolstest.MockSecurityManager
+}
+
+func (m *isPathSafeErrorSM) IsPathSafe(path string) (string, error) {
+	return "", fmt.Errorf("path rejected")
+}
+
+func TestConcurrentSearch_IsPathSafeError(t *testing.T) {
+	t.Parallel()
+
+	sm := &isPathSafeErrorSM{}
+
+	ctx := context.Background()
+	resChan, errChan := ConcurrentSearch(ctx, sm, nil, "/tmp/test", nil, nil, infra_persistence.NewWorkspacePolicy())
+
+	// Read the error from errChan
+	err := <-errChan
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != "path rejected" {
+		t.Errorf("expected error %q, got %q", "path rejected", err.Error())
+	}
+
+	// Verify result channel is closed (should read zero value + ok=false)
+	result, ok := <-resChan
+	if ok {
+		t.Errorf("expected result channel to be closed, got %q (ok=%v)", result, ok)
+	}
+}
+
+func TestSearchPipeline_WalkFunc_ErrorSkip(t *testing.T) {
+	t.Parallel()
+
+	p := &searchPipeline{}
+	err := p.walkFunc("", nil, errors.New("permission denied"))
+	if err != nil {
+		t.Errorf("expected nil, got %v", err)
 	}
 }

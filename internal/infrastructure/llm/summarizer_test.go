@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -211,6 +212,52 @@ func TestSummarizer_Summarize(t *testing.T) {
 		assert.Equal(t, 2, bus.publishCalls, "expected Publish to be called twice")
 	})
 
+	t.Run("SummarizationStartedEvent publish error logged but does not fail", func(t *testing.T) {
+		t.Parallel()
+
+		var buf bytes.Buffer
+		testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+		gw := &mockGateway{}
+		bus := &mockEventBus{}
+		s := NewSummarizer(gw, bus, WithLogger(testLogger))
+
+		metrics := &llm.Metrics{PromptTokens: 10, ResponseTokens: 5}
+		respContent := &llm.Content{
+			Role:  "model",
+			Parts: []*llm.Part{{Text: "Summary content"}},
+		}
+
+		gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, _ []*tools.ToolDeclaration, _ llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return respContent, metrics, nil
+		}
+
+		var publishCallCount int
+		bus.PublishFunc = func(ctx context.Context, event events.Event) error {
+			publishCallCount++
+			if publishCallCount == 1 {
+				return errors.New("simulated bus error on start")
+			}
+			return nil
+		}
+
+		summary, m, err := s.Summarize(ctx, subset, "architecture")
+
+		assert.NoError(t, err)
+		assert.Equal(t, "Summary content", summary)
+		assert.Equal(t, metrics, m)
+
+		output := buf.String()
+		assert.Contains(t, output, "event_publish_failed")
+		assert.Contains(t, output, "simulated bus error on start")
+		// Verify event_publish_failed appears only once (only the start event failed)
+		assert.Equal(t, 1, countSubstring(output, "event_publish_failed"),
+			"expected event_publish_failed exactly once, only for SummarizationStartedEvent")
+
+		assert.Equal(t, 1, gw.generateCalls, "expected Generate to be called once")
+		assert.Equal(t, 2, bus.publishCalls, "expected Publish to be called twice")
+	})
+
 	t.Run("Empty response", func(t *testing.T) {
 		gw := &mockGateway{}
 		s := NewSummarizer(gw, nil)
@@ -322,4 +369,9 @@ func TestSummarizer_WithLogger(t *testing.T) {
 
 	assert.Equal(t, 1, gw.generateCalls, "expected Generate to be called once")
 	assert.Equal(t, 1, bus.publishCalls, "expected Publish to be called once")
+}
+
+// countSubstring returns the number of non-overlapping instances of substr in s.
+func countSubstring(s, substr string) int {
+	return strings.Count(s, substr)
 }

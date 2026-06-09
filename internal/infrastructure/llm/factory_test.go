@@ -21,6 +21,8 @@ import (
 	domainLLM "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreateAuthenticator(t *testing.T) {
@@ -813,5 +815,45 @@ func TestNewFailoverChain(t *testing.T) {
 		bus := newTestBus(t)
 		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
 		assertNewFailoverChainGeminiResult(t, gw, err)
+	})
+
+	t.Run("buildBaseClient failure in chain returns wrapped error", func(t *testing.T) {
+		// Clear ambient GOOGLE_API_KEY / GEMINI_API_KEY so that genai.NewClient
+		// with BackendGeminiAPI deterministically fails on missing APIKey in
+		// ClientConfig. (Our code passes the key via HTTP headers, not the
+		// ClientConfig.APIKey field, so the genai SDK rejects the config.)
+		t.Setenv("GOOGLE_API_KEY", "")
+		t.Setenv("GEMINI_API_KEY", "")
+
+		server := newOpenAIMockServer(t)
+		// Use a non-VertexAI URL so determineBackend returns BackendGeminiAPI.
+		// The genai SDK requires ClientConfig.APIKey for this backend; since
+		// we only set the key via HTTP headers, NewClient fails.
+		cfg := &config.Config{
+			FailoverOrder: []string{"openai", "gemini"},
+			Providers: map[string]config.LLMProvider{
+				"openai": {
+					Type:   "openai",
+					URL:    server.URL,
+					Model:  "gpt-4",
+					APIKey: "test-key",
+				},
+				"gemini": {
+					Type:   "gemini",
+					Model:  "gemini-1.5-flash",
+					APIKey: "test-key",       // explicit key → APIKeyAuth, no ADC needed
+					URL:    "://invalid-url", // non-VertexAI → BackendGeminiAPI → SDK rejects missing APIKey
+				},
+			},
+		}
+		bus := newTestBus(t)
+		gw, err := newFailoverChain(cfg, pricing.PricingData{}, bus, nil)
+
+		require.Error(t, err, "expected error from buildBaseClient failure")
+		assert.Nil(t, gw, "expected nil gateway on error")
+		assert.Contains(t, err.Error(), `failover chain: provider "gemini"`,
+			"error should wrap with failover chain context")
+		assert.Contains(t, err.Error(), "failed to create genai client",
+			"error should chain through to the underlying genai SDK init failure")
 	})
 }
