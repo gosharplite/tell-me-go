@@ -6,6 +6,7 @@ package events
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -100,3 +101,44 @@ func TestWaitWorkers_PanicRecovery(t *testing.T) {
 		t.Errorf("expected 'injected worker wait panic' in log, got: %s", buf.String())
 	}
 }
+
+// TestFlush_CallerContextCancellation exercises the <-ctx.Done() branch in
+// Flush's select (event_bus_lifecycle.go:108-109). The caller's context is
+// pre-cancelled before Flush is called. Since pendingCount=1 keeps the
+// flushWaiter blocked in cond.Wait() (~done never fires), and <-ctx.Done()
+// is already ready, the select deterministically picks the cancellation
+// branch. No goroutines, channels, or scheduler cooperation needed.
+func TestFlush_CallerContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	bus := NewSimpleEventBus(context.Background())
+	bus.pendingCount = 1 // keep flushWaiter's loop alive (pendingCount > 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel: <-ctx.Done() is immediately ready
+
+	err := bus.Flush(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestFlush_BusShutdownDuringFlush exercises the <-b.ctx.Done() branch in
+// Flush's select (event_bus_lifecycle.go:109-110). The bus's internal context
+// is pre-cancelled before Flush is called. Since pendingCount=1 keeps the
+// flushWaiter blocked in cond.Wait() (~done never fires), and <-b.ctx.Done()
+// is already ready, the select deterministically picks the bus-cancellation
+// branch. No goroutines, channels, or scheduler cooperation needed.
+func TestFlush_BusShutdownDuringFlush(t *testing.T) {
+	t.Parallel()
+
+	bus := NewSimpleEventBus(context.Background())
+	bus.pendingCount = 1 // keep flushWaiter's loop alive (pendingCount > 0)
+	bus.cancel()         // pre-cancel: <-b.ctx.Done() is immediately ready
+
+	err := bus.Flush(context.Background())
+	if !errors.Is(err, ErrBusClosed) {
+		t.Errorf("expected ErrBusClosed, got %v", err)
+	}
+}
+
