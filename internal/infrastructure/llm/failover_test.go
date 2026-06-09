@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
@@ -675,4 +678,30 @@ func TestFailoverGateway_WithResilientClient_ClassifiesAndRoutes(t *testing.T) {
 	if secondary.generateCalled != 1 {
 		t.Errorf("secondary.generateCalled = %d, want 1", secondary.generateCalled)
 	}
+}
+
+func TestFailoverGateway_Generate_NilMetricsPassthrough(t *testing.T) {
+	primary := &mockExtendedClient{
+		name: "primary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return successContent(), nil, nil
+		},
+	}
+	secondary := &mockExtendedClient{
+		name: "secondary",
+	}
+
+	fg := NewFailoverGateway([]NamedClient{
+		{Name: primary.name, Client: primary},
+		{Name: secondary.name, Client: secondary},
+	})
+
+	content, metrics, err := fg.Generate(context.Background(), nil, nil, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, content)
+	assert.Equal(t, "success", content.Parts[0].Text)
+	assert.Nil(t, metrics)
+	assert.Equal(t, 1, primary.generateCalled)
+	assert.Equal(t, 0, secondary.generateCalled)
 }
