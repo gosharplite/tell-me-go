@@ -141,4 +141,3 @@ func TestFlush_BusShutdownDuringFlush(t *testing.T) {
 		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
 }
-

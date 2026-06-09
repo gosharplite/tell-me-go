@@ -354,6 +354,15 @@ func TestWithinParent(t *testing.T) {
 			want:   false,
 		},
 		{
+			name:   "rel error returns false",
+			parent: "",
+			target: "/foo/bar",
+			want:   false,
+			// filepath.Rel("", "/foo/bar") cleans "" to ".", then
+			// cannot compute a relative path between a relative and an
+			// absolute path → error → withinParent returns false.
+		},
+		{
 			name:    "different drives error",
 			parent:  "C:\\foo",
 			target:  "D:\\bar",

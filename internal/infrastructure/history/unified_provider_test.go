@@ -245,6 +245,52 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 	}
 }
 
+func TestEncodeNextCursor(t *testing.T) {
+	provider := &unifiedProvider{}
+
+	tests := []struct {
+		name       string
+		nextOffset int64
+		items      []ports.HistoryViewDTO
+		want       string
+	}{
+		{
+			name:       "empty items returns EOF",
+			nextOffset: 10,
+			items:      nil,
+			want:       "EOF",
+		},
+		{
+			name:       "zero offset returns EOF",
+			nextOffset: 0,
+			items:      []ports.HistoryViewDTO{{Role: "user"}},
+			want:       "EOF",
+		},
+		{
+			name:       "both trigger EOF",
+			nextOffset: 0,
+			items:      nil,
+			want:       "EOF",
+		},
+		{
+			name:       "happy path returns numeric cursor",
+			nextOffset: 42,
+			items:      []ports.HistoryViewDTO{{Role: "user"}},
+			want:       "archive:42",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := provider.encodeNextCursor(tt.nextOffset, tt.items)
+			if got != tt.want {
+				t.Errorf("encodeNextCursor(%d, %+v) = %q; want %q",
+					tt.nextOffset, tt.items, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUnifiedProvider_ToDTO_ExtraCases(t *testing.T) {
 	// Testing parts like thoughts and tool calls which weren't fully covered in the main test.
 	mockActive := &mockHistoryManager{}

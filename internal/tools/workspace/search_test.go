@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
@@ -330,6 +333,81 @@ func TestCreateSearchMatcher_RegexInvalid(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// getDefinitionMatcher — regex query edge cases
+// ---------------------------------------------------------------------------
+
+func TestGetDefinitionMatcher_RegexQueryFiltersNonMatchingDef(t *testing.T) {
+	t.Parallel()
+
+	compiledDefs := getCompiledPatterns()
+
+	tests := []struct {
+		name      string
+		reQuery   *regexp.Regexp
+		path      string
+		line      string
+		wantMatch string
+		wantOK    bool
+	}{
+		{
+			name:      "regex query filters non-matching def",
+			reQuery:   regexp.MustCompile("otherFunc"),
+			path:      "main.go",
+			line:      "func main() {}",
+			wantMatch: "",
+			wantOK:    false,
+		},
+		{
+			name:      "regex query matches def line",
+			reQuery:   regexp.MustCompile("main"),
+			path:      "main.go",
+			line:      "func main() {}",
+			wantMatch: "",
+			wantOK:    true,
+		},
+		{
+			name:      "nil query passes all defs",
+			reQuery:   nil,
+			path:      "main.go",
+			line:      "func main() {}",
+			wantMatch: "",
+			wantOK:    true,
+		},
+		{
+			name:      "non-def line with query",
+			reQuery:   regexp.MustCompile("x"),
+			path:      "main.go",
+			line:      "var x = 1",
+			wantMatch: "",
+			wantOK:    false,
+		},
+		{
+			name:      "unsupported extension",
+			reQuery:   nil,
+			path:      "script.rb",
+			line:      "def foo",
+			wantMatch: "",
+			wantOK:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			matcher := getDefinitionMatcher(tt.reQuery, compiledDefs)
+			gotMatch, gotOK := matcher(tt.path, tt.line)
+			if gotMatch != tt.wantMatch {
+				t.Errorf("match = %q, want %q", gotMatch, tt.wantMatch)
+			}
+			if gotOK != tt.wantOK {
+				t.Errorf("ok = %v, want %v", gotOK, tt.wantOK)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // checkConcurrentSearchError tests
 // ---------------------------------------------------------------------------
 
@@ -408,6 +486,33 @@ func TestGrepDefinitions_ConcurrentSearchError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "walk failure") {
 		t.Errorf("expected 'walk failure' in error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// grepDefinitions — UnmarshalArgs failure
+// ---------------------------------------------------------------------------
+
+func TestGrepDefinitions_UnmarshalArgsFailure(t *testing.T) {
+	s := &fileSearcher{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	ctx := context.Background()
+
+	// A nested map cannot be unmarshaled into the Path string field.
+	args := map[string]interface{}{
+		"path": map[string]interface{}{"nested": "value"},
+	}
+
+	result, err := s.grepDefinitions(ctx, args, nil)
+	if err == nil {
+		t.Fatal("expected error from UnmarshalArgs")
+	}
+	// grepDefinitions returns (tools.ToolResult{}, err) on unmarshal failure.
+	if result.Text != "" || result.Error != nil {
+		t.Errorf("expected zero-value ToolResult, got %+v", result)
 	}
 }
 
@@ -517,6 +622,32 @@ func TestSearchFiles_ConcurrentSearchError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "walk failure") {
 		t.Errorf("expected 'walk failure', got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// searchFiles — UnmarshalArgs failure
+// ---------------------------------------------------------------------------
+
+func TestSearchFiles_UnmarshalArgsFailure(t *testing.T) {
+	s := &fileSearcher{
+		sm:     &toolstest.MockSecurityManager{AllowAll: true},
+		fs:     persistencetest.NewPlainOSFileSystem(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+	ctx := context.Background()
+
+	// "not_a_bool" cannot be unmarshaled into the IsRegex bool field.
+	args := map[string]interface{}{
+		"is_regex": "not_a_bool",
+	}
+
+	result, err := s.searchFiles(ctx, args, nil)
+	if err == nil {
+		t.Fatal("expected error from UnmarshalArgs")
+	}
+	if !reflect.DeepEqual(result, tools.ToolResult{}) {
+		t.Errorf("expected zero-value ToolResult, got %+v", result)
 	}
 }
 
