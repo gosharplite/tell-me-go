@@ -15,11 +15,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func TestMockLLMClient_SendChat_Default(t *testing.T) {
+func TestMockLLMClient_SendChat_Default_ReturnsError(t *testing.T) {
 	t.Parallel()
 
 	m := &MockLLMClient{}
-	content, metrics, err := m.SendChat(context.Background(), nil, nil, nil)
+	_, _, err := m.SendChat(context.Background(), nil, nil, nil)
 
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -27,12 +27,28 @@ func TestMockLLMClient_SendChat_Default(t *testing.T) {
 	if !strings.Contains(err.Error(), "not implemented") {
 		t.Errorf("got error %q; want 'not implemented'", err.Error())
 	}
+}
+
+func TestMockLLMClient_SendChat_Default_ReturnsNilValues(t *testing.T) {
+	t.Parallel()
+
+	m := &MockLLMClient{}
+	content, metrics, _ := m.SendChat(context.Background(), nil, nil, nil)
+
 	if content != nil {
 		t.Errorf("got content %+v; want nil", content)
 	}
 	if metrics != nil {
 		t.Errorf("got metrics %+v; want nil", metrics)
 	}
+}
+
+func TestMockLLMClient_SendChat_Default_RecordsSnapshot(t *testing.T) {
+	t.Parallel()
+
+	m := &MockLLMClient{}
+	_, _, err := m.SendChat(context.Background(), nil, nil, nil)
+	_ = err
 
 	sendChat, genImg, refreshAuth, generate, methods := m.snapshot()
 	if sendChat != 1 {
@@ -52,7 +68,7 @@ func TestMockLLMClient_SendChat_Default(t *testing.T) {
 	}
 }
 
-func TestMockLLMClient_SendChat_Override(t *testing.T) {
+func TestMockLLMClient_SendChat_Override_ReturnsCustomValues(t *testing.T) {
 	t.Parallel()
 
 	wantContent := &llm.Content{Role: "assistant"}
@@ -77,8 +93,27 @@ func TestMockLLMClient_SendChat_Override(t *testing.T) {
 			t.Fatalf("got metrics %+v; want %+v", metrics, wantMetrics)
 		}
 	}
+}
 
-	sendChat, genImg, refreshAuth, generate, methods := m.snapshot()
+func TestMockLLMClient_SendChat_Override_TracksCallCount(t *testing.T) {
+	t.Parallel()
+
+	wantContent := &llm.Content{Role: "assistant"}
+	wantMetrics := &llm.Metrics{PromptTokens: 10}
+
+	m := &MockLLMClient{
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tl []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return wantContent, wantMetrics, nil
+		},
+	}
+
+	// Call twice.
+	for range 2 {
+		_, _, err := m.SendChat(context.Background(), nil, nil, nil)
+		_ = err
+	}
+
+	sendChat, genImg, refreshAuth, generate, _ := m.snapshot()
 	if sendChat != 2 {
 		t.Errorf("sendChat = %d; want 2", sendChat)
 	}
@@ -91,6 +126,27 @@ func TestMockLLMClient_SendChat_Override(t *testing.T) {
 	if generate != 0 {
 		t.Errorf("generate = %d; want 0", generate)
 	}
+}
+
+func TestMockLLMClient_SendChat_Override_RecordsMethods(t *testing.T) {
+	t.Parallel()
+
+	wantContent := &llm.Content{Role: "assistant"}
+	wantMetrics := &llm.Metrics{PromptTokens: 10}
+
+	m := &MockLLMClient{
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tl []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return wantContent, wantMetrics, nil
+		},
+	}
+
+	// Call twice.
+	for range 2 {
+		_, _, err := m.SendChat(context.Background(), nil, nil, nil)
+		_ = err
+	}
+
+	_, _, _, _, methods := m.snapshot()
 	if len(methods) != 2 {
 		t.Fatalf("len(methods) = %d; want 2", len(methods))
 	}
