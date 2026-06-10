@@ -137,10 +137,10 @@ func (i *noOpInteractor) Confirm(ctx context.Context, message string) (bool, err
 }
 
 // Warn does nothing.
-func (i *noOpInteractor) Warn(message string) {}
+func (i *noOpInteractor) Warn(message string) { _ = message }
 
 // Prompt does nothing.
-func (i *noOpInteractor) Prompt(message string) {}
+func (i *noOpInteractor) Prompt(message string) { _ = message }
 
 // ReadSingleKey returns an empty string.
 func (i *noOpInteractor) ReadSingleKey(ctx context.Context) (string, error) {

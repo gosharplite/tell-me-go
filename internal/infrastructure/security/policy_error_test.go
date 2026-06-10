@@ -486,4 +486,119 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "user aborted")
 	})
+
+	// 20. RemoveReadPath confirmAction error
+	t.Run("RemoveReadPath confirmAction error", func(t *testing.T) {
+		t.Parallel()
+
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Err: errors.New("user aborted")}
+		})
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		path := filepath.Join(t.TempDir(), "ro-remove-confirm-err")
+		_, err := pt.RemoveReadPath(ctx, map[string]interface{}{
+			"path": path,
+		}, nil)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user aborted")
+	})
+}
+
+// TestPolicyTool_UnmarshalArgsErrors verifies that all five CRUD functions
+// return an error when args contain a value of the wrong type, causing
+// tools.UnmarshalArgs to fail before any business logic runs.
+func TestPolicyTool_UnmarshalArgsErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("RegisterSafePath with int path", func(t *testing.T) {
+		t.Parallel()
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		sm.SetBypassActive(true)
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		_, err := pt.RegisterSafePath(ctx, map[string]interface{}{
+			"path":   123, // int instead of string
+			"reason": "test",
+		}, nil)
+
+		require.Error(t, err)
+	})
+
+	t.Run("RemoveSafePath with int path", func(t *testing.T) {
+		t.Parallel()
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		sm.SetBypassActive(true)
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		_, err := pt.RemoveSafePath(ctx, map[string]interface{}{
+			"path": 123, // int instead of string
+		}, nil)
+
+		require.Error(t, err)
+	})
+
+	t.Run("RegisterReadPath with int path", func(t *testing.T) {
+		t.Parallel()
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		sm.SetBypassActive(true)
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		_, err := pt.RegisterReadPath(ctx, map[string]interface{}{
+			"path":   123, // int instead of string
+			"reason": "test",
+		}, nil)
+
+		require.Error(t, err)
+	})
+
+	t.Run("RemoveReadPath with int path", func(t *testing.T) {
+		t.Parallel()
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		sm.SetBypassActive(true)
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		_, err := pt.RemoveReadPath(ctx, map[string]interface{}{
+			"path": 123, // int instead of string
+		}, nil)
+
+		require.Error(t, err)
+	})
+
+	t.Run("UpdateSessionSetting with int key", func(t *testing.T) {
+		t.Parallel()
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		sm.SetBypassActive(true)
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		_, err := pt.UpdateSessionSetting(ctx, map[string]interface{}{
+			"key":   123, // int instead of string
+			"value": "30",
+		}, nil)
+
+		require.Error(t, err)
+	})
 }

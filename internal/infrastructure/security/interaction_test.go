@@ -304,3 +304,11 @@ func TestNoOpInteractor_WarnAndPrompt(t *testing.T) {
 	ni.Warn("")
 	ni.Prompt("")
 }
+
+func TestNoOpInteractor_SingletonWarnAndPrompt(t *testing.T) {
+	t.Parallel()
+	ni := NoOpInteractor()
+	// Must not panic — these are no-ops on the singleton
+	ni.Warn("test warning via singleton")
+	ni.Prompt("test prompt via singleton")
+}
