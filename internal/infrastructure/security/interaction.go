@@ -50,23 +50,34 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 	}
 
 	if bypass {
-		ui.Warn(fmt.Sprintf("[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).", action, target))
-		if h.auditor != nil {
-			h.auditor.LogAudit("CONFIRM_ACTION",
-				"ACTION", action+" on "+target,
-				"DETAIL", detailLog+" (auto-approved via bypass_confirmation)",
-			)
-		}
-		return true, nil
+		return h.handleBypassConfirmation(ui, action, target, detailLog)
 	}
+	return h.handleConfirmationPrompt(ctx, ui, action, target, detail, detailLog)
+}
 
+// handleBypassConfirmation logs the auto-approved action and returns true.
+func (h *interactionHandler) handleBypassConfirmation(ui domain.UserInteractor, action, target, detailLog string) (bool, error) {
+	ui.Warn(fmt.Sprintf("[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).", action, target))
+	if h.auditor != nil {
+		h.auditor.LogAudit("CONFIRM_ACTION",
+			"ACTION", action+" on "+target,
+			"DETAIL", detailLog+" (auto-approved via bypass_confirmation)",
+		)
+	}
+	return true, nil
+}
+
+// handleConfirmationPrompt builds the confirmation message, prompts the user,
+// and logs the audit trail on approval.
+func (h *interactionHandler) handleConfirmationPrompt(ctx context.Context, ui domain.UserInteractor, action, target, detail, detailLog string) (bool, error) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[CONFIRMATION REQUIRED]\nAI is requesting to %s: %s\n", action, target)
 	if detail != "" {
-		if len(detail) > 1000 {
-			detail = detail[:1000] + "\n... (truncated)"
+		displayDetail := detail
+		if len(displayDetail) > 1000 {
+			displayDetail = displayDetail[:1000] + "\n... (truncated)"
 		}
-		sb.WriteString(detail + "\n")
+		sb.WriteString(displayDetail + "\n")
 	}
 	sb.WriteString("Proceed? (y/N) ")
 
@@ -76,15 +87,20 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 	}
 
 	if confirmed {
-		if h.auditor != nil {
-			h.auditor.LogAudit("CONFIRM_ACTION",
-				"ACTION", action+" on "+target,
-				"DETAIL", detailLog,
-			)
-		}
+		h.logActionAudit(action, target, detailLog)
 		return true, nil
 	}
 	return false, nil
+}
+
+// logActionAudit records a CONFIRM_ACTION audit entry when an action is approved.
+func (h *interactionHandler) logActionAudit(action, target, detailLog string) {
+	if h.auditor != nil {
+		h.auditor.LogAudit("CONFIRM_ACTION",
+			"ACTION", action+" on "+target,
+			"DETAIL", detailLog,
+		)
+	}
 }
 
 // ReadSingleKey waits for a single key press.

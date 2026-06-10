@@ -336,6 +336,39 @@ func (m *AdoManager) fetchPolicyConfigurations(ctx context.Context, org, project
 	return policyConfigs.Value, nil
 }
 
+// formatPolicySettings writes config.Settings to the builder, skipping "scope".
+func formatPolicySettings(sb *strings.Builder, settings map[string]interface{}) {
+	for k, v := range settings {
+		if k == "scope" {
+			continue
+		}
+		_, _ = fmt.Fprintf(sb, "    %s: %v\n", formatKey(k), v)
+	}
+}
+
+// formatSinglePolicy writes a single enabled, branch-matching policy to the builder.
+// It returns true if the policy was written (meaning at least one policy was found).
+func (m *AdoManager) formatSinglePolicy(sb *strings.Builder, config adoPolicyConfig, targetRepoId, fullBranchRef string) bool {
+	if !config.IsEnabled {
+		return false
+	}
+	if !m.policyMatchesBranch(config, targetRepoId, fullBranchRef) {
+		return false
+	}
+
+	requiredLabel := ""
+	if config.IsBlocking {
+		requiredLabel = " [REQUIRED]"
+	}
+
+	_, _ = fmt.Fprintf(sb, "- Type: %s%s\n", config.Type.DisplayName, requiredLabel)
+	sb.WriteString("  Status: Enabled\n")
+	sb.WriteString("  Settings:\n")
+	formatPolicySettings(sb, config.Settings)
+	sb.WriteString("\n")
+	return true
+}
+
 func (m *AdoManager) formatBranchPolicies(branchName, repositoryName string, policyConfigs []adoPolicyConfig, targetRepoId string) string {
 	fullBranchRef := branchName
 	if !strings.HasPrefix(fullBranchRef, "refs/heads/") {
@@ -347,36 +380,14 @@ func (m *AdoManager) formatBranchPolicies(branchName, repositoryName string, pol
 
 	found := false
 	for _, config := range policyConfigs {
-		if !config.IsEnabled {
-			continue
+		if m.formatSinglePolicy(&resultText, config, targetRepoId, fullBranchRef) {
+			found = true
 		}
-
-		if !m.policyMatchesBranch(config, targetRepoId, fullBranchRef) {
-			continue
-		}
-
-		found = true
-		requiredLabel := ""
-		if config.IsBlocking {
-			requiredLabel = " [REQUIRED]"
-		}
-
-		_, _ = fmt.Fprintf(&resultText, "- Type: %s%s\n", config.Type.DisplayName, requiredLabel)
-		resultText.WriteString("  Status: Enabled\n")
-		resultText.WriteString("  Settings:\n")
-		for k, v := range config.Settings {
-			if k == "scope" {
-				continue
-			}
-			_, _ = fmt.Fprintf(&resultText, "    %s: %v\n", formatKey(k), v)
-		}
-		resultText.WriteString("\n")
 	}
 
 	if !found {
 		return fmt.Sprintf("No active policies found for branch %s in repository %s.", branchName, repositoryName)
 	}
-
 	return resultText.String()
 }
 

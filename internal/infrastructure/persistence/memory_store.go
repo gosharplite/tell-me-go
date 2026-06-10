@@ -131,8 +131,8 @@ func (s *memoryListStore[T]) getCreatedAt(item T) time.Time {
 	return time.Time{}
 }
 
-// matchesFilter returns true when item satisfies all non-zero filters.
-func (s *memoryListStore[T]) matchesFilter(item T, filter ports.ListFilter) bool {
+// checkStatusMatch returns false when the item's status fails the filter.
+func (s *memoryListStore[T]) checkStatusMatch(item T, filter ports.ListFilter) bool {
 	if filter.Status != "" {
 		if s.getStatus(item) != filter.Status {
 			return false
@@ -143,6 +143,11 @@ func (s *memoryListStore[T]) matchesFilter(item T, filter ports.ListFilter) bool
 			return false
 		}
 	}
+	return true
+}
+
+// checkTimeMatch returns false when the item's CreatedAt fails the time filter.
+func (s *memoryListStore[T]) checkTimeMatch(item T, filter ports.ListFilter) bool {
 	if !filter.Since.IsZero() {
 		if s.getCreatedAt(item).Before(filter.Since) {
 			return false
@@ -152,6 +157,17 @@ func (s *memoryListStore[T]) matchesFilter(item T, filter ports.ListFilter) bool
 		if s.getCreatedAt(item).After(filter.Before) {
 			return false
 		}
+	}
+	return true
+}
+
+// matchesFilter returns true when item satisfies all non-zero filters.
+func (s *memoryListStore[T]) matchesFilter(item T, filter ports.ListFilter) bool {
+	if !s.checkStatusMatch(item, filter) {
+		return false
+	}
+	if !s.checkTimeMatch(item, filter) {
+		return false
 	}
 	return true
 }
