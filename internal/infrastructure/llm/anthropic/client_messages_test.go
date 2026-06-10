@@ -366,18 +366,8 @@ func TestMapAnthropicRole(t *testing.T) {
 	}
 }
 
-func TestConvertParts(t *testing.T) {
+func TestConvertParts_Empty(t *testing.T) {
 	c := &client{logger: &ports.NoOpLogger{}}
-
-	t.Run("empty parts returns empty blocks", func(t *testing.T) {
-		blocks, err := c.convertParts(nil, "user")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(blocks) != 0 {
-			t.Errorf("expected 0 blocks, got %d", len(blocks))
-		}
-	})
 
 	t.Run("nil slice returns empty blocks", func(t *testing.T) {
 		var parts []*llm.Part
@@ -389,6 +379,20 @@ func TestConvertParts(t *testing.T) {
 			t.Errorf("expected 0 blocks, got %d", len(blocks))
 		}
 	})
+
+	t.Run("empty parts returns empty blocks", func(t *testing.T) {
+		blocks, err := c.convertParts(nil, "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 0 {
+			t.Errorf("expected 0 blocks, got %d", len(blocks))
+		}
+	})
+}
+
+func TestConvertParts_TextConversion(t *testing.T) {
+	c := &client{logger: &ports.NoOpLogger{}}
 
 	t.Run("text parts are converted", func(t *testing.T) {
 		parts := []*llm.Part{
@@ -406,6 +410,10 @@ func TestConvertParts(t *testing.T) {
 			t.Errorf("unexpected block texts: %+v", blocks)
 		}
 	})
+}
+
+func TestConvertParts_Filtering(t *testing.T) {
+	c := &client{logger: &ports.NoOpLogger{}}
 
 	t.Run("empty part is skipped (ok=false)", func(t *testing.T) {
 		parts := []*llm.Part{
@@ -436,6 +444,10 @@ func TestConvertParts(t *testing.T) {
 			t.Errorf("expected nil blocks on error, got %+v", blocks)
 		}
 	})
+}
+
+func TestConvertParts_ThinkingRole(t *testing.T) {
+	c := &client{logger: &ports.NoOpLogger{}}
 
 	t.Run("thinking parts become text blocks for non-assistant role", func(t *testing.T) {
 		parts := []*llm.Part{

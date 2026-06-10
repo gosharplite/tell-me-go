@@ -214,6 +214,22 @@ func (r *fileReader) processSingleFile(ctx context.Context, path string, sb *str
 	return nil
 }
 
+// processOnePath processes a single file path within the readFiles loop.
+// It handles heartbeat emission (every 5th file) and the processSingleFileFn
+// test override. Extracted from readFiles to keep cyclomatic complexity
+// ≤ 7 (PR #773).
+func (r *fileReader) processOnePath(ctx context.Context, i int, path string, sb *strings.Builder, hb chan<- struct{}) error {
+	if i%5 == 0 && hb != nil {
+		sendHeartbeat(ctx, hb)
+	}
+
+	psf := r.processSingleFile
+	if r.processSingleFileFn != nil {
+		psf = r.processSingleFileFn
+	}
+	return psf(ctx, path, sb)
+}
+
 func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePaths []string `json:"filepaths"`
@@ -234,16 +250,7 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{},
 
 	var sb strings.Builder
 	for i, path := range params.FilePaths {
-		// Emit heartbeat every 5 files
-		if i%5 == 0 && hb != nil {
-			sendHeartbeat(ctx, hb)
-		}
-
-		psf := r.processSingleFile
-		if r.processSingleFileFn != nil {
-			psf = r.processSingleFileFn
-		}
-		if err := psf(ctx, path, &sb); err != nil {
+		if err := r.processOnePath(ctx, i, path, &sb, hb); err != nil {
 			return tools.ToolResult{}, err
 		}
 	}

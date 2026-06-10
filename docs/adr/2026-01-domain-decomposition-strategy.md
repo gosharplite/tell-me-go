@@ -5,7 +5,7 @@ Accepted
 
 ### Implementation Status (2025)
 - **Phase 1: Elimination of ChatterParams:** COMPLETED (See [ADR-004: Elimination of ChatterParams God Object](./2026-01-chatterparams-elimination.md))
-- **Phase 2: Facade Pattern & Focused Services:** IN PROGRESS (ContextPreparationService, ExecutionOrchestrator, etc. are being extracted).
+- **Phase 2: Facade Pattern & Focused Services:** COMPLETED. The DI Composition Root (`internal/infrastructure/di/`) was decomposed into 8 sub-providers (`sessionFactory`, `toolchainFactory`, `telemetryFactory`, `historyFactory`, `healthFactory`, `uiFactory`, `chatFactory`, `suggestionFactory`), each independently testable. See [ADR-041: DI Composition Root — Sub-Provider Decomposition](./2026-05-di-composition-root-decomposition.md) for the post-implementation review (2026-05-19).
 
 ## Context
 The current orchestration layer centered around the `Chatter` orchestrator and its corresponding `ChatterParams` struct has evolved into a "God Object." 

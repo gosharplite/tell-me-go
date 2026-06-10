@@ -107,6 +107,46 @@ func (m *metricsManager) getModelPricing(modelName string, pd domain_pricing.Pri
 	return pd.GetModelPricing(modelName)
 }
 
+// recordCostIfNeeded persists the cost breakdown to the local ledger when
+// shouldRecord is true. It generates a session ID and timestamp if needed.
+func (m *metricsManager) recordCostIfNeeded(ctx context.Context, shouldRecord bool, sessionID, detectedModel string, timestamp time.Time, outputDir string, breakdown domain_pricing.CostBreakdown, usage domain_pricing.UsageStats) {
+	if !shouldRecord {
+		return
+	}
+	if sessionID == "" {
+		sessionID = generateSessionID(m.mode, m.logFile)
+	}
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+	loc := time.FixedZone("UTC-8", -8*3600)
+	m.recordCost(ctx, outputDir, m.mode, sessionCostRecord{
+		Date:      timestamp.In(loc).Format("2006-01-02"),
+		Timestamp: timestamp,
+		Session:   sessionID,
+		Model:     detectedModel,
+		TotalCost: breakdown.TotalCost,
+		Usage:     usage,
+	})
+}
+
+// applyPricingOverrides applies configured pricing overrides to the pricing data.
+func (m *metricsManager) applyPricingOverrides(pd domain_pricing.PricingData) domain_pricing.PricingData {
+	for k, v := range m.pricingOverrides {
+		pd.Models[k] = v
+	}
+	return pd
+}
+
+// resolveModel returns the detected model, falling back to the configured model
+// when detection yields an empty string.
+func (m *metricsManager) resolveModel(detectedModel string) string {
+	if detectedModel == "" {
+		return m.model
+	}
+	return detectedModel
+}
+
 func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, sessionID string) (string, error) {
 	resolvedLog, err := m.sm.IsPathSafe(m.logFile)
 	if err != nil {
@@ -115,11 +155,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 
 	outputDir := filepath.Dir(resolvedLog)
 	pd := GetPricing(ctx, m.sm, outputDir)
-
-	// Apply overrides from config
-	for k, v := range m.pricingOverrides {
-		pd.Models[k] = v
-	}
+	pd = m.applyPricingOverrides(pd)
 
 	// 1. Parse usage from log
 	usage, totalCost, detectedModel, timestamp, err := parseUsage(resolvedLog, pd, m.model)
@@ -130,9 +166,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		return "", fmt.Errorf("failed to parse usage log: %w", err)
 	}
 
-	if detectedModel == "" {
-		detectedModel = m.model
-	}
+	detectedModel = m.resolveModel(detectedModel)
 
 	// 2. Delegate financial math to Calculator
 	p := GetModelPricing(detectedModel, pd)
@@ -140,24 +174,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	breakdown := calc.Calculate(usage)
 	breakdown.TotalCost = totalCost // Use the per-turn accurate total cost
 
-	// 3. Persistence: Record to local ledger
-	if shouldRecord {
-		if sessionID == "" {
-			sessionID = generateSessionID(m.mode, m.logFile)
-		}
-		if timestamp.IsZero() {
-			timestamp = time.Now()
-		}
-		loc := time.FixedZone("UTC-8", -8*3600)
-		m.recordCost(ctx, outputDir, m.mode, sessionCostRecord{
-			Date:      timestamp.In(loc).Format("2006-01-02"),
-			Timestamp: timestamp,
-			Session:   sessionID,
-			Model:     detectedModel,
-			TotalCost: breakdown.TotalCost,
-			Usage:     usage,
-		})
-	}
+	m.recordCostIfNeeded(ctx, shouldRecord, sessionID, detectedModel, timestamp, outputDir, breakdown, usage)
 
 	// 4. Render report
 	return m.renderReport(pd, breakdown), nil

@@ -609,33 +609,57 @@ func (v *sequenceVisitor) resolveSelectorCall(sel *ast.SelectorExpr) (string, st
 	return targetFunc, targetPkgPath, targetId
 }
 
+// resolveCallDetails_detectInterface checks whether call is a method call
+// on an interface-typed expression. Returns the interface status and
+// the interface type name (empty when not found).
+func (v *sequenceVisitor) resolveCallDetails_detectInterface(call *ast.CallExpr) (bool, string) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false, ""
+	}
+	tv, ok := v.pkg.TypesInfo.Types[sel.X]
+	if !ok {
+		return false, ""
+	}
+	if _, ok := tv.Type.Underlying().(*types.Interface); !ok {
+		return false, ""
+	}
+	return true, v.analyzer.getTypeName(tv.Type)
+}
+
+// resolveCallDetails_formatDisplay produces the display name for a call.
+// For interface calls, it prefixes the function with the interface type name
+// (falling back to "Interface" when the concrete type name is unavailable).
+// For concrete calls, it returns targetFunc unchanged.
+func (v *sequenceVisitor) resolveCallDetails_formatDisplay(targetFunc string, isInterface bool, interfaceTypeName string) string {
+	if !isInterface {
+		return targetFunc
+	}
+	if interfaceTypeName == "" {
+		interfaceTypeName = "Interface"
+	}
+	return fmt.Sprintf("%s.%s", interfaceTypeName, targetFunc)
+}
+
+// resolveCallDetails_extractReturnType returns a human-readable return type
+// for a call expression. Void returns ("()") and invalid types are filtered
+// to empty string.
+func (v *sequenceVisitor) resolveCallDetails_extractReturnType(call *ast.CallExpr) string {
+	tv, ok := v.pkg.TypesInfo.Types[call]
+	if !ok {
+		return ""
+	}
+	retType := v.analyzer.getTypeName(tv.Type)
+	if retType == "()" || retType == "invalid type" {
+		return ""
+	}
+	return retType
+}
+
 func (v *sequenceVisitor) resolveCallDetails(call *ast.CallExpr, targetFunc string) (string, string) {
-	isInterface := false
-	var interfaceTypeName string
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if tv, ok := v.pkg.TypesInfo.Types[sel.X]; ok {
-			if _, ok := tv.Type.Underlying().(*types.Interface); ok {
-				isInterface = true
-				interfaceTypeName = v.analyzer.getTypeName(tv.Type)
-			}
-		}
-	}
-
-	displayFunc := targetFunc
-	if isInterface {
-		if interfaceTypeName == "" {
-			interfaceTypeName = "Interface"
-		}
-		displayFunc = fmt.Sprintf("%s.%s", interfaceTypeName, targetFunc)
-	}
-
-	retType := ""
-	if tv, ok := v.pkg.TypesInfo.Types[call]; ok {
-		retType = v.analyzer.getTypeName(tv.Type)
-		if retType == "()" || retType == "invalid type" {
-			retType = ""
-		}
-	}
+	isInterface, interfaceTypeName := v.resolveCallDetails_detectInterface(call)
+	displayFunc := v.resolveCallDetails_formatDisplay(targetFunc, isInterface, interfaceTypeName)
+	retType := v.resolveCallDetails_extractReturnType(call)
 	return displayFunc, retType
 }
 

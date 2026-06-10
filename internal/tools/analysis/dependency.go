@@ -57,6 +57,37 @@ func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args ma
 	return tools.ToolResult{Text: a.renderGraph(graph, format)}, nil
 }
 
+// buildGraph_processPackage resolves internal imports for a single package
+// directory and records the result in the shared graph map under a mutex.
+// Extracted from buildGraph to reduce cyclomatic complexity.
+func (a *defaultDependencyAnalyzer) buildGraph_processPackage(
+	ctx context.Context,
+	path string,
+	modRoot string,
+	modPrefix string,
+	graph map[string][]string,
+	mu *sync.Mutex,
+) error {
+	imports, err := a.getImports(ctx, path, modPrefix)
+	if err != nil {
+		return err
+	}
+
+	rel, err := filepathRelFn(modRoot, path)
+	if err != nil {
+		return err
+	}
+	pkgImportPath := modPrefix
+	if rel != "." {
+		pkgImportPath = filepath.ToSlash(filepath.Join(modPrefix, rel))
+	}
+
+	mu.Lock()
+	graph[pkgImportPath] = imports
+	mu.Unlock()
+	return nil
+}
+
 func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string][]string, error) {
 	modPrefix, err := a.resolveModulePrefix(ctx)
 	if err != nil {
@@ -80,24 +111,7 @@ func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string]
 	for _, p := range pkgPaths {
 		path := p
 		g.Go(func() error {
-			imports, err := a.getImports(groupCtx, path, modPrefix)
-			if err != nil {
-				return err
-			}
-
-			rel, err := filepathRelFn(modRoot, path)
-			if err != nil {
-				return err
-			}
-			pkgImportPath := modPrefix
-			if rel != "." {
-				pkgImportPath = filepath.ToSlash(filepath.Join(modPrefix, rel))
-			}
-
-			mu.Lock()
-			graph[pkgImportPath] = imports
-			mu.Unlock()
-			return nil
+			return a.buildGraph_processPackage(groupCtx, path, modRoot, modPrefix, graph, &mu)
 		})
 	}
 
