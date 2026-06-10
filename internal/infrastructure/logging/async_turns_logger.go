@@ -94,7 +94,6 @@ func (l *asyncTurnsLogger) processMessage(msg string) {
 		}
 		return
 	}
-	l.consecutiveFailures.Store(0)
 	// Smart batching: only fsync when the channel buffer is fully drained
 	if len(l.ch) == 0 {
 		if err := l.file.Sync(); err != nil {
@@ -106,10 +105,10 @@ func (l *asyncTurnsLogger) processMessage(msg string) {
 			} else {
 				l.logger.Warn("failed to sync turns log", "error", err)
 			}
-		} else {
-			l.consecutiveFailures.Store(0)
+			return
 		}
 	}
+	l.consecutiveFailures.Store(0)
 }
 
 func (l *asyncTurnsLogger) drainAndSync() {

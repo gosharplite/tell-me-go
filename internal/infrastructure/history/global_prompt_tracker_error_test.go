@@ -369,3 +369,37 @@ func TestGlobalPromptTracker_PerformCompactionPass_LoadError(t *testing.T) {
 		t.Error("file should not be empty after aborted compaction pass")
 	}
 }
+
+// TestGlobalPromptTracker_WriteCompactedDataFailsInCompactionPass verifies
+// that writeCompactedData returns false when the underlying io.Writer fails.
+// The performCompactionPass L353-355 return-false branch is unreachable with
+// bytes.Buffer (which cannot fail), but this test validates the contract that
+// callers must handle writeCompactedData returning false.
+func TestGlobalPromptTracker_WriteCompactedDataFailsInCompactionPass(t *testing.T) {
+	// Verify writeCompactedData contract with a failing writer
+	tracker := &globalPromptTracker{}
+	entries := []promptEntry{
+		{Timestamp: "2026-01-01T00:00:00Z", Prompt: "test"},
+	}
+
+	// errorWriter is already defined in global_prompt_tracker_test.go
+	if tracker.writeCompactedData(&errorWriter{}, entries) {
+		t.Error("expected writeCompactedData to return false with errorWriter")
+	}
+
+	// Verify happy path: performCompactionPass with real data
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	outputDir := filepath.Join(tmpDir, "output")
+	trackerPath := seedLargeTrackerFile(t, baseFS, outputDir)
+
+	realTracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: trackerPath,
+	}
+
+	success := realTracker.performCompactionPass(context.Background())
+	if !success {
+		t.Error("expected performCompactionPass to succeed with valid data")
+	}
+}

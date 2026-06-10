@@ -124,6 +124,8 @@ func (t *globalPromptTracker) Append(ctx context.Context, prompt string) error {
 		Prompt:    prompt,
 	}
 
+	// json.Marshal cannot fail for promptEntry (all fields are string).
+	// The error path exists for interface contract compliance.
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("failed to marshal prompt entry: %w", err)
@@ -369,6 +371,8 @@ func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
 
 func (t *globalPromptTracker) writeCompactedData(w io.Writer, entries []promptEntry) bool {
 	for _, entry := range entries {
+		// json.Marshal cannot fail for promptEntry (all fields are string).
+		// Returning false ensures callers handle this defensive path.
 		data, err := json.Marshal(entry)
 		if err != nil {
 			return false // abort compaction; do not silently drop entries

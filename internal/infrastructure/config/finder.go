@@ -11,6 +11,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
+// Package-level variables to allow tests to inject OS-call failures.
+var (
+	osGetwd         = os.Getwd
+	osExecutable    = os.Executable
+	osUserConfigDir = os.UserConfigDir
+)
+
 // defaultConfigFinder implements the domain's ConfigFinder interface with tiered search logic.
 type defaultConfigFinder struct {
 	baseDir string
@@ -66,7 +73,7 @@ func (f *defaultConfigFinder) getBaseDir() string {
 	if f.baseDir != "" {
 		return f.baseDir
 	}
-	if wd, err := os.Getwd(); err == nil {
+	if wd, err := osGetwd(); err == nil {
 		return wd
 	}
 	log.Printf("config: cannot resolve current working directory: falling back to '.'")
@@ -90,7 +97,7 @@ func (f *defaultConfigFinder) findInLocalDir() (string, bool) {
 
 // findInExecutableDir searches in the directory of the executable.
 func (f *defaultConfigFinder) findInExecutableDir() (string, bool) {
-	exe, err := os.Executable()
+	exe, err := osExecutable()
 	if err != nil {
 		log.Printf("config: cannot resolve executable path: %v", err)
 		return "", false
@@ -139,7 +146,7 @@ func (f *defaultConfigFinder) findInParentDirs() (string, bool) {
 
 // findInSystemPaths searches in standard OS config paths.
 func (f *defaultConfigFinder) findInSystemPaths() (string, bool) {
-	configDir, err := os.UserConfigDir()
+	configDir, err := osUserConfigDir()
 	if err != nil {
 		log.Printf("config: cannot resolve user config directory: %v", err)
 		return "", false
