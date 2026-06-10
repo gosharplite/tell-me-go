@@ -989,7 +989,7 @@ func TestAsyncTurnsLogger_SyncFailureEscalation(t *testing.T) {
 		assertNoLogLevel(t, handler, slog.LevelError, "failed to sync turns log after multiple retries")
 	})
 
-	t.Run("sync failure stays Warn when write succeeds between", func(t *testing.T) {
+	t.Run("sync failure escalates to Error after 5 consecutive", func(t *testing.T) {
 		handler := &slogHandler{}
 		logger := slog.New(handler)
 
@@ -1000,15 +1000,16 @@ func TestAsyncTurnsLogger_SyncFailureEscalation(t *testing.T) {
 			clock:  &mockClock{now: time.Now()},
 		}
 
-		// Each processMessage: Write succeeds (counter→0), Sync fails (counter→1).
-		// The counter never reaches 5 because Write resets it each time.
-		for i := 0; i < 6; i++ {
+		// First 4 calls: Warn level
+		for i := 0; i < 4; i++ {
 			l.processMessage(fmt.Sprintf("msg %d\n", i))
 		}
-
-		// Sync failures are Warn-level because counter is reset by successful writes
 		assertLogLevel(t, handler, slog.LevelWarn, "failed to sync turns log")
 		assertNoLogLevel(t, handler, slog.LevelError, "failed to sync turns log after multiple retries")
+
+		// 5th call escalates to Error (counter now 5)
+		l.processMessage("msg 5\n")
+		assertLogLevel(t, handler, slog.LevelError, "failed to sync turns log after multiple retries")
 	})
 
 	t.Run("successful sync resets counter", func(t *testing.T) {

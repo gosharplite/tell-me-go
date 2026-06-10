@@ -4,6 +4,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -176,5 +177,57 @@ func TestFind_ReturnsFallbackWhenAllStrategiesFail(t *testing.T) {
 	expected := filepath.Join(tmpDir, "configs", "assistant.yaml")
 	if path != expected {
 		t.Errorf("expected fallback path %q, got %q", expected, path)
+	}
+}
+
+func TestDefaultConfigFinder_GetBaseDir_GetwdError(t *testing.T) {
+	// Save original and restore
+	originalGetwd := osGetwd
+	t.Cleanup(func() { osGetwd = originalGetwd })
+
+	osGetwd = func() (string, error) {
+		return "", fmt.Errorf("simulated getwd error")
+	}
+
+	f := &defaultConfigFinder{}
+	got := f.getBaseDir()
+	if got != "." {
+		t.Errorf("expected fallback to '.', got %q", got)
+	}
+}
+
+func TestDefaultConfigFinder_FindInExecutableDir_Error(t *testing.T) {
+	originalExecutable := osExecutable
+	t.Cleanup(func() { osExecutable = originalExecutable })
+
+	osExecutable = func() (string, error) {
+		return "", fmt.Errorf("simulated executable error")
+	}
+
+	f := &defaultConfigFinder{baseDir: t.TempDir()}
+	path, found := f.findInExecutableDir()
+	if found {
+		t.Error("expected found=false when os.Executable fails")
+	}
+	if path != "" {
+		t.Errorf("expected empty path, got %q", path)
+	}
+}
+
+func TestDefaultConfigFinder_FindInSystemPaths_Error(t *testing.T) {
+	originalUserConfigDir := osUserConfigDir
+	t.Cleanup(func() { osUserConfigDir = originalUserConfigDir })
+
+	osUserConfigDir = func() (string, error) {
+		return "", fmt.Errorf("simulated user config dir error")
+	}
+
+	f := &defaultConfigFinder{baseDir: t.TempDir()}
+	path, found := f.findInSystemPaths()
+	if found {
+		t.Error("expected found=false when os.UserConfigDir fails")
+	}
+	if path != "" {
+		t.Errorf("expected empty path, got %q", path)
 	}
 }
