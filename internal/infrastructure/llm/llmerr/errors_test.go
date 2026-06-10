@@ -268,6 +268,16 @@ func TestClassify(t *testing.T) {
 			expectedWrap: llm.ErrTransient,
 		},
 		{
+			name:         "HTTPStatusErr with non-classifiable status 200",
+			input:        &mockHTTPStatusErr{status: 200},
+			expectedWrap: llm.ErrTerminal,
+		},
+		{
+			name:         "HTTPStatusErr with zero status",
+			input:        &mockHTTPStatusErr{status: 0},
+			expectedWrap: llm.ErrTerminal,
+		},
+		{
 			name:         "Unclassified error defaults to terminal",
 			input:        errors.New("unknown error"),
 			expectedWrap: llm.ErrTerminal,
@@ -363,3 +373,11 @@ type mockNetError struct {
 func (e *mockNetError) Error() string   { return e.msg }
 func (e *mockNetError) Timeout() bool   { return e.timeout }
 func (e *mockNetError) Temporary() bool { return false }
+
+// mockHTTPStatusErr implements HTTPStatusErr for testing classifyHTTP fallthrough.
+type mockHTTPStatusErr struct {
+	status int
+}
+
+func (e *mockHTTPStatusErr) Error() string   { return fmt.Sprintf("http %d", e.status) }
+func (e *mockHTTPStatusErr) StatusCode() int { return e.status }
