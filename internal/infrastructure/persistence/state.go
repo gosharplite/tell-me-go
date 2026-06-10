@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -126,7 +127,7 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 
 	taskStore, kvStore, db, paths, err := initRepositories(ctx, configDir, storageType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("initializing persistence repositories: %w", err)
 	}
 
 	tasks, err := initServices(ctx, taskStore)
@@ -174,6 +175,7 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 	// Perform migration if needed
 	err = migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
 	if err != nil {
+		_ = db.Close()
 		return nil, nil, nil, nil, err
 	}
 
