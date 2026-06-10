@@ -40,6 +40,28 @@ func (r *resilientClient) wrapError(err error) error {
 	return llmerr.Classify(err)
 }
 
+// handleConnectionReset resets the underlying client's connection pool
+// when the error is transient (retryable via rate-limit or 5xx) or when
+// this is the final internal retry attempt, to prevent reusing poisoned
+// keep-alive connections.
+func (r *resilientClient) handleConnectionReset(wrapped error, attempt int) {
+	if llm.IsTransient(wrapped) || attempt == 1 {
+		if cr, ok := r.client.(connectionResetter); ok {
+			cr.ResetConnections()
+		}
+	}
+}
+
+// handleAuthRetry attempts to refresh authentication when an ErrAuth
+// is encountered on the first attempt. It returns true if the refresh
+// succeeded and the caller should retry the SendChat request.
+func (r *resilientClient) handleAuthRetry(wrapped error, attempt int) bool {
+	if errors.Is(wrapped, llm.ErrAuth) && attempt == 0 {
+		return r.client.RefreshAuth() == nil
+	}
+	return false
+}
+
 // Generate handles the LLM interaction logic synchronously.
 func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	ctx, span := otel.Tracer("llm").Start(ctx, "llm.generate_content")
@@ -53,19 +75,11 @@ func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, to
 		}
 
 		wrapped := r.wrapError(err)
-		if errors.Is(wrapped, llm.ErrAuth) && attempt == 0 {
-			if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
-				continue // Fixed! Retry once.
-			}
+		if r.handleAuthRetry(wrapped, attempt) {
+			continue
 		}
 
-		// Infrastructure-level resilience: reset connections on transient network errors (e.g., 502/504),
-		// rate limits, or on the final internal retry attempt to prevent reusing poisoned keep-alive connections.
-		if llm.IsTransient(wrapped) || attempt == 1 {
-			if cr, ok := r.client.(connectionResetter); ok {
-				cr.ResetConnections()
-			}
-		}
+		r.handleConnectionReset(wrapped, attempt)
 
 		lastErr = wrapped
 		break // Let the TurnEngine handle transient/terminal retries
