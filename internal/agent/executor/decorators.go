@@ -282,7 +282,11 @@ func (d *safetyDecorator) handlePanic(ctx context.Context, r interface{}, toolNa
 		Message: msg,
 		Level:   "error",
 	}
-	_ = events.SafePublish(ctx, d.events, evt)
+	if err := events.SafePublish(ctx, d.events, evt); err != nil {
+		d.logger.Error("failed to publish panic event",
+			"tool_name", toolName,
+			"error", err)
+	}
 
 	return tools.ToolResult{
 		Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", toolName),

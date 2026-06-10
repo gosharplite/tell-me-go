@@ -48,6 +48,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, registry,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)

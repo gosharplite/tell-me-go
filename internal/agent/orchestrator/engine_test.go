@@ -20,6 +20,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1116,4 +1117,52 @@ func TestExecutionStep_Process_MetricsNil_DoesNotPanic(t *testing.T) {
 	assert.Equal(t, PhasePersisting, res.NextPhase)
 	assert.NotNil(t, turn.State.ToolResponse)
 	assert.Nil(t, turn.State.Metrics, "Metrics must remain nil when not set by inference")
+}
+
+func TestInferenceStep_InvokeModel_InferenceStartedEvent_PublishError(t *testing.T) {
+	// GIVEN: a faulting event bus that will cause SafePublish to fail
+	bus := &eventstest.TestEventBus{}
+	bus.SetPublishErr(errors.New("bus failure"))
+
+	// AND: a spy logger to capture the error log
+	sl := &testfixtures.SpyLogger{}
+
+	// AND: a gateway that returns a valid response so InvokeModel still succeeds
+	gw := &agenttest.MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
+		},
+	}
+
+	// AND: a CtxManager with History (needed for GetResolver) but no SessionProvider
+	counter := &agenttest.MockTokenCounter{}
+	hMock := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+
+	// AND: a registry with core declarations (empty is fine)
+	reg := agenttest.NewMockToolRegistry()
+
+	turn := &Turn{
+		Events:     bus,
+		Logger:     sl,
+		Model:      "test-model",
+		Gateway:    gw,
+		CtxManager: cm,
+		Registry:   reg,
+		State:      &TurnState{},
+	}
+
+	step := &InferenceStep{}
+
+	// WHEN: InvokeModel is called
+	respContent, metrics, err := step.InvokeModel(context.Background(), turn)
+
+	// THEN: the function still succeeds (best-effort UI notification)
+	assert.NoError(t, err)
+	assert.NotNil(t, respContent)
+	assert.NotNil(t, metrics)
+
+	// AND: the logger recorded the expected error message
+	assert.True(t, sl.CalledWith("Error", "Failed to publish InferenceStartedEvent; UI may not show inference status"),
+		"expected logger to capture InferenceStartedEvent publish failure")
 }

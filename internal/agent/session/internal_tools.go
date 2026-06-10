@@ -158,7 +158,7 @@ func RegisterInternal(r tools.ToolRegistrar, cm *sessctx.Manager, logger ports.L
 		LongRunning: true,
 		Serial:      true,
 	}); err != nil {
-		return err
+		return fmt.Errorf("register summarize_history: %w", err)
 	}
 
 	if err := r.Register(&tools.ToolDeclaration{
@@ -180,7 +180,7 @@ func RegisterInternal(r tools.ToolRegistrar, cm *sessctx.Manager, logger ports.L
 			Required: []string{"action", "index"},
 		},
 	}, it.ManageHistory); err != nil {
-		return err
+		return fmt.Errorf("register manage_history: %w", err)
 	}
 	return nil
 }

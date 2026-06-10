@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +13,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 )
+
+// ErrToolNotFound is returned when a tool name cannot be resolved in the registry.
+var ErrToolNotFound = errors.New("tool not found in registry")
 
 type defaultResolver struct {
 	registry tools.Registry
@@ -23,6 +27,10 @@ func newToolResolutionService(registry tools.Registry) ToolResolutionService {
 }
 
 func (r *defaultResolver) Resolve(call *llm.FunctionCall) (*tools.ToolDeclaration, error) {
+	if call == nil {
+		return nil, fmt.Errorf("cannot resolve nil function call")
+	}
+
 	var tool *tools.ToolDeclaration
 	var validTools []string
 	for _, decl := range r.registry.GetDeclarations() {
@@ -45,7 +53,7 @@ func (r *defaultResolver) Resolve(call *llm.FunctionCall) (*tools.ToolDeclaratio
 
 		errorMessage += "; please check the spelling or use a different tool from the authorized list"
 
-		return nil, fmt.Errorf("%s", errorMessage)
+		return nil, fmt.Errorf("%w: %s", ErrToolNotFound, errorMessage)
 	}
 
 	return tool, nil

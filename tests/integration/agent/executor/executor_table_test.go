@@ -112,6 +112,13 @@ func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *event
 		} else if !errors.Is(err, llm.ErrTerminal) {
 			t.Fatalf("expected error to wrap llm.ErrTerminal, got: %v", err)
 		}
+	} else if expectedErr != nil {
+		if err == nil {
+			t.Fatalf("expected error wrapping %v, got nil", expectedErr)
+		}
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("expected error wrapping %v, got: %v", expectedErr, err)
+		}
 	} else {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -199,10 +206,7 @@ func TestDispatcher_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("expected nil error, got: %v", err)
-		}
-		verifyErrorResponse(t, resp, "tool \"missing\" is not defined")
+		assertExecutionError(t, resp, err, nil, "not defined", executor.ErrToolNotFound)
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -216,10 +220,7 @@ func TestDispatcher_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("expected nil error, got: %v", err)
-		}
-		verifyErrorResponse(t, resp, "did you mean \"list_files\"?")
+		assertExecutionError(t, resp, err, nil, "did you mean", executor.ErrToolNotFound)
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -247,8 +248,8 @@ func TestDispatcher_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("expected nil error, got: %v", err)
+		if err == nil {
+			t.Fatal("expected error from tool execution failure, got nil")
 		}
 		verifyErrorResponse(t, resp, "Error: tool execution failed: fail_tool: tool failed")
 	})
@@ -762,10 +763,7 @@ func TestDispatcher_LongRunningTimeout(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "Tool execution timed out after 50ms")
+		assertExecutionError(t, resp, err, nil, "timed out after 50ms", llm.ErrTransient)
 	})
 }
 
@@ -791,10 +789,7 @@ func TestDispatcher_ZombieTool(t *testing.T) {
 	}}
 
 	resp, err := exec.Execute(context.Background(), content, 0, 10)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	verifyErrorResponse(t, resp, "Tool execution timed out after 50ms")
+	assertExecutionError(t, resp, err, nil, "timed out after 50ms", llm.ErrTransient)
 
 	// The stubborn tool is still running in the background...
 	// We can't easily wait for it without some signaling mechanism in the tool,

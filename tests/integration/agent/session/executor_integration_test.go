@@ -228,7 +228,7 @@ func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 	// 1. Verify internal timeout (from functional option)
 	// We use a background context so the only timeout is the internal one (50ms)
 	content, err := exec.Execute(context.Background(), resp, 0, 10)
-	require.NoError(t, err, "Executor should not return error on internal tool timeout")
+	require.Error(t, err, "internal tool timeout should propagate as error")
 	require.NotEmpty(t, content.Parts)
 	// The internal goroutine should still exit because runWithTimeout cancels its derived context
 	select {

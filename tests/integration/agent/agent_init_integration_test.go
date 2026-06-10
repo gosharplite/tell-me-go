@@ -5,7 +5,7 @@ package agent_test
 
 import (
 	"context"
-	"sync"
+	"errors"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -19,6 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAgent_InitConfigFailure_Warning verifies that NewAgent now
+// returns an error when initial configuration application fails,
+// instead of swallowing it. This is the G8 fix — previously the
+// error was swallowed and only a non-blocking StatusUpdate warning
+// was emitted. Now the caller receives a proper error and the
+// agent is nil.
 func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	t.Parallel()
 	client := &agenttest.MockLLMClient{}
@@ -32,39 +38,19 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	var warningEmitted bool
-	var mu sync.Mutex
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
-		if su, ok := e.(events.StatusUpdate); ok {
-			mu.Lock()
-			if su.Level == "warning" && su.Message == "failed to apply initial configuration" {
-				warningEmitted = true
-			}
-			mu.Unlock()
-		}
-	})
-
-	// New should not crash even if applyConfig fails
+	// NewAgent now returns an error (instead of swallowing it and
+	// emitting a warning). A nil agent means no partially-initialized
+	// agent leaks to the caller.
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithInitContext(ctx),
 	)
-	require.NoError(t, err)
-
-	if a == nil {
-		t.Fatal("New returned nil agent")
-	}
-
-	// Flush the bus to ensure we process all events
-	_ = bus.Flush(context.Background())
-
-	mu.Lock()
-	emitted := warningEmitted
-	mu.Unlock()
-
-	if !emitted {
-		t.Error("Expected config-failure warning event to be emitted, but it was not")
-	}
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.Canceled),
+		"expected error to wrap context.Canceled, got: %v", err)
+	require.Contains(t, err.Error(), "failed to apply initial configuration")
+	require.Nil(t, a, "expected nil agent when initial config fails")
 }
