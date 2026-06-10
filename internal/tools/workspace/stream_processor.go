@@ -27,6 +27,23 @@ type streamProcessor struct {
 	file          *os.File
 }
 
+// buildLineContent constructs the content string and feedback message for a
+// single output line. It is extracted from processLine to keep cyclomatic
+// complexity below the threshold (PR #773).
+func buildLineContent(rawLine []byte, prefix string, feedback io.Writer) (content string, feedbackMsg string) {
+	content = string(rawLine) + "\n"
+	if feedback != nil {
+		feedbackMsg = fmt.Sprintf("  %s\n", rawLine)
+	}
+	if prefix != "" {
+		content = fmt.Sprintf("%s %s", prefix, content)
+		if feedback != nil {
+			feedbackMsg = fmt.Sprintf("  %s %s\n", prefix, rawLine)
+		}
+	}
+	return
+}
+
 func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, prefix string, feedback io.Writer) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
@@ -37,18 +54,7 @@ func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, pref
 		sp.wt.Write(sp.file, lineWithNL)
 	}
 
-	content := string(rawLine) + "\n"
-	feedbackMsg := ""
-	if feedback != nil {
-		feedbackMsg = fmt.Sprintf("  %s\n", rawLine)
-	}
-
-	if prefix != "" {
-		content = fmt.Sprintf("%s %s", prefix, content)
-		if feedback != nil {
-			feedbackMsg = fmt.Sprintf("  %s %s\n", prefix, rawLine)
-		}
-	}
+	content, feedbackMsg := buildLineContent(rawLine, prefix, feedback)
 
 	remaining := sp.maxCapture - *sp.totalCaptured
 	if remaining > 0 {
