@@ -300,6 +300,27 @@ func (a *defaultDeadCodeAnalyzer) protectContractSymbol(state *scanState, id str
 	state.externalUses[id]++
 }
 
+// trackExternalUsages_isExternalUsage determines whether a single usage
+// location qualifies as an external (cross-package or test-package) usage.
+// Extracted from trackExternalUsages to reduce cyclomatic complexity
+// below the project threshold of 7 (Issue #772).
+func (a *defaultDeadCodeAnalyzer) trackExternalUsages_isExternalUsage(
+	loc location,
+	fileToPkg map[string]string,
+	targetModule string,
+	objBase string,
+) bool {
+	usagePkg, ok := fileToPkg[loc.Path]
+	if !ok {
+		return false
+	}
+	if !strings.HasPrefix(usagePkg, targetModule) {
+		return false
+	}
+	pkgBase := getBasePkgPath(usagePkg)
+	return pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test")
+}
+
 func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state *scanState, id string, meta *symMeta, fileToPkg map[string]string, resolvedPath string, hb chan<- struct{}) error {
 	if !a.idx.IsSymbolUsed(ctx, id, hb) {
 		return nil
@@ -313,16 +334,7 @@ func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state
 	objBase := getBasePkgPath(meta.pkgPath)
 
 	for _, loc := range allUsages {
-		usagePkg, ok := fileToPkg[loc.Path]
-		if !ok {
-			continue
-		}
-		if !strings.HasPrefix(usagePkg, state.targetModule) {
-			continue
-		}
-		pkgBase := getBasePkgPath(usagePkg)
-
-		if pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test") {
+		if a.trackExternalUsages_isExternalUsage(loc, fileToPkg, state.targetModule, objBase) {
 			state.externalUses[id]++
 		}
 	}
