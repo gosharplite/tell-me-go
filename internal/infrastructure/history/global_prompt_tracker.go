@@ -215,6 +215,12 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 	seen := make(map[string]bool)
 	result := make([]promptEntry, 0, limit)
 
+	return t.readReverseEntries(ctx, scanner, seen, result, limit)
+}
+
+// readReverseEntries reads the file backwards in chunks, processing lines
+// in reverse order, deduplicating, and collecting up to limit unique entries.
+func (t *globalPromptTracker) readReverseEntries(ctx context.Context, scanner *reverseScanner, seen map[string]bool, result []promptEntry, limit int) ([]promptEntry, error) {
 	for scanner.pos > 0 && len(result) < limit {
 		// Periodically check for context cancellation
 		select {
