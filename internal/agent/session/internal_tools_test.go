@@ -538,6 +538,30 @@ func TestProdHeartbeatHooks_OnTick(t *testing.T) {
 	prodHeartbeatHooks{}.onTick()
 }
 
+func TestRegisterInternal_ErrorWrapsToolName(t *testing.T) {
+	t.Run("summarize_history", func(t *testing.T) {
+		sentinel := errors.New("underlying registration failure")
+		reg := &mockToolRegistrar{registerWithOptionsErr: sentinel}
+
+		err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "register summarize_history")
+		require.True(t, errors.Is(err, sentinel),
+			"errors.Is must unwrap to the underlying error — chain is broken")
+	})
+
+	t.Run("manage_history", func(t *testing.T) {
+		sentinel := errors.New("underlying registration failure")
+		reg := &mockToolRegistrar{registerErr: sentinel}
+
+		err := RegisterInternal(reg, &sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "register manage_history")
+		require.True(t, errors.Is(err, sentinel),
+			"errors.Is must unwrap to the underlying error — chain is broken")
+	})
+}
+
 func TestNewInternalTools_NilLogger(t *testing.T) {
 	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, nil)
 	require.NotNil(t, it.logger, "nil logger should fall back to NoOpLogger")

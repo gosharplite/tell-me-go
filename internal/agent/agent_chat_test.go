@@ -157,7 +157,8 @@ func TestAgent_Chat_TelemetryFailure(t *testing.T) {
 	// Wait, applyConfig:
 	// if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: newCfg.Limits}); err != nil { ... return err }
 
-	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
+	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	if err != nil {
 		// If NewAgent fails because of telemetry, that's fine for this test if we can still test Chat
 		t.Skip("NewAgent failed due to telemetry, skipping Chat telemetry failure test")
@@ -224,7 +225,8 @@ func TestAgent_Chat_AddContentFailure(t *testing.T) {
 	}}
 	sm := &mockSecurityManager{AllowAll: true}
 
-	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
+	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -245,7 +247,8 @@ func TestAgent_Chat_ApplyConfigFailure(t *testing.T) {
 	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
-	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
+	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}

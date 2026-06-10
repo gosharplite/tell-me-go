@@ -75,6 +75,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(hManager),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)

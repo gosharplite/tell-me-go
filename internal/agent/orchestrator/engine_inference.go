@@ -40,7 +40,9 @@ func (p *InferenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 }
 
 func (p *InferenceStep) InvokeModel(ctx context.Context, Turn *Turn) (respContent *llm.Content, metrics *llm.Metrics, err error) {
-	_ = events.SafePublish(ctx, Turn.Events, events.InferenceStartedEvent{Model: Turn.Model})
+	if err := events.SafePublish(ctx, Turn.Events, events.InferenceStartedEvent{Model: Turn.Model}); err != nil {
+		Turn.getLogger().Error("Failed to publish InferenceStartedEvent; UI may not show inference status", "error", err)
+	}
 
 	defer func() {
 		safeContent := respContent

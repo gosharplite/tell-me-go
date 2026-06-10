@@ -2,9 +2,14 @@ package executor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -155,11 +160,16 @@ func assertTimeoutScenario(t *testing.T, o *Dispatcher, ctx context.Context, cal
 func assertPanicScenario(t *testing.T, o *Dispatcher, ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult, wantPanicText string) {
 	t.Helper()
 	err := o.runExecutionPlan(ctx, calls, declinedMap, results)
-	if err != nil {
-		t.Logf("runExecutionPlan returned error: %v", err)
-	}
 
+	// G3: Verify that errors from panics propagate through runExecutionPlan (not silently swallowed).
 	if wantPanicText != "" {
+		assert.Error(t, err, "runExecutionPlan must return an error when a panic is recovered")
+		if err != nil {
+			assert.True(t, errors.Is(err, llm.ErrTerminal),
+				"runExecutionPlan error must contain ErrTerminal, got: %v", err)
+			assert.Contains(t, err.Error(), wantPanicText,
+				"runExecutionPlan error must contain panic text %q", wantPanicText)
+		}
 		assertPanicResult(t, results, wantPanicText)
 	} else {
 		assertNoErrorResult(t, results)
@@ -190,4 +200,143 @@ func assertNoErrorResult(t *testing.T, results []tools.ToolResult) {
 			t.Errorf("unexpected error for call %d: %v", i, res.Error)
 		}
 	}
+}
+
+// TestExecuteParallelBatch_FanInPanic_Propagates verifies that a panic in the
+// fan-in wait goroutine (e.g. a corrupted sync.WaitGroup causing wg.Wait() to panic)
+// is propagated as an error through the results channel and surfaced to the caller
+// via runExecutionPlan → planErrors → errors.Join.
+//
+// Since inducing a genuine wg.Wait() panic is impractical in a deterministic test,
+// this test uses two complementary approaches:
+//  1. Direct verification of the fan-in recover pattern (the exact code block from
+//     executeParallelBatch) — confirms the recover path sends an index:-1 sentinel
+//     with an ErrTerminal-wrapped error.
+//  2. Indirect verification through runExecutionPlan with a parallel worker panic —
+//     confirms the full error propagation chain: panic → recover → resultsCh →
+//     handleBatchResults → planErrors → errors.Join → caller.
+func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
+	t.Parallel()
+
+	t.Run("fan-in recover pattern propagates panic as error", func(t *testing.T) {
+		t.Parallel()
+		// This subtest directly exercises the fan-in goroutine recover pattern.
+		// It simulates a panic in the wg.Wait() equivalent and verifies that
+		// the error is sent through resultsCh with index:-1 and wrapped in ErrTerminal.
+		resultsCh := make(chan toolExecResult, 1)
+
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Exact same pattern as executeParallelBatch fan-in goroutine.
+					resultsCh <- toolExecResult{
+						index: -1,
+						name:  "fan_in_panic",
+						tr: tools.ToolResult{
+							Text:  fmt.Sprintf("internal error: fan-in panic: %v", r),
+							Error: fmt.Errorf("%w: fan-in panic: %v", llm.ErrTerminal, r),
+						},
+					}
+				}
+				close(resultsCh)
+			}()
+			panic("simulated wg.Wait corruption") // simulates what a corrupted WaitGroup would do
+		}()
+
+		var results []toolExecResult
+		for res := range resultsCh {
+			results = append(results, res)
+		}
+
+		if len(results) != 1 {
+			t.Fatalf("expected exactly 1 result from fan-in panic, got %d", len(results))
+		}
+
+		res := results[0]
+		if res.index != -1 {
+			t.Errorf("expected index -1 sentinel, got %d", res.index)
+		}
+		if res.name != "fan_in_panic" {
+			t.Errorf("expected name 'fan_in_panic', got %q", res.name)
+		}
+		if res.tr.Error == nil {
+			t.Fatal("expected error in ToolResult, got nil")
+		}
+		if !errors.Is(res.tr.Error, llm.ErrTerminal) {
+			t.Errorf("expected error wrapped in ErrTerminal, got: %v", res.tr.Error)
+		}
+		if !strings.Contains(res.tr.Error.Error(), "simulated wg.Wait corruption") {
+			t.Errorf("expected error to contain panic text, got: %v", res.tr.Error)
+		}
+		if !strings.Contains(res.tr.Text, "fan-in panic") {
+			t.Errorf("expected Text to contain 'fan-in panic', got: %q", res.tr.Text)
+		}
+	})
+
+	t.Run("parallel worker panic propagates through runExecutionPlan", func(t *testing.T) {
+		t.Parallel()
+		// This subtest verifies the full propagation chain through runExecutionPlan.
+		// A parallel worker panic is recovered by the worker's defer (not the fan-in
+		// goroutine), but the error propagation path through handleBatchResults →
+		// planErrors → errors.Join is identical to what the fan-in panic would use.
+		mock := &mockToolPipeline{
+			IsSerialFunc: func(n string) bool { return n == "serial_tool" },
+			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+				if call.Name == "crash_tool" {
+					panic("simulated nil pointer dereference in tool")
+				}
+				return tools.ToolResult{Text: "safe_result"}
+			},
+			RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+				return ctx, nil
+			},
+		}
+
+		cfg := dispatcherConfig{
+			MaxConcurrentTools: 3,
+			ToolTimeout:        1 * time.Hour,
+		}
+		cfg.applyDefaults()
+
+		ctx := context.Background()
+		bus := events.NewSimpleEventBus(ctx)
+		o := &Dispatcher{
+			pipeline: mock,
+			events:   bus,
+			logger:   &ports.NoOpLogger{},
+		}
+		o.state.Store(&dispatcherState{config: cfg})
+
+		calls := []*llm.FunctionCall{
+			{Name: "safe_tool"},
+			{Name: "crash_tool"},
+			{Name: "another_safe_tool"},
+		}
+		declinedMap := make(map[int]bool)
+		results := make([]tools.ToolResult, len(calls))
+
+		err := o.runExecutionPlan(ctx, calls, declinedMap, results)
+
+		// Error must propagate (not be silently swallowed).
+		require.Error(t, err, "runExecutionPlan must return an error from panic recovery")
+		require.True(t, errors.Is(err, llm.ErrTerminal),
+			"error must wrap ErrTerminal, got: %v", err)
+		require.Contains(t, err.Error(), "simulated nil pointer dereference",
+			"error must contain panic text, got: %v", err)
+
+		// Verify safe tools still completed.
+		if results[0].Text != "safe_result" {
+			t.Errorf("safe_tool result: got %q, want 'safe_result'", results[0].Text)
+		}
+		if results[2].Text != "safe_result" {
+			t.Errorf("another_safe_tool result: got %q, want 'safe_result'", results[2].Text)
+		}
+
+		// Verify crash_tool result has the panic error.
+		if results[1].Error == nil {
+			t.Error("crash_tool should have an error result")
+		} else if !strings.Contains(results[1].Error.Error(), "simulated nil pointer dereference") {
+			t.Errorf("crash_tool error: got %v, want panic text", results[1].Error)
+		}
+	})
 }

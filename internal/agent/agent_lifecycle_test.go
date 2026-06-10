@@ -92,7 +92,8 @@ func TestAgent_Subscribe(t *testing.T) {
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	require.NoError(t, err)
 
 	var capturedEvent events.Event
@@ -154,7 +155,8 @@ func TestAgent_Shutdown(t *testing.T) {
 		tl := &agenttest.MockTurnsLogger{}
 		tl.CloseFunc = func() error { return nil }
 
-		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl))
+		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl),
+			WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 		require.NoError(t, err)
 
 		err = chatter.Shutdown(ctx)
@@ -180,7 +182,9 @@ func TestAgent_Shutdown(t *testing.T) {
 		tl := &agenttest.MockTurnsLogger{}
 		tl.CloseFunc = func() error { return assert.AnError }
 
-		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl))
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl),
+			WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 		require.NoError(t, err)
 
 		err = chatter.Shutdown(ctx)
@@ -195,7 +199,8 @@ func TestAgent_Shutdown(t *testing.T) {
 		cancel()
 
 		bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
+		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+			WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 		require.NoError(t, err)
 
 		err = chatter.Shutdown(cancelCtx)
@@ -208,7 +213,8 @@ func TestAgent_Shutdown(t *testing.T) {
 		bus := &eventstest.MockEventBus{}
 		bus.SetShutdownErr(assert.AnError)
 
-		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
+		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+			WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 		require.NoError(t, err)
 
 		err = chatter.Shutdown(ctx)
@@ -241,14 +247,20 @@ func TestNewAgent_Errors(t *testing.T) {
 	})
 
 	t.Run("Initial config apply failure", func(t *testing.T) {
-		// Use a cancelled context to force applyConfig to fail
+		// Use a cancelled context to force applyConfig to fail.
+		// initComponents succeeds (it doesn't consume initCtx), but
+		// applyConfig returns context.Canceled. NewAgent now propagates
+		// this error instead of swallowing it (G8 fix).
 		cancelCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithInitContext(cancelCtx))
-		// NewAgent doesn't return error if applyConfig fails, it just emits a warning
-		assert.NoError(t, err)
-		assert.NotNil(t, chatter)
+		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+			WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil),
+			WithInitContext(cancelCtx))
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Contains(t, err.Error(), "failed to apply initial configuration")
+		assert.Nil(t, chatter)
 	})
 }
 
@@ -288,7 +300,8 @@ func TestAgent_InitComponents_ConfigWatcher(t *testing.T) {
 	sm := &mockSecurityManager{AllowAll: true}
 
 	cw := domain_config.NewNoOpConfigWatcher(100, 10, 20)
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithConfigWatcher(cw))
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithConfigWatcher(cw),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	require.NoError(t, err)
 
 	a := asAgent(t, chatter)
@@ -309,7 +322,8 @@ func TestAgent_Chat_AddContentError(t *testing.T) {
 		return assert.AnError
 	}
 
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithHistoryManager(hm))
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithHistoryManager(hm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	require.NoError(t, err)
 
 	err = chatter.Chat(ctx, &ports.Session{}, "hello")
@@ -324,7 +338,8 @@ func TestAgent_Chat_ApplyConfigError(t *testing.T) {
 	reg := agenttest.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
 
-	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
+	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+		WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
 	require.NoError(t, err)
 
 	cancelCtx, cancel := context.WithCancel(ctx)

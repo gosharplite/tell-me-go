@@ -24,7 +24,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
-	"golang.org/x/sync/errgroup"
+	"sync"
 )
 
 // runtimeConfig consolidates all agent configuration parameters.
@@ -94,7 +94,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, registry tools.
 	}
 
 	if err := a.applyConfig(a.initCtx); err != nil {
-		a.emit(context.Background(), events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
+		return nil, fmt.Errorf("failed to apply initial configuration: %w", err)
 	}
 	return a, nil
 }
@@ -326,26 +326,34 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 	// updated limits (e.g. MAX_TURNS) take effect before tool execution.
 	a.engine.ApplyOptions(orchestrator.WithEngineHook(&configRefreshHook{a: a}))
 
-	// [REFACTOR] Use errgroup to coordinate the engine run loop and background telemetry workers.
-	// We create a child context that is canceled when either the engine finishes or the background
-	// tasks fail. We also use a defer cancel() to ensure the background tasks are stopped if engine finishes.
+	// Coordinate the engine run loop and background telemetry workers using
+	// sync.WaitGroup + errors.Join. Unlike errgroup (which returns only the first
+	// non-nil error), this collects both errors so the caller can determine whether
+	// the orchestration itself succeeded or failed.
 	gCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	g, gCtx := errgroup.WithContext(gCtx)
+	var (
+		runErr       error
+		telemetryErr error
+		wg           sync.WaitGroup
+	)
 
-	// Engine run loop (main orchestration)
-	g.Go(func() error {
-		defer cancel() // Stop other tasks if this one finishes
-		return a.engine.Run(gCtx, s.StartTime)
-	})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer cancel() // Stop telemetry when Run finishes
+		runErr = a.engine.Run(gCtx, s.StartTime)
+	}()
 
-	// Background telemetry loop (coordinated via Listen)
-	g.Go(func() error {
-		return a.engine.StartTelemetry(gCtx)
-	})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		telemetryErr = a.engine.StartTelemetry(gCtx)
+	}()
 
-	return g.Wait()
+	wg.Wait()
+	return errors.Join(runErr, telemetryErr)
 }
 
 // configRefreshHook implements orchestrator.TurnHook to refresh the agent's

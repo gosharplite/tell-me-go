@@ -68,6 +68,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -144,6 +145,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithConfigWatcher(config.NewFileConfigWatcher(
 			&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()},
@@ -222,6 +224,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 			agent.WithHistoryManager(h),
 			agent.WithProviderName("test-provider"),
+			agent.WithPricing("test-model", "test-mode", nil),
 			agent.WithSecurityManager(sm),
 		)
 		require.NoError(t, err)
@@ -246,6 +249,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 			agent.WithHistoryManager(h),
 			agent.WithProviderName("test-provider"),
+			agent.WithPricing("test-model", "test-mode", nil),
 			agent.WithSecurityManager(sm),
 			agent.WithInternalTools(),
 		)
@@ -319,6 +323,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	a, err := agent.NewAgent(&agenttest.MockLLMClient{}, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -506,6 +511,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithSessionCostTracker(tracker1),
 	)
@@ -581,6 +587,7 @@ func TestAgent_Subscribe(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -629,6 +636,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithSessionCostTracker(tracker),
 	)
@@ -662,6 +670,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -692,6 +701,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -739,6 +749,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 	)
 	require.NoError(t, err)
@@ -769,6 +780,7 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	a, err := agent.NewAgent(client, bus, reg,
 		agent.WithHistoryManager(h),
 		agent.WithProviderName("test-provider"),
+		agent.WithPricing("test-model", "test-mode", nil),
 		agent.WithSecurityManager(sm),
 		agent.WithInternalTools(),
 		agent.WithSummarizer(mockSumm),
