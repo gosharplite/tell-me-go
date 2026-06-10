@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"strings"
@@ -109,9 +110,12 @@ func (r *stdUIRenderer) metrics_shouldSample(now time.Time) bool {
 // metrics_computeCPU calculates CPU usage percentage from raw counter deltas.
 // When idleTicks > 0, host-level tick-based computation is used (1 - idle/total).
 // Otherwise agent-level CPU-seconds are divided by wall-clock time per core.
+// Returns math.NaN() as a sentinel when the computation cannot produce a valid
+// update (e.g., zero delta-time or counter rollover). Callers must check with
+// math.IsNaN before using the result.
 func metrics_computeCPU(now time.Time, lastSampleTime time.Time, currentTotal, lastCPUTime, currentIdle, lastIdleTime int64) float64 {
 	if lastSampleTime.IsZero() {
-		return 0
+		return math.NaN()
 	}
 	if currentIdle > 0 {
 		dTotal := float64(currentTotal - lastCPUTime)
@@ -119,7 +123,7 @@ func metrics_computeCPU(now time.Time, lastSampleTime time.Time, currentTotal, l
 		if dTotal > 0 {
 			return (1.0 - (dIdle / dTotal)) * 100.0
 		}
-		return 0
+		return math.NaN()
 	}
 	// Agent-level from runtime/metrics
 	dt := now.Sub(lastSampleTime).Seconds()
@@ -127,7 +131,7 @@ func metrics_computeCPU(now time.Time, lastSampleTime time.Time, currentTotal, l
 		dCPU := float64(currentTotal-lastCPUTime) / 1e9
 		return (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
 	}
-	return 0
+	return math.NaN()
 }
 
 func (r *stdUIRenderer) updateSystemMetrics(now time.Time) (float64, float64) {
@@ -149,7 +153,9 @@ func (r *stdUIRenderer) updateSystemMetrics(now time.Time) (float64, float64) {
 
 		// Re-check update condition under write lock
 		if r.metrics_shouldSample(now) {
-			cpuPercent = metrics_computeCPU(now, r.lastSampleTime, currentTotal, r.lastCPUTime, currentIdle, r.lastIdleTime)
+			if cpu := metrics_computeCPU(now, r.lastSampleTime, currentTotal, r.lastCPUTime, currentIdle, r.lastIdleTime); !math.IsNaN(cpu) {
+				cpuPercent = cpu
+			}
 			hostMemPercent = currentMem
 			r.lastCPUTime = currentTotal
 			r.lastIdleTime = currentIdle
