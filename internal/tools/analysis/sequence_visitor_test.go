@@ -808,3 +808,248 @@ func TestSequenceExprToString_Default(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveCallDetails_detectInterface exercises every branch of
+// sequenceVisitor.resolveCallDetails_detectInterface.
+func TestResolveCallDetails_detectInterface(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-selector call returns false", func(t *testing.T) {
+		t.Parallel()
+		_, f := parseTestFile(t, "package p; func f() { g() }")
+		fd := f.Decls[0].(*ast.FuncDecl)
+		call := fd.Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr)
+
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+
+		isIface, name := v.resolveCallDetails_detectInterface(call)
+		if isIface {
+			t.Error("expected isInterface=false for bare function call")
+		}
+		if name != "" {
+			t.Errorf("expected empty name, got %q", name)
+		}
+	})
+
+	t.Run("selector with missing type info returns false", func(t *testing.T) {
+		t.Parallel()
+		_, f := parseTestFile(t, "package p; func f() { x.Y() }")
+		fd := f.Decls[0].(*ast.FuncDecl)
+		call := fd.Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr)
+
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+
+		isIface, name := v.resolveCallDetails_detectInterface(call)
+		if isIface {
+			t.Error("expected false when type info is missing")
+		}
+		if name != "" {
+			t.Errorf("expected empty name, got %q", name)
+		}
+	})
+
+	t.Run("concrete type returns false", func(t *testing.T) {
+		t.Parallel()
+		call := &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   &ast.Ident{Name: "s"},
+				Sel: &ast.Ident{Name: "Method"},
+			},
+		}
+		pkgTypes := types.NewPackage("example.com/pkg", "p")
+		named := types.NewNamed(
+			types.NewTypeName(token.NoPos, pkgTypes, "S", types.NewStruct(nil, nil)),
+			types.NewStruct(nil, nil),
+			nil,
+		)
+		typesMap := make(map[ast.Expr]types.TypeAndValue)
+		typesMap[call.Fun.(*ast.SelectorExpr).X] = types.TypeAndValue{Type: named}
+
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: typesMap},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+
+		isIface, name := v.resolveCallDetails_detectInterface(call)
+		if isIface {
+			t.Error("expected false for concrete struct type")
+		}
+		if name != "" {
+			t.Errorf("expected empty name, got %q", name)
+		}
+	})
+
+	t.Run("named interface returns true with type name", func(t *testing.T) {
+		t.Parallel()
+		call := &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   &ast.Ident{Name: "r"},
+				Sel: &ast.Ident{Name: "Run"},
+			},
+		}
+		pkgTypes := types.NewPackage("example.com/pkg", "p")
+		runMethod := types.NewFunc(token.NoPos, pkgTypes, "Run",
+			types.NewSignatureType(nil, nil, nil, nil, nil, false))
+		iface := types.NewInterfaceType([]*types.Func{runMethod}, nil)
+		namedIface := types.NewNamed(
+			types.NewTypeName(token.NoPos, pkgTypes, "Runner", iface),
+			iface, nil,
+		)
+		typesMap := make(map[ast.Expr]types.TypeAndValue)
+		typesMap[call.Fun.(*ast.SelectorExpr).X] = types.TypeAndValue{Type: namedIface}
+
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: typesMap},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+
+		isIface, name := v.resolveCallDetails_detectInterface(call)
+		if !isIface {
+			t.Error("expected true for named interface")
+		}
+		if name != "Runner" {
+			t.Errorf("expected 'Runner', got %q", name)
+		}
+	})
+}
+
+// TestResolveCallDetails_formatDisplay exercises every branch of
+// sequenceVisitor.resolveCallDetails_formatDisplay.
+func TestResolveCallDetails_formatDisplay(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		targetFunc        string
+		isInterface       bool
+		interfaceTypeName string
+		want              string
+	}{
+		{
+			name:       "concrete call returns bare name",
+			targetFunc: "DoWork",
+			want:       "DoWork",
+		},
+		{
+			name:              "named interface prefixes type",
+			targetFunc:        "Run",
+			isInterface:       true,
+			interfaceTypeName: "Runner",
+			want:              "Runner.Run",
+		},
+		{
+			name:        "anonymous interface falls back to Interface",
+			targetFunc:  "Execute",
+			isInterface: true,
+			want:        "Interface.Execute",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v := &sequenceVisitor{}
+			got := v.resolveCallDetails_formatDisplay(tt.targetFunc, tt.isInterface, tt.interfaceTypeName)
+			if got != tt.want {
+				t.Errorf("formatDisplay(%q, %v, %q) = %q, want %q",
+					tt.targetFunc, tt.isInterface, tt.interfaceTypeName, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestResolveCallDetails_extractReturnType exercises every branch of
+// sequenceVisitor.resolveCallDetails_extractReturnType.
+func TestResolveCallDetails_extractReturnType(t *testing.T) {
+	t.Parallel()
+
+	t.Run("missing type info returns empty", func(t *testing.T) {
+		t.Parallel()
+		call := &ast.CallExpr{Fun: &ast.Ident{Name: "f"}}
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+		if got := v.resolveCallDetails_extractReturnType(call); got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("void return cleared", func(t *testing.T) {
+		t.Parallel()
+		call := &ast.CallExpr{Fun: &ast.Ident{Name: "f"}}
+		typesMap := make(map[ast.Expr]types.TypeAndValue)
+		typesMap[call] = types.TypeAndValue{Type: types.NewTuple()}
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: typesMap},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+		if got := v.resolveCallDetails_extractReturnType(call); got != "" {
+			t.Errorf("expected empty for void, got %q", got)
+		}
+	})
+
+	t.Run("invalid type cleared", func(t *testing.T) {
+		t.Parallel()
+		call := &ast.CallExpr{Fun: &ast.Ident{Name: "f"}}
+		typesMap := make(map[ast.Expr]types.TypeAndValue)
+		typesMap[call] = types.TypeAndValue{Type: types.Typ[types.Invalid]}
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: typesMap},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+		if got := v.resolveCallDetails_extractReturnType(call); got != "" {
+			t.Errorf("expected empty for invalid, got %q", got)
+		}
+	})
+
+	t.Run("valid named type returned", func(t *testing.T) {
+		t.Parallel()
+		call := &ast.CallExpr{Fun: &ast.Ident{Name: "f"}}
+		pkgTypes := types.NewPackage("example.com/pkg", "p")
+		named := types.NewNamed(
+			types.NewTypeName(token.NoPos, pkgTypes, "Response", types.NewStruct(nil, nil)),
+			types.NewStruct(nil, nil),
+			nil,
+		)
+		typesMap := make(map[ast.Expr]types.TypeAndValue)
+		typesMap[call] = types.TypeAndValue{Type: named}
+		v := &sequenceVisitor{
+			ctx: context.Background(),
+			pkg: &packages.Package{
+				TypesInfo: &types.Info{Types: typesMap},
+			},
+			analyzer: &defaultSequenceAnalyzer{},
+		}
+		if got := v.resolveCallDetails_extractReturnType(call); got != "Response" {
+			t.Errorf("expected 'Response', got %q", got)
+		}
+	})
+}
