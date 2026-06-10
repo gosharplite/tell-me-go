@@ -99,10 +99,41 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, thStr, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
 }
 
+// metrics_shouldSample returns true if at least one second has elapsed since
+// the last sample, or if no sample has ever been taken.
+// Caller must hold at least r.mu.RLock.
+func (r *stdUIRenderer) metrics_shouldSample(now time.Time) bool {
+	return now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero()
+}
+
+// metrics_computeCPU calculates CPU usage percentage from raw counter deltas.
+// When idleTicks > 0, host-level tick-based computation is used (1 - idle/total).
+// Otherwise agent-level CPU-seconds are divided by wall-clock time per core.
+func metrics_computeCPU(now time.Time, lastSampleTime time.Time, currentTotal, lastCPUTime, currentIdle, lastIdleTime int64) float64 {
+	if lastSampleTime.IsZero() {
+		return 0
+	}
+	if currentIdle > 0 {
+		dTotal := float64(currentTotal - lastCPUTime)
+		dIdle := float64(currentIdle - lastIdleTime)
+		if dTotal > 0 {
+			return (1.0 - (dIdle / dTotal)) * 100.0
+		}
+		return 0
+	}
+	// Agent-level from runtime/metrics
+	dt := now.Sub(lastSampleTime).Seconds()
+	if dt > 0 {
+		dCPU := float64(currentTotal-lastCPUTime) / 1e9
+		return (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+	}
+	return 0
+}
+
 func (r *stdUIRenderer) updateSystemMetrics(now time.Time) (float64, float64) {
 	// 1. Check if update is needed under RLock
 	r.mu.RLock()
-	needsUpdate := now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero()
+	needsUpdate := r.metrics_shouldSample(now)
 	cpuPercent := r.lastCPUPercent
 	hostMemPercent := r.lastMemPercent
 	r.mu.RUnlock()
@@ -117,24 +148,8 @@ func (r *stdUIRenderer) updateSystemMetrics(now time.Time) (float64, float64) {
 		defer r.mu.Unlock()
 
 		// Re-check update condition under write lock
-		if now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero() {
-			if !r.lastSampleTime.IsZero() {
-				if currentIdle > 0 {
-					// Host-level metrics
-					dTotal := float64(currentTotal - r.lastCPUTime)
-					dIdle := float64(currentIdle - r.lastIdleTime)
-					if dTotal > 0 {
-						cpuPercent = (1.0 - (dIdle / dTotal)) * 100.0
-					}
-				} else {
-					// Agent-level from runtime/metrics
-					dt := now.Sub(r.lastSampleTime).Seconds()
-					if dt > 0 {
-						dCPU := float64(currentTotal-r.lastCPUTime) / 1e9 // seconds
-						cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
-					}
-				}
-			}
+		if r.metrics_shouldSample(now) {
+			cpuPercent = metrics_computeCPU(now, r.lastSampleTime, currentTotal, r.lastCPUTime, currentIdle, r.lastIdleTime)
 			hostMemPercent = currentMem
 			r.lastCPUTime = currentTotal
 			r.lastIdleTime = currentIdle
@@ -245,6 +260,42 @@ func (r *stdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 	}
 }
 
+// metrics_truncateArg truncates valStr to at most 189 characters, appending
+// "..." when truncation occurs. This mirrors the truncation used for tool
+// call argument values in the [Tool Action] line.
+func metrics_truncateArg(valStr string) string {
+	if len(valStr) > 189 {
+		return valStr[:186] + "..."
+	}
+	return valStr
+}
+
+// metrics_formatToolCallArgLine builds a comma-separated "key: value" string
+// from the function call arguments, excluding the "reason" key which is
+// rendered separately as [Tool Reason]. Values longer than 189 characters
+// are truncated.
+func metrics_formatToolCallArgLine(args map[string]interface{}) string {
+	var parts []string
+	for k, v := range args {
+		if k == "reason" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s: %v", k, metrics_truncateArg(fmt.Sprintf("%v", v))))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// metrics_logToolReason prints a [Tool Reason] line to stderr if the function
+// call contains a non-empty "reason" argument. Caller must hold r.ioMu.
+func (r *stdUIRenderer) metrics_logToolReason(ui uiState, fc *llm.FunctionCall, ts string) {
+	reason, ok := fc.Args["reason"].(string)
+	if !ok || reason == "" {
+		return
+	}
+	_, _ = fmt.Fprintf(ui.stderr, "%s[%s] [Tool Reason] %s%s\n",
+		ui.c(colorGray), ts, reason, ui.c(colorReset))
+}
+
 func (r *stdUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 	if r.locker != nil {
 		r.locker.TerminalLock()
@@ -263,25 +314,10 @@ func (r *stdUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCa
 
 	if showTools {
 		for _, fc := range calls {
-			// Extract and display the reason if present
-			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
-				_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
-					ui.c(colorGray), ts, reason, ui.c(colorReset))
-			}
+			r.metrics_logToolReason(ui, fc, ts)
 
-			var argParts []string
-			for k, v := range fc.Args {
-				if k == "reason" {
-					continue // Already shown as [Tool Reason]
-				}
-				valStr := fmt.Sprintf("%v", v)
-				if len(valStr) > 189 {
-					valStr = valStr[:186] + "..."
-				}
-				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
-			}
 			_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
-				ui.c(colorMagenta), ts, fc.Name, strings.Join(argParts, ", "), ui.c(colorReset))
+				ui.c(colorMagenta), ts, fc.Name, metrics_formatToolCallArgLine(fc.Args), ui.c(colorReset))
 		}
 	}
 }
