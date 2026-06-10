@@ -6,15 +6,18 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 func TestSQLiteHealthChecker_Healthy(t *testing.T) {
@@ -294,6 +297,106 @@ func TestNoOpHealthChecker_Check(t *testing.T) {
 	}
 }
 
+// integrityCheckFailingConnector wraps the SQLite driver and returns
+// connections that fail on PRAGMA integrity_check queries while
+// delegating all other operations (including Ping) to the real driver.
+type integrityCheckFailingConnector struct {
+	drv driver.Driver
+	dsn string
+}
+
+func (c *integrityCheckFailingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	conn, err := c.drv.Open(c.dsn)
+	if err != nil {
+		return nil, err
+	}
+	return &integrityCheckFailingConn{conn: conn}, nil
+}
+
+func (c *integrityCheckFailingConnector) Driver() driver.Driver {
+	return c.drv
+}
+
+// integrityCheckFailingConn wraps a driver.Conn and intercepts
+// QueryContext to fail specifically on PRAGMA integrity_check.
+type integrityCheckFailingConn struct {
+	conn driver.Conn
+}
+
+func (c *integrityCheckFailingConn) Prepare(query string) (driver.Stmt, error) {
+	return c.conn.Prepare(query)
+}
+func (c *integrityCheckFailingConn) Close() error {
+	return c.conn.Close()
+}
+func (c *integrityCheckFailingConn) Begin() (driver.Tx, error) {
+	//nolint:staticcheck // Fallback for drivers that don't implement ConnBeginTx
+	return c.conn.Begin()
+}
+
+func (c *integrityCheckFailingConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "PRAGMA integrity_check") {
+		return nil, errors.New("integrity check failed to execute: simulated error")
+	}
+	if qc, ok := c.conn.(driver.QueryerContext); ok {
+		return qc.QueryContext(ctx, query, args)
+	}
+	stmt, err := c.conn.Prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = stmt.Close() }()
+	vals := make([]driver.Value, len(args))
+	for i, a := range args {
+		vals[i] = a.Value
+	}
+	//nolint:staticcheck // Fallback for drivers that don't implement QueryerContext
+	return stmt.Query(vals)
+}
+
+func (c *integrityCheckFailingConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if ec, ok := c.conn.(driver.ExecerContext); ok {
+		return ec.ExecContext(ctx, query, args)
+	}
+	return nil, errors.New("ExecContext not supported")
+}
+
+func (c *integrityCheckFailingConn) Ping(ctx context.Context) error {
+	if p, ok := c.conn.(driver.Pinger); ok {
+		return p.Ping(ctx)
+	}
+	return nil
+}
+
+func (c *integrityCheckFailingConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if bt, ok := c.conn.(driver.ConnBeginTx); ok {
+		return bt.BeginTx(ctx, opts)
+	}
+	//nolint:staticcheck // Fallback for drivers that don't implement ConnBeginTx
+	return c.conn.Begin()
+}
+
+func (c *integrityCheckFailingConn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
+	if pc, ok := c.conn.(driver.ConnPrepareContext); ok {
+		return pc.PrepareContext(ctx, query)
+	}
+	return c.conn.Prepare(query)
+}
+
+func (c *integrityCheckFailingConn) ResetSession(ctx context.Context) error {
+	if rs, ok := c.conn.(driver.SessionResetter); ok {
+		return rs.ResetSession(ctx)
+	}
+	return nil
+}
+
+func (c *integrityCheckFailingConn) IsValid() bool {
+	if v, ok := c.conn.(driver.Validator); ok {
+		return v.IsValid()
+	}
+	return true
+}
+
 // TestSQLiteHealthChecker_Check is a table-driven test covering all error branches
 // in sqliteHealthChecker.Check(). Each subtest exercises a distinct code path.
 func TestSQLiteHealthChecker_Check(t *testing.T) {
@@ -387,21 +490,29 @@ func TestSQLiteHealthChecker_Check(t *testing.T) {
 
 	// ---------------
 	// Scenario C: PRAGMA integrity_check query fails with an error.
-	// NOTE: With modernc.org/sqlite, PingContext validates the schema and
-	// catches most corruptions before integrity_check runs. Closing the DB
-	// causes PingContext to fail first, which exercises the same error-
-	// handling pattern (StatusUnhealthy, error set). This subtest verifies
-	// that a closed database produces the expected unhealthy report.
+	// Uses a wrapped SQLite connector that intercepts QueryContext for
+	// "PRAGMA integrity_check" and returns an error, while PingContext
+	// (which uses Pinger.Ping) delegates to the real driver and succeeds.
+	// This deterministically hits lines 82-87 (Step C).
 	// ---------------
-	t.Run("integrity_query_fails", func(t *testing.T) {
-		t.Parallel()
+	t.Run("integrity_check_query_fails", func(t *testing.T) {
 		dbPath := filepath.Join(t.TempDir(), "test.db")
-		db, err := sql.Open("sqlite", dbPath)
-		require.NoError(t, err)
 
-		_, err = db.Exec("CREATE TABLE test (id INTEGER);")
+		// Setup: create the database file using the normal driver.
+		setupDB, err := sql.Open("sqlite", dbPath)
 		require.NoError(t, err)
-		_ = db.Close()
+		_, err = setupDB.Exec("CREATE TABLE test (id INTEGER);")
+		require.NoError(t, err)
+		_ = setupDB.Close()
+
+		// Create the wrapped DB: PingContext succeeds, but
+		// QueryRowContext("PRAGMA integrity_check") fails.
+		connector := &integrityCheckFailingConnector{
+			drv: &sqlite.Driver{},
+			dsn: dbPath,
+		}
+		db := sql.OpenDB(connector)
+		t.Cleanup(func() { _ = db.Close() })
 
 		checker := newSQLiteHealthChecker(db, dbPath)
 		report, err := checker.Check(context.Background())
@@ -410,7 +521,8 @@ func TestSQLiteHealthChecker_Check(t *testing.T) {
 
 		assert.Equal(t, ports.StatusUnhealthy, report.Status)
 		assert.NotNil(t, report.Error)
-		assert.Contains(t, report.Message, "database connection failed")
+		assert.Contains(t, report.Message, "integrity check failed to execute",
+			"should hit Step C (integrity_check failure), not Step B (Ping failure)")
 	})
 
 	// ---------------

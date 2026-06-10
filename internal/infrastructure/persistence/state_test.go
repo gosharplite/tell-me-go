@@ -5,14 +5,19 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func verifyStateInitialization(t *testing.T, state ports.SessionProvider) {
@@ -171,9 +176,32 @@ func TestNewSessionState_InitRepositoriesFailure(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := NewSessionState(ctx, badDir)
-	if err == nil {
-		t.Error("expected error from NewSessionState with invalid path, got nil")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "initializing persistence repositories",
+		"error should be wrapped with initialization context")
+}
+
+func TestNewSessionState_InitServicesFailure(t *testing.T) {
+	// NOT parallel: overrides package-level sqlOpenFn, must run sequentially.
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	var opCount atomic.Int32
+	origOpen := sqlOpenFn
+	t.Cleanup(func() { sqlOpenFn = origOpen })
+
+	sqlOpenFn = func(driverName, dsn string) (*sql.DB, error) {
+		return sql.OpenDB(&initServicesFailingConnector{
+			dsn:       dsn,
+			opCount:   &opCount,
+			failAfter: 5, // initSQLiteDB does ~5 ops; fail on 6th (initServices ReadAll)
+		}), nil
 	}
+
+	_, err := NewSessionState(ctx, tempDir)
+	require.Error(t, err, "expected error from NewSessionState when initServices fails")
+	t.Logf("error: %v", err)
 }
 
 // failingTaskStore is a ListStore[ports.Task] whose ReadAll always fails.
@@ -328,4 +356,98 @@ func TestInitServices_InitializeFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "simulated query failure") {
 		t.Errorf("expected error to contain 'simulated query failure', got: %v", err)
 	}
+}
+
+func TestInitRepositories_MigrationFailure(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission test not reliable on Windows")
+	}
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Create tasks.json with mode 0000 so ReadFile fails with EACCES.
+	tasksPath := filepath.Join(tempDir, "tasks.json")
+	if err := os.WriteFile(tasksPath, []byte(`[{"id":1,"content":"T","status":"pending","created_at":"2025-01-01T00:00:00Z"}]`), 0000); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(tasksPath, 0644) }()
+
+	_, _, db, _, err := initRepositories(ctx, tempDir, "sqlite")
+
+	// db must be nil (closed) on error, not leaked.
+	assert.Nil(t, db, "db should be nil after initRepositories error")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "migrating legacy tasks",
+		"error should contain migration failure context")
+}
+
+// initServicesFailingConnector wraps the SQLite driver and returns connections
+// whose QueryContext and ExecContext fail after a deterministic number of
+// successful operations. This allows initRepositories to complete normally
+// (5 ops: 2 pragmas + 2 CREATE TABLE + 1 COUNT) while initServices fails on
+// its first ReadAll QueryContext (the 6th operation).
+type initServicesFailingConnector struct {
+	dsn       string
+	opCount   *atomic.Int32
+	failAfter int32
+}
+
+func (c *initServicesFailingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	realConn, err := sqliteDriver.Open(c.dsn)
+	if err != nil {
+		return nil, err
+	}
+	return &initServicesFailingConn{
+		conn:      realConn,
+		opCount:   c.opCount,
+		failAfter: c.failAfter,
+	}, nil
+}
+
+func (c *initServicesFailingConnector) Driver() driver.Driver { return sqliteDriver }
+
+type initServicesFailingConn struct {
+	conn      driver.Conn
+	opCount   *atomic.Int32
+	failAfter int32
+}
+
+func (c *initServicesFailingConn) Prepare(q string) (driver.Stmt, error) { return c.conn.Prepare(q) }
+func (c *initServicesFailingConn) Close() error                          { return c.conn.Close() }
+func (c *initServicesFailingConn) Begin() (driver.Tx, error) {
+	return c.BeginTx(context.Background(), driver.TxOptions{})
+}
+
+func (c *initServicesFailingConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if bc, ok := c.conn.(driver.ConnBeginTx); ok {
+		return bc.BeginTx(ctx, opts)
+	}
+	// Fallback for drivers that don't implement ConnBeginTx.
+	return c.conn.Begin() //nolint:staticcheck // SA1019: fallback for older drivers
+}
+
+func (c *initServicesFailingConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	n := c.opCount.Add(1)
+	if n > c.failAfter {
+		return nil, errors.New("injected initServices failure")
+	}
+	if qc, ok := c.conn.(driver.QueryerContext); ok {
+		return qc.QueryContext(ctx, q, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+func (c *initServicesFailingConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
+	n := c.opCount.Add(1)
+	if n > c.failAfter {
+		return nil, errors.New("injected initServices failure")
+	}
+	if ec, ok := c.conn.(driver.ExecerContext); ok {
+		return ec.ExecContext(ctx, q, args)
+	}
+	return nil, driver.ErrSkip
 }
