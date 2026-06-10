@@ -307,16 +307,7 @@ func (m *defaultTypeManager) renderTypeInfo(def typeDefinition, receivers []stri
 		sb.WriteString("Doc: " + def.Doc)
 	}
 
-	if len(def.Fields) > 0 {
-		sb.WriteString("Fields:\n")
-		for _, f := range def.Fields {
-			tag := ""
-			if f.Tag != "" {
-				tag = " " + f.Tag
-			}
-			_, _ = fmt.Fprintf(&sb, "  - %s %s%s\n", f.Names, f.Type, tag)
-		}
-	}
+	m.renderTypeInfo_fields(def, &sb)
 
 	if len(def.Methods) > 0 {
 		sb.WriteString("Methods:\n")
@@ -331,6 +322,19 @@ func (m *defaultTypeManager) renderTypeInfo(def typeDefinition, receivers []stri
 	}
 
 	return sb.String()
+}
+
+func (m *defaultTypeManager) renderTypeInfo_fields(def typeDefinition, sb *strings.Builder) {
+	if len(def.Fields) > 0 {
+		sb.WriteString("Fields:\n")
+		for _, f := range def.Fields {
+			tag := ""
+			if f.Tag != "" {
+				tag = " " + f.Tag
+			}
+			_, _ = fmt.Fprintf(sb, "  - %s %s%s\n", f.Names, f.Type, tag)
+		}
+	}
 }
 
 func (m *defaultTypeManager) classifySymbol(decl ast.Decl) (string, string, bool) {

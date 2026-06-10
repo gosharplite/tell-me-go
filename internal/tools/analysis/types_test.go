@@ -271,6 +271,83 @@ func unexported() {}
 	}
 }
 
+func TestRenderTypeInfo_Fields(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		fields   []fieldInfo
+		want     string   // exact expected output (for "output integrity" case)
+		contains []string // substrings the output must contain
+		absent   []string // substrings the output must NOT contain
+	}{
+		{
+			name:   "empty fields",
+			fields: nil,
+			absent: []string{"Fields:"},
+		},
+		{
+			name:     "single field no tag",
+			fields:   []fieldInfo{{Names: "ID", Type: "int"}},
+			contains: []string{"Fields:\n", "  - ID int\n"},
+			absent:   []string{"`"},
+		},
+		{
+			name:   "single field with tag",
+			fields: []fieldInfo{{Names: "Name", Type: "string", Tag: "`json:\"name\"`"}},
+			contains: []string{
+				"Fields:\n",
+				"  - Name string `json:\"name\"`\n",
+			},
+		},
+		{
+			name: "multiple fields mixed tags",
+			fields: []fieldInfo{
+				{Names: "A", Type: "int"},
+				{Names: "B", Type: "string", Tag: "`xml:\"b\"`"},
+			},
+			contains: []string{
+				"  - A int\n",
+				"  - B string `xml:\"b\"`\n",
+			},
+		},
+		{
+			name:   "output integrity",
+			fields: []fieldInfo{{Names: "ID", Type: "int", Tag: "`json:\"id\"`"}},
+			want:   "Fields:\n  - ID int `json:\"id\"`\n",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newTypeManager(nil, nil, nil)
+			def := typeDefinition{Fields: tt.fields}
+			var sb strings.Builder
+			m.renderTypeInfo_fields(def, &sb)
+			got := sb.String()
+
+			if tt.want != "" {
+				if got != tt.want {
+					t.Errorf("got %q; want %q", got, tt.want)
+				}
+				return
+			}
+
+			for _, w := range tt.contains {
+				if !strings.Contains(got, w) {
+					t.Errorf("expected output to contain %q. Got:\n%s", w, got)
+				}
+			}
+			for _, a := range tt.absent {
+				if strings.Contains(got, a) {
+					t.Errorf("expected output to NOT contain %q. Got:\n%s", a, got)
+				}
+			}
+		})
+	}
+}
+
 func TestTypeManager_ErrorPaths(t *testing.T) {
 	t.Parallel()
 
