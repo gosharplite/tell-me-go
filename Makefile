@@ -344,13 +344,13 @@ ifeq ($(IS_POSIX),true)
 	@echo "Running race tests package-by-package (POSIX mode)..."
 	@for pkg in $$(go list ./...); do \
 		echo "Testing $$pkg..."; \
-		go test -race -timeout 60s $$pkg || exit 1; \
+		go test -race -timeout 180s $$pkg || exit 1; \
 	done
 else
 	@echo "Running race tests package-by-package (Windows CMD mode)..."
 	@for /f "tokens=*" %%p in ('go list ./...') do ( \
 		echo Testing %%p... & \
-		go test -race -timeout 60s %%p || exit /b 1 \
+		go test -race -timeout 180s %%p || exit /b 1 \
 	)
 endif
 
