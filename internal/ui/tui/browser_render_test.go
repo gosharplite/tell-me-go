@@ -715,8 +715,8 @@ func TestRenderThoughts_CacheMiss(t *testing.T) {
 	if !strings.Contains(result, "uncached thought") {
 		t.Errorf("expected thought content in render, got %q", result)
 	}
-	if _, ok := m.cachedThoughts["miss1"]; ok {
-		t.Error("renderThoughts should not populate cache")
+	if _, ok := m.cachedThoughts["miss1"]; !ok {
+		t.Error("renderThoughts should populate cache on miss")
 	}
 }
 
