@@ -86,7 +86,31 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 		return d.handleTimeout(parentCtx, ctx.Err(), call.Name, activeTimeout, outCh), nil
 
 	case out := <-outCh:
+		// In case of a select race where both the context cancels and the tool returns simultaneously,
+		// and the tool returned an error, we prefer the friendly context cancellation message.
+		if out.Err != nil && ctx.Err() != nil && (errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded)) {
+			return d.formatContextError(ctx.Err(), activeTimeout), nil
+		}
 		return out.Result, out.Err
+	}
+}
+
+func (d *safetyDecorator) formatContextError(errCtx error, activeTimeout time.Duration) tools.ToolResult {
+	if errors.Is(errCtx, context.Canceled) {
+		return tools.ToolResult{
+			Text:  "Execution was interrupted or cancelled by the user.",
+			Error: fmt.Errorf("tool execution canceled: %w", errCtx),
+		}
+	}
+	if errors.Is(errCtx, context.DeadlineExceeded) {
+		return tools.ToolResult{
+			Text:  fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout),
+			Error: fmt.Errorf("%w: tool execution timed out: %w", llm.ErrTransient, errCtx),
+		}
+	}
+	return tools.ToolResult{
+		Text:  fmt.Sprintf("Error: Tool execution failed: %v", errCtx),
+		Error: fmt.Errorf("%w: tool execution failed: %w", llm.ErrTransient, errCtx),
 	}
 }
 
@@ -139,23 +163,7 @@ func (d *safetyDecorator) resolveTimeout(call *llm.FunctionCall, opts tools.Tool
 func (d *safetyDecorator) handleTimeout(parentCtx context.Context, errCtx error, toolName string, activeTimeout time.Duration, outCh chan tools.ToolOutput) tools.ToolResult {
 	go d.zombie.Monitor(context.WithoutCancel(parentCtx), toolName, time.Now(), outCh, d.zombieTimeout)
 
-	switch errCtx {
-	case context.Canceled:
-		return tools.ToolResult{
-			Text:  "Execution was interrupted or cancelled by the user.",
-			Error: fmt.Errorf("tool execution canceled: %w", errCtx),
-		}
-	case context.DeadlineExceeded:
-		return tools.ToolResult{
-			Text:  fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout),
-			Error: fmt.Errorf("%w: tool execution timed out: %w", llm.ErrTransient, errCtx),
-		}
-	default:
-		return tools.ToolResult{
-			Text:  fmt.Sprintf("Error: Tool execution failed: %v", errCtx),
-			Error: fmt.Errorf("%w: tool execution failed: %w", llm.ErrTransient, errCtx),
-		}
-	}
+	return d.formatContextError(errCtx, activeTimeout)
 }
 
 func (d *safetyDecorator) monitorLiveness(
