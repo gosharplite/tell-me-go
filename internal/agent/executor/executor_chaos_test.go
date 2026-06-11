@@ -161,15 +161,11 @@ func assertPanicScenario(t *testing.T, o *Dispatcher, ctx context.Context, calls
 	t.Helper()
 	err := o.runExecutionPlan(ctx, calls, declinedMap, results)
 
-	// G3: Verify that errors from panics propagate through runExecutionPlan (not silently swallowed).
+	// With the new contract, tool-result errors (including panics recovered inside
+	// the tool pipeline) are delivered to the LLM via AssembleResponse and are NOT
+	// promoted to plan-level Go errors. Only cancellation signals (index:-1) propagate.
 	if wantPanicText != "" {
-		assert.Error(t, err, "runExecutionPlan must return an error when a panic is recovered")
-		if err != nil {
-			assert.True(t, errors.Is(err, llm.ErrTerminal),
-				"runExecutionPlan error must contain ErrTerminal, got: %v", err)
-			assert.Contains(t, err.Error(), wantPanicText,
-				"runExecutionPlan error must contain panic text %q", wantPanicText)
-		}
+		assert.NoError(t, err, "runExecutionPlan must NOT return an error for recovered panics")
 		assertPanicResult(t, results, wantPanicText)
 	} else {
 		assertNoErrorResult(t, results)
@@ -277,8 +273,9 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 		t.Parallel()
 		// This subtest verifies the full propagation chain through runExecutionPlan.
 		// A parallel worker panic is recovered by the worker's defer (not the fan-in
-		// goroutine), but the error propagation path through handleBatchResults →
-		// planErrors → errors.Join is identical to what the fan-in panic would use.
+		// goroutine). With the new contract, the error stays in results[] and is
+		// delivered to the LLM via AssembleResponse — NOT promoted to a plan-level
+		// Go error. Only cancellation signals (index:-1) propagate as plan errors.
 		mock := &mockToolPipeline{
 			IsSerialFunc: func(n string) bool { return n == "serial_tool" },
 			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
@@ -317,12 +314,9 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 
 		err := o.runExecutionPlan(ctx, calls, declinedMap, results)
 
-		// Error must propagate (not be silently swallowed).
-		require.Error(t, err, "runExecutionPlan must return an error from panic recovery")
-		require.True(t, errors.Is(err, llm.ErrTerminal),
-			"error must wrap ErrTerminal, got: %v", err)
-		require.Contains(t, err.Error(), "simulated nil pointer dereference",
-			"error must contain panic text, got: %v", err)
+		// With the new contract, tool-result errors stay in results[] — they are
+		// NOT promoted to plan-level Go errors. runExecutionPlan returns nil.
+		require.NoError(t, err, "runExecutionPlan must return nil — panics are recovered and stored in results[]")
 
 		// Verify safe tools still completed.
 		if results[0].Text != "safe_result" {

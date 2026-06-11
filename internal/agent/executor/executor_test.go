@@ -533,11 +533,12 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 
 	execErr := exec.runExecutionPlan(ctx, calls, declinedMap, results)
 
-	// 2. The recovered panic is returned as an error from runExecutionPlan
-	assert.Error(t, execErr)
-
-	// 4. The error string contains "simulated nil pointer dereference"
-	assert.Contains(t, execErr.Error(), "simulated nil pointer dereference")
+	// 2. With the new contract, tool-result errors (including panics recovered
+	//    inside the tool pipeline) are delivered to the LLM via AssembleResponse
+	//    and are NOT promoted to plan-level errors. runExecutionPlan returns nil
+	//    because the panic was recovered and turned into a ToolResult, not a
+	//    cancellation signal (index == -1).
+	assert.NoError(t, execErr)
 
 	// 3. The successfully executed tool's result is still handled or acknowledged
 	var foundSuccess bool
@@ -813,8 +814,14 @@ func TestDispatcher_Execute_ErrTerminal_PropagatesErrorWithResponse(t *testing.T
 
 	assert.NotNil(t, result, "result should be the assembled response")
 	assert.NotEmpty(t, result.Parts, "result should have at least one part")
-	assert.Error(t, execErr)
-	assert.True(t, errors.Is(execErr, llm.ErrTerminal), "error should be ErrTerminal")
+
+	// With the new contract, tool-result errors (including ErrTerminal from
+	// panic recovery) are delivered to the LLM via AssembleResponse and are
+	// NOT promoted to plan-level Go errors. The LLM sees the error text and
+	// can self-correct.
+	assert.NoError(t, execErr)
+	assert.Contains(t, result.Parts[0].FunctionResponse.Response["result"].(string),
+		"encountered an internal fatal error (panic)")
 }
 
 func TestDispatcher_Execute_NonTerminalError_Propagates(t *testing.T) {
@@ -861,12 +868,14 @@ func TestDispatcher_Execute_NonTerminalError_Propagates(t *testing.T) {
 	assert.NotNil(t, result, "result should be the assembled response")
 	assert.NotEmpty(t, result.Parts, "result should have at least one part")
 
-	// The function-level error must be non-nil — non-terminal errors propagate.
-	assert.Error(t, execErr, "non-terminal error must propagate from Execute()")
+	// With the new contract, tool-result errors are delivered to the LLM via
+	// AssembleResponse and are NOT promoted to plan-level Go errors. The LLM
+	// sees the error text and can self-correct.
+	assert.NoError(t, execErr, "non-terminal tool errors must NOT propagate from Execute()")
 
-	// errors.Is must be able to unwrap through errors.Join to find the sentinel.
-	assert.True(t, errors.Is(execErr, errDiskFull),
-		"errors.Is should match the wrapped non-terminal sentinel error")
+	// The error text is available in the assembled response for the LLM.
+	responseStr := result.Parts[0].FunctionResponse.Response["result"].(string)
+	assert.Contains(t, responseStr, "write failed")
 }
 
 func TestSuggestTool(t *testing.T) {

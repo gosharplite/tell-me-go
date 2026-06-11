@@ -543,9 +543,9 @@ func (e *Dispatcher) handleBatchResults(ctx context.Context, resultsCh <-chan to
 		evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
 		e.emitEvent(ctx, e.events, evt)
 
-		if res.tr.Error != nil {
-			planErrors = append(planErrors, res.tr.Error)
-		}
+		// Tool-result errors are delivered to the LLM via AssembleResponse.
+		// They must NOT be promoted to plan-level errors — that would kill
+		// the agent loop instead of letting the LLM self-correct.
 	}
 	return planErrors
 }

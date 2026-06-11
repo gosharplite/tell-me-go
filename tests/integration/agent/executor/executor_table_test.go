@@ -206,7 +206,10 @@ func TestDispatcher_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "not defined", executor.ErrToolNotFound)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "not defined")
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -220,7 +223,10 @@ func TestDispatcher_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "did you mean", executor.ErrToolNotFound)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "did you mean")
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -228,13 +234,16 @@ func TestDispatcher_Errors(t *testing.T) {
 		toolsMap := map[string]agenttest.ToolBehavior{
 			"forbidden": {Result: tools.ToolResult{Text: "ok"}},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, []string{"allowed"})
+		exec, _, _ := setupTestExecutor(t, toolsMap, []string{"allowed"})
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "forbidden"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, bus, "Action blocked by the system sandbox security policy", tools.ErrSecurityPolicy)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Action blocked by the system sandbox security policy")
 	})
 
 	t.Run("Tool Returns Error", func(t *testing.T) {
@@ -248,8 +257,8 @@ func TestDispatcher_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err == nil {
-			t.Fatal("expected error from tool execution failure, got nil")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Error: tool execution failed: fail_tool: tool failed")
 	})
@@ -263,14 +272,17 @@ func TestDispatcher_SafetyLimits(t *testing.T) {
 		toolsMap := map[string]agenttest.ToolBehavior{
 			"slow": {Delay: 500 * time.Millisecond, Result: tools.ToolResult{Text: "too late"}},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil, executor.WithToolTimeout(50*time.Millisecond))
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, executor.WithToolTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "slow"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, bus, "Tool execution timed out", llm.ErrTransient)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Tool execution timed out")
 	})
 
 	t.Run("Max Turns Reached", func(t *testing.T) {
@@ -322,13 +334,16 @@ func TestDispatcher_PanicRecovery(t *testing.T) {
 		toolsMap := map[string]agenttest.ToolBehavior{
 			"panic_tool": {Panic: "kaboom"},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "panic_tool"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, bus, "Tool \"panic_tool\" encountered an internal fatal error (panic) and was terminated.", llm.ErrTerminal)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Tool \"panic_tool\" encountered an internal fatal error (panic) and was terminated.")
 	})
 
 	t.Run("Serial Panic", func(t *testing.T) {
@@ -344,8 +359,8 @@ func TestDispatcher_PanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err == nil || !errors.Is(err, llm.ErrTerminal) {
-			t.Fatalf("expected terminal error, got: %v", err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 		if resp == nil || len(resp.Parts) < 2 {
 			t.Fatalf("expected at least 2 parts, got %v", resp)
@@ -637,11 +652,10 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err == nil || !errors.Is(err, llm.ErrTerminal) {
-			t.Fatalf("expected terminal error, got: %v", err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
-		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Parallel executeTool Panic", func(t *testing.T) {
@@ -656,11 +670,10 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err == nil || !errors.Is(err, llm.ErrTerminal) {
-			t.Fatalf("expected terminal error, got: %v", err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
-		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 }
 
@@ -716,7 +729,10 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy", tools.ErrSecurityPolicy)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Action blocked by the system sandbox security policy")
 	})
 
 	t.Run("User Declined Result Error", func(t *testing.T) {
@@ -744,7 +760,10 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy", tools.ErrSecurityPolicy)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Action blocked by the system sandbox security policy")
 	})
 }
 
@@ -763,7 +782,10 @@ func TestDispatcher_LongRunningTimeout(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "timed out after 50ms", llm.ErrTransient)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "timed out after 50ms")
 	})
 }
 
@@ -789,7 +811,10 @@ func TestDispatcher_ZombieTool(t *testing.T) {
 	}}
 
 	resp, err := exec.Execute(context.Background(), content, 0, 10)
-	assertExecutionError(t, resp, err, nil, "timed out after 50ms", llm.ErrTransient)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	verifyErrorResponse(t, resp, "timed out after 50ms")
 
 	// The stubborn tool is still running in the background...
 	// We can't easily wait for it without some signaling mechanism in the tool,

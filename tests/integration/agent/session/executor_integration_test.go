@@ -227,9 +227,13 @@ func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 
 	// 1. Verify internal timeout (from functional option)
 	// We use a background context so the only timeout is the internal one (50ms)
+	// With the new contract (commit 599a1075), internal tool timeouts are delivered
+	// via the assembled response (ToolResult), not as Go errors from Execute().
+	// The LLM sees the timeout text and can self-correct.
 	content, err := exec.Execute(context.Background(), resp, 0, 10)
-	require.Error(t, err, "internal tool timeout should propagate as error")
+	require.NoError(t, err, "internal tool timeout is delivered via response, not Go error")
 	require.NotEmpty(t, content.Parts)
+	require.Contains(t, content.Parts[0].FunctionResponse.Response["result"].(string), "timed out after")
 	// The internal goroutine should still exit because runWithTimeout cancels its derived context
 	select {
 	case <-exitSignal:
