@@ -116,6 +116,9 @@ func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, boo
 	case p.FunctionResponse != nil:
 		return c.toolResultBlock(p)
 	case p.IsThought && role == "assistant":
+		if len(p.ThoughtSignature) == 0 || p.Text == "" {
+			return contentBlock{}, false, nil
+		}
 		return c.thinkingBlock(p, role)
 	case p.Text != "":
 		return c.textBlock(p)

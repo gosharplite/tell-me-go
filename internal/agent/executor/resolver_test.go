@@ -31,12 +31,12 @@ func TestResolver_Resolve_ToolNotFound_ReturnsSentinel(t *testing.T) {
 		t.Fatal("expected error for nonexistent tool, got nil")
 	}
 
-	if !errors.Is(err, ErrToolNotFound) {
-		t.Errorf("expected errors.Is(err, ErrToolNotFound) to be true, got false; err=%v", err)
+	if !errors.Is(err, errToolNotFound) {
+		t.Errorf("expected errors.Is(err, errToolNotFound) to be true, got false; err=%v", err)
 	}
 
 	// Also verify the descriptive message is preserved
-	if err.Error() == ErrToolNotFound.Error() {
+	if err.Error() == errToolNotFound.Error() {
 		t.Error("expected error message to contain descriptive details beyond the sentinel")
 	}
 }
