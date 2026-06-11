@@ -427,10 +427,8 @@ func TestMigrateTasks_EmptyTasksArray(t *testing.T) {
 // =============================================================================
 
 func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
-	t.Parallel()
 
 	t.Run("sqlOpen_failure", func(t *testing.T) {
-		t.Parallel()
 
 		origOpen := sqlOpenFn
 		t.Cleanup(func() { sqlOpenFn = origOpen })
@@ -446,7 +444,6 @@ func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("createTables_failure", func(t *testing.T) {
-		t.Parallel()
 
 		db, err := sql.Open("sqlite", ":memory:")
 		require.NoError(t, err)
@@ -462,7 +459,6 @@ func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("initSQLiteDB_createTables_failure", func(t *testing.T) {
-		t.Parallel()
 
 		dbPath := filepath.Join(t.TempDir(), "createtables_fail.db")
 		origOpen := sqlOpenFn
@@ -489,7 +485,6 @@ func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("executeBatchInsert_failure", func(t *testing.T) {
-		t.Parallel()
 
 		db, err := sql.Open("sqlite", ":memory:")
 		require.NoError(t, err)
