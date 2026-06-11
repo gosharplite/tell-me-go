@@ -39,6 +39,7 @@ type stdUIRenderer struct {
 	lastSampleTime  time.Time
 	lastCPUPercent  float64
 	lastMemPercent  float64
+	markdownErrOnce sync.Once
 }
 
 type defaultMetricsProvider struct{}
@@ -59,8 +60,8 @@ func (hsr *healthStatusRenderer) renderOverallStatus(ui uiState, stderr io.Write
 		overallColor = colorYellow
 	}
 
-	_, _ = fmt.Fprintf(stderr, "Overall Status: %s%s%s\n", ui.c(overallColor), strings.ToUpper(string(report.OverallStatus)), ui.c(colorReset))
-	_, _ = fmt.Fprintf(stderr, "Timestamp:      %s\n\n", report.Timestamp.Format(time.RFC3339))
+	writeBestEffort(stderr, "Overall Status: %s%s%s\n", ui.c(overallColor), strings.ToUpper(string(report.OverallStatus)), ui.c(colorReset))
+	writeBestEffort(stderr, "Timestamp:      %s\n\n", report.Timestamp.Format(time.RFC3339))
 }
 
 // componentDetailRenderer handles component message and detail rendering
@@ -89,7 +90,7 @@ func (cdr *componentDetailRenderer) renderComponent(ui uiState, stderr io.Writer
 		statusColor = colorYellow
 	}
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s]%s %-12s : %s\n", ui.c(statusColor), strings.ToUpper(string(cr.Status)), ui.c(colorReset), comp, cr.Message)
+	writeBestEffort(stderr, "%s[%s]%s %-12s : %s\n", ui.c(statusColor), strings.ToUpper(string(cr.Status)), ui.c(colorReset), comp, cr.Message)
 
 	if cr.Details != nil {
 		cdr.renderComponentDetails(ui, stderr, cr.Details)
@@ -103,7 +104,7 @@ func (cdr *componentDetailRenderer) renderComponentDetails(ui uiState, stderr io
 			if k == "binaries" {
 				continue // Show binaries separately or handle specially
 			}
-			_, _ = fmt.Fprintf(stderr, "    %s%s:%s %v\n", ui.c(colorGray), k, ui.c(colorReset), v)
+			writeBestEffort(stderr, "    %s%s:%s %v\n", ui.c(colorGray), k, ui.c(colorReset), v)
 		}
 
 		if bins, ok := detailsMap["binaries"].(map[string]any); ok {
@@ -126,7 +127,7 @@ func (bdr *binaryDependencyRenderer) renderBinaryInfo(ui uiState, stderr io.Writ
 	if r, ok := info["is_required"].(bool); ok && r {
 		req = " (required)"
 	}
-	_, _ = fmt.Fprintf(stderr, "    %s%s:%s %s%s\n", ui.c(colorGray), name, ui.c(colorReset), ver, req)
+	writeBestEffort(stderr, "    %s%s:%s %s%s\n", ui.c(colorGray), name, ui.c(colorReset), ver, req)
 }
 
 // renderBinaries renders the binaries map with version information
@@ -160,7 +161,10 @@ func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk c
 		metricsProvider: metricsProvider,
 	}
 	if err != nil {
-		// Fallback: the renderer will be nil, and we'll handle it in renderMarkdown
+		// ADR-007: Glamour failures are non-fatal. The system degrades gracefully
+		// to raw text rendering. We explicitly nil the renderer so all downstream
+		// code paths unambiguously detect the degraded state.
+		r.renderer = nil
 		r.LogSystemMessage(context.Background(), fmt.Sprintf("failed to initialize glamour renderer: %v", err), "warn")
 	}
 	return r
@@ -245,6 +249,7 @@ func (r *stdUIRenderer) renderMarkdownWithUILocked(ui uiState, text string) {
 	}
 	out, err := r.renderer.Render(text)
 	if err != nil {
+		r.logMarkdownRenderError(ui, err)
 		_, _ = fmt.Fprint(stdout, text)
 	} else {
 		out = strings.TrimLeft(out, "\n")
@@ -253,6 +258,17 @@ func (r *stdUIRenderer) renderMarkdownWithUILocked(ui uiState, text string) {
 			_, _ = fmt.Fprint(stdout, out+"\n\n")
 		}
 	}
+}
+
+// logMarkdownRenderError logs a glamour rendering error at warn level.
+// It uses a sync.Once to rate-limit: repeated failures produce at most
+// one warning per renderer lifetime to avoid flooding stderr on every
+// response chunk.
+func (r *stdUIRenderer) logMarkdownRenderError(ui uiState, err error) {
+	r.markdownErrOnce.Do(func() {
+		writeBestEffort(ui.stderr, "\r%s%s[WARN] markdown rendering degraded, falling back to raw text: %v%s\n",
+			ui.c(termClearLine), ui.c(colorYellow), err, ui.c(colorReset))
+	})
 }
 
 type uiState struct {
@@ -320,7 +336,7 @@ func (r *stdUIRenderer) printTokenLine(ui uiState, timestamp string, tokens int,
 		prefix = ""
 	}
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: %s%s%s%d%s/%d tokens%s%s\n",
+	writeBestEffort(stderr, "%s[%s] Payload: %s%s%s%d%s/%d tokens%s%s\n",
 		ui.c(colorGray), timestamp, prefix, ui.c(tokenColor), "", tokens, ui.c(colorGray), maxTokens, modeStr, ui.c(colorReset))
 }
 
@@ -357,7 +373,7 @@ func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) st
 func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus) {
 	stderr := ui.stderr
 	costStr := r.formatFinalCost(status, ui)
-	_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
+	writeBestEffort(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
 }
 
 func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Content, showThoughts, rawOutput bool) {
@@ -390,7 +406,7 @@ func (r *stdUIRenderer) RenderHealthReport(ctx context.Context, report *ports.He
 
 	stderr := ui.stderr
 
-	_, _ = fmt.Fprintf(stderr, "\n%s═══ System Health Diagnostic ═══%s\n\n", ui.c(colorBlue), ui.c(colorReset))
+	writeBestEffort(stderr, "\n%s═══ System Health Diagnostic ═══%s\n\n", ui.c(colorBlue), ui.c(colorReset))
 
 	r.renderOverallStatus(ui, stderr, report)
 	r.renderComponents(ui, stderr, report)
@@ -406,4 +422,12 @@ func (r *stdUIRenderer) renderOverallStatus(ui uiState, stderr io.Writer, report
 func (r *stdUIRenderer) renderComponents(ui uiState, stderr io.Writer, report *ports.HealthReport) {
 	cdr := &componentDetailRenderer{}
 	cdr.renderComponents(ui, stderr, report)
+}
+
+// IsRendererDegraded returns true if the glamour markdown renderer failed
+// to initialize and the system is in raw-text fallback mode.
+func (r *stdUIRenderer) IsRendererDegraded() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.renderer == nil
 }

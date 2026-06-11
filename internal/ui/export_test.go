@@ -5,6 +5,7 @@ package ui
 
 import (
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/glamour"
@@ -62,6 +63,14 @@ func (r *stdUIRenderer) DrawLoadingIndicator(ui UIState, frame string, start tim
 
 func (r *stdUIRenderer) ClearLoadingIndicator(ui UIState, force bool) {
 	r.clearLoadingIndicator(ui, force)
+}
+
+func (r *stdUIRenderer) HandleSpinnerTick(ui UIState, frames []string, idx *int, start time.Time, status string, showMetrics bool, stopped *atomic.Bool) {
+	r.handleSpinnerTick(ui, frames, idx, start, status, showMetrics, stopped)
+}
+
+func (r *stdUIRenderer) CleanupOnStop(ui UIState, stopped *atomic.Bool) {
+	r.cleanupOnStop(ui, stopped)
 }
 
 func (r *stdUIRenderer) NowSafe() time.Time {

@@ -260,3 +260,24 @@ func TestHistory_RenderTextFallback(t *testing.T) {
 		}
 	})
 }
+
+// ── History render error reporting tests (G20) ──
+
+func TestHistory_RenderTextError(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyPath := filepath.Join(tmp, "history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello world"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("non-raw with nil renderer falls back to raw text", func(t *testing.T) {
+		var buf bytes.Buffer
+		ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: false})
+		output := stripANSI(buf.String())
+		if !strings.Contains(output, "hello world") {
+			t.Errorf("expected fallback text 'hello world', got: %q", output)
+		}
+	})
+}
