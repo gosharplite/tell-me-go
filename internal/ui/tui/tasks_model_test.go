@@ -5,9 +5,11 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -351,6 +353,118 @@ func TestTaskListModel_View_ErrorState(t *testing.T) {
 	}
 }
 
+func TestTaskListModel_HandleWindowSizeMsg_Bounds(t *testing.T) {
+	tests := []struct {
+		name          string
+		msg           tea.WindowSizeMsg
+		ready         bool
+		wantWidth     int
+		wantHeight    int
+		wantViewportH int // expected viewport.Height after handling
+		wantReady     bool
+	}{
+		{
+			name:          "normal dimensions",
+			msg:           tea.WindowSizeMsg{Width: 100, Height: 40},
+			ready:         false,
+			wantWidth:     100,
+			wantHeight:    40,
+			wantViewportH: 39, // 40 - 1 footer
+			wantReady:     true,
+		},
+		{
+			name:          "minimum width clamped",
+			msg:           tea.WindowSizeMsg{Width: 5, Height: 40},
+			ready:         false,
+			wantWidth:     20, // clamped
+			wantHeight:    40,
+			wantViewportH: 39,
+			wantReady:     true,
+		},
+		{
+			name:          "minimum height clamped",
+			msg:           tea.WindowSizeMsg{Width: 80, Height: 2},
+			ready:         false,
+			wantWidth:     80,
+			wantHeight:    5, // clamped
+			wantViewportH: 4, // 5 - 1
+			wantReady:     true,
+		},
+		{
+			name:          "viewport height floor at 3",
+			msg:           tea.WindowSizeMsg{Width: 80, Height: 4},
+			ready:         false,
+			wantWidth:     80,
+			wantHeight:    5, // clamped to 5 (below that would give vpHeight <3)
+			wantViewportH: 4,
+			wantReady:     true,
+		},
+		{
+			name:          "zero dimensions clamped",
+			msg:           tea.WindowSizeMsg{Width: 0, Height: 0},
+			ready:         false,
+			wantWidth:     20, // clamped
+			wantHeight:    5,  // clamped
+			wantViewportH: 4,  // 5 - 1
+			wantReady:     true,
+		},
+		{
+			name:          "already ready resizes viewport",
+			msg:           tea.WindowSizeMsg{Width: 120, Height: 50},
+			ready:         true,
+			wantWidth:     120,
+			wantHeight:    50,
+			wantViewportH: 49,
+			wantReady:     true,
+		},
+		{
+			name:          "already ready with small dimensions",
+			msg:           tea.WindowSizeMsg{Width: 3, Height: 1},
+			ready:         true,
+			wantWidth:     20, // clamped
+			wantHeight:    5,  // clamped
+			wantViewportH: 4,
+			wantReady:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &taskListModel{
+				ready:  tt.ready,
+				tasks:  []ports.Task{},
+				width:  0,
+				height: 0,
+			}
+			if tt.ready {
+				// Pre-create a viewport so the "already ready" branch is exercised
+				m.viewport = viewport.New(80, 24)
+				m.width = 80
+				m.height = 24
+			}
+
+			newModel, cmd := m.handleWindowSizeMsg(tt.msg)
+			updated := newModel.(*taskListModel)
+
+			if updated.width != tt.wantWidth {
+				t.Errorf("width = %d, want %d", updated.width, tt.wantWidth)
+			}
+			if updated.height != tt.wantHeight {
+				t.Errorf("height = %d, want %d", updated.height, tt.wantHeight)
+			}
+			if updated.ready != tt.wantReady {
+				t.Errorf("ready = %v, want %v", updated.ready, tt.wantReady)
+			}
+			if updated.viewport.Height != tt.wantViewportH {
+				t.Errorf("viewport.Height = %d, want %d", updated.viewport.Height, tt.wantViewportH)
+			}
+
+			// cmd may be nil — WindowSizeMsg does not trigger a viewport command
+			_ = cmd
+		})
+	}
+}
+
 func TestTaskListModel_View_NotReady(t *testing.T) {
 	m := &taskListModel{ready: false}
 	view := m.View()
@@ -511,7 +625,7 @@ func TestTaskListModel_FetchTasksCmd(t *testing.T) {
 		},
 	}
 
-	cmd := fetchTasksCmd(store, "pending", 0, 50)
+	cmd := fetchTasksCmd(context.Background(), store, "pending", 0, 50)
 	msg := cmd()
 	tasksMsg, ok := msg.(tasksLoadedMsg)
 	if !ok {
@@ -557,26 +671,52 @@ func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
 	m.selected = 0
 	m.pageSize = 50
 
-	// Press 'n' for next page
+	// Press 'n' for next page — offset should NOT change yet
 	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	_ = newModel
 
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd from 'n' key")
 	}
-	cmd() // execute fetch
-
-	// Verify offset was incremented
-	if receivedOffset != 50 {
-		t.Errorf("expected offset 50, got %d", receivedOffset)
-	}
 
 	updated := newModel.(*taskListModel)
-	if updated.pageOffset != 50 {
-		t.Errorf("expected pageOffset 50, got %d", updated.pageOffset)
+	if updated.pageOffset != 0 {
+		t.Errorf("pageOffset should still be 0 before fetch completes, got %d", updated.pageOffset)
 	}
-	if updated.selected != 0 {
-		t.Errorf("expected selected reset to 0, got %d", updated.selected)
+	if updated.pendingPageOffset != 50 {
+		t.Errorf("pendingPageOffset should be 50, got %d", updated.pendingPageOffset)
+	}
+	if !updated.pageNavPending {
+		t.Error("expected pageNavPending to be true")
+	}
+
+	// Execute the fetch
+	msg := cmd()
+	tasksMsg := msg.(tasksLoadedMsg)
+	if tasksMsg.err != nil {
+		t.Fatalf("unexpected fetch error: %v", tasksMsg.err)
+	}
+
+	// Verify offset was passed correctly to ListTasks
+	if receivedOffset != 50 {
+		t.Errorf("expected offset 50 passed to ListTasks, got %d", receivedOffset)
+	}
+
+	// Feed the success message back — now offset should be applied
+	newModel2, _ := updated.Update(tasksMsg)
+	updated2 := newModel2.(*taskListModel)
+
+	if updated2.pageOffset != 50 {
+		t.Errorf("pageOffset should be 50 after successful fetch, got %d", updated2.pageOffset)
+	}
+	if updated2.pendingPageOffset != 0 {
+		t.Errorf("pendingPageOffset should be cleared to 0, got %d", updated2.pendingPageOffset)
+	}
+	if updated2.pageNavPending {
+		t.Error("expected pageNavPending to be false after fetch")
+	}
+	if updated2.selected != 0 {
+		t.Errorf("expected selected reset to 0, got %d", updated2.selected)
 	}
 }
 
@@ -605,25 +745,51 @@ func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
 	m.selected = 0
 	m.pageSize = 50
 
-	// Press 'p' for previous page
+	// Press 'p' for previous page — offset should NOT change yet
 	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
 	_ = newModel
 
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd from 'p' key")
 	}
-	cmd()
-
-	if receivedOffset != 0 {
-		t.Errorf("expected offset 0, got %d", receivedOffset)
-	}
 
 	updated := newModel.(*taskListModel)
-	if updated.pageOffset != 0 {
-		t.Errorf("expected pageOffset 0, got %d", updated.pageOffset)
+	if updated.pageOffset != 50 {
+		t.Errorf("pageOffset should still be 50 before fetch completes, got %d", updated.pageOffset)
 	}
-	if updated.selected != 0 {
-		t.Errorf("expected selected reset to 0, got %d", updated.selected)
+	if updated.pendingPageOffset != 0 {
+		t.Errorf("pendingPageOffset should be 0, got %d", updated.pendingPageOffset)
+	}
+	if !updated.pageNavPending {
+		t.Error("expected pageNavPending to be true")
+	}
+
+	// Execute the fetch
+	msg := cmd()
+	tasksMsg := msg.(tasksLoadedMsg)
+	if tasksMsg.err != nil {
+		t.Fatalf("unexpected fetch error: %v", tasksMsg.err)
+	}
+
+	if receivedOffset != 0 {
+		t.Errorf("expected offset 0 passed to ListTasks, got %d", receivedOffset)
+	}
+
+	// Feed the success message back — now offset should be applied
+	newModel2, _ := updated.Update(tasksMsg)
+	updated2 := newModel2.(*taskListModel)
+
+	if updated2.pageOffset != 0 {
+		t.Errorf("pageOffset should be 0 after successful fetch, got %d", updated2.pageOffset)
+	}
+	if updated2.pendingPageOffset != 0 {
+		t.Errorf("pendingPageOffset should be cleared, got %d", updated2.pendingPageOffset)
+	}
+	if updated2.pageNavPending {
+		t.Error("expected pageNavPending to be false after fetch")
+	}
+	if updated2.selected != 0 {
+		t.Errorf("expected selected reset to 0, got %d", updated2.selected)
 	}
 }
 
@@ -648,12 +814,22 @@ func TestTaskListModel_PageNav_PrevPage_AtZero_Clamped(t *testing.T) {
 	m.selected = 0
 	m.pageSize = 50
 
-	// Press 'p' at page 0 — should NOT go negative
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	// Press 'p' at page 0 — should clamp pendingPageOffset to 0
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	_ = newModel
 
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd from 'p' key")
 	}
+
+	updated := newModel.(*taskListModel)
+	if updated.pendingPageOffset != 0 {
+		t.Errorf("pendingPageOffset should be 0 (clamped), got %d", updated.pendingPageOffset)
+	}
+	if !updated.pageNavPending {
+		t.Error("expected pageNavPending to be true")
+	}
+
 	cmd()
 
 	if receivedOffset != 0 {
@@ -682,12 +858,22 @@ func TestTaskListModel_PageNav_NextPage_AtLastPage_Clamped(t *testing.T) {
 	m.selected = 0
 	m.pageSize = 50
 
-	// Press 'n' at last page — should not go past totalCount
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	// Press 'n' at last page — should clamp to current offset
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	_ = newModel
 
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd from 'n' key")
 	}
+
+	updated := newModel.(*taskListModel)
+	if updated.pendingPageOffset != 50 {
+		t.Errorf("pendingPageOffset should be 50 (clamped at current page), got %d", updated.pendingPageOffset)
+	}
+	if !updated.pageNavPending {
+		t.Error("expected pageNavPending to be true")
+	}
+
 	cmd()
 
 	if receivedOffset != 50 {
@@ -762,8 +948,10 @@ func TestTaskListModel_PageNav_PreservesStatusFilter(t *testing.T) {
 	m.selected = 0
 	m.pageSize = 50
 
-	// Press 'n' — should re-fetch with statusFilter="pending"
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	// Press 'n' — should re-fetch with statusFilter="pending" and offset=50
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	_ = newModel
+
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd from 'n' key")
 	}
@@ -775,4 +963,400 @@ func TestTaskListModel_PageNav_PreservesStatusFilter(t *testing.T) {
 	if receivedOffset != 50 {
 		t.Errorf("expected offset 50, got %d", receivedOffset)
 	}
+
+	updated := newModel.(*taskListModel)
+	if updated.pageOffset != 0 {
+		t.Errorf("pageOffset should still be 0 before successful fetch, got %d", updated.pageOffset)
+	}
+	if updated.pendingPageOffset != 50 {
+		t.Errorf("pendingPageOffset should be 50, got %d", updated.pendingPageOffset)
+	}
+}
+
+func TestTaskListModel_PageNav_OffsetAppliedOnlyOnSuccess(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+			return []ports.Task{
+				{ID: int64(offset + 1), Content: "task", Status: "pending"},
+			}
+		},
+		CountTasksFunc: func(status string) int {
+			return 100
+		},
+	}
+
+	m := newTaskListModel(context.Background(), store)
+	m.ready = true
+	m.tasks = []ports.Task{{ID: 1, Content: "page0", Status: "pending"}}
+	m.totalCount = 100
+	m.pageOffset = 0
+	m.selected = 0
+	m.pageSize = 50
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	_ = newModel
+
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd from 'n' key")
+	}
+
+	updated := newModel.(*taskListModel)
+	if updated.pageOffset != 0 {
+		t.Errorf("pageOffset should still be 0 before fetch completes, got %d", updated.pageOffset)
+	}
+	if updated.pendingPageOffset != 50 {
+		t.Errorf("pendingPageOffset should be 50, got %d", updated.pendingPageOffset)
+	}
+
+	msg := cmd()
+	tasksMsg := msg.(tasksLoadedMsg)
+	if tasksMsg.err != nil {
+		t.Fatalf("unexpected fetch error: %v", tasksMsg.err)
+	}
+
+	newModel2, _ := updated.Update(tasksMsg)
+	updated2 := newModel2.(*taskListModel)
+
+	if updated2.pageOffset != 50 {
+		t.Errorf("pageOffset should be 50 after successful fetch, got %d", updated2.pageOffset)
+	}
+	if updated2.pendingPageOffset != 0 {
+		t.Errorf("pendingPageOffset should be cleared to 0, got %d", updated2.pendingPageOffset)
+	}
+}
+
+func TestTaskListModel_PageNav_ErrorDoesNotAdvanceOffset(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+			return nil
+		},
+		CountTasksFunc: func(status string) int {
+			return 100
+		},
+	}
+
+	m := newTaskListModel(context.Background(), store)
+	m.ready = true
+	m.tasks = []ports.Task{{ID: 1, Content: "original", Status: "pending"}}
+	m.totalCount = 100
+	m.pageOffset = 0
+	m.selected = 0
+	m.pageSize = 50
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	_ = cmd
+	updated := newModel.(*taskListModel)
+
+	errorMsg := tasksLoadedMsg{err: context.DeadlineExceeded}
+
+	newModel2, _ := updated.Update(errorMsg)
+	updated2 := newModel2.(*taskListModel)
+
+	if updated2.pageOffset != 0 {
+		t.Errorf("pageOffset should remain 0 after fetch error, got %d", updated2.pageOffset)
+	}
+	if updated2.pendingPageOffset != 0 {
+		t.Errorf("pendingPageOffset should be cleared after error, got %d", updated2.pendingPageOffset)
+	}
+	if updated2.err == nil {
+		t.Fatal("expected error to be set on model")
+	}
+	if len(updated2.tasks) != 1 {
+		t.Errorf("expected 1 original task, got %d", len(updated2.tasks))
+	}
+}
+
+func TestTaskListModel_PageNav_PrevClamped_ErrorNoAdvance(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+			return []ports.Task{}
+		},
+		CountTasksFunc: func(status string) int { return 100 },
+	}
+
+	m := newTaskListModel(context.Background(), store)
+	m.ready = true
+	m.tasks = []ports.Task{{ID: 1, Content: "at page 0", Status: "pending"}}
+	m.totalCount = 100
+	m.pageOffset = 0
+	m.selected = 0
+	m.pageSize = 50
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	updated := newModel.(*taskListModel)
+
+	if updated.pendingPageOffset != 0 {
+		t.Errorf("pendingPageOffset should be 0 (clamped), got %d", updated.pendingPageOffset)
+	}
+
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	cmd()
+
+	newModel2, _ := updated.Update(tasksLoadedMsg{err: context.DeadlineExceeded})
+	updated2 := newModel2.(*taskListModel)
+
+	if updated2.pageOffset != 0 {
+		t.Errorf("pageOffset should remain 0, got %d", updated2.pageOffset)
+	}
+	if updated2.err == nil {
+		t.Fatal("expected error to be set")
+	}
+}
+
+func TestTaskListModel_NextPage(t *testing.T) {
+	tests := []struct {
+		name       string
+		pageOffset int
+		pageSize   int
+		totalCount int
+		want       int
+	}{
+		{"advances when room", 0, 50, 100, 50},
+		{"clamped at boundary", 50, 50, 100, 50},
+		{"clamped past boundary", 60, 50, 100, 60},
+		{"exact boundary", 50, 50, 100, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &taskListModel{
+				pageOffset: tt.pageOffset,
+				pageSize:   tt.pageSize,
+				totalCount: tt.totalCount,
+			}
+			m.nextPage()
+			if m.pageOffset != tt.want {
+				t.Errorf("nextPage() offset = %d, want %d", m.pageOffset, tt.want)
+			}
+		})
+	}
+}
+
+func TestTaskListModel_PrevPage(t *testing.T) {
+	tests := []struct {
+		name       string
+		pageOffset int
+		pageSize   int
+		want       int
+	}{
+		{"decrements from 50", 50, 50, 0},
+		{"clamped at zero", 0, 50, 0},
+		{"partial decrement", 30, 50, 0},
+		{"exact decrement", 100, 50, 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &taskListModel{
+				pageOffset: tt.pageOffset,
+				pageSize:   tt.pageSize,
+			}
+			m.prevPage()
+			if m.pageOffset != tt.want {
+				t.Errorf("prevPage() offset = %d, want %d", m.pageOffset, tt.want)
+			}
+		})
+	}
+}
+
+// ── Error recovery tests (G7) ──
+
+func TestTaskListModel_ErrorRecovery_RetryOnAnyKey(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+			return []ports.Task{{ID: 1, Content: "recovered", Status: "pending"}}
+		},
+		CountTasksFunc: func(status string) int { return 1 },
+	}
+
+	m := &taskListModel{
+		ctx:      context.Background(),
+		provider: store,
+		err:      errors.New("transient failure"),
+		ready:    true,
+	}
+
+	// Press 'r' (any non-quit key)
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated := newModel.(*taskListModel)
+
+	if updated.err != nil {
+		t.Errorf("expected error to be cleared on retry, got %v", updated.err)
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil fetch cmd on retry")
+	}
+
+	msg := cmd()
+	tasksMsg, ok := msg.(tasksLoadedMsg)
+	if !ok {
+		t.Fatalf("expected tasksLoadedMsg, got %T", msg)
+	}
+	if tasksMsg.err != nil {
+		t.Fatalf("unexpected fetch error: %v", tasksMsg.err)
+	}
+	if len(tasksMsg.tasks) != 1 {
+		t.Errorf("expected 1 task on retry, got %d", len(tasksMsg.tasks))
+	}
+}
+
+func TestTaskListModel_ErrorRecovery_QuitKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		key  tea.KeyMsg
+	}{
+		{"q quits", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}},
+		{"esc quits", tea.KeyMsg{Type: tea.KeyEsc}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &taskListModel{
+				err:   errors.New("some error"),
+				ready: true,
+			}
+			_, cmd := m.Update(tt.key)
+			if cmd == nil {
+				t.Fatal("expected quit command")
+			}
+		})
+	}
+}
+
+func TestTaskListModel_ErrorRecovery_IgnoresNonKeyMsg(t *testing.T) {
+	m := &taskListModel{
+		err:   errors.New("some error"),
+		ready: true,
+	}
+
+	_, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+
+	if m.err == nil {
+		t.Error("expected error to persist for non-key messages")
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd for non-key messages in error state")
+	}
+}
+
+func TestTaskListModel_ErrorRecovery_ViewShowsRetryHint(t *testing.T) {
+	m := &taskListModel{
+		err:   errors.New("boom"),
+		ready: true,
+	}
+	view := m.View()
+	if !strings.Contains(view, "retry") {
+		t.Errorf("expected 'retry' hint in error view, got %q", view)
+	}
+	if !strings.Contains(view, "Error: boom") {
+		t.Errorf("expected error message in view, got %q", view)
+	}
+}
+
+// ── handleViewportUpdate nil-guard tests (G2) ──
+
+func TestTaskListModel_HandleViewportUpdate_NotReady(t *testing.T) {
+	m := &taskListModel{ready: false}
+
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	_ = newModel
+
+	if cmd != nil {
+		t.Error("expected nil cmd from handleViewportUpdate when not ready")
+	}
+}
+
+func TestTaskListModel_HandleViewportUpdate_Ready(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
+		CountTasksFunc: func(status string) int { return 0 },
+	}
+	m := newTaskListModel(context.Background(), store)
+	m.handleWindowSizeMsg(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	_ = cmd
+}
+
+// ── G6: Nil provider guard ──
+
+func TestNewTaskListModel_NilProvider(t *testing.T) {
+	m := newTaskListModel(context.Background(), nil)
+	if m.err == nil {
+		t.Fatal("expected error for nil provider")
+	}
+	if !strings.Contains(m.err.Error(), "not available") {
+		t.Errorf("expected 'not available' in error, got: %v", m.err)
+	}
+	m.ready = true
+	view := m.View()
+	if !strings.Contains(view, "Error:") {
+		t.Errorf("expected error in View, got %q", view)
+	}
+}
+
+func TestTaskListModel_Init_NilProvider(t *testing.T) {
+	m := newTaskListModel(context.Background(), nil)
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	msg := cmd()
+	tasksMsg, ok := msg.(tasksLoadedMsg)
+	if !ok {
+		t.Fatalf("expected tasksLoadedMsg, got %T", msg)
+	}
+	if tasksMsg.err == nil {
+		t.Fatal("expected error in tasksLoadedMsg")
+	}
+}
+
+// ── G5: Context cancellation in fetchTasksCmd ──
+
+func TestFetchTasksCmd_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	store := &mockTaskStore{
+		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+			t.Error("ListTasks should not be called")
+			return nil
+		},
+		CountTasksFunc: func(status string) int {
+			t.Error("CountTasks should not be called")
+			return 0
+		},
+	}
+	cmd := fetchTasksCmd(ctx, store, "", 0, 50)
+	msg := cmd()
+	tasksMsg := msg.(tasksLoadedMsg)
+	if tasksMsg.err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+}
+
+// ── G3: Unknown message handling ──
+
+func TestTaskListModel_Update_UnknownMessageNotReady(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
+		CountTasksFunc: func(status string) int { return 0 },
+	}
+	m := newTaskListModel(context.Background(), store)
+	_, cmd := m.Update(tea.BatchMsg{})
+	if cmd != nil {
+		t.Error("expected nil cmd when not ready")
+	}
+}
+
+func TestTaskListModel_Update_UnknownMessageReady(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
+		CountTasksFunc: func(status string) int { return 0 },
+	}
+	m := newTaskListModel(context.Background(), store)
+	m.ready = true
+	m.viewport = viewport.New(80, 24)
+	_, _ = m.Update(tea.BatchMsg{})
 }

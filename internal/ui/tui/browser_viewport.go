@@ -6,6 +6,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -26,7 +27,7 @@ func (m *rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 	if m.viewport.YOffset == 0 && !m.isLoading && m.cursor != "" && m.cursor != "EOF" && m.ready && !m.isSearching {
 		m.isLoading = true
 		m.updateViewportContent()
-		return m, tea.Batch(append(cmds, fetchHistoryCmd(m.provider, m.cursor))...)
+		return m, tea.Batch(append(cmds, fetchHistoryCmd(m.provider, m.cursor), refreshTimeoutCmd(30*time.Second))...)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -94,6 +95,7 @@ func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix strin
 		}
 
 		wrappedText = thoughtStyle.Width(maxWidth).Render(thoughtText)
+		m.cachedThoughts[dto.ID] = wrappedText
 	}
 
 	// Apply the dynamic prefix
