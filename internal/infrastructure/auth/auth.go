@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 // Package auth handles token management and authentication exclusively for Vertex AI.
+//
+// Coverage note: APIKeyAuth.Invalidate, BearerAuth.Invalidate, AnthropicAuth.Invalidate,
+// and noOpAuth.Invalidate are intentionally no-op bodies. They are called by production
+// code via the Authenticator interface and exercised by TestOtherAuthenticators,
+// TestNoOpAuth, and TestAuthInvalidate_Additional, but coverage instrumentation does
+// not count empty/no-op method bodies as covered. These are not error-handling gaps.
 package auth
 
 import (

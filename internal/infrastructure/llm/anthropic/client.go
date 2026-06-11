@@ -364,6 +364,13 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		}
 	}
 
+	// ADR-024 corollary (Issue #782): json.Marshal(reqPayload) cannot fail
+	// with the current messagesRequest type tree — every field resolves to
+	// strings, ints, or interface{} populated exclusively with JSON-safe
+	// types (json.RawMessage, string, map[string]interface{}, typed string-only
+	// structs). No float64 fields exist, so NaN/Inf cannot appear. The error
+	// branch below is defensive dead code that serves as a safety net if a
+	// future field addition introduces a marshal-unfriendly type.
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)

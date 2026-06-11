@@ -148,7 +148,7 @@ func TestHandleWatcherError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := m.handleWatcherError(tt.err, tt.ok)
-			// handleWatcherError always returns nil (errors are logged, swallowed)
+			// All subtests here return nil (below 3-error threshold)
 			if msg != nil {
 				t.Errorf("expected nil, got %T", msg)
 			}
@@ -316,5 +316,88 @@ func TestProcessWatcherEvents_ChannelClose(t *testing.T) {
 	msg := m.processWatcherEvents(watcher)
 	if msg != nil {
 		t.Errorf("expected nil msg for closed channel, got %T", msg)
+	}
+}
+
+// ── Watcher error handling hardening (G9 + G10) ──
+
+func TestWatchHistoryFileCmd_StatPermissionError(t *testing.T) {
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), nil, mockModifier)
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "no-perms")
+
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tmpDir, 0000); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(tmpDir, 0755) }()
+
+	mockModifier.GetFilePathFunc = func() string { return tmpFile }
+	cmd := m.watchHistoryFileCmd()
+	msg := cmd()
+
+	werr, ok := msg.(watcherErrorMsg)
+	if !ok {
+		t.Fatalf("expected watcherErrorMsg for permission error, got %T (value: %v)", msg, msg)
+	}
+	if !strings.Contains(werr.err.Error(), "stat history file") {
+		t.Errorf("expected 'stat history file', got: %v", werr.err)
+	}
+}
+
+func TestHandleWatcherError_ConsecutiveThreshold(t *testing.T) {
+	m := &rootBrowserModel{}
+
+	// Error 1 — swallowed
+	msg := m.handleWatcherError(errors.New("error 1"), true)
+	if msg != nil {
+		t.Errorf("expected nil for 1st error, got %T", msg)
+	}
+	if m.watcherErrorCount != 1 {
+		t.Errorf("expected 1, got %d", m.watcherErrorCount)
+	}
+
+	// Error 2 — swallowed
+	msg = m.handleWatcherError(errors.New("error 2"), true)
+	if msg != nil {
+		t.Errorf("expected nil for 2nd error, got %T", msg)
+	}
+
+	// Error 3 — surfaced
+	msg = m.handleWatcherError(errors.New("error 3"), true)
+	werr, ok := msg.(watcherErrorMsg)
+	if !ok {
+		t.Fatalf("expected watcherErrorMsg on 3rd error, got %T", msg)
+	}
+	if !strings.Contains(werr.err.Error(), "failed after 3 errors") {
+		t.Errorf("expected 'failed after 3 errors', got: %v", werr.err)
+	}
+}
+
+func TestHandleWatcherError_ResetAfterSuccess(t *testing.T) {
+	m := &rootBrowserModel{watcherErrorCount: 5}
+
+	msg := m.handleWatcherEvent(fsnotify.Event{Op: fsnotify.Write}, true)
+	if _, ok := msg.(fileChangedMsg); !ok {
+		t.Errorf("expected fileChangedMsg, got %T", msg)
+	}
+	if m.watcherErrorCount != 0 {
+		t.Errorf("expected reset to 0, got %d", m.watcherErrorCount)
+	}
+}
+
+func TestHandleWatcherError_ChannelClosedResetsNothing(t *testing.T) {
+	m := &rootBrowserModel{watcherErrorCount: 2}
+
+	msg := m.handleWatcherError(nil, false)
+	if msg != nil {
+		t.Errorf("expected nil for closed channel, got %T", msg)
+	}
+	if m.watcherErrorCount != 2 {
+		t.Errorf("expected unchanged at 2, got %d", m.watcherErrorCount)
 	}
 }

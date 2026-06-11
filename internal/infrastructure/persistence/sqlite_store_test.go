@@ -3,15 +3,18 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 func setupSQLite(t *testing.T) *sql.DB {
@@ -437,6 +440,12 @@ func TestSQLiteKVStore_GetAll_ScanError(t *testing.T) {
 // and L (Update ExecContext error).
 // =============================================================================
 
+// NOTE: The rows.Close() defer error-shadowing in queryOrdered (lines 140-143)
+// and the rows.Err() check (lines 158-160), plus the analogous branches in
+// GetAll (lines 251-254, 263-265), are defensive branches unreachable with
+// modernc.org/sqlite — see the comment in sqlite_store.go for details.
+// These branches are verified by code review. No test coverage is possible.
+
 func TestSQLiteTaskStore_ErrorPaths(t *testing.T) {
 	t.Parallel()
 
@@ -446,7 +455,9 @@ func TestSQLiteTaskStore_ErrorPaths(t *testing.T) {
 	// buffers query results. Closing the DB mid-iteration does not cause
 	// rows.Scan or rows.Close to fail. The defer shadowing logic is verified
 	// via code review. This test instead validates the QueryContext error
-	// path, which is the first error branch in ReadAll.
+	// path, which is the first error branch in ReadAll (ASC/active tasks).
+	// The DESC (completed tasks) error path from ReadAll is covered by the
+	// "ReadAll/DescQueryError" subtest below.
 	t.Run("ReadAll/DBClosed", func(t *testing.T) {
 		t.Parallel()
 
@@ -621,6 +632,63 @@ func TestSQLiteTaskStore_ErrorPaths(t *testing.T) {
 		err = store.Update(context.Background(), 1, task)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "updating task 1")
+	})
+
+	// --- Scenario M: Count with closed DB (QueryRowContext error) ---
+	t.Run("Count/ClosedDB", func(t *testing.T) {
+		t.Parallel()
+
+		dbPath := filepath.Join(t.TempDir(), "count_closed.db")
+		db, err := sql.Open("sqlite", dbPath)
+		require.NoError(t, err)
+
+		_, err = db.Exec(`CREATE TABLE tasks (
+			id INTEGER PRIMARY KEY,
+			content TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			created_at TEXT NOT NULL
+		)`)
+		require.NoError(t, err)
+
+		store := newSQLiteTaskStore(db)
+		_ = db.Close()
+
+		count, err := store.Count(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "counting tasks")
+		assert.Equal(t, 0, count)
+	})
+
+	// --- Scenario A2: ReadAll DESC (completed tasks) query failure ---
+	// Uses a driver-wrapper connector that lets the first QueryContext (ASC,
+	// active tasks) succeed but makes the second QueryContext (DESC, completed
+	// tasks) fail deterministically with an injected error.
+	t.Run("ReadAll/DescQueryError", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "desc_readall_error.db")
+
+		// Pre-create the database with the tasks table using the normal driver.
+		setupDB, err := sql.Open("sqlite", dbPath)
+		require.NoError(t, err)
+		_, err = setupDB.Exec(`CREATE TABLE tasks (
+			id INTEGER PRIMARY KEY,
+			content TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			created_at TEXT NOT NULL
+		)`)
+		require.NoError(t, err)
+		_ = setupDB.Close()
+
+		// Reopen with the wrapped connector that fails on the second QueryContext.
+		var queryCount atomic.Int32
+		db := sql.OpenDB(&descQueryFailingConnector{
+			dbPath:     dbPath,
+			queryCount: &queryCount,
+		})
+		t.Cleanup(func() { _ = db.Close() })
+		store := newSQLiteTaskStore(db)
+		_, err = store.ReadAll(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "querying completed tasks")
 	})
 
 	// --- Bonus: Delete with closed DB ---
@@ -1137,4 +1205,71 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 	t.Run("offset_beyond_total", func(t *testing.T) { testTaskStoreQueryOffsetBeyondTotal(t, store) })
 	t.Run("count_accurate", func(t *testing.T) { testTaskStoreQueryCountAccurate(t, store) })
 	t.Run("readall_bounded", func(t *testing.T) { testTaskStoreQueryReadallBounded(t, store) })
+}
+
+// =============================================================================
+// descQueryFailingConnector — deterministic driver wrapper for testing the DESC
+// (completed tasks) query failure path in ReadAll. The first QueryContext (ASC)
+// succeeds; the second QueryContext (DESC) returns an injected error.
+// =============================================================================
+
+var sqliteDriver = &sqlite.Driver{}
+
+type descQueryFailingConnector struct {
+	dbPath     string
+	queryCount *atomic.Int32
+}
+
+func (c *descQueryFailingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	realConn, err := sqliteDriver.Open(c.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	return &descQueryFailingConn{
+		conn:       realConn,
+		queryCount: c.queryCount,
+	}, nil
+}
+
+func (c *descQueryFailingConnector) Driver() driver.Driver {
+	return sqliteDriver
+}
+
+type descQueryFailingConn struct {
+	conn       driver.Conn
+	queryCount *atomic.Int32
+}
+
+func (c *descQueryFailingConn) Prepare(query string) (driver.Stmt, error) {
+	return c.conn.Prepare(query)
+}
+func (c *descQueryFailingConn) Close() error { return c.conn.Close() }
+func (c *descQueryFailingConn) Begin() (driver.Tx, error) {
+	return c.BeginTx(context.Background(), driver.TxOptions{})
+}
+
+func (c *descQueryFailingConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if bc, ok := c.conn.(driver.ConnBeginTx); ok {
+		return bc.BeginTx(ctx, opts)
+	}
+	// Fallback for drivers that don't implement ConnBeginTx.
+	return c.conn.Begin() //nolint:staticcheck // SA1019: fallback for older drivers
+}
+
+func (c *descQueryFailingConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	n := c.queryCount.Add(1)
+	if n == 2 {
+		return nil, errors.New("injected DESC query failure")
+	}
+	if qc, ok := c.conn.(driver.QueryerContext); ok {
+		return qc.QueryContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+func (c *descQueryFailingConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if ec, ok := c.conn.(driver.ExecerContext); ok {
+		return ec.ExecContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
 }

@@ -308,21 +308,19 @@ func (e *Dispatcher) Execute(ctx context.Context, respContent *llm.Content, turn
 		if ctx.Err() != nil {
 			return e.AssembleResponse(calls, results), ctx.Err()
 		}
-
-		if errors.Is(waitErr, llm.ErrTerminal) {
-			return e.AssembleResponse(calls, results), waitErr
-		}
-
-		waitErr = nil
-	} else {
-		e.logger.Debug("Tool execution turn completed",
-			"turn", turn,
-			"tool_calls", len(calls),
-			"duration_ms", duration.Milliseconds(),
-		)
+		// Both terminal and non-terminal errors propagate.
+		// The caller (engine ExecutionStep) classifies via IsTransient/IsTerminal
+		// and decides retry vs abort.
+		return e.AssembleResponse(calls, results), waitErr
 	}
 
-	return e.AssembleResponse(calls, results), waitErr
+	e.logger.Debug("Tool execution turn completed",
+		"turn", turn,
+		"tool_calls", len(calls),
+		"duration_ms", duration.Milliseconds(),
+	)
+
+	return e.AssembleResponse(calls, results), nil
 }
 
 func (e *Dispatcher) extractFunctionCalls(respContent *llm.Content) []*llm.FunctionCall {
@@ -470,6 +468,16 @@ func (e *Dispatcher) executeParallelBatch(ctx context.Context, batch taskBatch, 
 		defer func() {
 			if r := recover(); r != nil {
 				e.logger.Error("panic in fan-in wait goroutine", "panic", r, "stack", string(debug.Stack()))
+				// Propagate the panic as an error through resultsCh so the caller sees it.
+				// Use index -1 sentinel (same pattern as parallelWorker cancellation).
+				resultsCh <- toolExecResult{
+					index: -1,
+					name:  "fan_in_panic",
+					tr: tools.ToolResult{
+						Text:  fmt.Sprintf("internal error: fan-in panic: %v", r),
+						Error: fmt.Errorf("%w: fan-in panic: %v", llm.ErrTerminal, r),
+					},
+				}
 			}
 			close(resultsCh)
 		}()
@@ -525,7 +533,10 @@ func (e *Dispatcher) parallelWorker(ctx context.Context, calls []*llm.FunctionCa
 func (e *Dispatcher) handleBatchResults(ctx context.Context, resultsCh <-chan toolExecResult, results []tools.ToolResult, planErrors []error) []error {
 	for res := range resultsCh {
 		if res.index == -1 {
-			// cancellation signal
+			// cancellation signal: extract the error for propagation
+			if res.tr.Error != nil {
+				planErrors = append(planErrors, res.tr.Error)
+			}
 			continue
 		}
 		results[res.index] = res.tr

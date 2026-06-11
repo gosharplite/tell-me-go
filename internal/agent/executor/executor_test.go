@@ -817,6 +817,58 @@ func TestDispatcher_Execute_ErrTerminal_PropagatesErrorWithResponse(t *testing.T
 	assert.True(t, errors.Is(execErr, llm.ErrTerminal), "error should be ErrTerminal")
 }
 
+func TestDispatcher_Execute_NonTerminalError_Propagates(t *testing.T) {
+	t.Parallel()
+
+	// Define a sentinel error that is NOT terminal.
+	errDiskFull := errors.New("disk full")
+
+	mock := &mockToolPipeline{
+		IsSerialFunc: func(n string) bool { return false },
+		ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+			return tools.ToolResult{
+				Text:  "write failed",
+				Error: fmt.Errorf("tool failure: %w", errDiskFull),
+			}
+		},
+		RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+			return ctx, nil
+		},
+	}
+
+	cfg := dispatcherConfig{
+		MaxConcurrentTools: 5,
+		ToolTimeout:        30 * time.Second,
+	}
+	cfg.applyDefaults()
+
+	d := &Dispatcher{
+		pipeline: mock,
+		logger:   &ports.NoOpLogger{},
+		strategy: &markdownStrategy{},
+	}
+	d.state.Store(&dispatcherState{config: cfg})
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "write_file"}},
+		},
+	}
+
+	result, execErr := d.Execute(context.Background(), respContent, 0, 10)
+
+	// The assembled response must still be returned (with per-tool error details).
+	assert.NotNil(t, result, "result should be the assembled response")
+	assert.NotEmpty(t, result.Parts, "result should have at least one part")
+
+	// The function-level error must be non-nil — non-terminal errors propagate.
+	assert.Error(t, execErr, "non-terminal error must propagate from Execute()")
+
+	// errors.Is must be able to unwrap through errors.Join to find the sentinel.
+	assert.True(t, errors.Is(execErr, errDiskFull),
+		"errors.Is should match the wrapped non-terminal sentinel error")
+}
+
 func TestSuggestTool(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -1019,4 +1071,23 @@ func TestAssembleResponse_NoBinaryData(t *testing.T) {
 	assert.Len(t, result.Parts, 1, "no InlineData parts when BinaryData is empty")
 	assert.NotNil(t, result.Parts[0].FunctionResponse)
 	assert.Nil(t, result.Parts[0].InlineData)
+}
+
+func TestHandleBatchResults_ContextCancellation_Propagates(t *testing.T) {
+	t.Parallel()
+
+	e := &Dispatcher{strategy: &markdownStrategy{}}
+	resultsCh := make(chan toolExecResult, 1)
+	resultsCh <- toolExecResult{
+		index: -1,
+		name:  "context_cancelled",
+		tr:    tools.ToolResult{Text: "skipped: context cancelled", Error: context.Canceled},
+	}
+	close(resultsCh)
+
+	results := make([]tools.ToolResult, 1)
+	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+
+	require.Len(t, planErrors, 1)
+	assert.ErrorIs(t, planErrors[0], context.Canceled)
 }

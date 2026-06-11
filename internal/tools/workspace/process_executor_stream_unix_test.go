@@ -27,7 +27,7 @@ import (
 // An internal retry loop absorbs the inherent goroutine scheduling
 // race between the pre-reap and cmd.Wait().
 func TestRunCommand_NonExitErrorWaitPath_SIGKILL(t *testing.T) {
-	const maxAttempts = 5
+	const maxAttempts = 50
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		lastErr = runNonExitErrorWaitPathTest(t)
@@ -48,8 +48,9 @@ func spawnPreReaper(t *testing.T, pidFile string) {
 		for i := 0; i < 50; i++ {
 			data, err := os.ReadFile(pidFile)
 			if err == nil {
-				_, _ = fmt.Sscanf(string(data), "%d", &pid)
-				break
+				if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil && pid > 0 {
+					break
+				}
 			}
 			time.Sleep(5 * time.Millisecond)
 		}

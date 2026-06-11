@@ -35,6 +35,15 @@ func (m *mockBaseCapturer) ReadLine(ctx context.Context) (string, error)      { 
 func (m *mockBaseCapturer) ReadSingleKey(ctx context.Context) (string, error) { return "", nil }
 func (m *mockBaseCapturer) Close(ctx context.Context) error                   { return nil }
 
+// mockBaseCapturerWithCloseError returns an error from Close.
+type mockBaseCapturerWithCloseError struct {
+	mockBaseCapturer
+}
+
+func (m *mockBaseCapturerWithCloseError) Close(ctx context.Context) error {
+	return errors.New("base close failed")
+}
+
 type mockSuggestionService struct {
 	recordedPrompts []string
 }
@@ -48,6 +57,15 @@ func (m *mockSuggestionService) RecordPrompt(ctx context.Context, prompt string)
 }
 func (m *mockSuggestionService) Close(ctx context.Context) error {
 	return nil
+}
+
+// mockSuggestionServiceWithRecordError returns an error from RecordPrompt.
+type mockSuggestionServiceWithRecordError struct {
+	mockSuggestionService
+}
+
+func (m *mockSuggestionServiceWithRecordError) RecordPrompt(ctx context.Context, prompt string) error {
+	return errors.New("record failed")
 }
 
 func TestPromptCapturer_CapturePrompt_Fallback(t *testing.T) {
@@ -287,5 +305,47 @@ func TestRunTUI_ProvidesFeedback(t *testing.T) {
 	}
 	if result != "test prompt" {
 		t.Errorf("expected 'test prompt', got %q", result)
+	}
+}
+
+func TestPromptCapturer_ProvideFeedback_Empty(t *testing.T) {
+	base := &mockBaseCapturer{}
+	svc := &mockSuggestionService{}
+	capturer := NewPromptCapturer(base, svc)
+
+	// Calling provideFeedback with empty string should be a no-op
+	capturer.provideFeedback(context.Background(), "")
+
+	// Verify no RecordPrompt call was made
+	if len(svc.recordedPrompts) != 0 {
+		t.Errorf("expected 0 recorded prompts for empty input, got %d: %v", len(svc.recordedPrompts), svc.recordedPrompts)
+	}
+}
+
+func TestPromptCapturer_ProvideFeedback_RecordError(t *testing.T) {
+	base := &mockBaseCapturer{}
+	svc := &mockSuggestionServiceWithRecordError{}
+	capturer := NewPromptCapturer(base, svc)
+
+	// Calling provideFeedback with non-empty prompt when RecordPrompt fails
+	// should NOT panic — the error is logged, not propagated.
+	capturer.provideFeedback(context.Background(), "hello world")
+
+	// The error path is fire-and-forget; the function returns normally.
+	// No assertion needed on the log output — just verifying no panic.
+}
+
+func TestPromptCapturer_Close_BaseError(t *testing.T) {
+	base := &mockBaseCapturerWithCloseError{}
+	svc := &mockSuggestionService{}
+	capturer := NewPromptCapturer(base, svc)
+
+	err := capturer.Close(context.Background())
+
+	if err == nil {
+		t.Fatal("expected error from Close when base.Close fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "base close failed") {
+		t.Errorf("expected error to contain 'base close failed', got: %v", err)
 	}
 }

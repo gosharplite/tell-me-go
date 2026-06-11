@@ -96,7 +96,7 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 		thStr = fmt.Sprintf(" Th: %d", m.ThinkingTokens)
 	}
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d%s%s %s[%s]%s\n",
+	writeBestEffort(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d%s%s %s[%s]%s\n",
 		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, thStr, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
 }
 
@@ -196,7 +196,7 @@ func (r *stdUIRenderer) renderThoughtLocked(ui uiState, part *llm.Part, showThou
 		}
 
 		sanitized := sanitizeForTerminal(part.Text)
-		_, _ = fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
+		writeBestEffort(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
 	}
 }
 
@@ -204,7 +204,7 @@ func (r *stdUIRenderer) renderInlineDataLocked(ui uiState, part *llm.Part) {
 	if part.InlineData != nil {
 		ts := ui.getTimestamp()
 		stderr := ui.stderr
-		_, _ = fmt.Fprintf(stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
+		writeBestEffort(stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
 			ui.c(colorGray), ts, part.InlineData.MIMEType, len(part.InlineData.Data), ui.c(colorReset))
 	}
 }
@@ -242,11 +242,15 @@ func (r *stdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 
 	data, err := json.Marshal(m)
 	if err != nil {
+		r.LogSystemMessage(ctx,
+			fmt.Sprintf("failed to marshal usage metrics: %v", err), "warn")
 		return
 	}
 
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		r.LogSystemMessage(ctx,
+			fmt.Sprintf("failed to open usage log %s: %v", logFile, err), "warn")
 		return
 	}
 	defer func() {
@@ -298,7 +302,7 @@ func (r *stdUIRenderer) metrics_logToolReason(ui uiState, fc *llm.FunctionCall, 
 	if !ok || reason == "" {
 		return
 	}
-	_, _ = fmt.Fprintf(ui.stderr, "%s[%s] [Tool Reason] %s%s\n",
+	writeBestEffort(ui.stderr, "%s[%s] [Tool Reason] %s%s\n",
 		ui.c(colorGray), ts, reason, ui.c(colorReset))
 }
 
@@ -315,14 +319,14 @@ func (r *stdUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCa
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
-	_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Engine] Step %d/%d%s\n", ui.c(termClearLine),
+	writeBestEffort(stderr, "\r%s%s[%s] [Tool Engine] Step %d/%d%s\n", ui.c(termClearLine),
 		ui.c(colorCyan), ts, turn+1, maxTurns, ui.c(colorReset))
 
 	if showTools {
 		for _, fc := range calls {
 			r.metrics_logToolReason(ui, fc, ts)
 
-			_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
+			writeBestEffort(stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
 				ui.c(colorMagenta), ts, fc.Name, metrics_formatToolCallArgLine(fc.Args), ui.c(colorReset))
 		}
 	}
@@ -351,11 +355,11 @@ func (r *stdUIRenderer) LogToolResult(ctx context.Context, name string, result t
 			snippet = snippet[:197] + "..."
 		}
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
-		_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Result] %s: %s%s\n", ui.c(termClearLine), ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
+		writeBestEffort(stderr, "\r%s%s[%s] [Tool Result] %s: %s%s\n", ui.c(termClearLine), ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
 	}
 
 	for _, b := range result.BinaryData {
-		_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n", ui.c(termClearLine),
+		writeBestEffort(stderr, "\r%s%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n", ui.c(termClearLine),
 			ui.c(colorCyan), timestamp, name, b.MIMEType, len(b.Data), ui.c(colorReset))
 	}
 
@@ -390,7 +394,7 @@ func (r *stdUIRenderer) LogSystemMessage(ctx context.Context, msg string, level 
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
-	_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [%s] %s%s\n", ui.c(termClearLine),
+	writeBestEffort(stderr, "\r%s%s[%s] [%s] %s%s\n", ui.c(termClearLine),
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }
 
@@ -402,12 +406,12 @@ func (r *stdUIRenderer) renderTurnHeader(ui uiState, status events.TurnStatus) {
 		modeStr = fmt.Sprintf(" - %s", status.Mode)
 	}
 
-	_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
+	writeBestEffort(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 
 	if status.MaxHistoryTurns > 0 {
-		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, modeStr, ui.c(colorGray))
+		writeBestEffort(stderr, "%s╭─⠿ %sTurn %d/%d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, modeStr, ui.c(colorGray))
 	} else {
-		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, modeStr, ui.c(colorGray))
+		writeBestEffort(stderr, "%s╭─⠿ %sTurn %d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, modeStr, ui.c(colorGray))
 	}
 
 	r.printTokenLine(ui, timestamp, status.Tokens, status.MaxHistoryTokens, false, status.Mode)
@@ -421,7 +425,7 @@ func (r *stdUIRenderer) renderPostCallStatus(ui uiState, status events.TurnStatu
 
 	if len(status.ToolReasons) > 0 {
 		for _, reason := range status.ToolReasons {
-			_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
+			writeBestEffort(stderr, "%s[%s] [Tool Reason] %s%s\n",
 				ui.c(colorGray), timestamp, reason, ui.c(colorReset))
 		}
 	}

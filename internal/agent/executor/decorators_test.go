@@ -418,3 +418,44 @@ func TestMonitorLiveness_HeartbeatDropOnFullChannel(t *testing.T) {
 	// Drain the pre-filled value to prevent goroutine leak warnings
 	<-heartbeat
 }
+
+// TestHandlePanic_EventBusError_Logged verifies that when SafePublish fails,
+// the error is logged at Error level and the ToolResult still contains ErrTerminal.
+func TestHandlePanic_EventBusError_Logged(t *testing.T) {
+	t.Parallel()
+
+	logger := &capturingLogger{}
+	bus := &errorEventBus{err: errors.New("channel full")}
+
+	decorator := &safetyDecorator{
+		logger: logger,
+		events: bus,
+	}
+
+	result := decorator.handlePanic(context.Background(), "test panic", "panic_tool")
+
+	// ToolResult must still contain ErrTerminal
+	assert.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, llm.ErrTerminal),
+		"expected error to wrap llm.ErrTerminal")
+	assert.Contains(t, result.Text, "panic_tool")
+	assert.Contains(t, result.Text, "internal fatal error")
+
+	// Logger must have captured the publish failure
+	assert.True(t, logger.errorCalled, "Expected Error to be called on logger")
+	assert.Equal(t, "failed to publish panic event", logger.lastMsg)
+
+	// Check attributes
+	attrs := make(map[string]any)
+	for i := 0; i < len(logger.lastArgs); i += 2 {
+		if i+1 < len(logger.lastArgs) {
+			key, ok := logger.lastArgs[i].(string)
+			if ok {
+				attrs[key] = logger.lastArgs[i+1]
+			}
+		}
+	}
+
+	assert.Equal(t, "panic_tool", attrs["tool_name"])
+	assert.ErrorContains(t, attrs["error"].(error), "channel full")
+}

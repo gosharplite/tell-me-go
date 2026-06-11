@@ -35,13 +35,14 @@ func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 	}
 	for _, p := range pragmas {
 		if _, err := db.ExecContext(ctx, p); err != nil {
+			_ = db.Close()
 			return nil, fmt.Errorf("failed to set pragma %q: %w", p, err)
 		}
 	}
 
 	// Run schema migrations
-	err = createTables(ctx, db)
-	if err != nil {
+	if err := createTables(ctx, db); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
@@ -103,6 +104,10 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 	if err != nil {
 		return err
 	}
+	// NOTE: The deferred Rollback below logs a warning on unexpected rollback
+	// failures. This branch is untestable — Commit() causes Rollback to return
+	// sql.ErrTxDone (suppressed), and a dead connection would abort the test.
+	// Verified by code review. No test coverage is possible.
 	defer func() {
 		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
 			logger.Warn("failed to rollback migration transaction", "error", rbErr)

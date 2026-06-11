@@ -5,6 +5,7 @@ package executor_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +94,8 @@ func TestIntegration_DecoratorKillsProcess(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// 6. Verify actual termination via elapsed time
-	require.NoError(t, err, "dispatcher itself shouldn't fail fatally")
+	require.Error(t, err, "timeout should propagate as error from dispatcher")
+	require.True(t, errors.Is(err, llm.ErrTransient) || errors.Is(err, context.DeadlineExceeded))
 	require.Less(t, elapsed, 3*time.Second, "Execution was not terminated by the decorator's context")
 
 	// 7. Verify domain boundary (Error translation via string content and events)
@@ -156,7 +158,8 @@ func TestIntegration_DecoratorKillsPipeline(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// 6. Verify actual termination via elapsed time
-	require.NoError(t, err, "dispatcher itself shouldn't fail fatally")
+	require.Error(t, err, "timeout should propagate as error from dispatcher")
+	require.True(t, errors.Is(err, llm.ErrTransient) || errors.Is(err, context.DeadlineExceeded))
 	require.Less(t, elapsed, 3*time.Second, "Execution was not terminated by the decorator's context")
 
 	// 7. Verify domain boundary (Error translation)

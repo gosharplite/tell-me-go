@@ -728,3 +728,33 @@ func TestNewPolicyTool_ValidationErrors(t *testing.T) {
 		}
 	})
 }
+
+// TestRegisterPolicyTools_NilKV exercises the newPolicyTool → "KVStore dependency
+// is required" error path through the RegisterPolicyTools call chain (not through
+// a direct newPolicyTool call). The existing TestNewPolicyTool_ValidationErrors
+// tests newPolicyTool directly, but the call site at policy.go:415-417
+// (p, err := newPolicyTool(sm, kv); err != nil { return err }) may form a
+// distinct coverage block that can only be hit via RegisterPolicyTools.
+func TestRegisterPolicyTools_NilKV(t *testing.T) {
+	t.Parallel()
+	sm := NewSecurityManager(nil)
+	r := registry.New()
+
+	err := sm.RegisterPolicyTools(r, nil)
+	if err == nil {
+		t.Error("expected error for nil KVStore in RegisterPolicyTools")
+	}
+	if !strings.Contains(err.Error(), "KVStore") {
+		t.Errorf("expected KVStore error, got: %v", err)
+	}
+}
+
+// TestRegisterPolicyTools_NilSecurityManager documents that the nil-SM path
+// through RegisterPolicyTools is unreachable at the source level. You cannot
+// call sm.RegisterPolicyTools() on a nil receiver — Go would panic on the
+// nil-pointer dereference before reaching newPolicyTool. The nil-SM error
+// path is covered by TestNewPolicyTool_ValidationErrors via direct call.
+func TestRegisterPolicyTools_NilSecurityManager(t *testing.T) {
+	t.Parallel()
+	t.Skip("[UNREACHABLE] nil SecurityManager cannot be exercised through RegisterPolicyTools — sm must exist to call its method; the nil-SM error path is covered by TestNewPolicyTool_ValidationErrors")
+}

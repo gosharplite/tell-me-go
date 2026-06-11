@@ -323,6 +323,10 @@ func TestMigrateFromJSON_MigrateTasksError(t *testing.T) {
 	}
 }
 
+// NOTE: The tx.Rollback() defer warning branch in migrateTasks (lines 107-109
+// in sqlite_db.go) is defensive and unreachable in tests — Commit() makes
+// Rollback return sql.ErrTxDone, and a dead connection aborts the test.
+// Verified by code review. See comment in sqlite_db.go.
 func TestMigrateTasks_TxBeginFailure(t *testing.T) {
 	t.Parallel()
 
@@ -423,10 +427,8 @@ func TestMigrateTasks_EmptyTasksArray(t *testing.T) {
 // =============================================================================
 
 func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
-	t.Parallel()
 
 	t.Run("sqlOpen_failure", func(t *testing.T) {
-		t.Parallel()
 
 		origOpen := sqlOpenFn
 		t.Cleanup(func() { sqlOpenFn = origOpen })
@@ -442,7 +444,6 @@ func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("createTables_failure", func(t *testing.T) {
-		t.Parallel()
 
 		db, err := sql.Open("sqlite", ":memory:")
 		require.NoError(t, err)
@@ -457,8 +458,33 @@ func TestInitSQLiteDB_ErrorPaths(t *testing.T) {
 		assert.Contains(t, err.Error(), "executing schema query")
 	})
 
+	t.Run("initSQLiteDB_createTables_failure", func(t *testing.T) {
+
+		dbPath := filepath.Join(t.TempDir(), "createtables_fail.db")
+		origOpen := sqlOpenFn
+		t.Cleanup(func() { sqlOpenFn = origOpen })
+		sqlOpenFn = func(driverName, dsn string) (*sql.DB, error) {
+			db, err := sql.Open(driverName, dsn)
+			if err != nil {
+				return nil, err
+			}
+			// Enable query_only mode before returning the handle.
+			// Pragmas (journal_mode, busy_timeout) are connection-level
+			// settings and still succeed, but CREATE TABLE is a schema
+			// modification which is rejected in query_only mode.
+			// This deterministically triggers the createTables error path.
+			if _, err := db.Exec("PRAGMA query_only = 1"); err != nil {
+				_ = db.Close()
+				return nil, err
+			}
+			return db, nil
+		}
+		_, err := initSQLiteDB(context.Background(), dbPath)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create tables")
+	})
+
 	t.Run("executeBatchInsert_failure", func(t *testing.T) {
-		t.Parallel()
 
 		db, err := sql.Open("sqlite", ":memory:")
 		require.NoError(t, err)

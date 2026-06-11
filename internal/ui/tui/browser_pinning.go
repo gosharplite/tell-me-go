@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -109,26 +110,38 @@ func (m *rootBrowserModel) togglePin() {
 		return
 	}
 
-	// Toggle pin state
 	err := m.cmdService.SetPinned(context.Background(), turnIdx, !dto.IsPinned)
 	if err != nil {
 		m.err = err
 		return
 	}
 
-	m.updateLocalPinState(dto, !dto.IsPinned)
+	updated := m.updateLocalPinState(dto, !dto.IsPinned)
+	if !updated {
+		// Local state couldn't be updated — full refresh needed.
+		m.history = nil
+		m.cursor = ""
+		m.selectedTurn = -1
+		m.isLoading = true
+		m.lastMutationTime = time.Now()
+		return
+	}
+
 	m.lastMutationTime = time.Now()
 	m.updateViewportContent()
 	m.updateViewportHeight()
 }
 
-func (m *rootBrowserModel) updateLocalPinState(dto ports.HistoryViewDTO, newPinState bool) {
+func (m *rootBrowserModel) updateLocalPinState(dto ports.HistoryViewDTO, newPinState bool) bool {
 	turnStartIdx := m.getTurnStartOriginalIndex(dto)
+	updated := false
 	for idx := range m.history {
 		if !m.history[idx].IsArchived && m.getTurnStartOriginalIndex(m.history[idx]) == turnStartIdx {
 			m.history[idx].IsPinned = newPinState
+			updated = true
 		}
 	}
+	return updated
 }
 
 func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
@@ -138,6 +151,7 @@ func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
 
 	dto := m.history[m.selectedTurn]
 	if dto.IsArchived {
+		m.err = fmt.Errorf("cannot rollback: turn %d is archived and read-only", m.getTurnIndex(dto)+1)
 		return nil
 	}
 
@@ -168,5 +182,15 @@ func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
 	m.cursor = ""
 	m.selectedTurn = -1
 	m.isLoading = true
-	return fetchHistoryCmd(m.provider, "")
+	return tea.Batch(
+		fetchHistoryCmd(m.provider, ""),
+		refreshTimeoutCmd(30*time.Second),
+	)
+}
+
+func refreshTimeoutCmd(d time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(d)
+		return historyLoadedMsg{err: fmt.Errorf("refresh timed out after %v", d)}
+	}
 }

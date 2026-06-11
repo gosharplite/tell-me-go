@@ -109,17 +109,37 @@ func runCommandWithEnvInDirEx(dir string, env []string, stdin string, injectConf
 
 	var finalArgs []string
 	if injectConfig {
-		// Ensure absolute path to default config
-		configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs", "assistant.yaml"))
-		// Prepend config flag to ensure it's always set to a valid location
-		finalArgs = append([]string{configFlag}, args...)
+		// Only inject the default config if the caller didn't already pass -c
+		hasConfigFlag := false
+		for _, a := range args {
+			if strings.HasPrefix(a, "-c=") || a == "-c" || a == "--config" {
+				hasConfigFlag = true
+				break
+			}
+		}
+		if !hasConfigFlag {
+			// Ensure absolute path to default config
+			configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs", "assistant.yaml"))
+			// Prepend config flag to ensure it's always set to a valid location
+			finalArgs = append([]string{configFlag}, args...)
+		} else {
+			finalArgs = args
+		}
 	} else {
 		finalArgs = args
 	}
 
 	cmd := exec.CommandContext(ctx, binPath, finalArgs...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+
+	// Filter out host-specific TELL_ME_* vars to prevent ambient config pollution
+	var cleanEnv []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "TELL_ME_") {
+			cleanEnv = append(cleanEnv, e)
+		}
+	}
+	cmd.Env = append(cleanEnv, env...)
 	cmd.Env = append(cmd.Env, "GEMINI_API_KEY=dummy", "TELL_ME_FAST_RETRY=1")
 
 	// If a mock server is spun up, TELL_ME_MOCK_URL might be needed by gemini.go

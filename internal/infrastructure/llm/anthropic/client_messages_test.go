@@ -6,6 +6,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -302,6 +303,20 @@ func TestPartToContentBlock(t *testing.T) {
 			wantType: "text",
 			wantOk:   true,
 			wantErr:  false,
+		},
+		{
+			name: "FunctionCall - args with NaN causes marshal error",
+			part: &llm.Part{
+				FunctionCall: &llm.FunctionCall{
+					ID:   "call_nan",
+					Name: "bad_tool",
+					Args: map[string]interface{}{"value": math.NaN()},
+				},
+			},
+			role:        "assistant",
+			wantOk:      false,
+			wantErr:     true,
+			errContains: "NaN",
 		},
 		{
 			name:    "Empty part",

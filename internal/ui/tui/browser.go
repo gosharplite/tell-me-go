@@ -72,7 +72,9 @@ type rootBrowserModel struct {
 	lastQuery      string
 
 	// watcherFactory allows tests to inject a failing watcher constructor.
-	watcherFactory func() (*fsnotify.Watcher, error)
+	watcherFactory    func() (*fsnotify.Watcher, error)
+	watcherErrorCount int // consecutive watcher error count for threshold alerting
+	watcherRestarting bool
 }
 
 // NewRootBrowserModel creates a new history browser root model.
@@ -110,8 +112,12 @@ func (m *rootBrowserModel) watchHistoryFileCmd() tea.Cmd {
 			return nil
 		}
 		// Check if file exists to avoid watcher error
-		if _, err := os.Stat(filepath); os.IsNotExist(err) {
-			return nil
+		if _, err := os.Stat(filepath); err != nil {
+			if os.IsNotExist(err) {
+				return nil // file not created yet, silently skip
+			}
+			log.Printf("cannot stat history file %s: %v", filepath, err)
+			return watcherErrorMsg{err: fmt.Errorf("stat history file: %w", err)}
 		}
 
 		watcher, err := m.watcherFactory()
@@ -119,6 +125,7 @@ func (m *rootBrowserModel) watchHistoryFileCmd() tea.Cmd {
 			log.Printf("failed to create history file watcher: %v", err)
 			return watcherErrorMsg{err: fmt.Errorf("create watcher: %w", err)}
 		}
+		m.watcherErrorCount = 0 // reset on new watcher
 		defer func() { _ = watcher.Close() }()
 
 		if err := watcher.Add(filepath); err != nil {
@@ -145,6 +152,7 @@ func (m *rootBrowserModel) handleWatcherEvent(event fsnotify.Event, ok bool) tea
 	if !ok {
 		return nil
 	}
+	m.watcherErrorCount = 0 // reset consecutive error counter on successful event
 	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
 		return fileChangedMsg{}
 	}
@@ -156,6 +164,10 @@ func (m *rootBrowserModel) handleWatcherError(err error, ok bool) tea.Msg {
 		return nil
 	}
 	log.Printf("history file watcher error: %v", err)
+	m.watcherErrorCount++
+	if m.watcherErrorCount >= 3 {
+		return watcherErrorMsg{err: fmt.Errorf("file watcher failed after %d errors: %w", m.watcherErrorCount, err)}
+	}
 	return nil
 }
 
@@ -270,6 +282,9 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	switch msg.String() {
 	case "p":
 		m.togglePin()
+		if m.isLoading {
+			return m, fetchHistoryCmd(m.provider, "")
+		}
 		return m, nil
 	case "r":
 		cmd := m.rollbackToSelected()
@@ -294,6 +309,12 @@ func (m *rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model
 	}
 	m.width = msg.Width
 	m.height = msg.Height
+	if m.width < 20 {
+		m.width = 20
+	}
+	if m.height < 5 {
+		m.height = 5
+	}
 	if !m.ready {
 		m.viewport = viewport.New(msg.Width, msg.Height-m.calculateFooterHeight())
 		m.updateViewportContent()
@@ -308,10 +329,19 @@ func (m *rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model
 
 func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
 	m.isLoading = false
-	if msg.err != nil {
+
+	// If we have data, process it even when there's an error.
+	// Only treat the error as blocking if no data was returned.
+	if msg.err != nil && len(msg.dtos) == 0 {
 		log.Printf("failed to load history: %v", msg.err)
 		m.err = msg.err
 		return m, nil
+	}
+
+	if msg.err != nil {
+		// Partial result: log the error but still display what we got.
+		log.Printf("partial history load (got %d items): %v", len(msg.dtos), msg.err)
+		// DO NOT set m.err — let the data display. The user can retry by scrolling.
 	}
 
 	isInitialLoad := (m.selectedTurn == -1)
@@ -327,7 +357,10 @@ func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mod
 
 			// Update viewport and maintain scroll position
 			m.updateViewportContent()
-			addedLines := m.turnOffsets[numAdded]
+			addedLines := 0
+			if numAdded < len(m.turnOffsets) {
+				addedLines = m.turnOffsets[numAdded]
+			}
 			m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
 
 			// Adjust selected turn
@@ -349,8 +382,13 @@ func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mod
 func (m *rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, tea.Cmd) {
 	// Debounce: ignore changes if we just mutated the file
 	if time.Since(m.lastMutationTime) < 500*time.Millisecond {
+		if m.watcherRestarting {
+			return m, nil
+		}
+		m.watcherRestarting = true
 		return m, m.watchHistoryFileCmd()
 	}
+	m.watcherRestarting = false
 	// Refresh active memory
 	m.history = nil
 	m.cursor = ""

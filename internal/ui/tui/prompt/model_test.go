@@ -342,6 +342,37 @@ func TestModel_Update(t *testing.T) {
 			},
 			wantCmd: false,
 		},
+		{
+			name: "tab_no_suggestions_falls_through",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.suggester.Suggestions = []string{}
+				m.suggester.Index = -1
+				m.input.SetValue("hello")
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertSubmitted(t, m, false)
+				assertAborted(t, m, false)
+			},
+			wantCmd: false,
+		},
+		{
+			name: "enter_without_alt_does_not_submit",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("hello")
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyEnter},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertSubmitted(t, m, false)
+			},
+			wantCmd: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -623,6 +654,21 @@ func TestModel_GetSuggestions_ContextCancelledDuringFetch(t *testing.T) {
 
 	if msg != nil {
 		t.Errorf("expected nil msg for cancelled-context error, got %T", msg)
+	}
+}
+
+func TestNewModel_ZeroDebounceDuration(t *testing.T) {
+	m := NewModel(&mockSuggestionSvc{}, 0)
+	defer m.Destroy()
+
+	pm, ok := m.(*promptModel)
+	if !ok {
+		t.Fatal("NewModel did not return *promptModel")
+	}
+
+	if pm.debounceDuration != DefaultDebounceDuration {
+		t.Errorf("debounceDuration = %v, want %v (DefaultDebounceDuration)",
+			pm.debounceDuration, DefaultDebounceDuration)
 	}
 }
 

@@ -147,10 +147,10 @@ func (c *client) processDirectOutputItem(content *llm.Content, out *responseOutp
 		// alongside the sentinel suppression for output-item types like "call"
 		// and "message".
 		//
-		// Coverage gap accepted by architect (Issue #617). The branch is
-		// untestable without refactoring appendPartsFromBlock to return a
-		// distinguishable error type. processDirectOutputItem exceeds 90%
-		// branch coverage via all other reachable paths.
+		// Coverage gap accepted by architect (Issue #617).
+		// Reviewed: Issue #782 (2026-06) — branch remains structurally
+		// unreachable; no testable error path exists without refactoring
+		// appendPartsFromBlock. Accepted as defensive future-proofing.
 		if !errors.Is(err, errUnhandledBlockType) {
 			return err
 		}

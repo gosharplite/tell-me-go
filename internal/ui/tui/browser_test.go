@@ -709,6 +709,95 @@ func TestTogglePin_RecoveryAfterError(t *testing.T) {
 
 // ── Additional coverage tests for tui package ──
 
+func TestTogglePin_LocalStateUpdateNotFound(t *testing.T) {
+	mockProvider := &mockHistoryProvider{
+		GetHistoryStreamFunc: func(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+			return []ports.HistoryViewDTO{
+				{Role: "user", ContentPreview: "reloaded", OriginalIndex: 0},
+				{Role: "assistant", ContentPreview: "reloaded", OriginalIndex: 1},
+			}, "", nil
+		},
+	}
+	m := NewRootBrowserModel(context.Background(), mockProvider, &mockHistoryModifier{})
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+		{Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+	}
+	m.selectedTurn = 0
+	m.isLoading = false
+
+	// Use SetPinnedFunc to clear history between getTurnForPinning and updateLocalPinState,
+	// simulating a concurrent modification that makes the local state stale.
+	mockModifier := &mockHistoryModifier{
+		SetPinnedFunc: func(ctx context.Context, turnIndex int, pinned bool) error {
+			m.history = nil
+			return nil
+		},
+	}
+	m.cmdService = mockModifier
+
+	m.togglePin()
+
+	if !m.isLoading {
+		t.Error("expected isLoading=true after local update failure")
+	}
+	if len(m.history) != 0 {
+		t.Errorf("expected history to be cleared, got %d items", len(m.history))
+	}
+	if m.selectedTurn != -1 {
+		t.Errorf("expected selectedTurn=-1, got %d", m.selectedTurn)
+	}
+}
+
+func TestTogglePin_LocalStateUpdateSucceeds(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+		{Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+	}
+	m.selectedTurn = 0
+	m.isLoading = false
+
+	m.togglePin()
+
+	if m.isLoading {
+		t.Error("expected isLoading=false after successful local update")
+	}
+	if !m.history[0].IsPinned {
+		t.Error("expected local pin state to be true")
+	}
+	if !m.history[1].IsPinned {
+		t.Error("expected second message in turn to also be pinned")
+	}
+}
+
+func TestRollbackToSelected_ArchivedFeedback(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "archived msg", OriginalIndex: 0, IsArchived: true},
+		{Role: "assistant", ContentPreview: "archived resp", OriginalIndex: 1, IsArchived: true},
+	}
+	m.selectedTurn = 0
+
+	cmd := m.rollbackToSelected()
+
+	if cmd != nil {
+		t.Error("expected nil cmd for archived rollback attempt")
+	}
+	if m.err == nil {
+		t.Fatal("expected error to be set for archived rollback")
+	}
+	if !strings.Contains(m.err.Error(), "archived") {
+		t.Errorf("expected 'archived' in error message, got: %v", m.err)
+	}
+}
+
+// ── Additional coverage tests for tui package ──
+
 func TestPromptCapturer_Close(t *testing.T) {
 	base := &mockBaseCapturer{}
 	svc := &mockSuggestionService{}
@@ -901,6 +990,154 @@ func TestHandleHistoryLoadedMsg_EmptyDtos(t *testing.T) {
 	}
 }
 
+func TestHandleHistoryLoadedMsg_PrependBoundsSafety(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+
+	// Seed the model with history and a deliberately short turnOffsets slice
+	// to exercise the bounds-check path.
+	m := &rootBrowserModel{
+		provider:   mockProvider,
+		cmdService: mockModifier,
+		history: []ports.HistoryViewDTO{
+			{Role: "user", ContentPreview: "existing1", OriginalIndex: 3},
+			{Role: "assistant", ContentPreview: "existing2", OriginalIndex: 4},
+		},
+		selectedTurn: 1,
+		ready:        true,
+		viewport:     viewport.New(80, 24),
+		turnOffsets:  []int{0}, // deliberately too short — only 1 entry
+	}
+	m.viewport.SetContent("dummy content")
+
+	// Prepend 3 new DTOs
+	msg := historyLoadedMsg{
+		dtos: []ports.HistoryViewDTO{
+			{Role: "user", ContentPreview: "older1", OriginalIndex: 0},
+			{Role: "assistant", ContentPreview: "older2", OriginalIndex: 1},
+			{Role: "user", ContentPreview: "older3", OriginalIndex: 2},
+		},
+		nextCursor: "prev-cursor",
+	}
+
+	// This must not panic. After updateViewportContent(), turnOffsets
+	// will have 5 entries and numAdded=3 will be valid — but we verify
+	// the bounds-check path by confirming no panic occurs regardless.
+	newModel, _ := m.handleHistoryLoadedMsg(msg)
+	updated := newModel.(*rootBrowserModel)
+
+	if len(updated.history) != 5 {
+		t.Errorf("expected 5 history items, got %d", len(updated.history))
+	}
+	if updated.selectedTurn != 4 {
+		t.Errorf("expected selectedTurn 4, got %d", updated.selectedTurn)
+	}
+	if updated.cursor != "prev-cursor" {
+		t.Errorf("expected cursor 'prev-cursor', got %q", updated.cursor)
+	}
+	// turnOffsets should now have 5 entries (repopulated by updateViewportContent)
+	if len(updated.turnOffsets) != 5 {
+		t.Errorf("expected 5 turn offsets, got %d", len(updated.turnOffsets))
+	}
+}
+
+func TestHandleHistoryLoadedMsg_PartialError(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+
+	m := &rootBrowserModel{
+		provider:     mockProvider,
+		cmdService:   mockModifier,
+		isLoading:    true,
+		selectedTurn: -1,
+	}
+
+	// Partial result: data + error
+	msg := historyLoadedMsg{
+		dtos: []ports.HistoryViewDTO{
+			{Role: "user", ContentPreview: "partial data", OriginalIndex: 0},
+			{Role: "assistant", ContentPreview: "still useful", OriginalIndex: 1},
+		},
+		nextCursor: "next-cursor",
+		err:        errors.New("timeout fetching older pages"),
+	}
+
+	newModel, _ := m.handleHistoryLoadedMsg(msg)
+	updated := newModel.(*rootBrowserModel)
+
+	// Data must be loaded despite the error
+	if len(updated.history) != 2 {
+		t.Errorf("expected 2 history items (partial data preserved), got %d", len(updated.history))
+	}
+	if updated.cursor != "next-cursor" {
+		t.Errorf("expected cursor 'next-cursor', got %q", updated.cursor)
+	}
+	// Error must NOT be set on the model (data is displayed)
+	if updated.err != nil {
+		t.Errorf("expected no error on model when partial data exists, got %v", updated.err)
+	}
+	if updated.isLoading {
+		t.Error("expected isLoading to be false")
+	}
+}
+
+func TestHandleHistoryLoadedMsg_ErrorNoData(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+
+	m := &rootBrowserModel{
+		provider:     mockProvider,
+		cmdService:   mockModifier,
+		isLoading:    true,
+		selectedTurn: -1,
+	}
+
+	// Error with no data at all
+	msg := historyLoadedMsg{
+		dtos:       nil,
+		nextCursor: "",
+		err:        errors.New("connection refused"),
+	}
+
+	newModel, _ := m.handleHistoryLoadedMsg(msg)
+	updated := newModel.(*rootBrowserModel)
+
+	// Error must be set
+	if updated.err == nil || updated.err.Error() != "connection refused" {
+		t.Errorf("expected error 'connection refused', got %v", updated.err)
+	}
+	if updated.isLoading {
+		t.Error("expected isLoading to be false even on error")
+	}
+}
+
+func TestFetchHistoryCmd_ReturnsDataAndError(t *testing.T) {
+	mockProvider := &mockHistoryProvider{
+		GetHistoryStreamFunc: func(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+			return []ports.HistoryViewDTO{
+				{Role: "user", ContentPreview: "partial"},
+			}, "next", errors.New("partial failure")
+		},
+	}
+
+	cmd := fetchHistoryCmd(mockProvider, "start")
+	msg := cmd()
+
+	result, ok := msg.(historyLoadedMsg)
+	if !ok {
+		t.Fatalf("expected historyLoadedMsg, got %T", msg)
+	}
+	if len(result.dtos) != 1 {
+		t.Errorf("expected 1 dto, got %d", len(result.dtos))
+	}
+	if result.nextCursor != "next" {
+		t.Errorf("expected cursor 'next', got %q", result.nextCursor)
+	}
+	if result.err == nil {
+		t.Error("expected non-nil error")
+	}
+}
+
 func TestGetTurnForPinning_OutOfBounds(t *testing.T) {
 	m := &rootBrowserModel{
 		history:      []ports.HistoryViewDTO{{Role: "user", OriginalIndex: 0}},
@@ -935,5 +1172,95 @@ func TestMoveSelection_EmptyHistory(t *testing.T) {
 	m.moveSelection(1)
 	if m.selectedTurn != -1 {
 		t.Errorf("expected selectedTurn -1, got %d", m.selectedTurn)
+	}
+}
+
+// ── G11 + G12 + G15 + G17 + G18 + G19: Browser hardening tests ──
+
+func TestBrowserModel_HandleWindowSizeMsg_ZeroWidth(t *testing.T) {
+	m := &rootBrowserModel{ready: true, width: 80, height: 40, viewport: viewport.New(80, 30)}
+	newModel, _ := m.handleWindowSizeMsg(tea.WindowSizeMsg{Width: 0, Height: 0})
+	updated := newModel.(*rootBrowserModel)
+	if updated.width < 20 {
+		t.Errorf("width clamped, got %d", updated.width)
+	}
+	if updated.height < 5 {
+		t.Errorf("height clamped, got %d", updated.height)
+	}
+}
+
+func TestBrowserModel_HandleFileChangedMsg_WatcherGuard(t *testing.T) {
+	m := &rootBrowserModel{lastMutationTime: time.Now(), watcherRestarting: true}
+	_, cmd := m.handleFileChangedMsg(fileChangedMsg{})
+	if cmd != nil {
+		t.Error("expected nil cmd when already restarting")
+	}
+	m.watcherRestarting = false
+	_, cmd = m.handleFileChangedMsg(fileChangedMsg{})
+	if cmd == nil {
+		t.Error("expected non-nil cmd for restart")
+	}
+}
+
+func TestBrowserModel_PostRollback_HasTimeout(t *testing.T) {
+	mockProvider := &mockHistoryProvider{GetHistoryStreamFunc: func(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+		return []ports.HistoryViewDTO{{Role: "user", ContentPreview: "ok"}}, "", nil
+	}}
+	mockModifier := &mockHistoryModifier{RollbackTurnsFunc: func(ctx context.Context, turns int) (int, int, int, error) { return 1, 0, 0, nil }}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.history = []ports.HistoryViewDTO{{Role: "user", ContentPreview: "1", OriginalIndex: 0}, {Role: "assistant", ContentPreview: "2", OriginalIndex: 1}}
+	m.selectedTurn = 0
+	cmd := m.rollbackToSelected()
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	if !m.isLoading {
+		t.Error("expected isLoading")
+	}
+}
+
+func TestBrowserModel_GetPinningMetrics_AllArchived(t *testing.T) {
+	m := &rootBrowserModel{history: []ports.HistoryViewDTO{
+		{Role: "user", OriginalIndex: 0, IsArchived: true},
+		{Role: "assistant", OriginalIndex: 1, IsArchived: true},
+	}}
+	active, pinned := m.getPinningMetrics()
+	if active != 0 {
+		t.Errorf("expected 0 active, got %d", active)
+	}
+	if pinned != 0 {
+		t.Errorf("expected 0 pinned, got %d", pinned)
+	}
+}
+
+func TestBrowserModel_RenderThoughts_CacheSelfPopulating(t *testing.T) {
+	m := &rootBrowserModel{width: 80, showThoughts: true, cachedThoughts: map[string]string{}}
+	dto := ports.HistoryViewDTO{ID: "self-populate", ThoughtProcess: "new thought"}
+	result := m.renderThoughts(dto, "  ")
+	if !strings.Contains(result, "new thought") {
+		t.Errorf("expected thought, got %q", result)
+	}
+	if _, ok := m.cachedThoughts["self-populate"]; !ok {
+		t.Error("cache should be populated on miss")
+	}
+}
+
+func TestRefreshTimeoutCmd(t *testing.T) {
+	cmd := refreshTimeoutCmd(50 * time.Millisecond)
+	start := time.Now()
+	msg := cmd()
+	elapsed := time.Since(start)
+	historyMsg, ok := msg.(historyLoadedMsg)
+	if !ok {
+		t.Fatalf("expected historyLoadedMsg, got %T", msg)
+	}
+	if historyMsg.err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(historyMsg.err.Error(), "timed out") {
+		t.Errorf("expected 'timed out', got: %v", historyMsg.err)
+	}
+	if elapsed < 50*time.Millisecond {
+		t.Errorf("expected >=50ms, got %v", elapsed)
 	}
 }
