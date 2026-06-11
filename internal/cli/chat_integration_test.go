@@ -42,7 +42,8 @@ func (m *integrationMockChatter) Subscribe(sub func(stdctx.Context, events.Event
 func (m *integrationMockChatter) Shutdown(ctx stdctx.Context) error                { return nil }
 
 func TestChatCommand_NewSessionIntegration(t *testing.T) {
-	t.Parallel()
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
 	tmpDir, cfgPath, historyPath, _ := setupChatIntegrationEnv(t)
 
 	var stdout strings.Builder
@@ -109,7 +110,6 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	}
 
 	t.Run("Archiving", func(t *testing.T) {
-		t.Parallel()
 		verifyArchiving(t, stdout.String(), tmpDir)
 		if _, err := os.Stat(historyPath); err != nil {
 			t.Errorf("new history.jsonl not found: %v", err)
@@ -117,7 +117,6 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	})
 
 	t.Run("SecurityRegistration", func(t *testing.T) {
-		t.Parallel()
 		verifySecurityRegistration(t, sm, filepath.Join(tmpDir, "output"))
 	})
 }

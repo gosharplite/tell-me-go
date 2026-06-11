@@ -41,6 +41,8 @@ func assertLoadConfig(t *testing.T, cfg *domain_config.Config, tt loadTestCase) 
 }
 
 func TestLoad(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
+
 	tests := []loadTestCase{
 		{
 			name:          "ValidConfig",
@@ -95,6 +97,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
 	t.Setenv("GOSHARP_MODE", "env-mode")
 
 	tmpDir := t.TempDir()
@@ -166,6 +169,9 @@ PROVIDERS:
 }
 
 func TestLoad_SyncActiveProvider(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test_sync.yaml")
 
@@ -422,6 +428,7 @@ MODELS:
 }
 
 func TestLoad_WithDebugEnabled(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
 	t.Setenv("TELL_ME_DEBUG", "1")
 
 	tmpDir := t.TempDir()
