@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1302,5 +1303,92 @@ func TestSendRequest_GoroutineCleanup(t *testing.T) {
 		t.Logf("read after recovery: %q (err: %v) — needsReset was %v", result, err, c.needsReset.Load())
 	} else {
 		t.Logf("read after recovery succeeded: %q", result)
+	}
+}
+
+func TestResolveInput_TTYErrorWrapping(t *testing.T) {
+	capturer := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", false).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
+	isTTY := true
+	capturer.isTTYOverride = &isTTY
+
+	_, err := capturer.resolveInput(context.Background(), "", &ports.CaptureOptions{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "capture from TTY")
+	assert.Contains(t, err.Error(), "failed to read from TTY")
+}
+
+func TestResolveInput_PipeErrorWrapping(t *testing.T) {
+	capturer := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", false).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
+	isTTY := false
+	capturer.isTTYOverride = &isTTY
+
+	_, err := capturer.resolveInput(context.Background(), "", &ports.CaptureOptions{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read from pipe")
+}
+
+// ── G9+G10: ReadSingleKey edge path coverage ──
+
+func TestReadSingleKey_GoHelperProcess(t *testing.T) {
+	// NOTE: cannot use t.Parallel() — t.Setenv forbids it
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+	pr, pw, _ := os.Pipe()
+	_, _ = pw.Write([]byte("y"))
+	_ = pw.Close()
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", false).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() { _ = pr.Close() })
+	result, err := c.ReadSingleKey(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "y" {
+		t.Errorf("expected 'y', got %q", result)
+	}
+}
+
+func TestReadSingleKey_DisableEscapeSequences(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(strings.NewReader("n"), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	isTTY := false
+	c.isTTYOverride = &isTTY
+	result, err := c.ReadSingleKey(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "n" {
+		t.Errorf("expected 'n', got %q", result)
+	}
+}
+
+func TestReadSingleKey_PipeNotTTY(t *testing.T) {
+	t.Parallel()
+	pr, pw, _ := os.Pipe()
+	_, _ = pw.Write([]byte("z"))
+	_ = pw.Close()
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", false).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() { _ = pr.Close() })
+	_, err := c.ReadSingleKey(context.Background())
+	if err == nil {
+		t.Fatal("expected error for non-TTY pipe without GO_WANT_HELPER_PROCESS")
+	}
+	if !strings.Contains(err.Error(), "confirmation required but not running in a terminal") {
+		t.Errorf("expected 'confirmation required' error, got: %v", err)
 	}
 }

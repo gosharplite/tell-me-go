@@ -164,7 +164,7 @@ func (c *capturer) resolveInput(ctx context.Context, prompt string, options *por
 	if prompt == "" && !options.SkipTTYWait {
 		result, err := c.captureFromTTY(ctx, !options.Raw)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("capture from TTY: %w", err)
 		}
 		if strings.TrimSpace(result) == "" {
 			return "", context.Canceled
@@ -269,7 +269,7 @@ func (c *capturer) printFeedback(w io.Writer, useColor bool, color, msg string) 
 		if c.disableEscapeSequences {
 			prefix = ""
 		}
-		_, _ = fmt.Fprintf(w, "%s%s%s%s\n", prefix, color, msg, colorReset)
+		writeBestEffort(w, "%s%s%s%s\n", prefix, color, msg, colorReset)
 	} else {
 		_, _ = fmt.Fprintln(w, msg)
 	}
@@ -292,16 +292,16 @@ func (c *capturer) Confirm(ctx context.Context, message string) (bool, error) {
 			prefix = ""
 		}
 		if color != "" {
-			_, _ = fmt.Fprintf(c.Stderr, "%s%s%s%s", prefix, color, message, colorReset)
+			writeBestEffort(c.Stderr, "%s%s%s%s", prefix, color, message, colorReset)
 		} else {
-			_, _ = fmt.Fprintf(c.Stderr, "%s%s", prefix, message)
+			writeBestEffort(c.Stderr, "%s%s", prefix, message)
 		}
 	} else {
 		_, _ = fmt.Fprint(c.Stderr, message)
 	}
 
 	char, err := c.ReadSingleKey(ctx)
-	_, _ = fmt.Fprintf(c.Stderr, "\n")
+	writeBestEffort(c.Stderr, "\n")
 	if err != nil {
 		return false, err
 	}
@@ -327,7 +327,7 @@ func (c *capturer) Prompt(message string) {
 		if c.disableEscapeSequences {
 			prefix = ""
 		}
-		_, _ = fmt.Fprintf(c.Stderr, "%s%s%s%s", prefix, colorYellow, message, colorReset)
+		writeBestEffort(c.Stderr, "%s%s%s%s", prefix, colorYellow, message, colorReset)
 	} else {
 		_, _ = fmt.Fprint(c.Stderr, message)
 	}

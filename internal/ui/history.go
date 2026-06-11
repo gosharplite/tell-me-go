@@ -37,7 +37,7 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 	start := total - n
 	contents, err := h.GetWindow(context.Background(), start, -1)
 	if err != nil {
-		_, _ = fmt.Fprintf(w, "Error retrieving history: %v\n", err)
+		writeBestEffort(w, "Error retrieving history: %v\n", err)
 		return
 	}
 
@@ -81,7 +81,7 @@ func (r *historyRenderer) renderHeader(role string) {
 		if role != "user" {
 			roleColor = colorMagenta
 		}
-		_, _ = fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, colorReset)
+		writeBestEffort(r.writer, "%s%s%s\n", roleColor, roleStr, colorReset)
 	} else {
 		_, _ = fmt.Fprintln(r.writer, roleStr)
 	}
@@ -96,6 +96,8 @@ func (r *historyRenderer) renderText(text string) {
 	} else {
 		out, err := r.renderer.Render(text)
 		if err != nil {
+			// Surface render error in output so the user can see degradation
+			writeBestEffort(r.writer, "\n[render error: %v]\n", err)
 			_, _ = fmt.Fprintln(r.writer, text)
 		} else {
 			_, _ = fmt.Fprint(r.writer, out)
@@ -115,16 +117,16 @@ func (r *historyRenderer) renderPart(p llm.Part) {
 	}
 	if p.FunctionCall != nil {
 		if r.useColor {
-			_, _ = fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", colorCyan, p.FunctionCall.Name, colorReset)
+			writeBestEffort(r.writer, "%s[Tool Call] %s%s\n", colorCyan, p.FunctionCall.Name, colorReset)
 		} else {
-			_, _ = fmt.Fprintf(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
+			writeBestEffort(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
 		}
 	}
 	if p.FunctionResponse != nil {
 		if r.useColor {
-			_, _ = fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", colorCyan, p.FunctionResponse.Name, colorReset)
+			writeBestEffort(r.writer, "%s[Tool Response] %s%s\n", colorCyan, p.FunctionResponse.Name, colorReset)
 		} else {
-			_, _ = fmt.Fprintf(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
+			writeBestEffort(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
 		}
 	}
 }

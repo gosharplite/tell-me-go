@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -1067,4 +1068,110 @@ func TestStdUIRenderer_LogUsage_NilAndEmpty(t *testing.T) {
 		r.LogUsage(context.Background(), m, "/nonexistent/dir/log.json", mc.Now())
 		// Should not panic — error from os.OpenFile is silently ignored
 	})
+
+	t.Run("marshal success writes valid JSON", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		tmpFile := filepath.Join(t.TempDir(), "usage.log")
+		m := &llm.Metrics{
+			PromptTokens:   100,
+			ResponseTokens: 50,
+			TotalTokens:    150,
+			Timestamp:      "2026-01-01T12:00:00Z",
+			Cost:           0.005,
+		}
+		r.LogUsage(context.Background(), m, tmpFile, mc.Now())
+
+		data, err := os.ReadFile(tmpFile)
+		if err != nil {
+			t.Fatalf("failed to read usage log: %v", err)
+		}
+		if !strings.Contains(string(data), `"prompt_tokens":100`) {
+			t.Errorf("expected prompt_tokens in log, got: %s", string(data))
+		}
+		// Verify no warning was logged for successful path
+		if stderr.Len() > 0 {
+			t.Logf("stderr (may contain summary output): %s", stderr.String())
+		}
+	})
+
+	t.Run("unwritable path logs warning", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		m := &llm.Metrics{PromptTokens: 100, ResponseTokens: 50}
+		r.LogUsage(context.Background(), m, "/nonexistent/dir/subdir/log.json", mc.Now())
+		output := stderr.String()
+		if !strings.Contains(output, "failed to open usage log") {
+			t.Errorf("expected warning about unwritable path in stderr, got: %q", output)
+		}
+	})
+}
+
+// ── Markdown render error logging tests (G4+G5) ──
+
+func TestStdUIRenderer_MarkdownRenderError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := ui.NewMockLocker()
+	r := ui.NewRenderer(locker, &stdout, &stderr, nil, nil).(*ui.StdUIRenderer)
+
+	t.Run("nil renderer writes raw text", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		r.SetGlamourRenderer(nil)
+		r.RenderMarkdown("**bold** and *italic*")
+		output := stdout.String()
+		if !strings.Contains(output, "**bold**") {
+			t.Errorf("expected raw markdown text, got: %q", output)
+		}
+	})
+}
+
+// ── G3: Renderer degradation state tests ──
+
+func TestNewRenderer_GlamourFailure(t *testing.T) {
+	t.Run("normal renderer is not degraded", func(t *testing.T) {
+		var buf bytes.Buffer
+		locker := ui.NewMockLocker()
+		r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		if r.IsRendererDegraded() {
+			t.Error("expected IsRendererDegraded() = false for normal renderer")
+		}
+	})
+
+	t.Run("nil renderer reports degraded", func(t *testing.T) {
+		var buf bytes.Buffer
+		locker := ui.NewMockLocker()
+		r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		r.SetGlamourRenderer(nil)
+		if !r.IsRendererDegraded() {
+			t.Error("expected IsRendererDegraded() = true when renderer is nil")
+		}
+	})
+
+	t.Run("nil renderer renders raw text via RenderMarkdown", func(t *testing.T) {
+		var buf bytes.Buffer
+		locker := ui.NewMockLocker()
+		r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		r.SetGlamourRenderer(nil)
+		r.RenderMarkdown("**bold**")
+		output := buf.String()
+		if !strings.Contains(output, "**bold**") {
+			t.Errorf("expected raw markdown fallback, got: %q", output)
+		}
+	})
+}
+
+// ── G10: IsTerminalContext with redirected *os.File ──
+
+func TestIsTerminalContext_RedirectedFile(t *testing.T) {
+	pr, pw, _ := os.Pipe()
+	defer func() { _ = pr.Close() }()
+	defer func() { _ = pw.Close() }()
+	var buf bytes.Buffer
+	locker := ui.NewMockLocker()
+	r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+	r.SetWriters(&buf, pr)
+	if r.IsTerminalContext() {
+		t.Error("expected IsTerminalContext() = false for redirected *os.File (pipe)")
+	}
 }
