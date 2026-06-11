@@ -500,4 +500,21 @@ func TestConvertParts_ThinkingRole(t *testing.T) {
 			t.Errorf("expected first block type 'thinking', got %q", blocks[0].Type)
 		}
 	})
+
+	t.Run("unsigned thinking parts stripped for assistant role", func(t *testing.T) {
+		parts := []*llm.Part{
+			{IsThought: true, Text: "think from deepseek"}, // no signature
+			{Text: "visible"},
+		}
+		blocks, err := c.convertParts(parts, "assistant")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 block (thought stripped), got %d", len(blocks))
+		}
+		if blocks[0].Type != "text" || blocks[0].Text != "visible" {
+			t.Errorf("expected only text block 'visible', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
+		}
+	})
 }
