@@ -517,4 +517,24 @@ func TestConvertParts_ThinkingRole(t *testing.T) {
 			t.Errorf("expected only text block 'visible', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
 		}
 	})
+
+	t.Run("empty-text thinking parts stripped for assistant role", func(t *testing.T) {
+		// A thinking block with a signature but empty text causes
+		// "thinking.thinking: Field required" because omitempty
+		// drops the empty string from JSON serialization.
+		parts := []*llm.Part{
+			{IsThought: true, Text: "", ThoughtSignature: []byte("sig")}, // signed but empty
+			{Text: "visible"},
+		}
+		blocks, err := c.convertParts(parts, "assistant")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 block (empty thought stripped), got %d", len(blocks))
+		}
+		if blocks[0].Type != "text" || blocks[0].Text != "visible" {
+			t.Errorf("expected only text block 'visible', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
+		}
+	})
 }
