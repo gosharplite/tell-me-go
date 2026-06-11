@@ -1100,3 +1100,43 @@ func TestHandleBatchResults_ContextCancellation_Propagates(t *testing.T) {
 	require.Len(t, planErrors, 1)
 	assert.ErrorIs(t, planErrors[0], context.Canceled)
 }
+
+func TestHandleBatchResults_ToolError_NotPromoted(t *testing.T) {
+	t.Parallel()
+
+	// Under the post-599a1075 contract, tool-result errors (command failures,
+	// security blocks, panics, timeouts) are delivered to the LLM via
+	// AssembleResponse as data — they are NOT promoted to plan-level Go errors.
+	//
+	// This test is the direct unit-level counterpart to the existing
+	// TestHandleBatchResults_ContextCancellation_Propagates (which verifies
+	// that index:-1 sentinels DO propagate). Together they form the complete
+	// specification of the handleBatchResults contract.
+
+	toolErr := errors.New("disk full")
+
+	e := &Dispatcher{strategy: &markdownStrategy{}}
+	resultsCh := make(chan toolExecResult, 1)
+	resultsCh <- toolExecResult{
+		index: 0,
+		name:  "write_file",
+		tr: tools.ToolResult{
+			Text:  "write failed",
+			Error: toolErr,
+		},
+	}
+	close(resultsCh)
+
+	results := make([]tools.ToolResult, 1)
+	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+
+	// Core assertion: planErrors MUST be empty.
+	// If someone re-adds "planErrors = append(planErrors, res.tr.Error)"
+	// in handleBatchResults (the regression from commit 4d9a9c2a9), this fails.
+	require.Len(t, planErrors, 0)
+
+	// The result must still be stored so AssembleResponse can deliver
+	// the error text to the LLM.
+	require.Equal(t, "write failed", results[0].Text)
+	require.ErrorIs(t, results[0].Error, toolErr)
+}

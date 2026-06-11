@@ -130,6 +130,99 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 	})
 }
 
+func TestTurnEngine_ToolResultError_DoesNotEnterRecovery(t *testing.T) {
+	t.Parallel()
+
+	// This test guards the contract established in commit 599a1075:
+	// Tool-result errors (command failures, security blocks, panics,
+	// timeouts) are delivered to the LLM via AssembleResponse as data —
+	// they are NOT promoted to Go-level errors from Execute(). Only
+	// infrastructure errors (parent-context cancellation, index:-1
+	// sentinel) propagate as Go errors.
+	//
+	// Regression risk: if someone re-adds planErrors promotion in
+	// handleBatchResults (as happened in commit 4d9a9c2a9), this test
+	// catches it at the engine level.
+
+	// 1. Build the tool-error response that Execute() would return
+	//    under the post-599a1075 contract: content with error text, nil error.
+	toolErrorResponse := &llm.Content{
+		Role: "user",
+		Parts: []*llm.Part{
+			{
+				FunctionResponse: &llm.FunctionResponse{
+					ID:   "call_1",
+					Name: "write_file",
+					Response: map[string]interface{}{
+						"result": "Error: tool execution failed: write_file: disk full",
+					},
+				},
+			},
+		},
+	}
+
+	// 2. Mock executor: returns the error-in-response, nil Go error.
+	mockExec := &agenttest.MockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+			return toolErrorResponse, nil
+		},
+	}
+
+	// 3. Build the Turn as ExecutionStep.Process would see it.
+	Turn := &orchestrator.Turn{
+		Index:        0,
+		State:        &orchestrator.TurnState{},
+		Executor:     mockExec,
+		Clock:        &agenttest.MockClock{},
+		MaxToolTurns: 10,
+	}
+
+	// ExecutionStep.Process requires HasToolCalls=true and a Response
+	// with a FunctionCall to proceed past the early-return guard.
+	Turn.State.HasToolCalls = true
+	Turn.State.Response = &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{ID: "call_1", Name: "write_file"}},
+		},
+	}
+
+	// 4. Run ExecutionStep.Process — this is the critical path that,
+	//    before the fix, would have returned an error that killed the loop.
+	step := &orchestrator.ExecutionStep{}
+	res, err := step.Process(context.Background(), Turn)
+
+	// 5. ASSERTIONS
+	// A) No Go error — the tool-result error is data, not control-flow.
+	if err != nil {
+		t.Fatalf("ExecutionStep must NOT return Go error for tool-result failures, got: %v", err)
+	}
+
+	// B) Must transition to Persisting (NOT Recovery, NOT Complete).
+	if res.NextPhase != orchestrator.PhasePersisting {
+		t.Errorf("Expected NextPhase %s, got %s — tool error should not trigger Recovery",
+			orchestrator.PhasePersisting, res.NextPhase)
+	}
+
+	// C) ToolResponse must be set so the LLM can see the error text.
+	if Turn.State.ToolResponse == nil {
+		t.Fatal("ToolResponse must be set — the LLM needs the error text to self-correct")
+	}
+	if len(Turn.State.ToolResponse.Parts) != 1 {
+		t.Fatalf("Expected 1 response part, got %d", len(Turn.State.ToolResponse.Parts))
+	}
+	resultStr := Turn.State.ToolResponse.Parts[0].FunctionResponse.Response["result"].(string)
+	if resultStr != "Error: tool execution failed: write_file: disk full" {
+		t.Errorf("ToolResponse contains wrong result: %q", resultStr)
+	}
+
+	// D) LastError must NOT be set — if it were, determineNextPhase
+	//    would route to RecoveryStep on the next iteration.
+	if Turn.State.LastError != nil {
+		t.Errorf("LastError must be nil after tool-result error, got: %v", Turn.State.LastError)
+	}
+}
+
 func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
