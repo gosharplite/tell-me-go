@@ -35,6 +35,18 @@ func FuzzValidatePath(f *testing.F) {
 		"relative/path",
 		"../relative/path",
 		"/tmp/test",
+		// Seeds targeting gap-documented code paths (issue #830):
+		// - NUL byte variants for filepath.Abs error branches
+		"\x00/tmp/test",
+		"/tmp/\x00test",
+		// - Case-variant paths (exercises Windows case-insensitive branches)
+		"/TMP/TEST",
+		"/PRIVATE/TMP/TEST",
+		// - Extra temp dir paths (exercises macOS /private/tmp branch)
+		"/private/tmp/test",
+		"/private/tmp/nested/file",
+		// - Paths that look like temp dirs but aren't (boundary-exercise)
+		"/var/tmp/test",
 		safeDir,
 		filepath.Join(safeDir, "inner"),
 		readOnlyDir,
