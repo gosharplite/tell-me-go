@@ -29,7 +29,10 @@ func getSymbolIdentity(obj types.Object) string {
 	pkgPath := getBasePkgPath(obj.Pkg().Path())
 
 	if fn, ok := obj.(*types.Func); ok {
-		sig := fn.Type().(*types.Signature)
+		sig, ok := fn.Type().(*types.Signature)
+		if !ok {
+			return fmt.Sprintf("%s.%s", pkgPath, obj.Name())
+		}
 		if sig.Recv() != nil {
 			recvType := sig.Recv().Type()
 			if ptr, ok := recvType.(*types.Pointer); ok {

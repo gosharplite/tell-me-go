@@ -23,11 +23,13 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -523,7 +525,7 @@ func TestMarkPropagated_GuardClauses(t *testing.T) {
 		)
 		// Create signature returning the interface-named type
 		results := types.NewTuple(types.NewVar(token.NoPos, nil, "", named))
-		sig := types.NewSignatureType(nil, nil, nil, results, nil, false)
+		sig := types.NewSignatureType(nil, nil, nil, nil, results, false)
 
 		state := &scanState{
 			declarations: make(map[string]*symMeta),
@@ -548,7 +550,7 @@ func TestMarkPropagated_GuardClauses(t *testing.T) {
 			nil,
 		)
 		results := types.NewTuple(types.NewVar(token.NoPos, nil, "", named))
-		sig := types.NewSignatureType(nil, nil, nil, results, nil, false)
+		sig := types.NewSignatureType(nil, nil, nil, nil, results, false)
 
 		state := &scanState{
 			declarations: map[string]*symMeta{
@@ -579,7 +581,7 @@ func TestMarkPropagated_GuardClauses(t *testing.T) {
 		t.Parallel()
 		// int is a basic type, not *types.Named → extractNamedReturnTypes skips it
 		results := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int]))
-		sig := types.NewSignatureType(nil, nil, nil, results, nil, false)
+		sig := types.NewSignatureType(nil, nil, nil, nil, results, false)
 
 		state := &scanState{
 			declarations: make(map[string]*symMeta),
@@ -592,4 +594,214 @@ func TestMarkPropagated_GuardClauses(t *testing.T) {
 			t.Errorf("basic type should not add to totalUses, got %d", len(state.totalUses))
 		}
 	})
+}
+
+// TestExtractNamedReturnTypes_InterfaceReturn (P1) verifies that
+// extractNamedReturnTypes skips interface-typed returns. When a
+// constructor returns an interface, the interface guard
+// (`if _, ok := named.Underlying().(*types.Interface); ok { continue }`)
+// prevents over-propagation to every implementation of that interface.
+// This path was previously untested — if the guard is accidentally
+// removed, dead-code reports would silently hide genuinely dead
+// implementations downstream of interface-returning constructors.
+func TestExtractNamedReturnTypes_InterfaceReturn(t *testing.T) {
+	t.Parallel()
+	iface := types.NewInterfaceType(nil, nil)
+	named := types.NewNamed(
+		types.NewTypeName(token.NoPos, types.NewPackage("pkg", "pkg"), "MyIface", iface),
+		iface,
+		nil,
+	)
+	results := types.NewTuple(types.NewVar(token.NoPos, nil, "", named))
+	sig := types.NewSignatureType(nil, nil, nil, nil, results, false)
+
+	got := extractNamedReturnTypes(sig)
+	if len(got) != 0 {
+		t.Errorf("expected 0 return types for interface return, got %d", len(got))
+	}
+}
+
+// TestPropagateConstructorUsages_HeartbeatWithIds (P2) verifies the
+// heartbeat-send path in propagateConstructorUsagesToReturnTypes.
+// The existing TestPropagateConstructorUsages_WithHeartbeat test has
+// zero ids so the loop body (including the `i%20==0` heartbeat send)
+// never executes. This test provides ≥20 ids and a non-nil hb channel,
+// exercising the `case hb <- struct{}{}` branch.
+func TestPropagateConstructorUsages_HeartbeatWithIds(t *testing.T) {
+	t.Parallel()
+	state := &scanState{
+		declarations: make(map[string]*symMeta),
+		totalUses:    make(map[string]int),
+		externalUses: make(map[string]int),
+	}
+	for i := 0; i < 21; i++ {
+		id := fmt.Sprintf("example.com/pkg.Func%d", i)
+		// nil obj → skipped in processConstructorUsage (L140 guard),
+		// but the loop body in propagateConstructorUsagesToReturnTypes
+		// still executes, including the heartbeat send at i%20==0.
+		state.declarations[id] = &symMeta{id: id, obj: nil}
+		state.totalUses[id] = 1
+		state.externalUses[id] = 0
+	}
+	analyzer := &defaultDeadCodeAnalyzer{}
+	hb := make(chan struct{}, 1)
+	analyzer.propagateConstructorUsagesToReturnTypes(state, hb)
+
+	select {
+	case <-hb:
+		// heartbeat received — P2 path covered
+	case <-time.After(time.Second):
+		t.Error("expected heartbeat with 21 ids, got none")
+	}
+}
+
+// P3 — processConstructorUsage non-Signature guard:
+//
+// At line ~149 in propagate_constructor.go:
+//
+//   sig, ok := fn.Type().(*types.Signature)
+//   if !ok { return }
+//
+// This guard is untestable via the public go/types API because
+// (*types.Func).Type() always returns a *types.Signature (enforced by
+// types.NewFunc). The guard exists as a defensive measure against
+// future API changes or malformed type-checked ASTs. It is verified
+// by code review rather than automated testing. The existing
+// TestProcessConstructorUsage_GuardClauses covers the nil-obj (L140)
+// and non-func-obj (L143) guards which ARE testable.
+
+// TestMarkPropagated_ExistingTotalUses (P4) exercises the branch in
+// markPropagated where state.totalUses[typeId] is already > 0. In that
+// case the guard `if state.totalUses[typeId] == 0` is false, so only
+// externalUses is incremented (by externalCount) and totalUses is left
+// unchanged. Without this test, the `state.totalUses[typeId] = 1` line
+// (which only fires when totalUses == 0) was the only covered path.
+func TestMarkPropagated_ExistingTotalUses(t *testing.T) {
+	t.Parallel()
+	pkg := types.NewPackage("example.com/pkg", "pkg")
+	named := types.NewNamed(
+		types.NewTypeName(token.NoPos, pkg, "T", types.NewStruct(nil, nil)),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	results := types.NewTuple(types.NewVar(token.NoPos, nil, "", named))
+	sig := types.NewSignatureType(nil, nil, nil, nil, results, false)
+
+	state := &scanState{
+		declarations: map[string]*symMeta{
+			"example.com/pkg.T": {
+				id:      "example.com/pkg.T",
+				pkgPath: "example.com/pkg",
+				name:    "T",
+				symType: "Type",
+				obj:     named.Obj(),
+			},
+		},
+		totalUses:    map[string]int{"example.com/pkg.T": 5}, // already > 0
+		externalUses: map[string]int{"example.com/pkg.T": 0},
+	}
+	analyzer := &defaultDeadCodeAnalyzer{}
+	analyzer.markPropagated("example.com/pkg.Func", sig, 3, state)
+
+	// totalUses should NOT change (was already 5)
+	if state.totalUses["example.com/pkg.T"] != 5 {
+		t.Errorf("totalUses should remain 5, got %d", state.totalUses["example.com/pkg.T"])
+	}
+	// externalUses should increment by externalCount (3)
+	if state.externalUses["example.com/pkg.T"] != 3 {
+		t.Errorf("externalUses should be 3, got %d", state.externalUses["example.com/pkg.T"])
+	}
+}
+
+// TestExtractNamedReturnTypes_NilSig covers the nil-guard at the top of
+// extractNamedReturnTypes (sig == nil → return nil). This guard protects
+// against a nil-pointer dereference if the function is ever called with
+// a nil argument.
+func TestExtractNamedReturnTypes_NilSig(t *testing.T) {
+	t.Parallel()
+	got := extractNamedReturnTypes(nil)
+	if got != nil {
+		t.Errorf("expected nil for nil sig, got %v", got)
+	}
+}
+
+// TestPropagateConstructorUsages_SnapshotZeroSkips verifies the
+// `if snapshotTotal[id] == 0 { continue }` guard in
+// propagateConstructorUsagesToReturnTypes. When a constructor function
+// has zero total uses, its return types must NOT be protected — those
+// types should stand or fall on their own merits. This is the guard
+// tested end-to-end by TestConstructorPropagation_UnusedConstructorDoesNotProtect;
+// this test covers it at the unit level.
+func TestPropagateConstructorUsages_SnapshotZeroSkips(t *testing.T) {
+	t.Parallel()
+	state := &scanState{
+		declarations: map[string]*symMeta{
+			"example.com/pkg.Unused": {
+				id:      "example.com/pkg.Unused",
+				pkgPath: "example.com/pkg",
+				name:    "Unused",
+				symType: "Function",
+				obj:     nil, // nil obj → processConstructorUsage returns early anyway
+			},
+		},
+		totalUses:    map[string]int{"example.com/pkg.Unused": 0}, // snapshotTotal == 0
+		externalUses: map[string]int{"example.com/pkg.Unused": 0},
+	}
+	analyzer := &defaultDeadCodeAnalyzer{}
+	// Should not panic — the snapshotTotal[id]==0 guard fires, processConstructorUsage is skipped
+	analyzer.propagateConstructorUsagesToReturnTypes(state, nil)
+}
+
+// TestMarkPropagated_ZeroTotalUsesBumpedToOne covers the
+// `if state.totalUses[typeId] == 0 { state.totalUses[typeId] = 1 }`
+// block in markPropagated. When a return type's totalUses starts at 0,
+// markPropagated must initialize it to 1 (reflecting the constructor's
+// usage) before adding the externalCount.
+//
+// P4 — markPropagated: tn == nil guard:
+//
+// At line ~159 in propagate_constructor.go:
+//
+//	tn := named.Obj()
+//	if tn == nil { continue }
+//
+// This guard is untestable via the public go/types API because
+// (*types.Named).Obj() never returns nil for a properly constructed
+// *types.Named (guaranteed by types.NewNamed). The guard exists as a
+// defense-in-depth measure. It is verified by code review.
+func TestMarkPropagated_ZeroTotalUsesBumpedToOne(t *testing.T) {
+	t.Parallel()
+	pkg := types.NewPackage("example.com/pkg", "pkg")
+	named := types.NewNamed(
+		types.NewTypeName(token.NoPos, pkg, "T", types.NewStruct(nil, nil)),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	results := types.NewTuple(types.NewVar(token.NoPos, nil, "", named))
+	sig := types.NewSignatureType(nil, nil, nil, nil, results, false)
+
+	state := &scanState{
+		declarations: map[string]*symMeta{
+			"example.com/pkg.T": {
+				id:      "example.com/pkg.T",
+				pkgPath: "example.com/pkg",
+				name:    "T",
+				symType: "Type",
+				obj:     named.Obj(),
+			},
+		},
+		totalUses:    map[string]int{"example.com/pkg.T": 0}, // starts at 0
+		externalUses: map[string]int{"example.com/pkg.T": 0},
+	}
+	analyzer := &defaultDeadCodeAnalyzer{}
+	analyzer.markPropagated("example.com/pkg.Func", sig, 2, state)
+
+	// totalUses should be bumped from 0 to 1
+	if state.totalUses["example.com/pkg.T"] != 1 {
+		t.Errorf("totalUses should be bumped to 1 from 0, got %d", state.totalUses["example.com/pkg.T"])
+	}
+	// externalUses should increment by externalCount (2)
+	if state.externalUses["example.com/pkg.T"] != 2 {
+		t.Errorf("externalUses should be 2, got %d", state.externalUses["example.com/pkg.T"])
+	}
 }

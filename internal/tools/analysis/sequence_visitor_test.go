@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -1052,4 +1053,66 @@ func TestResolveCallDetails_extractReturnType(t *testing.T) {
 			t.Errorf("expected 'Response', got %q", got)
 		}
 	})
+}
+
+// TestSequenceVisitor_TryRecurse_NilIndexer verifies that tryRecurse
+// does not panic when the analyzer's idx field is nil. Future refactors
+// that add callers to tryRecurse without the upstream nil-guard in
+// traceFlow must still be safe.
+func TestSequenceVisitor_TryRecurse_NilIndexer(t *testing.T) {
+	t.Parallel()
+	a := &defaultSequenceAnalyzer{
+		idx:     nil, // deliberately nil
+		funcMap: make(map[string]funcInfo),
+		pkgMu:   sync.RWMutex{},
+	}
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		analyzer: a,
+		frames:   &frameCollector{},
+		visited:  make(map[string]bool),
+		depth:    0,
+		maxDepth: 5,
+	}
+
+	// This should not panic.
+	v.tryRecurse(context.Background(), "some.package.Func", 0, 5, nil)
+
+	// No assertion needed beyond "didn't panic".
+}
+
+// TestSequenceVisitor_TryRecurse_WithIndexer verifies that tryRecurse
+// correctly recurses when the indexer is non-nil and the target is
+// found in funcMap.
+func TestSequenceVisitor_TryRecurse_WithIndexer(t *testing.T) {
+	t.Parallel()
+	pkgA, _ := setupMockPackages()
+	idx := &mockIndexer{pkgs: []*packages.Package{pkgA}}
+
+	a := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
+	a.pkgMu.Lock()
+	a.pkgs = idx.pkgs
+	a.funcMap = a.mapSymbols(idx.pkgs)
+	a.pkgMu.Unlock()
+
+	frames := &frameCollector{}
+	visited := make(map[string]bool)
+	v := &sequenceVisitor{
+		ctx:      context.Background(),
+		pkg:      pkgA,
+		analyzer: a,
+		frames:   frames,
+		visited:  visited,
+		depth:    0,
+		maxDepth: 5,
+		modName:  "github.com/test/mod",
+	}
+
+	// StartFunc is in funcMap — tryRecurse should add frames via walk
+	startId := pkgA.PkgPath + ".StartFunc"
+	v.tryRecurse(context.Background(), startId, 0, 5, nil)
+
+	if len(frames.frames) == 0 {
+		t.Error("expected frames to be added when target is in funcMap, got none")
+	}
 }
