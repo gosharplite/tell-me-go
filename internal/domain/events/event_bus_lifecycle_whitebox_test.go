@@ -141,3 +141,47 @@ func TestFlush_BusShutdownDuringFlush(t *testing.T) {
 		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
 }
+
+// TestWaitStarted_NilBus exercises the nil-receiver early-return guard
+// in WaitStarted. A nil SimpleEventBus must return immediately without
+// panicking or blocking.
+func TestWaitStarted_NilBus(t *testing.T) {
+	t.Parallel()
+
+	var bus *SimpleEventBus = nil
+
+	done := make(chan struct{})
+	go func() {
+		bus.WaitStarted()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success — returned immediately without blocking
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("WaitStarted on nil bus blocked — nil guard may be missing")
+	}
+}
+
+// TestSignalStarted_NilBus exercises the nil-receiver early-return guard
+// in signalStarted. A nil SimpleEventBus must return immediately without
+// panicking.
+func TestSignalStarted_NilBus(t *testing.T) {
+	t.Parallel()
+
+	var bus *SimpleEventBus = nil
+
+	done := make(chan struct{})
+	go func() {
+		bus.signalStarted()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success — returned immediately without blocking or panicking
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("signalStarted on nil bus blocked — nil guard may be missing")
+	}
+}
