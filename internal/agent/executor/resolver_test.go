@@ -9,6 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestResolver_Resolve_ToolNotFound_ReturnsSentinel(t *testing.T) {
@@ -38,5 +39,57 @@ func TestResolver_Resolve_ToolNotFound_ReturnsSentinel(t *testing.T) {
 	// Also verify the descriptive message is preserved
 	if err.Error() == errToolNotFound.Error() {
 		t.Error("expected error message to contain descriptive details beyond the sentinel")
+	}
+}
+
+func TestResolver_NilCall_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{
+				{Name: "read_file"},
+			}
+		},
+	}
+
+	r := newToolResolutionService(reg)
+
+	tests := []struct {
+		name      string
+		call      *llm.FunctionCall
+		wantErr   string
+		expectNil bool
+	}{
+		{
+			name:      "nil_call",
+			call:      nil,
+			wantErr:   "cannot resolve nil function call",
+			expectNil: true,
+		},
+		{
+			name:      "non_nil_call_unaffected",
+			call:      &llm.FunctionCall{Name: "read_file"},
+			wantErr:   "",
+			expectNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tool, err := r.Resolve(tt.call)
+
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Nil(t, tool)
+				assert.Equal(t, tt.wantErr, err.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, tool)
+				assert.Equal(t, "read_file", tool.Name)
+			}
+		})
 	}
 }

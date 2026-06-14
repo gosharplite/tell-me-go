@@ -333,4 +333,56 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 			t.Errorf("crash_tool error: got %v, want panic text", results[1].Error)
 		}
 	})
+
+	t.Run("fan_in_no_panic_resultsCh_closed_cleanly", func(t *testing.T) {
+		t.Parallel()
+		// This subtest verifies that when wg.Wait() completes normally (no panic),
+		// resultsCh is cleanly closed with NO spurious index:-1 sentinel injected.
+		// Guards against a regression where the fan-in goroutine accidentally
+		// injects a sentinel on normal completion.
+		mock := &mockToolPipeline{
+			IsSerialFunc: func(n string) bool { return false },
+			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+				return tools.ToolResult{Text: "success"}
+			},
+			RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+				return ctx, nil
+			},
+		}
+
+		cfg := dispatcherConfig{
+			MaxConcurrentTools: 3,
+			ToolTimeout:        1 * time.Hour,
+		}
+		cfg.applyDefaults()
+
+		ctx := context.Background()
+		bus := events.NewSimpleEventBus(ctx)
+		d := &Dispatcher{
+			pipeline: mock,
+			events:   bus,
+			logger:   &ports.NoOpLogger{},
+		}
+		d.state.Store(&dispatcherState{config: cfg})
+
+		calls := []*llm.FunctionCall{
+			{Name: "tool_a"},
+			{Name: "tool_b"},
+			{Name: "tool_c"},
+		}
+		results := make([]tools.ToolResult, 3)
+
+		err := d.runExecutionPlan(ctx, calls, nil, results)
+
+		require.NoError(t, err, "runExecutionPlan must return nil on normal completion")
+
+		for i, res := range results {
+			assert.Equal(t, "success", res.Text,
+				"tool %s result Text: got %q, want 'success'", calls[i].Name, res.Text)
+			assert.NoError(t, res.Error,
+				"tool %s must not have an error, got %v", calls[i].Name, res.Error)
+			assert.NotContains(t, res.Text, "fan_in_panic",
+				"tool %s result must not contain sentinel text 'fan_in_panic'", calls[i].Name)
+		}
+	})
 }

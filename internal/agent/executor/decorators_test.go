@@ -131,6 +131,111 @@ func TestSafetyDecorator(t *testing.T) {
 	}
 }
 
+// TestSafetyDecorator_PrecedenceLogic verifies the context-cancellation vs
+// tool-error precedence condition at decorators.go:91-93. When both the tool
+// returns an error and the context is cancelled/deadline-exceeded, the
+// friendly context message takes priority over the raw tool error.
+func TestSafetyDecorator_PrecedenceLogic(t *testing.T) {
+	t.Parallel()
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	// Subtest A: context alive → tool error passes through unchanged.
+	// ctx.Err() == nil, so the precedence check short-circuits and we
+	// return out.Result, out.Err verbatim.
+	t.Run("context_OK_tool_error_preserved", func(t *testing.T) {
+		t.Parallel()
+		diskFull := errors.New("disk full")
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "write failed"},
+			Err:    diskFull,
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			5*time.Second, 5*time.Second, 10*time.Millisecond,
+		)
+
+		res, err := decorator.Execute(
+			context.Background(),
+			&tools.ToolDeclaration{Name: "test"},
+			&llm.FunctionCall{Name: "test"},
+			nil,
+		)
+
+		// Safety decorator returns nil error when the select picks the outCh
+		// branch (it does, because ctx is not done). The tool error is in the
+		// second return value from the fallthrough path: return out.Result, out.Err.
+		assert.Error(t, err, "tool error must pass through as second return value")
+		assert.Contains(t, err.Error(), "disk full")
+		assert.Equal(t, "write failed", res.Text)
+		assert.NoError(t, res.Error, "result.Error is nil because the mock returned error separately")
+	})
+
+	// Subtest B: pre-cancelled context → friendly cancellation message
+	// overrides the raw tool error. Both ctx.Done() and outCh may be
+	// simultaneously ready; Go selects randomly. Both paths produce the
+	// same formatContextError output that wraps context.Canceled.
+	t.Run("context_cancelled_tool_error_overridden", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // pre-cancelled per ADR-036 §2
+
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "raw output"},
+			Err:    errors.New("raw tool crash"),
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			5*time.Second, 5*time.Second, 10*time.Millisecond,
+		)
+
+		res, err := decorator.Execute(
+			ctx,
+			&tools.ToolDeclaration{Name: "test"},
+			&llm.FunctionCall{Name: "test"},
+			nil,
+		)
+
+		// Both select branches return (friendly result, nil).
+		assert.NoError(t, err)
+		assert.Error(t, res.Error)
+		assert.Contains(t, res.Text, "interrupted or cancelled")
+		assert.True(t, errors.Is(res.Error, context.Canceled),
+			"error must wrap context.Canceled")
+	})
+
+	// Subtest C: nearly-immediate deadline → friendly timeout message
+	// overrides the raw tool error. Same dual-path semantics as B.
+	t.Run("context_deadline_exceeded_tool_error_overridden", func(t *testing.T) {
+		t.Parallel()
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "raw output"},
+			Err:    errors.New("tool failed"),
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			1*time.Nanosecond, 1*time.Nanosecond, 10*time.Millisecond,
+		)
+
+		res, err := decorator.Execute(
+			context.Background(),
+			&tools.ToolDeclaration{Name: "test"},
+			&llm.FunctionCall{Name: "test"},
+			nil,
+		)
+
+		// Both select branches return (friendly result, nil).
+		assert.NoError(t, err)
+		assert.Error(t, res.Error)
+		assert.Contains(t, res.Text, "timed out")
+		assert.True(t, errors.Is(res.Error, llm.ErrTransient),
+			"error must wrap llm.ErrTransient")
+	})
+}
+
 func TestTracingDecorator(t *testing.T) {
 	t.Parallel()
 	registry := &panicRegistry{}
