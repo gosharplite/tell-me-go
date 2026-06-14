@@ -64,6 +64,7 @@ func (m *infoManager) recordGoStats(ctx context.Context, path string, info os.Fi
 	} else if loc, err := m.countLines(ctx, path); err == nil {
 		stats.totalLOC += loc
 	}
+	// countLines errors are intentionally silent: LOC is best-effort.
 }
 
 func (m *infoManager) sendHeartbeat(hb chan<- struct{}, count int) {
@@ -133,6 +134,8 @@ func (m *infoManager) GetProjectSummary(ctx context.Context, args map[string]int
 
 func (m *infoManager) resolveModuleInfo(ctx context.Context) string {
 	var sb strings.Builder
+	// Best-effort: go.mod may not exist (non-Go project) or may be
+	// unreadable. Both cases result in an empty module info string.
 	if content, err := m.FS.ReadFile(ctx, "go.mod"); err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
@@ -213,6 +216,8 @@ func (m *infoManager) publishGoDocEvent(ctx context.Context, symbol string) {
 	}
 	if err := events.SafePublish(ctx, m.Events, evt); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
+			// Falls back to the default logger; production code should
+			// inject a configured slog.Logger via the infoManager.
 			slog.Default().Error("event_publish_failed",
 				slog.String("event_type", string(evt.Type())),
 				slog.Any("error", err))
@@ -244,7 +249,11 @@ func (m *infoManager) startGoDocHeartbeat(hb chan<- struct{}) chan struct{} {
 
 func (m *infoManager) formatDocOutput(out []byte, err error) tools.ToolResult {
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}
+		msg := fmt.Sprintf("Error running go doc: %v", err)
+		if len(out) > 0 {
+			msg += fmt.Sprintf("\nOutput: %s", string(out))
+		}
+		return tools.ToolResult{Text: msg}
 	}
 	return tools.ToolResult{Text: string(out)}
 }

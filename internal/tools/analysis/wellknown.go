@@ -144,6 +144,10 @@ func signatureMatches(sig *types.Signature, want wellKnownContractSignature) boo
 // http.Handler). Such methods must be protected from being flagged as
 // DEAD/PRIVATE because the call site never names them.
 func (a *defaultDeadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
+	// Only *types.Func objects can match a well-known contract signature.
+	// Two distinct failure modes return false silently:
+	//   1. Not a function (variable, type, constant)
+	//   2. Function with a non-signature type (builtin, invalid)
 	fn, ok := obj.(*types.Func)
 	if !ok {
 		return false

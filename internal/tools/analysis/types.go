@@ -63,7 +63,10 @@ func (m *defaultTypeManager) GetTypeInfo(ctx context.Context, args map[string]in
 	}
 
 	locs, err := m.Indexer.Lookup(ctx, typename, hb)
-	if err != nil || len(locs) == 0 {
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("lookup type %s: %w", typename, err)
+	}
+	if len(locs) == 0 {
 		return tools.ToolResult{Text: "Type not found."}, nil
 	}
 
@@ -265,11 +268,16 @@ func (m *defaultTypeManager) findMethodsInPackage(ctx context.Context, dir, type
 }
 
 func (m *defaultTypeManager) makeMethodWalkFunc(ctx context.Context, typeName string, hb chan<- struct{}, methods *[]string, count *int) filepath.WalkFunc {
-	return func(p string, i os.FileInfo, e error) error {
+	return func(p string, i os.FileInfo, walkErr error) error {
+		// Propagate filesystem-level walk errors (permission denied,
+		// broken symlink) — these are not parse skips.
+		if walkErr != nil {
+			return walkErr
+		}
 		if err := m.checkCancellation(ctx); err != nil {
 			return err
 		}
-		if m.shouldSkipFile(p, i, e) {
+		if m.shouldSkipFile(p, i, nil) {
 			return nil
 		}
 
@@ -277,6 +285,9 @@ func (m *defaultTypeManager) makeMethodWalkFunc(ctx context.Context, typeName st
 
 		ff, _, err := m.Cache.Get(p)
 		if err != nil {
+			// Tolerate parse errors in individual files; method
+			// discovery is best-effort and a single corrupt .go
+			// file must not block the entire walk.
 			return nil
 		}
 		*methods = append(*methods, m.extractMethodsFromFile(ff, typeName)...)
@@ -287,7 +298,7 @@ func (m *defaultTypeManager) makeMethodWalkFunc(ctx context.Context, typeName st
 func (m *defaultTypeManager) extractMethodsFromFile(f *ast.File, typeName string) []string {
 	var methods []string
 	for _, d := range f.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil && len(fd.Recv.List) > 0 {
 			recvType := exprToString(fd.Recv.List[0].Type)
 			if strings.TrimPrefix(recvType, "*") == typeName {
 				methods = append(methods, getFuncSignature(fd))
@@ -403,11 +414,16 @@ func (m *defaultTypeManager) matchSymbolInFile(f *ast.File, fset *token.FileSet,
 func (m *defaultTypeManager) collectSymbols(ctx context.Context, root, query string, exportedOnly bool, hb chan<- struct{}) ([]string, error) {
 	var results []string
 	count := 0
-	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(root, func(p string, info os.FileInfo, walkErr error) error {
+		// Propagate filesystem-level walk errors (permission denied,
+		// broken symlink) — these are not parse skips.
+		if walkErr != nil {
+			return walkErr
+		}
 		if err := m.checkCancellation(ctx); err != nil {
 			return err
 		}
-		if m.shouldSkipFile(p, info, err) {
+		if m.shouldSkipFile(p, info, nil) {
 			return nil
 		}
 
@@ -415,12 +431,15 @@ func (m *defaultTypeManager) collectSymbols(ctx context.Context, root, query str
 
 		f, fset, err := m.Cache.Get(p)
 		if err != nil {
+			// Tolerate parse errors in individual files; symbol
+			// collection is best-effort and a single corrupt .go
+			// file must not block the entire walk.
 			return nil
 		}
 		results = append(results, m.matchSymbolInFile(f, fset, p, query, exportedOnly)...)
 		return nil
 	})
-	return results, err
+	return results, walkErr
 }
 
 func (m *defaultTypeManager) resolvePath(path string) (string, error) {
@@ -446,11 +465,17 @@ func (m *defaultTypeManager) checkCancellation(ctx context.Context) error {
 	}
 }
 
-func (m *defaultTypeManager) shouldSkipFile(p string, info os.FileInfo, err error) bool {
-	return err != nil || info.IsDir() || filepath.Ext(p) != ".go"
+func (m *defaultTypeManager) shouldSkipFile(p string, info os.FileInfo, _ error) bool {
+	// The error parameter is retained for signature compatibility with
+	// filepath.WalkFunc but is always nil at this point — walk errors
+	// are intercepted by the caller before shouldSkipFile is invoked.
+	return info.IsDir() || filepath.Ext(p) != ".go"
 }
 
 func (m *defaultTypeManager) handleHeartbeat(hb chan<- struct{}, count *int) {
+	if count == nil {
+		return
+	}
 	*count++
 	if *count%10 == 0 && hb != nil {
 		select {

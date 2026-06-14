@@ -485,13 +485,26 @@ func TestPublishGoDocEvent_NilEvents(t *testing.T) {
 func TestFormatDocOutput_Error(t *testing.T) {
 	t.Parallel()
 	m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
-	result := m.formatDocOutput([]byte("partial output"), fmt.Errorf("go doc failed"))
-	if !strings.Contains(result.Text, "Error running go doc") {
-		t.Errorf("expected error message in output, got: %s", result.Text)
-	}
-	if !strings.Contains(result.Text, "partial output") {
-		t.Errorf("expected partial output in result, got: %s", result.Text)
-	}
+
+	t.Run("error with partial output", func(t *testing.T) {
+		result := m.formatDocOutput([]byte("partial output"), fmt.Errorf("go doc failed"))
+		if !strings.Contains(result.Text, "Error running go doc") {
+			t.Errorf("expected error message in output, got: %s", result.Text)
+		}
+		if !strings.Contains(result.Text, "partial output") {
+			t.Errorf("expected partial output in result, got: %s", result.Text)
+		}
+	})
+
+	t.Run("error with empty output omits Output label", func(t *testing.T) {
+		result := m.formatDocOutput(nil, fmt.Errorf("go doc failed"))
+		if !strings.Contains(result.Text, "Error running go doc") {
+			t.Errorf("expected error message in output, got: %s", result.Text)
+		}
+		if strings.Contains(result.Text, "Output:") {
+			t.Errorf("expected no 'Output:' label when output is empty, got: %s", result.Text)
+		}
+	})
 }
 
 // TestInfoManager_RemainingErrorPaths covers error branches not exercised by other tests.
