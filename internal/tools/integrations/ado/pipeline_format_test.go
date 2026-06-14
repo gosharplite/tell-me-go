@@ -198,3 +198,91 @@ func TestFormatPipelineLogList(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatRepositoryItems(t *testing.T) {
+	tests := []struct {
+		name        string
+		scopePath   string
+		version     string
+		response    adoRepositoryItemsResponse
+		expect      string   // exact match
+		contains    []string // substrings that must appear
+		notContains []string // substrings that must NOT appear
+	}{
+		{
+			name:      "Empty Value slice returns sentinel",
+			scopePath: "/",
+			version:   "main",
+			response: adoRepositoryItemsResponse{
+				Value: nil,
+				Count: 0,
+			},
+			expect: "No items found.",
+		},
+		{
+			name:      "Single item matching scopePath, len==1 shows the item",
+			scopePath: "/",
+			version:   "main",
+			response: adoRepositoryItemsResponse{
+				Value: []struct {
+					Path     string `json:"path"`
+					IsFolder bool   `json:"isFolder"`
+				}{
+					{Path: "/", IsFolder: true},
+				},
+				Count: 1,
+			},
+			contains: []string{"[DIR]  /"},
+		},
+		{
+			name:      "Two items, first matches scopePath, len>1 skips root dir",
+			scopePath: "/",
+			version:   "main",
+			response: adoRepositoryItemsResponse{
+				Value: []struct {
+					Path     string `json:"path"`
+					IsFolder bool   `json:"isFolder"`
+				}{
+					{Path: "/", IsFolder: true},
+					{Path: "/src/main.go", IsFolder: false},
+				},
+				Count: 2,
+			},
+			contains:    []string{"[FILE] /src/main.go"},
+			notContains: []string{"[DIR]  /"},
+		},
+		{
+			name:      "Non-matching scopePath, no filtering",
+			scopePath: "/src",
+			version:   "main",
+			response: adoRepositoryItemsResponse{
+				Value: []struct {
+					Path     string `json:"path"`
+					IsFolder bool   `json:"isFolder"`
+				}{
+					{Path: "/src/main.go", IsFolder: false},
+				},
+				Count: 1,
+			},
+			contains: []string{"[FILE] /src/main.go"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := formatRepositoryItems(tt.scopePath, tt.version, tt.response)
+
+			if tt.expect != "" {
+				assert.Equal(t, tt.expect, result.Text)
+			}
+			for _, s := range tt.contains {
+				assert.Contains(t, result.Text, s)
+			}
+			for _, s := range tt.notContains {
+				assert.NotContains(t, result.Text, s)
+			}
+		})
+	}
+}

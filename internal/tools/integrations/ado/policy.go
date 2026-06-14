@@ -459,7 +459,7 @@ func registerPolicy(r tools.Registry, m *AdoManager, _ PipelineFormatter) error 
 
 	for _, spec := range specs {
 		if err := r.RegisterToToolkit("ado", spec.decl, spec.handler); err != nil {
-			return err
+			return fmt.Errorf("registering policy tool %q: %w", spec.decl.Name, err)
 		}
 	}
 
