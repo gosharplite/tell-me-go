@@ -540,6 +540,46 @@ func TestRegister_RegisterFilesFails(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// registerFiles — mid-sequence RegisterWithOptions failure (after get_definitions)
+// ---------------------------------------------------------------------------
+
+func TestRegisterFiles_MidSequenceFailure(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	fs := persistencetest.NewPlainOSFileSystem()
+	wp := infra_persistence.NewWorkspacePolicy()
+	// Use real processExecutor to cover the type-assertion success path (internalExec = pe).
+	exec := newprocessExecutor()
+
+	t.Run("append_text fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "append_text",
+		}
+		err := registerFiles(registry, sm, fs, exec, wp)
+		if err == nil {
+			t.Fatal("expected error from registerFiles when append_text fails")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+
+	t.Run("delete_path fails", func(t *testing.T) {
+		registry := &failingRegistry{
+			mockToolRegistry: &mockToolRegistry{},
+			failOnTool:       "delete_path",
+		}
+		err := registerFiles(registry, sm, fs, exec, wp)
+		if err == nil {
+			t.Fatal("expected error from registerFiles when delete_path fails")
+		}
+		if !strings.Contains(err.Error(), "injected failure") {
+			t.Errorf("expected 'injected failure', got %q", err.Error())
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // registerFiles — non-processExecutor path
 // ---------------------------------------------------------------------------
 

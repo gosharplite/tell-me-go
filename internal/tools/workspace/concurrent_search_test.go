@@ -6,6 +6,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,11 +35,30 @@ func (f *searchMockFile) Seek(offset int64, whence int) (int64, error) {
 	return f.Reader.Seek(offset, whence)
 }
 
+// searchMockFileReadErr wraps searchMockFile but returns an error on Read
+// after a specified number of successful reads. This exercises the scanFile
+// → checkBinary → scanLines → scanner.Err() error path.
+type searchMockFileReadErr struct {
+	*searchMockFile
+	readErr   error
+	readCount int
+	failAfter int
+}
+
+func (f *searchMockFileReadErr) Read(p []byte) (int, error) {
+	if f.readCount >= f.failAfter {
+		return 0, f.readErr
+	}
+	f.readCount++
+	return f.Reader.Read(p)
+}
+
 type searchMockFS struct {
 	persistence.FileSystem
-	files    map[string][]byte
-	walkErr  error
-	openErrs map[string]error
+	files        map[string][]byte
+	walkErr      error
+	openErrs     map[string]error
+	openReadErrs map[string]error // path → error returned by Read after checkBinary
 }
 
 func (m *searchMockFS) Open(ctx context.Context, name string) (persistence.File, error) {
@@ -49,7 +69,15 @@ func (m *searchMockFS) Open(ctx context.Context, name string) (persistence.File,
 	if !ok {
 		return nil, os.ErrNotExist
 	}
-	return &searchMockFile{Reader: bytes.NewReader(content), name: name}, nil
+	f := &searchMockFile{Reader: bytes.NewReader(content), name: name}
+	if readErr, ok := m.openReadErrs[name]; ok {
+		return &searchMockFileReadErr{
+			searchMockFile: f,
+			readErr:        readErr,
+			failAfter:      1, // fail after checkBinary's first read
+		}, nil
+	}
+	return f, nil
 }
 
 func (m *searchMockFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
@@ -109,7 +137,8 @@ func setupSearchTest(t *testing.T) (*searchMockFS, *mockSP) {
 			"bin.exe":   []byte{0, 1, 2, 3, 0},
 			"large.txt": make([]byte, 2*1024*1024),
 		},
-		openErrs: make(map[string]error),
+		openErrs:     make(map[string]error),
+		openReadErrs: make(map[string]error),
 	}
 	return fs, sp
 }
@@ -288,5 +317,110 @@ func testConcurrentSearchRace(t *testing.T) {
 			}()
 		}
 		wg.Wait()
+	}
+}
+
+func TestStartWorkers_ScanFileNonContextError(t *testing.T) {
+	fs := &searchMockFS{
+		files: map[string][]byte{
+			"badfile.txt": []byte("hello world\ntodo: fix this"),
+		},
+		openErrs: make(map[string]error),
+		openReadErrs: map[string]error{
+			"badfile.txt": io.ErrUnexpectedEOF,
+		},
+	}
+
+	p := &searchPipeline{
+		ctx:         context.Background(),
+		fs:          fs,
+		pathsChan:   make(chan string, 1),
+		resultsChan: make(chan string, 1),
+		errChan:     make(chan error, 1),
+		policy:      infra_persistence.NewWorkspacePolicy(),
+		matcher: func(_, line string) (string, bool) {
+			return "", strings.Contains(line, "todo")
+		},
+	}
+
+	p.pathsChan <- "badfile.txt"
+	close(p.pathsChan)
+
+	var wg sync.WaitGroup
+	p.startWorkers(&wg)
+	wg.Wait()
+
+	select {
+	case err := <-p.errChan:
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "scanFile") {
+			t.Errorf("expected error to contain 'scanFile', got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "badfile.txt") {
+			t.Errorf("expected error to contain 'badfile.txt', got: %v", err)
+		}
+		if !strings.Contains(err.Error(), io.ErrUnexpectedEOF.Error()) {
+			t.Errorf("expected error to contain '%v', got: %v", io.ErrUnexpectedEOF, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for error on errChan")
+	}
+}
+
+func TestWalkAndProcess_HeartbeatCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancelled
+
+	fs := &searchMockFS{
+		files: make(map[string][]byte),
+	}
+	// Add 50+ files to trigger walkHeartbeat (count%50==0 at count=50)
+	for i := 0; i < 55; i++ {
+		fs.files[fmt.Sprintf("file_%d.txt", i)] = []byte("content")
+	}
+
+	sp := &mockSP{}
+	hb := make(chan struct{}, 1)
+
+	processed := 0
+	err := walkAndProcess(ctx, sp, fs, ".", hb, func(path string) error {
+		processed++
+		return nil
+	}, infra_persistence.NewWorkspacePolicy())
+
+	if err == nil {
+		t.Fatal("expected context.Canceled error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	// Should have processed fewer than 55 files (aborted early)
+	if processed >= 55 {
+		t.Errorf("expected early abort, but processed all %d files", processed)
+	}
+}
+
+func TestSearchPipeline_WalkFunc_CtxCancelled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	p := &searchPipeline{
+		ctx:    ctx,
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	// walkFunc checks p.ctx.Err() before anything else
+	err := p.walkFunc("test.txt", &searchMockFileInfo{name: "test.txt", size: 10}, nil)
+	if err == nil {
+		t.Fatal("expected context.Canceled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
 	}
 }
