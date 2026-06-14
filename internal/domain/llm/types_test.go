@@ -771,3 +771,14 @@ func TestContent_addPart_ExplicitCall(t *testing.T) {
 		t.Errorf("Expected 1 part, got %d", len(c.Parts))
 	}
 }
+
+// TestPartClone_NilReceiver exercises the nil-receiver guard in Part.clone.
+// Calling clone on a nil *Part must return nil without panicking.
+func TestPartClone_NilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var p *Part = nil
+	if got := p.clone(); got != nil {
+		t.Errorf("(*Part)(nil).clone() = %+v, want nil", got)
+	}
+}

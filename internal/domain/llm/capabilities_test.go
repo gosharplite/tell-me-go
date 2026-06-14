@@ -68,6 +68,24 @@ func TestResolveCapabilities(t *testing.T) {
 			isDeepSeek:              false,
 		},
 		{
+			name:                    "gpt-7.0 requires responses API (major>5, n>=2)",
+			model:                   "gpt-7.0",
+			supportsReasoningEffort: true,
+			requiresResponsesAPI:    true,
+			useDeveloperRole:        true,
+			maxTokensField:          MaxTokensFieldOutput,
+			isDeepSeek:              false,
+		},
+		{
+			name:                    "gpt-10.1 requires responses API (major>5, n>=2, two-digit major)",
+			model:                   "gpt-10.1",
+			supportsReasoningEffort: true,
+			requiresResponsesAPI:    true,
+			useDeveloperRole:        true,
+			maxTokensField:          MaxTokensFieldOutput,
+			isDeepSeek:              false,
+		},
+		{
 			model:                   "deepseek-reasoner",
 			supportsReasoningEffort: false,
 			requiresResponsesAPI:    false,
@@ -181,6 +199,8 @@ func TestParseGPTVersion(t *testing.T) {
 		{"gpt-6", gptVersion{major: 6, minor: 0, ok: true}},
 		{"gpt-6.1", gptVersion{major: 6, minor: 1, ok: true}},
 		{"gpt-4o", gptVersion{major: 4, minor: 0, ok: true}}, // Sscanf stops at 'o'
+		{"gpt-", gptVersion{ok: false}},                      // prefix present, nothing parseable → n==0
+		{"gpt-abc", gptVersion{ok: false}},                   // prefix present, non-numeric → n==0
 		{"deepseek-v3", gptVersion{ok: false}},
 		{"o1", gptVersion{ok: false}},
 		{"claude-3", gptVersion{ok: false}},

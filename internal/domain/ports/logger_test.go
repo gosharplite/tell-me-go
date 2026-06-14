@@ -71,3 +71,20 @@ func TestNoOpTurnsLogger_Close(t *testing.T) {
 		t.Errorf("expected nil, got %v", err)
 	}
 }
+
+// TestNoOpTurnsLogger_Listen_DeadlineExceeded verifies that Listen returns
+// context.DeadlineExceeded when the context's deadline expires.
+func TestNoOpTurnsLogger_Listen_DeadlineExceeded(t *testing.T) {
+	t.Parallel()
+	l := &NoOpTurnsLogger{}
+
+	// Use an already-expired deadline to deterministically trigger
+	// the DeadlineExceeded path without time.Sleep.
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+	defer cancel()
+
+	err := l.Listen(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded, got %v", err)
+	}
+}
