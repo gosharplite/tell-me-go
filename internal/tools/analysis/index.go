@@ -164,7 +164,7 @@ func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 	fset := token.NewFileSet()
 	pkgs, err := idx.loadPackages(ctx, fset)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading packages: %w", err)
 	}
 
 	symbolsByPath, usagesByName, err := idx.harvestPackages(ctx, fset, pkgs, hb)
@@ -178,7 +178,10 @@ func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 
 func (idx *indexer) toLocation(pos token.Pos) location {
 	p := idx.fset.Position(pos)
-	abs, _ := filepath.Abs(p.Filename)
+	abs, err := filepath.Abs(p.Filename)
+	if err != nil {
+		abs = p.Filename // fallback to raw filename; better than empty string
+	}
 	return location{
 		Path:   abs,
 		Line:   p.Line,
@@ -262,6 +265,7 @@ func (idx *indexer) discoverModulePath(ctx context.Context, fset *token.FileSet)
 	}
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil || len(pkgs) == 0 {
+		log.Printf("analysis: discoverModulePath failed (dir=%s, err=%v, pkgs=%d), falling back to ./... pattern", idx.dir, err, len(pkgs))
 		return ""
 	}
 	for _, pkg := range pkgs {

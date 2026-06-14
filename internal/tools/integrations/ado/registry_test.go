@@ -6,7 +6,9 @@ package ado
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
@@ -273,6 +275,27 @@ func TestRegister(t *testing.T) {
 		assert.Len(t, r.registered, 20)
 	})
 
+	t.Run("Success with AZURE_PAT_ALL set exercises WithToken path", func(t *testing.T) {
+		t.Setenv("AZURE_PAT_ALL", "test-pat")
+		r := &mockRegistry{}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+		err := Register(r, sm, nil)
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, r.registered)
+		assert.Len(t, r.registered, 20)
+	})
+
+	t.Run("Success with client exercises WithHTTPClient path", func(t *testing.T) {
+		r := &mockRegistry{}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
+		client := &http.Client{Timeout: 5 * time.Second}
+		err := Register(r, sm, client)
+		require.NoError(t, err)
+		assert.Len(t, r.registered, 20)
+	})
+
 	t.Run("Error propagation stops registration", func(t *testing.T) {
 		// Use a mockRegistry where RegisterToToolkit succeeds once and fails
 		// on the second call.
@@ -300,4 +323,73 @@ func (f *failingRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDecla
 	f.callNum++
 	f.registered = append(f.registered, registeredTool{toolkit, def.Name, handler})
 	return nil
+}
+
+// ============================================================================
+// marshalIndentResult
+// ============================================================================
+
+func TestMarshalIndentResult(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   interface{}
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "unmarshalable value returns error",
+			input:   make(chan int),
+			wantErr: true,
+			errMsg:  "marshaling response",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := marshalIndentResult(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// ============================================================================
+// appendTruncationNote
+// ============================================================================
+
+func TestAppendTruncationNote(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		input  logContent
+		assert func(t *testing.T, result string)
+	}{
+		{
+			name:  "appends note when truncated",
+			input: logContent{Content: "data", Truncated: true, TotalLines: 100},
+			assert: func(t *testing.T, result string) {
+				assert.Contains(t, result, "[NOTE to LLM")
+				assert.Contains(t, result, "truncated after 100 lines")
+				assert.Contains(t, result, "data")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := appendTruncationNote(tt.input)
+			tt.assert(t, result)
+		})
+	}
 }

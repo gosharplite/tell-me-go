@@ -34,9 +34,9 @@ func (tx *transaction) Add(t transform) {
 }
 
 func (tx *transaction) Commit(ctx context.Context) error {
-	for _, t := range tx.transforms {
+	for i, t := range tx.transforms {
 		if err := t.Apply(ctx, tx.fset, tx.files); err != nil {
-			return err
+			return fmt.Errorf("transform %d: %w", i, err)
 		}
 	}
 
@@ -46,13 +46,13 @@ func (tx *transaction) Commit(ctx context.Context) error {
 		f, err := os.Create(tmpPath)
 		if err != nil {
 			tx.rollback(writtenFiles)
-			return err
+			return fmt.Errorf("create temp file %s: %w", tmpPath, err)
 		}
 		if err := tx.safeFormat(f, file); err != nil {
 			_ = f.Close()
 			_ = os.Remove(tmpPath)
 			tx.rollback(writtenFiles)
-			return err
+			return fmt.Errorf("format %s: %w", path, err)
 		}
 		_ = f.Close()
 		writtenFiles = append(writtenFiles, path)
@@ -97,7 +97,7 @@ func (tx *transaction) LoadFile(path string) (*ast.File, error) {
 
 	f, err := parser.ParseFile(tx.fset, path, nil, parser.ParseComments)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
 	tx.files[path] = f

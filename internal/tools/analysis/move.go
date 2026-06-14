@@ -28,11 +28,11 @@ func newMoveTransform(plan *movePlan) *moveTransform {
 func (t *moveTransform) Apply(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
 	srcFile, ok := files[t.Plan.SrcFile]
 	if !ok {
-		return fmt.Errorf("source file %s not loaded", t.Plan.SrcFile)
+		return fmt.Errorf("move %s: source file %s not loaded", t.Plan.Symbol, t.Plan.SrcFile)
 	}
 	dstFile, ok := files[t.Plan.DstFile]
 	if !ok {
-		return fmt.Errorf("destination file %s not loaded", t.Plan.DstFile)
+		return fmt.Errorf("move %s: destination file %s not loaded", t.Plan.Symbol, t.Plan.DstFile)
 	}
 
 	var toMove []ast.Decl
@@ -51,7 +51,7 @@ func (t *moveTransform) Apply(ctx context.Context, fset *token.FileSet, files ma
 	}
 
 	if !symbolFound {
-		return fmt.Errorf("symbol %s not found in %s", t.Plan.Symbol, t.Plan.SrcFile)
+		return fmt.Errorf("move %s: symbol not found in %s", t.Plan.Symbol, t.Plan.SrcFile)
 	}
 
 	// Update source and destination

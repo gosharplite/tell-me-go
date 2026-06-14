@@ -12,6 +12,9 @@ func (e *severityClassifierEvaluator) evaluate(ctx *orphanEvalContext) *orphanEv
 	if ctx == nil {
 		return nil
 	}
+	if ctx.state == nil || ctx.meta == nil {
+		return nil
+	}
 	total := ctx.state.totalUses[ctx.id]
 
 	var severity, reason string

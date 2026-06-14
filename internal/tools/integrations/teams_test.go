@@ -5,7 +5,6 @@ package integrations
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -148,17 +147,27 @@ func TestTeamsManager_Timeout(t *testing.T) {
 }
 
 func TestBuildTeamsRequestBody(t *testing.T) {
-	body, err := buildTeamsRequestBody("hello", "reason")
-	if err != nil {
-		t.Fatalf("buildTeamsRequestBody failed: %v", err)
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatalf("Failed to unmarshal body: %v", err)
-	}
-	if payload["type"] != "AdaptiveCard" {
-		t.Errorf("Expected type AdaptiveCard, got %v", payload["type"])
-	}
+	t.Run("includes reason when provided", func(t *testing.T) {
+		body, err := buildTeamsRequestBody("hello", "testing reason")
+		if err != nil {
+			t.Fatalf("buildTeamsRequestBody failed: %v", err)
+		}
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, "Reason: testing reason") {
+			t.Errorf("Expected reason in body, got: %s", bodyStr)
+		}
+	})
+
+	t.Run("omits reason when empty", func(t *testing.T) {
+		body, err := buildTeamsRequestBody("hello", "")
+		if err != nil {
+			t.Fatalf("buildTeamsRequestBody failed: %v", err)
+		}
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, "Reason:") {
+			t.Errorf("Expected no reason in body when reason is empty, got: %s", bodyStr)
+		}
+	})
 }
 
 func TestPostToWebhook_RequestError(t *testing.T) {

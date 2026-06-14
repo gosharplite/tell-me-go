@@ -63,22 +63,22 @@ func RegisterAll(params ToolRegistrationParams) error {
 		return err
 	}
 	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager); err != nil {
-		return err
+		return fmt.Errorf("workspace.Register: %w", err)
 	}
 	if params.SessionProvider != nil {
 		if err := workspace.RegisterPersistence(params.Registry, params.SessionProvider); err != nil {
-			return err
+			return fmt.Errorf("workspace.RegisterPersistence: %w", err)
 		}
 	}
 	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem, params.WorkspacePolicy)
 	if err != nil {
-		return err
+		return fmt.Errorf("analysis.Register: %w", err)
 	}
 	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, archVerify); err != nil {
-		return err
+		return fmt.Errorf("developer.Register: %w", err)
 	}
 	if err := integrations.RegisterAll(params.Registry, params.FileSystem, params.SecurityManager, params.Client, params.AssetsDir); err != nil {
-		return err
+		return fmt.Errorf("integrations.RegisterAll: %w", err)
 	}
 	return nil
 }

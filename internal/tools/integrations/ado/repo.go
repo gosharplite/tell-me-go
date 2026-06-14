@@ -4,6 +4,8 @@
 package ado
 
 import (
+	"fmt"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -57,7 +59,7 @@ func registerRepository(r tools.Registry, m *AdoManager, _ PipelineFormatter) er
 
 	for _, spec := range specs {
 		if err := r.RegisterToToolkit("ado", spec.decl, spec.handler); err != nil {
-			return err
+			return fmt.Errorf("registering repository tool %q: %w", spec.decl.Name, err)
 		}
 	}
 

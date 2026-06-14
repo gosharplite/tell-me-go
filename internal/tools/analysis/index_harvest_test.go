@@ -728,3 +728,41 @@ func TestHandleIdent_UnexportedNonPackageLevel(t *testing.T) {
 	h.handleIdent(ident)
 	assert.Empty(t, h.usagesByName)
 }
+
+// TestHarvestPackageSymbols_AbsFails verifies that when filepath.Abs fails
+// (e.g. due to a null byte in the path), harvestPackageSymbols falls back
+// to the raw directory path instead of silently skipping the package.
+func TestHarvestPackageSymbols_AbsFails(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+
+	state := &scanState{
+		targetModule: "example.com",
+		targetPath:   "/some/valid/prefix",
+		declarations: make(map[string]*symMeta),
+	}
+
+	// Create a package with a Go file path containing a null byte so that
+	// filepath.Abs returns an error.  The raw dir path (from filepath.Dir)
+	// will be "/some/valid/prefix" which passes the targetPath check.
+	pkg := &packages.Package{
+		PkgPath:   "example.com/test",
+		GoFiles:   []string{"/some/valid/prefix/pkg\x00.go"},
+		Types:     types.NewPackage("example.com/test", "test"),
+		TypesInfo: &types.Info{},
+		Module: &packages.Module{
+			Path:    "example.com",
+			Version: "v0.0.1",
+		},
+	}
+
+	// Insert an exported symbol so that the scope iteration path is exercised.
+	exportedVar := types.NewVar(token.NoPos, pkg.Types, "ExportedVar", types.Typ[types.Int])
+	pkg.Types.Scope().Insert(exportedVar)
+
+	analyzer.harvestPackageSymbols(pkg, state)
+
+	// No panic and the exported symbol should be registered.
+	assert.NotEmpty(t, state.declarations, "expected exported symbol to be harvested")
+}

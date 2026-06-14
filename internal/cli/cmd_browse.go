@@ -31,12 +31,18 @@ func (c *browseCommand) newCapturer(stdin io.Reader, stdout, stderr io.Writer, s
 	return ui.NewCapturer(stdin, stdout, stderr, sm, clk, mockPrompt, mockAnswer, disableEscapeSequences)
 }
 
+// warnf writes a formatted warning message to stderr; errors from Fprintf are
+// deliberately discarded because there is no recovery path for logging failures.
+func (c *browseCommand) warnf(format string, args ...interface{}) {
+	_, _ = fmt.Fprintf(c.ctx.Stderr, format, args...)
+}
+
 // getCapturer returns the override if set (test path), otherwise creates a real capturer.
 func (c *browseCommand) getCapturer() (agent.CapturerInteractor, func(stdctx.Context) error, error) {
 	if c.capturerOverride != nil {
 		return c.capturerOverride, func(ctx stdctx.Context) error {
 			if err := c.capturerOverride.Close(ctx); err != nil {
-				_, _ = fmt.Fprintf(c.ctx.Stderr, "Warning: failed to close capturer: %v\n", err)
+				c.warnf("Warning: failed to close capturer: %v\n", err)
 				return err
 			}
 			return nil
@@ -53,7 +59,7 @@ func newBrowseCommand(ctx *context) *cobra.Command {
 		Short: "Interactive history browser using Bubble Tea",
 		Long:  "Launches an interactive TUI to browse through active and archived chat history.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ := cmd.Flags().GetString("config")
+			configPath, _ := cmd.Flags().GetString("config") // flag guaranteed by root command; never errors
 			return c.runBrowse(cmd.Context(), configPath)
 		},
 	}
@@ -105,7 +111,7 @@ func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.C
 	c.ctx.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		if err := capturer.Close(ctx); err != nil {
-			_, _ = fmt.Fprintf(c.ctx.Stderr, "Warning: failed to close capturer: %v\n", err)
+			c.warnf("Warning: failed to close capturer: %v\n", err)
 			return err
 		}
 		return nil

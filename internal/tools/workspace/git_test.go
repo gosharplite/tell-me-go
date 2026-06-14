@@ -5,9 +5,11 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -527,5 +529,31 @@ func TestGitCommit_DirectInvocation_UnmarshalError(t *testing.T) {
 	_, err := m.gitCommit(ctx, map[string]interface{}{"message": 123, "reason": "test"}, nil)
 	if err == nil {
 		t.Fatal("expected error from unmarshal args")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runGitCommand context cancellation
+// ---------------------------------------------------------------------------
+
+func TestRunGitCommand_ContextCancellation(t *testing.T) {
+	executor := &mockGitExecutor{
+		handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	m := &gitManager{Exec: executor}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	_, err := m.runGitCommand(ctx, nil, "status")
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
 	}
 }

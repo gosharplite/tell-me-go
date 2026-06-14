@@ -15,6 +15,9 @@ func (e *usageGateEvaluator) evaluate(ctx *orphanEvalContext) *orphanEvalContext
 	if ctx == nil {
 		return ctx
 	}
+	if ctx.state == nil {
+		return ctx
+	}
 	total := ctx.state.totalUses[ctx.id]
 	external := ctx.state.externalUses[ctx.id]
 	if total > 0 && external > 0 {

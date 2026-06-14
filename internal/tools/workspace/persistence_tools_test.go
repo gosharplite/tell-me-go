@@ -730,6 +730,35 @@ func TestManageTasks_UnmarshalError(t *testing.T) {
 // schema for the manage_tasks tool declares task_id as "INTEGER", not
 // "NUMBER". This prevents LLMs from emitting fractional IDs (e.g., 3.5)
 // that would fail validation at the domain boundary (ports.Task.ID is int64).
+// TestListTasks_FilteredNoMatch verifies the offset-beyond-range edge case:
+// when tasks exist (totalCount > 0) but offset >= len(tasks) causes an empty
+// result set, listTasks returns "No tasks found. (total: N)".
+func TestListTasks_FilteredNoMatch(t *testing.T) {
+	pt, provider := setupPersistenceTools()
+	ctx := context.Background()
+
+	_, err := provider.tasks.AddTask(ctx, "pending task 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = provider.tasks.AddTask(ctx, "pending task 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Offset >= total matching tasks → empty slice, but CountTasks still sees them
+	res, err := pt.ManageTasks(ctx, map[string]interface{}{
+		"action": "list",
+		"offset": 10,
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "No tasks found. (total: 2)") {
+		t.Errorf("expected 'No tasks found. (total: 2)', got: %q", res.Text)
+	}
+}
+
 func TestManageTasks_SchemaTaskIDIsInteger(t *testing.T) {
 	pt, _ := setupPersistenceTools()
 	reg := registry.New()

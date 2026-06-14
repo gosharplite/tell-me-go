@@ -14,7 +14,7 @@ import (
 
 func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]typeName, error) {
 	if err := idx.Refresh(ctx, hb); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("refreshing index for implementors: %w", err)
 	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -67,14 +67,14 @@ func (idx *indexer) collectImplementors(iface *types.Interface) []typeName {
 
 func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool, hb chan<- struct{}) ([]symbolLocation, error) {
 	if err := idx.Refresh(ctx, hb); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("refreshing index for search: %w", err)
 	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	searchPath, err := filepath.Abs(path)
+	searchPath, err := idx.resolvePath(path)
 	if err != nil {
-		searchPath = path
+		return nil, fmt.Errorf("resolving search path %q: %w", path, err)
 	}
 
 	var results []symbolLocation
@@ -129,14 +129,14 @@ func (idx *indexer) matchesQuery(sym symbolLocation, query string, exportedOnly 
 
 func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
 	if err := idx.Refresh(ctx, hb); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("refreshing index for usages: %w", err)
 	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	searchPath, err := filepath.Abs(path)
+	searchPath, err := idx.resolvePath(path)
 	if err != nil {
-		searchPath = path
+		return nil, fmt.Errorf("resolving search path %q: %w", path, err)
 	}
 
 	var results []location

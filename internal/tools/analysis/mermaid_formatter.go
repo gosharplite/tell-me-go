@@ -22,6 +22,9 @@ type formatState struct {
 
 // Format transforms a slice of callFrame into a Mermaid sequence diagram string.
 func (f *mermaidFormatter) Format(frames []callFrame) string {
+	// Empty frames produce a minimal valid sequenceDiagram with
+	// no participants or interactions. The zero-value formatState
+	// (inLoop=false) ensures no unbalanced loop-end is emitted.
 	var b strings.Builder
 	b.WriteString("sequenceDiagram\n")
 

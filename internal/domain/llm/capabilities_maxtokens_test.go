@@ -71,7 +71,7 @@ func TestResolveCapabilities_MaxTokensField(t *testing.T) {
 // "UseMaxCompletionTokens" hits this comment block.
 func TestCapabilities_NoBothBudgetFieldsAtOnce(t *testing.T) {
 	models := []string{
-		"gpt-4", "gpt-5", "gpt-5.4", "gpt-6",
+		"gpt-4", "gpt-5", "gpt-5.4", "gpt-6", "gpt-7.0", "gpt-10.1",
 		"o1-mini", "o3",
 		"deepseek-reasoner", "deepseek-ai/deepseek-v3.2-maas",
 	}

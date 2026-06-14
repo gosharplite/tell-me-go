@@ -91,6 +91,18 @@ func TestDefaultSkillSelector_Ordering(t *testing.T) {
 			query:          "tdd is great",
 			expectedSkills: []string{"golang-testing", "golang-patterns", "unrelated-skill"},
 		},
+		{
+			name:           "FullNameMatch",
+			budget:         400,
+			query:          "use golang-testing for this",
+			expectedSkills: []string{"golang-testing", "golang-patterns", "unrelated-skill"},
+		},
+		{
+			name:           "FullNameMatchNoKeywordOverlap",
+			budget:         400,
+			query:          "I need unrelated-skill here",
+			expectedSkills: []string{"unrelated-skill", "golang-testing", "golang-patterns"},
+		},
 	}
 
 	for _, tt := range tests {

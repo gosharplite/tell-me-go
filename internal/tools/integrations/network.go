@@ -107,6 +107,20 @@ func truncateUTF8(s string, maxBytes int) string {
 	return strings.ToValidUTF8(s, "")
 }
 
+// drainAndClose drains remaining bytes from a response body to enable HTTP
+// connection reuse, then closes it. The close error is returned; drain errors
+// are discarded (they are expected when draining after a partial read).
+func drainAndClose(body io.ReadCloser) error {
+	_, _ = io.Copy(io.Discard, body)
+	return body.Close()
+}
+
+// mustFprintf is fmt.Fprintf for strings.Builder, which never returns an error.
+// It eliminates the noisy _, _ = pattern at call sites.
+func mustFprintf(sb *strings.Builder, format string, args ...interface{}) {
+	_, _ = fmt.Fprintf(sb, format, args...)
+}
+
 func (t *networkTool) sanitizeHTML(content string) string {
 	var sb strings.Builder
 	z := html.NewTokenizer(strings.NewReader(content))
@@ -169,7 +183,7 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = drainAndClose(resp.Body) }() // drain+close; error non-actionable after read
 
 	bodyContent, truncated, err := t.readResponseWithLimit(resp.Body, maxHttpRequestSize)
 	if err != nil {
@@ -180,10 +194,10 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	}
 
 	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "Status: %s\n", resp.Status)
+	mustFprintf(&sb, "Status: %s\n", resp.Status)
 	sb.WriteString("Headers:\n")
 	for k, v := range resp.Header {
-		_, _ = fmt.Fprintf(&sb, "  %s: %s\n", k, strings.Join(v, ", "))
+		mustFprintf(&sb, "  %s: %s\n", k, strings.Join(v, ", "))
 	}
 	sb.WriteString("\nBody:\n")
 	sb.WriteString(bodyContent)
@@ -216,7 +230,7 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to fetch URL: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = drainAndClose(resp.Body) }()
 
 	if resp.StatusCode != http.StatusOK {
 		return tools.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)

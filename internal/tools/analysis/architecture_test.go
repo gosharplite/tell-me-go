@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -573,4 +575,95 @@ func TestReportCycle_NoPathFound(t *testing.T) {
 	if len(d.violations) != 0 {
 		t.Errorf("expected 0 violations, got %d", len(d.violations))
 	}
+}
+
+// =============================================================================
+// Gap 7: TestVerifyArchitecture_IndexedProvider — covers the
+//
+//	indexed package provider path in VerifyArchitecture.
+//
+// =============================================================================
+func TestVerifyArchitecture_IndexedProvider(t *testing.T) {
+	t.Parallel()
+
+	mockIdx := &mockSymbolIndex{
+		PackagesFunc: func(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+			return []*packages.Package{
+				{
+					PkgPath: "example.com/mod/internal/domain",
+					Module: &packages.Module{
+						Path: "example.com/mod",
+					},
+					Imports: map[string]*packages.Package{},
+				},
+			}, nil
+		},
+	}
+
+	m := &architectureManager{
+		SP:  &mockSecurityProvider{},
+		idx: mockIdx,
+	}
+
+	res, err := m.VerifyArchitecture(context.Background(), nil, nil)
+	require.NoError(t, err)
+	assert.Contains(t, res.Text, "integrity verified")
+}
+
+// =============================================================================
+// Gap 8: TestCheckLayerViolations_CompositionRoot — covers the
+//
+//	composition root (DI/Factory) path in checkLayerViolations.
+//
+// =============================================================================
+func TestCheckLayerViolations_CompositionRoot(t *testing.T) {
+	t.Parallel()
+	m := &architectureManager{ModulePath: "example.com/mod"}
+
+	t.Run("DI package importing cmd is a violation", func(t *testing.T) {
+		t.Parallel()
+		pkgs := map[string][]string{
+			"example.com/mod/internal/infrastructure/di": {
+				"example.com/mod/cmd/app",
+			},
+		}
+		violations := m.checkLayerViolations(pkgs, nil)
+		if len(violations) != 1 {
+			t.Fatalf("expected 1 violation, got %d", len(violations))
+		}
+		if violations[0].category != "[LAYER VIOLATION]" {
+			t.Errorf("expected LAYER VIOLATION, got %s", violations[0].category)
+		}
+	})
+
+	t.Run("DI package importing domain is NOT a violation", func(t *testing.T) {
+		t.Parallel()
+		pkgs := map[string][]string{
+			"example.com/mod/internal/infrastructure/di": {
+				"example.com/mod/internal/domain",
+			},
+		}
+		violations := m.checkLayerViolations(pkgs, nil)
+		if len(violations) != 0 {
+			t.Errorf("expected 0 violations for DI importing domain, got %d", len(violations))
+		}
+	})
+
+	t.Run("factory package with mixed imports", func(t *testing.T) {
+		t.Parallel()
+		pkgs := map[string][]string{
+			"example.com/mod/internal/infrastructure/factory": {
+				"example.com/mod/internal/domain",
+				"example.com/mod/cmd/app",
+				"example.com/mod/internal/agent",
+			},
+		}
+		violations := m.checkLayerViolations(pkgs, nil)
+		if len(violations) != 1 {
+			t.Fatalf("expected 1 violation (cmd import only), got %d", len(violations))
+		}
+		if violations[0].target != "cmd/app" {
+			t.Errorf("expected cmd/app violation, got target: %s", violations[0].target)
+		}
+	})
 }

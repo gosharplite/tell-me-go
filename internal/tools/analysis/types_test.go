@@ -438,4 +438,11 @@ func TestTypeManager_ErrorPaths(t *testing.T) {
 			t.Error("expected error from resolvePath rejection")
 		}
 	})
+
+	t.Run("handleHeartbeat nil count does not panic", func(t *testing.T) {
+		t.Parallel()
+		m := &defaultTypeManager{}
+		// Must not panic when count is nil.
+		m.handleHeartbeat(nil, nil)
+	})
 }

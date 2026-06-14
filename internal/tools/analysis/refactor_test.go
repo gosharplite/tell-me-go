@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"os"
@@ -158,5 +159,66 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		// .tmp cleaned (rollback)
 		_, statErr := os.Stat(path + ".tmp")
 		assert.True(t, os.IsNotExist(statErr))
+	})
+
+	t.Run("transform_apply_error_is_wrapped", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
+
+		tx := newTransaction()
+		_, err := tx.LoadFile(path)
+		require.NoError(t, err)
+
+		tx.Add(&mockTransform{
+			applyFn: func(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
+				return fmt.Errorf("simulated transform failure")
+			},
+		})
+
+		err = tx.Commit(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "transform 0")
+		assert.Contains(t, err.Error(), "simulated transform failure")
+	})
+
+	t.Run("create_temp_file_error_is_wrapped", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
+
+		tx := newTransaction()
+		_, err := tx.LoadFile(path)
+		require.NoError(t, err)
+
+		tx.Add(&mockTransform{
+			applyFn: func(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
+				return nil
+			},
+		})
+
+		// Make the directory read-only so os.Create fails on the .tmp file
+		require.NoError(t, os.Chmod(tmpDir, 0500))
+		t.Cleanup(func() { _ = os.Chmod(tmpDir, 0700) })
+
+		err = tx.Commit(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "create temp file")
+		assert.Contains(t, err.Error(), ".tmp")
+	})
+
+	t.Run("load_file_parse_error_is_wrapped", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "broken.go")
+		require.NoError(t, os.WriteFile(path, []byte("not valid go {{{"), 0644))
+
+		tx := newTransaction()
+		_, err := tx.LoadFile(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parse")
+		assert.Contains(t, err.Error(), "broken.go")
 	})
 }

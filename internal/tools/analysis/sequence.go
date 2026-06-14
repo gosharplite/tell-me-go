@@ -388,12 +388,8 @@ func (a *defaultSequenceAnalyzer) getTypeName(t types.Type) string {
 }
 
 func (a *defaultSequenceAnalyzer) shortenPkg(pkgPath string) string {
-	// Try to find the last part of the package path
 	parts := strings.Split(pkgPath, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return pkgPath
+	return parts[len(parts)-1]
 }
 
 func (a *defaultSequenceAnalyzer) getReceiverTypeName(recv *ast.FieldList) string {
@@ -677,7 +673,10 @@ func (v *sequenceVisitor) tryRecurse(ctx context.Context, targetId string, depth
 		return
 	}
 
-	// 2. Interface implementation tracing
+	// 2. Interface implementation tracing — guard against nil idx.
+	if v.analyzer.idx == nil {
+		return
+	}
 	impls := v.analyzer.idx.GetImplementations(ctx, targetId, hb)
 	if len(impls) == 1 {
 		implId := impls[0]

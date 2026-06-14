@@ -116,3 +116,46 @@ func TestNoOpConfigWatcher_RaceDetector(t *testing.T) {
 		<-done
 	}
 }
+
+func TestNoOpConfigWatcher_GetContextWindow(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default value from constructor", func(t *testing.T) {
+		cw := NewNoOpConfigWatcher(100, 10, 20)
+		if got := cw.GetContextWindow(); got != 1000000 {
+			t.Errorf("GetContextWindow() = %d, want 1000000", got)
+		}
+	})
+
+	t.Run("unchanged after SetLimits", func(t *testing.T) {
+		cw := NewNoOpConfigWatcher(100, 10, 20)
+		cw.SetLimits(500, 5, 5)
+		if got := cw.GetContextWindow(); got != 1000000 {
+			t.Errorf("GetContextWindow() = %d after SetLimits, want 1000000", got)
+		}
+	})
+
+	t.Run("unchanged after ApplyLimits", func(t *testing.T) {
+		cw := NewNoOpConfigWatcher(100, 10, 20)
+		cw.ApplyLimits(events.Limits{MaxHistoryTokens: 500, MaxToolTurns: 5, MaxHistoryTurns: 5})
+		if got := cw.GetContextWindow(); got != 1000000 {
+			t.Errorf("GetContextWindow() = %d after ApplyLimits, want 1000000", got)
+		}
+	})
+
+	t.Run("concurrent reads do not race", func(t *testing.T) {
+		cw := NewNoOpConfigWatcher(100, 10, 20)
+		done := make(chan struct{})
+		for i := 0; i < 10; i++ {
+			go func() {
+				for j := 0; j < 100; j++ {
+					_ = cw.GetContextWindow()
+				}
+				done <- struct{}{}
+			}()
+		}
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+	})
+}

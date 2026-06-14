@@ -222,6 +222,10 @@ func (p *searchPipeline) startWorkers(wg *sync.WaitGroup) {
 					if err == context.Canceled || err == context.DeadlineExceeded {
 						return
 					}
+					select {
+					case p.errChan <- fmt.Errorf("scanFile %s: %w", path, err):
+					default:
+					}
 				}
 			}
 		}()

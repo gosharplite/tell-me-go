@@ -108,12 +108,16 @@ func TestGetTypeInfo_LookupError(t *testing.T) {
 	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
 
 	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error from Lookup failure, got nil")
 	}
-	if !strings.Contains(res.Text, "Type not found.") {
-		t.Errorf("expected 'Type not found.', got: %s", res.Text)
+	if !errors.Is(err, errSentinel) {
+		t.Errorf("expected error to wrap errSentinel, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "lookup type Foo") {
+		t.Errorf("expected error message to contain 'lookup type Foo', got: %v", err)
+	}
+	_ = res
 }
 
 // TestGetTypeInfo_LookupEmpty verifies that when Lookup returns zero locations
@@ -255,4 +259,169 @@ func TestGetTypeInfo_ShortCircuit(t *testing.T) {
 			t.Errorf("expected empty Text on UnmarshalArgs error, got %q", res.Text)
 		}
 	})
+}
+
+// TestCollectSymbols_SkipsUnparseableFile verifies that collectSymbols
+// gracefully tolerates a .go file with a syntax error and continues
+// collecting symbols from valid files in the same tree.
+func TestCollectSymbols_SkipsUnparseableFile(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Write a valid go.mod so the indexer can operate.
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// valid.go: a well-formed Go file with one exported function.
+	validSrc := filepath.Join(tmpDir, "valid.go")
+	if err := os.WriteFile(validSrc, []byte(`package test
+
+func ValidFunc() string { return "ok" }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// broken.go: syntactically invalid Go.
+	brokenSrc := filepath.Join(tmpDir, "broken.go")
+	if err := os.WriteFile(brokenSrc, []byte(`package test
+
+func broken() { // missing closing brace
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &analysistest.MockSymbolIndex{}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
+	if err != nil {
+		t.Fatalf("ListSymbols should not fail when one file is unparseable: %v", err)
+	}
+
+	// ValidFunc from valid.go must appear.
+	if !strings.Contains(res.Text, "ValidFunc") {
+		t.Errorf("expected ValidFunc in output, got:\n%s", res.Text)
+	}
+	// broken.go symbols must not appear.
+	if strings.Contains(res.Text, "broken") {
+		t.Errorf("expected no symbols from broken.go, got:\n%s", res.Text)
+	}
+}
+
+// TestFindMethodsInPackage_SkipsUnparseableFile verifies that
+// findMethodsInPackage gracefully tolerates a .go file with a syntax
+// error and still discovers methods from valid files in the same tree.
+func TestFindMethodsInPackage_SkipsUnparseableFile(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// valid.go: a struct with a method.
+	if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
+
+type MyStruct struct{}
+
+func (s *MyStruct) Greet() string { return "hi" }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// broken.go: syntactically invalid Go.
+	if err := os.WriteFile(filepath.Join(tmpDir, "broken.go"), []byte(`package test
+
+func broken() { // missing closing brace
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &mockTypeIndex{
+		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+			return []analysis.Location{{Path: filepath.Join(tmpDir, "valid.go"), Line: 2, Column: 6}}, nil
+		},
+	}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MyStruct"}, nil)
+	if err != nil {
+		t.Fatalf("GetTypeInfo should not fail when one file is unparseable: %v", err)
+	}
+	if !strings.Contains(res.Text, "Greet") {
+		t.Errorf("expected method Greet in output, got:\n%s", res.Text)
+	}
+}
+
+// TestCollectSymbols_PropagatesWalkError verifies that filesystem-level
+// walk errors (e.g., permission denied) are propagated rather than
+// silently skipped.
+func TestCollectSymbols_PropagatesWalkError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	validSrc := filepath.Join(tmpDir, "valid.go")
+	if err := os.WriteFile(validSrc, []byte(`package test
+
+func ValidFunc() string { return "ok" }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a subdirectory and make it unreadable.
+	lockedDir := filepath.Join(tmpDir, "locked")
+	if err := os.Mkdir(lockedDir, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+
+	m := analysis.NewTypeManager(
+		&analysistest.MockSymbolIndex{},
+		analysis.NewASTCache("."),
+		&analysistest.MockSecurityProvider{},
+	)
+
+	_, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
+	if err == nil {
+		t.Error("expected walk error from unreadable directory, got nil")
+	}
+}
+
+// TestGetTypeInfo_PropagatesWalkError verifies that filesystem-level
+// walk errors during method discovery propagate through GetTypeInfo.
+func TestGetTypeInfo_PropagatesWalkError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
+
+type MyStruct struct{}
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lockedDir := filepath.Join(tmpDir, "locked")
+	if err := os.Mkdir(lockedDir, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+
+	idx := &mockTypeIndex{
+		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+			return []analysis.Location{{Path: filepath.Join(tmpDir, "valid.go"), Line: 2, Column: 6}}, nil
+		},
+	}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+	_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MyStruct"}, nil)
+	if err == nil {
+		t.Error("expected walk error from unreadable directory during findMethodsInPackage, got nil")
+	}
 }

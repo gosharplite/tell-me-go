@@ -7,9 +7,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/imports"
 )
 
 func TestImportCleanupTransform_Apply(t *testing.T) {
@@ -62,4 +64,50 @@ func TestImportCleanupTransform_Apply(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, formatErr)
 	})
+}
+
+func TestImportCleanupTransform_Apply_ProcessError(t *testing.T) {
+	t.Parallel()
+	processErr := errors.New("imports.Process failed: GOROOT not found")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test.go",
+		"package p\n\nimport \"fmt\"\n\nfunc main() { fmt.Println() }",
+		parser.ParseComments)
+	require.NoError(t, err)
+	files := map[string]*ast.File{"test.go": file}
+	tx := &importCleanupTransform{
+		Path: "test.go",
+		testProcessFunc: func(path string, src []byte, opts *imports.Options) ([]byte, error) {
+			return nil, processErr
+		},
+	}
+	err = tx.Apply(context.Background(), fset, files)
+	require.Error(t, err)
+	require.ErrorIs(t, err, processErr)
+	if !strings.Contains(err.Error(), "processing imports for test.go") {
+		t.Errorf("expected wrapping message, got: %v", err)
+	}
+}
+
+func TestImportCleanupTransform_Apply_ParseError(t *testing.T) {
+	t.Parallel()
+	parseErr := errors.New("parser.ParseFile failed: invalid input")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test.go",
+		"package p\n\nimport \"fmt\"\n\nfunc main() { fmt.Println() }",
+		parser.ParseComments)
+	require.NoError(t, err)
+	files := map[string]*ast.File{"test.go": file}
+	tx := &importCleanupTransform{
+		Path: "test.go",
+		testParseFileFunc: func(fset *token.FileSet, filename string, src interface{}, mode parser.Mode) (*ast.File, error) {
+			return nil, parseErr
+		},
+	}
+	err = tx.Apply(context.Background(), fset, files)
+	require.Error(t, err)
+	require.ErrorIs(t, err, parseErr)
+	if !strings.Contains(err.Error(), "parsing formatted file test.go") {
+		t.Errorf("expected wrapping message, got: %v", err)
+	}
 }
