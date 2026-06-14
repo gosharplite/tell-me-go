@@ -116,3 +116,76 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestSafetyDecorator_DynamicTimeout_NonNumericType(t *testing.T) {
+	t.Parallel()
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	tests := []struct {
+		name        string
+		timeoutArg  interface{}
+		defaultTO   time.Duration
+		nextDelay   time.Duration
+		expectError bool
+	}{
+		{
+			name:        "string_timeout_falls_back_to_default",
+			timeoutArg:  "fast",
+			defaultTO:   50 * time.Millisecond,
+			nextDelay:   100 * time.Millisecond,
+			expectError: true,
+		},
+		{
+			name:        "bool_timeout_falls_back_to_default",
+			timeoutArg:  true,
+			defaultTO:   50 * time.Millisecond,
+			nextDelay:   100 * time.Millisecond,
+			expectError: true,
+		},
+		{
+			name:        "nil_timeout_falls_back_to_default",
+			timeoutArg:  nil,
+			defaultTO:   50 * time.Millisecond,
+			nextDelay:   100 * time.Millisecond,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			next := &mockExecutor{
+				Result:  tools.ToolResult{Text: "ok"},
+				Delay:   tt.nextDelay,
+				BlockCh: make(chan struct{}),
+			}
+
+			decorator := newSafetyDecorator(
+				next, registry, logger, bus, zombie,
+				tt.defaultTO, tt.defaultTO, 10*time.Millisecond,
+			)
+
+			args := map[string]interface{}{"timeout": tt.timeoutArg}
+			res, _ := decorator.Execute(
+				context.Background(),
+				&tools.ToolDeclaration{Name: "test"},
+				&llm.FunctionCall{Name: "test", Args: args},
+				nil,
+			)
+
+			if tt.expectError {
+				assert.Error(t, res.Error, "expected timeout error when non-numeric timeout arg falls back to default")
+				assert.Contains(t, res.Text, "timed out")
+			} else {
+				assert.NoError(t, res.Error)
+			}
+		})
+	}
+}
