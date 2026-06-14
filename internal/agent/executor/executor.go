@@ -264,6 +264,12 @@ func (e *Dispatcher) emitEvent(ctx context.Context, bus events.EventBus, evt eve
 }
 
 func (e *Dispatcher) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+	return e.executeInternal(ctx, respContent, turn, maxToolTurns, nil)
+}
+
+// executeInternal is Execute with a test-only fanIn injection seam.
+// When fanIn is nil, the default wg.Wait() fan-in is used (production path).
+func (e *Dispatcher) executeInternal(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int, fanIn fanInFunc) (*llm.Content, error) {
 	calls := e.extractFunctionCalls(respContent)
 	if len(calls) == 0 {
 		return nil, nil
@@ -295,7 +301,7 @@ func (e *Dispatcher) Execute(ctx context.Context, respContent *llm.Content, turn
 	startTime := time.Now()
 
 	results := make([]tools.ToolResult, len(calls))
-	waitErr := e.runExecutionPlan(ctx, calls, declinedMap, results)
+	waitErr := e.runExecutionPlan(ctx, calls, declinedMap, results, fanIn)
 
 	duration := time.Since(startTime)
 
@@ -361,7 +367,7 @@ type taskBatch struct {
 	tasks    []int
 }
 
-func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult) error {
+func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult, fanIn fanInFunc) error {
 	batches := e.buildExecutionBatches(calls, declinedMap, results)
 	state := e.state.Load()
 
@@ -377,7 +383,7 @@ func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.Function
 		resultsCh := make(chan toolExecResult, len(batch.tasks))
 
 		// 1. Fan-out
-		e.executeBatch(ctx, batch, calls, state.config.MaxConcurrentTools, resultsCh)
+		e.executeBatch(ctx, batch, calls, state.config.MaxConcurrentTools, resultsCh, fanIn)
 
 		// 2. Fan-in Aggregator Loop (lock-free mutation of failures)
 		planErrors = e.handleBatchResults(ctx, resultsCh, results, planErrors)
@@ -418,11 +424,11 @@ func (e *Dispatcher) checkPreconditions(ctx context.Context, batchIdx int, batch
 	return nil
 }
 
-func (e *Dispatcher) executeBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
+func (e *Dispatcher) executeBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult, fanIn fanInFunc) {
 	if batch.isSerial {
 		e.executeSerialBatch(ctx, batch, calls, resultsCh)
 	} else {
-		e.executeParallelBatch(ctx, batch, calls, maxWorkers, resultsCh)
+		e.executeParallelBatchWithFanIn(ctx, batch, calls, maxWorkers, resultsCh, fanIn)
 	}
 }
 
@@ -446,7 +452,12 @@ func (e *Dispatcher) executeSerialBatch(ctx context.Context, batch taskBatch, ca
 	close(resultsCh)
 }
 
-func (e *Dispatcher) executeParallelBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
+// fanInFunc is a test-only seam that replaces the wg.Wait() call in the
+// fan-in goroutine of executeParallelBatchWithFanIn. When nil, the default wg.Wait()
+// is used. Injected only by tests to trigger the panic-recovery path.
+type fanInFunc func(wg *sync.WaitGroup, resultsCh chan<- toolExecResult)
+
+func (e *Dispatcher) executeParallelBatchWithFanIn(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult, fanIn fanInFunc) {
 	jobsCh := make(chan int, len(batch.tasks))
 	for _, taskIdx := range batch.tasks {
 		jobsCh <- taskIdx
@@ -481,7 +492,11 @@ func (e *Dispatcher) executeParallelBatch(ctx context.Context, batch taskBatch, 
 			}
 			close(resultsCh)
 		}()
-		wg.Wait()
+		if fanIn != nil {
+			fanIn(&wg, resultsCh)
+		} else {
+			wg.Wait()
+		}
 	}()
 }
 

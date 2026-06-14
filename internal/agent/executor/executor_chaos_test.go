@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,7 +146,7 @@ func assertTimeoutScenario(t *testing.T, o *Dispatcher, ctx context.Context, cal
 	t.Helper()
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- o.runExecutionPlan(ctx, calls, declinedMap, results)
+		errChan <- o.runExecutionPlan(ctx, calls, declinedMap, results, nil)
 	}()
 
 	<-syncChan
@@ -159,7 +160,7 @@ func assertTimeoutScenario(t *testing.T, o *Dispatcher, ctx context.Context, cal
 
 func assertPanicScenario(t *testing.T, o *Dispatcher, ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult, wantPanicText string) {
 	t.Helper()
-	err := o.runExecutionPlan(ctx, calls, declinedMap, results)
+	err := o.runExecutionPlan(ctx, calls, declinedMap, results, nil)
 
 	// With the new contract, tool-result errors (including panics recovered inside
 	// the tool pipeline) are delivered to the LLM via AssembleResponse and are NOT
@@ -312,7 +313,7 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 		declinedMap := make(map[int]bool)
 		results := make([]tools.ToolResult, len(calls))
 
-		err := o.runExecutionPlan(ctx, calls, declinedMap, results)
+		err := o.runExecutionPlan(ctx, calls, declinedMap, results, nil)
 
 		// With the new contract, tool-result errors stay in results[] — they are
 		// NOT promoted to plan-level Go errors. runExecutionPlan returns nil.
@@ -372,7 +373,7 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 		}
 		results := make([]tools.ToolResult, 3)
 
-		err := d.runExecutionPlan(ctx, calls, nil, results)
+		err := d.runExecutionPlan(ctx, calls, nil, results, nil)
 
 		require.NoError(t, err, "runExecutionPlan must return nil on normal completion")
 
@@ -384,5 +385,105 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 			assert.NotContains(t, res.Text, "fan_in_panic",
 				"tool %s result must not contain sentinel text 'fan_in_panic'", calls[i].Name)
 		}
+	})
+
+	t.Run("fan_in_goroutine_panic_inside_executeParallelBatch", func(t *testing.T) {
+		t.Parallel()
+		// This subtest exercises the actual panic-recovery block inside the
+		// fan-in goroutine of executeParallelBatch by injecting a panicking
+		// fanInFunc through the test-only seam executeParallelBatchWithFanIn.
+		//
+		// The injected fanIn panics before workers complete, triggering the
+		// defer/recover block which propagates a sentinel (index:-1, name:fan_in_panic)
+		// through resultsCh. Without this recovery path, a panic in wg.Wait()
+		// would deadlock the agent loop (resultsCh never closed).
+
+		log := &capturingLogger{}
+
+		mock := &mockToolPipeline{
+			IsSerialFunc: func(n string) bool { return false },
+			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+				return tools.ToolResult{Text: "quick_success"}
+			},
+			RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+				return ctx, nil
+			},
+		}
+
+		cfg := dispatcherConfig{
+			MaxConcurrentTools: 3,
+			ToolTimeout:        1 * time.Hour,
+		}
+		cfg.applyDefaults()
+
+		ctx := context.Background()
+		d := &Dispatcher{
+			pipeline: mock,
+			events:   events.NewSimpleEventBus(ctx),
+			logger:   log,
+		}
+		d.state.Store(&dispatcherState{config: cfg})
+
+		calls := []*llm.FunctionCall{
+			{Name: "tool_a"},
+			{Name: "tool_b"},
+		}
+
+		batch := taskBatch{
+			isSerial: false,
+			tasks:    []int{0, 1},
+		}
+
+		resultsCh := make(chan toolExecResult, len(batch.tasks)+1)
+
+		panickingFanIn := func(wg *sync.WaitGroup, _ chan<- toolExecResult) {
+			wg.Wait() // workers complete first — avoids race on channel close
+			panic("simulated WaitGroup corruption in fan-in")
+		}
+
+		d.executeParallelBatchWithFanIn(ctx, batch, calls, cfg.MaxConcurrentTools, resultsCh, panickingFanIn)
+
+		var results []toolExecResult
+		for res := range resultsCh {
+			results = append(results, res)
+		}
+
+		// Find the sentinel among results (workers may or may not finish first).
+		var sentinel *toolExecResult
+		for i := range results {
+			if results[i].index == -1 {
+				sentinel = &results[i]
+				break
+			}
+		}
+
+		require.NotNil(t, sentinel, "expected at least one sentinel result with index == -1")
+		assert.Equal(t, "fan_in_panic", sentinel.name)
+		assert.Error(t, sentinel.tr.Error)
+		assert.True(t, errors.Is(sentinel.tr.Error, llm.ErrTerminal),
+			"sentinel error must wrap ErrTerminal")
+		assert.Contains(t, sentinel.tr.Error.Error(), "fan-in panic")
+		assert.Contains(t, sentinel.tr.Error.Error(), "simulated WaitGroup corruption")
+		assert.Contains(t, sentinel.tr.Text, "fan-in panic")
+
+		// Verify the logger captured the panic.
+		assert.True(t, log.errorCalled, "logger.Error must have been called")
+		assert.Equal(t, "panic in fan-in wait goroutine", log.lastMsg)
+
+		// Verify logger attributes include "panic" key with the panic value.
+		var foundPanicAttr bool
+		for i := 0; i < len(log.lastArgs)-1; i += 2 {
+			key, ok := log.lastArgs[i].(string)
+			if !ok {
+				continue
+			}
+			if key == "panic" {
+				foundPanicAttr = true
+				valStr := fmt.Sprintf("%v", log.lastArgs[i+1])
+				assert.Contains(t, valStr, "simulated WaitGroup corruption",
+					"logger 'panic' attribute must contain the panic value")
+			}
+		}
+		assert.True(t, foundPanicAttr, "logger attributes must include 'panic' key")
 	})
 }
