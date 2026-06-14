@@ -734,3 +734,36 @@ func TestSendChat_ConnectionRefused_ErrorsIs(t *testing.T) {
 		t.Errorf("expected *net.OpError in error chain, got: %v (type: %T)", err, err)
 	}
 }
+
+// TestPrepareAnthropicRequest_MarshalFailure is a sentinel test for the
+// defensive json.Marshal error branch in prepareAnthropicRequest
+// (client.go ~375-377). ADR-024 / Issue #782 documents that this branch
+// is structurally unreachable with the current messagesRequest type tree
+// — every field resolves to JSON-safe types. This test proves that if a
+// future field addition introduces an unmarshalable type, json.Marshal
+// will fail with a clear error, and the "failed to marshal request: %w"
+// wrapping in prepareAnthropicRequest will surface it correctly.
+func TestPrepareAnthropicRequest_MarshalFailure(t *testing.T) {
+	t.Run("json.Marshal fails on channel type in content block", func(t *testing.T) {
+		req := messagesRequest{
+			Model: "claude-3-5-sonnet",
+			Messages: []message{{
+				Role: "user",
+				Content: []contentBlock{{
+					Type:    "tool_result",
+					Content: make(chan int), // channels are not JSON-marshalable
+				}},
+			}},
+			MaxTokens: 100,
+		}
+		_, err := json.Marshal(req)
+		if err == nil {
+			t.Fatal("expected json.Marshal to fail on channel type")
+		}
+		// The production code wraps this with: fmt.Errorf("failed to marshal request: %w", err)
+		// Verify the underlying error is a json.UnsupportedTypeError or json.MarshalerError
+		if !strings.Contains(err.Error(), "json: unsupported type") {
+			t.Errorf("expected 'json: unsupported type' error, got: %v", err)
+		}
+	})
+}

@@ -312,6 +312,43 @@ func getResponsesAPIEdgeADR022(t *testing.T) []responsesAPITestCase {
 	}
 }
 
+// getResponsesAPIEdgeADR024Sentinel covers ADR-024 / Issue #782: the
+// !errors.Is(err, errUnhandledBlockType) guard in processDirectOutputItem.
+// When a direct output item carries an unrecognized content block type,
+// appendPartsFromBlock returns errUnhandledBlockType. The guard must
+// suppress this sentinel (not propagate it), allowing processing to
+// continue for any child blocks in out.Content.
+func getResponsesAPIEdgeADR024Sentinel(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
+		{
+			name:    "unhandled_block_type_suppressed_in_direct_output_item",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "future_block_type_v2", // unrecognized; triggers appendPartsFromBlock default case
+							Text: "some text that would appear if type were 'text'",
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			// No wantErr — the sentinel must be suppressed, so SendChat returns nil error
+			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
+				// The unrecognized type produces errUnhandledBlockType from appendPartsFromBlock,
+				// which processDirectOutputItem suppresses via !errors.Is(err, errUnhandledBlockType).
+				// No parts should be appended since no handler matches "future_block_type_v2".
+				if len(resp.Parts) != 0 {
+					t.Errorf("expected 0 parts from unrecognized block type, got %d: %+v", len(resp.Parts), resp.Parts)
+				}
+			},
+		},
+	}
+}
+
 // getResponsesAPIEdgeCases aggregates all edge-case test scenarios.
 func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 	var cases []responsesAPITestCase
@@ -323,6 +360,7 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 	cases = append(cases, getResponsesAPIEdgeGap6(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap7(t)...)
 	cases = append(cases, getResponsesAPIEdgeADR022(t)...)
+	cases = append(cases, getResponsesAPIEdgeADR024Sentinel(t)...)
 	return cases
 }
 

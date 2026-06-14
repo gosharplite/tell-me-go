@@ -231,3 +231,73 @@ func TestDefaultConfigFinder_FindInSystemPaths_Error(t *testing.T) {
 		t.Errorf("expected empty path, got %q", path)
 	}
 }
+
+// TestDefaultConfigFinder_FindInExecutableDir_FilepathAbsError verifies that
+// findInExecutableDir returns found=false when filepath.Abs fails due to an
+// invalid path. This covers the ERROR_HANDLING gap at finder.go ~112-114
+// where err1 != nil or err2 != nil causes the redundant-search guard to
+// fall through, continuing to the os.Stat check.
+func TestDefaultConfigFinder_FindInExecutableDir_FilepathAbsError(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseDir string
+	}{
+		{
+			name:    "path with NUL byte causes filepath.Abs to fail",
+			baseDir: string([]byte{'/', 't', 'm', 'p', 0x00, 'b', 'r', 'o', 'k', 'e', 'n'}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// We need a valid executable path so osExecutable succeeds,
+			// otherwise findInExecutableDir returns early before reaching
+			// the filepath.Abs calls. Use a temp dir.
+			originalExecutable := osExecutable
+			t.Cleanup(func() { osExecutable = originalExecutable })
+
+			tmpDir := t.TempDir()
+			osExecutable = func() (string, error) {
+				return tmpDir + "/fake-binary", nil
+			}
+
+			f := &defaultConfigFinder{baseDir: tt.baseDir}
+			path, found := f.findInExecutableDir()
+			if found {
+				t.Errorf("expected found=false when filepath.Abs fails on baseDir, got path=%q", path)
+			}
+			if path != "" {
+				t.Errorf("expected empty path on failure, got %q", path)
+			}
+		})
+	}
+}
+
+// TestDefaultConfigFinder_FindInExecutableDir_StatFileNotFound verifies that
+// findInExecutableDir returns found=false when the config file is absent from
+// the executable directory. This covers the ERROR_HANDLING gap at
+// finder.go ~117-119 where os.Stat returns an error (file not found) and the
+// function correctly falls through without returning a path.
+func TestDefaultConfigFinder_FindInExecutableDir_StatFileNotFound(t *testing.T) {
+	t.Run("os.Stat fails when config file absent from exe dir", func(t *testing.T) {
+		originalExecutable := osExecutable
+		t.Cleanup(func() { osExecutable = originalExecutable })
+
+		// Use a clean temp dir with no configs/assistant.yaml inside
+		exeDir := t.TempDir()
+		osExecutable = func() (string, error) {
+			return exeDir + "/fake-binary", nil
+		}
+
+		// Use a different base dir so the redundant-search guard (absBase == absExeDir)
+		// doesn't short-circuit us before we reach the os.Stat call
+		f := &defaultConfigFinder{baseDir: t.TempDir()}
+		path, found := f.findInExecutableDir()
+		if found {
+			t.Errorf("expected found=false when config file is absent, got path=%q", path)
+		}
+		if path != "" {
+			t.Errorf("expected empty path, got %q", path)
+		}
+	})
+}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -849,4 +850,31 @@ func TestVertexAuth_GetToken_CorruptCache(t *testing.T) {
 			t.Errorf("cache file contains %q, want fresh-gcloud-token", string(content))
 		}
 	})
+}
+
+// TestNewVertexAuth_DefaultTokenCmdFunc_ExecError verifies that the default
+// tokenCmdFunc wired by NewVertexAuth returns an error (not panics) when the
+// underlying execCommand fails. This covers the ERROR_HANDLING gap at
+// auth.go ~54-56 where execCommand("gcloud", "auth", "print-access-token").Output()
+// can fail when gcloud is not installed or misconfigured.
+func TestNewVertexAuth_DefaultTokenCmdFunc_ExecError(t *testing.T) {
+	originalExecCommand := execCommand
+	t.Cleanup(func() { execCommand = originalExecCommand })
+
+	// Replace execCommand with a function that always returns an error exit.
+	// Using "false" (which exits 1 on all platforms) as a portable stand-in
+	// for a missing/failing gcloud.
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		return exec.Command("false")
+	}
+
+	a := NewVertexAuth()
+	if a.tokenCmdFunc == nil {
+		t.Fatal("NewVertexAuth must wire a non-nil tokenCmdFunc")
+	}
+
+	_, err := a.tokenCmdFunc()
+	if err == nil {
+		t.Error("expected error from default tokenCmdFunc when execCommand fails")
+	}
 }
