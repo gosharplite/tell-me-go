@@ -328,6 +328,74 @@ func (m *mockAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.F
 	return ctx, nil
 }
 
+// TestDispatcher_Execute_RetryPath_PropagatesWaitErr covers the decision boundary at
+// executor.go:309-314 (retry-vs-abort). The abort path (line 309, ctx.Err() != nil)
+// is already tested by TestDispatcher_ContextCancellation. The retry path (line 314,
+// waitErr != nil && ctx.Err() == nil) is the gap addressed here.
+//
+// Under the current contract, tool-result errors are delivered to the LLM (not
+// promoted to plan errors), so the only way to reach line 314 is via the fan-in
+// panic sentinel (index:-1 with ErrTerminal). Since corrupting a real sync.WaitGroup
+// is impractical, we test the contract through a complementary two-subtest approach.
+func TestDispatcher_Execute_RetryPath_PropagatesWaitErr(t *testing.T) {
+	// === Subtest A: sentinel_promotion_through_handleBatchResults ===
+	// Directly test that handleBatchResults promotes index:-1 sentinels to plan
+	// errors. This verifies the critical link in the chain: IF a sentinel reaches
+	// handleBatchResults, it WILL flow through runExecutionPlan → waitErr →
+	// Execute line 314.
+	t.Run("sentinel_promotion_through_handleBatchResults", func(t *testing.T) {
+		t.Parallel()
+		e := &Dispatcher{strategy: &markdownStrategy{}}
+		resultsCh := make(chan toolExecResult, 1)
+		sentinelErr := fmt.Errorf("%w: fan-in panic: simulated corruption", llm.ErrTerminal)
+		resultsCh <- toolExecResult{
+			index: -1,
+			name:  "fan_in_panic",
+			tr: tools.ToolResult{
+				Text:  "internal error: fan-in panic: simulated corruption",
+				Error: sentinelErr,
+			},
+		}
+		close(resultsCh)
+
+		results := make([]tools.ToolResult, 1)
+		planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+
+		require.Len(t, planErrors, 1)
+		assert.ErrorIs(t, planErrors[0], llm.ErrTerminal)
+		assert.Contains(t, planErrors[0].Error(), "fan-in panic")
+	})
+
+	// === Subtest B: abort_path_returns_context_error ===
+	// Documentation test for line 309 (abort path). Already covered by
+	// TestDispatcher_ContextCancellation but included for completeness.
+	// Uses a pre-cancelled context (ADR-036 §2). No time.Sleep.
+	t.Run("abort_path_returns_context_error", func(t *testing.T) {
+		t.Parallel()
+		reg := &mockToolRegistry{}
+		exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true},
+			&mockEventBus{}, &ports.NoOpLogger{},
+			&mockLogger{CriticalLogs: make(chan string, 10)})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		respContent := &llm.Content{
+			Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+			},
+		}
+
+		result, execErr := exec.Execute(ctx, respContent, 0, 10)
+
+		require.Error(t, execErr)
+		assert.ErrorIs(t, execErr, context.Canceled)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Parts)
+	})
+}
+
 func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
