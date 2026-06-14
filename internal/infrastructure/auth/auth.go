@@ -52,7 +52,7 @@ type VertexAuth struct {
 func NewVertexAuth() *VertexAuth {
 	return &VertexAuth{
 		tokenCmdFunc: func() ([]byte, error) {
-			return exec.Command("gcloud", "auth", "print-access-token").Output()
+			return execCommand("gcloud", "auth", "print-access-token").Output()
 		},
 	}
 }
@@ -65,6 +65,10 @@ func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
 }
 
 var getUID = os.Getuid
+
+// execCommand is a package-level variable to allow tests to inject
+// command-execution failures. Defaults to exec.Command.
+var execCommand = exec.Command
 
 func (a *VertexAuth) getCachePath() string {
 	if a.CacheDir != "" {
