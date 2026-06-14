@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 
 	"github.com/stretchr/testify/assert"
@@ -737,25 +739,39 @@ func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
 }
 
 func TestBuildVariablesUpdatePayload_NonMapVariables(t *testing.T) {
-	// When existingDef["variables"] exists but is not a map[string]interface{},
-	// the function should replace it with an empty map and proceed.
-	existingDef := map[string]interface{}{
-		"variables": "not-a-map", // wrong type
-	}
-	inputVars := map[string]adoVariable{
-		"MY_VAR": {Value: "x", IsSecret: false},
-	}
+	t.Run("variables field is not a map", func(t *testing.T) {
+		// When existingDef["variables"] exists but is not a map[string]interface{},
+		// the function should replace it with an empty map and proceed.
+		existingDef := map[string]interface{}{
+			"variables": "not-a-map", // wrong type
+		}
+		inputVars := map[string]adoVariable{
+			"MY_VAR": {Value: "x", IsSecret: false},
+		}
 
-	body, err := buildVariablesUpdatePayload(existingDef, inputVars)
-	assert.NoError(t, err)
+		body, err := buildVariablesUpdatePayload(existingDef, inputVars)
+		assert.NoError(t, err)
 
-	var result map[string]interface{}
-	err = json.Unmarshal(body, &result)
-	assert.NoError(t, err)
+		var result map[string]interface{}
+		err = json.Unmarshal(body, &result)
+		assert.NoError(t, err)
 
-	vars, ok := result["variables"].(map[string]interface{})
-	assert.True(t, ok, "variables should be a map after buildVariablesUpdatePayload")
-	assert.Contains(t, vars, "MY_VAR")
+		vars, ok := result["variables"].(map[string]interface{})
+		assert.True(t, ok, "variables should be a map after buildVariablesUpdatePayload")
+		assert.Contains(t, vars, "MY_VAR")
+	})
+
+	t.Run("json.Marshal failure", func(t *testing.T) {
+		existingDef := map[string]interface{}{
+			"variables": map[string]interface{}{},
+			"poison":    make(chan int), // json.Marshal cannot serialize channels
+		}
+		inputVars := map[string]adoVariable{
+			"X": {Value: "val"},
+		}
+		_, err := buildVariablesUpdatePayload(existingDef, inputVars)
+		assert.Error(t, err)
+	})
 }
 
 func TestAdoManager_UnmarshalArgsErrors(t *testing.T) {
@@ -1037,4 +1053,78 @@ func TestAdoManager_GetTaskLog_ProcessError(t *testing.T) {
 	}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to process log content")
+}
+
+// TestAdoManager_PrArgumentErrors covers two untested error paths in PR tools:
+//   - Gap 4: AdoListPullRequests unmarshal failure when "top" is a string (not int)
+//   - Gap 5: adoGetPrDiff validation failure when all required fields are empty/zero
+//
+// Neither subtest requires an HTTP server — both fail before any network call.
+func TestAdoManager_PrArgumentErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	// Gap 4: AdoListPullRequests — tools.UnmarshalArgs fails when "top" is string
+	t.Run("AdoListPullRequests - unmarshal error", func(t *testing.T) {
+		m := NewADOManager(sm, WithToken("test-pat"))
+		_, err := m.AdoListPullRequests(context.Background(), map[string]interface{}{
+			"organization": "o",
+			"project":      "p",
+			"repository":   "r",
+			"top":          "not-an-int",
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing list pull requests args")
+	})
+
+	// Gap 5: adoGetPrDiff — validateGetPrDiffParams returns error when all fields are empty/zero
+	t.Run("adoGetPrDiff - missing required fields", func(t *testing.T) {
+		m := NewADOManager(sm, WithToken("test-pat"))
+		_, err := m.adoGetPrDiff(context.Background(), map[string]interface{}{}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "required")
+	})
+}
+
+// NOTE: Gaps 1 (executeCreatePipeline json.Marshal) and 3 (executeRunPipeline
+// json.Marshal) are structurally unreachable. All fields in adoCreatePipelineRequest
+// and adoRunPipelineRequest are string/int/bool/map[string]string, which json.Marshal
+// cannot fail on. Coverage of these error branches requires changing adoVariable.Value
+// from string to interface{}, which is a separate type-system refactor.
+
+// faultyRegistry wraps a real tools.Registry and injects failures for
+// RegisterToToolkit calls after failOn successful registrations.
+type faultyRegistry struct {
+	tools.Registry
+	failOn int
+	count  int
+}
+
+func (r *faultyRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	r.count++
+	if r.count > r.failOn {
+		return fmt.Errorf("simulated registration failure")
+	}
+	return r.Registry.RegisterToToolkit(toolkit, def, handler)
+}
+
+func TestRegisterRepository_ErrorPropagation(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	m := NewADOManager(sm, WithToken("test-pat"))
+	f := newPipelineFormatter()
+
+	t.Run("first tool registration fails", func(t *testing.T) {
+		r := &faultyRegistry{Registry: registry.New(), failOn: 0}
+		err := registerRepository(r, m, f)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "registering repository tool")
+	})
+
+	t.Run("second tool registration fails", func(t *testing.T) {
+		r := &faultyRegistry{Registry: registry.New(), failOn: 1}
+		err := registerRepository(r, m, f)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "registering repository tool")
+	})
 }

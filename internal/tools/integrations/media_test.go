@@ -441,6 +441,17 @@ func TestMediaTools_ErrorPaths(t *testing.T) {
 			errText: "write image file",
 		},
 		{
+			name: "readImage unmarshal error",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, newMediaMockSecurityManager(), &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readImage(ctx, map[string]interface{}{"filepath": 123}, nil)
+				return err
+			},
+			errText: "unmarshal args",
+		},
+		{
 			name: "nil security manager in readImage",
 			setup: func() *mediaManager {
 				return newMediaManager(&mockFileSystem{}, nil, &mockLLMClient{}, "")
@@ -552,10 +563,22 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 
+	// ── Structural impossibility notes ──
+	//
+	// Gaps 14-17 (atlassian http.NewRequestWithContext errors in fetchPageContent,
+	// getCurrentPageVersion, executeUpdate, resolveSpaceID) are structurally
+	// unreachable: all callers parse URLs via url.Parse before constructing
+	// requests, guaranteeing well-formed URLs.
+	//
+	// Gaps 1, 3 (ado json.Marshal errors) are structurally unreachable because
+	// adoCreatePipelineRequest and adoRunPipelineRequest use string-typed struct
+	// fields, making marshal failure impossible for valid UTF-8 strings.
+
 	tests := []struct {
-		name          string
-		failAfter     int
-		wantSubstring string
+		name            string
+		failAfter       int
+		wantSubstring   string
+		setAtlassianEnv bool
 	}{
 		{
 			name:          "registerMedia wraps error",
@@ -572,10 +595,30 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 			failAfter:     4,
 			wantSubstring: "registerTeams",
 		},
+		{
+			name:            "atlassian.RegisterConfluence wraps error",
+			failAfter:       5,
+			wantSubstring:   "atlassian.RegisterConfluence",
+			setAtlassianEnv: true,
+		},
+		{
+			name:            "atlassian.RegisterJira wraps error",
+			failAfter:       8,
+			wantSubstring:   "atlassian.RegisterJira",
+			setAtlassianEnv: true,
+		},
+		{
+			name:          "ado.Register wraps error",
+			failAfter:     10,
+			wantSubstring: "ado.Register",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.setAtlassianEnv {
+				t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+			}
 			r := newFaultyRegistry(registry.New(), tt.failAfter)
 			err := RegisterAll(r, fs, sm, client, tmpDir)
 			if err == nil {
