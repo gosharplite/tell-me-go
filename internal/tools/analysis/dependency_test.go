@@ -306,26 +306,6 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 			},
 			wantErrContains: "listing packages",
 		},
-		{
-			name: "filepath.Rel error in buildGraph goroutine",
-			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
-				dir := setupWorkspace(t)
-				origRel := filepathRelFn
-				t.Cleanup(func() { filepathRelFn = origRel })
-				filepathRelFn = func(basepath, targpath string) (string, error) {
-					return "", fmt.Errorf("injected Rel error")
-				}
-				return dir, &mockAnalysisGoRunner{
-					getModulePathFunc: func(ctx context.Context) (string, error) {
-						return "example.com/mod", nil
-					},
-					getModuleDirFunc: func(ctx context.Context) (string, error) {
-						return dir, nil
-					},
-				}
-			},
-			wantErrContains: "injected Rel error",
-		},
 	}
 
 	for _, tt := range tests {
@@ -343,6 +323,43 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 				"error message should contain %q", tt.wantErrContains)
 		})
 	}
+}
+
+// TestBuildGraph_FilepathRelError verifies the error path when
+// filepath.Rel fails inside buildGraph_processPackage. This test
+// must NOT use t.Parallel() because it temporarily replaces the
+// package-level filepathRelFn variable.
+func TestBuildGraph_FilepathRelError(t *testing.T) {
+	// NOT t.Parallel() — mutates package-level filepathRelFn
+
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "f.go"), []byte("package pkg"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mod"), 0644))
+
+	origRel := filepathRelFn
+	t.Cleanup(func() { filepathRelFn = origRel })
+	filepathRelFn = func(basepath, targpath string) (string, error) {
+		return "", fmt.Errorf("injected Rel error")
+	}
+
+	runner := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "example.com/mod", nil
+		},
+		getModuleDirFunc: func(ctx context.Context) (string, error) {
+			return dir, nil
+		},
+	}
+
+	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	_, err := a.buildGraph(context.Background())
+	require.Error(t, err, "expected error from buildGraph")
+	assert.Contains(t, err.Error(), "injected Rel error",
+		"error message should contain %q", "injected Rel error")
 }
 
 // ─────────────────────────────────────────────────────────
@@ -431,4 +448,102 @@ func TestGetImports_ErrorPath(t *testing.T) {
 		infra_persistence.NewWorkspacePolicy())
 	_, err := a.getImports(ctx, pkgDir, "example.com/mod")
 	require.Error(t, err, "expected error from cancelled context")
+}
+
+// ─────────────────────────────────────────────────────────
+// Gap 9: listInternalPackages skip-dir path (line 187)
+// ─────────────────────────────────────────────────────────
+
+func TestListInternalPackages_SkipDir(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	pkgDir := filepath.Join(tmpDir, "pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "f.go"), []byte("package pkg"), 0644))
+
+	ignoredDir := filepath.Join(tmpDir, ".git")
+	require.NoError(t, os.MkdirAll(ignoredDir, 0755))
+
+	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	pkgs, err := a.listInternalPackages(tmpDir)
+	require.NoError(t, err)
+
+	for _, p := range pkgs {
+		if strings.Contains(p, ".git") {
+			t.Errorf("expected .git to be skipped, found: %s", p)
+		}
+	}
+	found := false
+	for _, p := range pkgs {
+		if strings.Contains(p, "pkg") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected pkg directory to be listed")
+	}
+}
+
+// ─────────────────────────────────────────────────────────
+// Gap 10: resolveModulePrefix cached path (line 230)
+// ─────────────────────────────────────────────────────────
+
+func TestResolveModulePrefix_Cached(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	runner := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			callCount++
+			return "example.com/mod", nil
+		},
+	}
+	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	prefix1, err := a.resolveModulePrefix(context.Background())
+	require.NoError(t, err)
+	if prefix1 != "example.com/mod" {
+		t.Errorf("expected 'example.com/mod', got %q", prefix1)
+	}
+	if callCount != 1 {
+		t.Errorf("expected 1 call to GetModulePath, got %d", callCount)
+	}
+
+	prefix2, err := a.resolveModulePrefix(context.Background())
+	require.NoError(t, err)
+	if prefix2 != "example.com/mod" {
+		t.Errorf("expected 'example.com/mod', got %q", prefix2)
+	}
+	if callCount != 1 {
+		t.Errorf("expected still 1 call to GetModulePath (cached), got %d", callCount)
+	}
+}
+
+// ─────────────────────────────────────────────────────────
+// Gap 11: renderGraph mermaid format path (line 243)
+// ─────────────────────────────────────────────────────────
+
+func TestRenderGraph_MermaidFormat(t *testing.T) {
+	t.Parallel()
+	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	graph := map[string][]string{
+		"example.com/mod/pkg1": {"example.com/mod/pkg2"},
+		"example.com/mod/pkg2": {},
+	}
+
+	result := a.renderGraph(graph, "mermaid")
+
+	if !strings.Contains(result, "graph TD") && !strings.Contains(result, "graph ") {
+		t.Errorf("expected mermaid graph output, got: %s", result)
+	}
+	if !strings.Contains(result, "pkg1") || !strings.Contains(result, "pkg2") {
+		t.Errorf("expected both packages in mermaid output, got: %s", result)
+	}
 }

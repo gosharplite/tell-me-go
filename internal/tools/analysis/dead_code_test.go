@@ -1616,3 +1616,157 @@ func TestAnalyzeUsages_Heartbeat(t *testing.T) {
 		t.Error("expected heartbeat on hb channel")
 	}
 }
+
+// =============================================================================
+// Gap 5: TestTrackExternalUsages_TestPackageSuffix — covers the
+//
+//	strings.HasSuffix(usagePkg, "_test") path AND the
+//	!strings.HasPrefix(usagePkg, targetModule) path in
+//	trackExternalUsages_isExternalUsage (dead_code.go:317).
+//
+// =============================================================================
+func TestTrackExternalUsages_TestPackageSuffix(t *testing.T) {
+	t.Parallel()
+
+	t.Run("test package suffix triggers external", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		state := &scanState{
+			targetModule: "example.com/test",
+			declarations: map[string]*symMeta{
+				"example.com/test/pkg.Foo": {
+					id:      "example.com/test/pkg.Foo",
+					pkgPath: "example.com/test/pkg",
+					name:    "Foo",
+					symType: "Function",
+				},
+			},
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+
+		// Map the usage file to an external test package (pkg_test suffix).
+		// This exercises the _test suffix branch even when the base package
+		// path resolves to the same value as the declaring package.
+		fileToPkg := map[string]string{
+			"/tmp/file_test.go": "example.com/test/pkg_test",
+		}
+
+		mockIdx := &mockSymbolIndex{
+			IsSymbolUsedFunc: func(ctx context.Context, name string, hb chan<- struct{}) bool {
+				return true
+			},
+			GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+				return []location{{Path: "/tmp/file_test.go", Line: 1, Column: 1}}, nil
+			},
+		}
+
+		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if state.totalUses["example.com/test/pkg.Foo"] != 1 {
+			t.Errorf("expected totalUses=1, got %d", state.totalUses["example.com/test/pkg.Foo"])
+		}
+		if state.externalUses["example.com/test/pkg.Foo"] != 1 {
+			t.Errorf("expected externalUses=1 (test package suffix), got %d",
+				state.externalUses["example.com/test/pkg.Foo"])
+		}
+	})
+
+	t.Run("external module usage returns false", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		state := &scanState{
+			targetModule: "example.com/test",
+			declarations: map[string]*symMeta{
+				"example.com/test/pkg.Foo": {
+					id:      "example.com/test/pkg.Foo",
+					pkgPath: "example.com/test/pkg",
+					name:    "Foo",
+					symType: "Function",
+				},
+			},
+			totalUses:    make(map[string]int),
+			externalUses: make(map[string]int),
+		}
+
+		// Map the usage file to an external module that does NOT have the
+		// target module prefix. This exercises the !HasPrefix branch at
+		// dead_code.go:317: strings.HasPrefix("github.com/other/lib",
+		// "example.com/test") == false → return false.
+		fileToPkg := map[string]string{
+			"/tmp/external_usage.go": "github.com/other/lib",
+		}
+
+		mockIdx := &mockSymbolIndex{
+			IsSymbolUsedFunc: func(ctx context.Context, name string, hb chan<- struct{}) bool {
+				return true
+			},
+			GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+				return []location{{Path: "/tmp/external_usage.go", Line: 1, Column: 1}}, nil
+			},
+		}
+
+		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
+		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// totalUses is incremented (IsSymbolUsed returns true), but
+		// externalUses is NOT incremented because the usage is from
+		// an external module (github.com/other/lib) that does NOT
+		// have the target module prefix (example.com/test).
+		if state.totalUses["example.com/test/pkg.Foo"] != 1 {
+			t.Errorf("expected totalUses=1, got %d", state.totalUses["example.com/test/pkg.Foo"])
+		}
+		if state.externalUses["example.com/test/pkg.Foo"] != 0 {
+			t.Errorf("expected externalUses=0 (external module), got %d",
+				state.externalUses["example.com/test/pkg.Foo"])
+		}
+	})
+}
+
+// =============================================================================
+// Gap 6: TestResolveCrossPackage_NilTypesInfo — covers the
+//
+//	pkg.TypesInfo == nil → continue path in
+//	resolveCrossPackageMethodUsages (dead_code.go:501).
+//
+// =============================================================================
+func TestResolveCrossPackage_NilTypesInfo(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &defaultDeadCodeAnalyzer{}
+
+	state := &scanState{
+		pkgs: []*packages.Package{
+			{
+				PkgPath:   "example.com/other",
+				TypesInfo: nil, // nil TypesInfo → should be skipped
+			},
+		},
+	}
+
+	// Should not panic; should gracefully return false when the only
+	// cross-package candidate has nil TypesInfo.
+	got := analyzer.resolveCrossPackageMethodUsages(
+		state,
+		"SomeMethod",
+		"some/id",
+		"example.com/self",
+	)
+
+	if got {
+		t.Error("expected false when the only other package has nil TypesInfo")
+	}
+}

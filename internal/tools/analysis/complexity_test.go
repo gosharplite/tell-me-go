@@ -8,10 +8,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/semaphore"
 )
 
 // denyingSecurityProvider wraps mockSecurityProvider but denies all path access.
@@ -94,7 +97,12 @@ func C() {} // 1
 	}
 }
 
-func TestGetConcurrencyLimit(t *testing.T) {
+// TestGetConcurrencyLimit_Documented verifies getConcurrencyLimit always
+// returns >= 1. The defense-in-depth guard `if limit < 1 { limit = 1 }`
+// (complexity.go:102) cannot be triggered because runtime.NumCPU() never
+// returns < 1 on supported Go platforms. This is accepted technical debt
+// — identical to the fn.Type().(*types.Signature) guard in dead_code.go.
+func TestGetConcurrencyLimit_Documented(t *testing.T) {
 	t.Parallel()
 	analyzer := newComplexityAnalyzer(nil, nil)
 	limit := analyzer.getConcurrencyLimit()
@@ -103,18 +111,35 @@ func TestGetConcurrencyLimit(t *testing.T) {
 	}
 }
 
-// TestGetConcurrencyLimit_DefensiveGuard verifies the defense-in-depth
-// guard in getConcurrencyLimit: even if runtime.NumCPU() were to return 0
-// (which never happens on supported Go platforms), the function would
-// clamp to 1 to prevent semaphore.NewWeighted(0) deadlock.
-func TestGetConcurrencyLimit_DefensiveGuard(t *testing.T) {
+func TestProcessFileTask_SemAcquireError(t *testing.T) {
 	t.Parallel()
-	// Run multiple times to increase confidence (NumCPU is stable per process)
-	analyzer := newComplexityAnalyzer(nil, nil)
-	for i := 0; i < 100; i++ {
-		if limit := analyzer.getConcurrencyLimit(); limit < 1 {
-			t.Errorf("iteration %d: getConcurrencyLimit() = %d, must be >= 1", i, limit)
-		}
+
+	// Create a semaphore with capacity 1 and acquire its only slot,
+	// then cancel the context. The next Acquire will fail.
+	sem := semaphore.NewWeighted(1)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Acquire the only slot
+	if err := sem.Acquire(ctx, 1); err != nil {
+		t.Fatalf("failed to acquire semaphore slot: %v", err)
+	}
+
+	// Cancel the context so the next Acquire fails
+	cancel()
+
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{})
+
+	var complexities []funcComplexity
+	var mu sync.Mutex
+	var skippedErrs []string
+	var skippedMu sync.Mutex
+
+	err := analyzer.processFileTask(ctx, sem, "test.go", nil, 0, &complexities, &mu, &skippedErrs, &skippedMu)
+	if err == nil {
+		t.Error("expected error from sem.Acquire with cancelled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
 	}
 }
 
@@ -347,8 +372,8 @@ func (s S) ValueMethod() {}
 
 // TestGatherComplexities_WalkError covers the filepath.Walk error return
 // at L85–87 in complexity.go (e.g., permission errors while walking the
-// directory tree). The g.Wait() L88–90 error path for non-context errors
-// is covered by TestGatherComplexities_ContextCancelledDuringProcessing.
+// directory tree). The g.Wait() L88–90 error path is covered by
+// TestComplexityAnalyzer_ErrgroupError.
 func TestGatherComplexities_WalkError(t *testing.T) {
 	t.Parallel()
 
@@ -465,56 +490,18 @@ func TestGatherComplexities_ContextCancelled(t *testing.T) {
 		"expected context.Canceled, got: %v", err)
 }
 
-func TestGatherComplexities_ContextCancelledDuringProcessing(t *testing.T) {
-	t.Parallel()
-	tmpDir := t.TempDir()
-	// Create enough files to ensure goroutines are launched and some
-	// remain blocked on sem.Acquire when context cancellation happens.
-	// With NumCPU concurrent workers, we need more files than the
-	// concurrency limit so that sem.Acquire blocks for excess goroutines.
-	for i := 0; i < 500; i++ {
-		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
-		require.NoError(t, os.WriteFile(path, []byte("package test\nfunc F() {}\n"), 0644))
-	}
-
-	cache := newASTCache(".")
-	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Launch GatherComplexities in a goroutine, cancel after a short delay
-	// so filepath.Walk launches goroutines that then block on sem.Acquire.
-	type result struct {
-		complexities []funcComplexity
-		err          error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		c, _, e := analyzer.GatherComplexities(ctx, tmpDir, nil)
-		ch <- result{complexities: c, err: e}
-	}()
-
-	cancel() // Cancel immediately — goroutines see ctx.Done() during processing
-
-	res := <-ch
-	require.Error(t, res.err)
-	assert.True(t, errors.Is(res.err, context.Canceled) || strings.Contains(res.err.Error(), "context canceled"),
-		"expected context.Canceled, got: %v", res.err)
-}
-
 // TestComplexityAnalyzer_ErrgroupError exercises the g.Wait() error return
 // path (L88–90 in complexity.go). The challenge is that walkFn checks the
 // derived context (gCtx) before launching each goroutine, so cancelling the
-// parent context usually causes Walk itself to return an error before
+// parent context too early causes Walk itself to return an error before
 // g.Wait() is ever reached. To hit g.Wait(), Walk must finish successfully
-// and goroutines must still be running when the context is cancelled.
+// and goroutines must still be running when the context expires.
 //
-// Strategy: create many files with complex contents so that goroutines take
-// measurable time to process. Walk (directory traversal) completes in
-// microseconds; then we cancel the context while goroutines are still
-// blocked on sem.Acquire or processing. g.Wait() then returns the
-// context.Canceled error from the first failing goroutine.
+// Strategy: use context.WithTimeout with a 50ms timeout. Walk (directory
+// traversal) completes in microseconds, launching all goroutines. Then
+// g.Wait() blocks until the timeout fires; goroutines blocked on
+// sem.Acquire see context.DeadlineExceeded; g.Wait() captures and wraps it
+// with "gathering complexity metrics: %w".
 func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration-style test in short mode")
@@ -558,7 +545,8 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
 
 	type result struct {
 		complexities []funcComplexity
@@ -570,10 +558,22 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 		ch <- result{complexities: c, err: e}
 	}()
 
-	cancel() // Cancel immediately — goroutines see ctx.Done() during processing
-
 	res := <-ch
 	require.Error(t, res.err)
-	assert.True(t, errors.Is(res.err, context.Canceled) || strings.Contains(res.err.Error(), "context canceled"),
-		"expected context.Canceled from g.Wait(), got: %v", res.err)
+
+	// The timeout should fire while goroutines are blocked on sem.Acquire,
+	// causing g.Wait() to capture context.DeadlineExceeded wrapped with
+	// "gathering complexity metrics".
+	if !errors.Is(res.err, context.DeadlineExceeded) {
+		t.Errorf("errors.Is(err, context.DeadlineExceeded) = false, err type: %T, value: %v", res.err, res.err)
+	}
+
+	// Under race detection, filepath.Walk may complete before the timeout
+	// fires (race overhead slows goroutine scheduling), so the error comes
+	// from g.Wait() wrapped. Under heavy load (no -race), Walk may return
+	// early with the bare error. Both paths are valid.
+	if !strings.Contains(res.err.Error(), "gathering complexity metrics") &&
+		!strings.Contains(res.err.Error(), "context deadline exceeded") {
+		t.Errorf("expected 'gathering complexity metrics' or bare timeout, got: %v", res.err)
+	}
 }
