@@ -352,3 +352,56 @@ func TestLogTrace_WriteErrorUnreachable(t *testing.T) {
 	// level without filesystem mocking. The f.Close error path is covered
 	// by TestLogTrace_WriteError_DevFull in log_trace_write_error_test.go.
 }
+
+// =============================================================================
+// Gap — resolveUsageForSummary parseUsage error (metrics.go:139-141)
+// =============================================================================
+
+// TestResolveUsageForSummary_ParseUsageError covers the gap at metrics.go:139-141
+// where resolveUsageForSummary calls parseUsage (when tracker is nil) and
+// parseUsage returns a non-ErrNotExist error. The error is propagated to the
+// caller. This is the path exercised inside RecordSessionCost when the log
+// file exists but cannot be read.
+//
+// Strategy:
+//  1. Create a valid pricing.json so GetPricing succeeds.
+//  2. Create a tokens.log, then chmod 0000 to make it unreadable.
+//  3. Call resolveUsageForSummary directly — parseUsage fails with EACCES.
+//  4. Assert the error is returned, not silently swallowed.
+func TestResolveUsageForSummary_ParseUsageError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0000 not effective on Windows")
+	}
+
+	tempDir := t.TempDir()
+
+	// Setup pricing data so GetPricing succeeds.
+	logDir := filepath.Join(tempDir, "output")
+	require.NoError(t, os.MkdirAll(logDir, 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, "assets"), 0755))
+	pricingContent := `{"updated_at":"2025-06-15T00:00:00Z","models":{"test-model":{"hit":0.5,"miss":1.0,"comp":2.0}}}`
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "assets", "pricing.json"), []byte(pricingContent), 0644))
+
+	logPath := filepath.Join(logDir, "session_tokens.log")
+	// Write valid log content so the file exists.
+	logContent := `{"prompt_tokens":100,"response_tokens":50,"cost":0.01,"timestamp":"2025-06-15T12:00:00Z"}` + "\n"
+	require.NoError(t, os.WriteFile(logPath, []byte(logContent), 0644))
+
+	// Make the log file unreadable.
+	require.NoError(t, os.Chmod(logPath, 0000))
+	t.Cleanup(func() { _ = os.Chmod(logPath, 0644) })
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+
+	// Call resolveUsageForSummary directly with tracker=nil.
+	// parseUsage calls os.Open(path) which fails with permission denied.
+	// This is NOT os.ErrNotExist, so resolveUsageForSummary returns the error.
+	usage, cost, err := resolveUsageForSummary(context.Background(), sm, nil, logPath, "test-model", nil)
+
+	assert.Error(t, err, "expected error when log file is unreadable")
+	assert.Contains(t, err.Error(), "failed to parse usage log for summary",
+		"error should wrap with 'failed to parse usage log for summary'")
+	assert.Empty(t, usage.PromptTokens)
+	assert.Equal(t, float64(0), cost)
+}

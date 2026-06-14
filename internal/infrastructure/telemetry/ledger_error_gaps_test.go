@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -379,4 +380,105 @@ func TestProcessLogFile_DateFromPath(t *testing.T) {
 	// overriding the file's mod time (ledger.go:240-243).
 	assert.Equal(t, "2023-10-27", record.Date,
 		"date should be extracted from path when path contains YYYY-MM-DD pattern")
+}
+
+// TestProcessLogFile_GetSessionIDError covers the gap at ledger.go:217-219
+// where processLogFile calls getSessionID and getSessionID returns an error
+// because filepath.Rel fails on cross-volume paths. The error is wrapped
+// with "processing log file %s: %w".
+func TestProcessLogFile_GetSessionIDError(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	// Use paths from different volumes to force filepath.Rel to fail.
+	// On Linux, /proc is a separate virtual filesystem guaranteed to exist.
+	// On Windows, different drive letters (C:\, D:\) trigger the same path.
+	// If filepath.Rel succeeds (single-volume Docker, macOS), skip.
+	globalDir := tempDir
+	path := filepath.Join("/proc", "cpuinfo") // guaranteed to exist on Linux
+
+	// Validate that filepath.Rel actually fails on this platform.
+	_, relErr := filepath.Rel(globalDir, path)
+	if relErr == nil {
+		// Try Windows-style cross-volume paths.
+		globalDir = `C:\base`
+		path = `D:\other\tokens.log`
+		_, relErr = filepath.Rel(globalDir, path)
+	}
+	if relErr == nil {
+		t.Skip("filepath.Rel succeeded — cross-volume paths not available on this platform")
+	}
+
+	// Stat the file so we have a valid os.FileInfo for processLogFile.
+	// On Linux /proc/cpuinfo is readable; if the path doesn't exist, skip.
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Skipf("cannot stat cross-volume path %q: %v", path, err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+	ls := newLedgerStore(sm, "test-model", nil)
+
+	// processLogFile calls getSessionID(path, globalDir) which fails
+	// because filepath.Rel cannot resolve cross-volume paths. The error
+	// is wrapped and returned.
+	record, err := ls.processLogFile(path, info, globalDir, domain_pricing.PricingData{})
+	require.Error(t, err, "expected error when getSessionID fails on cross-volume paths")
+	assert.Contains(t, err.Error(), "processing log file",
+		"error should wrap with 'processing log file'")
+	assert.Nil(t, record, "record should be nil on error")
+}
+
+// TestDiscoverNewRecords_GetSessionIDError covers the gap at ledger.go:151-153
+// where discoverNewRecords receives an error from getSessionID, logs a
+// "Recovery: skipping" warning, and continues to the next file without
+// panicking or producing a record for the failed path.
+func TestDiscoverNewRecords_GetSessionIDError(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	// Create a valid tokens.log that can be processed normally.
+	validDir := filepath.Join(tempDir, "session-valid")
+	require.NoError(t, os.MkdirAll(validDir, 0755))
+	validLog := filepath.Join(validDir, "tokens.log")
+	require.NoError(t, os.WriteFile(validLog,
+		[]byte(`{"prompt_tokens":100,"response_tokens":50,"cost":0.01,"timestamp":"2025-06-15T12:00:00Z"}`+"\n"), 0644))
+
+	// Find a cross-volume path that will cause filepath.Rel to fail.
+	// On Linux, /proc is a separate virtual filesystem.
+	badPath := filepath.Join("/proc", "cpuinfo")
+	globalDir := tempDir
+	if _, relErr := filepath.Rel(globalDir, badPath); relErr == nil {
+		// Try Windows-style cross-volume paths.
+		badPath = `D:\does-not-exist\tokens.log`
+		globalDir = `C:\base`
+		if _, relErr := filepath.Rel(globalDir, badPath); relErr == nil {
+			t.Skip("filepath.Rel succeeds on all tested path pairs — cross-volume paths not available")
+		}
+	}
+
+	// Build file list: first a bad path (getSessionID fails → skip),
+	// then a valid path (should be processed normally).
+	files := []string{badPath, validLog}
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+	ls := newLedgerStore(sm, "test-model", nil)
+
+	seen := make(map[string]bool)
+	pricing := GetPricing(context.Background(), sm, tempDir)
+
+	// Call discoverNewRecords — the bad path must cause getSessionID to fail,
+	// log "Recovery: skipping", and continue. The valid path must be processed.
+	discovered := ls.discoverNewRecords(context.Background(), files, tempDir, seen, pricing)
+
+	// The valid file should be discovered (session-valid/tokens.log).
+	assert.Len(t, discovered, 1, "only the valid file should be discovered; bad path should be skipped")
+	if len(discovered) > 0 {
+		assert.Contains(t, discovered[0].Session, "session-valid/tokens.log",
+			"discovered record should be from the valid path")
+	}
 }
