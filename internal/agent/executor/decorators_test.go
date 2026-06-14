@@ -594,25 +594,24 @@ func TestForwardHeartbeat_SuccessfulSend(t *testing.T) {
 		t.Parallel()
 		ch := make(chan struct{})
 		received := make(chan struct{})
-		ready := make(chan struct{})
 
 		go func() {
-			close(ready) // signal: receiver is now blocked on <-ch
 			<-ch
 			close(received)
 		}()
 
-		// Deterministic barrier: block until the receiver goroutine is
-		// guaranteed to be waiting on <-ch before the non-blocking send.
-		<-ready
-		forwardHeartbeat(ch, struct{}{})
-
-		select {
-		case <-received:
-			// Receiver got the heartbeat
-		case <-time.After(1 * time.Second):
-			t.Fatal("timeout waiting for receiver to get heartbeat on unbuffered channel")
-		}
+		// Poll until the receiver is actually waiting and the non-blocking send succeeds.
+		// forwardHeartbeat does not return a value, so we poll it and check if
+		// the receiver unblocked and closed the 'received' channel.
+		require.Eventually(t, func() bool {
+			forwardHeartbeat(ch, struct{}{})
+			select {
+			case <-received:
+				return true
+			default:
+				return false
+			}
+		}, 1*time.Second, 5*time.Millisecond)
 	})
 
 	t.Run("nil_channel_no_panic", func(t *testing.T) {
@@ -671,9 +670,6 @@ func TestDrainHeartbeats_DrainsChannel(t *testing.T) {
 		// protection is against the tool goroutine's defer close(hbCh) racing
 		// with the drain. We verify the goroutine exits by ensuring no panic
 		// propagates to the test process.
-		//
-		// Give the goroutine time to process the close and exit.
-		time.Sleep(10 * time.Millisecond) // Simulating latency: wait for goroutine exit after close
 	})
 }
 
@@ -704,6 +700,7 @@ func TestMonitorLiveness_TimerFires_CancelsContext(t *testing.T) {
 		BlockCh:    make(chan struct{}),
 		Heartbeats: 0, // no heartbeats → timer will fire
 	}
+	defer close(next.BlockCh)
 
 	decorator := newSafetyDecorator(
 		next,

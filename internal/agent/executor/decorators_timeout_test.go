@@ -87,6 +87,8 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 					close(next.BlockCh)
 				})
 				defer timer.Stop()
+			} else if tt.nextDelay > 0 {
+				defer close(next.BlockCh)
 			}
 
 			decorator := newSafetyDecorator(
@@ -165,6 +167,9 @@ func TestSafetyDecorator_DynamicTimeout_NonNumericType(t *testing.T) {
 				Result:  tools.ToolResult{Text: "ok"},
 				Delay:   tt.nextDelay,
 				BlockCh: make(chan struct{}),
+			}
+			if tt.nextDelay > 0 {
+				defer close(next.BlockCh)
 			}
 
 			decorator := newSafetyDecorator(

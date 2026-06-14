@@ -1011,12 +1011,23 @@ func TestInferenceStep_UpdateState_NilMetrics(t *testing.T) {
 	assert.False(t, turn.State.HasToolCalls)
 }
 
+type responseEventFaultBus struct {
+	eventstest.TestEventBus
+}
+
+func (b *responseEventFaultBus) Publish(ctx context.Context, e events.Event) error {
+	if _, ok := e.(events.ResponseEvent); ok {
+		return errors.New("response event publish failure")
+	}
+	return b.TestEventBus.Publish(ctx, e)
+}
+
 func TestInferenceStep_InvokeModel_ResponseEvent_PublishError(t *testing.T) {
 	t.Parallel()
 
-	// Setup a faulting event bus that will cause the ResponseEvent publish to fail
-	bus := &eventstest.TestEventBus{}
-	bus.SetPublishErr(errors.New("response event publish failure"))
+	// Setup a faulting event bus that will ONLY cause the ResponseEvent publish to fail,
+	// to make the test intent explicit (InferenceStartedEvent will succeed).
+	bus := &responseEventFaultBus{}
 
 	// Spy logger to capture the error log
 	sl := &testfixtures.SpyLogger{}
