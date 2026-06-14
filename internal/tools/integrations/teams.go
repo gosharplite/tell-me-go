@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -64,16 +65,27 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 }
 
 func buildTeamsRequestBody(message, reason string) ([]byte, error) {
+	body := []map[string]interface{}{
+		{
+			"type": "TextBlock",
+			"text": message,
+			"wrap": true,
+		},
+	}
+	if reason != "" {
+		body = append(body, map[string]interface{}{
+			"type":     "TextBlock",
+			"text":     fmt.Sprintf("Reason: %s", reason),
+			"wrap":     true,
+			"spacing":  "Small",
+			"size":     "Small",
+			"isSubtle": true,
+		})
+	}
 	payload := map[string]interface{}{
 		"type":    "AdaptiveCard",
 		"version": "1.2",
-		"body": []map[string]interface{}{
-			{
-				"type": "TextBlock",
-				"text": message,
-				"wrap": true,
-			},
-		},
+		"body":    body,
 		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
 	}
 	return json.Marshal(payload)
@@ -89,7 +101,10 @@ func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byt
 	if err != nil {
 		return "", fmt.Errorf("failed to send message: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain to enable connection reuse
+		_ = resp.Body.Close()                 // close error non-critical after status check
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("failed to send message to Teams, status: %s", resp.Status)

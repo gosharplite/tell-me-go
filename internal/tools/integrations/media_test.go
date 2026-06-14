@@ -546,6 +546,48 @@ func TestRegisterAll_ErrorPropagation(t *testing.T) {
 	})
 }
 
+func TestRegisterAll_ErrorWrapping(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	fs := &mockFileSystem{}
+	client := &mockLLMClient{}
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name          string
+		failAfter     int
+		wantSubstring string
+	}{
+		{
+			name:          "registerMedia wraps error",
+			failAfter:     0,
+			wantSubstring: "registerMedia",
+		},
+		{
+			name:          "registerNetwork wraps error",
+			failAfter:     2,
+			wantSubstring: "registerNetwork",
+		},
+		{
+			name:          "registerTeams wraps error",
+			failAfter:     4,
+			wantSubstring: "registerTeams",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newFaultyRegistry(registry.New(), tt.failAfter)
+			err := RegisterAll(r, fs, sm, client, tmpDir)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantSubstring) {
+				t.Errorf("error %q should contain %q", err.Error(), tt.wantSubstring)
+			}
+		})
+	}
+}
+
 func TestRegisterMedia_ErrorPaths(t *testing.T) {
 	sm := newMediaMockSecurityManager()
 	fs := &mockFileSystem{}

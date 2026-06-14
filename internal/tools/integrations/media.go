@@ -125,6 +125,11 @@ func (m *mediaManager) saveImagesToDisk(ctx context.Context, images [][]byte, pr
 }
 
 func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	// readImage is a synchronous read operation (not registered as LongRunning),
+	// so heartbeat is intentionally not started. The hb parameter is required by
+	// the tools.ToolFunc interface signature.
+	_ = hb
+
 	var a struct {
 		Filepath string `json:"filepath"`
 	}

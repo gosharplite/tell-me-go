@@ -4,6 +4,8 @@
 package integrations
 
 import (
+	"fmt"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -16,33 +18,33 @@ import (
 func RegisterAll(r tools.Registry, fs persistence.FileSystem, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
 	// Register Media Tools
 	if err := registerMedia(r, fs, sm, client, assetsDir); err != nil {
-		return err
+		return fmt.Errorf("registerMedia: %w", err)
 	}
 
 	// Register Network Tools
 	net := newnetworkTool(sm, nil)
 	if err := registerNetwork(r, net); err != nil {
-		return err
+		return fmt.Errorf("registerNetwork: %w", err)
 	}
 
 	// Register Teams Tools
 	if err := registerTeams(r, sm, nil); err != nil {
-		return err
+		return fmt.Errorf("registerTeams: %w", err)
 	}
 
 	// Register Confluence Tools
 	if err := atlassian.RegisterConfluence(r, sm, nil); err != nil {
-		return err
+		return fmt.Errorf("atlassian.RegisterConfluence: %w", err)
 	}
 
 	// Register Jira Tools
 	if err := atlassian.RegisterJira(r, sm, nil); err != nil {
-		return err
+		return fmt.Errorf("atlassian.RegisterJira: %w", err)
 	}
 
 	// Register Azure DevOps Tools
 	if err := ado.Register(r, sm, nil); err != nil {
-		return err
+		return fmt.Errorf("ado.Register: %w", err)
 	}
 
 	return nil

@@ -655,3 +655,48 @@ func TestRecordPrompt_AfterClose(t *testing.T) {
 		}
 	}
 }
+
+func TestMultiSourceSuggestionService_Warnf(t *testing.T) {
+	var buf strings.Builder
+	failTracker := &failingAppendTracker{}
+	fs := persistence.NewMockFileSystem()
+
+	service, err := suggestions.NewMultiSourceSuggestionService(
+		context.Background(), fs, failTracker, nil, &buf, infra_persistence.NewWorkspacePolicy(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	// Trigger a background RecordPrompt with a failing tracker
+	_ = service.RecordPrompt(context.Background(), "test-prompt")
+
+	// Close drains the background goroutine
+	_ = service.Close(context.Background())
+
+	got := buf.String()
+	if !strings.Contains(got, "failed to record prompt to global tracker") {
+		t.Errorf("expected logger to contain warning about failed record, got: %q", got)
+	}
+}
+
+func TestNewService_LoadTopN_LogsWarning(t *testing.T) {
+	var buf strings.Builder
+	tracker := &errorPromptTracker{}
+	fs := persistence.NewMockFileSystem()
+
+	service, err := suggestions.NewMultiSourceSuggestionService(
+		context.Background(), fs, tracker, nil, &buf, infra_persistence.NewWorkspacePolicy(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+	if service == nil {
+		t.Fatal("service is nil")
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "failed to load top prompts") {
+		t.Errorf("expected logger to contain warning about failed load, got: %q", got)
+	}
+}

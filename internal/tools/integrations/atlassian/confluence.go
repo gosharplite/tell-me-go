@@ -72,15 +72,15 @@ func (m *ConfluenceManager) fetchPageContent(ctx context.Context, pageID string)
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		_ = resp.Body.Close()
+		_ = drainAndClose(resp.Body) // Drain to enable connection reuse; close errors on error paths are non-actionable.
 		return nil, fmt.Errorf("confluence page not found: %s", pageID)
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		_ = resp.Body.Close()
+		_ = drainAndClose(resp.Body) // Drain to enable connection reuse; close errors on error paths are non-actionable.
 		return nil, fmt.Errorf("authentication failed: %s", resp.Status)
 	}
 	if resp.StatusCode != http.StatusOK {
-		_ = resp.Body.Close()
+		_ = drainAndClose(resp.Body) // Drain to enable connection reuse; close errors on error paths are non-actionable.
 		return nil, fmt.Errorf("confluence API returned status: %s", resp.Status)
 	}
 
@@ -88,7 +88,7 @@ func (m *ConfluenceManager) fetchPageContent(ctx context.Context, pageID string)
 }
 
 func (m *ConfluenceManager) readAndValidateBody(respBody io.ReadCloser) ([]byte, error) {
-	defer func() { _ = respBody.Close() }()
+	defer func() { _ = respBody.Close() }() // body fully consumed by io.ReadAll above; close errors are non-actionable
 	const maxPageSize = 5 * 1024 * 1024
 	body, err := io.ReadAll(io.LimitReader(respBody, int64(maxPageSize)+1))
 	if err != nil {
@@ -167,7 +167,7 @@ func (m *ConfluenceManager) getCurrentPageVersion(ctx context.Context, pageID st
 	if err != nil {
 		return nil, fmt.Errorf("version fetch request failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = resp.Body.Close() }() // body consumed by json.Decoder; close error non-actionable
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch current version, status: %s", resp.Status)
@@ -203,7 +203,9 @@ func (m *ConfluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 	if err != nil {
 		return fmt.Errorf("update request failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_ = drainAndClose(resp.Body) // Write path: drain to enable connection reuse
+	}()
 
 	if resp.StatusCode == http.StatusConflict {
 		return fmt.Errorf("conflict: page version changed during update; please retry")
@@ -272,6 +274,14 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// drainAndClose drains any remaining bytes from the response body to enable
+// connection reuse, then closes it. The close error is returned; drain errors
+// are discarded (they are always expected when draining after a partial read).
+func drainAndClose(body io.ReadCloser) error {
+	_, _ = io.Copy(io.Discard, body)
+	return body.Close()
 }
 
 type confluenceSecurity interface {
