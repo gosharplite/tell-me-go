@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path/filepath"
+	"sort"
 )
 
 // renamePlan describes a symbol rename operation within a package directory.
@@ -53,7 +55,13 @@ func (t *renameTransform) Apply(_ context.Context, _ *token.FileSet, files map[s
 	}
 
 	if renamed == 0 {
-		return fmt.Errorf("symbol %q not found in any loaded file", t.Plan.OldName)
+		fileNames := make([]string, 0, len(files))
+		for path := range files {
+			fileNames = append(fileNames, filepath.Base(path))
+		}
+		sort.Strings(fileNames)
+		return fmt.Errorf("rename %s→%s: symbol %q not found in %d files: %v",
+			t.Plan.OldName, t.Plan.NewName, t.Plan.OldName, len(files), fileNames)
 	}
 
 	return nil

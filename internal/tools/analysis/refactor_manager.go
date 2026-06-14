@@ -26,7 +26,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		Reason  string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("move definition: %w", err)
 	}
 
 	plan := &movePlan{
@@ -38,24 +38,21 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	// Security Check
 	resolvedSrc, err := m.SP.IsPathWritable(plan.SrcFile)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("move definition src path %s: %w", plan.SrcFile, err)
 	}
 	resolvedDst, err := m.SP.IsPathWritable(plan.DstFile)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("move definition dst path %s: %w", plan.DstFile, err)
 	}
 	plan.SrcFile = resolvedSrc
 	plan.DstFile = resolvedDst
 
 	tx := newTransaction()
 	if _, err := tx.LoadFile(plan.SrcFile); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("move definition load src %s: %w", plan.SrcFile, err)
 	}
 	if _, err := tx.LoadFile(plan.DstFile); err != nil {
-		// Handle non-existent destination
-		// For simplicity in this implementation we assume it exists or fail
-		// Real implementation should handle it
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("move definition load dst %s: %w", plan.DstFile, err)
 	}
 
 	tx.Add(newMoveTransform(plan))
@@ -63,7 +60,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	tx.Add(newImportCleanupTransform(plan.DstFile))
 
 	if err := tx.Commit(ctx); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("move definition commit %s: %w", plan.Symbol, err)
 	}
 
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully moved %s from %s to %s", plan.Symbol, plan.SrcFile, plan.DstFile)}, nil
@@ -98,7 +95,7 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		Reason  string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("rename symbol: %w", err)
 	}
 	if params.Path == "" {
 		params.Path = "."
@@ -107,13 +104,13 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 	// Resolve and validate the target directory.
 	resolvedDir, err := m.SP.IsPathWritable(params.Path)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("rename symbol path %s: %w", params.Path, err)
 	}
 
 	// Discover and load all Go source files into a transaction.
 	goFiles, tx, err := m.loadGoFilesForRename(resolvedDir)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("rename symbol %s→%s: %w", params.OldName, params.NewName, err)
 	}
 
 	plan := &renamePlan{OldName: params.OldName, NewName: params.NewName}
@@ -123,7 +120,7 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("rename symbol %s→%s commit: %w", params.OldName, params.NewName, err)
 	}
 
 	// Build a compact list of filenames for the result.

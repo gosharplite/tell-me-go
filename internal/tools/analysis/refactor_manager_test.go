@@ -79,7 +79,7 @@ func TestMoveDefinition(t *testing.T) {
 			"reason":   "testing",
 		}
 		_, err := mgr.MoveDefinition(ctx, args, nil)
-		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "move definition src path")
 	})
 
 	tests := []struct {
@@ -336,7 +336,7 @@ func TestMoveDefinition_ErrorPaths(t *testing.T) {
 		}
 		_, err := mgr.MoveDefinition(ctx, args, nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "dst not writable")
+		assert.Contains(t, err.Error(), "move definition dst path")
 	})
 
 	t.Run("src file load error", func(t *testing.T) {
@@ -351,6 +351,7 @@ func TestMoveDefinition_ErrorPaths(t *testing.T) {
 		}
 		_, err := mgr.MoveDefinition(ctx, args, nil)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "move definition load src")
 	})
 
 	t.Run("Commit error (symbol not found)", func(t *testing.T) {
@@ -367,6 +368,7 @@ func TestMoveDefinition_ErrorPaths(t *testing.T) {
 		}
 		_, err := mgr.MoveDefinition(ctx, args, nil)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "move definition commit")
 		assert.Contains(t, err.Error(), "not found")
 	})
 }
@@ -399,6 +401,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 		}
 		_, err := mgr.RenameSymbol(ctx, args, nil)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "rename symbol path")
 		assert.Contains(t, err.Error(), "path not writable")
 	})
 
@@ -415,6 +418,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 		}
 		_, err := mgr.RenameSymbol(ctx, args, nil)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "rename symbol")
 		assert.Contains(t, err.Error(), "no .go files found")
 	})
 
@@ -435,6 +439,7 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 		}
 		_, err := mgr.RenameSymbol(ctx, args, nil)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "rename symbol")
 		assert.Contains(t, err.Error(), "load broken.go:")
 	})
 }
