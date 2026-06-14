@@ -6,6 +6,8 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,9 +16,9 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
 )
 
 func TestSQLiteMigrations(t *testing.T) {
@@ -323,10 +325,8 @@ func TestMigrateFromJSON_MigrateTasksError(t *testing.T) {
 	}
 }
 
-// NOTE: The tx.Rollback() defer warning branch in migrateTasks (lines 107-109
-// in sqlite_db.go) is defensive and unreachable in tests — Commit() makes
-// Rollback return sql.ErrTxDone, and a dead connection aborts the test.
-// Verified by code review. See comment in sqlite_db.go.
+// TestMigrateTasks_RollbackWarning (below) covers the tx.Rollback() defer
+// warning branch in migrateTasks using a custom driver.Connector wrapper.
 func TestMigrateTasks_TxBeginFailure(t *testing.T) {
 	t.Parallel()
 
@@ -710,4 +710,181 @@ func TestExecuteBatchInsert_ErrorContext(t *testing.T) {
 	err = executeBatchInsert(context.Background(), tx, rows)
 	require.Error(t, err, "expected error from batch insert with missing table")
 	assert.Contains(t, err.Error(), "batch 0-200", "error should mention batch range")
+}
+
+// =============================================================================
+// rollbackFailingTx — driver.Tx wrapper whose Rollback() returns an injected
+// error after performing a best-effort real rollback (to avoid resource leaks).
+// =============================================================================
+
+type rollbackFailingTx struct {
+	driver.Tx
+	rollbackErr error
+}
+
+func (tx *rollbackFailingTx) Rollback() error {
+	_ = tx.Tx.Rollback() // best-effort real rollback to avoid resource leaks
+	return tx.rollbackErr
+}
+
+// =============================================================================
+// rollbackFailingConnector — driver.Connector that injects a Rollback error.
+// Connect() opens a real sqlite connection and wraps it in rollbackFailingConn,
+// which returns *rollbackFailingTx from BeginTx.
+// =============================================================================
+
+type rollbackFailingConnector struct {
+	dbPath      string
+	rollbackErr error
+}
+
+func (c *rollbackFailingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	realConn, err := sqliteDriver.Open(c.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	return &rollbackFailingConn{
+		conn:        realConn,
+		rollbackErr: c.rollbackErr,
+	}, nil
+}
+
+func (c *rollbackFailingConnector) Driver() driver.Driver {
+	return sqliteDriver
+}
+
+// rollbackFailingConn wraps a real driver.Conn and returns *rollbackFailingTx
+// from BeginTx. All other methods delegate to the real connection.
+type rollbackFailingConn struct {
+	conn        driver.Conn
+	rollbackErr error
+}
+
+func (c *rollbackFailingConn) Prepare(query string) (driver.Stmt, error) {
+	return c.conn.Prepare(query)
+}
+
+func (c *rollbackFailingConn) Close() error { return c.conn.Close() }
+
+func (c *rollbackFailingConn) Begin() (driver.Tx, error) {
+	return c.BeginTx(context.Background(), driver.TxOptions{})
+}
+
+func (c *rollbackFailingConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if bc, ok := c.conn.(driver.ConnBeginTx); ok {
+		tx, err := bc.BeginTx(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return &rollbackFailingTx{Tx: tx, rollbackErr: c.rollbackErr}, nil
+	}
+	// Fallback for drivers that don't implement ConnBeginTx.
+	tx, err := c.conn.Begin() //nolint:staticcheck // SA1019: fallback for older drivers
+	if err != nil {
+		return nil, err
+	}
+	return &rollbackFailingTx{Tx: tx, rollbackErr: c.rollbackErr}, nil
+}
+
+func (c *rollbackFailingConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if qc, ok := c.conn.(driver.QueryerContext); ok {
+		return qc.QueryContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+func (c *rollbackFailingConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if ec, ok := c.conn.(driver.ExecerContext); ok {
+		return ec.ExecContext(ctx, query, args)
+	}
+	return nil, driver.ErrSkip
+}
+
+// =============================================================================
+// TestMigrateTasks_RollbackWarning — covers the deferred tx.Rollback() warning
+// branch in migrateTasks (sqlite_db.go L108-109). Tests two scenarios:
+//   1. Rollback returns a non-ErrTxDone error → warning is logged
+//   2. Rollback returns sql.ErrTxDone → warning is suppressed
+// =============================================================================
+
+func TestMigrateTasks_RollbackWarning(t *testing.T) {
+	tests := []struct {
+		name           string
+		rollbackErr    error
+		wantMigrateErr string // empty = expect nil
+		wantLog        string // empty = expect NOT in logs
+	}{
+		{
+			name:           "non-ErrTxDone rollback error logged",
+			rollbackErr:    errors.New("disk I/O error during rollback"),
+			wantMigrateErr: "migrating legacy tasks",
+			wantLog:        "failed to rollback migration transaction",
+		},
+		{
+			name:           "ErrTxDone suppressed",
+			rollbackErr:    sql.ErrTxDone,
+			wantMigrateErr: "", // nil — success
+			wantLog:        "", // must NOT appear
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "test.db")
+			tasksPath := filepath.Join(dir, "tasks.json")
+
+			// Write valid tasks JSON.
+			tasksJSON := `[{"id": 1, "content": "Task", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}]`
+			require.NoError(t, os.WriteFile(tasksPath, []byte(tasksJSON), 0644))
+
+			// Create connector with injected rollback error.
+			connector := &rollbackFailingConnector{
+				dbPath:      dbPath,
+				rollbackErr: tt.rollbackErr,
+			}
+			db := sql.OpenDB(connector)
+			t.Cleanup(func() { _ = db.Close() })
+
+			// Create tasks table. For the non-ErrTxDone case, omit created_at
+			// so executeBatchInsert fails. For the ErrTxDone case, include it.
+			var createSQL string
+			if tt.wantMigrateErr != "" {
+				// Missing created_at → INSERT fails → Rollback with injected error
+				createSQL = "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL);"
+			} else {
+				createSQL = "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, created_at DATETIME NOT NULL);"
+			}
+			_, err := db.Exec(createSQL)
+			require.NoError(t, err)
+
+			// Set up logger with SyncWriter to capture output.
+			var buf testfixtures.SyncWriter
+			testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+			fs := NewOSFileSystem()
+			ctx := context.Background()
+
+			err = migrateFromJSON(ctx, db, fs, tasksPath, testLogger)
+
+			output := buf.String()
+
+			if tt.wantMigrateErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantMigrateErr)
+			}
+
+			if tt.wantLog != "" {
+				assert.Contains(t, output, tt.wantLog)
+				// For non-ErrTxDone case, also verify the injected error string.
+				assert.Contains(t, output, tt.rollbackErr.Error())
+			} else {
+				assert.NotContains(t, output, "failed to rollback")
+			}
+		})
+	}
 }
