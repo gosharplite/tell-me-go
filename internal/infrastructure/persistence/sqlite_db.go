@@ -105,9 +105,8 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 		return err
 	}
 	// NOTE: The deferred Rollback below logs a warning on unexpected rollback
-	// failures. This branch is untestable — Commit() causes Rollback to return
-	// sql.ErrTxDone (suppressed), and a dead connection would abort the test.
-	// Verified by code review. No test coverage is possible.
+	// failures. This branch is covered by TestMigrateTasks_RollbackWarning
+	// using a custom driver.Connector wrapper that injects a Rollback error.
 	defer func() {
 		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
 			logger.Warn("failed to rollback migration transaction", "error", rbErr)
