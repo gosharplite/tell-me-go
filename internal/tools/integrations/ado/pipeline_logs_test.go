@@ -206,4 +206,27 @@ func TestStreamFunctions_EdgeCases(t *testing.T) {
 		assert.Equal(t, expectedErr, err)
 		assert.Equal(t, 1, count) // first line triggers error
 	})
+
+	t.Run("streamPagination - startLine beyond total", func(t *testing.T) {
+		t.Parallel()
+		result, err := streamPagination(context.Background(), strings.NewReader("line1\nline2\n"), 10, 10, nil)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Content, "Start line 10 is beyond total lines 2")
+	})
+
+	t.Run("streamPagination - maxLines unlimited", func(t *testing.T) {
+		t.Parallel()
+		result, err := streamPagination(context.Background(), strings.NewReader("line1\nline2\n"), 1, 0, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "line1\nline2", result.Content)
+		assert.Equal(t, 2, result.TotalLines)
+	})
+
+	t.Run("streamRegexFilter - no matches found", func(t *testing.T) {
+		t.Parallel()
+		opts := logFilterOptions{MaxLines: 100, ContextLines: 0}
+		result, err := streamRegexFilter(context.Background(), strings.NewReader("line1\nline2\n"), "zzz_not_present", opts, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "No matches found for filter_query.", result.Content)
+	})
 }

@@ -934,4 +934,107 @@ func TestAdoManager_FinalErrorPaths(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "parsing get pr statuses args")
 	})
+
+	// Gap 4: AdoGetPrThreads — tools.UnmarshalArgs fails on type mismatch.
+	// No HTTP server needed; fails before any network call.
+	t.Run("AdoGetPrThreads - unmarshal error", func(t *testing.T) {
+		// t.Setenv already at top-level, no t.Parallel() due to t.Setenv
+		m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true}, WithToken("test-pat"))
+		_, err := m.AdoGetPrThreads(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": "r", "pull_request_id": "not-an-int",
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing get pr threads args")
+	})
+}
+
+// TestAdoManager_ListPullRequests_URLParseError covers the error propagation
+// through AdoListPullRequests when buildListPullRequestsURL fails due to
+// url.Parse rejecting a malformed BaseURL containing a control character.
+// No HTTP server needed — url.Parse fails before any network call.
+func TestAdoManager_ListPullRequests_URLParseError(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true},
+		WithBaseURL("http://x\ny"), WithToken("test-pat"))
+	_, err := m.AdoListPullRequests(context.Background(), map[string]interface{}{
+		"organization": "o", "project": "p", "repository": "r",
+	}, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "building list pull requests URL")
+}
+
+// TestAdoManager_GetPipelineLogContent_MissingParams covers the explicit
+// missing-params validation in getPipelineLogContent (~line 299) that
+// requires organization, project, pipeline_id, run_id, and log_id.
+// No HTTP server is needed — the validation fails before any network call.
+func TestAdoManager_GetPipelineLogContent_MissingParams(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	m := NewADOManager(sm, WithToken("test-pat"))
+
+	_, err := m.getPipelineLogContent(context.Background(), map[string]interface{}{
+		"organization": "o",
+		// project, pipeline_id, run_id, log_id intentionally omitted — all zero
+	}, nil)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "required")
+}
+
+// TestAdoManager_GetTaskLog_MissingParams covers the explicit missing-params
+// validation in getTaskLog (~line 322) that requires organization, project,
+// build_id, and log_id. No HTTP server is needed.
+func TestAdoManager_GetTaskLog_MissingParams(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	m := NewADOManager(sm, WithToken("test-pat"))
+
+	_, err := m.getTaskLog(context.Background(), map[string]interface{}{
+		"organization": "o",
+		// project, build_id, log_id intentionally omitted — all zero
+	}, nil)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "required")
+}
+
+// TestAdoManager_ListPipelineRuns_URLParseError covers the error propagation
+// through ListPipelineRuns when buildListPipelineRunsURL fails due to
+// url.Parse rejecting a malformed BaseURL containing a control character.
+// No HTTP server needed — url.Parse fails before any network call.
+func TestAdoManager_ListPipelineRuns_URLParseError(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true},
+		WithBaseURL("http://x\ny"), WithToken("test-pat"))
+	_, _, err := m.ListPipelineRuns(context.Background(), map[string]interface{}{
+		"organization": "o", "project": "p", "pipeline_id": 1,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "building list pipeline runs URL")
+}
+
+// TestAdoManager_GetTaskLog_ProcessError covers the error propagation through
+// getTaskLog when processLogContent encounters a scanner buffer overflow
+// (line > 1MB). Follows the same pattern as the existing
+// "Fetch Log Content - processLogContent error (scanner.Err)" subtest in
+// TestAdoManager_ListPipelineLogs_Errors but exercises the build-variant path.
+func TestAdoManager_GetTaskLog_ProcessError(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	tooLong := make([]byte, 1*1024*1024+1)
+	for i := range tooLong {
+		tooLong[i] = 'A'
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(tooLong)
+	}))
+	defer ts.Close()
+
+	m := NewADOManager(&toolstest.MockSecurityManager{AllowAll: true},
+		WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+	_, err := m.getTaskLog(context.Background(), map[string]interface{}{
+		"organization": "o", "project": "p", "build_id": 1, "log_id": 1,
+	}, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to process log content")
 }
