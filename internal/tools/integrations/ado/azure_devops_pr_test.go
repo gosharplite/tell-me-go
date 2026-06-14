@@ -223,6 +223,48 @@ func TestAdoListPullRequests(t *testing.T) {
 		_, err := m.AdoListPullRequests(context.Background(), args, nil)
 		assert.NoError(t, err)
 	})
+
+	t.Run("Top Clamped To 1000", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.Query()
+			assert.Equal(t, "1000", q.Get("$top")) // clamped, not 2000
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value": []}`))
+		}))
+		t.Cleanup(server.Close)
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+		_, err := m.AdoListPullRequests(context.Background(), map[string]interface{}{
+			"organization": "myorg", "project": "myproj", "repository": "myrepo", "top": 2000,
+		}, nil)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Malformed JSON Response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{invalid`))
+		}))
+		t.Cleanup(server.Close)
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+		_, err := m.AdoListPullRequests(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": "r",
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+
+	t.Run("Forbidden", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		t.Cleanup(server.Close)
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+		_, err := m.AdoListPullRequests(context.Background(), map[string]interface{}{
+			"organization": "myorg", "project": "myproj", "repository": "myrepo",
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "forbidden")
+	})
 }
 
 func TestAdoGetPrDiff(t *testing.T) {
@@ -373,6 +415,126 @@ func TestAdoGetPrThreads(t *testing.T) {
 		result, err := m.AdoGetPrThreads(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, "No discussion threads found in this pull request.", result.Text)
+	})
+
+	t.Run("All System Threads", func(t *testing.T) {
+		t.Parallel()
+		m := &AdoManager{}
+		threadData := adoThreadResponse{
+			Value: []struct {
+				Comments []struct {
+					Author struct {
+						DisplayName string `json:"displayName"`
+					} `json:"author"`
+					Content       string `json:"content"`
+					PublishedDate string `json:"publishedDate"`
+					CommentType   string `json:"commentType"`
+				} `json:"comments"`
+				IsDeleted bool `json:"isDeleted"`
+			}{
+				{
+					IsDeleted: false,
+					Comments: []struct {
+						Author struct {
+							DisplayName string `json:"displayName"`
+						} `json:"author"`
+						Content       string `json:"content"`
+						PublishedDate string `json:"publishedDate"`
+						CommentType   string `json:"commentType"`
+					}{
+						{Author: struct {
+							DisplayName string `json:"displayName"`
+						}{DisplayName: "System"}, Content: "Build succeeded.", CommentType: "system"},
+					},
+				},
+				{
+					IsDeleted: true,
+					Comments:  nil,
+				},
+			},
+		}
+		result := m.formatPrThreads(123, threadData)
+		assert.Equal(t, "No discussion threads found in this pull request.", result)
+	})
+
+	t.Run("Empty Comment Content", func(t *testing.T) {
+		t.Parallel()
+		m := &AdoManager{}
+		threadData := adoThreadResponse{
+			Value: []struct {
+				Comments []struct {
+					Author struct {
+						DisplayName string `json:"displayName"`
+					} `json:"author"`
+					Content       string `json:"content"`
+					PublishedDate string `json:"publishedDate"`
+					CommentType   string `json:"commentType"`
+				} `json:"comments"`
+				IsDeleted bool `json:"isDeleted"`
+			}{
+				{
+					IsDeleted: false,
+					Comments: []struct {
+						Author struct {
+							DisplayName string `json:"displayName"`
+						} `json:"author"`
+						Content       string `json:"content"`
+						PublishedDate string `json:"publishedDate"`
+						CommentType   string `json:"commentType"`
+					}{
+						{Author: struct {
+							DisplayName string `json:"displayName"`
+						}{DisplayName: "Bot"}, Content: "", CommentType: "text"},
+						{Author: struct {
+							DisplayName string `json:"displayName"`
+						}{DisplayName: "User"}, Content: "Real comment.", CommentType: "text"},
+					},
+				},
+			},
+		}
+		result := m.formatPrThreads(123, threadData)
+		assert.Contains(t, result, "Real comment.")
+		assert.NotContains(t, result, "Bot:") // empty content comment is skipped
+	})
+
+	t.Run("Malformed JSON Response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{invalid`))
+		}))
+		t.Cleanup(server.Close)
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+		_, err := m.AdoGetPrThreads(context.Background(), map[string]interface{}{
+			"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+
+	t.Run("Unauthorized", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		t.Cleanup(server.Close)
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+		_, err := m.AdoGetPrThreads(context.Background(), map[string]interface{}{
+			"organization": "myorg", "project": "myproj", "repository": "myrepo", "pull_request_id": 123,
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unauthorized")
+	})
+
+	t.Run("Forbidden", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		t.Cleanup(server.Close)
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+		_, err := m.AdoGetPrThreads(context.Background(), map[string]interface{}{
+			"organization": "myorg", "project": "myproj", "repository": "myrepo", "pull_request_id": 123,
+		}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "forbidden")
 	})
 }
 
