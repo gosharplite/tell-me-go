@@ -159,3 +159,24 @@ func TestEnvCommand_Execute_WriteError(t *testing.T) {
 	err := c.execute(stdctx.Background(), "")
 	require.ErrorIs(t, err, writeErr)
 }
+
+// TestEnvCommand_Execute_MarshalFailure verifies that when yaml.Marshal
+// (or the injected marshalFunc) returns an error, execute propagates it
+// with the "failed to marshal configuration" wrapper (gap 6: cmd_env.go:57-59).
+func TestEnvCommand_Execute_MarshalFailure(t *testing.T) {
+	t.Parallel()
+
+	marshalErr := errors.New("yaml boom")
+	c := &envCommand{
+		Stdout: new(bytes.Buffer),
+		Loader: &mockLoader{Config: domain_config.Config{Mode: "test"}},
+		marshalFunc: func(v any) ([]byte, error) {
+			return nil, marshalErr
+		},
+	}
+
+	err := c.execute(stdctx.Background(), "")
+	require.Error(t, err)
+	require.ErrorIs(t, err, marshalErr)
+	require.Contains(t, err.Error(), "failed to marshal configuration")
+}
