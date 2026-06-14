@@ -34,6 +34,14 @@ type multiSourceSuggestionService struct {
 	policy    services.WorkspacePolicy
 }
 
+// warnf centralizes warning output. It writes to s.logger if non-nil.
+func (s *multiSourceSuggestionService) warnf(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	if s.logger != nil {
+		_, _ = fmt.Fprint(s.logger, msg)
+	}
+}
+
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the history.
 func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string, logger io.Writer, policy services.WorkspacePolicy) (ports.SuggestionService, error) {
 	if logger == nil {
@@ -52,7 +60,7 @@ func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSys
 	topPrompts, err := tracker.LoadTopN(ctx, 50)
 	if err != nil {
 		// Log error but continue with what we have
-		_, _ = fmt.Fprintf(s.logger, "Warning: failed to load top prompts: %v\n", err)
+		s.warnf("Warning: failed to load top prompts: %v\n", err)
 	}
 
 	seen := make(map[string]bool)
@@ -158,7 +166,7 @@ func (s *multiSourceSuggestionService) RecordPrompt(ctx context.Context, prompt 
 
 		if err := s.tracker.Append(bgCtx, p); err != nil {
 			// Since this is background, we can only log the error
-			_, _ = fmt.Fprintf(s.logger, "Warning: failed to record prompt to global tracker: %v\n", err)
+			s.warnf("Warning: failed to record prompt to global tracker: %v\n", err)
 		}
 	}(ctx, prompt)
 

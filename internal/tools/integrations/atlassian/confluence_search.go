@@ -56,7 +56,10 @@ func (m *ConfluenceManager) resolveSpaceID(ctx context.Context, spaceKey string)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain to enable connection reuse
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return "", fmt.Errorf("space key '%s' not found", spaceKey)
@@ -93,7 +96,10 @@ func (m *ConfluenceManager) FetchSearchPage(ctx context.Context, url string) (*s
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)

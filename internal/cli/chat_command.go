@@ -47,6 +47,12 @@ func (c *chatCommand) newCapturer(stdin io.Reader, stdout, stderr io.Writer, sm 
 	return ui.NewCapturer(stdin, stdout, stderr, sm, clk, mockPrompt, mockAnswer, disableEscapeSequences)
 }
 
+// warnf writes a formatted warning message to stderr; errors from Fprintf are
+// deliberately discarded because there is no recovery path for logging failures.
+func (c *chatCommand) warnf(format string, args ...interface{}) {
+	_, _ = fmt.Fprintf(c.Stderr, format, args...)
+}
+
 type cliOptions struct {
 	configPath   string
 	newSession   bool
@@ -101,7 +107,7 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 		Short: "Start a chat session (Default)",
 		Long:  `The chat command initiates a session with the AI assistant. You can provide a prompt directly as an argument or enter an interactive session.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ := cmd.Flags().GetString("config")
+			configPath, _ := cmd.Flags().GetString("config") // flag guaranteed by root command; never errors
 			opts.configPath = configPath
 			return c.executeChat(cmd.Context(), opts, args)
 		},
@@ -183,7 +189,7 @@ func (c *chatCommand) getCapturer(ctx stdctx.Context, cfg *domain_config.Config,
 	if c.capturerOverride != nil {
 		return c.capturerOverride, func(shutdownCtx stdctx.Context) error {
 			if err := c.capturerOverride.Close(shutdownCtx); err != nil {
-				_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+				c.warnf("Warning: failed to close capturer: %v\n", err)
 				return err
 			}
 			return nil
@@ -260,7 +266,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 
 		if err != nil {
 			// Log warning and fall back to the base capturer (no suggestions)
-			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to initialize suggestions: %v\n", err)
+			c.warnf("Warning: failed to initialize suggestions: %v\n", err)
 			capturer = baseCapturer
 			cleanup = func(ctx stdctx.Context) error {
 				return capturer.Close(ctx)
@@ -269,7 +275,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 			capturer = tui.NewPromptCapturer(baseCapturer, svc)
 			cleanup = func(ctx stdctx.Context) error {
 				if err := capturer.Close(ctx); err != nil {
-					_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+					c.warnf("Warning: failed to close capturer: %v\n", err)
 					return err
 				}
 				return nil
@@ -290,7 +296,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	if c.capturerOverride != nil {
 		return c.capturerOverride, func(ctx stdctx.Context) error {
 			if err := c.capturerOverride.Close(ctx); err != nil {
-				_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+				c.warnf("Warning: failed to close capturer: %v\n", err)
 				return err
 			}
 			return nil
@@ -305,7 +311,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	c.Interactor.set(capturer)
 	return capturer, func(ctx stdctx.Context) error {
 		if err := capturer.Close(ctx); err != nil {
-			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
+			c.warnf("Warning: failed to close capturer: %v\n", err)
 			return err
 		}
 		return nil

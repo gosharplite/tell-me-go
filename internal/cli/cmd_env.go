@@ -29,7 +29,7 @@ func newEnvCommand(ctx *context) *cobra.Command {
 		Short: "Print the fully resolved configuration",
 		Long:  `The env command loads the configuration, masks sensitive fields like API keys, and prints the resulting YAML to standard output.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ := cmd.Flags().GetString("config")
+			configPath, _ := cmd.Flags().GetString("config") // flag guaranteed by root command; never errors
 			return c.execute(cmd.Context(), configPath)
 		},
 	}

@@ -269,6 +269,76 @@ func TestRegisterAll_Errors(t *testing.T) {
 	}
 }
 
+func TestRegisterAll_ErrorWrapping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		failAfter     int
+		setup         func(*tools.ToolRegistrationParams)
+		wantSubstring string
+	}{
+		{
+			name:          "workspace.Register wraps error",
+			failAfter:     0,
+			wantSubstring: "workspace.Register",
+		},
+		{
+			name:      "workspace.RegisterPersistence wraps error",
+			failAfter: 23,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &agenttest.MockSessionProvider{}
+			},
+			wantSubstring: "workspace.RegisterPersistence",
+		},
+		{
+			name:      "analysis.Register wraps error",
+			failAfter: 26,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &agenttest.MockSessionProvider{}
+			},
+			wantSubstring: "analysis.Register",
+		},
+		{
+			name:      "developer.Register wraps error",
+			failAfter: 47,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &agenttest.MockSessionProvider{}
+			},
+			wantSubstring: "developer.Register",
+		},
+		{
+			name:      "integrations.RegisterAll wraps error",
+			failAfter: 54,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &agenttest.MockSessionProvider{}
+			},
+			wantSubstring: "integrations.RegisterAll",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockReg := &MockRegistry{failAfter: tt.failAfter}
+			params := tools.ToolRegistrationParams{
+				Registry:        mockReg,
+				SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
+				WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
+				HealthManager:   nil,
+			}
+			if tt.setup != nil {
+				tt.setup(&params)
+			}
+
+			err := tools.RegisterAll(params)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantSubstring)
+		})
+	}
+}
+
 func (m *MockRegistry) GetOptions(name string) domaintools.ToolOptions {
 	return domaintools.ToolOptions{}
 }
