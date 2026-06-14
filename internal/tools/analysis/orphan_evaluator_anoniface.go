@@ -19,6 +19,12 @@ func (e *anonInterfaceWarningEvaluator) evaluate(ctx *orphanEvalContext) *orphan
 	if ctx == nil || ctx.report == nil {
 		return ctx
 	}
+	if ctx.meta == nil || ctx.state == nil {
+		return ctx
+	}
+	if e.analyzer == nil {
+		return ctx
+	}
 	if !ctx.meta.isMethod {
 		return ctx
 	}
