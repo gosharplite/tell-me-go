@@ -25,6 +25,10 @@ var defaultstyleRules = []styleRule{
 
 // GenerateMermaid transforms a dependency map into a Mermaid.js diagram.
 func generateMermaid(graph map[string][]string) string {
+	// The graph may contain edges to nodes not present as keys
+	// (e.g., external packages, stdlib). These produce dangling
+	// references in the Mermaid output, which is acceptable —
+	// Mermaid renders them as external nodes without styling.
 	var builder strings.Builder
 	builder.WriteString("graph TD\n")
 
@@ -163,6 +167,10 @@ func (d *cycleDetector) dfs(u string) {
 }
 
 func (d *cycleDetector) buildCycle(v string) []string {
+	// Under DFS invariants, v is guaranteed to be on d.path when
+	// buildCycle is called from a back-edge. If the invariant is
+	// violated (e.g., concurrent mutation), nil is returned and
+	// the caller silently skips the malformed cycle.
 	for i, node := range d.path {
 		if node == v {
 			cycle := make([]string, len(d.path)-i+1)
