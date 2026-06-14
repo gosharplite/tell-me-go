@@ -18,6 +18,14 @@ type importCleanupTransform struct {
 	// testFormatNode, when non-nil, replaces format.Node during tests
 	// to exercise the format error path which is unreachable with bytes.Buffer.
 	testFormatNode func(buf *bytes.Buffer, fset *token.FileSet, file *ast.File) error
+
+	// testProcessFunc, when non-nil, replaces imports.Process during tests
+	// to exercise the imports.Process error path.
+	testProcessFunc func(path string, src []byte, opts *imports.Options) ([]byte, error)
+
+	// testParseFileFunc, when non-nil, replaces parser.ParseFile during tests
+	// to exercise the parse error path which is unreachable with []byte input.
+	testParseFileFunc func(fset *token.FileSet, filename string, src interface{}, mode parser.Mode) (*ast.File, error)
 }
 
 func newImportCleanupTransform(path string) *importCleanupTransform {
@@ -42,13 +50,24 @@ func (t *importCleanupTransform) Apply(ctx context.Context, fset *token.FileSet,
 		return fmt.Errorf("formatting %s: %w", t.Path, err)
 	}
 
-	res, err := imports.Process(t.Path, buf.Bytes(), nil)
+	var res []byte
+	var err error
+	if t.testProcessFunc != nil {
+		res, err = t.testProcessFunc(t.Path, buf.Bytes(), nil)
+	} else {
+		res, err = imports.Process(t.Path, buf.Bytes(), nil)
+	}
 	if err != nil {
 		return fmt.Errorf("processing imports for %s: %w", t.Path, err)
 	}
 
 	// Re-parse the result back into the AST
-	newFile, err := parser.ParseFile(fset, t.Path, res, parser.ParseComments)
+	var newFile *ast.File
+	if t.testParseFileFunc != nil {
+		newFile, err = t.testParseFileFunc(fset, t.Path, res, parser.ParseComments)
+	} else {
+		newFile, err = parser.ParseFile(fset, t.Path, res, parser.ParseComments)
+	}
 	if err != nil {
 		return fmt.Errorf("parsing formatted file %s: %w", t.Path, err)
 	}

@@ -1299,3 +1299,33 @@ func TestRunCoverageTest_NilHeartbeat(t *testing.T) {
 		t.Errorf("runCoverageTest with non-nil hb failed: %v", err)
 	}
 }
+
+func TestGetDetailedCoverage_ValidateProfileWithTestErr(t *testing.T) {
+	// NOT parallel — modifies package-level osOpenFile variable
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					if err := os.WriteFile(path, []byte(""), 0644); err != nil {
+						t.Errorf("failed to write coverage file: %v", err)
+					}
+				}
+			}
+			return nil, fmt.Errorf("go test failed: exit status 1")
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	_, err := hea.getDetailedCoverage(ctx, ".", nil)
+	if err == nil {
+		t.Error("expected error when both test fails and profile is empty")
+	}
+	if !strings.Contains(err.Error(), "test execution failed and no valid profile") {
+		t.Errorf("expected testErr wrapping message, got: %v", err)
+	}
+}

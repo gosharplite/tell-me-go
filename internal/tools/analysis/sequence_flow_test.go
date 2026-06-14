@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"strings"
 	"testing"
 	"time"
@@ -322,5 +323,28 @@ func OtherFunc() {}`
 		if !strings.Contains(err.Error(), "WrongName") {
 			t.Errorf("expected 'WrongName' in error, got: %v", err)
 		}
+	}
+}
+
+// TestLoadPackages_DoubleCheckCacheHit verifies the read-lock cache-hit path
+// (pkgs non-nil with a recent lastLoad returns nil immediately).
+// The write-lock double-check path (second if-block after acquiring Lock) is
+// structurally identical and covered under race in TestLoadPackages_ErrorPaths
+// by the indexer-error test which exercises the complementary path.
+func TestLoadPackages_DoubleCheckCacheHit(t *testing.T) {
+	t.Parallel()
+	idx := &mockIndexer{
+		pkgs: []*packages.Package{
+			{PkgPath: "example.com/pkg", Name: "pkg", Types: types.NewPackage("example.com/pkg", "pkg")},
+		},
+	}
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, idx)
+	analyzer.pkgs = []*packages.Package{{PkgPath: "example.com/pkg", Name: "pkg", Types: types.NewPackage("example.com/pkg", "pkg")}}
+	analyzer.lastLoad = time.Now()
+	analyzer.cacheTTL = 5 * time.Minute
+
+	err := analyzer.loadPackages(context.Background(), nil)
+	if err != nil {
+		t.Errorf("expected nil error (read-lock cache hit), got: %v", err)
 	}
 }

@@ -414,6 +414,34 @@ func Foo() {}
 			t.Error("isMethodMatch should not match method symbol on plain function")
 		}
 	})
+
+	t.Run("method match without parens", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+type T struct{}
+func (t T) Method() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		fd := f.Decls[1].(*ast.FuncDecl)
+		if !a.isMethodMatch(fd, "T.Method") {
+			t.Error("isMethodMatch should match receiver without parens or star")
+		}
+	})
+
+	t.Run("pointer receiver vs value symbol notation", func(t *testing.T) {
+		t.Parallel()
+		code := `package test
+type T struct{}
+func (t *T) Method() {}
+`
+		fset, f := parseTestFile(t, code)
+		_ = fset
+		fd := f.Decls[1].(*ast.FuncDecl)
+		if !a.isMethodMatch(fd, "T.Method") {
+			t.Error("isMethodMatch should match value-notation symbol against pointer receiver")
+		}
+	})
 }
 
 // setupRealWorkspaceAnalyzer creates a temporary Go workspace with the given
@@ -777,6 +805,7 @@ func TestNormalizeSymbolName_EdgeCases(t *testing.T) {
 		{"empty string", "", ""},
 		{"just dots", "...", ""},
 		{"double-paren receiver", "((Type)).Method", "Method"},
+		{"double-paren receiver with method", "((Type)).Method", "Method"},
 		{"receiver only no method", "(Type)", "Type"},
 		{"bare function", "FuncName", "FuncName"},
 		{"prefix plus pointer receiver", "pkg.(*Type).Method", "Method"},

@@ -6,6 +6,8 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/go/packages"
 )
 
 // nolintTestCase groups the inputs and expected output for a single
@@ -228,4 +231,123 @@ func TestNolintDeadcode_Method(t *testing.T) {
 	assert.Contains(t, result.Text, "No dead or effectively private code found.",
 		"Method with //nolint:deadcode should be suppressed")
 	_ = sharedModule
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for findFileForPosition (N1 gap)
+// ---------------------------------------------------------------------------
+
+func TestFindFileForPosition_NoMatch(t *testing.T) {
+	t.Parallel()
+
+	// Create a position in fsetA that falls well outside fsetB's range.
+	// Both filesets start at base 1, so we use a large offset in fsetA
+	// that exceeds fsetB's file size.
+	fsetA := token.NewFileSet()
+	fA := fsetA.AddFile("file_a.go", -1, 1000)
+	posInA := fA.Pos(500) // numeric pos = 501
+
+	// state.pkgs only has fsetB (different fset, file only spans 1-100)
+	fsetB := token.NewFileSet()
+	fsetB.AddFile("file_b.go", -1, 100)
+
+	state := &scanState{
+		pkgs: []*packages.Package{
+			{Fset: fsetB},
+		},
+	}
+
+	got := findFileForPosition(posInA, state)
+	if got != nil {
+		t.Errorf("expected nil for position not in any fset, got %v", got)
+	}
+}
+
+func TestFindFileForPosition_InvalidPos(t *testing.T) {
+	t.Parallel()
+	state := &scanState{
+		pkgs: []*packages.Package{
+			{Fset: token.NewFileSet()},
+		},
+	}
+	if got := findFileForPosition(token.NoPos, state); got != nil {
+		t.Error("expected nil for invalid position")
+	}
+}
+
+func TestFindFileForPosition_NilFset(t *testing.T) {
+	t.Parallel()
+	fset := token.NewFileSet()
+	f := fset.AddFile("file.go", -1, 100)
+	pos := f.Pos(5)
+
+	state := &scanState{
+		pkgs: []*packages.Package{
+			{Fset: nil},  // pkg with nil Fset — skipped
+			{Fset: fset}, // this one has the position
+		},
+	}
+	got := findFileForPosition(pos, state)
+	if got == nil {
+		t.Error("expected non-nil file for valid position in second package")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for isNolintDeadcode (N2 gap)
+// ---------------------------------------------------------------------------
+
+func TestIsNolintDeadcode_ReadFileError(t *testing.T) {
+	// NOT parallel — modifies filesystem in a way that could race
+	fset := token.NewFileSet()
+	tmpFile, err := os.CreateTemp("", "nolint-test-*.go")
+	require.NoError(t, err)
+	tmpPath := tmpFile.Name()
+	_, err = tmpFile.WriteString("package p\n\ntype T struct{}\n")
+	require.NoError(t, err)
+	require.NoError(t, tmpFile.Close())
+
+	f := fset.AddFile(tmpPath, -1, 100)
+	pos := f.Pos(15) // somewhere inside the file
+
+	// Delete the file to force os.ReadFile error
+	require.NoError(t, os.Remove(tmpPath))
+
+	state := &scanState{
+		pkgs: []*packages.Package{
+			{Fset: fset},
+		},
+	}
+
+	// Create a types.Object whose Pos() maps to the deleted file
+	pkg := types.NewPackage("example.com/pkg", "pkg")
+	obj := types.NewTypeName(pos, pkg, "T", types.Typ[types.Int])
+
+	got := isNolintDeadcode(obj, state)
+	if got {
+		t.Error("expected false when ReadFile fails, got true")
+	}
+}
+
+func TestIsNolintDeadcode_PositionNotFound(t *testing.T) {
+	t.Parallel()
+
+	// Position from an fset that's NOT in any package in state
+	fset := token.NewFileSet()
+	f := fset.AddFile("orphan.go", -1, 50)
+	pos := f.Pos(10)
+
+	state := &scanState{
+		pkgs: []*packages.Package{
+			{Fset: token.NewFileSet()}, // different fset, doesn't contain pos
+		},
+	}
+
+	pkg := types.NewPackage("example.com/pkg", "pkg")
+	obj := types.NewTypeName(pos, pkg, "T", types.Typ[types.Int])
+
+	got := isNolintDeadcode(obj, state)
+	if got {
+		t.Error("expected false when position not found in any fset, got true")
+	}
 }
