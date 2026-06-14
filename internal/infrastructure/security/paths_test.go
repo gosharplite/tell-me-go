@@ -600,8 +600,10 @@ func TestIsExemptedDirectory_CaseInsensitive(t *testing.T) {
 		// On Windows, isCaseSensitive() returns false.
 		// Test that an uppercase variant of the temp dir path is still exempted.
 		upperTemp := strings.ToUpper(p.resolvedTempDir)
-		require.NotEqual(t, p.resolvedTempDir, upperTemp,
-			"uppercase variant should differ from original for valid test")
+		if p.resolvedTempDir == upperTemp {
+			t.Skip("resolvedTempDir is already all-uppercase; " +
+				"case-insensitive branch is exercised by the normal flow on this system")
+		}
 		pathInUpperTemp := filepath.Join(upperTemp, "test-exempted-upper.txt")
 		exempted := p.isExemptedDirectory(pathInUpperTemp)
 		assert.True(t, exempted, "uppercase temp dir path should be exempted on case-insensitive platform")
@@ -929,85 +931,99 @@ func TestResolveSymlinks_RecursiveFallback(t *testing.T) {
 	}
 }
 
-// TestFilepathAbs_ErrorBranches injects NUL bytes to trigger filepath.Abs
-// failures in RegisterPath, RemovePath, ValidatePath, and checkBoundary.
-// On platforms where filepath.Abs does not error on NUL bytes, subtests
-// gracefully skip via t.Skip — these branches are [SYSTEM-DEPENDENT].
+// TestFilepathAbs_ErrorBranches verifies that filepath.Abs failures are handled
+// correctly in RegisterPath, RemovePath, ValidatePath, and checkBoundary.
+//
+// Strategy: Unset PWD (to disable Go's $PWD-based os.Getwd fast path), chdir
+// into a temp directory, then delete it. This causes os.Getwd() → syscall.Getwd
+// to fail with ENOENT, which makes filepath.Abs error on any relative path.
+// NUL byte injection does NOT work because filepath.Abs on absolute paths
+// never touches the OS — it just calls filepath.Clean and returns.
 func TestFilepathAbs_ErrorBranches(t *testing.T) {
-	t.Parallel()
+	// This test manipulates the process working directory and PWD environment
+	// variable — cannot run in parallel with other tests.
+	// t.Parallel() is intentionally omitted.
+
+	// Save original state for restoration.
+	origDir, err := os.Getwd()
+	require.NoError(t, err, "failed to get current working directory")
+	origPWD, hadPWD := os.LookupEnv("PWD")
+
+	// Create a disposable temp directory, chdir into it, then delete it.
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Chdir(tmpDir), "failed to chdir into temp directory")
+
+	// Unset PWD so os.Getwd() falls through to syscall.Getwd (which will fail
+	// on a deleted directory). Without this, Go may return the stale $PWD value.
+	os.Unsetenv("PWD")
+
+	require.NoError(t, os.RemoveAll(tmpDir), "failed to remove temp directory")
+
+	// Restore original state on cleanup.
+	t.Cleanup(func() {
+		if hadPWD {
+			os.Setenv("PWD", origPWD)
+		} else {
+			os.Unsetenv("PWD")
+		}
+		if err := os.Chdir(origDir); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
+	})
+
+	// Verify os.Getwd() now fails — the precondition for this test.
+	_, wdErr := os.Getwd()
+	require.Error(t, wdErr, "os.Getwd() should fail after deleting current directory and unsetting PWD")
 
 	// ---- 1. RegisterPath: filepath.Abs error returns early ----
 	t.Run("RegisterPath: filepath.Abs error returns early", func(t *testing.T) {
-		t.Parallel()
 		p := newPathPolicy(nil)
 		initialSafe := len(p.GetPaths(true))
 		initialRO := len(p.GetPaths(false))
 
-		p.RegisterPath("/valid/\x00invalid", true)
-		p.RegisterPath("/valid/\x00invalid", false)
+		// Relative path + deleted CWD + no PWD → filepath.Abs fails → RegisterPath is a no-op.
+		p.RegisterPath("relative/path", true)
+		p.RegisterPath("relative/path", false)
 
-		afterSafe := len(p.GetPaths(true))
-		afterRO := len(p.GetPaths(false))
-
-		// Guard: if filepath.Abs did NOT error on NUL bytes, the path was registered.
-		if afterSafe > initialSafe || afterRO > initialRO {
-			t.Skip("filepath.Abs does not error on NUL byte on this platform")
-		}
-
-		if afterSafe != initialSafe {
-			t.Errorf("safe paths changed from %d to %d", initialSafe, afterSafe)
-		}
-		if afterRO != initialRO {
-			t.Errorf("read-only paths changed from %d to %d", initialRO, afterRO)
-		}
+		assert.Equal(t, initialSafe, len(p.GetPaths(true)),
+			"safe paths should not change when filepath.Abs fails")
+		assert.Equal(t, initialRO, len(p.GetPaths(false)),
+			"read-only paths should not change when filepath.Abs fails")
 	})
 
 	// ---- 2. RemovePath: filepath.Abs error returns wrapped error ----
 	t.Run("RemovePath: filepath.Abs error returns wrapped error", func(t *testing.T) {
-		t.Parallel()
 		p := newPathPolicy(nil)
 
-		// Test writable=true
-		err := p.RemovePath("/valid/\x00invalid", true)
-		if err == nil || !strings.Contains(err.Error(), "invalid path") {
-			t.Skip("filepath.Abs does not error on NUL byte on this platform")
-		}
+		err := p.RemovePath("relative/path", true)
+		require.Error(t, err, "RemovePath(writable=true) should error when filepath.Abs fails")
 		assert.Contains(t, err.Error(), "invalid path",
-			"RemovePath(writable=true) should wrap filepath.Abs error with 'invalid path'")
+			"RemovePath should wrap filepath.Abs error with 'invalid path'")
 
-		// Test writable=false
-		err = p.RemovePath("/valid/\x00invalid", false)
-		if err == nil || !strings.Contains(err.Error(), "invalid path") {
-			t.Skip("filepath.Abs does not error on NUL byte on this platform")
-		}
+		err = p.RemovePath("relative/path", false)
+		require.Error(t, err, "RemovePath(writable=false) should error when filepath.Abs fails")
 		assert.Contains(t, err.Error(), "invalid path",
-			"RemovePath(writable=false) should wrap filepath.Abs error with 'invalid path'")
+			"RemovePath should wrap filepath.Abs error with 'invalid path'")
 	})
 
 	// ---- 3. ValidatePath: filepath.Abs error returns wrapped error ----
 	t.Run("ValidatePath: filepath.Abs error returns wrapped error", func(t *testing.T) {
-		t.Parallel()
 		p := newPathPolicy(nil)
 
-		_, err := p.ValidatePath("/tmp/\x00invalid", false)
-		if err == nil || !strings.Contains(err.Error(), "invalid path") {
-			t.Skip("filepath.Abs does not error on NUL byte on this platform")
-		}
+		_, err := p.ValidatePath("relative/path", false)
+		require.Error(t, err, "ValidatePath should error when filepath.Abs fails")
 		assert.Contains(t, err.Error(), "invalid path",
 			"ValidatePath should wrap filepath.Abs error with 'invalid path'")
 	})
 
 	// ---- 4. checkBoundary: filepath.Abs error on boundary propagates ----
 	t.Run("checkBoundary: filepath.Abs error on boundary propagates", func(t *testing.T) {
-		t.Parallel()
 		p := newPathPolicy(nil)
 
-		ok, err := p.checkBoundary("/some/target", "/valid/\x00boundary")
-		if err == nil {
-			t.Skip("filepath.Abs does not error on NUL byte on this platform")
-		}
+		// Relative boundary + deleted CWD + no PWD → filepath.Abs fails.
+		ok, err := p.checkBoundary("/some/absolute/target", "relative/boundary")
+		require.Error(t, err, "checkBoundary should propagate filepath.Abs error")
 		assert.False(t, ok, "checkBoundary should return ok=false when filepath.Abs fails")
-		assert.Error(t, err, "checkBoundary should propagate the error, not swallow it")
 	})
 }
 
