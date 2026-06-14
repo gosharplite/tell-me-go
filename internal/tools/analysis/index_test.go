@@ -1,7 +1,10 @@
 package analysis
 
 import (
+	"bytes"
 	"context"
+	"go/token"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,4 +171,71 @@ func TestIndexer_ErrorPersistence(t *testing.T) {
 	if len(syms) == 0 {
 		t.Error("Expected to still have F in despite other file errors")
 	}
+}
+
+func TestToLocation_AbsFailure(t *testing.T) {
+	t.Parallel()
+
+	idx := &indexer{fset: token.NewFileSet()}
+	// null byte in filename causes filepath.Abs to fail on all platforms
+	rawFilename := "invalid\x00.go"
+	f := idx.fset.AddFile(rawFilename, -1, 100)
+	loc := idx.toLocation(f.Pos(0))
+
+	assert.NotEmpty(t, loc.Path, "Path must not be empty even when filepath.Abs fails")
+	assert.Contains(t, loc.Path, rawFilename, "Path must fall back to raw filename")
+}
+
+func TestRefresh_LoadPackagesErrorWrapping(t *testing.T) {
+	t.Parallel()
+
+	idx, err := newIndexer("/nonexistent/path/that/does/not/exist")
+	require.NoError(t, err)
+
+	idx.mu.Lock()
+	idx.lastRefresh = time.Time{}
+	idx.mu.Unlock()
+
+	err = idx.Refresh(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "loading packages:")
+}
+
+func TestDiscoverModulePath_LoadFails(t *testing.T) {
+	// Not parallel: uses global log.SetOutput
+
+	idx, err := newIndexer("/nonexistent/for/discover/module")
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	result := idx.discoverModulePath(context.Background(), token.NewFileSet())
+
+	assert.Equal(t, "", result)
+	assert.Contains(t, buf.String(), "discoverModulePath failed")
+}
+
+func TestIsSymbolUsed_RefreshFails(t *testing.T) {
+	// Not parallel: uses global log.SetOutput
+
+	idx := &indexer{
+		dir:         "/nonexistent/for/is/symbol/used",
+		fset:        token.NewFileSet(),
+		resolvePath: filepath.Abs,
+	}
+
+	idx.mu.Lock()
+	idx.lastRefresh = time.Time{}
+	idx.mu.Unlock()
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	result := idx.IsSymbolUsed(context.Background(), "Anything", nil)
+
+	assert.False(t, result)
+	assert.Contains(t, buf.String(), "analysis: index refresh failed in IsSymbolUsed")
 }

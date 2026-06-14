@@ -68,6 +68,8 @@ func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pk
 
 	// Wait for all workers to finish and close the results channel
 	go func() {
+		// Drain errgroup; the actual error is captured by the explicit
+		// g.Wait() below. We discard here solely to close the channel.
 		_ = g.Wait()
 		close(results)
 	}()
