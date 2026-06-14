@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"testing"
 	"time"
 
@@ -595,15 +594,17 @@ func TestForwardHeartbeat_SuccessfulSend(t *testing.T) {
 		t.Parallel()
 		ch := make(chan struct{})
 		received := make(chan struct{})
+		ready := make(chan struct{})
 
 		go func() {
+			close(ready) // signal: receiver is now blocked on <-ch
 			<-ch
 			close(received)
 		}()
 
-		// Yield the scheduler so the receiver goroutine can start and
-		// block on <-ch before the non-blocking send.
-		runtime.Gosched()
+		// Deterministic barrier: block until the receiver goroutine is
+		// guaranteed to be waiting on <-ch before the non-blocking send.
+		<-ready
 		forwardHeartbeat(ch, struct{}{})
 
 		select {
