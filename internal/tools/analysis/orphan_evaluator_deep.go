@@ -21,6 +21,12 @@ func (e *deepVerificationEvaluator) evaluate(ctx *orphanEvalContext) *orphanEval
 	if ctx == nil || ctx.report == nil {
 		return ctx
 	}
+	if ctx.meta == nil || ctx.state == nil {
+		return ctx
+	}
+	if e.analyzer == nil {
+		return ctx
+	}
 	if !ctx.deep || !ctx.meta.isMethod {
 		return ctx
 	}

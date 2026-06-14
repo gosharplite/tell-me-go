@@ -17,6 +17,12 @@ func (e *nolintGateEvaluator) evaluate(ctx *orphanEvalContext) *orphanEvalContex
 	if ctx == nil {
 		return nil
 	}
+	if ctx.meta == nil || ctx.state == nil {
+		return ctx
+	}
+	if ctx.meta.obj == nil {
+		return ctx
+	}
 	if isNolintDeadcode(ctx.meta.obj, ctx.state) {
 		return nil
 	}
