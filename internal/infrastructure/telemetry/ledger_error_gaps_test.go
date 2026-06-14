@@ -5,13 +5,16 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -379,4 +382,109 @@ func TestProcessLogFile_DateFromPath(t *testing.T) {
 	// overriding the file's mod time (ledger.go:240-243).
 	assert.Equal(t, "2023-10-27", record.Date,
 		"date should be extracted from path when path contains YYYY-MM-DD pattern")
+}
+
+// TestProcessLogFile_GetSessionIDError covers the gap at ledger.go:217-219
+// where processLogFile calls getSessionID and getSessionID returns an error.
+// The error is wrapped with "processing log file %s: %w".
+//
+// Uses the getSessionIDFunc test-only override to inject a failure directly,
+// avoiding reliance on platform-specific filepath.Rel cross-volume behavior.
+func TestProcessLogFile_GetSessionIDError(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	// Create a valid tokens.log so os.Stat and parseUsage succeed
+	// (getSessionID is called before parseUsage, so we only need the file
+	// to exist for the Stat check in tests that go through discoverNewRecords).
+	sessionDir := filepath.Join(tempDir, "mode")
+	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+	logPath := filepath.Join(sessionDir, "tokens.log")
+	require.NoError(t, os.WriteFile(logPath,
+		[]byte(`{"prompt_tokens":100,"response_tokens":50,"cost":0.01,"timestamp":"2025-06-15T12:00:00Z"}`+"\n"), 0644))
+
+	info, err := os.Stat(logPath)
+	require.NoError(t, err)
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+	ls := newLedgerStore(sm, "test-model", nil)
+
+	// Inject a failing getSessionID to simulate a path resolution error.
+	injectedErr := errors.New("injected getSessionID error")
+	ls.getSessionIDFunc = func(path, globalDir string) (string, error) {
+		return "", injectedErr
+	}
+
+	record, err := ls.processLogFile(logPath, info, tempDir, domain_pricing.PricingData{})
+	require.Error(t, err, "expected error when getSessionID fails")
+	assert.Contains(t, err.Error(), "processing log file",
+		"error should wrap with 'processing log file'")
+	assert.Nil(t, record, "record should be nil on error")
+}
+
+// TestDiscoverNewRecords_GetSessionIDError covers the gap at ledger.go:151-153
+// where discoverNewRecords receives an error from getSessionID, logs a
+// "Recovery: skipping" warning, and continues to the next file without
+// panicking or producing a record for the failed path.
+//
+// Uses the getSessionIDFunc test-only override to inject a getSessionID
+// that fails for a designated "bad" path while delegating to the real
+// implementation for valid paths. This avoids reliance on platform-specific
+// filepath.Rel cross-volume behavior.
+func TestDiscoverNewRecords_GetSessionIDError(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	// Create a valid tokens.log that can be processed normally.
+	validDir := filepath.Join(tempDir, "session-valid")
+	require.NoError(t, os.MkdirAll(validDir, 0755))
+	validLog := filepath.Join(validDir, "tokens.log")
+	require.NoError(t, os.WriteFile(validLog,
+		[]byte(`{"prompt_tokens":100,"response_tokens":50,"cost":0.01,"timestamp":"2025-06-15T12:00:00Z"}`+"\n"), 0644))
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+	ls := newLedgerStore(sm, "test-model", nil)
+
+	// Inject a getSessionID that fails for any path containing "bad".
+	// For valid paths, delegate to the real implementation so the test
+	// verifies that the loop correctly skips bad paths and processes good ones.
+	injectedErr := errors.New("injected getSessionID error")
+	ls.getSessionIDFunc = func(path, globalDir string) (string, error) {
+		if strings.Contains(path, "bad") {
+			return "", injectedErr
+		}
+		// Delegate to the real getSessionID logic for valid paths.
+		rel, err := filepath.Rel(globalDir, path)
+		if err != nil {
+			return "", fmt.Errorf("resolving session ID for %s relative to %s: %w", path, globalDir, err)
+		}
+		rel = filepath.ToSlash(rel)
+		if strings.HasPrefix(rel, "backups/") {
+			return "backup/" + rel[len("backups/"):], nil
+		}
+		return rel, nil
+	}
+
+	// Build file list: first a "bad" path (getSessionID fails → skip),
+	// then a valid path (should be processed normally).
+	badPath := filepath.Join(tempDir, "session-bad", "tokens.log")
+	files := []string{badPath, validLog}
+
+	seen := make(map[string]bool)
+	pricing := GetPricing(context.Background(), sm, tempDir)
+
+	// Call discoverNewRecords — the bad path must cause getSessionID to fail,
+	// log "Recovery: skipping", and continue. The valid path must be processed.
+	discovered := ls.discoverNewRecords(context.Background(), files, tempDir, seen, pricing)
+
+	// The valid file should be discovered (session-valid/tokens.log).
+	assert.Len(t, discovered, 1, "only the valid file should be discovered; bad path should be skipped")
+	if len(discovered) > 0 {
+		assert.Contains(t, discovered[0].Session, "session-valid/tokens.log",
+			"discovered record should be from the valid path")
+	}
 }

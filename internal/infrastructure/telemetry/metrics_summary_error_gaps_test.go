@@ -140,3 +140,4 @@ func TestGetCostSummary_EnsureLedgerReadyError(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid character", "error should be the JSON parse error")
 	assert.Contains(t, result, "Error parsing cost history", "result should contain the status message")
 }
+
