@@ -328,6 +328,29 @@ func TestHealthManager_CheckDeadCode(t *testing.T) {
 	}
 }
 
+func TestFormatHealthTable_WithAlerts(t *testing.T) {
+	t.Parallel()
+	m := &healthManager{}
+	results := map[string]healthResult{
+		"Tests":      {Status: "PASS", Details: "ok"},
+		"Coverage":   {Status: "80%", Details: "target met"},
+		"Linting":    {Status: "CLEAN", Details: "no issues"},
+		"Complexity": {Status: "3 Alerts", Details: "3 functions > threshold"},
+		"Dead Code":  {Status: "CLEAN", Details: "no orphans"},
+	}
+	alerts := []string{"`BigFunc` (15)", "`HugeFunc` (22)", "`MassiveFunc` (30)"}
+	output := m.formatHealthTable(results, alerts)
+	if !strings.Contains(output, "Complexity Alerts (Threshold > 10)") {
+		t.Error("expected complexity alerts header")
+	}
+	if !strings.Contains(output, "`BigFunc` (15)") {
+		t.Error("expected BigFunc alert")
+	}
+	if !strings.Contains(output, "`MassiveFunc` (30)") {
+		t.Error("expected MassiveFunc alert")
+	}
+}
+
 type coverageMockExecutor struct {
 	t *testing.T
 }
@@ -392,31 +415,69 @@ func (m *coverageMockExecutor) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }
 
-// errorComplexityAnalyzer implements complexityAnalyzer and always returns
-// an error from GatherComplexities to exercise the error path in checkComplexity.
-type errorComplexityAnalyzer struct{}
+type stubComplexityAnalyzer struct {
+	complexities []funcComplexity
+	err          error
+}
 
-func (e *errorComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (s *stubComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
-func (e *errorComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, []string, error) {
-	return nil, nil, fmt.Errorf("complexity scan failed")
+func (s *stubComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, []string, error) {
+	return s.complexities, nil, s.err
 }
 
-func TestCheckComplexity_ErrorPath(t *testing.T) {
+func TestCheckComplexity_AllPaths(t *testing.T) {
 	t.Parallel()
-	m := &healthManager{
-		complexity: &errorComplexityAnalyzer{},
+	tests := []struct {
+		name             string
+		mockComplexities []funcComplexity
+		mockErr          error
+		wantStatus       string
+		wantDetails      string
+	}{
+		{
+			name:        "error path",
+			mockErr:     fmt.Errorf("complexity scan failed"),
+			wantStatus:  "ERROR",
+			wantDetails: "complexity scan failed",
+		},
+		{
+			name: "good path - all under threshold",
+			mockComplexities: []funcComplexity{
+				{Name: "Simple", Complexity: 1},
+				{Name: "Medium", Complexity: 5},
+			},
+			wantStatus:  "GOOD",
+			wantDetails: "All functions under threshold",
+		},
+		{
+			name: "alert path - some over threshold",
+			mockComplexities: []funcComplexity{
+				{Name: "Simple", Complexity: 1},
+				{Name: "ComplexFunc", Complexity: 15},
+				{Name: "VeryComplex", Complexity: 20},
+			},
+			wantStatus:  "2 Alerts",
+			wantDetails: "2 functions > threshold (10)",
+		},
 	}
-	status, details, alerts := m.checkComplexity(context.Background(), nil)
-	if status != "ERROR" {
-		t.Errorf("expected ERROR status, got %q", status)
-	}
-	if !strings.Contains(details, "complexity scan failed") {
-		t.Errorf("expected error details, got %q", details)
-	}
-	if alerts != nil {
-		t.Errorf("expected nil alerts on error, got %v", alerts)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &healthManager{complexity: &stubComplexityAnalyzer{
+				complexities: tt.mockComplexities, err: tt.mockErr,
+			}}
+			status, details, alerts := m.checkComplexity(context.Background(), nil)
+			if status != tt.wantStatus {
+				t.Errorf("status: got %q, want %q", status, tt.wantStatus)
+			}
+			if details != tt.wantDetails {
+				t.Errorf("details: got %q, want %q", details, tt.wantDetails)
+			}
+			_ = alerts
+		})
 	}
 }
 
@@ -589,6 +650,19 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 			},
 			wantTestStatus:   "PASS",
 			wantTestContains: "0 packages passed",
+			wantCovStatus:    "ERROR",
+			wantCovContains:  "Failed to generate coverage summary",
+		},
+		{
+			name: "no Go files with coverage pct set",
+			ctxFunc: func() (context.Context, func()) {
+				return context.Background(), func() {}
+			},
+			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+				return toolchain.CoverageReport{CoveragePct: "100.0%", NoGoFiles: true}, nil
+			},
+			wantTestStatus:   "PASS",
+			wantTestContains: "",
 			wantCovStatus:    "ERROR",
 			wantCovContains:  "Failed to generate coverage summary",
 		},

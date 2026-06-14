@@ -180,8 +180,8 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 			cStatus = "N/A"
 			cDetails = "Could not parse coverage"
 		} else if report.NoGoFiles {
-			cStatus = "N/A"
-			cDetails = "No Go files found in target path"
+			cStatus = "ERROR"
+			cDetails = "Failed to generate coverage summary"
 		} else {
 			cStatus = report.CoveragePct
 			cDetails = "Target: > 80%"
