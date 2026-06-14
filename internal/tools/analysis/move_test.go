@@ -6,6 +6,9 @@ import (
 	"go/parser"
 	"go/token"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMoveTransform(t *testing.T) {
@@ -160,4 +163,62 @@ func TestMovePlanDescription(t *testing.T) {
 	if desc != "Move Foo from a.go to b.go" {
 		t.Errorf("unexpected description: %q", desc)
 	}
+}
+
+func TestMoveTransform_ErrorContext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("source_not_loaded_includes_symbol", func(t *testing.T) {
+		t.Parallel()
+		plan := &movePlan{Symbol: "MyFunc", SrcFile: "missing.go", DstFile: "dst.go"}
+		tr := newMoveTransform(plan)
+
+		fset := token.NewFileSet()
+		files := map[string]*ast.File{
+			"dst.go": {},
+		}
+
+		err := tr.Apply(context.Background(), fset, files)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "move MyFunc")
+		assert.Contains(t, err.Error(), "source file missing.go not loaded")
+	})
+
+	t.Run("dest_not_loaded_includes_symbol", func(t *testing.T) {
+		t.Parallel()
+		plan := &movePlan{Symbol: "MyFunc", SrcFile: "src.go", DstFile: "missing.go"}
+		tr := newMoveTransform(plan)
+
+		fset, srcFile, err := parseTestMoveFile("package a\nfunc MyFunc() {}")
+		require.NoError(t, err)
+		_ = fset
+		files := map[string]*ast.File{
+			"src.go": srcFile,
+		}
+
+		err = tr.Apply(context.Background(), token.NewFileSet(), files)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "move MyFunc")
+		assert.Contains(t, err.Error(), "destination file missing.go not loaded")
+	})
+
+	t.Run("symbol_not_found_includes_symbol", func(t *testing.T) {
+		t.Parallel()
+		plan := &movePlan{Symbol: "NonExistent", SrcFile: "src.go", DstFile: "dst.go"}
+		tr := newMoveTransform(plan)
+
+		fset, srcFile, err := parseTestMoveFile("package a\nfunc Hello() {}")
+		require.NoError(t, err)
+		_ = fset
+		_, dstFile, _ := parseTestMoveFile("package a")
+		files := map[string]*ast.File{
+			"src.go": srcFile,
+			"dst.go": dstFile,
+		}
+
+		err = tr.Apply(context.Background(), token.NewFileSet(), files)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "move NonExistent")
+		assert.Contains(t, err.Error(), "symbol not found")
+	})
 }

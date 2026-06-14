@@ -4,6 +4,7 @@
 package analysis
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -339,11 +340,11 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 	for _, spec := range specs {
 		if spec.opts != nil {
 			if err := r.RegisterWithOptions(spec.decl, spec.handler, *spec.opts); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("register tool %q: %w", spec.decl.Name, err)
 			}
 		} else {
 			if err := r.Register(spec.decl, spec.handler); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("register tool %q: %w", spec.decl.Name, err)
 			}
 		}
 	}

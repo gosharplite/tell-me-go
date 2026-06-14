@@ -33,7 +33,7 @@ func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[strin
 		Target string `json:"target"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("semantic diff: %w", err)
 	}
 
 	if params.Target == "" {
