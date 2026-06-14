@@ -74,3 +74,24 @@ func TestInteractionTool(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// askUser heartbeat path
+// ---------------------------------------------------------------------------
+
+func TestAskUser_WithHeartbeat(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.Interactor = &toolstest.MockInteractor{Answer: "yes\n"}
+	it := newinteractionTool(sm)
+	ctx := context.Background()
+	hb := make(chan struct{}, 2)
+	res, err := it.askUser(ctx, map[string]interface{}{
+		"question": "Proceed?",
+	}, hb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "yes") {
+		t.Errorf("expected 'yes', got: %s", res.Text)
+	}
+}

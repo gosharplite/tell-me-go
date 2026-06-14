@@ -194,6 +194,52 @@ func TestWriteFile_Failures(t *testing.T) {
 	})
 }
 
+func TestWriteFile_SnapshotError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "existing.txt")
+	// Create a real file on disk (so IsPathWritable succeeds and Stat works)
+	if err := os.WriteFile(path, []byte("original content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	// Backup manager with ReadFile failure
+	bm := newBackupManager(sm, &mockFS_ReadFileError{
+		FileSystem:  persistencetest.NewPlainOSFileSystem(),
+		readFileErr: fmt.Errorf("snapshot I/O failure"),
+	}, 10)
+
+	// fileWriter uses the REAL fs for the actual write — only backup fails
+	w := &fileWriter{
+		sm: sm,
+		bm: bm,
+		fs: persistencetest.NewPlainOSFileSystem(),
+	}
+	ctx := context.Background()
+
+	_, err := w.writeFile(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "new content",
+		"reason":   "testing snapshot error",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected snapshot error, got nil")
+	}
+	if !strings.Contains(err.Error(), "snapshot I/O failure") {
+		t.Errorf("expected 'snapshot I/O failure' in error, got: %v", err)
+	}
+
+	// Verify file was NOT modified (snapshot fails before write)
+	got, _ := os.ReadFile(path)
+	if string(got) != "original content" {
+		t.Errorf("file should not be modified on snapshot failure; got %q, want %q", string(got), "original content")
+	}
+}
+
 func TestUndoFileChange(t *testing.T) {
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "undo.txt")
@@ -1129,6 +1175,45 @@ func TestDeletePath_RecursiveAuthorizationError(t *testing.T) {
 	}
 }
 
+func TestPerformRecursiveDelete_AuthorizationError(t *testing.T) {
+	tempDir := t.TempDir()
+	dir := filepath.Join(tempDir, "auth_err_recursive")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(false) // Force authorization check
+	sm.RegisterSafePath(tempDir)
+	sm.AuthorizeFunc = func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+		return false, fmt.Errorf("authorization service unavailable")
+	}
+
+	fs := persistencetest.NewPlainOSFileSystem()
+	w := &fileWriter{
+		sm: sm,
+		bm: newBackupManager(sm, fs, 10),
+		fs: fs,
+	}
+	ctx := context.Background()
+
+	_, err := w.performRecursiveDelete(ctx, dir, "testing auth error")
+	if err == nil {
+		t.Fatal("expected authorization error")
+	}
+	if !strings.Contains(err.Error(), "authorization failed") {
+		t.Errorf("expected 'authorization failed' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "authorization service unavailable") {
+		t.Errorf("expected wrapped cause in error, got: %v", err)
+	}
+
+	// Verify directory still exists (delete was blocked)
+	if _, statErr := os.Stat(dir); statErr != nil {
+		t.Errorf("directory should still exist after auth failure: %v", statErr)
+	}
+}
+
 func TestDeletePath_RecursiveRemoveAllError(t *testing.T) {
 	tempDir := t.TempDir()
 	dir := filepath.Join(tempDir, "rm_error")
@@ -1184,6 +1269,50 @@ func TestReplaceText_WriteError(t *testing.T) {
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "write failure") {
 		t.Errorf("expected 'write failure' error, got: %v", err)
+	}
+}
+
+func TestReplaceText_SnapshotError(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "replace_snap.txt")
+	if err := os.WriteFile(path, []byte("old content here"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	bm := newBackupManager(sm, &mockFS_ReadFileError{
+		FileSystem:  persistencetest.NewPlainOSFileSystem(),
+		readFileErr: fmt.Errorf("snapshot I/O failure"),
+	}, 10)
+
+	w := &fileWriter{
+		sm: sm,
+		bm: bm,
+		fs: persistencetest.NewPlainOSFileSystem(),
+	}
+	ctx := context.Background()
+
+	_, err := w.replaceText(ctx, map[string]interface{}{
+		"filepath": path,
+		"old_text": "old content here",
+		"new_text": "new content",
+		"reason":   "testing snapshot error",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected snapshot error, got nil")
+	}
+	if !strings.Contains(err.Error(), "snapshot I/O failure") {
+		t.Errorf("expected 'snapshot I/O failure' in error, got: %v", err)
+	}
+
+	// Verify file was NOT modified
+	got, _ := os.ReadFile(path)
+	if string(got) != "old content here" {
+		t.Errorf("file should not be modified on snapshot failure; got %q, want %q", string(got), "old content here")
 	}
 }
 
@@ -1428,5 +1557,35 @@ func TestPerformSingleDelete_SnapshotError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "read failure") {
 		t.Errorf("expected 'read failure' in error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// undoFileChange: UnmarshalArgs error path
+// ---------------------------------------------------------------------------
+
+func TestUndoFileChange_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.undoFileChange(ctx, map[string]interface{}{"n": "not_a_number"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for invalid n type")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// deletePath: UnmarshalArgs error path
+// ---------------------------------------------------------------------------
+
+func TestDeletePath_InvalidArgs(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := w.deletePath(ctx, map[string]interface{}{"path": 123, "reason": "test"}, nil)
+	if err == nil {
+		t.Fatal("expected unmarshal error for invalid path type")
 	}
 }

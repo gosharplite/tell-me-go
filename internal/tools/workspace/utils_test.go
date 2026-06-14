@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
@@ -82,6 +83,40 @@ func TestWalkAndProcess(t *testing.T) {
 			t.Error("expected error for unsafe path")
 		}
 	})
+
+	t.Run("empty path defaults to dot", func(t *testing.T) {
+		// walkAndProcess converts empty string path to "." before calling IsPathSafe.
+		// Use a temp dir with a file and a security manager that resolves "." to it.
+		tmpDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		sm2 := &toolstest.MockSecurityManager{AllowAll: false}
+		sm2.IsSafeFunc = func(path string) (string, error) {
+			if path == "." {
+				return tmpDir, nil
+			}
+			if strings.HasPrefix(path, tmpDir) {
+				return path, nil
+			}
+			return "", os.ErrPermission
+		}
+
+		var seen []string
+		processor2 := func(path string) error {
+			seen = append(seen, filepath.Base(path))
+			return nil
+		}
+
+		err := walkAndProcess(ctx, sm2, persistencetest.NewPlainOSFileSystem(), "", nil, processor2, infra_persistence.NewWorkspacePolicy())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(seen) != 1 || seen[0] != "test.txt" {
+			t.Errorf("unexpected files seen: %v", seen)
+		}
+	})
 }
 
 func TestSendHeartbeat_DefaultCase(t *testing.T) {
@@ -128,6 +163,16 @@ func (m *mockCheckBinaryFile) Write(p []byte) (int, error)             { return 
 func (m *mockCheckBinaryFile) ReadAt(p []byte, off int64) (int, error) { return 0, nil }
 func (m *mockCheckBinaryFile) ReadDir(n int) ([]os.DirEntry, error)    { return nil, nil }
 func (m *mockCheckBinaryFile) Sync() error                             { return nil }
+
+// singleFileFS is a minimal persistence.FileSystem that returns a fixed file for any Open call.
+type singleFileFS struct {
+	persistence.FileSystem
+	file persistence.File
+}
+
+func (m *singleFileFS) Open(ctx context.Context, name string) (persistence.File, error) {
+	return m.file, nil
+}
 
 func TestCheckBinary(t *testing.T) {
 	t.Parallel()
@@ -464,5 +509,74 @@ func TestSearchPipeline_WalkFunc_ErrorSkip(t *testing.T) {
 	err := p.walkFunc("", nil, errors.New("permission denied"))
 	if err != nil {
 		t.Errorf("expected nil, got %v", err)
+	}
+}
+
+func TestScanFile_CheckBinaryReadError(t *testing.T) {
+	t.Parallel()
+
+	// scanFile calls checkBinary, which returns (false, io.ErrUnexpectedEOF).
+	// scanFile then checks: if err != nil || isBin { return nil }
+	// So even on read errors from checkBinary, scanFile returns nil.
+	p := &searchPipeline{
+		ctx:    context.Background(),
+		fs:     &singleFileFS{file: &mockCheckBinaryFile{readErr: io.ErrUnexpectedEOF}},
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	err := p.scanFile("corrupt.txt")
+	if err != nil {
+		t.Errorf("expected nil (scanFile swallows checkBinary errors), got: %v", err)
+	}
+}
+
+func TestScanLines_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancelled
+
+	content := "line1\nline2\nline3\n"
+	mockFile := &mockCheckBinaryFile{
+		data: []byte(content),
+	}
+
+	p := &searchPipeline{
+		ctx:     ctx,
+		matcher: func(path, line string) (string, bool) { return "", false },
+	}
+
+	err := p.scanLines("test.txt", mockFile)
+	if err == nil {
+		t.Fatal("expected context.Canceled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+}
+
+func TestScanFile_ContextCancellationAfterHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mockFile := &mockCheckBinaryFile{
+		data: []byte("hello world\n"), // non-binary, passes checkBinary
+	}
+
+	p := &searchPipeline{
+		ctx:    ctx,
+		fs:     &singleFileFS{file: mockFile},
+		hb:     make(chan struct{}, 1), // non-nil hb triggers heartbeat path
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	err := p.scanFile("test.txt")
+	if err == nil {
+		t.Fatal("expected context.Canceled after heartbeat")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
 	}
 }
