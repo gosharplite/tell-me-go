@@ -41,12 +41,10 @@ func (m *searchManager) executeSearch(ctx context.Context, path string, hb chan<
 		results = append(results, res)
 	}
 
-	var finalErr error
-	select {
-	case err := <-errChan:
-		finalErr = err
-	default:
-	}
+	// Blocking receive on errChan is safe: ConcurrentSearch guarantees
+	// errChan is closed before resultsChan, so by the time the results
+	// loop exits, errChan is either closed (empty) or contains an error.
+	finalErr := <-errChan
 	if finalErr != nil {
 		return tools.ToolResult{}, finalErr
 	}

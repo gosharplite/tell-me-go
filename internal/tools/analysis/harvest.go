@@ -100,7 +100,10 @@ func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, s
 	}
 
 	if state.targetPath != "" && len(pkg.GoFiles) > 0 {
-		absPkg, _ := filepath.Abs(filepath.Dir(pkg.GoFiles[0]))
+		absPkg, err := filepath.Abs(filepath.Dir(pkg.GoFiles[0]))
+		if err != nil {
+			absPkg = filepath.Dir(pkg.GoFiles[0]) // fallback to raw dir path
+		}
 		if !strings.HasPrefix(absPkg, state.targetPath) {
 			return
 		}
