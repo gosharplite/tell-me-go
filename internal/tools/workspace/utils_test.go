@@ -12,7 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -578,5 +580,327 @@ func TestScanFile_ContextCancellationAfterHeartbeat(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+}
+
+// toggleErrContext wraps a context and allows Err() to be toggled between
+// nil and a target error via SetErr. This enables testing the walkHeartbeat
+// error-return path in walkAndProcess (utils.go:85-87) where ctx.Err() must
+// be nil during shouldSkipEntry (to avoid early abort) but non-nil during
+// walkHeartbeat (to trigger the error return).
+type toggleErrContext struct {
+	context.Context
+	mu  sync.Mutex
+	err error
+}
+
+func (c *toggleErrContext) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err != nil {
+		return c.err
+	}
+	return c.Context.Err()
+}
+
+func (c *toggleErrContext) setErr(err error) {
+	c.mu.Lock()
+	c.err = err
+	c.mu.Unlock()
+}
+
+// TestWalkAndProcess_HeartbeatErrorPropagation exercises the walkHeartbeat
+// error return path in walkAndProcess (utils.go:85-87). It uses a custom
+// context wrapper that toggles Err() between nil (for shouldSkipEntry) and
+// context.Canceled (for walkHeartbeat) so the heartbeat fires at count=50
+// without the walk being aborted early by shouldSkipEntry.
+func TestWalkAndProcess_HeartbeatErrorPropagation(t *testing.T) {
+	t.Parallel()
+
+	tctx := &toggleErrContext{Context: context.Background()}
+	hb := make(chan struct{}, 1)
+
+	// Create 50+ files so walkHeartbeat fires at count=50
+	fs := &searchMockFS{files: make(map[string][]byte)}
+	for i := 0; i < 55; i++ {
+		fs.files[fmt.Sprintf("file_%d.txt", i)] = []byte("content")
+	}
+
+	sp := &mockSP{}
+	policy := infra_persistence.NewWorkspacePolicy()
+
+	processed := 0
+	processor := func(path string) error {
+		processed++
+		// After 49 files, toggle context error so the 50th triggers
+		// walkHeartbeat's error return
+		if processed == 49 {
+			tctx.setErr(context.Canceled)
+		}
+		return nil
+	}
+
+	err := walkAndProcess(tctx, sp, fs, ".", hb, processor, policy)
+	if err == nil {
+		t.Fatal("expected context.Canceled from walkHeartbeat")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	// Should have processed exactly 49 files (50th aborted by heartbeat error)
+	if processed != 49 {
+		t.Errorf("expected 49 files processed before heartbeat abort, got %d", processed)
+	}
+}
+
+// TestStartWorkers_ScanFileContextCanceled verifies that when scanFile
+// returns a context error (Canceled or DeadlineExceeded), the worker
+// returns silently without sending to errChan (utils.go:222-224).
+//
+// GAP ACCEPTED (utils.go:215, numWorkers cap): The "numWorkers = 8"
+// branch only executes on machines with >8 CPU cores. On smaller
+// machines the branch is structurally unreachable. See issue #836.
+func TestStartWorkers_ScanFileContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancelled
+
+	fs := &searchMockFS{
+		files: map[string][]byte{
+			"test.txt": []byte("hello world\n"),
+		},
+	}
+
+	p := &searchPipeline{
+		ctx:         ctx,
+		fs:          fs,
+		pathsChan:   make(chan string, 1),
+		resultsChan: make(chan string, 1),
+		errChan:     make(chan error, 1),
+		policy:      infra_persistence.NewWorkspacePolicy(),
+		matcher:     func(_, line string) (string, bool) { return "", false },
+		hb:          nil, // no heartbeat — cancellation comes from ctx
+	}
+
+	p.pathsChan <- "test.txt"
+	close(p.pathsChan)
+
+	var wg sync.WaitGroup
+	p.startWorkers(&wg)
+	wg.Wait()
+
+	// errChan should be empty — worker returned silently on context error
+	select {
+	case err := <-p.errChan:
+		t.Errorf("expected no error on errChan, got: %v", err)
+	default:
+		// expected: no error sent
+	}
+}
+
+// TestStartWorkers_ScanFileErrorChannelFull verifies that when scanFile
+// returns a non-context error and errChan is full (no receiver), the
+// default case prevents blocking (utils.go:227).
+func TestStartWorkers_ScanFileErrorChannelFull(t *testing.T) {
+	t.Parallel()
+
+	// Unbuffered errChan with no receiver — send will hit default
+	fs := &searchMockFS{
+		files: map[string][]byte{
+			"badfile.txt": []byte("hello world\n"),
+		},
+		openReadErrs: map[string]error{
+			"badfile.txt": io.ErrUnexpectedEOF,
+		},
+	}
+
+	p := &searchPipeline{
+		ctx:         context.Background(),
+		fs:          fs,
+		pathsChan:   make(chan string, 1),
+		resultsChan: make(chan string, 1),
+		errChan:     make(chan error), // UNBUFFERED, no receiver
+		policy:      infra_persistence.NewWorkspacePolicy(),
+		matcher:     func(_, line string) (string, bool) { return "", false },
+	}
+
+	p.pathsChan <- "badfile.txt"
+	close(p.pathsChan)
+
+	var wg sync.WaitGroup
+	p.startWorkers(&wg)
+	wg.Wait()
+
+	// No deadlock occurred — the default case was hit.
+	// The error was silently dropped (expected behavior for full channel).
+}
+
+// TestWalkFunc_LargeFileSkip verifies that walkFunc silently skips
+// files larger than 1MB (utils.go walkFunc, info.Size() > 1024*1024).
+func TestWalkFunc_LargeFileSkip(t *testing.T) {
+	t.Parallel()
+
+	p := &searchPipeline{
+		ctx:       context.Background(),
+		policy:    infra_persistence.NewWorkspacePolicy(),
+		pathsChan: make(chan string, 1),
+	}
+
+	// A file > 1MB should be skipped without sending to pathsChan
+	largeInfo := &searchMockFileInfo{name: "large.dat", size: 2 * 1024 * 1024}
+
+	err := p.walkFunc("large.dat", largeInfo, nil)
+	if err != nil {
+		t.Errorf("expected nil (large file skipped), got: %v", err)
+	}
+
+	// Verify nothing was sent to pathsChan
+	select {
+	case path := <-p.pathsChan:
+		t.Errorf("expected nothing on pathsChan, got: %q", path)
+	default:
+		// expected
+	}
+}
+
+// TestScanLines_ResultsChanContextCancelled verifies that when
+// ctx is cancelled while trying to send to resultsChan, scanLines
+// returns ctx.Err() (utils.go:282-283).
+func TestScanLines_ResultsChanContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	content := "match this line\n"
+	mockFile := &mockCheckBinaryFile{data: []byte(content)}
+
+	p := &searchPipeline{
+		ctx:         ctx,
+		resultsChan: make(chan string), // unbuffered — blocks send
+		matcher:     func(path, line string) (string, bool) { return "", true },
+	}
+
+	// Cancel AFTER scanLines starts scanning but BEFORE the send.
+	// Since resultsChan is unbuffered and there's no receiver, the
+	// send blocks, then ctx.Done() fires.
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- p.scanLines("test.txt", mockFile)
+	}()
+
+	// Give the goroutine time to enter the select
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected context.Canceled")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for scanLines to return")
+	}
+}
+
+// TestScanLines_ScannerError verifies that scanLines returns
+// scanner.Err() after the scan loop completes with an error
+// (utils.go line 289). It routes through scanFile so that
+// checkBinary consumes one Read (failAfter=1), and then
+// scanLines gets the injected error on its first scanner Read.
+func TestScanLines_ScannerError(t *testing.T) {
+	t.Parallel()
+
+	content := "line one\nline two\n"
+	baseFile := &searchMockFile{Reader: bytes.NewReader([]byte(content)), name: "err.txt"}
+	mockFile := &searchMockFileReadErr{
+		searchMockFile: baseFile,
+		readErr:        io.ErrUnexpectedEOF,
+		failAfter:      1, // checkBinary consumes 1 read; scanLines gets error
+	}
+
+	p := &searchPipeline{
+		ctx:     context.Background(),
+		fs:      &singleFileFS{file: mockFile},
+		policy:  infra_persistence.NewWorkspacePolicy(),
+		matcher: func(path, line string) (string, bool) { return "", false },
+	}
+
+	err := p.scanFile("err.txt")
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+	// bufio.Scanner wraps the underlying error
+	if !strings.Contains(err.Error(), "UnexpectedEOF") && !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("expected error related to UnexpectedEOF, got: %v", err)
+	}
+}
+
+// TestWalkFunc_ShouldIgnoreDir verifies that walkFunc returns
+// filepath.SkipDir for directories matching the workspace policy
+// ignore list (e.g., .git). This covers utils.go:176-181
+// (ShouldIgnoreDir branch within IsDir).
+func TestWalkFunc_ShouldIgnoreDir(t *testing.T) {
+	t.Parallel()
+
+	p := &searchPipeline{
+		ctx:    context.Background(),
+		policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	// .git directory should trigger ShouldIgnoreDir → SkipDir
+	dotGitDir := &mockFileInfo{name: ".git", isDir: true}
+	err := p.walkFunc(".git", dotGitDir, nil)
+	if err != filepath.SkipDir {
+		t.Errorf("expected filepath.SkipDir for .git, got: %v", err)
+	}
+
+	// Regular directory should not be skipped with an error
+	normalDir := &mockFileInfo{name: "src", isDir: true}
+	err = p.walkFunc("src", normalDir, nil)
+	if err != nil {
+		t.Errorf("expected nil for normal directory, got: %v", err)
+	}
+}
+
+// TestScanLines_MatchNonEmpty verifies that scanLines uses the matcher's
+// returned match string instead of the full line when the match is non-empty.
+// This covers utils.go:3574 (if match != "").
+func TestScanLines_MatchNonEmpty(t *testing.T) {
+	t.Parallel()
+
+	// Use a buffered resultsChan so the send doesn't block
+	resultsChan := make(chan string, 1)
+
+	content := "prefix: value\n"
+	mockFile := &mockCheckBinaryFile{data: []byte(content)}
+
+	p := &searchPipeline{
+		ctx:         context.Background(),
+		resultsChan: resultsChan,
+		matcher: func(path, line string) (string, bool) {
+			return "value", true // non-empty match
+		},
+	}
+
+	err := p.scanLines("test.txt", mockFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	select {
+	case result := <-resultsChan:
+		if !strings.Contains(result, "value") {
+			t.Errorf("expected result containing 'value', got: %q", result)
+		}
+		// The result should use the match string, not the full line
+		if strings.Contains(result, "prefix") {
+			t.Errorf("expected match-only string, got full line: %q", result)
+		}
+	default:
+		t.Error("expected a result on resultsChan")
 	}
 }

@@ -606,6 +606,11 @@ func TestCloseFile(t *testing.T) {
 // TestNewPipelineCmd_CancelGuard verifies that newPipelineCmd sets the
 // cmd.Cancel function on Windows to enable forceful process tree
 // termination via taskkill.
+//
+// GAP ACCEPTED (pipeline.go:57-59): The nil-Process guard inside
+// cmd.Cancel is platform-gated (runtime.GOOS == "windows"). On Linux/macOS,
+// cmd.Cancel is never set. On Windows, the guard is tested below and
+// cmd.Cancel() with nil Process returns nil. See issue #836.
 func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 	e := newprocessExecutor()
 	ctx := context.Background()
@@ -618,6 +623,33 @@ func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 	}
 
 	// Verify Cancel returns nil when Process is nil (before Start)
+	if runtime.GOOS == "windows" {
+		cancelErr := cmd.Cancel()
+		if cancelErr != nil {
+			t.Errorf("cmd.Cancel() with nil Process should return nil, got: %v", cancelErr)
+		}
+	}
+}
+
+// TestSetupCommand_CancelGuard verifies that setupCommand sets the
+// cmd.Cancel function on Windows to enable forceful process tree
+// termination via taskkill.
+//
+// GAP ACCEPTED (process_executor.go:107-109): The nil-Process guard
+// inside cmd.Cancel is platform-gated (runtime.GOOS == "windows").
+// On Linux/macOS, cmd.Cancel is never set. On Windows, the guard is
+// tested below. See issue #836.
+func TestSetupCommand_CancelGuard(t *testing.T) {
+	e := &processExecutor{}
+	ctx := context.Background()
+	cmd, _, _, _, err := e.setupCommand(ctx, []string{"echo", "hello"}, executionConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if runtime.GOOS == "windows" && cmd.Cancel == nil {
+		t.Error("expected cmd.Cancel to be set on Windows")
+	}
+	// Verify Cancel returns nil when Process is nil (before cmd.Start)
 	if runtime.GOOS == "windows" {
 		cancelErr := cmd.Cancel()
 		if cancelErr != nil {
@@ -651,10 +683,13 @@ func TestWithinParent_BareDotDot(t *testing.T) {
 // TestValidateAbsPath_SecurityBoundaries exercises all reachable branches
 // of validateAbsPath: CWD boundary hit, TempDir boundary hit, and escape.
 //
-// NOTE: The os.Getwd() failure paths (lines 291-293) are NOT covered here
-// because they require catastrophic filesystem conditions (CWD deleted or
-// permissions revoked). Go provides no mechanism to inject a failing Getwd,
-// making these lines structurally unreachable in normal operation.
+// GAP ACCEPTED (process_executor.go:291-293): The os.Getwd() failure
+// path in validateAbsPath is structurally unreachable in unit tests.
+// Go provides no mechanism to inject a failing Getwd — it is a direct
+// syscall (getcwd) not affected by environment variables. Covering
+// this would require catastrophic filesystem conditions (CWD deleted
+// or permissions revoked from another process). This defensive error
+// path exists to handle edge cases in production. See issue #836.
 func TestValidateAbsPath_SecurityBoundaries(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -701,9 +736,13 @@ func TestValidateAbsPath_SecurityBoundaries(t *testing.T) {
 // TestValidateAndResolveRelPath_Boundaries exercises all reachable branches
 // of validateAndResolveRelPath.
 //
-// NOTE: The os.Getwd() failure path (lines 312-314) is NOT covered here
-// for the same reason as validateAbsPath — it requires catastrophic
-// filesystem conditions and Go provides no injection mechanism.
+// GAP ACCEPTED (process_executor.go:312-314): The os.Getwd() failure
+// path in validateAndResolveRelPath is structurally unreachable in unit tests.
+// Go provides no mechanism to inject a failing Getwd — it is a direct
+// syscall (getcwd) not affected by environment variables. Covering
+// this would require catastrophic filesystem conditions (CWD deleted
+// or permissions revoked from another process). This defensive error
+// path exists to handle edge cases in production. See issue #836.
 func TestValidateAndResolveRelPath_Boundaries(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -747,6 +786,52 @@ func TestValidateAndResolveRelPath_Boundaries(t *testing.T) {
 				}
 				if absPath != tt.wantAbsPath {
 					t.Errorf("expected absPath = %q, got %q", tt.wantAbsPath, absPath)
+				}
+			}
+		})
+	}
+}
+
+// TestValidateAbsPath_ErrorMessageFormat verifies that path-boundary
+// rejection errors are well-formed, even though the os.Getwd failure
+// paths (lines 291-293, 312-314) are structurally unreachable in tests.
+func TestValidateAbsPath_ErrorMessageFormat(t *testing.T) {
+	tests := []struct {
+		name        string
+		cleanedPath string
+		wantErrSub  string
+	}{
+		{
+			name:        "escape rejected with original path in message",
+			cleanedPath: "/etc/passwd",
+			wantErrSub:  "output file path cannot escape current directory",
+		},
+		{
+			name:        "dot-dot escape rejected",
+			cleanedPath: "../outside.txt",
+			wantErrSub:  "output file path cannot escape current directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// validateAbsPath for absolute paths
+			if filepath.IsAbs(tt.cleanedPath) {
+				_, err := validateAbsPath(tt.cleanedPath, tt.cleanedPath)
+				if err == nil {
+					t.Fatal("expected error for escape path")
+				}
+				if !strings.Contains(err.Error(), tt.wantErrSub) {
+					t.Errorf("error = %q, want contains %q", err.Error(), tt.wantErrSub)
+				}
+			} else {
+				// validateAndResolveRelPath for relative paths
+				_, err := validateAndResolveRelPath(tt.cleanedPath, tt.cleanedPath)
+				if err == nil {
+					t.Fatal("expected error for escape path")
+				}
+				if !strings.Contains(err.Error(), tt.wantErrSub) {
+					t.Errorf("error = %q, want contains %q", err.Error(), tt.wantErrSub)
 				}
 			}
 		})

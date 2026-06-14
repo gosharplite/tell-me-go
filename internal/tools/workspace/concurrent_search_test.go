@@ -369,6 +369,20 @@ func TestStartWorkers_ScanFileNonContextError(t *testing.T) {
 	}
 }
 
+// TestWalkAndProcess_HeartbeatCancellation tests the shouldSkipEntry ctx.Err()
+// cancellation path in walkAndProcess (utils.go:82-84). When the context is
+// already cancelled before the walk begins, shouldSkipEntry aborts early on
+// the first file.
+//
+// GAP ACCEPTED (utils.go:85-87): The walkHeartbeat error return inside
+// walkAndProcess is structurally unreachable because shouldSkipEntry
+// (called immediately before walkHeartbeat on the same goroutine) also
+// checks ctx.Err(). Context cancellation between the two calls would
+// require a race-condition-level expiry. walkHeartbeat itself is at
+// 100% coverage via TestWalkHeartbeat. See issue #836.
+//
+// For explicit coverage of the walkHeartbeat error path using a toggle
+// context, see TestWalkAndProcess_HeartbeatErrorPropagation in utils_test.go.
 func TestWalkAndProcess_HeartbeatCancellation(t *testing.T) {
 	t.Parallel()
 

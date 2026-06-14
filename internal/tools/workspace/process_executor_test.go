@@ -222,12 +222,16 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 
 // TestSetupCommand covers the error and env-propagation branches of setupCommand.
 //
-// Three structurally unreachable branches are intentionally untested:
-//   - Lines 126-128: cmd.StdoutPipe() failure — exec.CommandContext always returns a
-//     valid pipe reader on the first call; only fails if called twice on the same cmd.
-//   - Lines 130-132: cmd.StderrPipe() failure — same reason.
-//   - Lines 107-109: Windows cmd.Cancel — platform-gated taskkill logic cannot be
-//     unit-tested cross-platform. Covered implicitly by integration tests on Windows CI.
+// Three structurally unreachable branches are documented as accepted exclusions:
+//
+//	GAP ACCEPTED (process_executor.go:126-128): cmd.StdoutPipe() failure —
+//	  exec.CommandContext always returns a valid pipe reader on the first call;
+//	  only fails if called twice on the same cmd.
+//	GAP ACCEPTED (process_executor.go:130-132): cmd.StderrPipe() failure —
+//	  same reason as StdoutPipe.
+//	GAP ACCEPTED (process_executor.go:107-109): Windows cmd.Cancel —
+//	  platform-gated taskkill logic cannot be unit-tested cross-platform.
+//	  Covered by TestSetupCommand_CancelGuard on Windows. See issue #836.
 func TestSetupCommand(t *testing.T) {
 	executor := &processExecutor{}
 	ctx := context.Background()

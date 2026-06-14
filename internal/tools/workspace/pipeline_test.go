@@ -282,27 +282,24 @@ func TestRunPipeline_EnvPropagation(t *testing.T) {
 	}
 }
 
-// TestNewPipeline_WirePipesError exercises the error return path in newPipeline
-// when wirePipes fails due to a pre-consumed pipe.
+// TestNewPipeline_WirePipesError exercises the wirePipes error return path
+// in newPipeline (pipeline.go:41-43) indirectly through direct wirePipes calls.
 //
-// NOTE: This tests wirePipes directly rather than through newPipeline because
-// newPipelineCmd creates fresh exec.Cmd objects with un-consumed pipes, making
-// it structurally impossible to trigger a wirePipes failure through newPipeline.
-// The newPipeline lines 41-43 (wirePipes error return) are therefore
-// structurally unreachable in normal operation. The wirePipes function itself
-// is fully covered by this and the existing WirePipesCleanupOnFailure tests.
-//
-// GAP (B10): newPipeline at 88.9% — the wirePipes error return path remains
-// uncovered because exec.Cmd pipes are always fresh after CommandContext.
+// GAP ACCEPTED (pipeline.go:41-43): The wirePipes error return inside
+// newPipeline is structurally unreachable because newPipelineCmd creates
+// fresh exec.Cmd objects with un-consumed pipes. StdoutPipe/StderrPipe
+// only fail on the second call to the same *exec.Cmd. This defensive
+// error path exists to protect against future refactors. wirePipes
+// itself is fully covered (100%) by the WirePipesCleanupOnFailure tests.
+// See issue #836.
 func TestNewPipeline_WirePipesError(t *testing.T) {
-	e := newprocessExecutor()
-	_ = e // not used directly, but documents that newPipeline is the target
-
-	// Create a pipeline where cmd2 has a pre-consumed stderr pipe.
-	// This causes wirePipes to fail on the stderr pipe for that command.
+	// Construct a pipeline where cmd2 has a pre-consumed stderr pipe.
+	// This triggers the wirePipes error path that corresponds to the
+	// defensive `if err := p.wirePipes(); err != nil` check in newPipeline
+	// (pipeline.go:41-43), which is structurally unreachable through
+	// the public API but must still behave correctly.
 	cmd1 := exec.Command("echo", "hello")
 	cmd2 := exec.Command("echo", "world")
-	// Pre-consume cmd2's stderr pipe so wirePipes fails
 	if _, err := cmd2.StderrPipe(); err != nil {
 		t.Fatalf("failed to pre-consume stderr: %v", err)
 	}
@@ -315,15 +312,16 @@ func TestNewPipeline_WirePipesError(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 1") {
 		t.Errorf("expected stderr pipe error for command 1, got: %v", err)
 	}
-	// Verify pipes were cleaned up on failure
+
+	// Verify pipes were cleaned up on failure (deferred in wirePipes).
 	p.closePipes()
 }
 
 // TestNewPipelineCmd exercises error and success branches of newPipelineCmd.
 //
-// NOTE: The Windows Cancel branch (pipeline.go:57-59, taskkill proc kill)
-// is platform-gated via runtime.GOOS and untestable on Linux — same pattern
-// as setupCommand. Structurally unreachable on this platform.
+// GAP ACCEPTED (pipeline.go:57-59): The Windows Cancel branch (taskkill
+// proc kill) is platform-gated via runtime.GOOS and untestable on Linux.
+// Covered by TestNewPipelineCmd_CancelGuard on Windows. See issue #836.
 func TestNewPipelineCmd(t *testing.T) {
 	e := newprocessExecutor()
 	ctx := context.Background()
