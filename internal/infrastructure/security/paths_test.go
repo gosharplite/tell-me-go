@@ -955,16 +955,16 @@ func TestFilepathAbs_ErrorBranches(t *testing.T) {
 
 	// Unset PWD so os.Getwd() falls through to syscall.Getwd (which will fail
 	// on a deleted directory). Without this, Go may return the stale $PWD value.
-	os.Unsetenv("PWD")
+	_ = os.Unsetenv("PWD")
 
 	require.NoError(t, os.RemoveAll(tmpDir), "failed to remove temp directory")
 
 	// Restore original state on cleanup.
 	t.Cleanup(func() {
 		if hadPWD {
-			os.Setenv("PWD", origPWD)
+			_ = os.Setenv("PWD", origPWD)
 		} else {
-			os.Unsetenv("PWD")
+			_ = os.Unsetenv("PWD")
 		}
 		if err := os.Chdir(origDir); err != nil {
 			t.Logf("failed to restore working directory: %v", err)
