@@ -220,8 +220,15 @@ func TestSafetyDecorator_PrecedenceLogic(t *testing.T) {
 			1*time.Nanosecond, 1*time.Nanosecond, 10*time.Millisecond,
 		)
 
+		// Pre-deadlined context per ADR-036 §2: ensures the child context
+		// created by context.WithTimeout inside safetyDecorator.Execute
+		// inherits a past deadline, making ctx.Done() deterministically
+		// readable before the mock executor goroutine can deliver a result.
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+		defer cancel()
+
 		res, err := decorator.Execute(
-			context.Background(),
+			ctx,
 			&tools.ToolDeclaration{Name: "test"},
 			&llm.FunctionCall{Name: "test"},
 			nil,
