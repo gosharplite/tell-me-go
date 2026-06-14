@@ -1618,24 +1618,6 @@ func TestAnalyzeUsages_Heartbeat(t *testing.T) {
 }
 
 // =============================================================================
-// Gap 4: TestIsInterfaceMethod_SignatureGuard_Documented — documents the
-//        intentionally untestable defense-in-depth guard at dead_code.go:283.
-// =============================================================================
-
-// TestIsInterfaceMethod_SignatureGuard_Documented documents that the
-// fn.Type().(*types.Signature) guard at dead_code.go:283 cannot be
-// triggered through the public go/types API because *types.Func.Type()
-// always returns *types.Signature. This defense-in-depth guard mirrors
-// getConcurrencyLimit's limit<1 path (complexity.go:102).
-func TestIsInterfaceMethod_SignatureGuard_Documented(t *testing.T) {
-	t.Parallel()
-	// Intentionally no assertions: the guard at dead_code.go:283
-	// (if !ok after fn.Type().(*types.Signature)) is verified by
-	// code review as defense-in-depth that cannot be triggered
-	// through normal go/types usage.
-}
-
-// =============================================================================
 // Gap 5: TestTrackExternalUsages_TestPackageSuffix — covers the
 //
 //	strings.HasSuffix(usagePkg, "_test") path AND the

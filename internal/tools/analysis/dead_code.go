@@ -279,6 +279,9 @@ func (a *defaultDeadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 	if !ok {
 		return false
 	}
+	// Defense-in-depth: *types.Func.Type() always returns *types.Signature
+	// through the public go/types API, but the ok check guards against
+	// unexpected future changes or edge cases in go/packages.
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok {
 		return false

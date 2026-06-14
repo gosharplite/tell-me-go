@@ -306,26 +306,6 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 			},
 			wantErrContains: "listing packages",
 		},
-		{
-			name: "filepath.Rel error in buildGraph goroutine",
-			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
-				dir := setupWorkspace(t)
-				origRel := filepathRelFn
-				t.Cleanup(func() { filepathRelFn = origRel })
-				filepathRelFn = func(basepath, targpath string) (string, error) {
-					return "", fmt.Errorf("injected Rel error")
-				}
-				return dir, &mockAnalysisGoRunner{
-					getModulePathFunc: func(ctx context.Context) (string, error) {
-						return "example.com/mod", nil
-					},
-					getModuleDirFunc: func(ctx context.Context) (string, error) {
-						return dir, nil
-					},
-				}
-			},
-			wantErrContains: "injected Rel error",
-		},
 	}
 
 	for _, tt := range tests {
@@ -343,6 +323,43 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 				"error message should contain %q", tt.wantErrContains)
 		})
 	}
+}
+
+// TestBuildGraph_FilepathRelError verifies the error path when
+// filepath.Rel fails inside buildGraph_processPackage. This test
+// must NOT use t.Parallel() because it temporarily replaces the
+// package-level filepathRelFn variable.
+func TestBuildGraph_FilepathRelError(t *testing.T) {
+	// NOT t.Parallel() — mutates package-level filepathRelFn
+
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "f.go"), []byte("package pkg"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mod"), 0644))
+
+	origRel := filepathRelFn
+	t.Cleanup(func() { filepathRelFn = origRel })
+	filepathRelFn = func(basepath, targpath string) (string, error) {
+		return "", fmt.Errorf("injected Rel error")
+	}
+
+	runner := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "example.com/mod", nil
+		},
+		getModuleDirFunc: func(ctx context.Context) (string, error) {
+			return dir, nil
+		},
+	}
+
+	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	_, err := a.buildGraph(context.Background())
+	require.Error(t, err, "expected error from buildGraph")
+	assert.Contains(t, err.Error(), "injected Rel error",
+		"error message should contain %q", "injected Rel error")
 }
 
 // ─────────────────────────────────────────────────────────
