@@ -86,13 +86,18 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 		return d.handleTimeout(parentCtx, ctx.Err(), call.Name, activeTimeout, outCh), nil
 
 	case out := <-outCh:
-		// In case of a select race where both the context cancels and the tool returns simultaneously,
-		// and the tool returned an error, we prefer the friendly context cancellation message.
-		if out.Err != nil && ctx.Err() != nil && (errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded)) {
-			return d.formatContextError(ctx.Err(), activeTimeout), nil
-		}
-		return out.Result, out.Err
+		return d.handleToolOutput(out, ctx, activeTimeout)
 	}
+}
+
+// handleToolOutput resolves the tool output against the current context state.
+// When both the tool returned an error and the context is cancelled/deadline-exceeded,
+// the friendly context message takes priority over the raw tool error.
+func (d *safetyDecorator) handleToolOutput(out tools.ToolOutput, ctx context.Context, activeTimeout time.Duration) (tools.ToolResult, error) {
+	if out.Err != nil && ctx.Err() != nil && (errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded)) {
+		return d.formatContextError(ctx.Err(), activeTimeout), nil
+	}
+	return out.Result, out.Err
 }
 
 func (d *safetyDecorator) formatContextError(errCtx error, activeTimeout time.Duration) tools.ToolResult {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -396,6 +397,53 @@ func TestDispatcher_Execute_RetryPath_PropagatesWaitErr(t *testing.T) {
 	})
 }
 
+func TestDispatcher_Execute_WaitErr_NonContext_AssemblesResponse(t *testing.T) {
+	mock := &mockToolPipeline{
+		IsSerialFunc: func(n string) bool { return false },
+		ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+			return tools.ToolResult{Text: "worker_done"}
+		},
+		RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+			return ctx, nil
+		},
+	}
+
+	logger := &capturingLogger{}
+	d := &Dispatcher{
+		pipeline: mock,
+		events:   events.NewSimpleEventBus(context.Background()),
+		logger:   logger,
+		strategy: &markdownStrategy{},
+	}
+	d.state.Store(&dispatcherState{
+		config: dispatcherConfig{MaxConcurrentTools: 3},
+	})
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "tool_a"}},
+			{FunctionCall: &llm.FunctionCall{Name: "tool_b"}},
+		},
+	}
+
+	panickingFanIn := fanInFunc(func(wg *sync.WaitGroup, resultsCh chan<- toolExecResult) {
+		wg.Wait()
+		panic("simulated WaitGroup corruption in fan-in")
+	})
+
+	ctx := context.Background()
+	result, execErr := d.executeInternal(ctx, respContent, 0, 10, panickingFanIn)
+
+	require.Error(t, execErr, "waitErr must be non-nil")
+	require.NotNil(t, result, "AssembleResponse must return non-nil content")
+	require.NotEmpty(t, result.Parts, "response must contain assembled parts")
+	require.True(t, errors.Is(execErr, llm.ErrTerminal),
+		"error must wrap llm.ErrTerminal, got: %v", execErr)
+	require.Contains(t, execErr.Error(), "fan-in panic",
+		"error must contain 'fan-in panic'")
+	require.NoError(t, ctx.Err(), "context must not be cancelled")
+}
+
 func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
@@ -599,7 +647,7 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 	calls := []*llm.FunctionCall{content.Parts[0].FunctionCall, content.Parts[1].FunctionCall}
 	declinedMap := make(map[int]bool)
 
-	execErr := exec.runExecutionPlan(ctx, calls, declinedMap, results)
+	execErr := exec.runExecutionPlan(ctx, calls, declinedMap, results, nil)
 
 	// 2. With the new contract, tool-result errors (including panics recovered
 	//    inside the tool pipeline) are delivered to the LLM via AssembleResponse
