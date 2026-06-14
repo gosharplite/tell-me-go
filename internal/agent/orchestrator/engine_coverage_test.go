@@ -19,7 +19,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExecuteTurn_TraceEvent(t *testing.T) {
@@ -306,6 +308,14 @@ func TestInferenceStep_TDT(t *testing.T) {
 			expectedPh: PhasePersisting,
 		},
 		{
+			name: "SessionProvider with empty ActiveToolkits",
+			apiResponse: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Hello from core tools"}},
+			},
+			expectedPh: PhasePersisting,
+		},
+		{
 			name: "Tool call with non-string reason arg",
 			apiResponse: &llm.Content{
 				Role: "model",
@@ -315,6 +325,46 @@ func TestInferenceStep_TDT(t *testing.T) {
 						Args: map[string]any{"reason": 42.0},
 					},
 				}},
+			},
+			expectedPh: PhaseExecuting,
+		},
+		{
+			name: "Tool call with string reason arg",
+			apiResponse: &llm.Content{
+				Role: "model",
+				Parts: []*llm.Part{{
+					FunctionCall: &llm.FunctionCall{
+						Name: "test_tool",
+						Args: map[string]any{"reason": "User requested file analysis"},
+					},
+				}},
+			},
+			expectedPh: PhaseExecuting,
+		},
+		{
+			name: "Multiple tool calls with mixed reasons",
+			apiResponse: &llm.Content{
+				Role: "model",
+				Parts: []*llm.Part{
+					{
+						FunctionCall: &llm.FunctionCall{
+							Name: "tool_a",
+							Args: map[string]any{"reason": "First analysis pass"},
+						},
+					},
+					{
+						FunctionCall: &llm.FunctionCall{
+							Name: "tool_b",
+							Args: map[string]any{"other_arg": 42},
+						},
+					},
+					{
+						FunctionCall: &llm.FunctionCall{
+							Name: "tool_c",
+							Args: map[string]any{"reason": "Final cleanup"},
+						},
+					},
+				},
 			},
 			expectedPh: PhaseExecuting,
 		},
@@ -344,7 +394,8 @@ func TestInferenceStep_TDT(t *testing.T) {
 			reg := &agenttest.MockToolRegistry{}
 
 			var cm *sessctx.Manager
-			if tt.name == "Toolkits active — GetDeclarationsByToolkits called" {
+			switch tt.name {
+			case "Toolkits active — GetDeclarationsByToolkits called":
 				// Register tools in a non-core toolkit so that
 				// GetDeclarationsByToolkits returns a non-empty list
 				// while GetCoreDeclarations (ToolkitMap["core"]) returns nil.
@@ -360,7 +411,21 @@ func TestInferenceStep_TDT(t *testing.T) {
 					info: ports.SessionInfo{ActiveToolkits: []string{"test_toolkit"}},
 				}
 				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
-			} else {
+			case "SessionProvider with empty ActiveToolkits":
+				// Register a tool in "core" toolkit so GetCoreDeclarations returns it
+				if err := reg.RegisterToToolkit("core", &tools.ToolDeclaration{
+					Name:        "core_tool",
+					Description: "A core tool",
+				}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					return tools.ToolResult{}, nil
+				}); err != nil {
+					t.Fatalf("RegisterToToolkit(core): %v", err)
+				}
+				sp := &mockSessionProvider{
+					info: ports.SessionInfo{ActiveToolkits: []string{}}, // empty!
+				}
+				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
+			default:
 				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
 			}
 
@@ -389,6 +454,17 @@ func TestInferenceStep_TDT(t *testing.T) {
 			if tt.name == "Tool call with non-string reason arg" {
 				assert.True(t, turn.State.HasToolCalls, "HasToolCalls must be true for a FunctionCall response")
 				assert.Empty(t, turn.State.ToolReasons, "non-string reason arg must be skipped, ToolReasons must be empty")
+			}
+
+			// Verify ToolReasons for cases that exercise reason extraction
+			switch tt.name {
+			case "Tool call with string reason arg":
+				require.Len(t, turn.State.ToolReasons, 1)
+				assert.Equal(t, "User requested file analysis", turn.State.ToolReasons[0])
+			case "Multiple tool calls with mixed reasons":
+				require.Len(t, turn.State.ToolReasons, 2)
+				assert.Equal(t, "First analysis pass", turn.State.ToolReasons[0])
+				assert.Equal(t, "Final cleanup", turn.State.ToolReasons[1])
 			}
 		})
 	}
@@ -933,4 +1009,63 @@ func TestInferenceStep_UpdateState_NilMetrics(t *testing.T) {
 	assert.Nil(t, turn.State.Metrics, "Metrics must remain nil when gateway returns nil metrics")
 	assert.Equal(t, 0, turn.State.Tokens, "Tokens must remain 0 when metrics is nil")
 	assert.False(t, turn.State.HasToolCalls)
+}
+
+type responseEventFaultBus struct {
+	eventstest.TestEventBus
+}
+
+func (b *responseEventFaultBus) Publish(ctx context.Context, e events.Event) error {
+	if _, ok := e.(events.ResponseEvent); ok {
+		return errors.New("response event publish failure")
+	}
+	return b.TestEventBus.Publish(ctx, e)
+}
+
+func TestInferenceStep_InvokeModel_ResponseEvent_PublishError(t *testing.T) {
+	t.Parallel()
+
+	// Setup a faulting event bus that will ONLY cause the ResponseEvent publish to fail,
+	// to make the test intent explicit (InferenceStartedEvent will succeed).
+	bus := &responseEventFaultBus{}
+
+	// Spy logger to capture the error log
+	sl := &testfixtures.SpyLogger{}
+
+	// Gateway that returns a valid response so InvokeModel succeeds,
+	// ensuring we reach the defer block on the happy path
+	gw := &agenttest.MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
+		},
+	}
+
+	counter := &agenttest.MockTokenCounter{}
+	hMock := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(sessctx.NewStrategy(counter), hMock, bus, nil)
+	reg := agenttest.NewMockToolRegistry()
+
+	turn := &Turn{
+		Events:     bus,
+		Logger:     sl,
+		Model:      "test-model",
+		Gateway:    gw,
+		CtxManager: cm,
+		Registry:   reg,
+		State:      &TurnState{},
+	}
+
+	step := &InferenceStep{}
+
+	// InvokeModel should succeed (no error returned) because the ResponseEvent
+	// publish failure is logged but not promoted to an error
+	respContent, metrics, err := step.InvokeModel(context.Background(), turn)
+
+	assert.NoError(t, err, "InvokeModel must not return error when ResponseEvent publish fails")
+	assert.NotNil(t, respContent)
+	assert.NotNil(t, metrics)
+
+	// The spy logger must have captured the ResponseEvent publish failure
+	assert.True(t, sl.CalledWith("Error", "Failed to publish ResponseEvent; UI spinner may hang"),
+		"expected logger to capture ResponseEvent publish failure")
 }
