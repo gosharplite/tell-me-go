@@ -1081,3 +1081,101 @@ func TestChatCommand_ExecuteChat_SetupSessionError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ui.NewCapturer did not return an agent.CapturerInteractor")
 }
+
+// TestChatCommand_NewCapturer_FactoryNilFallback covers the fallback branch
+// in newCapturer: when capturerFactory is nil, it delegates to ui.NewCapturer.
+// The concrete ui.NewCapturer always returns a non-nil UserInteractor.
+func TestChatCommand_NewCapturer_FactoryNilFallback(t *testing.T) {
+	t.Parallel()
+
+	c := &chatCommand{
+		Stdin:  strings.NewReader(""),
+		Stdout: new(strings.Builder),
+		Stderr: new(strings.Builder),
+		// capturerFactory intentionally left nil — triggers ui.NewCapturer fallback
+	}
+
+	result := c.newCapturer(
+		c.Stdin, c.Stdout, c.Stderr,
+		&mockSM{},
+		clock.RealClock{},
+		"", "", false,
+	)
+
+	if result == nil {
+		t.Fatal("expected non-nil UserInteractor from ui.NewCapturer fallback")
+	}
+}
+
+// TestChatCommand_BuildCapturer_TUI_Fallback covers the defensive
+// BaseCapturer → CapturerInteractor fallback chain in buildCapturer's
+// TUI branch (lines 256-261 of chat_command.go).
+func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("CapturerInteractor_fallback_when_not_BaseCapturer", func(t *testing.T) {
+		// mockCapturerInteractor implements agent.CapturerInteractor
+		// but NOT tui.BaseCapturer — the first assertion fails,
+		// triggering the CapturerInteractor fallback (gap 2).
+		mockCap := &mockCapturerInteractor{}
+
+		c := &chatCommand{
+			Stdin:  strings.NewReader(""),
+			Stdout: new(strings.Builder),
+			Stderr: new(strings.Builder),
+			SM:     &mockSM{},
+			capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer,
+				sm domain_security.Manager, clk clock.Clock,
+				mockPrompt, mockAnswer string, disableEscapeSequences bool,
+			) domain_security.UserInteractor {
+				return mockCap
+			},
+			Bootstrapper: &clitest.MockBootstrapper{},
+			ChatService:  &clitest.MockChatService{},
+		}
+
+		opts := &cliOptions{tuiPrompt: true}
+		capturer, cleanup, err := c.buildCapturer(
+			stdctx.Background(), &config.Config{}, opts)
+
+		require.NoError(t, err, "CapturerInteractor fallback should succeed")
+		require.NotNil(t, capturer)
+		require.NotNil(t, cleanup)
+
+		// Gap 3: verify cleanup delegates to the capturer's Close
+		err = cleanup(stdctx.Background())
+		require.NoError(t, err, "cleanup from CapturerInteractor fallback should succeed")
+	})
+
+	t.Run("error_when_neither_BaseCapturer_nor_CapturerInteractor", func(t *testing.T) {
+		// stubInteractor implements domain_security.UserInteractor but
+		// NEITHER tui.BaseCapturer NOR agent.CapturerInteractor.
+		// Both type assertions fail → gap 4.
+		nonCapturer := &stubInteractor{id: 99}
+
+		c := &chatCommand{
+			Stdin:  strings.NewReader(""),
+			Stdout: new(strings.Builder),
+			Stderr: new(strings.Builder),
+			SM:     &mockSM{},
+			capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer,
+				sm domain_security.Manager, clk clock.Clock,
+				mockPrompt, mockAnswer string, disableEscapeSequences bool,
+			) domain_security.UserInteractor {
+				return nonCapturer
+			},
+			Bootstrapper: &clitest.MockBootstrapper{},
+			ChatService:  &clitest.MockChatService{},
+		}
+
+		opts := &cliOptions{tuiPrompt: true}
+		capturer, cleanup, err := c.buildCapturer(
+			stdctx.Background(), &config.Config{}, opts)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(),
+			"ui.NewCapturer did not return a tui.BaseCapturer or agent.CapturerInteractor")
+		require.Nil(t, capturer)
+		require.Nil(t, cleanup)
+	})
+}

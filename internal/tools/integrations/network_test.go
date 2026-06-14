@@ -98,6 +98,19 @@ func TestHttpRequest(t *testing.T) {
 			mockErr: io.EOF,
 			wantErr: true,
 		},
+		{
+			name: "Response body read error",
+			args: map[string]interface{}{
+				"method": "GET",
+				"url":    "https://example.com",
+			},
+			mockResp: &http.Response{
+				Status:     "200 OK",
+				StatusCode: 200,
+				Body:       io.NopCloser(iotest.ErrReader(errors.New("simulated body read error"))),
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -176,6 +189,17 @@ func TestReadExternalDocs(t *testing.T) {
 				Body:       io.NopCloser(strings.NewReader(strings.Repeat("A ", 6000))),
 			},
 			wantInText: []string{"... (truncated)"},
+		},
+		{
+			name: "Response body read error",
+			args: map[string]interface{}{
+				"url": "https://example.com/docs",
+			},
+			mockResp: &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(iotest.ErrReader(errors.New("simulated body read error"))),
+			},
+			wantErr: true,
 		},
 	}
 

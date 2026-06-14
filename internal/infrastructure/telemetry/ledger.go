@@ -44,6 +44,7 @@ type ledgerStore struct {
 	sm               domain_security.Manager
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
+	getSessionIDFunc func(path, globalDir string) (string, error) // test-only override; when set, getSessionID delegates to this
 }
 
 // newLedgerStore creates a new ledgerStore.
@@ -200,6 +201,9 @@ func (ls *ledgerStore) findLogFiles(globalDir string) ([]string, error) {
 }
 
 func (ls *ledgerStore) getSessionID(path, globalDir string) (string, error) {
+	if ls.getSessionIDFunc != nil {
+		return ls.getSessionIDFunc(path, globalDir)
+	}
 	rel, err := filepath.Rel(globalDir, path)
 	if err != nil {
 		return "", fmt.Errorf("resolving session ID for %s relative to %s: %w", path, globalDir, err)

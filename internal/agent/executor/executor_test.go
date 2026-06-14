@@ -328,6 +328,74 @@ func (m *mockAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.F
 	return ctx, nil
 }
 
+// TestDispatcher_Execute_RetryPath_PropagatesWaitErr covers the decision boundary at
+// executor.go:309-314 (retry-vs-abort). The abort path (line 309, ctx.Err() != nil)
+// is already tested by TestDispatcher_ContextCancellation. The retry path (line 314,
+// waitErr != nil && ctx.Err() == nil) is the gap addressed here.
+//
+// Under the current contract, tool-result errors are delivered to the LLM (not
+// promoted to plan errors), so the only way to reach line 314 is via the fan-in
+// panic sentinel (index:-1 with ErrTerminal). Since corrupting a real sync.WaitGroup
+// is impractical, we test the contract through a complementary two-subtest approach.
+func TestDispatcher_Execute_RetryPath_PropagatesWaitErr(t *testing.T) {
+	// === Subtest A: sentinel_promotion_through_handleBatchResults ===
+	// Directly test that handleBatchResults promotes index:-1 sentinels to plan
+	// errors. This verifies the critical link in the chain: IF a sentinel reaches
+	// handleBatchResults, it WILL flow through runExecutionPlan → waitErr →
+	// Execute line 314.
+	t.Run("sentinel_promotion_through_handleBatchResults", func(t *testing.T) {
+		t.Parallel()
+		e := &Dispatcher{strategy: &markdownStrategy{}}
+		resultsCh := make(chan toolExecResult, 1)
+		sentinelErr := fmt.Errorf("%w: fan-in panic: simulated corruption", llm.ErrTerminal)
+		resultsCh <- toolExecResult{
+			index: -1,
+			name:  "fan_in_panic",
+			tr: tools.ToolResult{
+				Text:  "internal error: fan-in panic: simulated corruption",
+				Error: sentinelErr,
+			},
+		}
+		close(resultsCh)
+
+		results := make([]tools.ToolResult, 1)
+		planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+
+		require.Len(t, planErrors, 1)
+		assert.ErrorIs(t, planErrors[0], llm.ErrTerminal)
+		assert.Contains(t, planErrors[0].Error(), "fan-in panic")
+	})
+
+	// === Subtest B: abort_path_returns_context_error ===
+	// Documentation test for line 309 (abort path). Already covered by
+	// TestDispatcher_ContextCancellation but included for completeness.
+	// Uses a pre-cancelled context (ADR-036 §2). No time.Sleep.
+	t.Run("abort_path_returns_context_error", func(t *testing.T) {
+		t.Parallel()
+		reg := &mockToolRegistry{}
+		exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true},
+			&mockEventBus{}, &ports.NoOpLogger{},
+			&mockLogger{CriticalLogs: make(chan string, 10)})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		respContent := &llm.Content{
+			Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+			},
+		}
+
+		result, execErr := exec.Execute(ctx, respContent, 0, 10)
+
+		require.Error(t, execErr)
+		assert.ErrorIs(t, execErr, context.Canceled)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Parts)
+	})
+}
+
 func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
@@ -916,6 +984,30 @@ func TestSuggestTool(t *testing.T) {
 			validTools:   []string{"write_file", "read_file", "delete_file"},
 			want:         "read_file",
 		},
+		{
+			name:         "short name close match within distance 1",
+			hallucinated: "cot",
+			validTools:   []string{"bat", "cat", "dog"},
+			want:         "cat",
+		},
+		{
+			name:         "short name no match exceeds distance 1",
+			hallucinated: "zzz",
+			validTools:   []string{"bat", "cat", "dog"},
+			want:         "",
+		},
+		{
+			name:         "medium name close match within distance 2",
+			hallucinated: "delte",
+			validTools:   []string{"create", "delete", "update"},
+			want:         "delete",
+		},
+		{
+			name:         "medium name no match exceeds distance 2",
+			hallucinated: "xyzabc",
+			validTools:   []string{"create", "delete", "update"},
+			want:         "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1139,4 +1231,314 @@ func TestHandleBatchResults_ToolError_NotPromoted(t *testing.T) {
 	// the error text to the LLM.
 	require.Equal(t, "write failed", results[0].Text)
 	require.ErrorIs(t, results[0].Error, toolErr)
+}
+
+func TestDispatcher_SetConcurrency_NoopShortCircuit(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{}
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true},
+		&mockEventBus{}, &ports.NoOpLogger{},
+		&mockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		initialMax    int
+		setTo         int
+		wantUnchanged bool // true means the config pointer should be the SAME after SetConcurrency
+	}{
+		{
+			name:          "zero_value_noop",
+			initialMax:    5,
+			setTo:         0,
+			wantUnchanged: true,
+		},
+		{
+			name:          "negative_value_noop",
+			initialMax:    5,
+			setTo:         -1,
+			wantUnchanged: true,
+		},
+		{
+			name:          "same_value_noop",
+			initialMax:    5,
+			setTo:         5,
+			wantUnchanged: true,
+		},
+		{
+			name:          "different_value_changes",
+			initialMax:    5,
+			setTo:         3,
+			wantUnchanged: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Reset to known state: set concurrency to initialMax first
+			exec.SetConcurrency(tt.initialMax)
+			beforeState := exec.state.Load()
+
+			// Now call with tt.setTo
+			exec.SetConcurrency(tt.setTo)
+			afterState := exec.state.Load()
+
+			if tt.wantUnchanged {
+				// Config pointer must be identical (CAS short-circuited)
+				assert.Same(t, beforeState, afterState,
+					"state pointer should not change when SetConcurrency is a no-op")
+				// Config value must still be initialMax
+				assert.Equal(t, tt.initialMax, afterState.config.MaxConcurrentTools)
+			} else {
+				// Config must have changed
+				assert.NotSame(t, beforeState, afterState,
+					"state pointer should change when concurrency differs")
+				assert.Equal(t, tt.setTo, afterState.config.MaxConcurrentTools)
+			}
+		})
+	}
+}
+
+func TestDispatcher_Execute_EmptyFunctionCalls_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockToolRegistry{}
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true},
+		&mockEventBus{}, &ports.NoOpLogger{},
+		&mockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		content *llm.Content
+	}{
+		{
+			name: "text_only_no_function_calls",
+			content: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Hello, how can I help?"}},
+			},
+		},
+		{
+			name: "empty_parts_slice",
+			content: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := exec.Execute(context.Background(), tt.content, 0, 10)
+
+			assert.Nil(t, result, "result must be nil when no function calls")
+			assert.NoError(t, err, "err must be nil when no function calls")
+		})
+	}
+}
+
+func TestEvaluateBatchOutcome_ParallelSuccess_ReturnsNoError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		isSerial   bool
+		ctxCancel  bool
+		wantHalt   bool
+		wantErrNil bool
+	}{
+		{
+			name:       "parallel_batch_success_no_context_error",
+			isSerial:   false,
+			ctxCancel:  false,
+			wantHalt:   false,
+			wantErrNil: true,
+		},
+		{
+			name:       "serial_batch_success_no_context_error",
+			isSerial:   true,
+			ctxCancel:  false,
+			wantHalt:   false,
+			wantErrNil: true,
+		},
+		{
+			name:       "parallel_batch_context_cancelled",
+			isSerial:   false,
+			ctxCancel:  true,
+			wantHalt:   true,
+			wantErrNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			mock := &mockToolPipeline{
+				IsSerialFunc: func(name string) bool { return tt.isSerial },
+			}
+
+			ctx := context.Background()
+			if tt.ctxCancel {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			d := &Dispatcher{
+				pipeline: mock,
+				logger:   &ports.NoOpLogger{},
+			}
+			d.state.Store(&dispatcherState{
+				config: dispatcherConfig{MaxConcurrentTools: 5},
+			})
+
+			calls := []*llm.FunctionCall{{Name: "test_tool"}}
+			results := []tools.ToolResult{{Text: "success"}}
+			batches := []taskBatch{{isSerial: tt.isSerial, tasks: []int{0}}}
+
+			halt, err := d.evaluateBatchOutcome(ctx, 0, batches[0], batches, calls, results)
+
+			assert.Equal(t, tt.wantHalt, halt, "halt flag mismatch")
+			if tt.wantErrNil {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestFailRemainingTasks_SkipsAlreadyFilledSlots(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockToolPipeline{}
+	d := &Dispatcher{
+		pipeline: mock,
+		logger:   &ports.NoOpLogger{},
+	}
+
+	t.Run("skips_slot_with_existing_text", func(t *testing.T) {
+		t.Parallel()
+
+		calls := []*llm.FunctionCall{{Name: "a"}, {Name: "b"}}
+		results := []tools.ToolResult{
+			{Text: "already filled", Error: nil}, // slot 0 pre-filled
+			{},                                   // slot 1 empty
+		}
+		batches := []taskBatch{
+			{isSerial: false, tasks: []int{0, 1}},
+		}
+
+		d.failRemainingTasks(batches, 0, -1, calls, results,
+			errors.New("ctx cancelled"), "batch interrupted")
+
+		// Slot 0 must be UNCHANGED (skip guard fired)
+		assert.Equal(t, "already filled", results[0].Text)
+		assert.NoError(t, results[0].Error)
+
+		// Slot 1 must be FILLED
+		assert.Contains(t, results[1].Text, "batch interrupted")
+		assert.Error(t, results[1].Error)
+	})
+
+	t.Run("skips_slot_with_existing_error", func(t *testing.T) {
+		t.Parallel()
+
+		calls := []*llm.FunctionCall{{Name: "a"}, {Name: "b"}}
+		results := []tools.ToolResult{
+			{Text: "", Error: errors.New("previous failure")}, // slot 0 has error
+			{}, // slot 1 empty
+		}
+		batches := []taskBatch{
+			{isSerial: false, tasks: []int{0, 1}},
+		}
+
+		d.failRemainingTasks(batches, 0, -1, calls, results,
+			errors.New("ctx cancelled"), "batch interrupted")
+
+		// Slot 0 must be UNCHANGED
+		assert.Empty(t, results[0].Text)
+		assert.EqualError(t, results[0].Error, "previous failure")
+
+		// Slot 1 must be FILLED
+		assert.Contains(t, results[1].Text, "batch interrupted")
+		assert.Error(t, results[1].Error)
+	})
+}
+
+func TestHandleBatchResults_SentinelWithNilError_NotPromoted(t *testing.T) {
+	t.Parallel()
+
+	e := &Dispatcher{strategy: &markdownStrategy{}}
+	resultsCh := make(chan toolExecResult, 1)
+
+	// Sentinel with index: -1 but nil Error — defensive guard must NOT promote it
+	resultsCh <- toolExecResult{
+		index: -1,
+		name:  "context_cancelled",
+		tr:    tools.ToolResult{Text: "skipped: context cancelled", Error: nil},
+	}
+	close(resultsCh)
+
+	results := make([]tools.ToolResult, 1)
+	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+
+	// planErrors must be empty — nil errors from sentinels are silently dropped
+	require.Len(t, planErrors, 0)
+
+	// results must be untouched (index -1 doesn't write to results)
+	assert.Empty(t, results[0].Text)
+	assert.NoError(t, results[0].Error)
+}
+
+func TestDispatcher_Execute_MaxTurnsZero_FirstTurnExceeds(t *testing.T) {
+	t.Parallel()
+
+	bus := &mockEventBus{}
+	reg := &mockToolRegistry{}
+
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true},
+		bus, &ports.NoOpLogger{},
+		&mockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
+
+	// turn=0, maxToolTurns=0: turn >= maxToolTurns is true even on the first turn
+	result, execErr := exec.Execute(context.Background(), respContent, 0, 0)
+
+	// Result must be nil
+	assert.Nil(t, result, "result should be nil when max turns is 0")
+
+	// Error must be ErrMaxTurnsReached
+	assert.Error(t, execErr)
+	assert.True(t, errors.Is(execErr, llm.ErrMaxTurnsReached),
+		"error should be ErrMaxTurnsReached")
+
+	// Verify the SystemMessageEvent was published
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	var foundSystemMsg bool
+	for _, e := range bus.Published {
+		if sme, ok := e.(events.SystemMessageEvent); ok {
+			foundSystemMsg = true
+			assert.Contains(t, sme.Message, "Maximum tool execution turns (0) reached")
+			assert.Equal(t, "error", sme.Level)
+		}
+	}
+	assert.True(t, foundSystemMsg, "expected SystemMessageEvent to be published")
 }

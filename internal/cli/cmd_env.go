@@ -14,8 +14,9 @@ import (
 )
 
 type envCommand struct {
-	Stdout io.Writer
-	Loader domain_config.ConfigLoader
+	Stdout      io.Writer
+	Loader      domain_config.ConfigLoader
+	marshalFunc func(any) ([]byte, error) // test-only injection; defaults to yaml.Marshal
 }
 
 func newEnvCommand(ctx *context) *cobra.Command {
@@ -53,7 +54,11 @@ func (c *envCommand) execute(ctx stdctx.Context, configPath string) error {
 	}
 
 	// 2. Marshal back to YAML to preserve uppercase struct tags
-	data, err := yaml.Marshal(cfg)
+	marshaller := c.marshalFunc
+	if marshaller == nil {
+		marshaller = yaml.Marshal
+	}
+	data, err := marshaller(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal configuration: %w", err)
 	}

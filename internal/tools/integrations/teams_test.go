@@ -210,3 +210,11 @@ func TestRegisterTeams_ErrorPaths(t *testing.T) {
 		}
 	})
 }
+
+// ── Structural impossibility notes ──
+//
+// Gap #13 (buildTeamsRequestBody json.Marshal error) is structurally
+// unreachable: the function constructs a map[string]interface{} whose
+// values are limited to string literals (message, reason, "AdaptiveCard",
+// "1.2", etc.), the boolean true, and slices of similarly-constrained
+// maps. None of these types can cause encoding/json.Marshal to fail.

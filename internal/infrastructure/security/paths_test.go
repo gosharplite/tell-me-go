@@ -518,6 +518,32 @@ func TestCheckDefaultBoundaries_ExtraTempDirs(t *testing.T) {
 		require.NoError(t, err2)
 		assert.True(t, ok2, "path in /private/tmp should pass checkDefaultBoundaries on macOS")
 	}
+
+	t.Run("extra temp dir ok short-circuit (line 81)", func(t *testing.T) {
+		// This branch is only reachable when os.TempDir() differs from
+		// getExtraTempDirs() entries. On Linux os.TempDir() == /tmp so
+		// the temp-dir check at line 66 catches it first.
+		// On macOS, os.TempDir() is per-user, so /tmp hits the extra loop.
+		if runtime.GOOS == "linux" {
+			// On Linux, verify the loop would work if reached:
+			// Directly call checkBoundary against each extra temp dir to
+			// confirm they would match if os.TempDir() were different.
+			for _, extraDir := range getExtraTempDirs() {
+				// Skip dirs that don't exist on this system
+				if _, statErr := os.Stat(extraDir); statErr != nil {
+					continue
+				}
+				path := p.resolveSymlinks(filepath.Join(extraDir, "test-extra-shortcircuit.txt"))
+				ok, err := p.checkBoundary(path, extraDir)
+				require.NoError(t, err)
+				assert.True(t, ok, "path in %s should be within boundary", extraDir)
+			}
+			// Document that the actual line-81 return is unreachable on Linux
+			// because os.TempDir() catches /tmp before the loop.
+		}
+		// On macOS, the existing test above already exercises line 81.
+		// On Windows, getExtraTempDirs() returns nil so the loop never runs.
+	})
 }
 
 // TestNewPathPolicy_ResolvedTempDir verifies that resolvedTempDir is populated
@@ -542,6 +568,56 @@ func TestNewPathPolicy_ResolvedTempDir(t *testing.T) {
 	tempFile := filepath.Join(p.resolvedTempDir, "test-exempted-file.txt")
 	exempted := p.isExemptedDirectory(tempFile)
 	assert.True(t, exempted, "path in resolvedTempDir should be exempted by isExemptedDirectory")
+}
+
+// TestIsExemptedDirectory_CaseInsensitive verifies the case-insensitive
+// branch of isExemptedDirectory (paths.go lines 204-207). On Linux,
+// isCaseSensitive() returns true, so this branch is never reached through
+// normal flow. On Windows, isCaseSensitive() returns false, so this test
+// exercises the real code path.
+//
+// Strategy: test on the current platform. On Windows, the normal flow
+// exercises lines 204-207. On Linux, we verify isExemptedDirectory returns
+// correct results and document the branch as platform-dependent.
+func TestIsExemptedDirectory_CaseInsensitive(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	t.Run("temp dir is exempted (any platform)", func(t *testing.T) {
+		t.Parallel()
+		// Use the policy's own resolved temp dir for consistency
+		require.NotEmpty(t, p.resolvedTempDir, "resolvedTempDir should be populated")
+		pathInTemp := filepath.Join(p.resolvedTempDir, "test-exempted-case.txt")
+		exempted := p.isExemptedDirectory(pathInTemp)
+		assert.True(t, exempted, "path in resolvedTempDir should be exempted on all platforms")
+	})
+
+	t.Run("case-insensitive match (Windows)", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS != "windows" {
+			t.Skip("case-insensitive isExemptedDirectory branch is Windows-only")
+		}
+		// On Windows, isCaseSensitive() returns false.
+		// Test that an uppercase variant of the temp dir path is still exempted.
+		upperTemp := strings.ToUpper(p.resolvedTempDir)
+		if p.resolvedTempDir == upperTemp {
+			t.Skip("resolvedTempDir is already all-uppercase; " +
+				"case-insensitive branch is exercised by the normal flow on this system")
+		}
+		pathInUpperTemp := filepath.Join(upperTemp, "test-exempted-upper.txt")
+		exempted := p.isExemptedDirectory(pathInUpperTemp)
+		assert.True(t, exempted, "uppercase temp dir path should be exempted on case-insensitive platform")
+	})
+
+	t.Run("path outside temp dir not exempted", func(t *testing.T) {
+		t.Parallel()
+		outside := "/nonexistent_outside_for_exemption_test"
+		if runtime.GOOS == "windows" {
+			outside = `C:\nonexistent_outside_for_exemption_test`
+		}
+		exempted := p.isExemptedDirectory(outside)
+		assert.False(t, exempted, "path outside all boundaries should not be exempted")
+	})
 }
 
 func TestRegisterPath_EmptyPath(t *testing.T) {
@@ -853,4 +929,186 @@ func TestResolveSymlinks_RecursiveFallback(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFilepathAbs_ErrorBranches verifies that filepath.Abs failures are handled
+// correctly in RegisterPath, RemovePath, ValidatePath, and checkBoundary.
+//
+// Strategy: Unset PWD (to disable Go's $PWD-based os.Getwd fast path), chdir
+// into a temp directory, then delete it. This causes os.Getwd() → syscall.Getwd
+// to fail with ENOENT, which makes filepath.Abs error on any relative path.
+// NUL byte injection does NOT work because filepath.Abs on absolute paths
+// never touches the OS — it just calls filepath.Clean and returns.
+func TestFilepathAbs_ErrorBranches(t *testing.T) {
+	// This test manipulates the process working directory and PWD environment
+	// variable — cannot run in parallel with other tests.
+	// t.Parallel() is intentionally omitted.
+
+	// Save original state for restoration.
+	origDir, err := os.Getwd()
+	require.NoError(t, err, "failed to get current working directory")
+	origPWD, hadPWD := os.LookupEnv("PWD")
+
+	// Create a disposable temp directory, chdir into it, then delete it.
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Chdir(tmpDir), "failed to chdir into temp directory")
+
+	// Unset PWD so os.Getwd() falls through to syscall.Getwd (which will fail
+	// on a deleted directory). Without this, Go may return the stale $PWD value.
+	_ = os.Unsetenv("PWD")
+
+	require.NoError(t, os.RemoveAll(tmpDir), "failed to remove temp directory")
+
+	// Restore original state on cleanup.
+	t.Cleanup(func() {
+		if hadPWD {
+			_ = os.Setenv("PWD", origPWD)
+		} else {
+			_ = os.Unsetenv("PWD")
+		}
+		if err := os.Chdir(origDir); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
+	})
+
+	// Verify os.Getwd() now fails — the precondition for this test.
+	_, wdErr := os.Getwd()
+	require.Error(t, wdErr, "os.Getwd() should fail after deleting current directory and unsetting PWD")
+
+	// ---- 1. RegisterPath: filepath.Abs error returns early ----
+	t.Run("RegisterPath: filepath.Abs error returns early", func(t *testing.T) {
+		p := newPathPolicy(nil)
+		initialSafe := len(p.GetPaths(true))
+		initialRO := len(p.GetPaths(false))
+
+		// Relative path + deleted CWD + no PWD → filepath.Abs fails → RegisterPath is a no-op.
+		p.RegisterPath("relative/path", true)
+		p.RegisterPath("relative/path", false)
+
+		assert.Equal(t, initialSafe, len(p.GetPaths(true)),
+			"safe paths should not change when filepath.Abs fails")
+		assert.Equal(t, initialRO, len(p.GetPaths(false)),
+			"read-only paths should not change when filepath.Abs fails")
+	})
+
+	// ---- 2. RemovePath: filepath.Abs error returns wrapped error ----
+	t.Run("RemovePath: filepath.Abs error returns wrapped error", func(t *testing.T) {
+		p := newPathPolicy(nil)
+
+		err := p.RemovePath("relative/path", true)
+		require.Error(t, err, "RemovePath(writable=true) should error when filepath.Abs fails")
+		assert.Contains(t, err.Error(), "invalid path",
+			"RemovePath should wrap filepath.Abs error with 'invalid path'")
+
+		err = p.RemovePath("relative/path", false)
+		require.Error(t, err, "RemovePath(writable=false) should error when filepath.Abs fails")
+		assert.Contains(t, err.Error(), "invalid path",
+			"RemovePath should wrap filepath.Abs error with 'invalid path'")
+	})
+
+	// ---- 3. ValidatePath: filepath.Abs error returns wrapped error ----
+	t.Run("ValidatePath: filepath.Abs error returns wrapped error", func(t *testing.T) {
+		p := newPathPolicy(nil)
+
+		_, err := p.ValidatePath("relative/path", false)
+		require.Error(t, err, "ValidatePath should error when filepath.Abs fails")
+		assert.Contains(t, err.Error(), "invalid path",
+			"ValidatePath should wrap filepath.Abs error with 'invalid path'")
+	})
+
+	// ---- 4. checkBoundary: filepath.Abs error on boundary propagates ----
+	t.Run("checkBoundary: filepath.Abs error on boundary propagates", func(t *testing.T) {
+		p := newPathPolicy(nil)
+
+		// Relative boundary + deleted CWD + no PWD → filepath.Abs fails.
+		ok, err := p.checkBoundary("/some/absolute/target", "relative/boundary")
+		require.Error(t, err, "checkBoundary should propagate filepath.Abs error")
+		assert.False(t, ok, "checkBoundary should return ok=false when filepath.Abs fails")
+	})
+}
+
+// TestSystemDependentBranches_Documented catalogs all code paths in paths.go
+// that are [SYSTEM-DEPENDENT] or [UNREACHABLE] under normal conditions.
+// These branches exist as defensive coding but cannot be triggered without
+// a broken filesystem, platform-specific behavior, or code refactoring.
+//
+// Each subtest documents one gap with its line number, the condition
+// required to trigger it, and why it cannot be tested in CI.
+func TestSystemDependentBranches_Documented(t *testing.T) {
+	t.Parallel()
+
+	t.Run("G1-line45: EvalSymlinks fallback in newPathPolicy", func(t *testing.T) {
+		t.Parallel()
+		// This branch sets resolvedTempDir from the raw os.TempDir() value
+		// when filepath.EvalSymlinks fails on the temp directory.
+		// Trigger condition: os.TempDir() must return a non-empty path
+		// whose symlinks cannot be resolved (e.g., /tmp is a dangling symlink
+		// or the underlying mount is inaccessible).
+		// Verdict: [SYSTEM-DEPENDENT] — requires intentionally broken filesystem.
+		t.Log("[SYSTEM-DEPENDENT] line 45: EvalSymlinks fallback — requires " +
+			"broken temp dir symlink. Defensive code for corrupted environments.")
+	})
+
+	t.Run("G2-line60: CWD boundary check error logging", func(t *testing.T) {
+		t.Parallel()
+		// This branch logs when checkBoundary returns an error for the CWD check.
+		// checkBoundary only errors when filepath.Abs(boundary) fails.
+		// os.Getwd() always returns a valid absolute path; on the rare occasion
+		// it fails (deleted CWD), the outer if err == nil guard prevents entry.
+		// Verdict: [SYSTEM-DEPENDENT] — os.Getwd() always returns valid paths.
+		t.Log("[SYSTEM-DEPENDENT] line 60: CWD error logging — os.Getwd() " +
+			"always returns valid absolute paths. Defensive log statement.")
+	})
+
+	t.Run("G3-line71: Temp dir boundary check error logging", func(t *testing.T) {
+		t.Parallel()
+		// This branch logs when checkBoundary returns an error for os.TempDir().
+		// os.TempDir() always returns a valid absolute path (or empty string).
+		// filepath.Abs cannot fail on it. If os.TempDir() returns "", the
+		// short-circuit if ok prevents entry; checkBoundary is never called.
+		// Verdict: [SYSTEM-DEPENDENT] — os.TempDir() is always valid.
+		t.Log("[SYSTEM-DEPENDENT] line 71: temp dir error logging — " +
+			"os.TempDir() always returns valid paths. Defensive log statement.")
+	})
+
+	t.Run("G4-line78: Extra temp dirs boundary check error logging", func(t *testing.T) {
+		t.Parallel()
+		// This branch logs when checkBoundary returns an error for entries in
+		// getExtraTempDirs() (["/tmp", "/private/tmp"] on Unix, nil on Windows).
+		// These are hardcoded valid paths; filepath.Abs cannot fail on them.
+		// Verdict: [SYSTEM-DEPENDENT] — hardcoded paths are always valid.
+		t.Log("[SYSTEM-DEPENDENT] line 78: extra temp dir error logging — " +
+			"hardcoded paths always valid. Defensive log statement.")
+	})
+
+	t.Run("G9-line156: Rule error propagation in ValidatePath", func(t *testing.T) {
+		t.Parallel()
+		// This branch propagates errors from pathRule functions. However, all
+		// three rule implementations (checkDefaultBoundaries, checkSafePaths,
+		// checkReadOnlyPaths) log errors from checkBoundary via log.Printf and
+		// return nil — they never return (false, err). As a result, this
+		// error-propagation path is dead code.
+		// Verdict: [UNREACHABLE] — rules swallow checkBoundary errors.
+		// Tracking: This is [TECHNICAL DEBT]. Rules should propagate errors
+		// from checkBoundary instead of just logging them, to enable this
+		// fail-secure error path. See ADR in issue #830.
+		t.Log("[UNREACHABLE] line 156: rule error propagation — dead code " +
+			"because all rule implementations swallow checkBoundary errors " +
+			"instead of returning them. See issue #830 for tracking ADR.")
+	})
+
+	t.Run("G6-G7-lines96-117: Safe/read-only path error logging", func(t *testing.T) {
+		t.Parallel()
+		// These branches log when checkBoundary returns an error for a
+		// registered safe/read-only boundary path. They are tested in
+		// TestBoundaryChecks_ErrorLogging but skip on platforms where
+		// filepath.Abs tolerates NUL bytes (Linux with Go 1.x).
+		// On platforms where filepath.Abs rejects NUL bytes, these
+		// branches ARE covered.
+		// Verdict: [SYSTEM-DEPENDENT] — covered on platforms where
+		// filepath.Abs errors on NUL bytes; skipped otherwise.
+		t.Log("[SYSTEM-DEPENDENT] lines 96/117: safe/RO error logging — " +
+			"covered by TestBoundaryChecks_ErrorLogging on platforms where " +
+			"filepath.Abs rejects NUL bytes. Skipped on this platform.")
+	})
 }

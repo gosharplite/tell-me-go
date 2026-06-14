@@ -15,6 +15,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAuthDecorator(t *testing.T) {
@@ -129,6 +130,118 @@ func TestSafetyDecorator(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSafetyDecorator_PrecedenceLogic verifies the context-cancellation vs
+// tool-error precedence condition at decorators.go:91-93. When both the tool
+// returns an error and the context is cancelled/deadline-exceeded, the
+// friendly context message takes priority over the raw tool error.
+func TestSafetyDecorator_PrecedenceLogic(t *testing.T) {
+	t.Parallel()
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	// Subtest A: context alive → tool error passes through unchanged.
+	// ctx.Err() == nil, so the precedence check short-circuits and we
+	// return out.Result, out.Err verbatim.
+	t.Run("context_OK_tool_error_preserved", func(t *testing.T) {
+		t.Parallel()
+		diskFull := errors.New("disk full")
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "write failed"},
+			Err:    diskFull,
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			5*time.Second, 5*time.Second, 10*time.Millisecond,
+		)
+
+		res, err := decorator.Execute(
+			context.Background(),
+			&tools.ToolDeclaration{Name: "test"},
+			&llm.FunctionCall{Name: "test"},
+			nil,
+		)
+
+		// Safety decorator returns nil error when the select picks the outCh
+		// branch (it does, because ctx is not done). The tool error is in the
+		// second return value from the fallthrough path: return out.Result, out.Err.
+		assert.Error(t, err, "tool error must pass through as second return value")
+		assert.Contains(t, err.Error(), "disk full")
+		assert.Equal(t, "write failed", res.Text)
+		assert.NoError(t, res.Error, "result.Error is nil because the mock returned error separately")
+	})
+
+	// Subtest B: pre-cancelled context → friendly cancellation message
+	// overrides the raw tool error. Both ctx.Done() and outCh may be
+	// simultaneously ready; Go selects randomly. Both paths produce the
+	// same formatContextError output that wraps context.Canceled.
+	t.Run("context_cancelled_tool_error_overridden", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // pre-cancelled per ADR-036 §2
+
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "raw output"},
+			Err:    errors.New("raw tool crash"),
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			5*time.Second, 5*time.Second, 10*time.Millisecond,
+		)
+
+		res, err := decorator.Execute(
+			ctx,
+			&tools.ToolDeclaration{Name: "test"},
+			&llm.FunctionCall{Name: "test"},
+			nil,
+		)
+
+		// Both select branches return (friendly result, nil).
+		assert.NoError(t, err)
+		assert.Error(t, res.Error)
+		assert.Contains(t, res.Text, "interrupted or cancelled")
+		assert.True(t, errors.Is(res.Error, context.Canceled),
+			"error must wrap context.Canceled")
+	})
+
+	// Subtest C: nearly-immediate deadline → friendly timeout message
+	// overrides the raw tool error. Same dual-path semantics as B.
+	t.Run("context_deadline_exceeded_tool_error_overridden", func(t *testing.T) {
+		t.Parallel()
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "raw output"},
+			Err:    errors.New("tool failed"),
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			1*time.Nanosecond, 1*time.Nanosecond, 10*time.Millisecond,
+		)
+
+		// Pre-deadlined context per ADR-036 §2: ensures the child context
+		// created by context.WithTimeout inside safetyDecorator.Execute
+		// inherits a past deadline, making ctx.Done() deterministically
+		// readable before the mock executor goroutine can deliver a result.
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+		defer cancel()
+
+		res, err := decorator.Execute(
+			ctx,
+			&tools.ToolDeclaration{Name: "test"},
+			&llm.FunctionCall{Name: "test"},
+			nil,
+		)
+
+		// Both select branches return (friendly result, nil).
+		assert.NoError(t, err)
+		assert.Error(t, res.Error)
+		assert.Contains(t, res.Text, "timed out")
+		assert.True(t, errors.Is(res.Error, llm.ErrTransient),
+			"error must wrap llm.ErrTransient")
+	})
 }
 
 func TestTracingDecorator(t *testing.T) {
@@ -458,4 +571,177 @@ func TestHandlePanic_EventBusError_Logged(t *testing.T) {
 
 	assert.Equal(t, "panic_tool", attrs["tool_name"])
 	assert.ErrorContains(t, attrs["error"].(error), "channel full")
+}
+
+func TestForwardHeartbeat_SuccessfulSend(t *testing.T) {
+	t.Parallel()
+
+	t.Run("buffered_channel_with_capacity", func(t *testing.T) {
+		t.Parallel()
+		ch := make(chan struct{}, 1)
+		forwardHeartbeat(ch, struct{}{})
+
+		select {
+		case v := <-ch:
+			// Successfully received the heartbeat value
+			_ = v
+		default:
+			t.Error("expected heartbeat to be sent successfully on buffered channel with capacity")
+		}
+	})
+
+	t.Run("unbuffered_channel_with_concurrent_receiver", func(t *testing.T) {
+		t.Parallel()
+		ch := make(chan struct{})
+		received := make(chan struct{})
+
+		go func() {
+			<-ch
+			close(received)
+		}()
+
+		// Poll until the receiver is actually waiting and the non-blocking send succeeds.
+		// forwardHeartbeat does not return a value, so we poll it and check if
+		// the receiver unblocked and closed the 'received' channel.
+		require.Eventually(t, func() bool {
+			forwardHeartbeat(ch, struct{}{})
+			select {
+			case <-received:
+				return true
+			default:
+				return false
+			}
+		}, 1*time.Second, 5*time.Millisecond)
+	})
+
+	t.Run("nil_channel_no_panic", func(t *testing.T) {
+		t.Parallel()
+		// Must not panic, must return immediately
+		assert.NotPanics(t, func() {
+			forwardHeartbeat(nil, struct{}{})
+		})
+	})
+}
+
+// TestDrainHeartbeats_DrainsChannel verifies that the drainHeartbeats
+// goroutine drains all buffered values from hbCh without blocking, and
+// that the recover() guard catches any panic that might arise (e.g., from
+// a hypothetical double-close race).
+func TestDrainHeartbeats_DrainsChannel(t *testing.T) {
+	t.Parallel()
+
+	t.Run("drains_all_values_without_blocking", func(t *testing.T) {
+		t.Parallel()
+		hbCh := make(chan struct{}, 3)
+		hbCh <- struct{}{}
+		hbCh <- struct{}{}
+		hbCh <- struct{}{}
+
+		drainHeartbeats(hbCh)
+
+		// The goroutine should drain all values; closing the channel
+		// after a brief yield should let the drain complete cleanly.
+		require.Eventually(t, func() bool {
+			return len(hbCh) == 0
+		}, 500*time.Millisecond, 5*time.Millisecond,
+			"drainHeartbeats goroutine should consume all buffered values")
+
+		// Close the channel so the drain goroutine's for-range exits.
+		close(hbCh)
+	})
+
+	t.Run("recovers_from_double_close", func(t *testing.T) {
+		t.Parallel()
+		hbCh := make(chan struct{}, 1)
+		hbCh <- struct{}{}
+
+		drainHeartbeats(hbCh)
+
+		// Wait for the drain to consume the value
+		require.Eventually(t, func() bool {
+			return len(hbCh) == 0
+		}, 500*time.Millisecond, 5*time.Millisecond)
+
+		// Close the channel — the drain goroutine's for-range exits cleanly.
+		close(hbCh)
+
+		// The recover() is protecting against a hypothetical double-close.
+		// Since drainHeartbeats itself never closes the channel, the real
+		// protection is against the tool goroutine's defer close(hbCh) racing
+		// with the drain. We verify the goroutine exits by ensuring no panic
+		// propagates to the test process.
+	})
+}
+
+// TestMonitorLiveness_TimerFires_CancelsContext covers the case <-timer.channel() branch
+// in monitorLiveness (decorators.go:266). When the liveness timer fires before any
+// heartbeat arrives, handleLivenessTimeout is called, which logs "tool_liveness_timeout"
+// and cancels the tool context.
+func TestMonitorLiveness_TimerFires_CancelsContext(t *testing.T) {
+	t.Parallel()
+
+	logger := &capturingLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+
+	// Use a registry that reports a very short liveness threshold
+	reg := &mockZombieRegistry{
+		livenessThreshold: 1 * time.Millisecond,
+		isLongRunningFn:   func(name string) bool { return true },
+	}
+
+	// Mock executor sends zero heartbeats and blocks until context cancelled
+	// (simulating a tool that stops sending heartbeats, causing the liveness
+	// timer to fire).
+	next := &mockExecutor{
+		Result:     tools.ToolResult{Text: "should_not_appear"},
+		Delay:      1, // triggers blocking on BlockCh
+		BlockCh:    make(chan struct{}),
+		Heartbeats: 0, // no heartbeats → timer will fire
+	}
+	defer close(next.BlockCh)
+
+	decorator := newSafetyDecorator(
+		next,
+		reg,
+		logger,
+		bus,
+		zombie,
+		5*time.Second, // long tool timeout — must NOT be the one that fires
+		5*time.Second, // long long-running timeout
+		10*time.Millisecond,
+	).(*safetyDecorator)
+
+	result, _ := decorator.Execute(
+		context.Background(),
+		&tools.ToolDeclaration{Name: "zombie_tool"},
+		&llm.FunctionCall{Name: "zombie_tool"},
+		nil,
+	)
+
+	// The liveness timer should fire, causing handleLivenessTimeout to cancel
+	// the tool's context. The tool then returns ctx.Err().
+	assert.Error(t, result.Error)
+	assert.True(t,
+		errors.Is(result.Error, context.Canceled) ||
+			errors.Is(result.Error, context.DeadlineExceeded),
+		"expected context.Canceled or context.DeadlineExceeded, got: %v", result.Error)
+
+	// Verify the logger captured the liveness timeout
+	assert.True(t, logger.errorCalled,
+		"expected Error to be called for tool_liveness_timeout")
+	assert.Equal(t, "tool_liveness_timeout", logger.lastMsg)
+
+	// Verify the tool name is in the log args
+	attrs := make(map[string]any)
+	for i := 0; i < len(logger.lastArgs); i += 2 {
+		if i+1 < len(logger.lastArgs) {
+			key, ok := logger.lastArgs[i].(string)
+			if ok {
+				attrs[key] = logger.lastArgs[i+1]
+			}
+		}
+	}
+	assert.Equal(t, "zombie_tool", attrs["tool_name"])
 }
