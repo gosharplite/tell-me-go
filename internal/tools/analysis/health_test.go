@@ -650,21 +650,8 @@ func TestRunTestsAndCoverage_ErrorPaths(t *testing.T) {
 			},
 			wantTestStatus:   "PASS",
 			wantTestContains: "0 packages passed",
-			wantCovStatus:    "ERROR",
-			wantCovContains:  "Failed to generate coverage summary",
-		},
-		{
-			name: "no Go files with coverage pct set",
-			ctxFunc: func() (context.Context, func()) {
-				return context.Background(), func() {}
-			},
-			runnerFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
-				return toolchain.CoverageReport{CoveragePct: "100.0%", NoGoFiles: true}, nil
-			},
-			wantTestStatus:   "PASS",
-			wantTestContains: "",
-			wantCovStatus:    "ERROR",
-			wantCovContains:  "Failed to generate coverage summary",
+			wantCovStatus:    "N/A",
+			wantCovContains:  "No Go files found in target path",
 		},
 		{
 			name: "empty coverage",
