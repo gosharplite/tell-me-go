@@ -49,7 +49,7 @@ func TestStderrPrefixConsistency(t *testing.T) {
 // UTF-8 truncation
 // ---------------------------------------------------------------------------
 
-func TestTruncateToValidUTF8(t *testing.T) {
+func TestSanitizeAndTruncateUTF8(t *testing.T) {
 	tests := []struct {
 		input    string
 		max      int
@@ -58,18 +58,18 @@ func TestTruncateToValidUTF8(t *testing.T) {
 		{"hello", 3, "hel"},
 		{"hello", 5, "hello"},
 		{"hello", 10, "hello"},
-		{"世界", 3, "世"},                             // "世" is 3 bytes, "界" starts at index 3
-		{"世界", 4, "世"},                             // "界" is 3 bytes, cannot take only 1 byte of "界"
-		{"世界", 6, "世界"},                            // exactly 6 bytes
-		{"😀", 2, ""},                               // Emoji is 4 bytes
-		{"😀", 4, "😀"},                              // Emoji is 4 bytes
-		{string([]byte{0xff, 0xff}), 1, ""},        // Invalid UTF-8
-		{"A" + string([]byte{0xff}) + "B", 2, "A"}, // Invalid UTF-8 after 'A'
+		{"世界", 3, "世"},                              // "世" is 3 bytes, "界" starts at index 3
+		{"世界", 4, "世"},                              // "界" is 3 bytes, cannot take only 1 byte of "界"
+		{"世界", 6, "世界"},                             // exactly 6 bytes
+		{"😀", 2, ""},                                // Emoji is 4 bytes
+		{"😀", 4, "😀"},                               // Emoji is 4 bytes
+		{string([]byte{0xff, 0xff}), 1, ""},         // Invalid UTF-8 → stripped by ToValidUTF8 → ""
+		{"A" + string([]byte{0xff}) + "B", 2, "AB"}, // Invalid byte stripped → "AB" (fits in 2 bytes)
 	}
 	for _, tt := range tests {
-		got := truncateToValidUTF8(tt.input, tt.max)
+		got := sanitizeAndTruncateUTF8(tt.input, tt.max)
 		if got != tt.expected {
-			t.Errorf("truncate(%q, %d) = %q; want %q", tt.input, tt.max, got, tt.expected)
+			t.Errorf("sanitizeAndTruncateUTF8(%q, %d) = %q; want %q", tt.input, tt.max, got, tt.expected)
 		}
 	}
 }
