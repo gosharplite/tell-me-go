@@ -8,6 +8,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// maxEstimateDepth limits recursion in estimateMapSizeInternal and
+// estimateValueSizeInternal to prevent stack overflow from circular
+// map references (e.g., m["self"] = m).
+const maxEstimateDepth = 100
+
 // HeuristicTokenCounter provides a rule-of-thumb token estimation.
 type HeuristicTokenCounter struct {
 	registry tools.Registry
@@ -33,6 +38,9 @@ func (c *HeuristicTokenCounter) Count(contents []*llm.Content) int {
 	}
 
 	for _, content := range contents {
+		if content == nil {
+			continue
+		}
 		charCount := 0
 		for _, p := range content.Parts {
 			charCount += c.estimatePartChars(p)
@@ -68,11 +76,11 @@ func (c *HeuristicTokenCounter) estimatePartChars(p *llm.Part) int {
 	}
 	if p.FunctionCall != nil {
 		charCount += len(p.FunctionCall.Name)
-		charCount += estimateMapSizeInternal(p.FunctionCall.Args)
+		charCount += estimateMapSizeInternal(p.FunctionCall.Args, 0)
 	}
 	if p.FunctionResponse != nil {
 		charCount += len(p.FunctionResponse.Name)
-		charCount += estimateMapSizeInternal(p.FunctionResponse.Response)
+		charCount += estimateMapSizeInternal(p.FunctionResponse.Response, 0)
 	}
 	if p.InlineData != nil {
 		charCount += 160 // Heuristic for blob (roughly 50 tokens)
@@ -80,19 +88,25 @@ func (c *HeuristicTokenCounter) estimatePartChars(p *llm.Part) int {
 	return charCount
 }
 
-func estimateMapSizeInternal(m map[string]interface{}) int {
+func estimateMapSizeInternal(m map[string]interface{}, depth int) int {
+	if depth > maxEstimateDepth {
+		return 0
+	}
 	if m == nil {
 		return 0
 	}
 	size := 0
 	for k, v := range m {
 		size += len(k)
-		size += estimateValueSizeInternal(v)
+		size += estimateValueSizeInternal(v, depth+1)
 	}
 	return size
 }
 
-func estimateValueSizeInternal(v interface{}) int {
+func estimateValueSizeInternal(v interface{}, depth int) int {
+	if depth > maxEstimateDepth {
+		return 0
+	}
 	if v == nil {
 		return 4
 	}
@@ -104,11 +118,11 @@ func estimateValueSizeInternal(v interface{}) int {
 	case bool:
 		return 5
 	case map[string]interface{}:
-		return estimateMapSizeInternal(val)
+		return estimateMapSizeInternal(val, depth+1)
 	case []interface{}:
 		size := 1
 		for _, item := range val {
-			size += estimateValueSizeInternal(item)
+			size += estimateValueSizeInternal(item, depth+1)
 		}
 		return size
 	default:
