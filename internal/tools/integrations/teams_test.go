@@ -122,12 +122,16 @@ func TestTeamsManager_Timeout(t *testing.T) {
 
 	mock := &mockHTTPClient{
 		DoFunc: func(req *http.Request) (*http.Response, error) {
-			select {
-			case <-req.Context().Done():
-				return nil, req.Context().Err()
-			case <-time.After(100 * time.Millisecond):
-				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("OK"))}, nil
+			// Check context before blocking — eliminates race between
+			// real timers in select. If the context is already expired,
+			// return the error immediately and deterministically.
+			if err := req.Context().Err(); err != nil {
+				return nil, err
 			}
+			// Block until context expires; this ensures we never
+			// accidentally return a 200 when the deadline has passed.
+			<-req.Context().Done()
+			return nil, req.Context().Err()
 		},
 	}
 
