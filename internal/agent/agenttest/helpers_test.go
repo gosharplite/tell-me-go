@@ -60,36 +60,70 @@ func TestStubUIRenderer_StartSpinnerWithMetrics(t *testing.T) {
 func TestStubUIRenderer_NoOpMethods(t *testing.T) {
 	t.Parallel()
 
-	s := &stubUIRenderer{}
 	ctx := context.Background()
 
-	// All of these must not panic.
-	s.RenderResponse(ctx, nil, false, false)
-	s.RenderResponse(ctx, &llm.Content{Role: "assistant"}, true, true)
+	t.Run("RenderResponse", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.RenderResponse(ctx, &llm.Content{Role: "assistant"}, true, true)
+		s.RenderResponse(ctx, nil, false, false)
+	})
 
-	s.LogTurnStatus(ctx, events.TurnStatus{CurrentTurns: 1})
-	s.LogTurnStatus(ctx, events.TurnStatus{})
+	t.Run("LogTurnStatus", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.LogTurnStatus(ctx, events.TurnStatus{CurrentTurns: 1})
+		s.LogTurnStatus(ctx, events.TurnStatus{})
+	})
 
-	s.LogSystemMessage(ctx, "hello", "info")
-	s.LogSystemMessage(ctx, "", "")
+	t.Run("LogSystemMessage", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.LogSystemMessage(ctx, "hello", "info")
+		s.LogSystemMessage(ctx, "", "")
+	})
 
-	s.LogUsage(ctx, &llm.Metrics{}, "log.json", time.Now())
-	s.LogUsage(ctx, nil, "", time.Time{})
+	t.Run("LogUsage", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.LogUsage(ctx, &llm.Metrics{}, "log.json", time.Now())
+		s.LogUsage(ctx, nil, "", time.Time{})
+	})
 
-	s.LogToolCall(ctx, nil, 0, 0, false)
-	s.LogToolCall(ctx, []*llm.FunctionCall{{Name: "test"}}, 1, 10, true)
+	t.Run("LogToolCall", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.LogToolCall(ctx, []*llm.FunctionCall{{Name: "test"}}, 1, 10, true)
+		s.LogToolCall(ctx, nil, 0, 0, false)
+	})
 
-	s.LogToolResult(ctx, "tool", tools.ToolResult{Text: "ok"}, false)
-	s.LogToolResult(ctx, "", tools.ToolResult{}, true)
+	t.Run("LogToolResult", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.LogToolResult(ctx, "tool", tools.ToolResult{Text: "ok"}, true)
+		s.LogToolResult(ctx, "", tools.ToolResult{}, false)
+	})
 
-	s.RenderHealthReport(ctx, nil)
-	s.RenderHealthReport(ctx, &ports.HealthReport{})
+	t.Run("RenderHealthReport", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.RenderHealthReport(ctx, &ports.HealthReport{})
+		s.RenderHealthReport(ctx, nil)
+	})
 
-	s.SetUseColor(true)
-	s.SetUseColor(false)
+	t.Run("SetUseColor", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.SetUseColor(true)
+		s.SetUseColor(false)
+	})
 
-	s.SetForceSpinner(true)
-	s.SetForceSpinner(false)
+	t.Run("SetForceSpinner", func(t *testing.T) {
+		t.Parallel()
+		s := &stubUIRenderer{}
+		s.SetForceSpinner(true)
+		s.SetForceSpinner(false)
+	})
 }
 
 func TestStubUIRenderer_IsTerminalContext(t *testing.T) {
@@ -108,10 +142,17 @@ func TestStubUIRenderer_IsTerminalContext(t *testing.T) {
 func TestStubHistoryRenderer_Render(t *testing.T) {
 	t.Parallel()
 
-	s := &stubHistoryRenderer{}
-	// Must not panic with nil/zero args.
-	s.Render(nil, nil, 0, ports.HistoryRenderOptions{})
-	s.Render(io.Discard, nil, 5, ports.HistoryRenderOptions{})
+	t.Run("nil_writer", func(t *testing.T) {
+		t.Parallel()
+		s := &stubHistoryRenderer{}
+		s.Render(nil, nil, 0, ports.HistoryRenderOptions{})
+	})
+
+	t.Run("valid_writer", func(t *testing.T) {
+		t.Parallel()
+		s := &stubHistoryRenderer{}
+		s.Render(io.Discard, nil, 5, ports.HistoryRenderOptions{})
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -413,9 +454,11 @@ func TestStubEventBus_Publish(t *testing.T) {
 func TestStubEventBus_Subscribe(t *testing.T) {
 	t.Parallel()
 
-	bus := &StubEventBus{}
-	// Must not panic.
-	bus.Subscribe(func(ctx context.Context, e events.Event) {})
+	t.Run("noop", func(t *testing.T) {
+		t.Parallel()
+		bus := &StubEventBus{}
+		bus.Subscribe(func(ctx context.Context, e events.Event) {})
+	})
 }
 
 func TestStubEventBus_Shutdown_NilErr(t *testing.T) {
@@ -465,9 +508,11 @@ func TestStubEventBus_Listen(t *testing.T) {
 func TestStubEventBus_WaitStarted(t *testing.T) {
 	t.Parallel()
 
-	bus := &StubEventBus{}
-	// Must not panic.
-	bus.WaitStarted()
+	t.Run("noop", func(t *testing.T) {
+		t.Parallel()
+		bus := &StubEventBus{}
+		bus.WaitStarted()
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -592,27 +637,41 @@ func TestStubCapturer_Close(t *testing.T) {
 func TestStubCapturer_NoOpMethods(t *testing.T) {
 	t.Parallel()
 
-	c := &StubCapturer{}
+	t.Run("Warn", func(t *testing.T) {
+		t.Parallel()
+		c := &StubCapturer{}
+		c.Warn("warning message")
+	})
 
-	// Must not panic.
-	c.Warn("warning message")
-	c.Prompt("prompt message")
+	t.Run("Prompt", func(t *testing.T) {
+		t.Parallel()
+		c := &StubCapturer{}
+		c.Prompt("prompt message")
+	})
 
-	got, err := c.ReadSingleKey(context.Background())
-	if got != "" {
-		t.Errorf("ReadSingleKey should return empty, got %q", got)
-	}
-	if err != nil {
-		t.Errorf("ReadSingleKey unexpected error: %v", err)
-	}
+	t.Run("ReadSingleKey", func(t *testing.T) {
+		t.Parallel()
+		c := &StubCapturer{}
+		got, err := c.ReadSingleKey(context.Background())
+		if got != "" {
+			t.Errorf("ReadSingleKey should return empty, got %q", got)
+		}
+		if err != nil {
+			t.Errorf("ReadSingleKey unexpected error: %v", err)
+		}
+	})
 
-	got, err = c.ReadLine(context.Background())
-	if got != "" {
-		t.Errorf("ReadLine should return empty, got %q", got)
-	}
-	if err != nil {
-		t.Errorf("ReadLine unexpected error: %v", err)
-	}
+	t.Run("ReadLine", func(t *testing.T) {
+		t.Parallel()
+		c := &StubCapturer{}
+		got, err := c.ReadLine(context.Background())
+		if got != "" {
+			t.Errorf("ReadLine should return empty, got %q", got)
+		}
+		if err != nil {
+			t.Errorf("ReadLine unexpected error: %v", err)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -918,6 +977,111 @@ func TestMockServiceSecurityManager_Close_Error(t *testing.T) {
 	}
 }
 
+// TestMockServiceSecurityManager_NilFuncs exercises every method's zero-value
+// return path when its Func field is nil. Existing tests only cover the
+// fn != nil branch.
+func TestMockServiceSecurityManager_NilFuncs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(m *MockServiceSecurityManager)
+	}{
+		{
+			name: "IsPathSafe_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				got, err := m.IsPathSafe("/p")
+				if got != "" {
+					t.Errorf("IsPathSafe nil func: got %q, want empty", got)
+				}
+				if err != nil {
+					t.Errorf("IsPathSafe nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "IsPathWritable_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				got, err := m.IsPathWritable("/p")
+				if got != "" {
+					t.Errorf("IsPathWritable nil func: got %q, want empty", got)
+				}
+				if err != nil {
+					t.Errorf("IsPathWritable nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "Authorize_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				got, err := m.Authorize(context.Background(), "l", "d", "r", true)
+				if got {
+					t.Error("Authorize nil func: got true, want false")
+				}
+				if err != nil {
+					t.Errorf("Authorize nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "Confirm_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				got, err := m.Confirm(context.Background(), "msg")
+				if got {
+					t.Error("Confirm nil func: got true, want false")
+				}
+				if err != nil {
+					t.Errorf("Confirm nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "ReadLine_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				got, err := m.ReadLine(context.Background())
+				if got != "" {
+					t.Errorf("ReadLine nil func: got %q, want empty", got)
+				}
+				if err != nil {
+					t.Errorf("ReadLine nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "IsCommandAllowed_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				if m.IsCommandAllowed("ls") {
+					t.Error("IsCommandAllowed nil func: got true, want false")
+				}
+			},
+		},
+		{
+			name: "IsBypassActive_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				if m.IsBypassActive() {
+					t.Error("IsBypassActive nil func: got true, want false")
+				}
+			},
+		},
+		{
+			name: "Close_nil_func",
+			call: func(m *MockServiceSecurityManager) {
+				if err := m.Close(); err != nil {
+					t.Errorf("Close nil func: unexpected error %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockServiceSecurityManager{}
+			tt.call(m)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // I. mockServiceAgent (4 hand-rolled spy methods)
 // ---------------------------------------------------------------------------
@@ -1058,6 +1222,53 @@ func TestMockServiceAgent_Shutdown_Error(t *testing.T) {
 	}
 }
 
+// TestMockServiceAgent_NilFuncs exercises every method's zero-value return path
+// when its Func field is nil. Existing tests only cover the fn != nil branch.
+func TestMockServiceAgent_NilFuncs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(m *MockServiceAgent)
+	}{
+		{
+			name: "Chat_nil_func",
+			call: func(m *MockServiceAgent) {
+				err := m.Chat(context.Background(), &ports.Session{ID: "nil-test"}, "hello")
+				if err != nil {
+					t.Errorf("Chat nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "SetLimits_nil_func",
+			call: func(m *MockServiceAgent) {
+				err := m.SetLimits(context.Background(), 5, 1000, 10)
+				if err != nil {
+					t.Errorf("SetLimits nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "Shutdown_nil_func",
+			call: func(m *MockServiceAgent) {
+				err := m.Shutdown(context.Background())
+				if err != nil {
+					t.Errorf("Shutdown nil func: unexpected error %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockServiceAgent{}
+			tt.call(m)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // J. mockTurnsLogger (3 hand-rolled spy methods)
 // ---------------------------------------------------------------------------
@@ -1151,5 +1362,43 @@ func TestMockTurnsLogger_Close_Error(t *testing.T) {
 	snap := m.Snapshot()
 	if snap["Close"] != 1 {
 		t.Errorf("expected 1 Close call, got %d", snap["Close"])
+	}
+}
+
+// TestMockTurnsLogger_NilFuncs exercises every method's zero-value return path
+// when its Func field is nil. Existing tests only cover the fn != nil branch.
+func TestMockTurnsLogger_NilFuncs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(m *MockTurnsLogger)
+	}{
+		{
+			name: "Listen_nil_func",
+			call: func(m *MockTurnsLogger) {
+				err := m.Listen(context.Background())
+				if err != nil {
+					t.Errorf("Listen nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "Close_nil_func",
+			call: func(m *MockTurnsLogger) {
+				err := m.Close()
+				if err != nil {
+					t.Errorf("Close nil func: unexpected error %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockTurnsLogger{}
+			tt.call(m)
+		})
 	}
 }

@@ -311,6 +311,26 @@ func TestNewCostCapturer(t *testing.T) {
 			t.Error("expected length mismatch error but got none")
 		}
 	})
+
+	t.Run("assert_turn_costs_element_mismatch", func(t *testing.T) {
+		t.Parallel()
+		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+		defer func() { _ = bus.Shutdown(context.Background()) }()
+
+		cc := NewCostCapturer(bus)
+
+		// Publish cost 1.0
+		_ = bus.Publish(context.Background(), events.UsageMetricsEvent{
+			Metrics: &llm.Metrics{Cost: 1.0},
+		})
+
+		// Assert cost 2.0 — should trigger per-element mismatch error
+		ft := &fakeT{}
+		cc.AssertTurnCosts(ft, []float64{2.0})
+		if len(ft.errs) == 0 {
+			t.Error("expected per-element mismatch error but got none")
+		}
+	})
 }
 
 // ──────────────────────── TestNewTestContextManager ──────────────────
@@ -489,5 +509,61 @@ func TestSetupTransitionTurn_Metadata(t *testing.T) {
 	}
 	if len(entry.Parts) == 0 || entry.Parts[0].Text != "test" {
 		t.Error("text does not match expected 'test'")
+	}
+}
+
+// TestSetupTransitionTurn_GenerateFunc_FunctionCall verifies that
+// GenerateFunc produces a FunctionCall part when hasTools is true and the
+// phase is PhaseInference.
+func TestSetupTransitionTurn_GenerateFunc_FunctionCall(t *testing.T) {
+	t.Parallel()
+
+	turn := SetupTransitionTurn(true, orchestrator.PhaseInference, nil)
+
+	content, _, err := turn.Gateway.Generate(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Generate unexpected error: %v", err)
+	}
+	if content == nil {
+		t.Fatal("Generate returned nil content")
+	}
+	if len(content.Parts) == 0 {
+		t.Fatal("Generate returned content with no parts")
+	}
+	fc := content.Parts[0].FunctionCall
+	if fc == nil {
+		t.Fatal("expected FunctionCall part, got nil")
+	}
+	if fc.Name != "test" {
+		t.Errorf("FunctionCall.Name = %q, want %q", fc.Name, "test")
+	}
+}
+
+// TestSetupTransitionTurn_ExecuteFunc_Success verifies the success return
+// path of the mock executor's ExecuteFunc when execErr is nil.
+func TestSetupTransitionTurn_ExecuteFunc_Success(t *testing.T) {
+	t.Parallel()
+
+	turn := SetupTransitionTurn(true, orchestrator.PhaseExecuting, nil)
+
+	content, err := turn.Executor.Execute(context.Background(), &llm.Content{Role: "model"}, 0, 0)
+	if err != nil {
+		t.Fatalf("Execute unexpected error: %v", err)
+	}
+	if content == nil {
+		t.Fatal("Execute returned nil content")
+	}
+	if content.Role != "user" {
+		t.Errorf("Role = %q, want %q", content.Role, "user")
+	}
+	if len(content.Parts) == 0 {
+		t.Fatal("content has no parts")
+	}
+	fr := content.Parts[0].FunctionResponse
+	if fr == nil {
+		t.Fatal("expected FunctionResponse part, got nil")
+	}
+	if fr.Name != "test" {
+		t.Errorf("FunctionResponse.Name = %q, want %q", fr.Name, "test")
 	}
 }
