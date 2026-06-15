@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -38,9 +38,11 @@ help:
 	@echo "  make fmt        - Format code"
 	@echo "  make lint       - Run golangci-lint static analysis"
 	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
-	@echo "  make check      - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck test dead-code test-coverage"
+	@echo "  make check      - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-coverage"
 	@echo "  make bench       - Run all benchmarks with memory allocation metrics"
-	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck test dead-code test-race test-coverage"
+	@echo "  make fuzz       - Run all fuzz targets for 30s each (developer-invoked)"
+	@echo "  make fuzz-smoke - Compile-check fuzz tests are buildable (included in make check)"
+	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-race test-coverage"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
 build:
@@ -382,6 +384,27 @@ BENCH_PKGS := ./internal/agent/session/context \
 bench:
 	go test -bench=. -benchmem -count=1 $(BENCH_PKGS)
 
+# fuzz runs all fuzz targets for 30 seconds each, iterating per-package
+# because go test -fuzz does not support ./... wildcard expansion.
+# This is developer-invoked only — not part of the check pipeline.
+# Use make fuzz-smoke for the fast PR-gating compile check.
+fuzz:
+ifeq ($(IS_POSIX),true)
+	@for pkg in $$(go list ./...); do \
+		go test -fuzz=. -fuzztime=30s -run=NONEXISTENT $$pkg || exit 1; \
+	done
+else
+	@for /f "tokens=*" %%p in ('go list ./...') do ( \
+		go test -fuzz=. -fuzztime=30s -run=NONEXISTENT %%p || exit /b 1 \
+	)
+endif
+
+# fuzz-smoke compiles all test files (including fuzz harnesses) without
+# running any tests. This gates PRs by ensuring fuzz tests stay buildable.
+# Uses -run=NONEXISTENT to skip all tests while still verifying compilation.
+fuzz-smoke:
+	go test -run=NONEXISTENT ./...
+
 # check runs the full quality pipeline in sequence, stopping on first failure.
 # Fast/cheap checks run first so problems surface quickly.
 check: fmt tidy build
@@ -393,6 +416,8 @@ check: fmt tidy build
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
+	@echo "=== fuzz-smoke ==="
+	@$(MAKE) fuzz-smoke
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="
@@ -417,6 +442,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
 	@$(MAKE) verify-adr-index
+	@echo "=== fuzz-smoke ==="
+	@$(MAKE) fuzz-smoke
 	@echo "=== vulncheck ==="
 	@$(MAKE) vulncheck
 	@echo "=== test ==="
