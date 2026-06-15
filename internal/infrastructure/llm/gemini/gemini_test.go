@@ -573,39 +573,40 @@ func TestToSDKSchema(t *testing.T) {
 }
 
 func TestClassifyError(t *testing.T) {
-
 	client := &Client{}
 
 	tests := []struct {
-		name     string
-		err      error
-		expected error
+		name   string
+		err    error
+		wantIs error
 	}{
-		{
-			name:     "NilError",
-			err:      nil,
-			expected: nil,
-		},
-		{
-			name:     "GenericError",
-			err:      fmt.Errorf("some error"),
-			expected: fmt.Errorf("%w: some error", llm.ErrTerminal),
-		},
-		{
-			name:     "RateLimitError",
-			err:      fmt.Errorf("Error 429, Message: Resource exhausted."),
-			expected: fmt.Errorf("%w: Error 429, Message: Resource exhausted.", llm.ErrRateLimit),
-		},
+		{"nil_error", nil, nil},
+		{"domain_auth", llm.ErrAuth, llm.ErrAuth},
+		{"domain_rate_limit", llm.ErrRateLimit, llm.ErrRateLimit},
+		{"domain_transient", llm.ErrTransient, llm.ErrTransient},
+		{"domain_terminal", llm.ErrTerminal, llm.ErrTerminal},
+		{"sdk_format_429", fmt.Errorf("Error 429: Resource exhausted"), llm.ErrRateLimit},
+		{"sdk_format_503", fmt.Errorf("Error 503: Unavailable"), llm.ErrTransient},
+		{"sdk_format_500", fmt.Errorf("Error 500, Message: Internal"), llm.ErrTransient},
+		{"sdk_format_unauthenticated", fmt.Errorf("Error 401, Message: unauthenticated"), llm.ErrAuth},
+		{"sdk_format_permission_denied", fmt.Errorf("Error 403, Message: Permission denied"), llm.ErrTerminal},
+		{"rate_limit_keyword", fmt.Errorf("RATE LIMIT exceeded"), llm.ErrRateLimit},
+		{"quota_keyword", fmt.Errorf("QUOTA exceeded"), llm.ErrRateLimit},
+		{"unavailable_keyword", fmt.Errorf("SERVICE UNAVAILABLE"), llm.ErrTransient},
+		{"unknown_error", fmt.Errorf("something completely unexpected"), llm.ErrTerminal},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := client.classifyError(tt.err)
-			if (got == nil) != (tt.expected == nil) {
-				t.Fatalf("expected error %v, got %v", tt.expected, got)
+			if tt.wantIs == nil {
+				if got != nil {
+					t.Errorf("expected nil, got %v", got)
+				}
+				return
 			}
-			if got != nil && !errors.Is(got, tt.expected) && got.Error() != tt.expected.Error() {
-				t.Errorf("expected error message %q, got %q", tt.expected.Error(), got.Error())
+			if !errors.Is(got, tt.wantIs) {
+				t.Errorf("expected errors.Is(%v, %v), got %v", got, tt.wantIs, got)
 			}
 		})
 	}
@@ -627,6 +628,10 @@ func TestSendChat_ClassifyError_Integration(t *testing.T) {
 		{"HTTP 429 → ErrRateLimit", http.StatusTooManyRequests, `{"error":{"code":429,"message":"Resource exhausted"}}`, llm.ErrRateLimit},
 		{"HTTP 503 → ErrTransient", http.StatusServiceUnavailable, `{"error":{"code":503,"message":"Unavailable"}}`, llm.ErrTransient},
 		{"HTTP 400 → ErrTerminal", http.StatusBadRequest, `{"error":{"code":400,"message":"Bad request"}}`, llm.ErrTerminal},
+		{"HTTP 500 → ErrTransient", http.StatusInternalServerError, `{"error":{"code":500,"message":"Internal"}}`, llm.ErrTransient},
+		{"HTTP 502 → ErrTransient", http.StatusBadGateway, `{"error":{"code":502,"message":"Bad Gateway"}}`, llm.ErrTransient},
+		{"HTTP 408 → ErrTransient", http.StatusRequestTimeout, `{"error":{"code":408,"message":"Timeout"}}`, llm.ErrTransient},
+		{"HTTP 403 → ErrTerminal", http.StatusForbidden, `{"error":{"code":403,"message":"Forbidden"}}`, llm.ErrTerminal},
 	}
 
 	for _, tt := range tests {
@@ -1361,5 +1366,58 @@ func TestNewClient_Options(t *testing.T) {
 	}
 	if _, ok := c.logger.(*ports.NoOpLogger); !ok {
 		t.Error("expected logger to be NoOpLogger")
+	}
+}
+
+func TestSendChat_SDKError_Direct(t *testing.T) {
+	tests := []struct {
+		name         string
+		sdkInitErr   error
+		wantSentinel error
+	}{
+		{
+			name:         "sdk init auth error",
+			sdkInitErr:   fmt.Errorf("Error 401, Message: unauthenticated"),
+			wantSentinel: llm.ErrAuth,
+		},
+		{
+			name:         "sdk init rate limit",
+			sdkInitErr:   fmt.Errorf("Error 429, Message: Resource exhausted."),
+			wantSentinel: llm.ErrRateLimit,
+		},
+		{
+			name:         "sdk init unavailable",
+			sdkInitErr:   fmt.Errorf("Error 503, Message: The server encountered a temporary error."),
+			wantSentinel: llm.ErrTransient,
+		},
+		{
+			name:         "sdk init bad request",
+			sdkInitErr:   fmt.Errorf("Error 400, Message: Invalid request."),
+			wantSentinel: llm.ErrTerminal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				apiURL:        "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models",
+				model:         "test-model",
+				authenticator: &stubAuthenticator{token: "test"},
+				logger:        &ports.NoOpLogger{},
+				timeout:       5 * time.Second,
+				newGenaiClient: func(ctx context.Context, cfg *genai.ClientConfig) (*genai.Client, error) {
+					return nil, tt.sdkInitErr
+				},
+			}
+
+			err := c.initSDK(5 * time.Second)
+			if err == nil {
+				t.Fatal("expected initSDK error, got nil")
+			}
+			classified := c.classifyError(err)
+			if !errors.Is(classified, tt.wantSentinel) {
+				t.Errorf("expected error wrapping %v, got: %v", tt.wantSentinel, classified)
+			}
+		})
 	}
 }

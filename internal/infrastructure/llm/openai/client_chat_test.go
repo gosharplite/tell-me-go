@@ -403,53 +403,123 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 	}
 }
 
-func TestSendChat_Errors(t *testing.T) {
-	tests := []struct {
-		name          string
-		status        int
-		response      string
-		expectedError string
-		isAPIError    bool
-	}{
+func TestSendChat_ErrorHandling(t *testing.T) {
+	type testCase struct {
+		name               string
+		statusCode         int
+		responseBody       string
+		wantAPIErrorStatus int   // 0 means error is NOT an *llmerr.APIError
+		wantSentinel       error // nil means skip Classify assertion
+		wantErrContains    string
+	}
+
+	tests := []testCase{
+		// ── Dimension 1: HTTP status codes ──────────────────────────
 		{
-			name:          "401 Unauthorized",
-			status:        http.StatusUnauthorized,
-			response:      `{"error": {"message": "Invalid API key", "type": "invalid_request_error"}}`,
-			expectedError: "api error (status 401)",
-			isAPIError:    true,
+			name:               "400_bad_request",
+			statusCode:         400,
+			responseBody:       `{"error":{"message":"Invalid request","type":"invalid_request_error"}}`,
+			wantAPIErrorStatus: 400,
+			wantSentinel:       llm.ErrTerminal,
+			wantErrContains:    "api error (status 400)",
 		},
 		{
-			name:          "429 Rate Limit",
-			status:        http.StatusTooManyRequests,
-			response:      `{"error": {"message": "Rate limit reached", "type": "requests"}}`,
-			expectedError: "api error (status 429)",
-			isAPIError:    true,
+			name:               "401_unauthorized",
+			statusCode:         401,
+			responseBody:       `{"error":{"message":"Invalid API key","type":"invalid_request_error"}}`,
+			wantAPIErrorStatus: 401,
+			wantSentinel:       llm.ErrAuth,
+			wantErrContains:    "api error (status 401)",
 		},
 		{
-			name:          "Malformed JSON",
-			status:        http.StatusOK,
-			response:      `{ "choices": [ { "mess...`,
-			expectedError: "failed to decode response",
+			name:               "403_forbidden",
+			statusCode:         403,
+			responseBody:       `{"error":{"message":"Access denied","type":"permission_error"}}`,
+			wantAPIErrorStatus: 403,
+			wantSentinel:       llm.ErrTerminal,
+			wantErrContains:    "api error (status 403)",
 		},
 		{
-			name:          "Empty Choices",
-			status:        http.StatusOK,
-			response:      `{"choices": [], "usage": {"total_tokens": 0}}`,
-			expectedError: "no choices returned from api",
+			name:               "408_timeout",
+			statusCode:         408,
+			responseBody:       `{"error":{"message":"Request timeout","type":"timeout_error"}}`,
+			wantAPIErrorStatus: 408,
+			wantSentinel:       llm.ErrTransient,
+			wantErrContains:    "api error (status 408)",
 		},
 		{
-			name:          "Tool Call with Invalid Arguments JSON",
-			status:        http.StatusOK,
-			response:      `{"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "test_tool", "arguments": "{broken json"}}]}, "content": "ok"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}`,
-			expectedError: "failed to unmarshal tool arguments",
+			name:               "429_rate_limit",
+			statusCode:         429,
+			responseBody:       `{"error":{"message":"Rate limit reached","type":"rate_limit_error"}}`,
+			wantAPIErrorStatus: 429,
+			wantSentinel:       llm.ErrRateLimit,
+			wantErrContains:    "api error (status 429)",
+		},
+		{
+			name:               "499_client_closed",
+			statusCode:         499,
+			responseBody:       `{"error":{"message":"Client closed request","type":"cancelled"}}`,
+			wantAPIErrorStatus: 499,
+			wantSentinel:       llm.ErrTransient,
+			wantErrContains:    "api error (status 499)",
+		},
+		{
+			name:               "500_internal",
+			statusCode:         500,
+			responseBody:       `{"error":{"message":"Internal server error","type":"server_error"}}`,
+			wantAPIErrorStatus: 500,
+			wantSentinel:       llm.ErrTransient,
+			wantErrContains:    "api error (status 500)",
+		},
+		{
+			name:               "502_bad_gateway",
+			statusCode:         502,
+			responseBody:       `{"error":{"message":"Bad gateway","type":"server_error"}}`,
+			wantAPIErrorStatus: 502,
+			wantSentinel:       llm.ErrTransient,
+			wantErrContains:    "api error (status 502)",
+		},
+		{
+			name:               "503_unavailable",
+			statusCode:         503,
+			responseBody:       `{"error":{"message":"Service unavailable","type":"server_error"}}`,
+			wantAPIErrorStatus: 503,
+			wantSentinel:       llm.ErrTransient,
+			wantErrContains:    "api error (status 503)",
+		},
+
+		// ── Dimension 2: Malformed / edge response bodies ──────────
+		{
+			name:            "malformed_json",
+			statusCode:      200,
+			responseBody:    `{"choices": [{"mess...`,
+			wantErrContains: "failed to decode response",
+			// not an APIError (200 with broken body → decode failure)
+		},
+		{
+			name:            "empty_choices",
+			statusCode:      200,
+			responseBody:    `{"choices":[],"usage":{"total_tokens":0}}`,
+			wantErrContains: "no choices returned from api",
+			// not an APIError (valid 200 but empty choices)
+		},
+
+		// ── Dimension 3: Tool call error path ──────────────────────
+		{
+			name:            "tool_call_invalid_args",
+			statusCode:      200,
+			responseBody:    `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"test_tool","arguments":"{broken json"}}]},"content":"ok"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`,
+			wantErrContains: "failed to unmarshal tool arguments",
+			// not an APIError (valid 200 but broken tool args)
 		},
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte(tt.response))
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -460,20 +530,77 @@ func TestSendChat_Errors(t *testing.T) {
 				t.Fatal("expected error, got nil")
 			}
 
-			if !strings.Contains(err.Error(), tt.expectedError) {
-				t.Errorf("expected error containing %q, got %q", tt.expectedError, err.Error())
+			// Assertion A: error message contains expected substring
+			if !strings.Contains(err.Error(), tt.wantErrContains) {
+				t.Errorf("expected error containing %q, got %q", tt.wantErrContains, err.Error())
 			}
 
-			if tt.isAPIError {
+			// Assertion B: APIError type + status (only for status-code rows)
+			if tt.wantAPIErrorStatus != 0 {
 				var apiErr *llmerr.APIError
 				if !errors.As(err, &apiErr) {
-					t.Errorf("expected llmerr.APIError, got %T", err)
-				} else if apiErr.Status != tt.status {
-					t.Errorf("expected status %d, got %d", tt.status, apiErr.Status)
+					t.Fatalf("expected *llmerr.APIError, got %T", err)
+				}
+				if apiErr.Status != tt.wantAPIErrorStatus {
+					t.Errorf("status: got %d, want %d", apiErr.Status, tt.wantAPIErrorStatus)
+				}
+
+				// Assertion C: Classify maps to the correct domain sentinel
+				if tt.wantSentinel != nil {
+					classified := llmerr.Classify(apiErr)
+					if !errors.Is(classified, tt.wantSentinel) {
+						t.Errorf("Classify: got %v, want %v", classified, tt.wantSentinel)
+					}
 				}
 			}
 		})
 	}
+
+	// ── Response body variants for HTTP 500 ───────────────────────
+	t.Run("500_responseBodyVariant", func(t *testing.T) {
+		variants := []struct {
+			name string
+			body string
+		}{
+			{"empty_body", ""},
+			{"non_json_body", "<html>Internal Server Error</html>"},
+		}
+
+		for _, v := range variants {
+			v := v
+			t.Run(v.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+					if v.body != "" {
+						_, _ = w.Write([]byte(v.body))
+					}
+				}))
+				defer server.Close()
+
+				client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"})
+				_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				// Must still be an APIError
+				var apiErr *llmerr.APIError
+				if !errors.As(err, &apiErr) {
+					t.Fatalf("expected *llmerr.APIError, got %T", err)
+				}
+				if apiErr.Status != 500 {
+					t.Errorf("status: got %d, want 500", apiErr.Status)
+				}
+
+				// Classify must map to ErrTransient
+				classified := llmerr.Classify(apiErr)
+				if !errors.Is(classified, llm.ErrTransient) {
+					t.Errorf("Classify: got %v, want %v", classified, llm.ErrTransient)
+				}
+			})
+		}
+	})
 }
 
 func TestSendChat_EmptyToolResponseID(t *testing.T) {
