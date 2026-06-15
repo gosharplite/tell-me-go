@@ -454,6 +454,88 @@ func TestTracingDecorator(t *testing.T) {
 	assert.True(t, next.Called)
 }
 
+func TestTracingDecorator_ErrorLogging(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		mockResult tools.ToolResult
+		mockErr    error
+		wantLogMsg string
+		wantStatus string
+	}{
+		{
+			name:       "tool_error_triggers_failure_log",
+			mockResult: tools.ToolResult{Text: "fail"},
+			mockErr:    errors.New("disk full"),
+			wantLogMsg: "Tool execution failed",
+			wantStatus: "error",
+		},
+		{
+			name:       "tool_success_triggers_completion_log",
+			mockResult: tools.ToolResult{Text: "ok"},
+			mockErr:    nil,
+			wantLogMsg: "Tool execution completed",
+			wantStatus: "success",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			registry := &panicRegistry{}
+			logger := &capturingLogger{}
+			next := &mockExecutor{Result: tt.mockResult, Err: tt.mockErr}
+			decorator := newTracingDecorator(next, registry, logger)
+
+			res, err := decorator.Execute(
+				context.Background(),
+				&tools.ToolDeclaration{Name: "test"},
+				&llm.FunctionCall{Name: "test"},
+				nil,
+			)
+
+			// Tool result is passed through regardless of error
+			assert.Equal(t, tt.mockResult.Text, res.Text)
+			assert.True(t, next.Called)
+
+			if tt.mockErr != nil {
+				assert.EqualError(t, err, tt.mockErr.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+
+			// Verify Debug log was captured
+			assert.True(t, logger.debugCalled, "expected Debug to be called")
+			assert.Equal(t, tt.wantLogMsg, logger.debugMsg)
+
+			// Extract attributes from debug args
+			attrs := make(map[string]any)
+			for i := 0; i < len(logger.debugArgs); i += 2 {
+				if i+1 < len(logger.debugArgs) {
+					key, ok := logger.debugArgs[i].(string)
+					if ok {
+						attrs[key] = logger.debugArgs[i+1]
+					}
+				}
+			}
+
+			assert.Equal(t, tt.wantStatus, attrs["status"],
+				"status attribute mismatch")
+			assert.Equal(t, "test", attrs["tool_name"],
+				"tool_name attribute mismatch")
+
+			if tt.wantStatus == "error" {
+				assert.Contains(t, attrs, "error_reason",
+					"error case must include error_reason attribute")
+				assert.Contains(t, attrs["error_reason"].(string), "disk full")
+			}
+		})
+	}
+}
+
 func TestFormatToolExecutionError(t *testing.T) {
 	err1 := errors.New("system error")
 	err2 := errors.New("tool error")
