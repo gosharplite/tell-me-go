@@ -40,7 +40,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 			name:          "exact boundary",
 			maxOutput:     7, // 6 bytes for "世界" + 1 byte for newline added by executor
 			expectedPart:  "世界",
-			wantTruncated: false,
+			wantTruncated: true, // Buffer filled to capacity → truncated flag set
 		},
 		{
 			name:          "truncate middle of char",

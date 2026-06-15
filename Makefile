@@ -391,11 +391,22 @@ bench:
 fuzz:
 ifeq ($(IS_POSIX),true)
 	@for pkg in $$(go list ./...); do \
-		go test -fuzz=. -fuzztime=30s -run=NONEXISTENT $$pkg || exit 1; \
+		targets=$$(go test -list='Fuzz' $$pkg 2>/dev/null | grep '^Fuzz'); \
+		if [ -z "$$targets" ]; then \
+			echo "  ✓ $$pkg (no fuzz targets, skipping)"; \
+		else \
+			for target in $$targets; do \
+				echo "  fuzz $$pkg/$$target..."; \
+				go test -fuzz=^$$target$$ -fuzztime=30s -run=NONEXISTENT $$pkg || exit 1; \
+			done; \
+		fi; \
 	done
 else
 	@for /f "tokens=*" %%p in ('go list ./...') do ( \
-		go test -fuzz=. -fuzztime=30s -run=NONEXISTENT %%p || exit /b 1 \
+		for /f "tokens=*" %%t in ('go test -list=Fuzz %%p 2^>nul ^| findstr /R "^Fuzz"') do ( \
+			echo fuzz %%p/%%t... & \
+			go test -fuzz=^%%t$$ -fuzztime=30s -run=NONEXISTENT %%p || exit /b 1 \
+		) \
 	)
 endif
 

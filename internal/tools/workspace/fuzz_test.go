@@ -28,11 +28,8 @@ func verifyStreamProcessorInvariants(t *testing.T, sp *streamProcessor, sb *stri
 		t.Errorf("*sp.totalCaptured = %d, sb.Len() = %d; want equal", *sp.totalCaptured, sb.Len())
 	}
 
-	// (d) Truncation invariant: if we are exactly at maxCapture, the
-	// truncated flag must be set. A line that fits precisely without
-	// exceeding remaining capacity will not trigger truncation in the
-	// current implementation, so the fuzzer may discover counter-
-	// examples to this property.
+	// (d) Truncation invariant: if the buffer is exactly at maxCapture,
+	// the truncated flag must be set — further writes will be dropped.
 	if sb.Len() > 0 && sb.Len() == sp.maxCapture && !sp.truncated.Load() {
 		t.Errorf("sb.Len() == maxCapture (%d) but truncated is false", sp.maxCapture)
 	}
@@ -99,9 +96,11 @@ func FuzzStreamProcessor(f *testing.F) {
 		sbLenBeforeAppend := sb.Len()
 		sp.appendErr(&sb, bufio.ErrTooLong)
 		if sbLenBeforeAppend < sp.maxCapture {
-			// Warning should appear only when remaining > 0
-			if !strings.Contains(sb.String(), "[Warning] Output line too long") {
-				t.Errorf("appendErr(ErrTooLong): expected warning in sb when remaining > 0, got %q", sb.String())
+			// When remaining > 0, appendErr must write at least some content
+			// (even if truncated by sanitizeAndTruncateUTF8).
+			if sb.Len() <= sbLenBeforeAppend {
+				t.Errorf("appendErr(ErrTooLong): sb did not grow (len=%d before, len=%d after) when remaining > 0",
+					sbLenBeforeAppend, sb.Len())
 			}
 		}
 		// When sb was already at maxCapture, the truncated flag is re-set

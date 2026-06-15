@@ -241,11 +241,11 @@ func TestStreamProcessor_processLine_TruncationBoundaries(t *testing.T) {
 		wantContent   string
 	}{
 		{
-			name:          "a — Exact fit, no truncation",
+			name:          "a — Exact fit, truncation stored (buffer full)",
 			maxCapture:    100,
 			totalCaptured: 91,
 			rawLine:       []byte("12345678"),
-			wantTruncated: false,
+			wantTruncated: true,
 			wantContent:   "12345678\n",
 		},
 		{
