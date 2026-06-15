@@ -9,6 +9,235 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
+// seedConstructors maps fuzz seed names to their concrete []*llm.Content fixtures.
+// Each function is a closure that returns the identical data previously produced
+// by the buildSeedContents switch statement.
+var seedConstructors = map[string]func() []*llm.Content{
+	"empty":     func() []*llm.Content { return []*llm.Content{} },
+	"nil_slice": func() []*llm.Content { return nil },
+	"one_nil_content": func() []*llm.Content {
+		return []*llm.Content{nil}
+	},
+	"nil_parts_slices": func() []*llm.Content {
+		return []*llm.Content{{Role: "user"}}
+	},
+	"nil_part_in_parts": func() []*llm.Content {
+		return []*llm.Content{{
+			Role:  "user",
+			Parts: []*llm.Part{nil, {Text: "hello"}},
+		}}
+	},
+	"nil_part_in_transient": func() []*llm.Content {
+		return []*llm.Content{{
+			Role:           "user",
+			TransientParts: []*llm.Part{nil, {Text: "transient"}},
+		}}
+	},
+	"text_only": func() []*llm.Content {
+		return []*llm.Content{{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: "hello world"}},
+		}}
+	},
+	"function_call": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "model",
+			Parts: []*llm.Part{{
+				FunctionCall: &llm.FunctionCall{
+					Name: "search",
+					Args: map[string]interface{}{"q": "test", "n": float64(5)},
+				},
+			}},
+		}}
+	},
+	"function_response": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "tool",
+			Parts: []*llm.Part{{
+				FunctionResponse: &llm.FunctionResponse{
+					Name:     "search",
+					Response: map[string]interface{}{"ok": true, "count": float64(3)},
+				},
+			}},
+		}}
+	},
+	"inline_data": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "user",
+			Parts: []*llm.Part{{
+				InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake")},
+			}},
+		}}
+	},
+	"transient_only": func() []*llm.Content {
+		return []*llm.Content{{
+			Role:           "user",
+			Parts:          []*llm.Part{},
+			TransientParts: []*llm.Part{{Text: "transient instruction"}},
+		}}
+	},
+	"mixed_all_types": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "model",
+			Parts: []*llm.Part{{
+				Text: "mixed",
+				FunctionCall: &llm.FunctionCall{
+					Name: "multi",
+					Args: map[string]interface{}{"x": float64(1)},
+				},
+				FunctionResponse: &llm.FunctionResponse{
+					Name:     "multi",
+					Response: map[string]interface{}{"y": "z"},
+				},
+				InlineData: &llm.Blob{MIMEType: "text/plain", Data: []byte("data")},
+			}},
+			TransientParts: []*llm.Part{{Text: "transient"}},
+		}}
+	},
+	"nil_functioncall_args": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "model",
+			Parts: []*llm.Part{{
+				FunctionCall: &llm.FunctionCall{Name: "f", Args: nil},
+			}},
+		}}
+	},
+	"nil_functionresponse_response": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "tool",
+			Parts: []*llm.Part{{
+				FunctionResponse: &llm.FunctionResponse{Name: "g", Response: nil},
+			}},
+		}}
+	},
+	"nested_maps": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "tool",
+			Parts: []*llm.Part{{
+				FunctionResponse: &llm.FunctionResponse{
+					Name: "nest",
+					Response: map[string]interface{}{
+						"a": map[string]interface{}{
+							"b": map[string]interface{}{
+								"c": "d",
+							},
+						},
+					},
+				},
+			}},
+		}}
+	},
+	"mixed_slice_types": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "tool",
+			Parts: []*llm.Part{{
+				FunctionResponse: &llm.FunctionResponse{
+					Name: "mix",
+					Response: map[string]interface{}{
+						"items": []interface{}{"str", float64(1), true, nil},
+					},
+				},
+			}},
+		}}
+	},
+	"multiple_contents": func() []*llm.Content {
+		return []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+			{Role: "model", Parts: []*llm.Part{{
+				FunctionCall: &llm.FunctionCall{
+					Name: "f",
+					Args: map[string]interface{}{"x": "y"},
+				},
+			}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "thanks"}}},
+		}
+	},
+	"large_text": func() []*llm.Content {
+		large := make([]byte, 10000)
+		for i := range large {
+			large[i] = 'a'
+		}
+		return []*llm.Content{{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: string(large)}},
+		}}
+	},
+	"circular_map": func() []*llm.Content {
+		selfRef := map[string]interface{}{}
+		selfRef["self"] = selfRef
+		return []*llm.Content{{
+			Role: "tool",
+			Parts: []*llm.Part{{
+				FunctionResponse: &llm.FunctionResponse{
+					Name:     "cycle",
+					Response: selfRef,
+				},
+			}},
+		}}
+	},
+	"overflow_many_contents": func() []*llm.Content {
+		n := 1000
+		contents := make([]*llm.Content, n)
+		for i := 0; i < n; i++ {
+			role := "user"
+			if i%2 == 1 {
+				role = "model"
+			}
+			text := make([]byte, 1024)
+			for j := range text {
+				text[j] = byte('a' + (i+j)%26)
+			}
+			contents[i] = &llm.Content{
+				Role: role,
+				Parts: []*llm.Part{
+					{Text: string(text)},
+					{
+						FunctionCall: &llm.FunctionCall{
+							Name: "f",
+							Args: map[string]interface{}{
+								"input":   string(text),
+								"count":   float64(i),
+								"enabled": i%2 == 0,
+								"nested": map[string]interface{}{
+									"key": "value",
+								},
+							},
+						},
+					},
+				},
+			}
+		}
+		return contents
+	},
+	"exotic_map_types": func() []*llm.Content {
+		return []*llm.Content{{
+			Role: "tool",
+			Parts: []*llm.Part{{
+				FunctionResponse: &llm.FunctionResponse{
+					Name: "exotic",
+					Response: map[string]interface{}{
+						"int32_val":    int32(42),
+						"float32_val":  float32(3.14),
+						"uint_val":     uint(100),
+						"byte_slice":   []byte("raw bytes"),
+						"string_slice": []string{"a", "b", "c"},
+						"empty_slice":  []interface{}{},
+						"deep_nest": map[string]interface{}{
+							"l2": map[string]interface{}{
+								"l3": map[string]interface{}{
+									"l4": map[string]interface{}{
+										"l5": "deep",
+									},
+								},
+							},
+						},
+					},
+				},
+			}},
+		}}
+	},
+}
+
 // FuzzTokenCounter verifies that HeuristicTokenCounter.Count never panics
 // and always produces a non-negative result across all nil-variant scenarios,
 // randomized Part types, and nil Content pointers.
@@ -61,231 +290,10 @@ func FuzzTokenCounter(f *testing.F) {
 // The default branch handles fuzzer-generated mutations by using the seed
 // string directly as text content.
 func buildSeedContents(seed string) []*llm.Content {
-	switch seed {
-	case "empty":
-		return []*llm.Content{}
-	case "nil_slice":
-		return nil
-	case "one_nil_content":
-		return []*llm.Content{nil}
-	case "nil_parts_slices":
-		return []*llm.Content{{Role: "user"}}
-	case "nil_part_in_parts":
-		return []*llm.Content{{
-			Role:  "user",
-			Parts: []*llm.Part{nil, {Text: "hello"}},
-		}}
-	case "nil_part_in_transient":
-		return []*llm.Content{{
-			Role:           "user",
-			TransientParts: []*llm.Part{nil, {Text: "transient"}},
-		}}
-	case "text_only":
-		return []*llm.Content{{
-			Role:  "user",
-			Parts: []*llm.Part{{Text: "hello world"}},
-		}}
-	case "function_call":
-		return []*llm.Content{{
-			Role: "model",
-			Parts: []*llm.Part{{
-				FunctionCall: &llm.FunctionCall{
-					Name: "search",
-					Args: map[string]interface{}{"q": "test", "n": float64(5)},
-				},
-			}},
-		}}
-	case "function_response":
-		return []*llm.Content{{
-			Role: "tool",
-			Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{
-					Name:     "search",
-					Response: map[string]interface{}{"ok": true, "count": float64(3)},
-				},
-			}},
-		}}
-	case "inline_data":
-		return []*llm.Content{{
-			Role: "user",
-			Parts: []*llm.Part{{
-				InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake")},
-			}},
-		}}
-	case "transient_only":
-		return []*llm.Content{{
-			Role:           "user",
-			Parts:          []*llm.Part{},
-			TransientParts: []*llm.Part{{Text: "transient instruction"}},
-		}}
-	case "mixed_all_types":
-		return []*llm.Content{{
-			Role: "model",
-			Parts: []*llm.Part{{
-				Text: "mixed",
-				FunctionCall: &llm.FunctionCall{
-					Name: "multi",
-					Args: map[string]interface{}{"x": float64(1)},
-				},
-				FunctionResponse: &llm.FunctionResponse{
-					Name:     "multi",
-					Response: map[string]interface{}{"y": "z"},
-				},
-				InlineData: &llm.Blob{MIMEType: "text/plain", Data: []byte("data")},
-			}},
-			TransientParts: []*llm.Part{{Text: "transient"}},
-		}}
-	case "nil_functioncall_args":
-		return []*llm.Content{{
-			Role: "model",
-			Parts: []*llm.Part{{
-				FunctionCall: &llm.FunctionCall{Name: "f", Args: nil},
-			}},
-		}}
-	case "nil_functionresponse_response":
-		return []*llm.Content{{
-			Role: "tool",
-			Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{Name: "g", Response: nil},
-			}},
-		}}
-	case "nested_maps":
-		return []*llm.Content{{
-			Role: "tool",
-			Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{
-					Name: "nest",
-					Response: map[string]interface{}{
-						"a": map[string]interface{}{
-							"b": map[string]interface{}{
-								"c": "d",
-							},
-						},
-					},
-				},
-			}},
-		}}
-	case "mixed_slice_types":
-		return []*llm.Content{{
-			Role: "tool",
-			Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{
-					Name: "mix",
-					Response: map[string]interface{}{
-						"items": []interface{}{"str", float64(1), true, nil},
-					},
-				},
-			}},
-		}}
-	case "multiple_contents":
-		return []*llm.Content{
-			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-			{Role: "model", Parts: []*llm.Part{{
-				FunctionCall: &llm.FunctionCall{
-					Name: "f",
-					Args: map[string]interface{}{"x": "y"},
-				},
-			}}},
-			{Role: "user", Parts: []*llm.Part{{Text: "thanks"}}},
-		}
-	case "large_text":
-		large := make([]byte, 10000)
-		for i := range large {
-			large[i] = 'a'
-		}
-		return []*llm.Content{{
-			Role:  "user",
-			Parts: []*llm.Part{{Text: string(large)}},
-		}}
-	case "circular_map":
-		// Self-referencing map: exercises unbounded recursion path (R2).
-		// This should NOT panic or stack-overflow; if it does, the fuzz
-		// framework will report the crash.
-		selfRef := map[string]interface{}{}
-		selfRef["self"] = selfRef
-		return []*llm.Content{{
-			Role: "tool",
-			Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{
-					Name:     "cycle",
-					Response: selfRef,
-				},
-			}},
-		}}
-	case "overflow_many_contents":
-		// 1000 contents each with a 1KB text + function call with args.
-		// Stresses totalTokens accumulation. On 64-bit systems this is
-		// harmless (~1000 * 350 ≈ 350K tokens); the seed validates no
-		// panic and non-negative result under bulk input.
-		n := 1000
-		contents := make([]*llm.Content, n)
-		for i := 0; i < n; i++ {
-			role := "user"
-			if i%2 == 1 {
-				role = "model"
-			}
-			// ~1KB text
-			text := make([]byte, 1024)
-			for j := range text {
-				text[j] = byte('a' + (i+j)%26)
-			}
-			contents[i] = &llm.Content{
-				Role: role,
-				Parts: []*llm.Part{
-					{Text: string(text)},
-					{
-						FunctionCall: &llm.FunctionCall{
-							Name: "f",
-							Args: map[string]interface{}{
-								"input":   string(text),
-								"count":   float64(i),
-								"enabled": i%2 == 0,
-								"nested": map[string]interface{}{
-									"key": "value",
-								},
-							},
-						},
-					},
-				},
-			}
-		}
-		return contents
-
-	case "exotic_map_types":
-		// Maps with types that fall through to the default branch (20 chars)
-		// of estimateValueSizeInternal. Confirms no type-assertion panic.
-		return []*llm.Content{{
-			Role: "tool",
-			Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{
-					Name: "exotic",
-					Response: map[string]interface{}{
-						"int32_val":    int32(42),
-						"float32_val":  float32(3.14),
-						"uint_val":     uint(100),
-						"byte_slice":   []byte("raw bytes"),
-						"string_slice": []string{"a", "b", "c"}, // NOT []interface{}
-						"empty_slice":  []interface{}{},
-						"deep_nest": map[string]interface{}{
-							"l2": map[string]interface{}{
-								"l3": map[string]interface{}{
-									"l4": map[string]interface{}{
-										"l5": "deep",
-									},
-								},
-							},
-						},
-					},
-				},
-			}},
-		}}
-	default:
-		// Fuzzer-generated mutations: use seed as text to explore the string space.
-		return []*llm.Content{{
-			Role:  "user",
-			Parts: []*llm.Part{{Text: seed}},
-		}}
+	if fn, ok := seedConstructors[seed]; ok {
+		return fn()
 	}
+	return []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: seed}}}}
 }
 
 // verifyInvariants checks that Count results satisfy basic correctness properties.
