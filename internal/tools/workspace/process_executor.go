@@ -203,7 +203,7 @@ func (e *processExecutor) handleCaptureError(err error, sb *strings.Builder, mu 
 		if len(fullMsg) > remaining {
 			truncated.Store(true)
 		}
-		content := truncateToValidUTF8(fullMsg, remaining)
+		content := sanitizeAndTruncateUTF8(fullMsg, remaining)
 		sb.WriteString(content)
 	} else {
 		truncated.Store(true)
@@ -395,9 +395,11 @@ func (wt *writeTracker) Write(w io.Writer, p []byte) {
 	}
 }
 
-// truncateToValidUTF8 ensures that a string is truncated to a maximum number of bytes
-// without breaking a multi-byte UTF-8 character.
-func truncateToValidUTF8(s string, maxBytes int) string {
+// sanitizeAndTruncateUTF8 strips invalid UTF-8 sequences from s, then
+// ensures the result does not exceed maxBytes without breaking a
+// multi-byte UTF-8 character at the boundary.
+func sanitizeAndTruncateUTF8(s string, maxBytes int) string {
+	s = strings.ToValidUTF8(s, "")
 	if len(s) <= maxBytes {
 		return s
 	}
