@@ -165,7 +165,7 @@ func TestEstimatePartChars_InlineData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEstimateMapSizeInternal_NilMap(t *testing.T) {
-	size := estimateMapSizeInternal(nil)
+	size := estimateMapSizeInternal(nil, 0)
 
 	require.Equal(t, 0, size, "nil map must return 0")
 }
@@ -221,7 +221,7 @@ func TestEstimateValueSizeInternal_AllTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := estimateValueSizeInternal(tt.input)
+			got := estimateValueSizeInternal(tt.input, 0)
 			require.Equal(t, tt.expected, got,
 				"estimateValueSizeInternal(%v)", tt.input)
 		})

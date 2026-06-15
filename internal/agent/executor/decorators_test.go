@@ -244,6 +244,201 @@ func TestSafetyDecorator_PrecedenceLogic(t *testing.T) {
 	})
 }
 
+// TestSafetyDecorator_ContextCancellationPrecedence exercises the precedence-check
+// logic in decorators.go:91-93 directly, without going through the goroutine-based
+// select statement. This ensures deterministic coverage of the branch where both
+// the tool returned an error AND the context is cancelled/deadline-exceeded.
+func TestSafetyDecorator_ContextCancellationPrecedence(t *testing.T) {
+	t.Parallel()
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	d := newSafetyDecorator(
+		&mockExecutor{},
+		registry,
+		logger,
+		bus,
+		zombie,
+		5*time.Second,
+		5*time.Second,
+		10*time.Millisecond,
+	).(*safetyDecorator)
+
+	tests := []struct {
+		name             string
+		toolErr          error
+		ctxErr           error
+		activeTimeout    time.Duration
+		wantNilError     bool
+		wantTextContains string
+		wantErrorWraps   error
+	}{
+		{
+			name:             "context_canceled_tool_errored",
+			toolErr:          errors.New("raw tool crash"),
+			ctxErr:           context.Canceled,
+			activeTimeout:    5 * time.Second,
+			wantNilError:     true,
+			wantTextContains: "interrupted or cancelled",
+			wantErrorWraps:   context.Canceled,
+		},
+		{
+			name:             "context_deadline_exceeded_tool_errored",
+			toolErr:          errors.New("tool timed out internally"),
+			ctxErr:           context.DeadlineExceeded,
+			activeTimeout:    2 * time.Second,
+			wantNilError:     true,
+			wantTextContains: "timed out after 2s",
+			wantErrorWraps:   llm.ErrTransient,
+		},
+		{
+			name:             "context_canceled_tool_succeeded",
+			toolErr:          nil,
+			ctxErr:           context.Canceled,
+			activeTimeout:    5 * time.Second,
+			wantNilError:     false,
+			wantTextContains: "",
+			wantErrorWraps:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			out := tools.ToolOutput{
+				Result: tools.ToolResult{Text: "raw tool output"},
+				Err:    tt.toolErr,
+			}
+
+			var ctx context.Context
+			var cancel context.CancelFunc
+			switch {
+			case errors.Is(tt.ctxErr, context.Canceled):
+				ctx, cancel = context.WithCancel(context.Background())
+				cancel()
+			case errors.Is(tt.ctxErr, context.DeadlineExceeded):
+				ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+				defer cancel()
+			default:
+				ctx = context.Background()
+			}
+
+			var result tools.ToolResult
+			var execErr error
+
+			result, execErr = d.handleToolOutput(out, ctx, tt.activeTimeout)
+
+			if tt.wantNilError {
+				require.NoError(t, execErr, "second return value must be nil")
+			} else {
+				require.Equal(t, tt.toolErr, execErr, "second return value must be the tool error")
+			}
+
+			if tt.wantTextContains != "" {
+				require.Contains(t, result.Text, tt.wantTextContains)
+			}
+
+			if tt.wantErrorWraps != nil {
+				require.Error(t, result.Error, "result.Error must be non-nil")
+				require.True(t, errors.Is(result.Error, tt.wantErrorWraps),
+					"result.Error must wrap %v, got: %v", tt.wantErrorWraps, result.Error)
+			} else if tt.toolErr == nil {
+				require.NoError(t, result.Error, "result.Error must be nil when tool succeeded")
+				require.Equal(t, "raw tool output", result.Text)
+			}
+		})
+	}
+}
+
+// TestSafetyDecorator_Execute_RacePrecedence hits the race-condition path at
+// decorators.go:91-93 where the outCh case wins the select when the context
+// is also cancelled/deadline-exceeded and the tool returned an error. Because
+// Go's select is non-deterministic when multiple cases are ready, this test
+// retries up to 200 times to guarantee coverage. The expected behavior is
+// identical for both select branches: formatContextError is returned with a
+// nil second return value.
+func TestSafetyDecorator_Execute_RacePrecedence(t *testing.T) {
+	t.Parallel()
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	t.Run("cancelled_context_outCh_wins", func(t *testing.T) {
+		t.Parallel()
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "raw output"},
+			Err:    errors.New("raw tool crash"),
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			5*time.Second, 5*time.Second, 10*time.Millisecond,
+		)
+
+		// Retry until the select picks outCh over ctx.Done().
+		// Both branches produce formatContextError output, so we verify
+		// the outcome matches regardless of which path was taken.
+		for i := 0; i < 200; i++ {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel() // pre-cancelled per ADR-036 §2
+
+			res, err := decorator.Execute(
+				ctx,
+				&tools.ToolDeclaration{Name: "test"},
+				&llm.FunctionCall{Name: "test"},
+				nil,
+			)
+
+			// Both branches return (friendly result, nil).
+			require.NoError(t, err)
+			require.Error(t, res.Error)
+			require.Contains(t, res.Text, "interrupted or cancelled")
+			require.True(t, errors.Is(res.Error, context.Canceled),
+				"error must wrap context.Canceled")
+		}
+	})
+
+	t.Run("deadlined_context_outCh_wins", func(t *testing.T) {
+		t.Parallel()
+		next := &mockExecutor{
+			Result: tools.ToolResult{Text: "raw output"},
+			Err:    errors.New("tool failed"),
+		}
+		decorator := newSafetyDecorator(
+			next, registry, logger, bus, zombie,
+			1*time.Nanosecond, 1*time.Nanosecond, 10*time.Millisecond,
+		)
+
+		for i := 0; i < 200; i++ {
+			// Pre-deadlined context: ensures child context inherits a past deadline.
+			ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+
+			res, err := decorator.Execute(
+				ctx,
+				&tools.ToolDeclaration{Name: "test"},
+				&llm.FunctionCall{Name: "test"},
+				nil,
+			)
+
+			cancel() // clean up immediately, not deferred
+
+			require.NoError(t, err)
+			require.Error(t, res.Error)
+			require.Contains(t, res.Text, "timed out")
+			require.True(t, errors.Is(res.Error, llm.ErrTransient),
+				"error must wrap llm.ErrTransient")
+		}
+	})
+}
+
 func TestTracingDecorator(t *testing.T) {
 	t.Parallel()
 	registry := &panicRegistry{}

@@ -58,10 +58,10 @@ func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, pref
 
 	remaining := sp.maxCapture - *sp.totalCaptured
 	if remaining > 0 {
-		if len(content) > remaining {
+		if len(content) >= remaining {
 			sp.truncated.Store(true)
 		}
-		content = truncateToValidUTF8(content, remaining)
+		content = sanitizeAndTruncateUTF8(content, remaining)
 		sb.WriteString(content)
 		*sp.totalCaptured += len(content)
 	} else {
@@ -91,10 +91,10 @@ func (sp *streamProcessor) appendErr(sb *strings.Builder, err error) {
 	remaining := sp.maxCapture - *sp.totalCaptured
 	if remaining > 0 {
 		fullMsg := msg + "\n"
-		if len(fullMsg) > remaining {
+		if len(fullMsg) >= remaining {
 			sp.truncated.Store(true)
 		}
-		content := truncateToValidUTF8(fullMsg, remaining)
+		content := sanitizeAndTruncateUTF8(fullMsg, remaining)
 		sb.WriteString(content)
 		*sp.totalCaptured += len(content)
 	} else {

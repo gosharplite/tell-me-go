@@ -368,7 +368,7 @@ func TestDispatcher_RunExecutionPlan_ContextCancelledAfterEmptyBatches(t *testin
 	cancel()
 
 	// No tool calls → empty batches → for-loop skipped → hits post-loop ctx.Err() check.
-	err = dispatcher.runExecutionPlan(ctx, nil, nil, nil)
+	err = dispatcher.runExecutionPlan(ctx, nil, nil, nil, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -392,7 +392,7 @@ func TestRunExecutionPlan_PostLoopContextCancellation(t *testing.T) {
 	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, logger, observer)
 	require.NoError(t, err)
 
-	err = dispatcher.runExecutionPlan(context.Background(), nil, nil, nil)
+	err = dispatcher.runExecutionPlan(context.Background(), nil, nil, nil, nil)
 	require.NoError(t, err)
 }
 
@@ -424,7 +424,7 @@ func TestRunExecutionPlan_PostLoopContextCancellation_WithBatches(t *testing.T) 
 	calls := []*llm.FunctionCall{{Name: "p1"}}
 	results := make([]tools.ToolResult, 1)
 
-	err = dispatcher.runExecutionPlan(context.Background(), calls, nil, results)
+	err = dispatcher.runExecutionPlan(context.Background(), calls, nil, results, nil)
 	require.NoError(t, err)
 
 	// Verify the successful tool result
@@ -643,7 +643,7 @@ func TestRunExecutionPlan_HappyPath_SuccessfulBatchesReturnNil(t *testing.T) {
 
 	// context.Background() is never cancelled — this is the critical ingredient
 	// that distinguishes this test from the existing PostLoopContextCancellation tests.
-	err = dispatcher.runExecutionPlan(context.Background(), calls, nil, results)
+	err = dispatcher.runExecutionPlan(context.Background(), calls, nil, results, nil)
 
 	// The coverage target: ctx.Err() returns nil on the happy path.
 	require.NoError(t, err)
