@@ -273,6 +273,76 @@ func TestDefaultConfigFinder_FindInExecutableDir_FilepathAbsError(t *testing.T) 
 	}
 }
 
+// TestFindInExecutableDir_ErrorPaths exercises the error-handling branches in
+// findInExecutableDir that are not covered by the happy-path tests:
+//
+//  1. osExecutable() failure (finder.go:100-102) — logs a warning and returns ("", false).
+//  2. filepath.Abs(base) and/or filepath.Abs(exeDir) failure (finder.go:112-114) —
+//     when either resolution fails, the redundant-search guard is skipped
+//     and the function proceeds to the os.Stat check.
+func TestFindInExecutableDir_ErrorPaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func() // shadows package-level stubs
+		wantPath  string
+		wantFound bool
+	}{
+		{
+			name: "os.Executable failure",
+			setup: func() {
+				osExecutable = func() (string, error) {
+					return "", fmt.Errorf("injected executable error")
+				}
+			},
+			wantPath:  "",
+			wantFound: false,
+		},
+		{
+			name: "filepath.Abs resolution failure on both base and exeDir",
+			setup: func() {
+				// Make osGetwd fail so getBaseDir() falls back to ".", and
+				// subsequent filepath.Abs(".") calls also fail — exercising
+				// the branch where err1 != nil || err2 != nil at lines 112-114.
+				osGetwd = func() (string, error) {
+					return "", fmt.Errorf("injected getwd error")
+				}
+				// Return a relative path so exeDir resolves to "." and
+				// filepath.Abs(".") also hits the failing osGetwd.
+				osExecutable = func() (string, error) {
+					return "fake-binary", nil
+				}
+			},
+			wantPath:  "",
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture and restore package-level stubs
+			origExecutable := osExecutable
+			origGetwd := osGetwd
+			t.Cleanup(func() {
+				osExecutable = origExecutable
+				osGetwd = origGetwd
+			})
+
+			tt.setup()
+
+			// Use an empty baseDir so getBaseDir() calls osGetwd (our stub).
+			f := &defaultConfigFinder{baseDir: ""}
+			path, found := f.findInExecutableDir()
+
+			if found != tt.wantFound {
+				t.Errorf("found = %v; want %v", found, tt.wantFound)
+			}
+			if path != tt.wantPath {
+				t.Errorf("path = %q; want %q", path, tt.wantPath)
+			}
+		})
+	}
+}
+
 // TestDefaultConfigFinder_FindInExecutableDir_StatFileNotFound verifies that
 // findInExecutableDir returns found=false when the config file is absent from
 // the executable directory. This covers the ERROR_HANDLING gap at
