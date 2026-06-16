@@ -153,54 +153,205 @@ func testHistoryProcessing(t *testing.T) {
 	}
 }
 
-func TestSendChat_Errors(t *testing.T) {
+func TestSendChat_ErrorHandling(t *testing.T) {
 	tests := []struct {
-		name          string
-		status        int
-		response      string
-		expectedError string
-		isAPIError    bool
+		name               string
+		status             int
+		responseBody       string
+		wantAPIErrorStatus int
+		wantSentinel       error
+		wantErrContains    string
+		isAPIError         bool
+		useReadFailure     bool
 	}{
+		// ── Dimension 1: Status Codes ──────────────────────────────────
 		{
-			name:          "400 Bad Request",
-			status:        http.StatusBadRequest,
-			response:      `{"error": {"type": "invalid_request_error", "message": "Missing required parameter"}}`,
-			expectedError: "api error (status 400)",
-			isAPIError:    true,
+			name:               "400_bad_request",
+			status:             400,
+			responseBody:       `{"type":"error","error":{"type":"invalid_request_error","message":"Missing required parameter: model"}}`,
+			wantAPIErrorStatus: 400,
+			wantSentinel:       llm.ErrTerminal,
+			isAPIError:         true,
 		},
 		{
-			name:          "Malformed JSON",
-			status:        http.StatusOK,
-			response:      `{ "id": "msg_123", "content...`,
-			expectedError: "failed to decode response",
+			name:               "401_unauthorized",
+			status:             401,
+			responseBody:       `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`,
+			wantAPIErrorStatus: 401,
+			wantSentinel:       llm.ErrAuth,
+			isAPIError:         true,
+		},
+		{
+			name:               "403_forbidden",
+			status:             403,
+			responseBody:       `{"type":"error","error":{"type":"permission_error","message":"Your API key does not have permission"}}`,
+			wantAPIErrorStatus: 403,
+			wantSentinel:       llm.ErrTerminal,
+			isAPIError:         true,
+		},
+		{
+			name:               "408_timeout",
+			status:             408,
+			responseBody:       `{"type":"error","error":{"type":"timeout_error","message":"Request timed out"}}`,
+			wantAPIErrorStatus: 408,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
+		},
+		{
+			name:               "429_rate_limit",
+			status:             429,
+			responseBody:       `{"type":"error","error":{"type":"rate_limit_error","message":"Rate limit exceeded"}}`,
+			wantAPIErrorStatus: 429,
+			wantSentinel:       llm.ErrRateLimit,
+			isAPIError:         true,
+		},
+		{
+			name:               "499_client_closed",
+			status:             499,
+			responseBody:       `{"type":"error","error":{"type":"cancelled_error","message":"Client closed request"}}`,
+			wantAPIErrorStatus: 499,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
+		},
+		{
+			name:               "500_internal",
+			status:             500,
+			responseBody:       `{"type":"error","error":{"type":"server_error","message":"Internal server error"}}`,
+			wantAPIErrorStatus: 500,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
+		},
+		{
+			name:               "502_bad_gateway",
+			status:             502,
+			responseBody:       `{"type":"error","error":{"type":"server_error","message":"Bad gateway"}}`,
+			wantAPIErrorStatus: 502,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
+		},
+		{
+			name:               "503_unavailable",
+			status:             503,
+			responseBody:       `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`,
+			wantAPIErrorStatus: 503,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
+		},
+
+		// ── Dimension 2: Anthropic-Specific Error Types ────────────────
+		{
+			name:               "overloaded_error",
+			status:             529,
+			responseBody:       `{"type":"error","error":{"type":"overloaded_error","message":"Anthropic's servers are temporarily overloaded"}}`,
+			wantAPIErrorStatus: 529,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
+		},
+		{
+			name:               "permission_error",
+			status:             403,
+			responseBody:       `{"type":"error","error":{"type":"permission_error","message":"Your API key does not have permission to use this resource"}}`,
+			wantAPIErrorStatus: 403,
+			wantSentinel:       llm.ErrTerminal,
+			isAPIError:         true,
+		},
+		{
+			name:               "invalid_request_error_empty_max_tokens",
+			status:             400,
+			responseBody:       `{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: must be greater than thinking budget"}}`,
+			wantAPIErrorStatus: 400,
+			wantSentinel:       llm.ErrTerminal,
+			isAPIError:         true,
+		},
+
+		// ── Dimension 3: Malformed Response + Edge ────────────────────
+		{
+			name:            "malformed_json",
+			status:          200,
+			responseBody:    `{"id":"msg_123","content...`,
+			wantErrContains: "failed to decode response",
+			isAPIError:      false,
+		},
+		{
+			name:            "500_read_failure",
+			status:          500,
+			wantErrContains: "simulated read failure",
+			isAPIError:      false,
+			useReadFailure:  true,
+		},
+
+		// ── Dimension 4: Response Body Variants for 500 ───────────────
+		{
+			name:               "500_empty_body",
+			status:             500,
+			responseBody:       "",
+			wantAPIErrorStatus: 500,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
+		},
+		{
+			name:               "500_non_json_body",
+			status:             500,
+			responseBody:       "<html>500 Internal Server Error</html>",
+			wantAPIErrorStatus: 500,
+			wantSentinel:       llm.ErrTransient,
+			isAPIError:         true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte(tt.response))
-			}))
-			defer server.Close()
+			var c *client
 
-			client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"})
-			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+			if tt.useReadFailure {
+				c = NewClient("", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
+				c.httpClient.Transport = &readFailureRoundTripper{}
+			} else {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tt.status)
+					if tt.responseBody != "" {
+						_, _ = w.Write([]byte(tt.responseBody))
+					}
+				}))
+				defer server.Close()
+				c = NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"})
+			}
 
+			_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
 
-			if !strings.Contains(err.Error(), tt.expectedError) {
-				t.Errorf("expected error containing %q, got %q", tt.expectedError, err.Error())
+			if tt.wantErrContains != "" {
+				if !strings.Contains(err.Error(), tt.wantErrContains) {
+					t.Errorf("expected error containing %q, got %q", tt.wantErrContains, err.Error())
+				}
 			}
 
+			var apiErr *llmerr.APIError
 			if tt.isAPIError {
-				var apiErr *llmerr.APIError
 				if !errors.As(err, &apiErr) {
-					t.Errorf("expected llmerr.APIError, got %T", err)
-				} else if apiErr.Status != tt.status {
-					t.Errorf("expected status %d, got %d", tt.status, apiErr.Status)
+					t.Fatalf("expected *llmerr.APIError, got %T", err)
+				}
+				if apiErr.Status != tt.wantAPIErrorStatus {
+					t.Errorf("status: got %d, want %d", apiErr.Status, tt.wantAPIErrorStatus)
+				}
+				if tt.wantSentinel != nil {
+					classified := llmerr.Classify(apiErr)
+					if !errors.Is(classified, tt.wantSentinel) {
+						t.Errorf("Classify: got %v, want %v", classified, tt.wantSentinel)
+					}
+				}
+			} else {
+				if errors.As(err, &apiErr) {
+					t.Errorf("expected non-APIError, got %T: %v", apiErr, apiErr)
+				}
+
+				// 500_read_failure: additionally verify the full error chain
+				if tt.useReadFailure {
+					if !strings.Contains(err.Error(), "additionally, failed to read response body") {
+						t.Errorf("expected error containing %q, got %q", "additionally, failed to read response body", err.Error())
+					}
 				}
 			}
 		})

@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
@@ -470,18 +473,12 @@ func TestConvertParts_ThinkingRole(t *testing.T) {
 			{Text: "visible"},
 		}
 		blocks, err := c.convertParts(parts, "user")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(blocks) != 2 {
-			t.Fatalf("expected 2 blocks (thought becomes text for non-assistant), got %d", len(blocks))
-		}
-		if blocks[0].Type != "text" || blocks[0].Text != "think" {
-			t.Errorf("expected first block to be text block 'think', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
-		}
-		if blocks[1].Type != "text" || blocks[1].Text != "visible" {
-			t.Errorf("expected second block to be text block 'visible', got type=%q text=%q", blocks[1].Type, blocks[1].Text)
-		}
+		require.NoError(t, err)
+		require.Len(t, blocks, 2, "thought becomes text for non-assistant")
+		assert.Equal(t, "text", blocks[0].Type)
+		assert.Equal(t, "think", blocks[0].Text)
+		assert.Equal(t, "text", blocks[1].Type)
+		assert.Equal(t, "visible", blocks[1].Text)
 	})
 
 	t.Run("thinking parts kept for assistant role", func(t *testing.T) {
@@ -490,15 +487,9 @@ func TestConvertParts_ThinkingRole(t *testing.T) {
 			{Text: "visible"},
 		}
 		blocks, err := c.convertParts(parts, "assistant")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(blocks) != 2 {
-			t.Fatalf("expected 2 blocks, got %d", len(blocks))
-		}
-		if blocks[0].Type != "thinking" {
-			t.Errorf("expected first block type 'thinking', got %q", blocks[0].Type)
-		}
+		require.NoError(t, err)
+		require.Len(t, blocks, 2)
+		assert.Equal(t, "thinking", blocks[0].Type)
 	})
 
 	t.Run("unsigned thinking parts stripped for assistant role", func(t *testing.T) {
@@ -507,15 +498,10 @@ func TestConvertParts_ThinkingRole(t *testing.T) {
 			{Text: "visible"},
 		}
 		blocks, err := c.convertParts(parts, "assistant")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(blocks) != 1 {
-			t.Fatalf("expected 1 block (thought stripped), got %d", len(blocks))
-		}
-		if blocks[0].Type != "text" || blocks[0].Text != "visible" {
-			t.Errorf("expected only text block 'visible', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
-		}
+		require.NoError(t, err)
+		require.Len(t, blocks, 1, "unsigned thought should be stripped")
+		assert.Equal(t, "text", blocks[0].Type)
+		assert.Equal(t, "visible", blocks[0].Text)
 	})
 
 	t.Run("empty-text thinking parts stripped for assistant role", func(t *testing.T) {
@@ -527,14 +513,9 @@ func TestConvertParts_ThinkingRole(t *testing.T) {
 			{Text: "visible"},
 		}
 		blocks, err := c.convertParts(parts, "assistant")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(blocks) != 1 {
-			t.Fatalf("expected 1 block (empty thought stripped), got %d", len(blocks))
-		}
-		if blocks[0].Type != "text" || blocks[0].Text != "visible" {
-			t.Errorf("expected only text block 'visible', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
-		}
+		require.NoError(t, err)
+		require.Len(t, blocks, 1, "empty thought should be stripped")
+		assert.Equal(t, "text", blocks[0].Type)
+		assert.Equal(t, "visible", blocks[0].Text)
 	})
 }

@@ -25,45 +25,64 @@ func NewHeuristicTokenCounter(registry tools.Registry) *HeuristicTokenCounter {
 
 // Count estimates tokens based on character counts and tool declarations.
 func (c *HeuristicTokenCounter) Count(contents []*llm.Content) int {
-	totalTokens := 0
-
-	// Overhead for tools if registry is provided
-	if c.registry != nil {
-		for _, decl := range c.registry.GetDeclarations() {
-			totalTokens += (len(decl.Name) + len(decl.Description)) / 4
-			if decl.Parameters != nil {
-				totalTokens += 50 // Heuristic for parameter definitions
-			}
-		}
-	}
+	totalTokens := c.countToolDeclarationOverhead()
 
 	for _, content := range contents {
-		if content == nil {
-			continue
-		}
-		charCount := 0
-		for _, p := range content.Parts {
-			charCount += c.estimatePartChars(p)
-		}
-		for _, p := range content.TransientParts {
-			charCount += c.estimatePartChars(p)
-		}
-
-		// Heuristic: ~3.2 chars per token
-		tokenCount := int(float64(charCount) / 3.2)
-
-		// Cache the token count only if there are no transient parts,
-		// otherwise the cache would be incorrect for subsequent calls without transients.
-		// Actually, since transients are used in the Prepare phase, they might vary.
-		if len(content.TransientParts) == 0 {
-			content.TokenCount = tokenCount
-		}
-
-		totalTokens += tokenCount
+		totalTokens += c.countContentTokens(content)
 	}
 
 	totalTokens += 300 // Base overhead
 	return totalTokens
+}
+
+// countContentTokens estimates tokens for a single Content entry.
+// It accumulates character counts from both Parts and TransientParts,
+// converts to tokens using the ~3.2 chars/token heuristic, and —
+// as a side effect — caches the result in content.TokenCount when
+// TransientParts is empty. Nil content returns 0.
+func (c *HeuristicTokenCounter) countContentTokens(content *llm.Content) int {
+	if content == nil {
+		return 0
+	}
+	charCount := 0
+	charCount += c.accumulatePartsChars(content.Parts)
+	charCount += c.accumulatePartsChars(content.TransientParts)
+
+	// Heuristic: ~3.2 chars per token
+	tokenCount := int(float64(charCount) / 3.2)
+
+	// Cache the token count only if there are no transient parts,
+	// otherwise the cache would be incorrect for subsequent calls without transients.
+	if len(content.TransientParts) == 0 {
+		content.TokenCount = tokenCount
+	}
+
+	return tokenCount
+}
+
+// accumulatePartsChars sums estimatePartChars across a slice of Parts.
+func (c *HeuristicTokenCounter) accumulatePartsChars(parts []*llm.Part) int {
+	count := 0
+	for _, p := range parts {
+		count += c.estimatePartChars(p)
+	}
+	return count
+}
+
+// countToolDeclarationOverhead returns the estimated token overhead
+// for all registered tool declarations. Returns 0 when registry is nil.
+func (c *HeuristicTokenCounter) countToolDeclarationOverhead() int {
+	if c.registry == nil {
+		return 0
+	}
+	overhead := 0
+	for _, decl := range c.registry.GetDeclarations() {
+		overhead += (len(decl.Name) + len(decl.Description)) / 4
+		if decl.Parameters != nil {
+			overhead += 50 // Heuristic for parameter definitions
+		}
+	}
+	return overhead
 }
 
 func (c *HeuristicTokenCounter) estimatePartChars(p *llm.Part) int {
@@ -103,6 +122,23 @@ func estimateMapSizeInternal(m map[string]interface{}, depth int) int {
 	return size
 }
 
+// estimateMapValueSize delegates map sizing to estimateMapSizeInternal
+// with an incremented depth counter.
+func estimateMapValueSize(m map[string]interface{}, depth int) int {
+	return estimateMapSizeInternal(m, depth+1)
+}
+
+// estimateSliceValueSize sums the estimated sizes of each element in
+// a slice, plus 1 for the slice structure itself. Recursion depth is
+// incremented per element.
+func estimateSliceValueSize(s []interface{}, depth int) int {
+	size := 1
+	for _, item := range s {
+		size += estimateValueSizeInternal(item, depth+1)
+	}
+	return size
+}
+
 func estimateValueSizeInternal(v interface{}, depth int) int {
 	if depth > maxEstimateDepth {
 		return 0
@@ -118,13 +154,9 @@ func estimateValueSizeInternal(v interface{}, depth int) int {
 	case bool:
 		return 5
 	case map[string]interface{}:
-		return estimateMapSizeInternal(val, depth+1)
+		return estimateMapValueSize(val, depth)
 	case []interface{}:
-		size := 1
-		for _, item := range val {
-			size += estimateValueSizeInternal(item, depth+1)
-		}
-		return size
+		return estimateSliceValueSize(val, depth)
 	default:
 		return 20
 	}

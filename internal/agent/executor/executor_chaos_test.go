@@ -199,6 +199,26 @@ func assertNoErrorResult(t *testing.T, results []tools.ToolResult) {
 	}
 }
 
+// assertLogHasPanicAttr verifies that the capturingLogger recorded a "panic" key
+// with a value containing the expected substring (key-value pair convention).
+func assertLogHasPanicAttr(t *testing.T, log *capturingLogger, wantContain string) {
+	t.Helper()
+	var foundPanicAttr bool
+	for i := 0; i < len(log.lastArgs)-1; i += 2 {
+		key, ok := log.lastArgs[i].(string)
+		if !ok {
+			continue
+		}
+		if key == "panic" {
+			foundPanicAttr = true
+			valStr := fmt.Sprintf("%v", log.lastArgs[i+1])
+			assert.Contains(t, valStr, wantContain,
+				"logger 'panic' attribute must contain the panic value")
+		}
+	}
+	assert.True(t, foundPanicAttr, "logger attributes must include 'panic' key")
+}
+
 // TestExecuteParallelBatch_FanInPanic_Propagates verifies that a panic in the
 // fan-in wait goroutine (e.g. a corrupted sync.WaitGroup causing wg.Wait() to panic)
 // is propagated as an error through the results channel and surfaced to the caller
@@ -245,29 +265,15 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 			results = append(results, res)
 		}
 
-		if len(results) != 1 {
-			t.Fatalf("expected exactly 1 result from fan-in panic, got %d", len(results))
-		}
+		require.Len(t, results, 1, "expected exactly 1 result from fan-in panic")
 
 		res := results[0]
-		if res.index != -1 {
-			t.Errorf("expected index -1 sentinel, got %d", res.index)
-		}
-		if res.name != "fan_in_panic" {
-			t.Errorf("expected name 'fan_in_panic', got %q", res.name)
-		}
-		if res.tr.Error == nil {
-			t.Fatal("expected error in ToolResult, got nil")
-		}
-		if !errors.Is(res.tr.Error, llm.ErrTerminal) {
-			t.Errorf("expected error wrapped in ErrTerminal, got: %v", res.tr.Error)
-		}
-		if !strings.Contains(res.tr.Error.Error(), "simulated wg.Wait corruption") {
-			t.Errorf("expected error to contain panic text, got: %v", res.tr.Error)
-		}
-		if !strings.Contains(res.tr.Text, "fan-in panic") {
-			t.Errorf("expected Text to contain 'fan-in panic', got: %q", res.tr.Text)
-		}
+		assert.Equal(t, -1, res.index, "expected index -1 sentinel")
+		assert.Equal(t, "fan_in_panic", res.name)
+		require.Error(t, res.tr.Error, "expected error in ToolResult")
+		assert.True(t, errors.Is(res.tr.Error, llm.ErrTerminal), "expected error wrapped in ErrTerminal")
+		assert.Contains(t, res.tr.Error.Error(), "simulated wg.Wait corruption")
+		assert.Contains(t, res.tr.Text, "fan-in panic")
 	})
 
 	t.Run("parallel worker panic propagates through runExecutionPlan", func(t *testing.T) {
@@ -319,20 +325,11 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 		// NOT promoted to plan-level Go errors. runExecutionPlan returns nil.
 		require.NoError(t, err, "runExecutionPlan must return nil — panics are recovered and stored in results[]")
 
-		// Verify safe tools still completed.
-		if results[0].Text != "safe_result" {
-			t.Errorf("safe_tool result: got %q, want 'safe_result'", results[0].Text)
-		}
-		if results[2].Text != "safe_result" {
-			t.Errorf("another_safe_tool result: got %q, want 'safe_result'", results[2].Text)
-		}
+		assert.Equal(t, "safe_result", results[0].Text)
+		assert.Equal(t, "safe_result", results[2].Text)
 
-		// Verify crash_tool result has the panic error.
-		if results[1].Error == nil {
-			t.Error("crash_tool should have an error result")
-		} else if !strings.Contains(results[1].Error.Error(), "simulated nil pointer dereference") {
-			t.Errorf("crash_tool error: got %v, want panic text", results[1].Error)
-		}
+		require.Error(t, results[1].Error, "crash_tool should have an error result")
+		assert.Contains(t, results[1].Error.Error(), "simulated nil pointer dereference")
 	})
 
 	t.Run("fan_in_no_panic_resultsCh_closed_cleanly", func(t *testing.T) {
@@ -459,7 +456,7 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 
 		require.NotNil(t, sentinel, "expected at least one sentinel result with index == -1")
 		assert.Equal(t, "fan_in_panic", sentinel.name)
-		assert.Error(t, sentinel.tr.Error)
+		require.Error(t, sentinel.tr.Error)
 		assert.True(t, errors.Is(sentinel.tr.Error, llm.ErrTerminal),
 			"sentinel error must wrap ErrTerminal")
 		assert.Contains(t, sentinel.tr.Error.Error(), "fan-in panic")
@@ -469,21 +466,6 @@ func TestExecuteParallelBatch_FanInPanic_Propagates(t *testing.T) {
 		// Verify the logger captured the panic.
 		assert.True(t, log.errorCalled, "logger.Error must have been called")
 		assert.Equal(t, "panic in fan-in wait goroutine", log.lastMsg)
-
-		// Verify logger attributes include "panic" key with the panic value.
-		var foundPanicAttr bool
-		for i := 0; i < len(log.lastArgs)-1; i += 2 {
-			key, ok := log.lastArgs[i].(string)
-			if !ok {
-				continue
-			}
-			if key == "panic" {
-				foundPanicAttr = true
-				valStr := fmt.Sprintf("%v", log.lastArgs[i+1])
-				assert.Contains(t, valStr, "simulated WaitGroup corruption",
-					"logger 'panic' attribute must contain the panic value")
-			}
-		}
-		assert.True(t, foundPanicAttr, "logger attributes must include 'panic' key")
+		assertLogHasPanicAttr(t, log, "simulated WaitGroup corruption")
 	})
 }
