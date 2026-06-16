@@ -237,12 +237,21 @@ type capturingLogger struct {
 	errorCalled bool
 	lastMsg     string
 	lastArgs    []any
+	debugCalled bool
+	debugMsg    string
+	debugArgs   []any
 }
 
 func (l *capturingLogger) Error(msg string, args ...any) {
 	l.errorCalled = true
 	l.lastMsg = msg
 	l.lastArgs = args
+}
+
+func (l *capturingLogger) Debug(msg string, args ...any) {
+	l.debugCalled = true
+	l.debugMsg = msg
+	l.debugArgs = args
 }
 
 type errorEventBus struct {
