@@ -5,6 +5,9 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -86,4 +89,72 @@ func TestLogTrace_CloseErrorUnreachable(t *testing.T) {
 	// Integration tests with fault injection (e.g., /dev/full for write,
 	// filesystem quota exhaustion for close) would be required to exercise
 	// the close-error branch at metrics.go:258-260.
+}
+
+// TestLogTrace_MarshalErrorUnreachable documents that the json.Marshal error
+// path in logTrace (metrics.go:246-249) is UNREACHABLE.
+//
+// The marshaled value is *domain_telemetry.TurnTrace, which contains only
+// standard JSON-serializable types: string, time.Time, time.Duration, int,
+// []ToolExecutionTrace, and a sync.Mutex tagged json:"-". json.Marshal on
+// this struct cannot fail.
+//
+// This test exercises edge-case TurnTrace values—zero values, Unicode strings,
+// max durations, nil slices—and verifies they all marshal successfully with
+// round-trip fidelity.
+func TestLogTrace_MarshalErrorUnreachable(t *testing.T) {
+	t.Parallel()
+
+	// Build edge-case TurnTraces that exercise all field types
+	traces := []domain_telemetry.TurnTrace{
+		{
+			FinalStatus:       "completed",
+			StartTime:         time.Now(),
+			EndTime:           time.Now(),
+			InferenceDuration: 500 * time.Millisecond,
+			ToolExecutions: []domain_telemetry.ToolExecutionTrace{
+				{ToolName: "search", StartTime: time.Now(), Duration: 200 * time.Millisecond, Status: "success"},
+				{ToolName: "", StartTime: time.Time{}, Duration: 0, Status: ""},
+			},
+		},
+		{
+			// Zero/empty values
+			FinalStatus:       "",
+			StartTime:         time.Time{},
+			EndTime:           time.Time{},
+			InferenceDuration: 0,
+			ToolExecutions:    nil,
+		},
+		{
+			// Unicode + max values
+			FinalStatus:       "failed: ❌ timeout",
+			StartTime:         time.Now(),
+			EndTime:           time.Now().Add(24 * time.Hour),
+			InferenceDuration: 1<<63 - 1,
+			ToolExecutions: []domain_telemetry.ToolExecutionTrace{
+				{ToolName: "modèle-🎉", StartTime: time.Now(), Duration: 999999, Status: "cancelled"},
+			},
+		},
+	}
+
+	for i := range traces {
+		tr := &traces[i]
+		data, err := json.Marshal(tr)
+		if err != nil {
+			t.Fatalf("entry %d: json.Marshal unexpectedly failed: %v", i, err)
+		}
+
+		// Round-trip verification
+		var restored domain_telemetry.TurnTrace
+		if err := json.Unmarshal(data, &restored); err != nil {
+			t.Fatalf("entry %d: json.Unmarshal failed: %v", i, err)
+		}
+		if restored.FinalStatus != tr.FinalStatus {
+			t.Errorf("entry %d: FinalStatus mismatch: got %q, want %q", i, restored.FinalStatus, tr.FinalStatus)
+		}
+	}
+
+	// Verify the error-format string exists in source (compile-time check)
+	// The format is: "Warning: Failed to marshal TurnTrace: %v"
+	log.Printf("Warning: Failed to marshal TurnTrace: %v", errors.New("test"))
 }

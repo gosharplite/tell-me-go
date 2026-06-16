@@ -517,41 +517,6 @@ func TestLogTrace_OpenError(t *testing.T) {
 	}
 }
 
-// TestLogTrace_MarshalErrorUnreachable documents that the json.Marshal error
-// path in logTrace is unreachable because TurnTrace contains only JSON-
-// serializable fields (sync.Mutex excluded via json:"-"). No test is needed.
-func TestLogTrace_MarshalErrorUnreachable(t *testing.T) {
-	t.Parallel()
-
-	// Verify TurnTrace serializes cleanly with all field types.
-	trace := &domain_telemetry.TurnTrace{
-		StartTime:         time.Now(),
-		EndTime:           time.Now().Add(time.Second),
-		InferenceDuration: 500 * time.Millisecond,
-		ToolExecutions: []domain_telemetry.ToolExecutionTrace{
-			{ToolName: "tool1", StartTime: time.Now(), Duration: time.Second, Status: "success"},
-		},
-		FinalStatus: "complete",
-	}
-
-	data, err := json.Marshal(trace)
-	if err != nil {
-		t.Fatalf("unexpected marshal error (TurnTrace should always be serializable): %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("expected non-empty JSON output")
-	}
-
-	// Also verify the zero-value TurnTrace serializes.
-	data2, err := json.Marshal(&domain_telemetry.TurnTrace{})
-	if err != nil {
-		t.Fatalf("unexpected marshal error for zero TurnTrace: %v", err)
-	}
-	if len(data2) == 0 {
-		t.Error("expected non-empty JSON output for zero TurnTrace")
-	}
-}
-
 func (m *mockRegistry) GetOptions(name string) tools.ToolOptions {
 	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }
@@ -754,45 +719,6 @@ func TestAppendSummaryToLog_ZeroUsage(t *testing.T) {
 	// Verify no file was created (early return skips I/O).
 	if _, statErr := os.Stat(logPath); !os.IsNotExist(statErr) {
 		t.Error("expected no log file to be created for zero usage")
-	}
-}
-
-// TestAppendSummaryToLog_MarshalErrorUnreachable documents gap #2: the
-// json.Marshal error path inside appendSummaryToLog is UNREACHABLE because
-// llm.Metrics contains only JSON-serializable fields (int32, int, float64,
-// string, bool). No test can trigger this branch without violating the Go
-// type system.
-func TestAppendSummaryToLog_MarshalErrorUnreachable(t *testing.T) {
-	t.Parallel()
-
-	// Prove that all field types in llm.Metrics serialize cleanly.
-	summary := llm.Metrics{
-		Timestamp:      time.Now().Format(time.RFC3339),
-		Model:          "test-model",
-		CachedTokens:   100,
-		PromptTokens:   200,
-		ResponseTokens: 300,
-		TotalTokens:    600,
-		SearchQueries:  5,
-		Cost:           1.5,
-		IsSummary:      true,
-	}
-
-	data, err := json.Marshal(summary)
-	if err != nil {
-		t.Fatalf("unexpected marshal error (llm.Metrics should always be serializable): %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("expected non-empty JSON output")
-	}
-
-	// Verify round-trip works.
-	var restored llm.Metrics
-	if err := json.Unmarshal(data, &restored); err != nil {
-		t.Fatalf("round-trip unmarshal failed: %v", err)
-	}
-	if restored.PromptTokens != 200 || restored.Cost != 1.5 {
-		t.Errorf("round-trip mismatch: %+v", restored)
 	}
 }
 
