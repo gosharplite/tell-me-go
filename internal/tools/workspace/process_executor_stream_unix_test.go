@@ -38,37 +38,51 @@ func TestRunCommand_NonExitErrorWaitPath_SIGKILL(t *testing.T) {
 	t.Fatal(lastErr)
 }
 
+// readPIDFromFile polls pidFile until a valid PID (>0) is read or maxAttempts
+// is exhausted. Returns 0 if no PID could be read.
+func readPIDFromFile(t *testing.T, pidFile string) int {
+	t.Helper()
+	for i := 0; i < 50; i++ {
+		data, err := os.ReadFile(pidFile)
+		if err == nil {
+			var pid int
+			if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil && pid > 0 {
+				return pid
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return 0
+}
+
+// reapZombie sends SIGKILL to pid and pre-reaps the zombie via syscall.Wait4
+// so that cmd.Wait() receives ECHILD instead of observing the process exit.
+func reapZombie(pid int) {
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	var wstatus syscall.WaitStatus
+	wpid, werr := syscall.Wait4(pid, &wstatus, 0, nil)
+	if wpid <= 0 && werr == nil {
+		for i := 0; i < 1000; i++ {
+			wpid, werr = syscall.Wait4(pid, &wstatus, syscall.WNOHANG, nil)
+			if wpid > 0 || werr != nil {
+				break
+			}
+			time.Sleep(1 * time.Millisecond)
+		}
+	}
+}
+
 // spawnPreReaper starts a goroutine that reads a PID from pidFile,
 // sends SIGKILL, and pre-reaps the zombie via syscall.Wait4 so that
 // cmd.Wait() receives ECHILD instead of observing the process exit.
 func spawnPreReaper(t *testing.T, pidFile string) {
 	t.Helper()
 	go func() {
-		var pid int
-		for i := 0; i < 50; i++ {
-			data, err := os.ReadFile(pidFile)
-			if err == nil {
-				if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil && pid > 0 {
-					break
-				}
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
+		pid := readPIDFromFile(t, pidFile)
 		if pid <= 0 {
 			return
 		}
-		_ = syscall.Kill(pid, syscall.SIGKILL)
-		var wstatus syscall.WaitStatus
-		wpid, werr := syscall.Wait4(pid, &wstatus, 0, nil)
-		if wpid <= 0 && werr == nil {
-			for i := 0; i < 1000; i++ {
-				wpid, werr = syscall.Wait4(pid, &wstatus, syscall.WNOHANG, nil)
-				if wpid > 0 || werr != nil {
-					break
-				}
-				time.Sleep(1 * time.Millisecond)
-			}
-		}
+		reapZombie(pid)
 	}()
 }
 

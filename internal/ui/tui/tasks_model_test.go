@@ -644,73 +644,46 @@ func TestTaskListModel_FetchTasksCmd(t *testing.T) {
 
 // ── Page navigation tests ──
 
-func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
-	var receivedOffset int
+// assertPageNav verifies the full page-navigation lifecycle:
+// 1. Press key → pendingPageOffset set, pageOffset unchanged
+// 2. Execute fetch → correct offset sent to ListTasks
+// 3. Feed success → pageOffset advanced, pending cleared
+// 4. Selection reset to 0
+func assertPageNav(t *testing.T, m *taskListModel, key tea.KeyMsg, wantPendingOffset, wantListOffset int, totalCount int) {
+	t.Helper()
 
-	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
-			receivedOffset = offset
-			// Return 50 tasks to simulate a full page
-			tasks := make([]ports.Task, 50)
-			for i := range tasks {
-				tasks[i] = ports.Task{ID: int64(offset + i + 1), Content: "task", Status: "pending"}
-			}
-			return tasks
-		},
-		CountTasksFunc: func(status string) int {
-			return 100 // more tasks exist on next page
-		},
-	}
-
-	m := newTaskListModel(context.Background(), store)
-	m.ready = true
-	// Simulate initial load completing
-	m.tasks = make([]ports.Task, 50)
-	m.totalCount = 100
-	m.pageOffset = 0
-	m.selected = 0
-	m.pageSize = 50
-
-	// Press 'n' for next page — offset should NOT change yet
-	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	_ = newModel
-
+	newModel, cmd := m.Update(key)
 	if cmd == nil {
-		t.Fatal("expected non-nil cmd from 'n' key")
+		t.Fatal("expected non-nil cmd from page nav key")
 	}
 
 	updated := newModel.(*taskListModel)
-	if updated.pageOffset != 0 {
-		t.Errorf("pageOffset should still be 0 before fetch completes, got %d", updated.pageOffset)
-	}
-	if updated.pendingPageOffset != 50 {
-		t.Errorf("pendingPageOffset should be 50, got %d", updated.pendingPageOffset)
+	if updated.pendingPageOffset != wantPendingOffset {
+		t.Errorf("pendingPageOffset = %d, want %d", updated.pendingPageOffset, wantPendingOffset)
 	}
 	if !updated.pageNavPending {
 		t.Error("expected pageNavPending to be true")
 	}
 
-	// Execute the fetch
+	// Execute the fetch command
 	msg := cmd()
-	tasksMsg := msg.(tasksLoadedMsg)
+	tasksMsg, ok := msg.(tasksLoadedMsg)
+	if !ok {
+		t.Fatalf("expected tasksLoadedMsg, got %T", msg)
+	}
 	if tasksMsg.err != nil {
 		t.Fatalf("unexpected fetch error: %v", tasksMsg.err)
 	}
 
-	// Verify offset was passed correctly to ListTasks
-	if receivedOffset != 50 {
-		t.Errorf("expected offset 50 passed to ListTasks, got %d", receivedOffset)
-	}
-
-	// Feed the success message back — now offset should be applied
+	// Feed the success message back
 	newModel2, _ := updated.Update(tasksMsg)
 	updated2 := newModel2.(*taskListModel)
 
-	if updated2.pageOffset != 50 {
-		t.Errorf("pageOffset should be 50 after successful fetch, got %d", updated2.pageOffset)
+	if updated2.pageOffset != wantPendingOffset {
+		t.Errorf("pageOffset = %d, want %d after successful fetch", updated2.pageOffset, wantPendingOffset)
 	}
 	if updated2.pendingPageOffset != 0 {
-		t.Errorf("pendingPageOffset should be cleared to 0, got %d", updated2.pendingPageOffset)
+		t.Errorf("pendingPageOffset = %d, want 0 after fetch", updated2.pendingPageOffset)
 	}
 	if updated2.pageNavPending {
 		t.Error("expected pageNavPending to be false after fetch")
@@ -720,9 +693,8 @@ func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
 	}
 }
 
-func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
+func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
 	var receivedOffset int
-
 	store := &mockTaskStore{
 		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
 			receivedOffset = offset
@@ -732,9 +704,36 @@ func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
 			}
 			return tasks
 		},
-		CountTasksFunc: func(status string) int {
-			return 100
+		CountTasksFunc: func(status string) int { return 100 },
+	}
+
+	m := newTaskListModel(context.Background(), store)
+	m.ready = true
+	m.tasks = make([]ports.Task, 50)
+	m.totalCount = 100
+	m.pageOffset = 0
+	m.selected = 0
+	m.pageSize = 50
+
+	assertPageNav(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, 50, 50, 100)
+
+	if receivedOffset != 50 {
+		t.Errorf("expected offset 50 passed to ListTasks, got %d", receivedOffset)
+	}
+}
+
+func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
+	var receivedOffset int
+	store := &mockTaskStore{
+		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+			receivedOffset = offset
+			tasks := make([]ports.Task, 50)
+			for i := range tasks {
+				tasks[i] = ports.Task{ID: int64(offset + i + 1), Content: "task", Status: "pending"}
+			}
+			return tasks
 		},
+		CountTasksFunc: func(status string) int { return 100 },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -745,51 +744,10 @@ func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
 	m.selected = 0
 	m.pageSize = 50
 
-	// Press 'p' for previous page — offset should NOT change yet
-	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
-	_ = newModel
-
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd from 'p' key")
-	}
-
-	updated := newModel.(*taskListModel)
-	if updated.pageOffset != 50 {
-		t.Errorf("pageOffset should still be 50 before fetch completes, got %d", updated.pageOffset)
-	}
-	if updated.pendingPageOffset != 0 {
-		t.Errorf("pendingPageOffset should be 0, got %d", updated.pendingPageOffset)
-	}
-	if !updated.pageNavPending {
-		t.Error("expected pageNavPending to be true")
-	}
-
-	// Execute the fetch
-	msg := cmd()
-	tasksMsg := msg.(tasksLoadedMsg)
-	if tasksMsg.err != nil {
-		t.Fatalf("unexpected fetch error: %v", tasksMsg.err)
-	}
+	assertPageNav(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")}, 0, 0, 100)
 
 	if receivedOffset != 0 {
 		t.Errorf("expected offset 0 passed to ListTasks, got %d", receivedOffset)
-	}
-
-	// Feed the success message back — now offset should be applied
-	newModel2, _ := updated.Update(tasksMsg)
-	updated2 := newModel2.(*taskListModel)
-
-	if updated2.pageOffset != 0 {
-		t.Errorf("pageOffset should be 0 after successful fetch, got %d", updated2.pageOffset)
-	}
-	if updated2.pendingPageOffset != 0 {
-		t.Errorf("pendingPageOffset should be cleared, got %d", updated2.pendingPageOffset)
-	}
-	if updated2.pageNavPending {
-		t.Error("expected pageNavPending to be false after fetch")
-	}
-	if updated2.selected != 0 {
-		t.Errorf("expected selected reset to 0, got %d", updated2.selected)
 	}
 }
 

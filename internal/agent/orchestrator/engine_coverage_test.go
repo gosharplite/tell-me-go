@@ -251,15 +251,50 @@ func (m *mockSessionProvider) GetSettings() ports.KVStore            { return ni
 func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }
 func (m *mockSessionProvider) Close() error                          { return nil }
 
+// buildTestContextManager constructs a session context manager for TDT tests.
+// It optionally calls setupReg to register tools and attaches a SessionProvider
+// when sessionInfo is provided.
+func buildTestContextManager(t *testing.T, setupReg func(t *testing.T, reg *agenttest.MockToolRegistry), sessionInfo *ports.SessionInfo, reg *agenttest.MockToolRegistry, hMock *agenttest.MockHistoryManager, bus *eventstest.MockEventBus) *sessctx.Manager {
+	if setupReg != nil {
+		setupReg(t, reg)
+	}
+	if sessionInfo != nil {
+		sp := &mockSessionProvider{info: *sessionInfo}
+		return sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
+	}
+	return sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+}
+
+// assertToolCallState verifies HasToolCalls and ToolReasons on turn.State
+// based on the expected values from the test table.
+func assertToolCallState(t *testing.T, state *TurnState, wantHasToolCalls bool, wantToolReasons []string) {
+	if wantToolReasons == nil && !wantHasToolCalls {
+		return
+	}
+	if wantHasToolCalls {
+		assert.True(t, state.HasToolCalls, "HasToolCalls must be true")
+	}
+	if wantToolReasons != nil {
+		require.Len(t, state.ToolReasons, len(wantToolReasons))
+		for i, want := range wantToolReasons {
+			assert.Equal(t, want, state.ToolReasons[i])
+		}
+	}
+}
+
 func TestInferenceStep_TDT(t *testing.T) {
 	tests := []struct {
-		name        string
-		cancelCtx   bool
-		apiResponse *llm.Content
-		apiErr      error
-		history     []*llm.Content
-		expectedErr error
-		expectedPh  TurnPhase
+		name             string
+		cancelCtx        bool
+		apiResponse      *llm.Content
+		apiErr           error
+		history          []*llm.Content
+		setupReg         func(t *testing.T, reg *agenttest.MockToolRegistry)
+		sessionInfo      *ports.SessionInfo
+		wantHasToolCalls bool
+		wantToolReasons  []string
+		expectedErr      error
+		expectedPh       TurnPhase
 	}{
 		{
 			name: "Normal inference",
@@ -306,6 +341,16 @@ func TestInferenceStep_TDT(t *testing.T) {
 				Parts: []*llm.Part{{Text: "Hello from toolkit"}},
 			},
 			expectedPh: PhasePersisting,
+			setupReg: func(t *testing.T, reg *agenttest.MockToolRegistry) {
+				if err := reg.RegisterToToolkit("test_toolkit", &tools.ToolDeclaration{
+					Name: "toolkit_tool", Description: "A tool in a non-core toolkit",
+				}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					return tools.ToolResult{}, nil
+				}); err != nil {
+					t.Fatalf("RegisterToToolkit: %v", err)
+				}
+			},
+			sessionInfo: &ports.SessionInfo{ActiveToolkits: []string{"test_toolkit"}},
 		},
 		{
 			name: "SessionProvider with empty ActiveToolkits",
@@ -314,6 +359,16 @@ func TestInferenceStep_TDT(t *testing.T) {
 				Parts: []*llm.Part{{Text: "Hello from core tools"}},
 			},
 			expectedPh: PhasePersisting,
+			setupReg: func(t *testing.T, reg *agenttest.MockToolRegistry) {
+				if err := reg.RegisterToToolkit("core", &tools.ToolDeclaration{
+					Name: "core_tool", Description: "A core tool",
+				}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					return tools.ToolResult{}, nil
+				}); err != nil {
+					t.Fatalf("RegisterToToolkit(core): %v", err)
+				}
+			},
+			sessionInfo: &ports.SessionInfo{ActiveToolkits: []string{}},
 		},
 		{
 			name: "Tool call with non-string reason arg",
@@ -326,7 +381,9 @@ func TestInferenceStep_TDT(t *testing.T) {
 					},
 				}},
 			},
-			expectedPh: PhaseExecuting,
+			expectedPh:       PhaseExecuting,
+			wantHasToolCalls: true,
+			wantToolReasons:  nil,
 		},
 		{
 			name: "Tool call with string reason arg",
@@ -339,7 +396,9 @@ func TestInferenceStep_TDT(t *testing.T) {
 					},
 				}},
 			},
-			expectedPh: PhaseExecuting,
+			expectedPh:       PhaseExecuting,
+			wantHasToolCalls: true,
+			wantToolReasons:  []string{"User requested file analysis"},
 		},
 		{
 			name: "Multiple tool calls with mixed reasons",
@@ -366,7 +425,9 @@ func TestInferenceStep_TDT(t *testing.T) {
 					},
 				},
 			},
-			expectedPh: PhaseExecuting,
+			expectedPh:       PhaseExecuting,
+			wantHasToolCalls: true,
+			wantToolReasons:  []string{"First analysis pass", "Final cleanup"},
 		},
 	}
 
@@ -393,41 +454,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 
 			reg := &agenttest.MockToolRegistry{}
 
-			var cm *sessctx.Manager
-			switch tt.name {
-			case "Toolkits active — GetDeclarationsByToolkits called":
-				// Register tools in a non-core toolkit so that
-				// GetDeclarationsByToolkits returns a non-empty list
-				// while GetCoreDeclarations (ToolkitMap["core"]) returns nil.
-				if err := reg.RegisterToToolkit("test_toolkit", &tools.ToolDeclaration{
-					Name:        "toolkit_tool",
-					Description: "A tool in a non-core toolkit",
-				}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-					return tools.ToolResult{}, nil
-				}); err != nil {
-					t.Fatalf("RegisterToToolkit: %v", err)
-				}
-				sp := &mockSessionProvider{
-					info: ports.SessionInfo{ActiveToolkits: []string{"test_toolkit"}},
-				}
-				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
-			case "SessionProvider with empty ActiveToolkits":
-				// Register a tool in "core" toolkit so GetCoreDeclarations returns it
-				if err := reg.RegisterToToolkit("core", &tools.ToolDeclaration{
-					Name:        "core_tool",
-					Description: "A core tool",
-				}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-					return tools.ToolResult{}, nil
-				}); err != nil {
-					t.Fatalf("RegisterToToolkit(core): %v", err)
-				}
-				sp := &mockSessionProvider{
-					info: ports.SessionInfo{ActiveToolkits: []string{}}, // empty!
-				}
-				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
-			default:
-				cm = sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
-			}
+			cm := buildTestContextManager(t, tt.setupReg, tt.sessionInfo, reg, hMock, bus)
 
 			turn := &Turn{
 				Gateway:    gw,
@@ -451,21 +478,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 				assert.Equal(t, tt.expectedPh, res.NextPhase)
 			}
 
-			if tt.name == "Tool call with non-string reason arg" {
-				assert.True(t, turn.State.HasToolCalls, "HasToolCalls must be true for a FunctionCall response")
-				assert.Empty(t, turn.State.ToolReasons, "non-string reason arg must be skipped, ToolReasons must be empty")
-			}
-
-			// Verify ToolReasons for cases that exercise reason extraction
-			switch tt.name {
-			case "Tool call with string reason arg":
-				require.Len(t, turn.State.ToolReasons, 1)
-				assert.Equal(t, "User requested file analysis", turn.State.ToolReasons[0])
-			case "Multiple tool calls with mixed reasons":
-				require.Len(t, turn.State.ToolReasons, 2)
-				assert.Equal(t, "First analysis pass", turn.State.ToolReasons[0])
-				assert.Equal(t, "Final cleanup", turn.State.ToolReasons[1])
-			}
+			assertToolCallState(t, turn.State, tt.wantHasToolCalls, tt.wantToolReasons)
 		})
 	}
 }
