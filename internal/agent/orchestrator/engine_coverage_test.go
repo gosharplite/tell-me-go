@@ -383,7 +383,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 			},
 			expectedPh:       PhaseExecuting,
 			wantHasToolCalls: true,
-			wantToolReasons:  nil,
+			wantToolReasons:  []string{},
 		},
 		{
 			name: "Tool call with string reason arg",
