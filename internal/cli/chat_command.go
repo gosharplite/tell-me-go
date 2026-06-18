@@ -249,15 +249,13 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 		capturerInterface := c.newCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
-			// Defensive: untestable without DI for NewCapturer.
-			// The concrete type returned by ui.NewCapturer always implements
-			// both BaseCapturer and CapturerInteractor in practice.
-			// Fallback: use the base capturer directly if it's an interactor
-			if ci, ok := capturerInterface.(agent.CapturerInteractor); ok {
-				return ci, func(ctx stdctx.Context) error {
-					return ci.Close(ctx)
-				}, nil
-			}
+			// Coverage gap accepted by architect: structurally unreachable.
+			// tui.BaseCapturer and agent.CapturerInteractor are structurally
+			// identical interfaces (both compose ports.Capturer +
+			// domain_security.UserInteractor). Any type that fails the
+			// BaseCapturer assertion necessarily also fails the
+			// CapturerInteractor assertion — and vice versa. The dual-failure
+			// path is covered by the error return below. See Issue #888.
 			return nil, nil, fmt.Errorf("ui.NewCapturer did not return a tui.BaseCapturer or agent.CapturerInteractor")
 		}
 
