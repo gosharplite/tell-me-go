@@ -977,6 +977,45 @@ func TestMockServiceSecurityManager_Close_Error(t *testing.T) {
 	}
 }
 
+// assertNilFuncStrErr validates the (string, error) zero-value return path
+// for MockServiceSecurityManager methods when their Func field is nil.
+func assertNilFuncStrErr(t *testing.T, got string, err error) {
+	t.Helper()
+	if got != "" {
+		t.Errorf("nil func: got %q, want empty", got)
+	}
+	if err != nil {
+		t.Errorf("nil func: unexpected error %v", err)
+	}
+}
+
+// assertNilFuncBoolErr validates the (bool, error) zero-value return path.
+func assertNilFuncBoolErr(t *testing.T, got bool, err error) {
+	t.Helper()
+	if got {
+		t.Error("nil func: got true, want false")
+	}
+	if err != nil {
+		t.Errorf("nil func: unexpected error %v", err)
+	}
+}
+
+// assertNilFuncBool validates the bool zero-value return path.
+func assertNilFuncBool(t *testing.T, got bool) {
+	t.Helper()
+	if got {
+		t.Error("nil func: got true, want false")
+	}
+}
+
+// assertNilFuncErr validates the error zero-value return path.
+func assertNilFuncErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Errorf("nil func: unexpected error %v", err)
+	}
+}
+
 // TestMockServiceSecurityManager_NilFuncs exercises every method's zero-value
 // return path when its Func field is nil. Existing tests only cover the
 // fn != nil branch.
@@ -991,84 +1030,53 @@ func TestMockServiceSecurityManager_NilFuncs(t *testing.T) {
 			name: "IsPathSafe_nil_func",
 			call: func(m *MockServiceSecurityManager) {
 				got, err := m.IsPathSafe("/p")
-				if got != "" {
-					t.Errorf("IsPathSafe nil func: got %q, want empty", got)
-				}
-				if err != nil {
-					t.Errorf("IsPathSafe nil func: unexpected error %v", err)
-				}
+				assertNilFuncStrErr(t, got, err)
 			},
 		},
 		{
 			name: "IsPathWritable_nil_func",
 			call: func(m *MockServiceSecurityManager) {
 				got, err := m.IsPathWritable("/p")
-				if got != "" {
-					t.Errorf("IsPathWritable nil func: got %q, want empty", got)
-				}
-				if err != nil {
-					t.Errorf("IsPathWritable nil func: unexpected error %v", err)
-				}
+				assertNilFuncStrErr(t, got, err)
 			},
 		},
 		{
 			name: "Authorize_nil_func",
 			call: func(m *MockServiceSecurityManager) {
 				got, err := m.Authorize(context.Background(), "l", "d", "r", true)
-				if got {
-					t.Error("Authorize nil func: got true, want false")
-				}
-				if err != nil {
-					t.Errorf("Authorize nil func: unexpected error %v", err)
-				}
+				assertNilFuncBoolErr(t, got, err)
 			},
 		},
 		{
 			name: "Confirm_nil_func",
 			call: func(m *MockServiceSecurityManager) {
 				got, err := m.Confirm(context.Background(), "msg")
-				if got {
-					t.Error("Confirm nil func: got true, want false")
-				}
-				if err != nil {
-					t.Errorf("Confirm nil func: unexpected error %v", err)
-				}
+				assertNilFuncBoolErr(t, got, err)
 			},
 		},
 		{
 			name: "ReadLine_nil_func",
 			call: func(m *MockServiceSecurityManager) {
 				got, err := m.ReadLine(context.Background())
-				if got != "" {
-					t.Errorf("ReadLine nil func: got %q, want empty", got)
-				}
-				if err != nil {
-					t.Errorf("ReadLine nil func: unexpected error %v", err)
-				}
+				assertNilFuncStrErr(t, got, err)
 			},
 		},
 		{
 			name: "IsCommandAllowed_nil_func",
 			call: func(m *MockServiceSecurityManager) {
-				if m.IsCommandAllowed("ls") {
-					t.Error("IsCommandAllowed nil func: got true, want false")
-				}
+				assertNilFuncBool(t, m.IsCommandAllowed("ls"))
 			},
 		},
 		{
 			name: "IsBypassActive_nil_func",
 			call: func(m *MockServiceSecurityManager) {
-				if m.IsBypassActive() {
-					t.Error("IsBypassActive nil func: got true, want false")
-				}
+				assertNilFuncBool(t, m.IsBypassActive())
 			},
 		},
 		{
 			name: "Close_nil_func",
 			call: func(m *MockServiceSecurityManager) {
-				if err := m.Close(); err != nil {
-					t.Errorf("Close nil func: unexpected error %v", err)
-				}
+				assertNilFuncErr(t, m.Close())
 			},
 		},
 	}

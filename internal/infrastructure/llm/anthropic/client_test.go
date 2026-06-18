@@ -318,43 +318,72 @@ func TestSendChat_ErrorHandling(t *testing.T) {
 			}
 
 			_, _, err := c.SendChat(context.Background(), nil, nil, nil)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-
-			if tt.wantErrContains != "" {
-				if !strings.Contains(err.Error(), tt.wantErrContains) {
-					t.Errorf("expected error containing %q, got %q", tt.wantErrContains, err.Error())
-				}
-			}
-
-			var apiErr *llmerr.APIError
-			if tt.isAPIError {
-				if !errors.As(err, &apiErr) {
-					t.Fatalf("expected *llmerr.APIError, got %T", err)
-				}
-				if apiErr.Status != tt.wantAPIErrorStatus {
-					t.Errorf("status: got %d, want %d", apiErr.Status, tt.wantAPIErrorStatus)
-				}
-				if tt.wantSentinel != nil {
-					classified := llmerr.Classify(apiErr)
-					if !errors.Is(classified, tt.wantSentinel) {
-						t.Errorf("Classify: got %v, want %v", classified, tt.wantSentinel)
-					}
-				}
-			} else {
-				if errors.As(err, &apiErr) {
-					t.Errorf("expected non-APIError, got %T: %v", apiErr, apiErr)
-				}
-
-				// 500_read_failure: additionally verify the full error chain
-				if tt.useReadFailure {
-					if !strings.Contains(err.Error(), "additionally, failed to read response body") {
-						t.Errorf("expected error containing %q, got %q", "additionally, failed to read response body", err.Error())
-					}
-				}
-			}
+			assertSendChatError(t, tt, err)
 		})
+	}
+}
+
+// assertSendChatError validates the error returned by SendChat against the
+// expectations defined in the test case. It delegates to sub-helpers for
+// APIError and non-APIError specific assertions.
+func assertSendChatError(t *testing.T, tt struct {
+	name               string
+	status             int
+	responseBody       string
+	wantAPIErrorStatus int
+	wantSentinel       error
+	wantErrContains    string
+	isAPIError         bool
+	useReadFailure     bool
+}, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if tt.wantErrContains != "" {
+		if !strings.Contains(err.Error(), tt.wantErrContains) {
+			t.Errorf("expected error containing %q, got %q", tt.wantErrContains, err.Error())
+		}
+	}
+	if tt.isAPIError {
+		assertAPIErrorDetails(t, err, tt.wantAPIErrorStatus, tt.wantSentinel)
+	} else {
+		assertNonAPIErrorDetails(t, err, tt.useReadFailure)
+	}
+}
+
+// assertAPIErrorDetails validates that err is an *llmerr.APIError with the
+// expected HTTP status code and Classify sentinel mapping.
+func assertAPIErrorDetails(t *testing.T, err error, wantStatus int, wantSentinel error) {
+	t.Helper()
+	var apiErr *llmerr.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *llmerr.APIError, got %T", err)
+	}
+	if apiErr.Status != wantStatus {
+		t.Errorf("status: got %d, want %d", apiErr.Status, wantStatus)
+	}
+	if wantSentinel != nil {
+		classified := llmerr.Classify(apiErr)
+		if !errors.Is(classified, wantSentinel) {
+			t.Errorf("Classify: got %v, want %v", classified, wantSentinel)
+		}
+	}
+}
+
+// assertNonAPIErrorDetails validates that err is NOT an *llmerr.APIError and
+// optionally checks for read-failure error text in the chain.
+func assertNonAPIErrorDetails(t *testing.T, err error, useReadFailure bool) {
+	t.Helper()
+	var apiErr *llmerr.APIError
+	if errors.As(err, &apiErr) {
+		t.Errorf("expected non-APIError, got %T: %v", apiErr, apiErr)
+	}
+	if useReadFailure {
+		if !strings.Contains(err.Error(), "additionally, failed to read response body") {
+			t.Errorf("expected error containing %q, got %q",
+				"additionally, failed to read response body", err.Error())
+		}
 	}
 }
 

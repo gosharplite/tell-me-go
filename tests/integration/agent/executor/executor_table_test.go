@@ -104,26 +104,34 @@ func assertExecutionSuccess(t *testing.T, resp *llm.Content, err error, expected
 	}
 }
 
-func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *eventstest.MockEventBus, expectedMsg string, expectedErr error) {
+// checkExpectedError classifies and validates an error against the expected
+// error sentinel. Returns true if the error matches expectations, false if
+// a fatal mismatch was found (caller should abort via t.Fatal).
+func checkExpectedError(t *testing.T, err error, expectedErr error) {
 	t.Helper()
-	if expectedErr != nil && errors.Is(expectedErr, llm.ErrTerminal) {
+	if expectedErr == nil {
+		return // no error expected, caller handles nil-check
+	}
+	if errors.Is(expectedErr, llm.ErrTerminal) {
 		if err == nil {
 			t.Fatalf("expected terminal error, got nil")
-		} else if !errors.Is(err, llm.ErrTerminal) {
+		}
+		if !errors.Is(err, llm.ErrTerminal) {
 			t.Fatalf("expected error to wrap llm.ErrTerminal, got: %v", err)
 		}
-	} else if expectedErr != nil {
-		if err == nil {
-			t.Fatalf("expected error wrapping %v, got nil", expectedErr)
-		}
-		if !errors.Is(err, expectedErr) {
-			t.Fatalf("expected error wrapping %v, got: %v", expectedErr, err)
-		}
-	} else {
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		return
 	}
+	if err == nil {
+		t.Fatalf("expected error wrapping %v, got nil", expectedErr)
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected error wrapping %v, got: %v", expectedErr, err)
+	}
+}
+
+func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *eventstest.MockEventBus, expectedMsg string, expectedErr error) {
+	t.Helper()
+	checkExpectedError(t, err, expectedErr)
 	verifyErrorResponse(t, resp, expectedMsg)
 	if bus != nil && expectedErr != nil {
 		verifyToolEventError(t, bus, expectedErr)
