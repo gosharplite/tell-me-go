@@ -321,6 +321,21 @@ Toby provides:
 
 See the [Toby documentation](docs/user/toby/README.md) for installation and usage.
 
+### Advanced Environment Management with Dobby
+
+If you need to switch AI providers mid-session while keeping the same project context, consider using **Dobby** – a Bash environment manager that creates isolated `tell-me-go` environments with dedicated configurations for every role in the pipeline and on-the-fly provider switching within the same tag.
+
+Dobby provides:
+- **Multi‑role environments** (`ait‑<tag>` directories) with five role configs: `butler`, `architect`, `coder`, `reviewer`, `tester`
+- **Template‑based provisioning** (`-n` flag) with auto‑generated role configs from a single `butler.yaml` source
+- **Priority mode** (`-p` flag) for Vertex AI shared/priority headers
+- **Clean mode** (`-c` flag) for lean, docs‑free environments
+- **Interactive selection** (with `fzf`) for tags and providers
+- **Role‑specific helper functions** (`b`, `a`, `c`, `t`, `r`) scoped to the current environment
+- **Visual shell prompt** showing the active tag and provider
+
+See the [Dobby documentation](docs/user/dobby/README.md) for installation and usage.
+
 ## 🛠️ Development
 
 To build from source, run tests, or contribute to `tell-me-go`, install the following Go development tools:
