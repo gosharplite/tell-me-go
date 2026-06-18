@@ -371,3 +371,49 @@ func TestDefaultConfigFinder_FindInExecutableDir_StatFileNotFound(t *testing.T) 
 		}
 	})
 }
+
+// TestDefaultConfigFinder_FindInExecutableDir_Success verifies that
+// findInExecutableDir returns (path, true) when configs/assistant.yaml
+// exists in the executable directory and the base directory differs.
+// This covers the success branch at finder.go:119 (return path, true).
+func TestDefaultConfigFinder_FindInExecutableDir_Success(t *testing.T) {
+	t.Run("config file found adjacent to executable", func(t *testing.T) {
+		originalExecutable := osExecutable
+		t.Cleanup(func() { osExecutable = originalExecutable })
+
+		// Create a temp dir that simulates the executable's directory,
+		// complete with configs/assistant.yaml inside it.
+		exeDir := t.TempDir()
+		configsDir := filepath.Join(exeDir, "configs")
+		if err := os.MkdirAll(configsDir, 0755); err != nil {
+			t.Fatalf("failed to create configs dir: %v", err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(configsDir, "assistant.yaml"),
+			[]byte("exe-adjacent-config"),
+			0644,
+		); err != nil {
+			t.Fatalf("failed to write config file: %v", err)
+		}
+
+		// Make osExecutable return a path inside exeDir so that
+		// filepath.Dir resolves to exeDir.
+		osExecutable = func() (string, error) {
+			return filepath.Join(exeDir, "fake-binary"), nil
+		}
+
+		// Use a different baseDir to avoid the redundant-search guard
+		// at finder.go:111-115 (absBase == absExeDir → early return).
+		f := &defaultConfigFinder{baseDir: t.TempDir()}
+
+		path, found := f.findInExecutableDir()
+		if !found {
+			t.Fatal("expected found=true when config exists in executable dir")
+		}
+
+		expected := filepath.Join(exeDir, "configs", "assistant.yaml")
+		if path != expected {
+			t.Errorf("got path %q; want %q", path, expected)
+		}
+	})
+}
