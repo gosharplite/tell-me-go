@@ -139,8 +139,9 @@ func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFil
 	// NOTE: The rows.Close() defer error-shadowing and rows.Err() check below
 	// are defensive branches that cannot be triggered by modernc.org/sqlite
 	// (which eagerly buffers all results during QueryContext). These branches
-	// exist for correctness if the SQLite driver is swapped. Verified by code
-	// review only; no test coverage is possible.
+	// exist for correctness if the SQLite driver is swapped.
+	// Coverage gap accepted by architect — verified by code review only;
+	// no test coverage is possible.
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
 			if err == nil {
@@ -253,8 +254,9 @@ func (s *sqliteKVStore) GetAll(ctx context.Context) (res map[string]string, err 
 	// NOTE: The rows.Close() defer error-shadowing and rows.Err() check below
 	// are defensive branches that cannot be triggered by modernc.org/sqlite
 	// (which eagerly buffers all results during QueryContext). These branches
-	// exist for correctness if the SQLite driver is swapped. Verified by code
-	// review only; no test coverage is possible.
+	// exist for correctness if the SQLite driver is swapped.
+	// Coverage gap accepted by architect — verified by code review only;
+	// no test coverage is possible.
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
 			if err == nil {

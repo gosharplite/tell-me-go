@@ -1178,4 +1178,122 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 		require.Nil(t, capturer)
 		require.Nil(t, cleanup)
 	})
+
+	t.Run("history_manager_non_nil_empty_last_message", func(t *testing.T) {
+		t.Parallel()
+
+		mb := &clitest.MockBootstrapper{
+			GetHistoryManagerFunc: func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+				return &stubHistoryManager{}, nil
+			},
+			GetSuggestionServiceFunc: func(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
+				return &mockSuggestionService{}, nil
+			},
+		}
+		ms := &clitest.MockChatService{
+			GetLastUserMessageFunc: func(ctx stdctx.Context, hManager ports.HistoryManager) (string, int, error) {
+				return "", 0, nil // empty lastMsg — exercises hManager != nil but NOT lastMsg != ""
+			},
+		}
+
+		mockCap := &mockCapturerInteractor{}
+
+		c := &chatCommand{
+			Stdin:  strings.NewReader(""),
+			Stdout: new(strings.Builder),
+			Stderr: new(strings.Builder),
+			SM:     &mockSM{},
+			capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer,
+				sm domain_security.Manager, clk clock.Clock,
+				mockPrompt, mockAnswer string, disableEscapeSequences bool,
+			) domain_security.UserInteractor {
+				return mockCap
+			},
+			Bootstrapper: mb,
+			ChatService:  ms,
+		}
+
+		opts := &cliOptions{tuiPrompt: true}
+		capturer, cleanup, err := c.buildCapturer(
+			stdctx.Background(), &config.Config{}, opts)
+
+		require.NoError(t, err)
+		require.NotNil(t, capturer)
+		require.NotNil(t, cleanup)
+
+		// Verify cleanup delegates to the capturer's Close
+		err = cleanup(stdctx.Background())
+		require.NoError(t, err)
+
+		// Verify bootstrapper call tracking
+		snap := mb.Snapshot()
+		if snap.GetHistoryManager != 1 {
+			t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+		}
+		if snap.GetSuggestionService != 1 {
+			t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+		}
+	})
+
+	t.Run("history_manager_with_last_message_populates_recent_history", func(t *testing.T) {
+		t.Parallel()
+
+		const expectedLastMsg = "previous user message"
+
+		mb := &clitest.MockBootstrapper{
+			GetHistoryManagerFunc: func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+				return &stubHistoryManager{}, nil
+			},
+			GetSuggestionServiceFunc: func(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
+				// Verify recentHistory contains the last message from GetLastUserMessage
+				if len(recentHistory) == 0 {
+					t.Error("expected non-empty recentHistory when lastMsg is populated")
+				} else if recentHistory[0] != expectedLastMsg {
+					t.Errorf("recentHistory[0] = %q, want %q", recentHistory[0], expectedLastMsg)
+				}
+				return &mockSuggestionService{}, nil
+			},
+		}
+		ms := &clitest.MockChatService{
+			GetLastUserMessageFunc: func(ctx stdctx.Context, hManager ports.HistoryManager) (string, int, error) {
+				return expectedLastMsg, 1, nil
+			},
+		}
+
+		mockCap := &mockCapturerInteractor{}
+
+		c := &chatCommand{
+			Stdin:  strings.NewReader(""),
+			Stdout: new(strings.Builder),
+			Stderr: new(strings.Builder),
+			SM:     &mockSM{},
+			capturerFactory: func(stdin io.Reader, stdout, stderr io.Writer,
+				sm domain_security.Manager, clk clock.Clock,
+				mockPrompt, mockAnswer string, disableEscapeSequences bool,
+			) domain_security.UserInteractor {
+				return mockCap
+			},
+			Bootstrapper: mb,
+			ChatService:  ms,
+		}
+
+		opts := &cliOptions{tuiPrompt: true}
+		capturer, cleanup, err := c.buildCapturer(
+			stdctx.Background(), &config.Config{}, opts)
+
+		require.NoError(t, err)
+		require.NotNil(t, capturer)
+		require.NotNil(t, cleanup)
+		err = cleanup(stdctx.Background())
+		require.NoError(t, err)
+
+		// Verify bootstrapper call tracking
+		snap := mb.Snapshot()
+		if snap.GetHistoryManager != 1 {
+			t.Errorf("GetHistoryManager: expected 1, got %d", snap.GetHistoryManager)
+		}
+		if snap.GetSuggestionService != 1 {
+			t.Errorf("GetSuggestionService: expected 1, got %d", snap.GetSuggestionService)
+		}
+	})
 }
