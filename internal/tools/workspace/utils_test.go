@@ -44,7 +44,11 @@ func TestFormatMatch(t *testing.T) {
 	}
 }
 
-func TestWalkAndProcess(t *testing.T) {
+// setupWalkTest creates a temp directory with a single file "f1.txt"
+// and returns the directory path and a security manager that allows
+// access to that directory.
+func setupWalkTest(t *testing.T) (string, *toolstest.MockSecurityManager) {
+	t.Helper()
 	tempDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tempDir, "safe"), 0755); err != nil {
 		t.Fatal(err)
@@ -52,11 +56,56 @@ func TestWalkAndProcess(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tempDir, "safe/f1.txt"), []byte("data"), 0644); err != nil {
 		t.Fatal(err)
 	}
-
 	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.RegisterSafePath(tempDir)
 	sm.IsSafeFunc = func(path string) (string, error) {
 		if strings.HasPrefix(path, tempDir) {
+			return path, nil
+		}
+		return "", os.ErrPermission
+	}
+	return tempDir, sm
+}
+
+func TestWalkAndProcess_SafePath(t *testing.T) {
+	tempDir, sm := setupWalkTest(t)
+	ctx := context.Background()
+	var seen []string
+	processor := func(path string) error {
+		seen = append(seen, filepath.Base(path))
+		return nil
+	}
+
+	err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), tempDir, nil, processor, infra_persistence.NewWorkspacePolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || seen[0] != "f1.txt" {
+		t.Errorf("unexpected files seen: %v", seen)
+	}
+}
+
+func TestWalkAndProcess_UnsafePath(t *testing.T) {
+	_, sm := setupWalkTest(t)
+	ctx := context.Background()
+	err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, nil, infra_persistence.NewWorkspacePolicy())
+	if err == nil {
+		t.Error("expected error for unsafe path")
+	}
+}
+
+func TestWalkAndProcess_EmptyPathDefaultsToDot(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		if path == "." {
+			return tmpDir, nil
+		}
+		if strings.HasPrefix(path, tmpDir) {
 			return path, nil
 		}
 		return "", os.ErrPermission
@@ -69,56 +118,13 @@ func TestWalkAndProcess(t *testing.T) {
 		return nil
 	}
 
-	t.Run("safe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), tempDir, nil, processor, infra_persistence.NewWorkspacePolicy())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(seen) != 1 || seen[0] != "f1.txt" {
-			t.Errorf("unexpected files seen: %v", seen)
-		}
-	})
-
-	t.Run("unsafe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, processor, infra_persistence.NewWorkspacePolicy())
-		if err == nil {
-			t.Error("expected error for unsafe path")
-		}
-	})
-
-	t.Run("empty path defaults to dot", func(t *testing.T) {
-		// walkAndProcess converts empty string path to "." before calling IsPathSafe.
-		// Use a temp dir with a file and a security manager that resolves "." to it.
-		tmpDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		sm2 := &toolstest.MockSecurityManager{AllowAll: false}
-		sm2.IsSafeFunc = func(path string) (string, error) {
-			if path == "." {
-				return tmpDir, nil
-			}
-			if strings.HasPrefix(path, tmpDir) {
-				return path, nil
-			}
-			return "", os.ErrPermission
-		}
-
-		var seen []string
-		processor2 := func(path string) error {
-			seen = append(seen, filepath.Base(path))
-			return nil
-		}
-
-		err := walkAndProcess(ctx, sm2, persistencetest.NewPlainOSFileSystem(), "", nil, processor2, infra_persistence.NewWorkspacePolicy())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(seen) != 1 || seen[0] != "test.txt" {
-			t.Errorf("unexpected files seen: %v", seen)
-		}
-	})
+	err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "", nil, processor, infra_persistence.NewWorkspacePolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || seen[0] != "test.txt" {
+		t.Errorf("unexpected files seen: %v", seen)
+	}
 }
 
 func TestSendHeartbeat_DefaultCase(t *testing.T) {

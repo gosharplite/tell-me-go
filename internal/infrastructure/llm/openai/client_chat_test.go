@@ -487,6 +487,22 @@ func TestSendChat_ErrorHandling(t *testing.T) {
 			wantSentinel:       llm.ErrTransient,
 			wantErrContains:    "api error (status 503)",
 		},
+		{
+			name:               "500_empty_body",
+			statusCode:         500,
+			responseBody:       "",
+			wantAPIErrorStatus: 500,
+			wantSentinel:       llm.ErrTransient,
+			wantErrContains:    "api error (status 500)",
+		},
+		{
+			name:               "500_non_json_body",
+			statusCode:         500,
+			responseBody:       "<html>Internal Server Error</html>",
+			wantAPIErrorStatus: 500,
+			wantSentinel:       llm.ErrTransient,
+			wantErrContains:    "api error (status 500)",
+		},
 
 		// ── Dimension 2: Malformed / edge response bodies ──────────
 		{
@@ -526,81 +542,42 @@ func TestSendChat_ErrorHandling(t *testing.T) {
 			client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"})
 			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
 
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-
-			// Assertion A: error message contains expected substring
-			if !strings.Contains(err.Error(), tt.wantErrContains) {
-				t.Errorf("expected error containing %q, got %q", tt.wantErrContains, err.Error())
-			}
-
-			// Assertion B: APIError type + status (only for status-code rows)
-			if tt.wantAPIErrorStatus != 0 {
-				var apiErr *llmerr.APIError
-				if !errors.As(err, &apiErr) {
-					t.Fatalf("expected *llmerr.APIError, got %T", err)
-				}
-				if apiErr.Status != tt.wantAPIErrorStatus {
-					t.Errorf("status: got %d, want %d", apiErr.Status, tt.wantAPIErrorStatus)
-				}
-
-				// Assertion C: Classify maps to the correct domain sentinel
-				if tt.wantSentinel != nil {
-					classified := llmerr.Classify(apiErr)
-					if !errors.Is(classified, tt.wantSentinel) {
-						t.Errorf("Classify: got %v, want %v", classified, tt.wantSentinel)
-					}
-				}
-			}
+			assertSendChatError(t, tt, err)
 		})
 	}
 
-	// ── Response body variants for HTTP 500 ───────────────────────
-	t.Run("500_responseBodyVariant", func(t *testing.T) {
-		variants := []struct {
-			name string
-			body string
-		}{
-			{"empty_body", ""},
-			{"non_json_body", "<html>Internal Server Error</html>"},
+}
+
+func assertSendChatError(t *testing.T, tt struct {
+	name               string
+	statusCode         int
+	responseBody       string
+	wantAPIErrorStatus int
+	wantSentinel       error
+	wantErrContains    string
+}, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), tt.wantErrContains) {
+		t.Errorf("expected error containing %q, got %q", tt.wantErrContains, err.Error())
+	}
+	if tt.wantAPIErrorStatus != 0 {
+		var apiErr *llmerr.APIError
+		if !errors.As(err, &apiErr) {
+			t.Fatalf("expected *llmerr.APIError, got %T", err)
 		}
-
-		for _, v := range variants {
-			v := v
-			t.Run(v.name, func(t *testing.T) {
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusInternalServerError)
-					if v.body != "" {
-						_, _ = w.Write([]byte(v.body))
-					}
-				}))
-				defer server.Close()
-
-				client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"})
-				_, _, err := client.SendChat(context.Background(), nil, nil, nil)
-
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-
-				// Must still be an APIError
-				var apiErr *llmerr.APIError
-				if !errors.As(err, &apiErr) {
-					t.Fatalf("expected *llmerr.APIError, got %T", err)
-				}
-				if apiErr.Status != 500 {
-					t.Errorf("status: got %d, want 500", apiErr.Status)
-				}
-
-				// Classify must map to ErrTransient
-				classified := llmerr.Classify(apiErr)
-				if !errors.Is(classified, llm.ErrTransient) {
-					t.Errorf("Classify: got %v, want %v", classified, llm.ErrTransient)
-				}
-			})
+		if apiErr.Status != tt.wantAPIErrorStatus {
+			t.Errorf("status: got %d, want %d", apiErr.Status, tt.wantAPIErrorStatus)
 		}
-	})
+		if tt.wantSentinel != nil {
+			classified := llmerr.Classify(apiErr)
+			if !errors.Is(classified, tt.wantSentinel) {
+				t.Errorf("Classify: got %v, want %v", classified, tt.wantSentinel)
+			}
+		}
+	}
 }
 
 func TestSendChat_EmptyToolResponseID(t *testing.T) {
