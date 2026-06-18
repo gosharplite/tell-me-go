@@ -1,6 +1,6 @@
 # Dobby: Multi-Role Environment Manager for tell-me-go
 
-Dobby is a Bash environment manager that creates isolated `tell-me-go` environments with dedicated configurations for every role in the SOP pipeline (**Architect → Coder → Reviewer → Tester → Butler**). Each `ait-<tag>` directory contains five auto-generated role configs, all derived from a single `butler.yaml` master source. Unlike Toby (which bakes the provider into the directory name), Dobby lets you switch AI providers on the fly within the same project — just re-source with the same tag and a different provider.
+Dobby is a Bash environment manager that creates isolated `tell-me-go` environments with dedicated configurations for every role in the SOP pipeline. Each `ait-<tag>` directory contains five auto-generated role configs, all derived from a single `butler.yaml` master source. Unlike Toby (which bakes the provider into the directory name), Dobby lets you switch AI providers on the fly within the same session.
 
 ## Overview
 
