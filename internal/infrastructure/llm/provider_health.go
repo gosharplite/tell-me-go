@@ -43,8 +43,11 @@ func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authent
 		providerName:  providerName,
 		authenticator: authenticator,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
-		httpClient:    &http.Client{Timeout: 5 * time.Second},
-		gateway:       gateway,
+		httpClient: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: &http.Transport{},
+		},
+		gateway: gateway,
 	}
 }
 
