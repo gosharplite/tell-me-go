@@ -243,3 +243,90 @@ func TestMockCapturer_RaceDetection(t *testing.T) {
 			total, it, cp, cf, cl, wc, pc, rsk, rl, wantTotal)
 	}
 }
+
+func TestMockCapturer_NilFuncs(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name string
+		call func(m *MockCapturer)
+	}{
+		{
+			name: "IsTTY_nil_func",
+			call: func(m *MockCapturer) {
+				got := m.IsTTY("any")
+				if got {
+					t.Error("nil IsTTYFn: got true; want false")
+				}
+			},
+		},
+		{
+			name: "CapturePrompt_nil_func",
+			call: func(m *MockCapturer) {
+				got, err := m.CapturePrompt(ctx, nil)
+				if got != "" {
+					t.Errorf("nil CapturePromptFn: got %q; want empty", got)
+				}
+				if err != nil {
+					t.Errorf("nil CapturePromptFn: unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name: "Confirm_nil_func",
+			call: func(m *MockCapturer) {
+				got, err := m.Confirm(ctx, "proceed?")
+				if got {
+					t.Error("nil ConfirmFn: got true; want false")
+				}
+				if err != nil {
+					t.Errorf("nil ConfirmFn: unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name: "Close_nil_func",
+			call: func(m *MockCapturer) {
+				err := m.Close(ctx)
+				if err != nil {
+					t.Errorf("nil CloseFn: unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name: "ReadSingleKey_nil_func",
+			call: func(m *MockCapturer) {
+				got, err := m.ReadSingleKey(ctx)
+				if got != "" {
+					t.Errorf("nil ReadSingleKeyFn: got %q; want empty", got)
+				}
+				if err != nil {
+					t.Errorf("nil ReadSingleKeyFn: unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name: "ReadLine_nil_func",
+			call: func(m *MockCapturer) {
+				got, err := m.ReadLine(ctx)
+				if got != "" {
+					t.Errorf("nil ReadLineFn: got %q; want empty", got)
+				}
+				if err != nil {
+					t.Errorf("nil ReadLineFn: unexpected error: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockCapturer{} // zero value — no Fn fields set
+			tt.call(m)
+		})
+	}
+}
