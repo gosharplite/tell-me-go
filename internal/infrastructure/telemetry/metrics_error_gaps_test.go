@@ -241,6 +241,78 @@ func TestAppendSummaryToLog_WriteErrorUnreachable(t *testing.T) {
 }
 
 // =============================================================================
+// Gap 2b — appendSummaryToLog json.Marshal error (metrics.go:213-215)
+// =============================================================================
+
+// TestAppendSummaryToLog_MarshalError proves that the json.Marshal error path
+// in appendSummaryToLog is reachable when llm.Metrics float64 fields contain
+// NaN or Inf. Unlike TurnTrace (all fields are JSON-safe types), llm.Metrics
+// has float64 fields (Cost, Duration, ToolDuration, CumulativeToolDuration)
+// that can hold NaN/Inf values, causing json.Marshal to fail with
+// *json.UnsupportedValueError.
+//
+// This test follows the same structural pattern as the existing gap tests:
+// direct proof of reachability, then exercise the production code path.
+func TestAppendSummaryToLog_MarshalError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "summary.log")
+
+	// Usage with non-zero tokens so appendSummaryToLog does not early-return.
+	usage := domain_pricing.UsageStats{
+		PromptTokens:   100,
+		ResponseTokens: 50,
+	}
+
+	// -------------------------------------------------------------------------
+	// 1. Prove json.Marshal fails on NaN — the key distinction from TurnTrace.
+	//    TurnTrace fields are all string/time.Time/time.Duration (JSON-safe).
+	//    llm.Metrics has float64 fields that CAN contain NaN/Inf.
+	// -------------------------------------------------------------------------
+	_, err := json.Marshal(llm.Metrics{Cost: math.NaN()})
+	require.Error(t, err, "json.Marshal should fail when Cost is NaN")
+	var unsupportedValueErr *json.UnsupportedValueError
+	require.ErrorAs(t, err, &unsupportedValueErr,
+		"error should be *json.UnsupportedValueError")
+
+	// Also prove +Inf and -Inf fail.
+	_, err = json.Marshal(llm.Metrics{Duration: math.Inf(1)})
+	require.Error(t, err, "json.Marshal should fail when Duration is +Inf")
+	_, err = json.Marshal(llm.Metrics{ToolDuration: math.Inf(-1)})
+	require.Error(t, err, "json.Marshal should fail when ToolDuration is -Inf")
+
+	// -------------------------------------------------------------------------
+	// 2. Exercise appendSummaryToLog with NaN cost — marshal fails internally.
+	// -------------------------------------------------------------------------
+	err = appendSummaryToLog(logPath, usage, math.NaN(), "test-model")
+	require.Error(t, err, "appendSummaryToLog should fail with NaN cost")
+	require.ErrorContains(t, err, "failed to marshal cost summary",
+		"error should wrap with 'failed to marshal cost summary'")
+	require.ErrorContains(t, err, "json: unsupported value",
+		"underlying error should be the json unsupported value error")
+
+	// -------------------------------------------------------------------------
+	// 3. Happy-path reinforcement: valid cost produces valid JSON.
+	// -------------------------------------------------------------------------
+	validPath := filepath.Join(tmpDir, "valid_summary.log")
+	err = appendSummaryToLog(validPath, usage, 1.5, "test-model")
+	require.NoError(t, err, "appendSummaryToLog should succeed with valid cost")
+
+	data, err := os.ReadFile(validPath)
+	require.NoError(t, err)
+	require.True(t, len(data) > 0, "log file should not be empty")
+
+	var written llm.Metrics
+	require.NoError(t, json.Unmarshal(data, &written),
+		"written content should be valid JSON")
+	assert.Equal(t, int32(100), written.PromptTokens)
+	assert.Equal(t, int32(50), written.ResponseTokens)
+	assert.Equal(t, 1.5, written.Cost)
+	assert.True(t, written.IsSummary, "summary flag should be set")
+}
+
+// =============================================================================
 // Gap 3 — logTrace Write error (metrics.go:264)
 // =============================================================================
 

@@ -6,6 +6,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -268,4 +269,130 @@ func TestUpdateLedgerHistory_AtomicWriteFailure_AlreadyCovered(t *testing.T) {
 	// If we reach here, coverage for this gap is provided by the existing
 	// persistence_error_test.go test suite.
 	assert.True(t, true, "coverage provided by persistence_error_test.go")
+}
+
+// =============================================================================
+// updateLedgerHistory marshal error gap tests
+// =============================================================================
+
+// TestUpdateLedgerHistory_MarshalError covers the gap at metrics_cost.go:82-85
+// where json.Marshal(history) fails because a sessionCostRecord contains a NaN
+// float64 field (TotalCost). The float64 NaN/Inf values are not representable
+// in JSON when embedded in a struct, causing json.Marshal to return
+// *json.UnsupportedValueError. The test proves:
+//  1. json.Marshal rejects []sessionCostRecord with NaN (direct proof)
+//  2. updateLedgerHistory does NOT panic and does NOT overwrite the file
+//     when the upserted history contains NaN
+//  3. updateLedgerHistory successfully writes the file with a valid record
+//     (happy-path reinforcement)
+func TestUpdateLedgerHistory_MarshalError(t *testing.T) {
+	t.Parallel()
+
+	// --- Part 1: Direct proof that NaN in TotalCost makes marshal fail ---
+	_, err := json.Marshal([]sessionCostRecord{{TotalCost: math.NaN()}})
+	var unsupportedValueErr *json.UnsupportedValueError
+	require.ErrorAs(t, err, &unsupportedValueErr,
+		"json.Marshal must reject NaN in sessionCostRecord.TotalCost (struct float64 field)")
+	require.ErrorContains(t, err, "json: unsupported value",
+		"error message must mention unsupported value")
+
+	// --- Part 2: Exercise updateLedgerHistory with NaN in history ---
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "output")
+	require.NoError(t, os.MkdirAll(outputDir, 0755))
+	globalDir := tempDir // global_costs.json lives in parent of outputDir
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	// Pre-create global_costs.json with one valid session record so
+	// loadHistory returns non-empty data.
+	existingRecord := sessionCostRecord{
+		Date:      "2026-06-15",
+		Timestamp: time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+		Session:   "test-mode/test-session.log",
+		Model:     "gpt-4",
+		TotalCost: 0.10,
+		Usage: domain_pricing.UsageStats{
+			PromptTokens:   100,
+			ResponseTokens: 50,
+		},
+	}
+	existingData, err := json.Marshal([]sessionCostRecord{existingRecord})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(historyPath, existingData, 0644))
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+
+	logFile := filepath.Join(outputDir, "test-session.log")
+
+	// ledger=nil prevents async ledger recovery from triggering.
+	// kvStore=nil makes loadRetentionDays default to 30 days, keeping
+	// the recent record within the retention window.
+	m := &metricsManager{
+		sm:      sm,
+		logFile: logFile,
+		mode:    "test-mode",
+		model:   "gpt-4",
+		ledger:  nil,
+		kvStore: nil,
+	}
+
+	nanRecord := sessionCostRecord{
+		Date:      "2026-06-15",
+		Timestamp: time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+		Session:   "test-mode/test-session.log", // same session → upsert
+		Model:     "gpt-4",
+		TotalCost: math.NaN(),
+		Usage: domain_pricing.UsageStats{
+			PromptTokens:   200,
+			ResponseTokens: 100,
+		},
+	}
+
+	ctx := context.Background()
+
+	// updateLedgerHistory must NOT panic when marshal fails.
+	// The NaN record is upserted into history, json.Marshal(history)
+	// returns an error, and the function returns early before AtomicWrite.
+	require.NotPanics(t, func() {
+		m.updateLedgerHistory(ctx, historyPath, globalDir, outputDir, nanRecord)
+	}, "updateLedgerHistory must not panic when json.Marshal fails on NaN")
+
+	// Verify the file is unchanged — marshal failed before AtomicWrite.
+	data, err := os.ReadFile(historyPath)
+	require.NoError(t, err)
+	var records []sessionCostRecord
+	require.NoError(t, json.Unmarshal(data, &records))
+	require.Len(t, records, 1, "global_costs.json should still have exactly one record")
+	assert.Equal(t, existingRecord.TotalCost, records[0].TotalCost,
+		"TotalCost should be unchanged after failed marshal")
+	assert.Equal(t, int64(100), records[0].Usage.PromptTokens,
+		"usage should be unchanged after failed marshal")
+
+	// --- Part 3: Happy-path reinforcement ---
+	// Call updateLedgerHistory with a valid float64 value and verify the
+	// file is updated with the upserted record.
+	validRecord := sessionCostRecord{
+		Date:      "2026-06-15",
+		Timestamp: time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+		Session:   "test-mode/test-session.log", // same session → upsert
+		Model:     "gpt-4",
+		TotalCost: 0.05,
+		Usage: domain_pricing.UsageStats{
+			PromptTokens:   300,
+			ResponseTokens: 150,
+		},
+	}
+
+	m.updateLedgerHistory(ctx, historyPath, globalDir, outputDir, validRecord)
+
+	data, err = os.ReadFile(historyPath)
+	require.NoError(t, err)
+	var records2 []sessionCostRecord
+	require.NoError(t, json.Unmarshal(data, &records2))
+	require.Len(t, records2, 1, "global_costs.json should still have exactly one record after upsert")
+	assert.Equal(t, 0.05, records2[0].TotalCost,
+		"TotalCost should be updated to 0.05")
+	assert.Equal(t, int64(300), records2[0].Usage.PromptTokens,
+		"usage should be updated to 300 prompt tokens")
 }
