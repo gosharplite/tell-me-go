@@ -187,9 +187,8 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 
 func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task]) (ports.TaskStore, error) {
 	tasks := services.NewTaskService(taskStore)
-
-	if err := tasks.Initialize(ctx); err != nil {
-		return nil, err
-	}
+	// Initialize is a no-op since taskService became stateless (Issue #906).
+	// Kept for interface compatibility with ports.Initializer.
+	_ = tasks.Initialize(ctx)
 	return tasks, nil
 }

@@ -6,8 +6,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"sort"
-	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -18,42 +16,19 @@ import (
 var _ ports.TaskStore = (*taskService)(nil)
 
 // taskService handles the logic for managing tasks.
+// It is a stateless pass-through that delegates all operations to the store.
 type taskService struct {
-	mu     sync.RWMutex
-	store  ports.ListStore[ports.Task]
-	tasks  map[int64]ports.Task
-	nextID int64
+	store ports.ListStore[ports.Task]
 }
 
 // NewTaskService creates a new taskService.
 func NewTaskService(store ports.ListStore[ports.Task]) *taskService {
-	return &taskService{
-		store:  store,
-		tasks:  make(map[int64]ports.Task),
-		nextID: 1,
-	}
+	return &taskService{store: store}
 }
 
-// Initialize loads tasks from the repository.
-func (s *taskService) Initialize(ctx context.Context) error {
-	// Load only active tasks (not completed) into memory.
-	// Completed tasks remain in the persistent store and can be
-	// queried on demand via ListTasks with status filter.
-	tasks, err := s.store.Query(ctx, ports.ListFilter{NotStatus: "completed"}, 0, 0)
-	if err != nil {
-		return err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, t := range tasks {
-		s.tasks[t.ID] = t
-		if t.ID >= s.nextID {
-			s.nextID = t.ID + 1
-		}
-	}
-	return nil
-}
+// Initialize is a no-op required for ports.Initializer compatibility.
+// All state is managed by the backing store.
+func (s *taskService) Initialize(ctx context.Context) error { return nil }
 
 // AddTask adds a new task.
 func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, error) {
@@ -61,11 +36,11 @@ func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, 
 		return ports.Task{}, fmt.Errorf("content is required for add")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	t := ports.Task{
-		ID:        s.nextID,
+		// [TECHNICAL DEBT] ID assignment uses time.Now().UnixNano() which is
+		// unique-enough for a single-user CLI tool. A more robust approach would
+		// be store-level auto-increment (e.g., SQLite INTEGER PRIMARY KEY).
+		ID:        time.Now().UnixNano(),
 		Content:   content,
 		Status:    "pending",
 		CreatedAt: time.Now(),
@@ -75,18 +50,27 @@ func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, 
 		return ports.Task{}, err
 	}
 
-	s.tasks[t.ID] = t
-	s.nextID++
 	return t, nil
 }
 
 // UpdateTask updates an existing task.
 func (s *taskService) UpdateTask(ctx context.Context, id int64, content, status string) (ports.Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Fetch existing tasks from store to validate existence
+	tasks, err := s.store.Query(ctx, ports.ListFilter{}, 0, 0)
+	if err != nil {
+		return ports.Task{}, err
+	}
 
-	t, ok := s.tasks[id]
-	if !ok {
+	var t ports.Task
+	found := false
+	for _, existing := range tasks {
+		if existing.ID == id {
+			t = existing
+			found = true
+			break
+		}
+	}
+	if !found {
 		return ports.Task{}, fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 	}
 
@@ -101,90 +85,47 @@ func (s *taskService) UpdateTask(ctx context.Context, id int64, content, status 
 		return ports.Task{}, err
 	}
 
-	s.tasks[id] = t
 	return t, nil
 }
 
 // DeleteTask removes a task.
 func (s *taskService) DeleteTask(ctx context.Context, id int64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.tasks[id]; !ok {
-		return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
-	}
-
-	if err := s.store.Delete(ctx, id); err != nil {
+	// Pre-check existence
+	tasks, err := s.store.Query(ctx, ports.ListFilter{}, 0, 0)
+	if err != nil {
 		return err
 	}
-
-	delete(s.tasks, id)
-	return nil
+	found := false
+	for _, t := range tasks {
+		if t.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
+	}
+	return s.store.Delete(ctx, id)
 }
 
 // ListTasks returns all tasks, optionally filtered by status, bounded by limit and offset.
-func (s *taskService) ListTasks(status string, limit, offset int) []ports.Task {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var list []ports.Task
-	for _, t := range s.tasks {
-		if status != "" && t.Status != status {
-			continue
-		}
-		list = append(list, t)
-	}
-
-	sort.Slice(list, func(i, j int) bool {
-		return list[i].ID < list[j].ID
-	})
-
-	// Apply offset
-	if offset > 0 {
-		if offset >= len(list) {
-			return []ports.Task{}
-		}
-		list = list[offset:]
-	}
-
-	// Apply limit
-	if limit > 0 && limit < len(list) {
-		list = list[:limit]
-	}
-
-	return list
+func (s *taskService) ListTasks(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
+	filter := ports.ListFilter{Status: status}
+	return s.store.Query(ctx, filter, limit, offset)
 }
 
 // CountTasks returns the total number of tasks matching the given status filter.
 // status="" returns the total count across all statuses.
-func (s *taskService) CountTasks(status string) int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// For the in-memory map path (current behavior): count from s.tasks.
-	// This is consistent with ListTasks which also reads from s.tasks.
-	// [TECHNICAL DEBT] When ListTasks is updated to query the persistent store
-	// for non-pending statuses (Issue #521), this must also fall through to
-	// the store for accurate counts across sessions.
-	count := 0
-	for _, t := range s.tasks {
-		if status != "" && t.Status != status {
-			continue
-		}
-		count++
+func (s *taskService) CountTasks(ctx context.Context, status string) (int, error) {
+	filter := ports.ListFilter{Status: status}
+	tasks, err := s.store.Query(ctx, filter, 0, 0)
+	if err != nil {
+		return 0, err
 	}
-	return count
+	return len(tasks), nil
 }
 
 // ClearTasks removes all tasks.
 func (s *taskService) ClearTasks(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := s.store.DeleteAll(ctx); err != nil {
-		return err
-	}
-
-	s.tasks = make(map[int64]ports.Task)
-	return nil
+	return s.store.DeleteAll(ctx)
 }

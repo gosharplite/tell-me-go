@@ -74,67 +74,79 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e Event) error {
 	return s.f(ctx, e)
 }
 
-type notifyExpectation struct {
-	sub          Subscriber
-	wantErrNil   bool   // true if err should be nil
-	wantErrCont  string // substring that error must contain (empty = skip check)
-	wantPanicLog bool   // true if ERROR log expected
-	desc         string // human-readable label
-}
-
 func FuzzNotifySubscriber(f *testing.F) {
-	// Seed corpus per specification.
-	f.Add(int64(0)) // Happy path: subscriber returns nil
-	f.Add(int64(1)) // Error propagation: subscriber returns error
-	f.Add(int64(2)) // Panic with string "boom": most common panic form
-	f.Add(int64(3)) // Panic with nil: edge case panic(nil)
-	f.Add(int64(4)) // Panic with error-typed value
-	f.Add(int64(5)) // Panic with empty string: edge case
+	// Seed corpus: diverse panic values, error messages, and event messages.
+	f.Add("boom", "sub err", "fuzz")                // baseline
+	f.Add("", "", "")                                // all-empty edge case
+	f.Add("\x00\nil", "oops\nil", "evt\nil")        // embedded nils/newlines
+	f.Add("\n", "\n", "\n")                          // newline-only
+	f.Add("", "disk full", "status: ok")             // empty panic, rich error
+	f.Add("goroutine panic: send on closed channel", "timeout", "retry") // realistic
 
-	f.Fuzz(func(t *testing.T, kind int64) {
+	f.Fuzz(func(t *testing.T, panicValue string, errMsg string, eventMessage string) {
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 		bus := NewSimpleEventBus(context.Background(), WithLogger(logger))
 
-		expectations := map[int64]notifyExpectation{
-			0: {sub: &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error { return nil }}, wantErrNil: true, desc: "happy path"},
-			1: {sub: &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error { return errors.New("sub err") }}, wantErrCont: "sub err", desc: "error propagation"},
-			2: {sub: &panickingSubscriber{v: "boom"}, wantErrCont: "subscriber panicked", wantPanicLog: true, desc: "panic with string"},
-			3: {sub: &panickingSubscriber{v: nil}, wantErrCont: "subscriber panicked", wantPanicLog: true, desc: "panic with nil"},
-			4: {sub: &panickingSubscriber{v: errors.New("typed")}, wantErrCont: "subscriber panicked", wantPanicLog: true, desc: "panic with error type"},
-			5: {sub: &panickingSubscriber{v: ""}, wantErrCont: "subscriber panicked", wantPanicLog: true, desc: "panic with empty string"},
+		event := StatusUpdate{Message: eventMessage}
+
+		// 1. Test panicking subscriber with fuzzed panic value.
+		panicSub := &panickingSubscriber{v: panicValue}
+		err := bus.notifySubscriber(context.Background(), panicSub, event)
+
+		if err == nil {
+			t.Error("panicking subscriber: expected error, got nil")
+		} else if !strings.Contains(err.Error(), "subscriber panicked") {
+			t.Errorf("panicking subscriber: error %q does not contain 'subscriber panicked'", err.Error())
+		}
+		if !strings.Contains(logBuf.String(), `"level":"ERROR"`) {
+			t.Error("panicking subscriber: expected ERROR log")
+		}
+		if !strings.Contains(logBuf.String(), "Subscriber panicked") {
+			t.Error("panicking subscriber: expected 'Subscriber panicked' in log")
 		}
 
-		exp := expectations[kind%6]
-		event := StatusUpdate{Message: "fuzz"}
-		ctx := context.Background()
-		err := bus.notifySubscriber(ctx, exp.sub, event)
-		assertNotifyResult(t, exp, err, logBuf.String())
+		// 2. Test error-returning subscriber with fuzzed error message.
+		logBuf.Reset()
+		errSub := &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
+			if errMsg == "" {
+				return nil
+			}
+			return errors.New(errMsg)
+		}}
+		err = bus.notifySubscriber(context.Background(), errSub, event)
+
+		if errMsg == "" {
+			if err != nil {
+				t.Errorf("error subscriber (nil case): expected nil, got %v", err)
+			}
+		} else {
+			if err == nil {
+				t.Error("error subscriber: expected error, got nil")
+			} else if !strings.Contains(err.Error(), errMsg) {
+				t.Errorf("error subscriber: error %q does not contain %q", err.Error(), errMsg)
+			}
+		}
+
+		// 3. Test event passthrough: event reaches subscriber intact.
+		logBuf.Reset()
+		var capturedEvent Event
+		captureSub := &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
+			capturedEvent = e
+			return nil
+		}}
+		_ = bus.notifySubscriber(context.Background(), captureSub, event)
+		if capturedEvent == nil {
+			t.Error("capture subscriber: event was nil")
+		} else if capturedEvent.Type() != "StatusUpdate" {
+			t.Errorf("capture subscriber: expected Type()='StatusUpdate', got %q", capturedEvent.Type())
+		}
+		if su, ok := capturedEvent.(StatusUpdate); ok {
+			if su.Message != eventMessage {
+				t.Errorf("capture subscriber: Message=%q, want %q", su.Message, eventMessage)
+			}
+		} else {
+			t.Errorf("capture subscriber: expected StatusUpdate, got %T", capturedEvent)
+		}
 	})
-}
-
-func assertNotifyResult(t *testing.T, exp notifyExpectation, err error, logOutput string) {
-	t.Helper()
-	// Invariant: notifySubscriber always returns (never panics)
-	if exp.wantErrNil {
-		if err != nil {
-			t.Errorf("%s: expected nil error, got %v", exp.desc, err)
-		}
-		return
-	}
-	if err == nil {
-		t.Errorf("%s: expected error, got nil", exp.desc)
-		return
-	}
-	if exp.wantErrCont != "" && !strings.Contains(err.Error(), exp.wantErrCont) {
-		t.Errorf("%s: error %q does not contain %q", exp.desc, err.Error(), exp.wantErrCont)
-	}
-	if exp.wantPanicLog {
-		if !strings.Contains(logOutput, `"level":"ERROR"`) {
-			t.Error("expected ERROR log on subscriber panic")
-		}
-		if !strings.Contains(logOutput, "Subscriber panicked") {
-			t.Error("expected 'Subscriber panicked' in log")
-		}
-	}
 }
