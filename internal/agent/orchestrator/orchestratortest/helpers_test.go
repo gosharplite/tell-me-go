@@ -567,3 +567,33 @@ func TestSetupTransitionTurn_ExecuteFunc_Success(t *testing.T) {
 		t.Errorf("FunctionResponse.Name = %q, want %q", fr.Name, "test")
 	}
 }
+
+// TestSetupTurnEngineTest_CleanupExecutes verifies that the cleanup function
+// registered by SetupTurnEngineTest (bus.Shutdown) executes without panicking.
+// This closes coverage gap #10: the cleanup runs during test teardown, outside
+// Go's coverage window.
+func TestSetupTurnEngineTest_CleanupExecutes(t *testing.T) {
+	t.Parallel()
+
+	rt := &cleanupRecordingT{}
+	env := SetupTurnEngineTest(rt)
+
+	if env == nil {
+		t.Fatal("SetupTurnEngineTest returned nil")
+	}
+	if len(rt.cleanupFuncs) < 1 {
+		t.Fatal("expected at least one cleanup function to be registered")
+	}
+
+	for i, fn := range rt.cleanupFuncs {
+		// Each cleanup must not panic when executed explicitly.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("cleanup[%d] panicked: %v", i, r)
+				}
+			}()
+			fn()
+		}()
+	}
+}

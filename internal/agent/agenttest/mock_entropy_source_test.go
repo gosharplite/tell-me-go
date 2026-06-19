@@ -120,3 +120,19 @@ func TestMockEntropySource_RaceDetection(t *testing.T) {
 		t.Errorf("Read calls: got %d, want %d", called.Load(), goroutines*iterations)
 	}
 }
+
+func TestMockEntropySource_Read_TrueNilFunc(t *testing.T) {
+	t.Parallel()
+
+	m := &MockEntropySource{} // zero value — ReadFunc is nil
+
+	buf := make([]byte, 8)
+	n, err := m.Read(buf)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("got n %d; want 0 (nil ReadFunc default)", n)
+	}
+}
