@@ -147,3 +147,50 @@ func TestFindCycles_EdgeCases(t *testing.T) {
 		assert.Nil(t, findCycles(map[string][]string{"a": {"b"}, "c": {"d"}}))
 	})
 }
+
+func TestRenderSubgraphs_RootEmpty(t *testing.T) {
+	t.Parallel()
+
+	// Package paths starting with "/" produce root == "" after splitting,
+	// which is renamed to "root" to avoid empty subgraph labels.
+	graph := map[string][]string{
+		"/absolute/path/pkg": {},
+	}
+	var sb strings.Builder
+	renderSubgraphs(&sb, graph)
+	result := sb.String()
+
+	assert.Contains(t, result, "subgraph root", "empty root must be renamed to 'root'")
+	assert.Contains(t, result, "absolute_path_pkg", "node must be present in subgraph")
+}
+
+func TestRenderSubgraphs_MixedRoots(t *testing.T) {
+	t.Parallel()
+
+	graph := map[string][]string{
+		"internal/api":       {},
+		"/absolute/other":    {},
+		"github.com/mod/pkg": {},
+	}
+	var sb strings.Builder
+	renderSubgraphs(&sb, graph)
+	result := sb.String()
+
+	// All three root-level subgraphs must appear
+	assert.Contains(t, result, "subgraph internal")
+	assert.Contains(t, result, "subgraph root") // from "/absolute/other" → root=""
+	assert.Contains(t, result, "subgraph github_com")
+}
+
+func TestBuildCycle_DefensiveNil(t *testing.T) {
+	t.Parallel()
+
+	// The return-nil in buildCycle is unreachable under DFS invariants.
+	// This test documents that invariant: when called with a vertex
+	// that is not on the current path, buildCycle returns nil.
+	d := &cycleDetector{
+		path: []string{"a", "b", "c"},
+	}
+	cycle := d.buildCycle("z") // not on path
+	assert.Nil(t, cycle, "buildCycle must return nil when vertex not on path (defensive)")
+}

@@ -547,3 +547,35 @@ func TestRenderGraph_MermaidFormat(t *testing.T) {
 		t.Errorf("expected both packages in mermaid output, got: %s", result)
 	}
 }
+
+// =============================================================================
+// Gap: listInternalPackages containsGoFiles error path (L187-189).
+// Covered by creating a directory with execute-only permission (0100) so
+// that filepath.Walk can enter it but os.ReadDir inside containsGoFiles fails.
+// NOTE: On some platforms/Go versions, Walk itself may fail to read the
+// directory and return the error via the Walk callback instead (L178-179),
+// which exercises a different but related path. Both are acceptable.
+// =============================================================================
+func TestListInternalPackages_ContainsGoFilesError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod execute-only not reliable on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a subdirectory with execute-only permission (--x------ = 0100).
+	// filepath.Walk uses os.Lstat to detect directories (succeeds with exec bit)
+	// and then calls os.ReadDir to list contents (fails without read bit).
+	// On some Go versions, Walk's own ReadDir fails first and passes the error
+	// to the callback; on others, the callback is called with err==nil and
+	// containsGoFiles' own os.ReadDir fails.
+	subdir := filepath.Join(tmpDir, "subdir")
+	require.NoError(t, os.MkdirAll(subdir, 0100))
+	t.Cleanup(func() { _ = os.Chmod(subdir, 0755) })
+
+	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy())
+
+	_, err := a.listInternalPackages(tmpDir)
+	require.Error(t, err, "expected error from listInternalPackages with unreadable subdirectory")
+}

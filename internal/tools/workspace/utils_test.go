@@ -910,3 +910,155 @@ func TestScanLines_MatchNonEmpty(t *testing.T) {
 		t.Error("expected a result on resultsChan")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// countingErrContext — context wrapper that returns nil the first N times
+// Err() is called, then switches to returning a target error. This enables
+// testing the walkHeartbeat error return in walkAndProcess (utils.go:85-87)
+// which is normally unreachable because shouldSkipEntry (called immediately
+// before walkHeartbeat) also checks ctx.Err().
+// ---------------------------------------------------------------------------
+
+type countingErrContext struct {
+	context.Context
+	mu        sync.Mutex
+	callCount int
+	failAfter int
+	targetErr error
+}
+
+func (c *countingErrContext) Err() error {
+	c.mu.Lock()
+	c.callCount++
+	count := c.callCount
+	c.mu.Unlock()
+	if count > c.failAfter {
+		return c.targetErr
+	}
+	return c.Context.Err()
+}
+
+// TestWalkAndProcess_IsPathSafe covers two error paths in walkAndProcess:
+//  1. sm.IsPathSafe(path) returning an error (safety rejection)
+//  2. walkHeartbeat returning a context error (utils.go:85-87)
+//
+// Path (2) uses countingErrContext so that shouldSkipEntry sees nil from
+// ctx.Err() (allowing the file to proceed) while walkHeartbeat sees
+// context.Canceled (triggering the error return).
+func TestWalkAndProcess_IsPathSafe(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IsPathSafe error", func(t *testing.T) {
+		t.Parallel()
+		_, sm := setupWalkTest(t)
+		ctx := context.Background()
+		err := walkAndProcess(ctx, sm, persistencetest.NewPlainOSFileSystem(), "/etc", nil, nil, infra_persistence.NewWorkspacePolicy())
+		if err == nil {
+			t.Error("expected error for unsafe path")
+		}
+	})
+
+	t.Run("walkHeartbeat context error", func(t *testing.T) {
+		t.Parallel()
+
+		// Use a context that cancels on a toggle: after the processor function
+		// has been called 49 times (meaning 49 files have passed through
+		// shouldSkipEntry and walkHeartbeat), the NEXT file (50th) will have
+		// shouldSkipEntry see nil (toggle not yet active) and walkHeartbeat see
+		// Canceled (toggle activated inside shouldSkipEntry's ctx.Err() check).
+		//
+		// We use a deterministic FS that walks files in order, and toggle the
+		// context error INSIDE the counting logic so that for file #50 the
+		// first ctx.Err() call (shouldSkipEntry) returns nil but the second
+		// (walkHeartbeat) returns Canceled.
+		tctx := &countingErrContext{
+			Context:   context.Background(),
+			failAfter: 50, // file 50: shouldSkipEntry=call#50→nil, walkHeartbeat=call#51→Canceled
+			targetErr: context.Canceled,
+		}
+
+		hb := make(chan struct{}, 1)
+
+		// Build a deterministic file list (slice, not map) so files are
+		// processed in a guaranteed order.
+		files := make([]string, 55)
+		for i := 0; i < 55; i++ {
+			files[i] = fmt.Sprintf("file_%04d.txt", i)
+		}
+
+		fs := &orderedWalkFS{
+			files: files,
+			sizes: make([]int64, 55),
+		}
+		for i := range fs.sizes {
+			fs.sizes[i] = int64(len("content"))
+		}
+
+		sp := &mockSP{}
+		policy := infra_persistence.NewWorkspacePolicy()
+
+		err := walkAndProcess(tctx, sp, fs, ".", hb, func(path string) error {
+			return nil
+		}, policy)
+
+		if err == nil {
+			t.Fatal("expected context.Canceled from walkHeartbeat")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got: %v", err)
+		}
+	})
+}
+
+// TestConcurrentSearch_IsPathSafe verifies that ConcurrentSearch returns
+// an error via errChan when sp.IsPathSafe(root) fails (safety rejection).
+func TestConcurrentSearch_IsPathSafe(t *testing.T) {
+	t.Parallel()
+
+	sm := &isPathSafeErrorSM{}
+
+	ctx := context.Background()
+	resChan, errChan := ConcurrentSearch(ctx, sm, nil, "/tmp/test", nil, nil, infra_persistence.NewWorkspacePolicy())
+
+	// Read the error from errChan
+	err := <-errChan
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != "path rejected" {
+		t.Errorf("expected error %q, got %q", "path rejected", err.Error())
+	}
+
+	// Verify result channel is closed
+	result, ok := <-resChan
+	if ok {
+		t.Errorf("expected result channel to be closed, got %q (ok=%v)", result, ok)
+	}
+}
+
+// orderedWalkFS is a minimal persistence.FileSystem that walks files in
+// a deterministic order (by slice index). Used when test assertions depend
+// on a guaranteed walk ordering (e.g., testing the walkHeartbeat error
+// return at exactly the 50th file).
+type orderedWalkFS struct {
+	persistence.FileSystem
+	files []string
+	sizes []int64
+}
+
+func (m *orderedWalkFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	for i, path := range m.files {
+		info := &searchMockFileInfo{name: path, size: m.sizes[i]}
+		if err := fn(path, info, nil); err != nil {
+			if err == os.ErrNotExist {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *orderedWalkFS) Open(ctx context.Context, name string) (persistence.File, error) {
+	return &mockCheckBinaryFile{data: []byte("content")}, nil
+}

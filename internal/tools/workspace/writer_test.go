@@ -1589,3 +1589,99 @@ func TestDeletePath_InvalidArgs(t *testing.T) {
 		t.Fatal("expected unmarshal error for invalid path type")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TestFileWriter_writeFile — covers UnmarshalArgs error path (writer.go:48-50)
+// ---------------------------------------------------------------------------
+
+func TestFileWriter_writeFile(t *testing.T) {
+	t.Parallel()
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+	ctx := context.Background()
+
+	t.Run("UnmarshalArgs error", func(t *testing.T) {
+		// Pass a non-string value for a string field to trigger json.Unmarshal failure
+		_, err := w.writeFile(ctx, map[string]interface{}{
+			"filepath": 123, // int instead of string
+			"content":  "test",
+			"reason":   "testing",
+		}, nil)
+		if err == nil {
+			t.Fatal("expected UnmarshalArgs error, got nil")
+		}
+	})
+
+	t.Run("MkdirAll error", func(t *testing.T) {
+		mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
+		w2 := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+		_, err := w2.writeFile(ctx, map[string]interface{}{
+			"filepath": "/mock/any/file.txt",
+			"content":  "test",
+			"reason":   "testing",
+		}, nil)
+		if err == nil || !strings.Contains(err.Error(), "disk full") {
+			t.Errorf("expected 'disk full' error, got %v", err)
+		}
+	})
+
+	t.Run("WriteFile error", func(t *testing.T) {
+		mfs := &mockFS{writeErr: fmt.Errorf("write error")}
+		w2 := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: mfs}
+		tempDir := t.TempDir()
+		sm.RegisterSafePath(tempDir)
+		path := filepath.Join(tempDir, "file.txt")
+		_, err := w2.writeFile(ctx, map[string]interface{}{
+			"filepath": path,
+			"content":  "test",
+			"reason":   "testing",
+		}, nil)
+		if err == nil || !strings.Contains(err.Error(), "write error") {
+			t.Errorf("expected 'write error', got %v", err)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestFileWriter_replaceText — covers UnmarshalArgs error path (writer.go:87-89)
+// ---------------------------------------------------------------------------
+
+func TestFileWriter_replaceText(t *testing.T) {
+	t.Parallel()
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	ctx := context.Background()
+
+	t.Run("UnmarshalArgs error", func(t *testing.T) {
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+		// Pass a non-string value for a string field to trigger json.Unmarshal failure
+		_, err := w.replaceText(ctx, map[string]interface{}{
+			"filepath": "/tmp/test.txt",
+			"old_text": 456, // int instead of string
+			"new_text": "new",
+			"reason":   "testing",
+		}, nil)
+		if err == nil {
+			t.Fatal("expected UnmarshalArgs error, got nil")
+		}
+	})
+
+	t.Run("ReadFile error", func(t *testing.T) {
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
+		_, err := w.replaceText(ctx, map[string]interface{}{
+			"filepath": "/nonexistent/file.txt",
+			"old_text": "old",
+			"new_text": "new",
+			"reason":   "test",
+		}, nil)
+		if err == nil {
+			t.Fatal("expected ReadFile error, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to read file") {
+			t.Errorf("expected 'failed to read file' in error, got: %v", err)
+		}
+	})
+}

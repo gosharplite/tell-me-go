@@ -171,6 +171,11 @@ func (d *cycleDetector) buildCycle(v string) []string {
 	// buildCycle is called from a back-edge. If the invariant is
 	// violated (e.g., concurrent mutation), nil is returned and
 	// the caller silently skips the malformed cycle.
+	//
+	// UNREACHABLE: The for-loop below always finds v on d.path because
+	// dfs() only calls buildCycle(v) when onStack[v] is true, which is
+	// only set after pushing v onto d.path. The return-nil below is
+	// defensive dead code guarded by DFS invariants.
 	for i, node := range d.path {
 		if node == v {
 			cycle := make([]string, len(d.path)-i+1)
