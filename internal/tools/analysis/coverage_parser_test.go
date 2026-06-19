@@ -1329,3 +1329,43 @@ func TestGetDetailedCoverage_ValidateProfileWithTestErr(t *testing.T) {
 		t.Errorf("expected testErr wrapping message, got: %v", err)
 	}
 }
+
+// =============================================================================
+// Gap: parseDetailedCoverage error path inside getDetailedCoverage (L407-409).
+// Covered by writing a coverage file whose content causes bufio.Scanner to
+// overflow its token buffer, triggering scanner.Err() in parseCoverageProfile.
+// =============================================================================
+func TestGetDetailedCoverage_ParseDetailedCoverageError(t *testing.T) {
+	// NOT parallel — modifies package-level osOpenFile variable
+	ctx := context.Background()
+
+	// Create a mock that writes a coverage profile with an extremely long
+	// first line to overflow bufio.Scanner's default 64KB token buffer.
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					// Write a profile whose first data line exceeds MaxScanTokenSize
+					longLine := "mode: set\n" + strings.Repeat("x", 70000)
+					if err := os.WriteFile(path, []byte(longLine), 0644); err != nil {
+						t.Errorf("failed to write coverage file: %v", err)
+					}
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	_, err := hea.getDetailedCoverage(ctx, ".", nil)
+	if err == nil {
+		t.Error("expected error from scanner overflow in parseDetailedCoverage")
+	}
+	if !strings.Contains(err.Error(), "bufio.Scanner: token too long") {
+		t.Errorf("expected scanner overflow error, got: %v", err)
+	}
+}

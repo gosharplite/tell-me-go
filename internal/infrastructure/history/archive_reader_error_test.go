@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
@@ -149,12 +150,37 @@ func TestJSONLArchiveReader_ReadPageInternal_ContextCancelled(t *testing.T) {
 		archivePath: archivePath,
 	}
 
-	// Pre-cancelled context: the loop enters, hits select, ctx.Done() fires immediately
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		wantErr error
+	}{
+		{
+			name: "canceled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			}(),
+			wantErr: context.Canceled,
+		},
+		{
+			name: "deadline exceeded",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+				cancel()
+				return ctx
+			}(),
+			wantErr: context.DeadlineExceeded,
+		},
+	}
 
-	_, _, err := reader.readPageInternal(ctx, 10, 0)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled, got %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := reader.readPageInternal(tt.ctx, 10, 0)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }

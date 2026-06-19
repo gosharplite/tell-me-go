@@ -365,3 +365,106 @@ func TestSemanticDiff_InvalidTarget(t *testing.T) {
 		t.Errorf("expected soft-error message, got:\n%s", res.Text)
 	}
 }
+
+// =============================================================================
+// Gap: analyzeChangedFiles heartbeat (i%5==0 with hb != nil) and soft-fail
+// path when analyzeFileChange returns an error.
+// =============================================================================
+func TestAnalyzeChangedFiles_HeartbeatAndSoftFail(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Create a valid Go file for the "good" case
+	goodPath := filepath.Join(tmpDir, "good.go")
+	require.NoError(t, os.WriteFile(goodPath, []byte("package p\nfunc Good() {}"), 0644))
+
+	// Create a file that will cause Cache.Get to fail (parse error)
+	badPath := filepath.Join(tmpDir, "bad.go")
+	require.NoError(t, os.WriteFile(badPath, []byte("not valid go {{{"), 0644))
+
+	// Create 6 files total to trigger i%5==0 at i=0 and i=5
+	changedFiles := []string{
+		goodPath,                        // i=0 → heartbeat, Go file → analyzed
+		filepath.Join(tmpDir, "a.txt"),  // i=1 → non-Go → skipped
+		filepath.Join(tmpDir, "b.md"),   // i=2 → non-Go → skipped
+		filepath.Join(tmpDir, "c.yaml"), // i=3 → non-Go → skipped
+		filepath.Join(tmpDir, "d.json"), // i=4 → non-Go → skipped
+		badPath,                         // i=5 → heartbeat, Go file → parse error → soft-fail
+	}
+
+	mockExec := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, fmt.Errorf("git show error")
+		},
+	}
+
+	cache := newASTCache(tmpDir)
+	analyzer := newChangeAnalyzer(cache, mockExec)
+
+	fset := token.NewFileSet()
+	hb := make(chan struct{}, 2)
+	fileChanges := analyzer.analyzeChangedFiles(context.Background(), "HEAD~1", changedFiles, fset, hb)
+
+	// Verify heartbeat at i=0
+	select {
+	case <-hb:
+	default:
+		t.Error("expected heartbeat at i=0")
+	}
+
+	// Verify heartbeat at i=5
+	select {
+	case <-hb:
+	default:
+		t.Error("expected heartbeat at i=5")
+	}
+
+	// Verify good.go was analyzed (new file with "Added:" decls)
+	if _, ok := fileChanges[goodPath]; !ok {
+		t.Error("expected good.go in fileChanges")
+	}
+
+	// Verify bad.go returned soft-fail message
+	badResult, ok := fileChanges[badPath]
+	if !ok {
+		t.Fatal("expected bad.go in fileChanges")
+	}
+	if len(badResult) != 1 {
+		t.Fatalf("expected 1 result for bad.go, got %d: %v", len(badResult), badResult)
+	}
+	if !strings.Contains(badResult[0], "analysis error") {
+		t.Errorf("expected analysis error in result, got: %s", badResult[0])
+	}
+}
+
+// =============================================================================
+// Gap: analyzeChangedFiles full hb channel (default case in select)
+// =============================================================================
+func TestAnalyzeChangedFiles_HbFull(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Create a valid Go file
+	goPath := filepath.Join(tmpDir, "test.go")
+	require.NoError(t, os.WriteFile(goPath, []byte("package p\nfunc F() {}"), 0644))
+
+	changedFiles := []string{goPath}
+	mockExec := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, fmt.Errorf("git show error")
+		},
+	}
+
+	cache := newASTCache(tmpDir)
+	analyzer := newChangeAnalyzer(cache, mockExec)
+
+	fset := token.NewFileSet()
+	// Buffered channel with 1 slot, pre-filled so send would go to default
+	hb := make(chan struct{}, 1)
+	hb <- struct{}{} // fill the buffer
+
+	// Must not panic or deadlock
+	fileChanges := analyzer.analyzeChangedFiles(context.Background(), "HEAD~1", changedFiles, fset, hb)
+	_ = fileChanges
+	// Test passes if we reach here
+}

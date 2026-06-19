@@ -89,6 +89,40 @@ func TestTransaction_LoadFile_Error(t *testing.T) {
 	}
 }
 
+func TestTransaction_LoadFile_CachedReturn(t *testing.T) {
+	t.Parallel()
+	tx := newTransaction()
+
+	// First call: parses the file
+	f1, err := tx.LoadFile("testdata/valid.go")
+	// If testdata/valid.go doesn't exist, create a temp file
+	if err != nil {
+		// Use a temp file instead
+		tmpDir := t.TempDir()
+		path := tmpDir + "/valid.go"
+		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
+		f1, err = tx.LoadFile(path)
+		require.NoError(t, err)
+
+		// Second call with same path: should return cached file
+		f2, err := tx.LoadFile(path)
+		require.NoError(t, err)
+		if f1 != f2 {
+			t.Error("LoadFile must return the same *ast.File pointer on cache hit")
+		}
+		return
+	}
+	require.NoError(t, err)
+
+	// Second call with same path: should return cached file (same pointer)
+	f2, err := tx.LoadFile("testdata/valid.go")
+	require.NoError(t, err)
+
+	if f1 != f2 {
+		t.Error("LoadFile must return the same *ast.File pointer on cache hit")
+	}
+}
+
 func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 	// Subtest A: format.Node fails mid-loop → rollback cleans .tmp, original unchanged
 	t.Run("format_Node_error_and_rollback", func(t *testing.T) {

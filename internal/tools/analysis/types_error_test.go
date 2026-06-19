@@ -13,16 +13,32 @@ import (
 )
 
 // mockTypeIndex embeds analysistest.MockSymbolIndex to inherit all
-// symbolIndex method implementations, overriding only Lookup for
-// test-specific control.
+// symbolIndex method implementations, overriding Lookup,
+// FindImplementors, and GetUsages for test-specific control.
 type mockTypeIndex struct {
 	analysistest.MockSymbolIndex
-	LookupFunc func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error)
+	LookupFunc           func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error)
+	FindImplementorsFunc func(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]analysis.TypeName, error)
+	GetUsagesFunc        func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]analysis.Location, error)
 }
 
 func (m *mockTypeIndex) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
 	if m.LookupFunc != nil {
 		return m.LookupFunc(ctx, symbol, hb)
+	}
+	return nil, nil
+}
+
+func (m *mockTypeIndex) FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]analysis.TypeName, error) {
+	if m.FindImplementorsFunc != nil {
+		return m.FindImplementorsFunc(ctx, interfaceName, hb)
+	}
+	return nil, nil
+}
+
+func (m *mockTypeIndex) GetUsages(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]analysis.Location, error) {
+	if m.GetUsagesFunc != nil {
+		return m.GetUsagesFunc(ctx, symbol, path, hb)
 	}
 	return nil, nil
 }
@@ -424,4 +440,296 @@ type MyStruct struct{}
 	if err == nil {
 		t.Error("expected walk error from unreadable directory during findMethodsInPackage, got nil")
 	}
+}
+
+// =============================================================================
+// Batch 2, Task 3 — Table-driven error path tests
+// =============================================================================
+
+// TestTypeManager_IndexerErrors verifies that indexer-level errors
+// (Lookup, FindImplementors, GetUsages) are correctly propagated by
+// the type manager methods that depend on them.
+func TestTypeManager_IndexerErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		method  string // "GetTypeInfo", "ListImplementations", "FindUsages"
+		idx     *mockTypeIndex
+		args    map[string]interface{}
+		wantErr string
+	}{
+		{
+			name:   "GetTypeInfo Lookup error",
+			method: "GetTypeInfo",
+			idx: &mockTypeIndex{
+				LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+					return nil, errSentinel
+				},
+			},
+			args:    map[string]interface{}{"typename": "Foo"},
+			wantErr: "lookup type Foo",
+		},
+		{
+			name:   "ListImplementations FindImplementors error",
+			method: "ListImplementations",
+			idx: &mockTypeIndex{
+				FindImplementorsFunc: func(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]analysis.TypeName, error) {
+					return nil, errSentinel
+				},
+			},
+			args:    map[string]interface{}{"interface_name": "MyInterface"},
+			wantErr: "index lookup failure",
+		},
+		{
+			name:   "FindUsages GetUsages error",
+			method: "FindUsages",
+			idx: &mockTypeIndex{
+				GetUsagesFunc: func(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]analysis.Location, error) {
+					return nil, errSentinel
+				},
+			},
+			args:    map[string]interface{}{"query": "Foo", "path": "."},
+			wantErr: "index lookup failure",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := analysis.NewTypeManager(tt.idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+			var err error
+			switch tt.method {
+			case "GetTypeInfo":
+				_, err = m.GetTypeInfo(context.Background(), tt.args, nil)
+			case "ListImplementations":
+				_, err = m.ListImplementations(context.Background(), tt.args, nil)
+			case "FindUsages":
+				_, err = m.FindUsages(context.Background(), tt.args, nil)
+			}
+
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error to contain %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestTypeManager_PathValidationErrors verifies that security path
+// validation errors (IsPathSafe / resolvePath) are correctly propagated
+// by ListSymbols, FindUsages, and FindDefinitions.
+func TestTypeManager_PathValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	denyingSP := &analysistest.MockSecurityProvider{DenyAll: true}
+
+	tests := []struct {
+		name    string
+		method  string // "ListSymbols", "FindUsages", "FindDefinitions"
+		sp      *analysistest.MockSecurityProvider
+		args    map[string]interface{}
+		wantErr string
+	}{
+		{
+			name:    "ListSymbols resolvePath denied",
+			method:  "ListSymbols",
+			sp:      denyingSP,
+			args:    map[string]interface{}{"path": "/denied/path"},
+			wantErr: "path not authorized",
+		},
+		{
+			name:    "FindUsages IsPathSafe denied",
+			method:  "FindUsages",
+			sp:      denyingSP,
+			args:    map[string]interface{}{"query": "Foo", "path": "/denied/path"},
+			wantErr: "path not authorized",
+		},
+		{
+			name:    "FindDefinitions resolvePath denied",
+			method:  "FindDefinitions",
+			sp:      denyingSP,
+			args:    map[string]interface{}{"query": "Foo", "path": "/denied/path"},
+			wantErr: "path not authorized",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), tt.sp)
+
+			var err error
+			switch tt.method {
+			case "ListSymbols":
+				_, err = m.ListSymbols(context.Background(), tt.args, nil)
+			case "FindUsages":
+				_, err = m.FindUsages(context.Background(), tt.args, nil)
+			case "FindDefinitions":
+				_, err = m.FindDefinitions(context.Background(), tt.args, nil)
+			}
+
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error to contain %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestTypeManager_FilesystemErrors verifies that filesystem-level errors
+// (Cache.Get failures, filepath.Walk errors) are correctly propagated.
+func TestTypeManager_FilesystemErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GetTypeInfo Cache.Get error", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		idx := &mockTypeIndex{
+			LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+				// Point to a file that does not exist → Cache.Get fails
+				return []analysis.Location{{Path: filepath.Join(tmpDir, "does_not_exist.go"), Line: 1, Column: 1}}, nil
+			},
+		}
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+		_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
+		if err == nil {
+			t.Error("expected error for Cache.Get failure, got nil")
+		}
+	})
+
+	t.Run("GetTypeInfo findMethods Walk error", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		// Create a valid Go file so Lookup succeeds
+		if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
+type MyStruct struct{}
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create an unreadable subdirectory → Walk fails
+		lockedDir := filepath.Join(tmpDir, "locked")
+		if err := os.Mkdir(lockedDir, 0000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+
+		idx := &mockTypeIndex{
+			LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
+				return []analysis.Location{{Path: filepath.Join(tmpDir, "valid.go"), Line: 2, Column: 6}}, nil
+			},
+		}
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+		_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MyStruct"}, nil)
+		if err == nil {
+			t.Error("expected walk error from unreadable directory, got nil")
+		}
+	})
+
+	t.Run("ListSymbols collectSymbols Walk error", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		// Create a valid Go file
+		if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
+func F() {}
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create an unreadable subdirectory → Walk fails
+		lockedDir := filepath.Join(tmpDir, "locked")
+		if err := os.Mkdir(lockedDir, 0000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+
+		m := analysis.NewTypeManager(
+			&mockTypeIndex{},
+			analysis.NewASTCache("."),
+			&analysistest.MockSecurityProvider{},
+		)
+
+		_, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
+		if err == nil {
+			t.Error("expected walk error from unreadable directory, got nil")
+		}
+	})
+
+	t.Run("FindDefinitions collectSymbols Walk error", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		// Create a valid Go file
+		if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
+func F() {}
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create an unreadable subdirectory → Walk fails
+		lockedDir := filepath.Join(tmpDir, "locked")
+		if err := os.Mkdir(lockedDir, 0000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+
+		m := analysis.NewTypeManager(
+			&mockTypeIndex{},
+			analysis.NewASTCache("."),
+			&analysistest.MockSecurityProvider{},
+		)
+
+		_, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
+		if err == nil {
+			t.Error("expected walk error from unreadable directory, got nil")
+		}
+	})
+}
+
+// TestListImplementations_ErrorPaths covers remaining error paths in
+// ListImplementations: UnmarshalArgs error and empty FindImplementors results.
+func TestListImplementations_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("UnmarshalArgs error", func(t *testing.T) {
+		t.Parallel()
+		m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+		ch := make(chan struct{})
+		_, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": ch}, nil)
+		if err == nil {
+			t.Fatal("expected unmarshal error, got nil")
+		}
+	})
+
+	t.Run("empty FindImplementors results", func(t *testing.T) {
+		t.Parallel()
+		idx := &mockTypeIndex{
+			FindImplementorsFunc: func(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]analysis.TypeName, error) {
+				return nil, nil // no error, no results
+			},
+		}
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+
+		res, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": "EmptyInterface"}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(res.Text, "No implementors found for EmptyInterface") {
+			t.Errorf("expected 'No implementors found' message, got: %s", res.Text)
+		}
+	})
 }

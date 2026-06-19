@@ -667,3 +667,104 @@ func TestCheckLayerViolations_CompositionRoot(t *testing.T) {
 		}
 	})
 }
+
+// =============================================================================
+// Gap: checkLayerViolations heartbeat (i%10==0 with hb != nil)
+// Covered by ≥10 packages triggering the per-package heartbeat send.
+// =============================================================================
+func TestCheckLayerViolations_Heartbeat(t *testing.T) {
+	t.Parallel()
+	m := &architectureManager{ModulePath: "example.com/mod"}
+
+	// Create 12 packages to trigger i%10==0 heartbeat at i=0 and i=10
+	pkgs := make(map[string][]string)
+	for i := 0; i < 12; i++ {
+		pkgPath := fmt.Sprintf("example.com/mod/internal/domain/pkg%d", i)
+		pkgs[pkgPath] = []string{}
+	}
+
+	hb := make(chan struct{}, 2)
+	violations := m.checkLayerViolations(pkgs, hb)
+	_ = violations
+
+	// Verify heartbeat was sent (i=0 hits i%10==0, i=10 also hits)
+	select {
+	case <-hb:
+		// heartbeat received at i=0
+	default:
+		t.Error("expected heartbeat at i=0")
+	}
+	select {
+	case <-hb:
+		// heartbeat received at i=10
+	default:
+		t.Error("expected heartbeat at i=10")
+	}
+}
+
+// =============================================================================
+// Gap: VerifyArchitecture heartbeat (line 174 sendHeartbeat with hb != nil)
+// Covered by passing a non-nil hb to VerifyArchitecture.
+// =============================================================================
+func TestVerifyArchitecture_Heartbeat(t *testing.T) {
+	t.Parallel()
+	mockSP := &mockSecurityProvider{}
+	m := &architectureManager{
+		SP:         mockSP,
+		ModulePath: "github.com/gosharplite/tell-me-go",
+	}
+
+	pkgs := map[string][]string{
+		"github.com/gosharplite/tell-me-go/internal/domain": {},
+	}
+	m.Loader = &mockpackageProvider{pkgs: pkgs}
+
+	hb := make(chan struct{}, 5)
+	res, err := m.VerifyArchitecture(context.Background(), nil, hb)
+	if err != nil {
+		t.Fatalf("VerifyArchitecture failed: %v", err)
+	}
+	if !strings.Contains(res.Text, "integrity verified") {
+		t.Error("expected success message")
+	}
+
+	// Verify at least one heartbeat was received (either from runHeartbeat ticker
+	// or from the final sendHeartbeat call)
+	select {
+	case <-hb:
+		// heartbeat received
+	default:
+		// Acceptable if buffer was full and ticker didn't fire before completion.
+		// The test validates the hb != nil path doesn't panic.
+	}
+}
+
+// =============================================================================
+// Gap: VerifyArchitecture loaderOnce.Do realpackageProvider path (L174-176).
+// Covered by creating an architectureManager without idx and without Loader,
+// so that the lazy initialization creates a realpackageProvider.
+// =============================================================================
+func TestVerifyArchitecture_RealPackageProviderPath(t *testing.T) {
+	t.Parallel()
+
+	runner := &mockAnalysisGoRunner{
+		getPackageListFunc: func(ctx context.Context, path string) ([]byte, error) {
+			// Return valid JSON package list with one domain package
+			return []byte(`{"ImportPath": "github.com/org/repo/internal/domain", "Imports": [], "Module": {"Path": "github.com/org/repo"}}`), nil
+		},
+	}
+
+	m := &architectureManager{
+		SP:     &mockSecurityProvider{},
+		Runner: runner,
+		// Loader and idx intentionally nil — forces realpackageProvider creation
+	}
+
+	res, err := m.VerifyArchitecture(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("VerifyArchitecture failed: %v", err)
+	}
+	if !strings.Contains(res.Text, "integrity verified") {
+		t.Error("expected success message")
+	}
+}

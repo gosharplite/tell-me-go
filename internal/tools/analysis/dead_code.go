@@ -282,6 +282,9 @@ func (a *defaultDeadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 	// Defense-in-depth: *types.Func.Type() always returns *types.Signature
 	// through the public go/types API, but the ok check guards against
 	// unexpected future changes or edge cases in go/packages.
+	// GAP ACCEPTED (dead_code.go:277-280): The !ok branch is unreachable
+	// because *types.Func.Type() is guaranteed by the Go specification to
+	// return *types.Signature. This guard exists solely as defensive coding.
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok {
 		return false

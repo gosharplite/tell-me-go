@@ -1215,3 +1215,233 @@ func TestShellTool_PipeCommands_SplitPipelineError(t *testing.T) {
 		t.Errorf("expected 'split: empty command' in res.Error, got: %v", res.Error)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// posixTranslator.Translate edge cases
+// ---------------------------------------------------------------------------
+
+func TestPosixTranslator_Translate_EdgeCases(t *testing.T) {
+	p := &posixTranslator{}
+
+	t.Run("nil slice", func(t *testing.T) {
+		got := p.Translate(nil)
+		if got != nil {
+			t.Errorf("Translate(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("empty slice", func(t *testing.T) {
+		got := p.Translate([]string{})
+		if len(got) != 0 {
+			t.Errorf("Translate([]) len = %d, want 0", len(got))
+		}
+	})
+
+	t.Run("non-empty slice", func(t *testing.T) {
+		input := []string{"echo", "hello"}
+		got := p.Translate(input)
+		if !reflect.DeepEqual(got, input) {
+			t.Errorf("Translate(%v) = %v, want %v", input, got, input)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// windowsTranslator.Translate default passthrough & empty parts
+// ---------------------------------------------------------------------------
+
+func TestWindowsTranslator_Translate_DefaultPassthrough(t *testing.T) {
+	w := &windowsTranslator{}
+
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "empty parts",
+			input:    []string{},
+			expected: []string{},
+		},
+		{
+			name:     "go command (passthrough)",
+			input:    []string{"go", "test", "./..."},
+			expected: []string{"go", "test", "./..."},
+		},
+		{
+			name:     "git command (passthrough)",
+			input:    []string{"git", "status"},
+			expected: []string{"git", "status"},
+		},
+		{
+			name:     "unknown command (passthrough)",
+			input:    []string{"unknown-cmd", "--flag", "arg"},
+			expected: []string{"unknown-cmd", "--flag", "arg"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.Translate(tt.input)
+			if !reflect.DeepEqual(got, tt.expected) {
+				t.Errorf("Translate() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// windowsTranslator.Translate rm branches
+// ---------------------------------------------------------------------------
+
+func TestWindowsTranslator_Translate_RM(t *testing.T) {
+	w := &windowsTranslator{}
+
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "rm simple (non-recursive)",
+			input:    []string{"rm", "file.txt"},
+			expected: []string{"cmd", "/c", "del", "/f", "/q", "file.txt"},
+		},
+		{
+			name:     "rm -r (recursive via -r)",
+			input:    []string{"rm", "-r", "dir"},
+			expected: []string{"cmd", "/c", "rd", "/s", "/q", "dir"},
+		},
+		{
+			name:     "rm -rf (recursive via -rf)",
+			input:    []string{"rm", "-rf", "dir"},
+			expected: []string{"cmd", "/c", "rd", "/s", "/q", "dir"},
+		},
+		{
+			name:     "rm -f (non-recursive, flag stripped)",
+			input:    []string{"rm", "-f", "file.txt"},
+			expected: []string{"cmd", "/c", "del", "/f", "/q", "file.txt"},
+		},
+		{
+			name:     "rm -v (non-recursive, flag stripped)",
+			input:    []string{"rm", "-v", "file.txt"},
+			expected: []string{"cmd", "/c", "del", "/f", "/q", "file.txt"},
+		},
+		{
+			name:     "rm -rf -v dir (mixed flags, recursive)",
+			input:    []string{"rm", "-rf", "-v", "dir"},
+			expected: []string{"cmd", "/c", "rd", "/s", "/q", "dir"},
+		},
+		{
+			name:     "rm multiple files (non-recursive)",
+			input:    []string{"rm", "a.txt", "b.txt", "c.txt"},
+			expected: []string{"cmd", "/c", "del", "/f", "/q", "a.txt", "b.txt", "c.txt"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.Translate(tt.input)
+			if !reflect.DeepEqual(got, tt.expected) {
+				t.Errorf("Translate() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// windowsTranslator.Translate mkdir branches
+// ---------------------------------------------------------------------------
+
+func TestWindowsTranslator_Translate_Mkdir(t *testing.T) {
+	w := &windowsTranslator{}
+
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "mkdir simple",
+			input:    []string{"mkdir", "mydir"},
+			expected: []string{"cmd", "/c", "mkdir", "mydir"},
+		},
+		{
+			name:     "mkdir -p (flag stripped)",
+			input:    []string{"mkdir", "-p", "a/b/c"},
+			expected: []string{"cmd", "/c", "mkdir", "a/b/c"},
+		},
+		{
+			name:     "mkdir -p multiple dirs",
+			input:    []string{"mkdir", "-p", "a", "b", "c"},
+			expected: []string{"cmd", "/c", "mkdir", "a", "b", "c"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.Translate(tt.input)
+			if !reflect.DeepEqual(got, tt.expected) {
+				t.Errorf("Translate() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// shellTool.prepareCommand error paths
+// ---------------------------------------------------------------------------
+
+func TestShellTool_PrepareCommand_SplitError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	validator := &toolstest.MockCommandValidator{
+		SplitFunc: func(cmd string) ([]string, error) {
+			return nil, fmt.Errorf("split: mock failure")
+		},
+	}
+	tool := newshellTool(sm, validator, &posixTranslator{}, &posixShellWrapper{})
+
+	parts, err := tool.prepareCommand("any command")
+
+	if err == nil {
+		t.Fatal("expected error from prepareCommand, got nil")
+	}
+	if !strings.Contains(err.Error(), "error parsing command") {
+		t.Errorf("expected 'error parsing command' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "split: mock failure") {
+		t.Errorf("expected 'split: mock failure' in error, got: %v", err)
+	}
+	if parts != nil {
+		t.Errorf("expected nil parts on error, got %v", parts)
+	}
+}
+
+func TestShellTool_PrepareCommand_ValidateStructureError(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	validator := &toolstest.MockCommandValidator{
+		// HasShellFeatures returns false so Wrap is NOT called;
+		// ValidateStructure fails on the raw split parts.
+		HasShellFeaturesFunc: func(parts []string) bool {
+			return false
+		},
+		ValidateStructureFunc: func(parts []string) error {
+			return fmt.Errorf("validate: structure rejected")
+		},
+	}
+	tool := newshellTool(sm, validator, &posixTranslator{}, &posixShellWrapper{})
+
+	parts, err := tool.prepareCommand("echo hello")
+
+	if err == nil {
+		t.Fatal("expected error from prepareCommand, got nil")
+	}
+	if !strings.Contains(err.Error(), "validate: structure rejected") {
+		t.Errorf("expected 'validate: structure rejected' in error, got: %v", err)
+	}
+	if parts != nil {
+		t.Errorf("expected nil parts on error, got %v", parts)
+	}
+}

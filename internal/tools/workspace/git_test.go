@@ -345,6 +345,29 @@ func TestGitManagerInternal(t *testing.T) {
 	}
 }
 
+// TestGitManager_runGitCommand_Error verifies that runGitCommand wraps
+// CombinedOutput errors with the "git command failed" prefix and still
+// returns the partial output.
+func TestGitManager_runGitCommand_Error(t *testing.T) {
+	m := &gitManager{
+		Exec: &mockGitExecutor{
+			handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte("fatal: not a git repository"), errors.New("exit status 128")
+			},
+		},
+	}
+	out, err := m.runGitCommand(context.Background(), nil, "status", "--short")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "git command failed") {
+		t.Errorf("expected error to contain 'git command failed', got: %v", err)
+	}
+	if out != "fatal: not a git repository" {
+		t.Errorf("expected output 'fatal: not a git repository', got %q", out)
+	}
+}
+
 func (m *mockGitExecutor) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }
@@ -380,6 +403,59 @@ func TestRunGitCommand_WithHeartbeat(t *testing.T) {
 		// heartbeat received — the hb != nil branch was exercised
 	default:
 		// May not have fired; this is non-fatal.
+	}
+}
+
+// TestRunGitCommand_HeartbeatTickerFires ensures the ticker.C branch inside
+// runGitCommand's heartbeat goroutine is exercised. The mock executor blocks
+// until the test receives a heartbeat, guaranteeing the 2-second ticker fires.
+func TestRunGitCommand_HeartbeatTickerFires(t *testing.T) {
+	unblock := make(chan struct{})
+
+	m := &gitManager{
+		Exec: &mockGitExecutor{
+			handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				select {
+				case <-unblock:
+					return []byte("ok"), nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			},
+		},
+	}
+
+	hb := make(chan struct{}, 1)
+
+	// Start runGitCommand in a goroutine so we can wait for the heartbeat.
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := m.runGitCommand(context.Background(), hb, "status")
+		done <- result{out, err}
+	}()
+
+	// Wait for the ticker to fire and deliver a heartbeat.
+	select {
+	case <-hb:
+		// Heartbeat received — the case <-ticker.C branch is now covered.
+		close(unblock)
+	case <-done:
+		t.Fatal("runGitCommand returned before ticker fired")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for heartbeat ticker to fire")
+	}
+
+	// Collect result.
+	r := <-done
+	if r.err != nil {
+		t.Fatalf("unexpected error: %v", r.err)
+	}
+	if r.out != "ok" {
+		t.Errorf("expected 'ok', got %q", r.out)
 	}
 }
 

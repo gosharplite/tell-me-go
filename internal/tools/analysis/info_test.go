@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
@@ -564,5 +565,238 @@ func TestInfoManager_RemainingErrorPaths(t *testing.T) {
 		if loc != 0 {
 			t.Errorf("expected loc=0 on error, got %d", loc)
 		}
+	})
+}
+
+// mockEventBus is a minimal EventBus for testing publishGoDocEvent.
+type mockEventBus struct {
+	publishFunc func(ctx context.Context, e events.Event) error
+}
+
+func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+	if m.publishFunc != nil {
+		return m.publishFunc(ctx, e)
+	}
+	return nil
+}
+func (m *mockEventBus) Subscribe(sub func(context.Context, events.Event)) {}
+func (m *mockEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (m *mockEventBus) Flush(ctx context.Context) error                   { return nil }
+func (m *mockEventBus) Listen(ctx context.Context) error                  { return nil }
+func (m *mockEventBus) WaitStarted()                                      {}
+
+func TestInfoManager_IsTargetSourceFile(t *testing.T) {
+	t.Parallel()
+	m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+
+	tests := []struct {
+		name     string
+		fileName string
+		isDir    bool
+		want     bool
+	}{
+		{"directory returns false", "foo.go", true, false},
+		{"go file returns true", "main.go", false, true},
+		{"test file returns false", "main_test.go", false, false},
+		{"non-go file returns false", "README.md", false, false},
+		{"no extension returns false", "Makefile", false, false},
+		{"go file in subdir", "pkg/handler.go", false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.isTargetSourceFile(tt.fileName, tt.isDir)
+			if got != tt.want {
+				t.Errorf("isTargetSourceFile(%q, %v) = %v, want %v", tt.fileName, tt.isDir, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInfoManager_RecordGoStats_CacheHit(t *testing.T) {
+	t.Parallel()
+
+	// Create a real temp file that can be cached by astCache
+	tmpDir := t.TempDir()
+	srcPath := tmpDir + "/test.go"
+	content := "package test\n\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cache := newASTCache(tmpDir)
+	// Populate the cache by calling Get (this stores modTime and lineCount)
+	_, _, err := cache.Get("test.go")
+	if err != nil {
+		t.Fatalf("cache.Get failed: %v", err)
+	}
+
+	info, err := os.Stat(srcPath)
+	if err != nil {
+		t.Fatalf("os.Stat failed: %v", err)
+	}
+
+	fs := persistence.NewMockFileSystem()
+	m := &infoManager{
+		FS:     fs,
+		Cache:  cache,
+		Policy: infra_persistence.NewWorkspacePolicy(),
+	}
+
+	stats := &projectStats{
+		fileCounts: make(map[string]int),
+		packages:   make(map[string]bool),
+	}
+
+	// recordGoStats with a populated cache — should hit the cache
+	m.recordGoStats(context.Background(), "test.go", info, stats)
+
+	// Verify cache hit: totalLOC should be 3 (3 lines in the file)
+	if stats.totalLOC != 3 {
+		t.Errorf("expected totalLOC=3 from cache hit, got %d", stats.totalLOC)
+	}
+	if !stats.packages["."] {
+		t.Error("expected '.' package to be registered")
+	}
+}
+
+func TestInfoManager_GoDoc_Error(t *testing.T) {
+	t.Parallel()
+
+	runner := &mockAnalysisGoRunner{
+		getGoDocFunc: func(ctx context.Context, symbol string) ([]byte, error) {
+			return []byte("partial output"), fmt.Errorf("go doc failure")
+		},
+	}
+	m := &infoManager{Runner: runner, Policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	args := map[string]interface{}{"symbol": "nonexistent.Symbol"}
+	res, err := m.GoDoc(ctx, args, nil)
+	if err != nil {
+		t.Fatalf("GoDoc should return nil error (error is embedded in result): %v", err)
+	}
+
+	if !strings.Contains(res.Text, "Error running go doc: go doc failure") {
+		t.Errorf("expected error message in result.Text, got: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "Output: partial output") {
+		t.Errorf("expected partial output in result.Text, got: %s", res.Text)
+	}
+}
+
+func TestInfoManager_PublishGoDocEvent_WithEvents(t *testing.T) {
+	t.Parallel()
+
+	published := make(chan string, 1)
+	bus := &mockEventBus{
+		publishFunc: func(ctx context.Context, e events.Event) error {
+			select {
+			case published <- e.(events.SystemMessageEvent).Message:
+			default:
+			}
+			return nil
+		},
+	}
+
+	m := &infoManager{Events: bus, Policy: infra_persistence.NewWorkspacePolicy()}
+	m.publishGoDocEvent(context.Background(), "fmt.Println")
+
+	select {
+	case msg := <-published:
+		if !strings.Contains(msg, "Running go doc fmt.Println") {
+			t.Errorf("unexpected message: %s", msg)
+		}
+	case <-time.After(time.Second):
+		t.Error("expected event to be published")
+	}
+}
+
+func TestInfoManager_StartGoDocHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil hb does not panic", func(t *testing.T) {
+		t.Parallel()
+		m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+		done := m.startGoDocHeartbeat(nil)
+		// Closing done stops the goroutine
+		close(done)
+		// Give goroutine time to exit
+		time.Sleep(10 * time.Millisecond)
+	})
+
+	t.Run("non-nil hb receives heartbeat", func(t *testing.T) {
+		t.Parallel()
+		m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+		hb := make(chan struct{}, 1)
+		done := m.startGoDocHeartbeat(hb)
+
+		// Wait for ticker to fire (2s interval)
+		select {
+		case <-hb:
+			// Received heartbeat
+		case <-time.After(3 * time.Second):
+			t.Error("expected heartbeat within 3s")
+		}
+		close(done) // stop the goroutine
+	})
+}
+
+func TestInfoManager_GoDoc_HappyPath_WithHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	runner := &mockAnalysisGoRunner{
+		getGoDocFunc: func(ctx context.Context, symbol string) ([]byte, error) {
+			return []byte("doc output"), nil
+		},
+	}
+	m := &infoManager{Runner: runner, Policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	hb := make(chan struct{}, 2)
+	res, err := m.GoDoc(ctx, map[string]interface{}{"symbol": "fmt.Println"}, hb)
+	if err != nil {
+		t.Fatalf("GoDoc failed: %v", err)
+	}
+	if res.Text != "doc output" {
+		t.Errorf("expected 'doc output', got %q", res.Text)
+	}
+}
+
+func TestInfoManager_GoDoc_UnmarshalArgsError(t *testing.T) {
+	t.Parallel()
+	m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+	// Pass unserializable value to trigger UnmarshalArgs error
+	_, err := m.GoDoc(context.Background(), map[string]interface{}{"symbol": make(chan int)}, nil)
+	if err == nil {
+		t.Error("expected error from UnmarshalArgs failure")
+	}
+}
+
+func TestInfoManager_PublishGoDocEvent_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("SafePublish returns ErrBusNotInitialized (silently ignored)", func(t *testing.T) {
+		t.Parallel()
+		bus := &mockEventBus{
+			publishFunc: func(ctx context.Context, e events.Event) error {
+				return events.ErrBusNotInitialized
+			},
+		}
+		m := &infoManager{Events: bus, Policy: infra_persistence.NewWorkspacePolicy()}
+		// Must not panic; error is silently suppressed
+		m.publishGoDocEvent(context.Background(), "fmt.Println")
+	})
+
+	t.Run("SafePublish returns other error (logged)", func(t *testing.T) {
+		t.Parallel()
+		bus := &mockEventBus{
+			publishFunc: func(ctx context.Context, e events.Event) error {
+				return fmt.Errorf("some publish error")
+			},
+		}
+		m := &infoManager{Events: bus, Policy: infra_persistence.NewWorkspacePolicy()}
+		// Must not panic; error is logged via slog.Default()
+		m.publishGoDocEvent(context.Background(), "fmt.Println")
 	})
 }

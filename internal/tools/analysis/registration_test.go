@@ -158,3 +158,18 @@ func TestRegister_ErrorWrapping(t *testing.T) {
 		assert.Contains(t, err.Error(), "simulated registration failure")
 	})
 }
+
+func TestRegister_Success(t *testing.T) {
+	t.Parallel()
+
+	r := &stubRegistry{} // no errors
+	sp := &mockSecurityProvider{}
+	bus := &stubEventBus{}
+	exec := &mockExecutor{}
+	fs := &stubFileSystem{}
+	wp := &stubWorkspacePolicy{}
+
+	result, err := Register(r, sp, bus, exec, fs, wp)
+	require.NoError(t, err)
+	require.NotNil(t, result, "expected a non-nil handler (VerifyArchitecture) on success")
+}
