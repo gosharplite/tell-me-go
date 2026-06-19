@@ -17,8 +17,8 @@ import (
 // ── TaskStore mock ──
 
 type mockTaskStore struct {
-	ListTasksFunc  func(status string, limit, offset int) []ports.Task
-	CountTasksFunc func(status string) int
+	ListTasksFunc  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error)
+	CountTasksFunc func(ctx context.Context, status string) (int, error)
 
 	// TaskWriter methods (unused by taskListModel but needed for interface)
 	AddTaskFunc    func(ctx context.Context, content string) (ports.Task, error)
@@ -27,18 +27,18 @@ type mockTaskStore struct {
 	ClearTasksFunc func(ctx context.Context) error
 }
 
-func (m *mockTaskStore) ListTasks(status string, limit, offset int) []ports.Task {
+func (m *mockTaskStore) ListTasks(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 	if m.ListTasksFunc != nil {
-		return m.ListTasksFunc(status, limit, offset)
+		return m.ListTasksFunc(ctx, status, limit, offset)
 	}
-	return nil
+	return nil, nil
 }
 
-func (m *mockTaskStore) CountTasks(status string) int {
+func (m *mockTaskStore) CountTasks(ctx context.Context, status string) (int, error) {
 	if m.CountTasksFunc != nil {
-		return m.CountTasksFunc(status)
+		return m.CountTasksFunc(ctx, status)
 	}
-	return 0
+	return 0, nil
 }
 
 func (m *mockTaskStore) AddTask(ctx context.Context, content string) (ports.Task, error) {
@@ -122,12 +122,12 @@ func TestTaskListModel_SearchEnter_NormalizesStatus(t *testing.T) {
 	var receivedStatus string
 
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedStatus = status
-			return []ports.Task{{ID: 1, Content: "test", Status: "pending"}}
+			return []ports.Task{{ID: 1, Content: "test", Status: "pending"}}, nil
 		},
-		CountTasksFunc: func(status string) int {
-			return 1
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			return 1, nil
 		},
 	}
 
@@ -166,11 +166,11 @@ func TestTaskListModel_SearchEnter_ValidStatus_Pending(t *testing.T) {
 	var receivedStatus string
 
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedStatus = status
-			return []ports.Task{}
+			return []ports.Task{}, nil
 		},
-		CountTasksFunc: func(status string) int { return 0 },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -194,11 +194,11 @@ func TestTaskListModel_SearchEnter_ValidStatus_Completed(t *testing.T) {
 	var receivedStatus string
 
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedStatus = status
-			return []ports.Task{}
+			return []ports.Task{}, nil
 		},
-		CountTasksFunc: func(status string) int { return 0 },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -222,11 +222,11 @@ func TestTaskListModel_SearchEsc_ResetsFilter(t *testing.T) {
 	var receivedStatus string
 
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedStatus = status
-			return []ports.Task{}
+			return []ports.Task{}, nil
 		},
-		CountTasksFunc: func(status string) int { return 0 },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -254,8 +254,8 @@ func TestTaskListModel_SearchEsc_ResetsFilter(t *testing.T) {
 
 func TestTaskListModel_SearchEnter_BlurAndReset(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -279,8 +279,8 @@ func TestTaskListModel_SearchEnter_BlurAndReset(t *testing.T) {
 
 func TestTaskListModel_SearchBar_FocusAndUnfocus(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -301,8 +301,8 @@ func TestTaskListModel_SearchBar_FocusAndUnfocus(t *testing.T) {
 
 func TestTaskListModel_FooterText(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -475,8 +475,8 @@ func TestTaskListModel_View_NotReady(t *testing.T) {
 
 func TestTaskListModel_View_WithSearchFocused(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -539,8 +539,8 @@ func TestTaskListModel_UpdateViewportHeight_NotReady(t *testing.T) {
 
 func TestTaskListModel_Init(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 	m := newTaskListModel(context.Background(), store)
 	cmd := m.Init()
@@ -587,8 +587,8 @@ func TestTaskListModel_HandleTasksLoadedMsg_Success(t *testing.T) {
 
 func TestTaskListModel_QuitKeys(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	tests := []struct {
@@ -612,16 +612,16 @@ func TestTaskListModel_QuitKeys(t *testing.T) {
 
 func TestTaskListModel_FetchTasksCmd(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			return []ports.Task{
 				{ID: 1, Content: "test", Status: status},
-			}
+			}, nil
 		},
-		CountTasksFunc: func(status string) int {
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
 			if status == "pending" {
-				return 5
+				return 5, nil
 			}
-			return 10
+			return 10, nil
 		},
 	}
 
@@ -696,15 +696,15 @@ func assertPageNav(t *testing.T, m *taskListModel, key tea.KeyMsg, wantPendingOf
 func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
 	var receivedOffset int
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedOffset = offset
 			tasks := make([]ports.Task, 50)
 			for i := range tasks {
 				tasks[i] = ports.Task{ID: int64(offset + i + 1), Content: "task", Status: "pending"}
 			}
-			return tasks
+			return tasks, nil
 		},
-		CountTasksFunc: func(status string) int { return 100 },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 100, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -725,15 +725,15 @@ func TestTaskListModel_PageNav_NextPage_IncrementsOffset(t *testing.T) {
 func TestTaskListModel_PageNav_PrevPage_DecrementsOffset(t *testing.T) {
 	var receivedOffset int
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedOffset = offset
 			tasks := make([]ports.Task, 50)
 			for i := range tasks {
 				tasks[i] = ports.Task{ID: int64(offset + i + 1), Content: "task", Status: "pending"}
 			}
-			return tasks
+			return tasks, nil
 		},
-		CountTasksFunc: func(status string) int { return 100 },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 100, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -755,12 +755,12 @@ func TestTaskListModel_PageNav_PrevPage_AtZero_Clamped(t *testing.T) {
 	var receivedOffset int
 
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedOffset = offset
-			return []ports.Task{}
+			return []ports.Task{}, nil
 		},
-		CountTasksFunc: func(status string) int {
-			return 10
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			return 10, nil
 		},
 	}
 
@@ -799,12 +799,12 @@ func TestTaskListModel_PageNav_NextPage_AtLastPage_Clamped(t *testing.T) {
 	var receivedOffset int
 
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedOffset = offset
-			return []ports.Task{}
+			return []ports.Task{}, nil
 		},
-		CountTasksFunc: func(status string) int {
-			return 100
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			return 100, nil
 		},
 	}
 
@@ -841,8 +841,8 @@ func TestTaskListModel_PageNav_NextPage_AtLastPage_Clamped(t *testing.T) {
 
 func TestTaskListModel_Footer_ShowsCorrectRange(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -864,8 +864,8 @@ func TestTaskListModel_Footer_ShowsCorrectRange(t *testing.T) {
 
 func TestTaskListModel_Footer_AtPageZero(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -887,13 +887,13 @@ func TestTaskListModel_PageNav_PreservesStatusFilter(t *testing.T) {
 	var receivedOffset int
 
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			receivedStatus = status
 			receivedOffset = offset
-			return []ports.Task{{ID: 1, Content: "test", Status: "pending"}}
+			return []ports.Task{{ID: 1, Content: "test", Status: "pending"}}, nil
 		},
-		CountTasksFunc: func(status string) int {
-			return 100
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			return 100, nil
 		},
 	}
 
@@ -933,13 +933,13 @@ func TestTaskListModel_PageNav_PreservesStatusFilter(t *testing.T) {
 
 func TestTaskListModel_PageNav_OffsetAppliedOnlyOnSuccess(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			return []ports.Task{
 				{ID: int64(offset + 1), Content: "task", Status: "pending"},
-			}
+			}, nil
 		},
-		CountTasksFunc: func(status string) int {
-			return 100
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			return 100, nil
 		},
 	}
 
@@ -985,11 +985,11 @@ func TestTaskListModel_PageNav_OffsetAppliedOnlyOnSuccess(t *testing.T) {
 
 func TestTaskListModel_PageNav_ErrorDoesNotAdvanceOffset(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
-			return nil
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
+			return nil, nil
 		},
-		CountTasksFunc: func(status string) int {
-			return 100
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			return 100, nil
 		},
 	}
 
@@ -1026,10 +1026,10 @@ func TestTaskListModel_PageNav_ErrorDoesNotAdvanceOffset(t *testing.T) {
 
 func TestTaskListModel_PageNav_PrevClamped_ErrorNoAdvance(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
-			return []ports.Task{}
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
+			return []ports.Task{}, nil
 		},
-		CountTasksFunc: func(status string) int { return 100 },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 100, nil },
 	}
 
 	m := newTaskListModel(context.Background(), store)
@@ -1123,10 +1123,10 @@ func TestTaskListModel_PrevPage(t *testing.T) {
 
 func TestTaskListModel_ErrorRecovery_RetryOnAnyKey(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
-			return []ports.Task{{ID: 1, Content: "recovered", Status: "pending"}}
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
+			return []ports.Task{{ID: 1, Content: "recovered", Status: "pending"}}, nil
 		},
-		CountTasksFunc: func(status string) int { return 1 },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 1, nil },
 	}
 
 	m := &taskListModel{
@@ -1228,8 +1228,8 @@ func TestTaskListModel_HandleViewportUpdate_NotReady(t *testing.T) {
 
 func TestTaskListModel_HandleViewportUpdate_Ready(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 	m := newTaskListModel(context.Background(), store)
 	m.handleWindowSizeMsg(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -1277,13 +1277,13 @@ func TestFetchTasksCmd_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	store := &mockTaskStore{
-		ListTasksFunc: func(status string, limit, offset int) []ports.Task {
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
 			t.Error("ListTasks should not be called")
-			return nil
+			return nil, nil
 		},
-		CountTasksFunc: func(status string) int {
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
 			t.Error("CountTasks should not be called")
-			return 0
+			return 0, nil
 		},
 	}
 	cmd := fetchTasksCmd(ctx, store, "", 0, 50)
@@ -1298,8 +1298,8 @@ func TestFetchTasksCmd_CancelledContext(t *testing.T) {
 
 func TestTaskListModel_Update_UnknownMessageNotReady(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 	m := newTaskListModel(context.Background(), store)
 	_, cmd := m.Update(tea.BatchMsg{})
@@ -1310,8 +1310,8 @@ func TestTaskListModel_Update_UnknownMessageNotReady(t *testing.T) {
 
 func TestTaskListModel_Update_UnknownMessageReady(t *testing.T) {
 	store := &mockTaskStore{
-		ListTasksFunc:  func(status string, limit, offset int) []ports.Task { return nil },
-		CountTasksFunc: func(status string) int { return 0 },
+		ListTasksFunc:  func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) { return nil, nil },
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) { return 0, nil },
 	}
 	m := newTaskListModel(context.Background(), store)
 	m.ready = true

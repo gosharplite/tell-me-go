@@ -7,19 +7,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 type mockTaskRepo struct {
+	mu       sync.Mutex
 	tasks    []ports.Task
 	readErr  error
 	writeErr error
 }
 
-func (m *mockTaskRepo) ReadAll(ctx context.Context) ([]ports.Task, error) { return m.tasks, m.readErr }
+func (m *mockTaskRepo) ReadAll(ctx context.Context) ([]ports.Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.tasks, m.readErr
+}
 func (m *mockTaskRepo) Update(ctx context.Context, id int64, task ports.Task) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.writeErr != nil {
 		return m.writeErr
 	}
@@ -33,6 +41,8 @@ func (m *mockTaskRepo) Update(ctx context.Context, id int64, task ports.Task) er
 }
 
 func (m *mockTaskRepo) Delete(ctx context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.writeErr != nil {
 		return m.writeErr
 	}
@@ -47,6 +57,8 @@ func (m *mockTaskRepo) Delete(ctx context.Context, id int64) error {
 }
 
 func (m *mockTaskRepo) DeleteAll(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.writeErr != nil {
 		return m.writeErr
 	}
@@ -55,6 +67,8 @@ func (m *mockTaskRepo) DeleteAll(ctx context.Context) error {
 }
 
 func (m *mockTaskRepo) Append(ctx context.Context, task ports.Task) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.writeErr != nil {
 		return m.writeErr
 	}
@@ -63,6 +77,8 @@ func (m *mockTaskRepo) Append(ctx context.Context, task ports.Task) error {
 }
 
 func (m *mockTaskRepo) Query(ctx context.Context, filter ports.ListFilter, limit, offset int) ([]ports.Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.readErr != nil {
 		return nil, m.readErr
 	}
@@ -107,6 +123,8 @@ func applyTaskOffsetLimit(tasks []ports.Task, limit, offset int) []ports.Task {
 }
 
 func (m *mockTaskRepo) Count(ctx context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.readErr != nil {
 		return 0, m.readErr
 	}
@@ -129,7 +147,7 @@ func TestTaskService_Add(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.ID != 1 || task.Content != "Test task" {
+	if task.ID == 0 || task.Content != "Test task" {
 		t.Errorf("unexpected task: %+v", task)
 	}
 	if len(repo.tasks) != 1 {
@@ -141,13 +159,16 @@ func TestTaskService_Update(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s, _ := setupTaskService(t)
-	_, _ = s.AddTask(ctx, "Initial task")
+	task, _ := s.AddTask(ctx, "Initial task")
 
-	_, err := s.UpdateTask(ctx, 1, "Updated task", "completed")
+	_, err := s.UpdateTask(ctx, task.ID, "Updated task", "completed")
 	if err != nil {
 		t.Fatal(err)
 	}
-	tasks := s.ListTasks("", 0, 0)
+	tasks, err := s.ListTasks(ctx, "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(tasks) != 1 || tasks[0].Content != "Updated task" || tasks[0].Status != "completed" {
 		t.Errorf("unexpected task: %+v", tasks[0])
 	}
@@ -157,12 +178,16 @@ func TestTaskService_Delete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s, _ := setupTaskService(t)
-	_, _ = s.AddTask(ctx, "To be deleted")
+	task, _ := s.AddTask(ctx, "To be deleted")
 
-	if err := s.DeleteTask(ctx, 1); err != nil {
+	if err := s.DeleteTask(ctx, task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.ListTasks("", 0, 0)) != 0 {
+	tasks, err := s.ListTasks(ctx, "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 0 {
 		t.Error("task not deleted")
 	}
 }
@@ -178,7 +203,7 @@ func TestTaskService_Concurrency(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func(val int) {
 			_, _ = s.AddTask(ctx, "Task")
-			_ = s.ListTasks("", 0, 0)
+			_, _ = s.ListTasks(context.Background(), "", 0, 0)
 			done <- true
 		}(i)
 	}
@@ -187,57 +212,13 @@ func TestTaskService_Concurrency(t *testing.T) {
 		<-done
 	}
 
-	if len(s.ListTasks("", 0, 0)) != workers {
-		t.Errorf("expected %d tasks, got %d", workers, len(s.ListTasks("", 0, 0)))
+	tasks, err := s.ListTasks(ctx, "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestTaskService_Initialize(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	t.Run("Success", func(t *testing.T) {
-		t.Parallel()
-		repo := &mockTaskRepo{
-			tasks: []ports.Task{
-				{ID: 1, Content: "Task 1", Status: "pending"},
-				{ID: 10, Content: "Task 10", Status: "pending"},
-			},
-		}
-		s := NewTaskService(repo)
-
-		err := s.Initialize(ctx)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		tasks := s.ListTasks("", 0, 0)
-		if len(tasks) != 2 {
-			t.Errorf("expected 2 tasks, got %d", len(tasks))
-		}
-
-		// Verify nextID is max(ID) + 1 = 11
-		newTask, err := s.AddTask(ctx, "New Task")
-		if err != nil {
-			t.Fatalf("failed to add task after init: %v", err)
-		}
-		if newTask.ID != 11 {
-			t.Errorf("expected new task ID to be 11, got %v", newTask.ID)
-		}
-	})
-
-	t.Run("Error", func(t *testing.T) {
-		t.Parallel()
-		repo := &mockTaskRepo{
-			readErr: errors.New("read error"),
-		}
-		s := NewTaskService(repo)
-
-		err := s.Initialize(ctx)
-		if err == nil {
-			t.Error("expected error, got nil")
-		}
-	})
+	if len(tasks) != workers {
+		t.Errorf("expected %d tasks, got %d", workers, len(tasks))
+	}
 }
 
 func TestTaskService_ClearTasks(t *testing.T) {
@@ -255,7 +236,11 @@ func TestTaskService_ClearTasks(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(s.ListTasks("", 0, 0)) != 0 {
+		tasks, err := s.ListTasks(ctx, "", 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(tasks) != 0 {
 			t.Error("tasks not cleared from service")
 		}
 		if len(repo.tasks) != 0 {
@@ -315,9 +300,9 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	t.Run("UpdateTask Write Error", func(t *testing.T) {
 		t.Parallel()
 		s, repo := setupTaskService(t)
-		_, _ = s.AddTask(ctx, "Task")
+		task, _ := s.AddTask(ctx, "Task")
 		repo.writeErr = errors.New("write fail")
-		_, err := s.UpdateTask(ctx, 1, "Updated", "completed")
+		_, err := s.UpdateTask(ctx, task.ID, "Updated", "completed")
 		if err == nil {
 			t.Error("expected write error")
 		}
@@ -335,9 +320,9 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	t.Run("DeleteTask Write Error", func(t *testing.T) {
 		t.Parallel()
 		s, repo := setupTaskService(t)
-		_, _ = s.AddTask(ctx, "Task")
+		task, _ := s.AddTask(ctx, "Task")
 		repo.writeErr = errors.New("write fail")
-		err := s.DeleteTask(ctx, 1)
+		err := s.DeleteTask(ctx, task.ID)
 		if err == nil {
 			t.Error("expected write error")
 		}
@@ -353,12 +338,18 @@ func TestTaskService_ListTasks_Filter(t *testing.T) {
 	t3, _ := s.AddTask(ctx, "Completed")
 	_, _ = s.UpdateTask(ctx, t3.ID, "", "completed")
 
-	pending := s.ListTasks("pending", 0, 0)
+	pending, err := s.ListTasks(ctx, "pending", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(pending) != 2 {
 		t.Errorf("expected 2 pending tasks, got %d", len(pending))
 	}
 
-	completed := s.ListTasks("completed", 0, 0)
+	completed, err := s.ListTasks(ctx, "completed", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(completed) != 1 {
 		t.Errorf("expected 1 completed task, got %d", len(completed))
 	}
@@ -396,48 +387,15 @@ func TestTaskService_DeleteTask_Multiple(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	tasks := s.ListTasks("", 0, 0)
+	tasks, err := s.ListTasks(ctx, "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(tasks) != 2 {
 		t.Errorf("expected 2 tasks, got %d", len(tasks))
 	}
 	if len(repo.tasks) != 2 {
 		t.Error("task not deleted from repo")
-	}
-}
-
-func TestTaskService_Initialize_OnlyActive(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	repo := &mockTaskRepo{
-		tasks: []ports.Task{
-			{ID: 1, Content: "Pending 1", Status: "pending"},
-			{ID: 2, Content: "In Progress", Status: "in_progress"},
-			{ID: 3, Content: "Completed 1", Status: "completed"},
-			{ID: 4, Content: "Completed 2", Status: "completed"},
-		},
-	}
-	s := NewTaskService(repo)
-
-	err := s.Initialize(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Only pending and in_progress should be loaded
-	tasks := s.ListTasks("", 0, 0)
-	if len(tasks) != 2 {
-		t.Errorf("expected 2 active tasks, got %d: %+v", len(tasks), tasks)
-	}
-	for _, task := range tasks {
-		if task.Status == "completed" {
-			t.Errorf("completed task %d should not have been loaded", int(task.ID))
-		}
-	}
-
-	// nextID should be max of active IDs + 1 = 3 (not 5 from completed tasks)
-	if s.nextID != 3 {
-		t.Errorf("expected nextID 3, got %v", s.nextID)
 	}
 }
 
@@ -540,7 +498,10 @@ func TestTaskService_CountTasks(t *testing.T) {
 			s, _ := setupTaskService(t)
 			tt.setup(s)
 
-			got := s.CountTasks(tt.status)
+			got, err := s.CountTasks(ctx, tt.status)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if got != tt.expected {
 				t.Errorf("CountTasks(%q) = %d; want %d", tt.status, got, tt.expected)
 			}
@@ -562,18 +523,22 @@ func seedTaskServiceWithN(t *testing.T, s ports.TaskStore, n int) {
 
 func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 
 	t.Run("limit3_offset0_returns_first_3", func(t *testing.T) {
 		t.Parallel()
 		s, _ := setupTaskService(t)
 		seedTaskServiceWithN(t, s, 5)
 
-		tasks := s.ListTasks("", 3, 0)
+		tasks, err := s.ListTasks(ctx, "", 3, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(tasks) != 3 {
 			t.Errorf("expected 3 tasks, got %d", len(tasks))
 		}
-		if tasks[0].ID != 1 || tasks[2].ID != 3 {
-			t.Errorf("expected IDs 1,2,3, got %v", tasks)
+		if tasks[0].Content != "Task 1" || tasks[2].Content != "Task 3" {
+			t.Errorf("expected Task 1, Task 2, Task 3, got %v", tasks)
 		}
 	})
 
@@ -582,12 +547,15 @@ func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
 		s, _ := setupTaskService(t)
 		seedTaskServiceWithN(t, s, 5)
 
-		tasks := s.ListTasks("", 2, 3)
+		tasks, err := s.ListTasks(ctx, "", 2, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(tasks) != 2 {
 			t.Errorf("expected 2 tasks, got %d", len(tasks))
 		}
-		if tasks[0].ID != 4 || tasks[1].ID != 5 {
-			t.Errorf("expected IDs 4,5, got %v", tasks)
+		if tasks[0].Content != "Task 4" || tasks[1].Content != "Task 5" {
+			t.Errorf("expected Task 4, Task 5, got %v", tasks)
 		}
 	})
 
@@ -596,7 +564,10 @@ func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
 		s, _ := setupTaskService(t)
 		seedTaskServiceWithN(t, s, 5)
 
-		tasks := s.ListTasks("", 10, 100)
+		tasks, err := s.ListTasks(ctx, "", 10, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(tasks) != 0 {
 			t.Errorf("expected 0 tasks, got %d", len(tasks))
 		}
@@ -607,7 +578,10 @@ func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
 		s, _ := setupTaskService(t)
 		seedTaskServiceWithN(t, s, 5)
 
-		tasks := s.ListTasks("", 0, 0)
+		tasks, err := s.ListTasks(ctx, "", 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(tasks) != 5 {
 			t.Errorf("expected 5 tasks, got %d", len(tasks))
 		}

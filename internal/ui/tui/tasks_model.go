@@ -93,8 +93,14 @@ func fetchTasksCmd(ctx context.Context, provider ports.TaskStore, status string,
 		if ctx.Err() != nil {
 			return tasksLoadedMsg{err: ctx.Err()}
 		}
-		tasks := provider.ListTasks(status, limit, offset)
-		count := provider.CountTasks(status)
+		tasks, err := provider.ListTasks(ctx, status, limit, offset)
+		if err != nil {
+			return tasksLoadedMsg{err: err}
+		}
+		count, err := provider.CountTasks(ctx, status)
+		if err != nil {
+			return tasksLoadedMsg{err: err}
+		}
 		return tasksLoadedMsg{tasks: tasks, totalCount: count}
 	}
 }

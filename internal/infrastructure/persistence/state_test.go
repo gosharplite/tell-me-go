@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -181,8 +180,12 @@ func TestNewSessionState_InitRepositoriesFailure(t *testing.T) {
 		"error should be wrapped with initialization context")
 }
 
-func TestNewSessionState_InitServicesFailure(t *testing.T) {
+func TestNewSessionState_InitServicesSucceeds(t *testing.T) {
 	// NOT parallel: overrides package-level sqlOpenFn, must run sequentially.
+	//
+	// After Issue #906, initServices is a no-op that never queries the DB.
+	// Even with a connector that would fail on a 6th operation, NewSessionState
+	// succeeds because initServices no longer performs any DB operations.
 
 	ctx := context.Background()
 	tempDir := t.TempDir()
@@ -195,13 +198,14 @@ func TestNewSessionState_InitServicesFailure(t *testing.T) {
 		return sql.OpenDB(&initServicesFailingConnector{
 			dsn:       dsn,
 			opCount:   &opCount,
-			failAfter: 5, // initSQLiteDB does ~5 ops; fail on 6th (initServices ReadAll)
+			failAfter: 5, // initSQLiteDB does ~5 ops; initServices does none
 		}), nil
 	}
 
-	_, err := NewSessionState(ctx, tempDir)
-	require.Error(t, err, "expected error from NewSessionState when initServices fails")
-	t.Logf("error: %v", err)
+	state, err := NewSessionState(ctx, tempDir)
+	require.NoError(t, err, "NewSessionState should succeed since initServices is a no-op")
+	require.NotNil(t, state)
+	_ = state.Close()
 }
 
 // failingTaskStore is a ListStore[ports.Task] whose ReadAll always fails.
@@ -345,17 +349,16 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	}
 }
 
-func TestInitServices_InitializeFailure(t *testing.T) {
+func TestInitServices_InitializeIsNoOp(t *testing.T) {
 	t.Parallel()
 
+	// After Issue #906, Initialize is a no-op that always returns nil.
+	// initServices ignores the return value. Even with a failing task store,
+	// initServices succeeds because it never calls any store methods during init.
 	ctx := context.Background()
-	_, err := initServices(ctx, &failingTaskStore{})
-	if err == nil {
-		t.Fatal("expected error from initServices when Initialize fails, got nil")
-	}
-	if !strings.Contains(err.Error(), "simulated query failure") {
-		t.Errorf("expected error to contain 'simulated query failure', got: %v", err)
-	}
+	tasks, err := initServices(ctx, &failingTaskStore{})
+	require.NoError(t, err, "initServices should succeed since Initialize is a no-op")
+	require.NotNil(t, tasks)
 }
 
 func TestInitRepositories_MigrationFailure(t *testing.T) {
@@ -388,8 +391,8 @@ func TestInitRepositories_MigrationFailure(t *testing.T) {
 // initServicesFailingConnector wraps the SQLite driver and returns connections
 // whose QueryContext and ExecContext fail after a deterministic number of
 // successful operations. This allows initRepositories to complete normally
-// (5 ops: 2 pragmas + 2 CREATE TABLE + 1 COUNT) while initServices fails on
-// its first ReadAll QueryContext (the 6th operation).
+// (5 ops: 2 pragmas + 2 CREATE TABLE + 1 COUNT) while initServices is
+// verified to not perform any DB operations (it's a no-op after Issue #906).
 type initServicesFailingConnector struct {
 	dsn       string
 	opCount   *atomic.Int32
