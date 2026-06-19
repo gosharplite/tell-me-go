@@ -152,6 +152,14 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	for _, rule := range rules {
 		ok, err := rule(absPath, writable)
 		if err != nil {
+			// NOTE: This error-propagation path is currently dead code because
+			// all three built-in rules (checkDefaultBoundaries, checkSafePaths,
+			// checkReadOnlyPaths) use log-and-continue semantics — they log
+			// checkBoundary errors via log.Printf and return nil. This ensures
+			// all boundaries are checked and all errors are logged before
+			// rejecting the path (fail-secure). The path exists as a safety
+			// net for custom pathRule implementations that may propagate errors.
+			// See ADR #830 for the architectural decision.
 			return "", err
 		}
 		if ok {
