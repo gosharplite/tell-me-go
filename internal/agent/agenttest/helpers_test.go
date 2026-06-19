@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -62,68 +64,100 @@ func TestStubUIRenderer_NoOpMethods(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("RenderResponse", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.RenderResponse(ctx, &llm.Content{Role: "assistant"}, true, true)
-		s.RenderResponse(ctx, nil, false, false)
-	})
+	tests := []struct {
+		name string
+		fn   func()
+	}{
+		// RenderResponse
+		{"RenderResponse_normal", func() {
+			s := &stubUIRenderer{}
+			s.RenderResponse(ctx, &llm.Content{Role: "assistant"}, true, true)
+		}},
+		{"RenderResponse_nil_content", func() {
+			s := &stubUIRenderer{}
+			s.RenderResponse(ctx, nil, false, false)
+		}},
+		// LogTurnStatus
+		{"LogTurnStatus_with_turns", func() {
+			s := &stubUIRenderer{}
+			s.LogTurnStatus(ctx, events.TurnStatus{CurrentTurns: 1})
+		}},
+		{"LogTurnStatus_empty", func() {
+			s := &stubUIRenderer{}
+			s.LogTurnStatus(ctx, events.TurnStatus{})
+		}},
+		// LogSystemMessage
+		{"LogSystemMessage_normal", func() {
+			s := &stubUIRenderer{}
+			s.LogSystemMessage(ctx, "hello", "info")
+		}},
+		{"LogSystemMessage_empty", func() {
+			s := &stubUIRenderer{}
+			s.LogSystemMessage(ctx, "", "")
+		}},
+		// LogUsage
+		{"LogUsage_with_metrics", func() {
+			s := &stubUIRenderer{}
+			s.LogUsage(ctx, &llm.Metrics{}, "log.json", time.Now())
+		}},
+		{"LogUsage_nil_metrics", func() {
+			s := &stubUIRenderer{}
+			s.LogUsage(ctx, nil, "", time.Time{})
+		}},
+		// LogToolCall
+		{"LogToolCall_with_calls", func() {
+			s := &stubUIRenderer{}
+			s.LogToolCall(ctx, []*llm.FunctionCall{{Name: "test"}}, 1, 10, true)
+		}},
+		{"LogToolCall_nil_calls", func() {
+			s := &stubUIRenderer{}
+			s.LogToolCall(ctx, nil, 0, 0, false)
+		}},
+		// LogToolResult
+		{"LogToolResult_with_result", func() {
+			s := &stubUIRenderer{}
+			s.LogToolResult(ctx, "tool", tools.ToolResult{Text: "ok"}, true)
+		}},
+		{"LogToolResult_empty", func() {
+			s := &stubUIRenderer{}
+			s.LogToolResult(ctx, "", tools.ToolResult{}, false)
+		}},
+		// RenderHealthReport
+		{"RenderHealthReport_with_report", func() {
+			s := &stubUIRenderer{}
+			s.RenderHealthReport(ctx, &ports.HealthReport{})
+		}},
+		{"RenderHealthReport_nil_report", func() {
+			s := &stubUIRenderer{}
+			s.RenderHealthReport(ctx, nil)
+		}},
+		// SetUseColor
+		{"SetUseColor_true", func() {
+			s := &stubUIRenderer{}
+			s.SetUseColor(true)
+		}},
+		{"SetUseColor_false", func() {
+			s := &stubUIRenderer{}
+			s.SetUseColor(false)
+		}},
+		// SetForceSpinner
+		{"SetForceSpinner_true", func() {
+			s := &stubUIRenderer{}
+			s.SetForceSpinner(true)
+		}},
+		{"SetForceSpinner_false", func() {
+			s := &stubUIRenderer{}
+			s.SetForceSpinner(false)
+		}},
+	}
 
-	t.Run("LogTurnStatus", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.LogTurnStatus(ctx, events.TurnStatus{CurrentTurns: 1})
-		s.LogTurnStatus(ctx, events.TurnStatus{})
-	})
-
-	t.Run("LogSystemMessage", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.LogSystemMessage(ctx, "hello", "info")
-		s.LogSystemMessage(ctx, "", "")
-	})
-
-	t.Run("LogUsage", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.LogUsage(ctx, &llm.Metrics{}, "log.json", time.Now())
-		s.LogUsage(ctx, nil, "", time.Time{})
-	})
-
-	t.Run("LogToolCall", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.LogToolCall(ctx, []*llm.FunctionCall{{Name: "test"}}, 1, 10, true)
-		s.LogToolCall(ctx, nil, 0, 0, false)
-	})
-
-	t.Run("LogToolResult", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.LogToolResult(ctx, "tool", tools.ToolResult{Text: "ok"}, true)
-		s.LogToolResult(ctx, "", tools.ToolResult{}, false)
-	})
-
-	t.Run("RenderHealthReport", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.RenderHealthReport(ctx, &ports.HealthReport{})
-		s.RenderHealthReport(ctx, nil)
-	})
-
-	t.Run("SetUseColor", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.SetUseColor(true)
-		s.SetUseColor(false)
-	})
-
-	t.Run("SetForceSpinner", func(t *testing.T) {
-		t.Parallel()
-		s := &stubUIRenderer{}
-		s.SetForceSpinner(true)
-		s.SetForceSpinner(false)
-	})
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.NotPanics(t, tt.fn, "stubUIRenderer no-op method must not panic")
+		})
+	}
 }
 
 func TestStubUIRenderer_IsTerminalContext(t *testing.T) {
