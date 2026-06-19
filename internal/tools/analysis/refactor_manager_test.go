@@ -442,4 +442,59 @@ func TestRenameSymbol_ErrorPaths(t *testing.T) {
 		assert.Contains(t, err.Error(), "rename symbol")
 		assert.Contains(t, err.Error(), "load broken.go:")
 	})
+
+	t.Run("empty path defaults to '.'", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package test\n\ntype Foo struct{}\n"), 0644))
+
+		// Mock IsPathWritable to redirect "." to dir, covering the empty-path default branch
+		sp := &refactorMockSecurityProvider{
+			IsPathWritableFunc: func(path string) (string, error) {
+				return dir, nil
+			},
+		}
+		mgr := newRefactorManager(sp)
+		args := map[string]interface{}{
+			"old_name": "Foo",
+			"new_name": "Bar",
+			"reason":   "testing",
+			// path is omitted so it defaults to ""
+		}
+		res, err := mgr.RenameSymbol(ctx, args, nil)
+		require.NoError(t, err)
+		assert.Contains(t, res.Text, "Foo → Bar")
+	})
+}
+
+func TestMoveDefinition_DstLoadFileError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Create workspace with valid src but non-existent dst
+	mgr, tmpDir := setupMoveWorkspace(t, map[string]string{
+		"src.go": "package test\nfunc MyFunc() {}\n",
+	})
+
+	args := map[string]interface{}{
+		"symbol":   "MyFunc",
+		"src_file": filepath.Join(tmpDir, "src.go"),
+		"dst_file": filepath.Join(tmpDir, "nonexistent.go"),
+		"reason":   "testing",
+	}
+	_, err := mgr.MoveDefinition(ctx, args, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "move definition load dst")
+}
+
+func TestLoadGoFilesForRename_GlobError(t *testing.T) {
+	t.Parallel()
+
+	sp := &refactorMockSecurityProvider{}
+	mgr := newRefactorManager(sp)
+
+	// Use a path with unclosed glob metacharacter to trigger Glob error
+	_, _, err := mgr.loadGoFilesForRename("/tmp/[invalid")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "glob")
 }

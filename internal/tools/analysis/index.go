@@ -178,7 +178,7 @@ func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 
 func (idx *indexer) toLocation(pos token.Pos) location {
 	p := idx.fset.Position(pos)
-	abs, err := filepath.Abs(p.Filename)
+	abs, err := idx.resolvePath(p.Filename)
 	if err != nil {
 		abs = p.Filename // fallback to raw filename; better than empty string
 	}

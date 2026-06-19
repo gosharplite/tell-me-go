@@ -183,6 +183,12 @@ func (a *defaultDependencyAnalyzer) listInternalPackages(root string) ([]string,
 		if a.Policy.ShouldIgnoreDir(info.Name()) {
 			return filepath.SkipDir
 		}
+		// GAP ACCEPTED (dependency.go:187-189): The containsGoFiles error path
+		// is defense-in-depth. filepath.Walk calls os.ReadDir internally before
+		// invoking the callback; if os.ReadDir fails, Walk passes the error to
+		// the callback (handled at L178-179). The containsGoFiles error path is
+		// only reachable if os.ReadDir succeeds for Walk but fails for the
+		// subsequent containsGoFiles call — a race impossible in unit tests.
 		hasGo, err := containsGoFiles(path)
 		if err != nil {
 			return fmt.Errorf("checking for Go files in %s: %w", path, err)

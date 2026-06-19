@@ -183,6 +183,11 @@ func (a *defaultDeadCodeAnalyzer) registerDeclaration(obj types.Object, state *s
 func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, fset *token.FileSet, state *scanState) {
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
+		// GAP ACCEPTED (harvest.go:186-187): The nil-method/nil-pkg guard is
+		// defense-in-depth. named.Method(i) never returns nil for valid indices,
+		// and AddMethod panics when given a method with nil package. All methods
+		// from go/packages have non-nil packages. This guard cannot be exercised
+		// in unit tests.
 		if m == nil || m.Pkg() == nil {
 			continue
 		}

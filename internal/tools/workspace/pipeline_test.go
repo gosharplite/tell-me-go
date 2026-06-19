@@ -317,6 +317,31 @@ func TestNewPipeline_WirePipesError(t *testing.T) {
 	p.closePipes()
 }
 
+// TestNewPipeline_LoopErrorOnThirdCommand verifies that when newPipelineCmd
+// fails for the third command in a multi-command pipeline (after the first
+// two succeeded), the error propagates with the correct index. Although the
+// loop error path at pipeline.go:35-37 is already exercised by
+// TestRunPipeline_NewPipelineError (2nd command fails), this test confirms
+// correct index reporting for deeper pipelines.
+func TestNewPipeline_LoopErrorOnThirdCommand(t *testing.T) {
+	e := newprocessExecutor()
+	ctx := context.Background()
+
+	pipedParts := [][]string{
+		{helperPath, "echo", "hello"},
+		{helperPath, "echo", "world"},
+		{}, // empty parts → newPipelineCmd returns error at index 2
+	}
+
+	_, err := e.newPipeline(ctx, pipedParts, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error from empty command at index 2")
+	}
+	if !strings.Contains(err.Error(), "empty command at index 2") {
+		t.Errorf("expected 'empty command at index 2', got: %v", err)
+	}
+}
+
 // TestNewPipelineCmd exercises error and success branches of newPipelineCmd.
 //
 // GAP ACCEPTED (pipeline.go:57-59): The Windows Cancel branch (taskkill

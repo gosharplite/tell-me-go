@@ -6,6 +6,7 @@ package analysis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -233,4 +234,75 @@ func TestSearchManager_Errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// walkErrorFS wraps a persistence.FileSystem and overrides Walk to return an error.
+type walkErrorFS struct {
+	persistence.FileSystem
+	err error
+}
+
+func (w *walkErrorFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	return w.err
+}
+
+func TestSearchUsagesGlobally_RegexSuccess(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	fs := persistence.NewMockFileSystem()
+	m := &searchManager{SP: sm, FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	tempDir := "/mock/regex-usages"
+	sm.RegisterSafePath(tempDir)
+	absTempDirRaw, err := sm.IsPathSafe(tempDir)
+	require.NoError(t, err)
+	absTempDir := strings.ReplaceAll(absTempDirRaw, "\\", "/")
+
+	require.NoError(t, fs.WriteFile(ctx, absTempDir+"/main.go", []byte("package main\nfunc FooBar() {}\n"), 0644))
+
+	res, err := m.SearchUsagesGlobally(ctx, map[string]interface{}{
+		"query":    `Foo\w+`,
+		"is_regex": true,
+		"path":     absTempDir,
+	}, nil)
+	require.NoError(t, err)
+	assert.Contains(t, res.Text, "FooBar")
+}
+
+func TestSearchUsagesGlobally_WalkError(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	baseFS := persistence.NewMockFileSystem()
+	fs := &walkErrorFS{FileSystem: baseFS, err: fmt.Errorf("walk failed")}
+	m := &searchManager{SP: sm, FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	// Register "." as safe path so empty-path default is exercised
+	sm.RegisterSafePath(".")
+
+	_, err := m.SearchUsagesGlobally(ctx, map[string]interface{}{
+		"query": "anything",
+	}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "walk failed")
+}
+
+func TestListTodos_WalkError(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	baseFS := persistence.NewMockFileSystem()
+	fs := &walkErrorFS{FileSystem: baseFS, err: fmt.Errorf("walk failed")}
+	m := &searchManager{SP: sm, FS: fs, Policy: infra_persistence.NewWorkspacePolicy()}
+	ctx := context.Background()
+
+	tempDir := "/mock/todo-walk-error"
+	sm.RegisterSafePath(tempDir)
+	absTempDirRaw, err := sm.IsPathSafe(tempDir)
+	require.NoError(t, err)
+	absTempDir := strings.ReplaceAll(absTempDirRaw, "\\", "/")
+
+	_, err = m.ListTodos(ctx, map[string]interface{}{"path": absTempDir}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "walk failed")
 }
