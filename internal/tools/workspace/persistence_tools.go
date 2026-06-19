@@ -136,7 +136,7 @@ func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 	case "delete":
 		return t.deleteTask(ctx, params.TaskID)
 	case "list":
-		return t.listTasks(params.Status, params.Limit, params.Offset)
+		return t.listTasks(ctx, params.Status, params.Limit, params.Offset)
 	case "clear":
 		return t.clearTasks(ctx)
 	default:
@@ -166,12 +166,18 @@ func (t *persistenceTools) deleteTask(ctx context.Context, id int64) (tools.Tool
 	return tools.ToolResult{Text: fmt.Sprintf("Task %d deleted", id)}, nil
 }
 
-func (t *persistenceTools) listTasks(status string, limit, offset int) (tools.ToolResult, error) {
+func (t *persistenceTools) listTasks(ctx context.Context, status string, limit, offset int) (tools.ToolResult, error) {
 	if limit == 0 {
 		limit = 50
 	}
-	tasks := t.tasks.ListTasks(status, limit, offset)
-	totalCount := t.tasks.CountTasks(status)
+	tasks, err := t.tasks.ListTasks(ctx, status, limit, offset)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	totalCount, err := t.tasks.CountTasks(ctx, status)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
 
 	if len(tasks) == 0 {
 		if totalCount > 0 {
