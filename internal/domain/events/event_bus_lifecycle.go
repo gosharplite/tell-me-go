@@ -61,6 +61,13 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go b.waitWorkers(done)
 
+	// Honor a pre-cancelled context before entering select,
+	// avoiding a race when no workers are active and both
+	// channels are ready simultaneously.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	select {
 	case <-done:
 		return nil

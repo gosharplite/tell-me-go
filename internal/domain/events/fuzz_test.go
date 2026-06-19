@@ -76,11 +76,11 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e Event) error {
 
 func FuzzNotifySubscriber(f *testing.F) {
 	// Seed corpus: diverse panic values, error messages, and event messages.
-	f.Add("boom", "sub err", "fuzz")                // baseline
-	f.Add("", "", "")                                // all-empty edge case
-	f.Add("\x00\nil", "oops\nil", "evt\nil")        // embedded nils/newlines
-	f.Add("\n", "\n", "\n")                          // newline-only
-	f.Add("", "disk full", "status: ok")             // empty panic, rich error
+	f.Add("boom", "sub err", "fuzz")                                     // baseline
+	f.Add("", "", "")                                                    // all-empty edge case
+	f.Add("\x00\nil", "oops\nil", "evt\nil")                             // embedded nils/newlines
+	f.Add("\n", "\n", "\n")                                              // newline-only
+	f.Add("", "disk full", "status: ok")                                 // empty panic, rich error
 	f.Add("goroutine panic: send on closed channel", "timeout", "retry") // realistic
 
 	f.Fuzz(func(t *testing.T, panicValue string, errMsg string, eventMessage string) {
