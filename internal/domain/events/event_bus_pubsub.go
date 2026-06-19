@@ -188,9 +188,10 @@ func (b *SimpleEventBus) drain(w *subscriberWrapper) {
 }
 
 func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, event Event) (err error) {
-	// Cache event type before calling sub.Handle so that if event.Type()
-	// panics inside the recover block below, we don't lose the original
-	// subscriber panic reason and stack trace.
+	// Cache event type before calling sub.Handle. If sub.Handle panics and
+	// the recover block below then calls event.Type() for logging, a secondary
+	// panic inside Type() would overwrite the original panic's stack trace.
+	// Caching first guarantees event_type is always populated in the log.
 	eventType := event.Type()
 
 	defer func() {
