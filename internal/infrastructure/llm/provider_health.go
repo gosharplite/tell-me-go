@@ -44,8 +44,13 @@ func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authent
 		authenticator: authenticator,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		httpClient: &http.Client{
-			Timeout:   5 * time.Second,
-			Transport: &http.Transport{},
+			Timeout: 5 * time.Second,
+			Transport: func() http.RoundTripper {
+				if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+					return dt.Clone()
+				}
+				return http.DefaultTransport
+			}(),
 		},
 		gateway: gateway,
 	}
