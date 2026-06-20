@@ -63,6 +63,9 @@ func TestImportCleanupTransform_Apply(t *testing.T) {
 		err = tx.Apply(context.Background(), fset, files)
 		require.Error(t, err)
 		require.ErrorIs(t, err, formatErr)
+		if !strings.Contains(err.Error(), "formatting test.go") {
+			t.Errorf("expected wrapping message 'formatting test.go', got: %v", err)
+		}
 	})
 }
 
@@ -147,6 +150,9 @@ func TestFormatAndReprocess(t *testing.T) {
 		_, err = tx.formatAndReprocess(fset, file)
 		require.Error(t, err)
 		require.ErrorIs(t, err, formatErr)
+		if !strings.Contains(err.Error(), "formatting test.go") {
+			t.Errorf("expected wrapping message 'formatting test.go', got: %v", err)
+		}
 	})
 
 	t.Run("process error via test hook", func(t *testing.T) {
