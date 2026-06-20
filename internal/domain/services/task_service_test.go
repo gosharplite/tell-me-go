@@ -617,69 +617,76 @@ func seedTaskServiceWithN(t *testing.T, s ports.TaskStore, n int) {
 	}
 }
 
-func TestTaskService_ListTasks_LimitOffset(t *testing.T) {
+// TestListTasks_Limit3Offset0 verifies that listing with limit=3 offset=0
+// returns the first 3 of 5 seeded tasks.
+func TestListTasks_Limit3Offset0(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	s, _ := setupTaskService(t)
+	seedTaskServiceWithN(t, s, 5)
 
-	t.Run("limit3_offset0_returns_first_3", func(t *testing.T) {
-		t.Parallel()
-		s, _ := setupTaskService(t)
-		seedTaskServiceWithN(t, s, 5)
+	tasks, err := s.ListTasks(ctx, "", 3, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 3 {
+		t.Errorf("expected 3 tasks, got %d", len(tasks))
+	}
+	if tasks[0].Content != "Task 1" || tasks[2].Content != "Task 3" {
+		t.Errorf("expected Task 1, Task 2, Task 3, got %v", tasks)
+	}
+}
 
-		tasks, err := s.ListTasks(ctx, "", 3, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(tasks) != 3 {
-			t.Errorf("expected 3 tasks, got %d", len(tasks))
-		}
-		if tasks[0].Content != "Task 1" || tasks[2].Content != "Task 3" {
-			t.Errorf("expected Task 1, Task 2, Task 3, got %v", tasks)
-		}
-	})
+// TestListTasks_Limit2Offset3 verifies that listing with limit=2 offset=3
+// returns tasks 4 and 5 of 5 seeded tasks.
+func TestListTasks_Limit2Offset3(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := setupTaskService(t)
+	seedTaskServiceWithN(t, s, 5)
 
-	t.Run("limit2_offset3_returns_tasks_4_5", func(t *testing.T) {
-		t.Parallel()
-		s, _ := setupTaskService(t)
-		seedTaskServiceWithN(t, s, 5)
+	tasks, err := s.ListTasks(ctx, "", 2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Errorf("expected 2 tasks, got %d", len(tasks))
+	}
+	if tasks[0].Content != "Task 4" || tasks[1].Content != "Task 5" {
+		t.Errorf("expected Task 4, Task 5, got %v", tasks)
+	}
+}
 
-		tasks, err := s.ListTasks(ctx, "", 2, 3)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(tasks) != 2 {
-			t.Errorf("expected 2 tasks, got %d", len(tasks))
-		}
-		if tasks[0].Content != "Task 4" || tasks[1].Content != "Task 5" {
-			t.Errorf("expected Task 4, Task 5, got %v", tasks)
-		}
-	})
+// TestListTasks_OffsetBeyondTotal verifies that an offset exceeding the
+// total task count returns an empty result.
+func TestListTasks_OffsetBeyondTotal(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := setupTaskService(t)
+	seedTaskServiceWithN(t, s, 5)
 
-	t.Run("offset_beyond_total_returns_empty", func(t *testing.T) {
-		t.Parallel()
-		s, _ := setupTaskService(t)
-		seedTaskServiceWithN(t, s, 5)
+	tasks, err := s.ListTasks(ctx, "", 10, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 tasks, got %d", len(tasks))
+	}
+}
 
-		tasks, err := s.ListTasks(ctx, "", 10, 100)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(tasks) != 0 {
-			t.Errorf("expected 0 tasks, got %d", len(tasks))
-		}
-	})
+// TestListTasks_Limit0ReturnsAll verifies that limit=0 returns all tasks
+// (limit=0 disables the limit).
+func TestListTasks_Limit0ReturnsAll(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := setupTaskService(t)
+	seedTaskServiceWithN(t, s, 5)
 
-	t.Run("limit0_returns_all", func(t *testing.T) {
-		t.Parallel()
-		s, _ := setupTaskService(t)
-		seedTaskServiceWithN(t, s, 5)
-
-		tasks, err := s.ListTasks(ctx, "", 0, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(tasks) != 5 {
-			t.Errorf("expected 5 tasks, got %d", len(tasks))
-		}
-	})
+	tasks, err := s.ListTasks(ctx, "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 5 {
+		t.Errorf("expected 5 tasks, got %d", len(tasks))
+	}
 }

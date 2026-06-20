@@ -812,6 +812,33 @@ func TestTaskIcon(t *testing.T) {
 	}
 }
 
+// assertRenderOutput validates renderTaskPage output against expected
+// contains, exact-match, and not-contains criteria. The wantExact check
+// short-circuits: when wantExact is non-empty, contains/not-contains
+// checks are skipped.
+func assertRenderOutput(t *testing.T, got string, wantContains []string, wantExact string, notContains []string) {
+	t.Helper()
+
+	if wantExact != "" {
+		if got != wantExact {
+			t.Errorf("renderTaskPage = %q; want exact %q", got, wantExact)
+		}
+		return
+	}
+
+	for _, want := range wantContains {
+		if !strings.Contains(got, want) {
+			t.Errorf("renderTaskPage missing %q in:\n%s", want, got)
+		}
+	}
+
+	for _, notWant := range notContains {
+		if strings.Contains(got, notWant) {
+			t.Errorf("renderTaskPage unexpectedly contains %q in:\n%s", notWant, got)
+		}
+	}
+}
+
 func TestRenderTaskPage(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -940,25 +967,7 @@ func TestRenderTaskPage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := renderTaskPage(tt.tasks, tt.totalCount, tt.offset, tt.limit)
-
-			if tt.wantExact != "" {
-				if got != tt.wantExact {
-					t.Errorf("renderTaskPage = %q; want exact %q", got, tt.wantExact)
-				}
-				return
-			}
-
-			for _, want := range tt.wantContains {
-				if !strings.Contains(got, want) {
-					t.Errorf("renderTaskPage missing %q in:\n%s", want, got)
-				}
-			}
-
-			for _, notWant := range tt.notContains {
-				if strings.Contains(got, notWant) {
-					t.Errorf("renderTaskPage unexpectedly contains %q in:\n%s", notWant, got)
-				}
-			}
+			assertRenderOutput(t, got, tt.wantContains, tt.wantExact, tt.notContains)
 		})
 	}
 }
