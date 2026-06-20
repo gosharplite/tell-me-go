@@ -266,12 +266,9 @@ func (t *livenessTimer) reset() {
 	if t.timer == nil {
 		return
 	}
-	if !t.timer.Stop() {
-		select {
-		case <-t.timer.C:
-		default:
-		}
-	}
+	// Go 1.23+ guarantees Stop() drains t.C before returning;
+	// the stale-value drain select is no longer necessary.
+	t.timer.Stop()
 	t.timer.Reset(t.threshold)
 }
 
