@@ -488,3 +488,32 @@ func TestDiscoverNewRecords_GetSessionIDError(t *testing.T) {
 			"discovered record should be from the valid path")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Gap 5 — getSessionID filepath.Rel error (ledger.go:216-218)
+// ---------------------------------------------------------------------------
+
+// TestGetSessionID_FilepathRelError covers the gap at ledger.go:216-218
+// where filepathRel (the injectable filepath.Rel) fails and getSessionID
+// returns a wrapped error.
+//
+// NOTE: This test modifies the package-level filepathRel variable and
+// therefore must NOT use t.Parallel() to avoid races with other tests
+// that read the default filepathRel concurrently.
+func TestGetSessionID_FilepathRelError(t *testing.T) {
+	// Override filepathRel to simulate a cross-volume error on any platform
+	originalRel := filepathRel
+	filepathRel = func(base, target string) (string, error) {
+		return "", fmt.Errorf("cannot compute relative path from %s to %s", base, target)
+	}
+	t.Cleanup(func() { filepathRel = originalRel })
+
+	ls := &ledgerStore{}
+
+	result, err := ls.getSessionID("/some/path", "/other/dir")
+
+	assert.Error(t, err, "expected error when filepathRel returns an error")
+	assert.Contains(t, err.Error(), "resolving session ID",
+		"error should wrap with 'resolving session ID'")
+	assert.Empty(t, result, "expected empty result on error")
+}
