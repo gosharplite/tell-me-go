@@ -53,6 +53,18 @@ type taskListModel struct {
 	err               error
 }
 
+// taskKeyBindings maps keyboard input strings to handler methods.
+// Defined at package level so it can be referenced in tests if needed.
+var taskKeyBindings = map[string]func(*taskListModel) tea.Cmd{
+	"q":   (*taskListModel).cmdQuit,
+	"esc": (*taskListModel).cmdQuit,
+	"j":   (*taskListModel).cmdMoveDown,
+	"k":   (*taskListModel).cmdMoveUp,
+	"/":   (*taskListModel).cmdFocusSearch,
+	"n":   (*taskListModel).cmdNextPage,
+	"p":   (*taskListModel).cmdPrevPage,
+}
+
 // NewTaskListModel creates a new task list model.
 func newTaskListModel(ctx context.Context, provider ports.TaskStore) *taskListModel {
 	ti := textinput.New()
@@ -143,35 +155,8 @@ func (m *taskListModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSearchInput(msg)
 	}
 
-	switch msg.String() {
-	case "q", "esc":
-		return m, tea.Quit
-	case "j":
-		m.moveSelection(1)
-		return m, nil
-	case "k":
-		m.moveSelection(-1)
-		return m, nil
-	case "/":
-		m.searchBar.Focus()
-		m.updateViewportHeight()
-		return m, nil
-	case "n":
-		next := m.pageOffset + m.pageSize
-		if next >= m.totalCount {
-			next = m.pageOffset // clamp
-		}
-		m.pendingPageOffset = next
-		m.pageNavPending = true
-		return m, fetchTasksCmd(m.ctx, m.provider, m.statusFilter, next, m.pageSize)
-	case "p":
-		prev := m.pageOffset - m.pageSize
-		if prev < 0 {
-			prev = 0
-		}
-		m.pendingPageOffset = prev
-		m.pageNavPending = true
-		return m, fetchTasksCmd(m.ctx, m.provider, m.statusFilter, prev, m.pageSize)
+	if cmd, ok := taskKeyBindings[msg.String()]; ok {
+		return m, cmd(m)
 	}
 
 	return m.handleViewportUpdate(msg)
@@ -211,20 +196,6 @@ func (m *taskListModel) moveSelection(delta int) {
 		m.selected = len(m.tasks) - 1
 	}
 	m.updateViewportContent()
-}
-
-func (m *taskListModel) nextPage() {
-	next := m.pageOffset + m.pageSize
-	if next < m.totalCount {
-		m.pageOffset = next
-	}
-}
-
-func (m *taskListModel) prevPage() {
-	m.pageOffset -= m.pageSize
-	if m.pageOffset < 0 {
-		m.pageOffset = 0
-	}
 }
 
 func (m *taskListModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -293,6 +264,52 @@ func (m *taskListModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+// cmdQuit returns a quit command.
+func (m *taskListModel) cmdQuit() tea.Cmd {
+	return tea.Quit
+}
+
+// cmdMoveDown moves the selection down by one.
+func (m *taskListModel) cmdMoveDown() tea.Cmd {
+	m.moveSelection(1)
+	return nil
+}
+
+// cmdMoveUp moves the selection up by one.
+func (m *taskListModel) cmdMoveUp() tea.Cmd {
+	m.moveSelection(-1)
+	return nil
+}
+
+// cmdFocusSearch focuses the search bar and adjusts the viewport.
+func (m *taskListModel) cmdFocusSearch() tea.Cmd {
+	m.searchBar.Focus()
+	m.updateViewportHeight()
+	return nil
+}
+
+// cmdNextPage advances to the next page using the pending-offset protocol.
+func (m *taskListModel) cmdNextPage() tea.Cmd {
+	next := m.pageOffset + m.pageSize
+	if next >= m.totalCount {
+		next = m.pageOffset // clamp to current page
+	}
+	m.pendingPageOffset = next
+	m.pageNavPending = true
+	return fetchTasksCmd(m.ctx, m.provider, m.statusFilter, next, m.pageSize)
+}
+
+// cmdPrevPage goes to the previous page using the pending-offset protocol.
+func (m *taskListModel) cmdPrevPage() tea.Cmd {
+	prev := m.pageOffset - m.pageSize
+	if prev < 0 {
+		prev = 0
+	}
+	m.pendingPageOffset = prev
+	m.pageNavPending = true
+	return fetchTasksCmd(m.ctx, m.provider, m.statusFilter, prev, m.pageSize)
 }
 
 // View renders the current state of the model.
