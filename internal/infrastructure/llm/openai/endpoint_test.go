@@ -452,10 +452,10 @@ func TestModernTextTypesAndPerItemUsage(t *testing.T) {
 }
 
 func TestTopLevelToolCallsInResponses(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// Heterogeneous output: thought then top-level call
 		_, _ = w.Write([]byte(`{
 			"id": "resp_top_call",
 			"output": [
@@ -483,16 +483,24 @@ func TestTopLevelToolCallsInResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	assertThoughtAndToolCallParts(t, resp.Parts, "I need to call a tool.", "get_time", "c123")
+}
+
+// assertThoughtAndToolCallParts validates that the response parts contain
+// both a thought part with the expected text and a tool call part with the
+// expected name and ID. This is used for testing heterogeneous Responses API
+// output (thought block + top-level call block).
+func assertThoughtAndToolCallParts(t *testing.T, parts []*llm.Part, wantThought string, wantCallName, wantCallID string) {
+	t.Helper()
 	var hasThought, hasCall bool
-	for _, p := range resp.Parts {
-		if p.IsThought && p.Text == "I need to call a tool." {
+	for _, p := range parts {
+		if p.IsThought && p.Text == wantThought {
 			hasThought = true
 		}
-		if p.FunctionCall != nil && p.FunctionCall.Name == "get_time" && p.FunctionCall.ID == "c123" {
+		if p.FunctionCall != nil && p.FunctionCall.Name == wantCallName && p.FunctionCall.ID == wantCallID {
 			hasCall = true
 		}
 	}
-
 	if !hasThought {
 		t.Error("missing expected thought part")
 	}
@@ -502,6 +510,7 @@ func TestTopLevelToolCallsInResponses(t *testing.T) {
 }
 
 func TestBlockBasedToolCallsInHistory(t *testing.T) {
+	t.Parallel()
 	var capturedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -513,7 +522,6 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 
 	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 
-	// History item: assistant message with a tool call
 	history := []*llm.Content{
 		{
 			Role: "model",
@@ -529,36 +537,42 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify the structure of the first message in the input array (the assistant message)
-	// For Responses API, tool calls must be in content blocks, not at top level
-	if strings.Contains(capturedBody, `"input":[{"role":"assistant","content":`) {
-		// It's in block mode. Ensure tool_calls is NOT at top level of this message.
-		// A simple check: if we see "assistant" followed by "tool_calls" before the next message or end of object
-		// But "tool_calls" IS valid at the TOP level of the request (the tool declarations).
-		// We care about the message in the "input" array.
+	assertNoTopLevelToolCallsInAssistantMessage(t, capturedBody)
+	assertFunctionCallBlockPresent(t, capturedBody, "call_123", "get_weather")
+}
 
-		// In block mode, we specifically set msg.ToolCalls = nil
-
-		// Let's check for the absence of "tool_calls" specifically within the assistant message object
-		// Assistant message starts with {"role":"assistant"
-		idx := strings.Index(capturedBody, `"role":"assistant"`)
-		if idx != -1 {
-			// Find the end of this message object (next message or end of array)
-			endIdx := strings.Index(capturedBody[idx:], `},{"role"`)
-			if endIdx == -1 {
-				endIdx = strings.Index(capturedBody[idx:], `]}],"tools"`)
-			}
-			if endIdx != -1 {
-				msgSegment := capturedBody[idx : idx+endIdx]
-				if strings.Contains(msgSegment, `"tool_calls":`) {
-					t.Errorf("found forbidden top-level 'tool_calls' in assistant message in Responses API mode: %s", msgSegment)
-				}
-			}
+// assertNoTopLevelToolCallsInAssistantMessage validates that in Responses API
+// mode, the assistant message in the input array does NOT contain top-level
+// "tool_calls" keys — tool calls must be in content blocks instead.
+func assertNoTopLevelToolCallsInAssistantMessage(t *testing.T, body string) {
+	t.Helper()
+	if !strings.Contains(body, `"input":[{"role":"assistant","content":`) {
+		return // not in block mode; nothing to check
+	}
+	idx := strings.Index(body, `"role":"assistant"`)
+	if idx == -1 {
+		return
+	}
+	endIdx := strings.Index(body[idx:], `},{"role"`)
+	if endIdx == -1 {
+		endIdx = strings.Index(body[idx:], `]}],"tools"`)
+	}
+	if endIdx != -1 {
+		msgSegment := body[idx : idx+endIdx]
+		if strings.Contains(msgSegment, `"tool_calls":`) {
+			t.Errorf("found forbidden top-level 'tool_calls' in assistant message in Responses API mode: %s", msgSegment)
 		}
 	}
+}
 
-	if !strings.Contains(capturedBody, `"type":"function_call"`) || !strings.Contains(capturedBody, `"call_id":"call_123"`) || !strings.Contains(capturedBody, `"name":"get_weather"`) {
-		t.Errorf("expected JSON to contain function_call item with call_id and name, got %s", capturedBody)
+// assertFunctionCallBlockPresent validates that the captured JSON body
+// contains a function_call content block with the expected call_id and name.
+func assertFunctionCallBlockPresent(t *testing.T, body, callID, name string) {
+	t.Helper()
+	if !strings.Contains(body, `"type":"function_call"`) ||
+		!strings.Contains(body, `"call_id":"`+callID+`"`) ||
+		!strings.Contains(body, `"name":"`+name+`"`) {
+		t.Errorf("expected JSON to contain function_call item with call_id and name, got %s", body)
 	}
 }
 

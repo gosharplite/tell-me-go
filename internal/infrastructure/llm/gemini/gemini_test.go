@@ -724,64 +724,64 @@ func TestToSDKTool(t *testing.T) {
 	}
 }
 
-func TestApplyThinkingBudget(t *testing.T) {
-
+func TestApplyThinkingBudget_UnderBudget(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	client := &Client{eventBus: bus}
-	ctx := context.Background()
 
-	t.Run("Under Budget", func(t *testing.T) {
-		config := &genai.ThinkingConfig{}
-		client.applyThinkingBudget(ctx, config, 1000, 2000, "test-model")
+	config := &genai.ThinkingConfig{}
+	client.applyThinkingBudget(context.Background(), config, 1000, 2000, "test-model")
 
-		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1000 {
-			t.Errorf("expected budget 1000, got %v", config.ThinkingBudget)
-		}
-	})
+	if config.ThinkingBudget == nil || *config.ThinkingBudget != 1000 {
+		t.Errorf("expected budget 1000, got %v", config.ThinkingBudget)
+	}
+}
 
-	t.Run("Exceeds Max Budget", func(t *testing.T) {
-		localBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		eventstest.CleanupBus(t, localBus)
-		localClient := &Client{eventBus: localBus}
+func TestApplyThinkingBudget_ExceedsMaxBudget(t *testing.T) {
+	t.Parallel()
+	localBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, localBus)
+	localClient := &Client{eventBus: localBus}
 
-		var mu sync.Mutex
-		var publishedEvents []events.Event
-		localBus.Subscribe(func(ctx context.Context, e events.Event) {
-			mu.Lock()
-			defer mu.Unlock()
-			publishedEvents = append(publishedEvents, e)
-		})
-
-		config := &genai.ThinkingConfig{}
-		localClient.applyThinkingBudget(ctx, config, 3000, 1024, "test-model")
-
-		// Flush to ensure the event is processed
-		if err := localBus.Flush(context.Background()); err != nil {
-			t.Fatalf("failed to flush event bus: %v", err)
-		}
-
-		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1024 {
-			t.Errorf("expected budget to be capped at 1024, got %v", config.ThinkingBudget)
-		}
-
+	var mu sync.Mutex
+	var publishedEvents []events.Event
+	localBus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
-		count := len(publishedEvents)
-		var firstEvent events.Event
-		if count > 0 {
-			firstEvent = publishedEvents[0]
-		}
-		mu.Unlock()
-
-		if count != 1 {
-			t.Fatalf("expected 1 warning event, got %d", count)
-		}
-
-		msgEvent, ok := firstEvent.(events.SystemMessageEvent)
-		if !ok || msgEvent.Level != "warning" {
-			t.Errorf("expected warning SystemMessageEvent")
-		}
+		defer mu.Unlock()
+		publishedEvents = append(publishedEvents, e)
 	})
+
+	config := &genai.ThinkingConfig{}
+	localClient.applyThinkingBudget(context.Background(), config, 3000, 1024, "test-model")
+
+	if err := localBus.Flush(context.Background()); err != nil {
+		t.Fatalf("failed to flush event bus: %v", err)
+	}
+
+	if config.ThinkingBudget == nil || *config.ThinkingBudget != 1024 {
+		t.Errorf("expected budget capped at 1024, got %v", config.ThinkingBudget)
+	}
+
+	mu.Lock()
+	events := make([]events.Event, len(publishedEvents))
+	copy(events, publishedEvents)
+	mu.Unlock()
+
+	assertSingleWarningEvent(t, events)
+}
+
+// assertSingleWarningEvent validates that exactly one warning SystemMessageEvent
+// was published to the event slice.
+func assertSingleWarningEvent(t *testing.T, publishedEvents []events.Event) {
+	t.Helper()
+	if len(publishedEvents) != 1 {
+		t.Fatalf("expected 1 warning event, got %d", len(publishedEvents))
+	}
+	msgEvent, ok := publishedEvents[0].(events.SystemMessageEvent)
+	if !ok || msgEvent.Level != "warning" {
+		t.Errorf("expected warning SystemMessageEvent")
+	}
 }
 
 // captureErrorLogger implements ports.Logger and captures the last Error call.
