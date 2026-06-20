@@ -183,6 +183,52 @@ func checkSendChatWithOverride(t *testing.T, m *MockGateway) {
 	}
 }
 
+// assertNilGenerateReturnsDefault verifies that calling Generate on a
+// MockGateway with a nil GenerateFunc returns the default "model"/"generated"
+// response with non-nil Metrics.
+func assertNilGenerateReturnsDefault(t *testing.T, m *MockGateway) {
+	t.Helper()
+	content, metrics, err := m.Generate(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("nil GenerateFunc: unexpected error: %v", err)
+	}
+	if content == nil {
+		t.Fatal("nil GenerateFunc: got nil content")
+	}
+	if content.Role != "model" {
+		t.Errorf("nil GenerateFunc: got role %q; want %q", content.Role, "model")
+	}
+	if len(content.Parts) != 1 || content.Parts[0].Text != "generated" {
+		t.Errorf("nil GenerateFunc: got parts %+v; want [Text:generated]", content.Parts)
+	}
+	if metrics == nil {
+		t.Error("nil GenerateFunc: got nil metrics")
+	}
+}
+
+// assertNilSendChatReturnsDefault verifies that calling SendChat on a
+// MockGateway with a nil SendChatFn returns the default "model"/"generated"
+// response with non-nil Metrics.
+func assertNilSendChatReturnsDefault(t *testing.T, m *MockGateway) {
+	t.Helper()
+	content, metrics, err := m.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("nil SendChatFn: unexpected error: %v", err)
+	}
+	if content == nil {
+		t.Fatal("nil SendChatFn: got nil content")
+	}
+	if content.Role != "model" {
+		t.Errorf("nil SendChatFn: got role %q; want %q", content.Role, "model")
+	}
+	if len(content.Parts) != 1 || content.Parts[0].Text != "generated" {
+		t.Errorf("nil SendChatFn: got parts %+v; want [Text:generated]", content.Parts)
+	}
+	if metrics == nil {
+		t.Error("nil SendChatFn: got nil metrics")
+	}
+}
+
 func TestMockGateway(t *testing.T) {
 	t.Parallel()
 
@@ -267,53 +313,17 @@ func TestMockGateway_RaceDetection(t *testing.T) {
 func TestMockGateway_NilFuncs(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
 	tests := []struct {
 		name string
-		call func(m *MockGateway)
+		call func(t *testing.T, m *MockGateway)
 	}{
 		{
 			name: "Generate_nil_func",
-			call: func(m *MockGateway) {
-				content, metrics, err := m.Generate(ctx, nil, nil, nil)
-				if err != nil {
-					t.Fatalf("nil GenerateFunc: unexpected error: %v", err)
-				}
-				if content == nil {
-					t.Fatal("nil GenerateFunc: got nil content")
-				}
-				if content.Role != "model" {
-					t.Errorf("nil GenerateFunc: got role %q; want %q", content.Role, "model")
-				}
-				if len(content.Parts) != 1 || content.Parts[0].Text != "generated" {
-					t.Errorf("nil GenerateFunc: got parts %+v; want [Text:generated]", content.Parts)
-				}
-				if metrics == nil {
-					t.Error("nil GenerateFunc: got nil metrics")
-				}
-			},
+			call: assertNilGenerateReturnsDefault,
 		},
 		{
 			name: "SendChat_nil_func",
-			call: func(m *MockGateway) {
-				content, metrics, err := m.SendChat(ctx, nil, nil, nil)
-				if err != nil {
-					t.Fatalf("nil SendChatFn: unexpected error: %v", err)
-				}
-				if content == nil {
-					t.Fatal("nil SendChatFn: got nil content")
-				}
-				if content.Role != "model" {
-					t.Errorf("nil SendChatFn: got role %q; want %q", content.Role, "model")
-				}
-				if len(content.Parts) != 1 || content.Parts[0].Text != "generated" {
-					t.Errorf("nil SendChatFn: got parts %+v; want [Text:generated]", content.Parts)
-				}
-				if metrics == nil {
-					t.Error("nil SendChatFn: got nil metrics")
-				}
-			},
+			call: assertNilSendChatReturnsDefault,
 		},
 	}
 
@@ -322,7 +332,7 @@ func TestMockGateway_NilFuncs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := &MockGateway{} // zero value — no func fields set
-			tt.call(m)
+			tt.call(t, m)
 		})
 	}
 }
