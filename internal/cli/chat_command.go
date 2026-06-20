@@ -230,58 +230,66 @@ func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerIn
 	return prompt, nil
 }
 
+// buildTUICapturer constructs a TUI-based prompt capturer with suggestion support.
+// It seeds the suggestion trie from the last user message (best-effort), initializes
+// the suggestion service, and wraps the base capturer. Falls back to a bare capturer
+// if suggestion initialization fails.
+func (c *chatCommand) buildTUICapturer(ctx stdctx.Context, cfg *domain_config.Config) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
+	// Try to get at least the last user message for the trie
+	hManager, _ := c.Bootstrapper.GetHistoryManager(ctx, cfg)
+	var lastMsg string
+	if hManager != nil {
+		lastMsg, _, _ = c.ChatService.GetLastUserMessage(ctx, hManager)
+	}
+
+	var recentHistory []string
+	if lastMsg != "" {
+		recentHistory = append(recentHistory, lastMsg)
+	}
+
+	svc, err := c.Bootstrapper.GetSuggestionService(ctx, recentHistory)
+
+	capturerInterface := c.newCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
+	baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
+	if !ok {
+		// Coverage gap accepted by architect: structurally unreachable.
+		// tui.BaseCapturer and agent.CapturerInteractor are structurally
+		// identical interfaces (both compose ports.Capturer +
+		// domain_security.UserInteractor). Any type that fails the
+		// BaseCapturer assertion necessarily also fails the
+		// CapturerInteractor assertion — and vice versa. The dual-failure
+		// path is covered by the error return below. See Issue #888.
+		return nil, nil, fmt.Errorf("ui.NewCapturer did not return a tui.BaseCapturer or agent.CapturerInteractor")
+	}
+
+	var capturer agent.CapturerInteractor
+	var cleanup func(stdctx.Context) error
+
+	if err != nil {
+		// Log warning and fall back to the base capturer (no suggestions)
+		c.warnf("Warning: failed to initialize suggestions: %v\n", err)
+		capturer = baseCapturer
+		cleanup = func(ctx stdctx.Context) error {
+			return capturer.Close(ctx)
+		}
+	} else {
+		capturer = tui.NewPromptCapturer(baseCapturer, svc)
+		cleanup = func(ctx stdctx.Context) error {
+			if err := capturer.Close(ctx); err != nil {
+				c.warnf("Warning: failed to close capturer: %v\n", err)
+				return err
+			}
+			return nil
+		}
+	}
+
+	c.Interactor.set(capturer)
+	return capturer, cleanup, nil
+}
+
 func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error, error) {
 	if opts.tuiPrompt {
-		// Try to get at least the last user message for the trie
-		hManager, _ := c.Bootstrapper.GetHistoryManager(ctx, cfg)
-		var lastMsg string
-		if hManager != nil {
-			lastMsg, _, _ = c.ChatService.GetLastUserMessage(ctx, hManager)
-		}
-
-		var recentHistory []string
-		if lastMsg != "" {
-			recentHistory = append(recentHistory, lastMsg)
-		}
-
-		svc, err := c.Bootstrapper.GetSuggestionService(ctx, recentHistory)
-
-		capturerInterface := c.newCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
-		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
-		if !ok {
-			// Coverage gap accepted by architect: structurally unreachable.
-			// tui.BaseCapturer and agent.CapturerInteractor are structurally
-			// identical interfaces (both compose ports.Capturer +
-			// domain_security.UserInteractor). Any type that fails the
-			// BaseCapturer assertion necessarily also fails the
-			// CapturerInteractor assertion — and vice versa. The dual-failure
-			// path is covered by the error return below. See Issue #888.
-			return nil, nil, fmt.Errorf("ui.NewCapturer did not return a tui.BaseCapturer or agent.CapturerInteractor")
-		}
-
-		var capturer agent.CapturerInteractor
-		var cleanup func(stdctx.Context) error
-
-		if err != nil {
-			// Log warning and fall back to the base capturer (no suggestions)
-			c.warnf("Warning: failed to initialize suggestions: %v\n", err)
-			capturer = baseCapturer
-			cleanup = func(ctx stdctx.Context) error {
-				return capturer.Close(ctx)
-			}
-		} else {
-			capturer = tui.NewPromptCapturer(baseCapturer, svc)
-			cleanup = func(ctx stdctx.Context) error {
-				if err := capturer.Close(ctx); err != nil {
-					c.warnf("Warning: failed to close capturer: %v\n", err)
-					return err
-				}
-				return nil
-			}
-		}
-
-		c.Interactor.set(capturer)
-		return capturer, cleanup, nil
+		return c.buildTUICapturer(ctx, cfg)
 	}
 	capturer, cleanup, err := c.setupCapturer()
 	if err != nil {
