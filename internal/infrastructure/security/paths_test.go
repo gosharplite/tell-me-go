@@ -590,6 +590,40 @@ func TestNewPathPolicy_ResolvedTempDir(t *testing.T) {
 	assert.True(t, exempted, "path in resolvedTempDir should be exempted by isExemptedDirectory")
 }
 
+// TestNewPathPolicy_EvalSymlinksFallback verifies that when os.TempDir()
+// returns a path whose symlinks cannot be resolved (e.g., a dangling symlink),
+// newPathPolicy falls back to using the raw unresolved path for resolvedTempDir.
+// This covers paths.go:44.
+func TestNewPathPolicy_EvalSymlinksFallback(t *testing.T) {
+	// NOTE: t.Parallel() cannot be used with t.Setenv() — Go testing forbids
+	// the combination. The test still runs in its own goroutine context;
+	// TMPDIR is auto-restored after the test via t.Setenv.
+
+	tmpDir := t.TempDir()
+
+	// Create a dangling symlink: points to a non-existent target.
+	danglingLink := filepath.Join(tmpDir, "dangling_tmp")
+	target := filepath.Join(tmpDir, "nonexistent_target")
+	if err := os.Symlink(target, danglingLink); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+
+	// Ensure the target truly doesn't exist.
+	_ = os.Remove(target)
+
+	// Override TMPDIR so os.TempDir() returns our dangling symlink.
+	t.Setenv("TMPDIR", danglingLink)
+
+	// Construct a new policy — EvalSymlinks should fail on the dangling link.
+	p := newPathPolicy(nil)
+
+	// The fallback uses filepath.Clean(temp) — the raw, unresolved path.
+	expected := filepath.Clean(danglingLink) + string(filepath.Separator)
+	if p.resolvedTempDir != expected {
+		t.Errorf("resolvedTempDir = %q, want %q (EvalSymlinks fallback)", p.resolvedTempDir, expected)
+	}
+}
+
 // TestIsExemptedDirectory_CaseInsensitive verifies the case-insensitive
 // branch of isExemptedDirectory (paths.go lines 204-207). On Linux,
 // isCaseSensitive() returns true, so this branch is never reached through
@@ -1044,6 +1078,55 @@ func TestFilepathAbs_ErrorBranches(t *testing.T) {
 		ok, err := p.checkBoundary("/some/absolute/target", "relative/boundary")
 		require.Error(t, err, "checkBoundary should propagate filepath.Abs error")
 		assert.False(t, ok, "checkBoundary should return ok=false when filepath.Abs fails")
+	})
+
+	// ---- 5. checkSafePaths: logs boundary check error ----
+	t.Run("checkSafePaths: logs boundary check error", func(t *testing.T) {
+		// Capture log output
+		var logBuf strings.Builder
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(os.Stderr)
+
+		p := newPathPolicy(nil)
+		// Inject a relative path directly. RegisterPath cannot be used because
+		// filepath.Abs would also fail in this deleted-CWD environment.
+		p.safePaths["relative/boundary"] = struct{}{}
+
+		ok, err := p.checkSafePaths("/some/absolute/target", false)
+		// checkSafePaths logs errors from checkBoundary but never returns them.
+		if err != nil {
+			t.Errorf("checkSafePaths should return nil error (logs only), got: %v", err)
+		}
+		if ok {
+			t.Error("checkSafePaths should return false for path outside boundary")
+		}
+		if !strings.Contains(logBuf.String(), "boundary check error for safe path") {
+			t.Errorf("expected log containing 'boundary check error for safe path', got: %q", logBuf.String())
+		}
+	})
+
+	// ---- 6. checkReadOnlyPaths: logs boundary check error ----
+	t.Run("checkReadOnlyPaths: logs boundary check error", func(t *testing.T) {
+		// Capture log output
+		var logBuf strings.Builder
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(os.Stderr)
+
+		p := newPathPolicy(nil)
+		// Inject a relative path directly into readOnlyPaths.
+		p.readOnlyPaths["relative/ro_boundary"] = struct{}{}
+
+		// Must call with writable=false to enter the loop (writable=true returns early).
+		ok, err := p.checkReadOnlyPaths("/some/absolute/target", false)
+		if err != nil {
+			t.Errorf("checkReadOnlyPaths should return nil error (logs only), got: %v", err)
+		}
+		if ok {
+			t.Error("checkReadOnlyPaths should return false for path outside boundary")
+		}
+		if !strings.Contains(logBuf.String(), "boundary check error for read-only path") {
+			t.Errorf("expected log containing 'boundary check error for read-only path', got: %q", logBuf.String())
+		}
 	})
 }
 
