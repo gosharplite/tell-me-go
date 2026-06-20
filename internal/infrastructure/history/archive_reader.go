@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"io"
 	"os"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -24,9 +24,8 @@ import (
 type jsonlArchiveReader struct {
 	fs          persistence.FileSystem
 	archivePath string
-	mu          sync.RWMutex
+	indexOnce   concurrency.OnceWithRetry
 	index       []int64 // offsets of each line
-	indexed     bool
 }
 
 // NewJSONLArchiveReader creates a new JSONLArchiveReader.
@@ -57,14 +56,10 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 		return nil, 0, err
 	}
 
-	r.mu.RLock()
 	if len(r.index) == 0 {
-		r.mu.RUnlock()
 		return nil, 0, nil
 	}
 
-	// Find the current index for the offset
-	// If offset is -1 or greater than file size, we start from the last line.
 	targetIdx := len(r.index)
 	if offset != -1 {
 		targetIdx = sort.Search(len(r.index), func(i int) bool {
@@ -73,7 +68,6 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 	}
 
 	if targetIdx == 0 {
-		r.mu.RUnlock()
 		return nil, 0, nil
 	}
 
@@ -84,7 +78,6 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 
 	startOffset := r.index[startIdx]
 	limitToRead := targetIdx - startIdx
-	r.mu.RUnlock()
 
 	dtos, _, err := r.readPageInternal(ctx, limitToRead, startOffset)
 	if err != nil {
@@ -95,24 +88,9 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 }
 
 func (r *jsonlArchiveReader) ensureIndex(ctx context.Context) error {
-	r.mu.RLock()
-	if r.indexed {
-		r.mu.RUnlock()
-		return nil
-	}
-	r.mu.RUnlock()
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.indexed {
-		return nil
-	}
-
-	if err := r.buildIndex(ctx); err != nil {
-		return err // Do not cache transient errors
-	}
-	r.indexed = true
-	return nil
+	return r.indexOnce.Do(func() error {
+		return r.buildIndex(ctx)
+	})
 }
 
 // readLineForIndex reads one complete line from the reader, handling lines
