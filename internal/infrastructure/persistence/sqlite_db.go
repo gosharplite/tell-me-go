@@ -23,21 +23,9 @@ var sqlOpenFn = sql.Open
 
 // initSQLiteDB opens the SQLite database and runs migrations.
 func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
-	db, err := sqlOpenFn("sqlite", dbPath)
+	db, err := sqlOpenFn("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
-	}
-
-	// Apply pragmas for resilience
-	pragmas := []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
-	}
-	for _, p := range pragmas {
-		if _, err := db.ExecContext(ctx, p); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to set pragma %q: %w", p, err)
-		}
 	}
 
 	// Run schema migrations
