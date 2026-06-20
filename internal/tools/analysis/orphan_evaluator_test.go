@@ -245,6 +245,107 @@ func TestDeepVerificationEvaluator(t *testing.T) {
 		})
 	}
 }
+func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
+	tests := []struct {
+		name string
+		e    *deepVerificationEvaluator
+		ctx  *orphanEvalContext
+		want bool
+	}{
+		{
+			name: "nil context",
+			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
+			ctx:  nil,
+			want: false,
+		},
+		{
+			name: "nil report",
+			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
+			ctx: &orphanEvalContext{
+				report: nil,
+				meta:   &symMeta{isMethod: true},
+				state:  &scanState{},
+				deep:   true,
+			},
+			want: false,
+		},
+		{
+			name: "nil meta",
+			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
+			ctx: &orphanEvalContext{
+				report: &orphanReport{},
+				meta:   nil,
+				state:  &scanState{},
+				deep:   true,
+			},
+			want: false,
+		},
+		{
+			name: "nil state",
+			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
+			ctx: &orphanEvalContext{
+				report: &orphanReport{},
+				meta:   &symMeta{isMethod: true},
+				state:  nil,
+				deep:   true,
+			},
+			want: false,
+		},
+		{
+			name: "nil analyzer",
+			e:    &deepVerificationEvaluator{analyzer: nil},
+			ctx: &orphanEvalContext{
+				report: &orphanReport{},
+				meta:   &symMeta{isMethod: true},
+				state:  &scanState{},
+				deep:   true,
+			},
+			want: false,
+		},
+		{
+			name: "deep disabled",
+			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
+			ctx: &orphanEvalContext{
+				report: &orphanReport{},
+				meta:   &symMeta{isMethod: true},
+				state:  &scanState{},
+				deep:   false,
+			},
+			want: false,
+		},
+		{
+			name: "not a method",
+			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
+			ctx: &orphanEvalContext{
+				report: &orphanReport{},
+				meta:   &symMeta{isMethod: false},
+				state:  &scanState{},
+				deep:   true,
+			},
+			want: false,
+		},
+		{
+			name: "all conditions met",
+			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
+			ctx: &orphanEvalContext{
+				report: &orphanReport{},
+				meta:   &symMeta{isMethod: true},
+				state:  &scanState{},
+				deep:   true,
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.e.shouldDeepVerify(tt.ctx)
+			if got != tt.want {
+				t.Errorf("shouldDeepVerify() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 func TestAnonInterfaceWarningEvaluator(t *testing.T) {
 	validReport := &orphanReport{
 		Symbol:   "Symbol",

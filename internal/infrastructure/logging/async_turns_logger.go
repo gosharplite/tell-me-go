@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -244,6 +245,41 @@ func (l *asyncTurnsLogger) renderTurnHeader(sb *strings.Builder, status events.T
 	fmt.Fprintf(sb, "[%s] Payload: %s%d/%d tokens%s\n", timestamp, prefix, status.Tokens, status.MaxHistoryTokens, modeStr)
 }
 
+// formatDisplayName returns the human-readable model identifier for log output.
+// Provider takes precedence over Model. ON_DEMAND_PRIORITY traffic appends
+// a "-priority" suffix. Returns empty string when both Provider and Model are empty.
+func formatDisplayName(m *llm.Metrics) string {
+	if m == nil {
+		return ""
+	}
+	displayName := m.Provider
+	if displayName == "" {
+		displayName = m.Model
+	}
+	if strings.EqualFold(m.TrafficType, "ON_DEMAND_PRIORITY") {
+		displayName = fmt.Sprintf("%s-priority", displayName)
+	}
+	return displayName
+}
+
+// formatTiming returns the formatted latency string for log output.
+// It includes total turn latency, cumulative tool duration, and optionally
+// session duration with per-turn throughput when StartTime is populated.
+func formatTiming(m *llm.Metrics, startTime time.Time, currentTurns int, now time.Time) string {
+	totalTurnLatency := m.Duration + m.ToolDuration
+	timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
+	if startTime.IsZero() {
+		return timingRaw
+	}
+	totalSessionDuration := now.Sub(startTime).Seconds()
+	if currentTurns+1 > 0 {
+		timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(currentTurns+1))
+	} else {
+		timingRaw = fmt.Sprintf("%s / %.2fs", timingRaw, totalSessionDuration)
+	}
+	return timingRaw
+}
+
 func (l *asyncTurnsLogger) renderTurnMetrics(sb *strings.Builder, status events.TurnStatus, now time.Time, timestamp string) {
 	m := status.Metrics
 	// Token line (actual)
@@ -255,28 +291,13 @@ func (l *asyncTurnsLogger) renderTurnMetrics(sb *strings.Builder, status events.
 
 	// Metrics line
 	miss := m.PromptTokens - m.CachedTokens
+	displayName := formatDisplayName(m)
 	modelStr := ""
-	displayName := m.Provider
-	if displayName == "" {
-		displayName = m.Model
-	}
-	if strings.EqualFold(m.TrafficType, "ON_DEMAND_PRIORITY") {
-		displayName = fmt.Sprintf("%s-priority", displayName)
-	}
 	if displayName != "" {
 		modelStr = fmt.Sprintf(" [%s]", displayName)
 	}
 
-	totalTurnLatency := m.Duration + m.ToolDuration
-	timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
-	if !status.StartTime.IsZero() {
-		totalSessionDuration := now.Sub(status.StartTime).Seconds()
-		if status.CurrentTurns+1 > 0 {
-			timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(status.CurrentTurns+1))
-		} else {
-			timingRaw = fmt.Sprintf("%s / %.2fs", timingRaw, totalSessionDuration)
-		}
-	}
+	timingRaw := formatTiming(m, status.StartTime, status.CurrentTurns, now)
 
 	// Prepare thinking-tokens segment. Suppressed when zero — kept in
 	// lockstep with the on-screen renderer (see internal/ui/renderer.go

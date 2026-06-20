@@ -878,3 +878,140 @@ func TestNewVertexAuth_DefaultTokenCmdFunc_ExecError(t *testing.T) {
 		t.Error("expected error from default tokenCmdFunc when execCommand fails")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// readCacheFile / writeCacheFile unit tests
+// ---------------------------------------------------------------------------
+
+func TestVertexAuth_ReadCacheFile(t *testing.T) {
+	t.Run("cache hit", func(t *testing.T) {
+		dir := t.TempDir()
+		auth := &VertexAuth{CacheDir: dir}
+		cachePath := auth.getCachePath()
+		if err := os.MkdirAll(filepath.Dir(cachePath), 0700); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(cachePath, []byte("  cached-token\n"), 0600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		token, ok := auth.readCacheFile()
+		if !ok {
+			t.Fatal("expected cache hit")
+		}
+		if token != "cached-token" {
+			t.Errorf("got %q, want cached-token", token)
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		auth := &VertexAuth{CacheDir: t.TempDir()}
+		token, ok := auth.readCacheFile()
+		if ok {
+			t.Errorf("expected cache miss, got token=%q", token)
+		}
+		if token != "" {
+			t.Errorf("expected empty token on miss, got %q", token)
+		}
+	})
+
+	t.Run("expired cache", func(t *testing.T) {
+		dir := t.TempDir()
+		auth := &VertexAuth{CacheDir: dir}
+		cachePath := auth.getCachePath()
+		if err := os.MkdirAll(filepath.Dir(cachePath), 0700); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(cachePath, []byte("expired-token"), 0600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		// Set mod time to 2 hours ago → older than 55 minutes
+		past := time.Now().Add(-2 * time.Hour)
+		if err := os.Chtimes(cachePath, past, past); err != nil {
+			t.Fatalf("Chtimes: %v", err)
+		}
+
+		token, ok := auth.readCacheFile()
+		if ok {
+			t.Errorf("expected cache miss for expired token, got %q", token)
+		}
+	})
+
+	t.Run("unreadable cache", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Chmod 0000 not reliable on Windows")
+		}
+		dir := t.TempDir()
+		auth := &VertexAuth{CacheDir: dir}
+		cachePath := auth.getCachePath()
+		if err := os.MkdirAll(filepath.Dir(cachePath), 0700); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(cachePath, []byte("unreadable-token"), 0600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		if err := os.Chmod(cachePath, 0000); err != nil {
+			t.Fatalf("Chmod: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(cachePath, 0600) })
+
+		token, ok := auth.readCacheFile()
+		if ok {
+			t.Errorf("expected cache miss for unreadable file, got %q", token)
+		}
+	})
+}
+
+func TestVertexAuth_WriteCacheFile(t *testing.T) {
+	t.Run("successful write", func(t *testing.T) {
+		dir := t.TempDir()
+		auth := &VertexAuth{CacheDir: dir}
+		auth.writeCacheFile(context.Background(), "my-token")
+
+		cachePath := auth.getCachePath()
+		content, err := os.ReadFile(cachePath)
+		if err != nil {
+			t.Fatalf("ReadFile after writeCacheFile: %v", err)
+		}
+		if string(content) != "my-token" {
+			t.Errorf("got %q, want my-token", string(content))
+		}
+	})
+
+	t.Run("mkdir failure does not panic", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Chmod 0555 not reliable on Windows")
+		}
+		dir := t.TempDir()
+		// Create a read-only parent so MkdirAll fails
+		if err := os.Chmod(dir, 0555); err != nil {
+			t.Fatalf("Chmod: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+
+		auth := &VertexAuth{CacheDir: filepath.Join(dir, "sub", "deep")}
+		// Must not panic
+		auth.writeCacheFile(context.Background(), "should-not-panic")
+	})
+
+	t.Run("write failure does not panic", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Chmod 0555 not reliable on Windows")
+		}
+		dir := t.TempDir()
+		auth := &VertexAuth{CacheDir: dir}
+		cachePath := auth.getCachePath()
+		cacheDir := filepath.Dir(cachePath)
+		if err := os.MkdirAll(cacheDir, 0700); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		// Make directory read-only so AtomicWrite cannot create temp file
+		if err := os.Chmod(cacheDir, 0555); err != nil {
+			t.Fatalf("Chmod: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(cacheDir, 0700) })
+
+		// Must not panic
+		auth.writeCacheFile(context.Background(), "should-not-panic")
+	})
+}

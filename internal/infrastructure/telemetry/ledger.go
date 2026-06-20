@@ -139,6 +139,36 @@ func (ls *ledgerStore) getPricingWithOverrides(ctx context.Context, globalDir st
 	return pricing
 }
 
+// tryProcessLogFile attempts to process a single log file into a
+// sessionCostRecord. It returns nil when the file has already been
+// seen, is inaccessible, or cannot be parsed. Non-fatal errors are
+// logged and result in nil.
+func (ls *ledgerStore) tryProcessLogFile(ctx context.Context, path string, globalDir string, seen map[string]bool, pricing domain_pricing.PricingData) *sessionCostRecord {
+	sessionID, err := ls.getSessionID(path, globalDir)
+	if err != nil {
+		log.Printf("Recovery: skipping %s: %v\n", path, err)
+		return nil
+	}
+	if seen[sessionID] {
+		return nil
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+
+	record, err := ls.processLogFile(path, info, globalDir, pricing)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Recovery: failed to parse %s: %v\n", path, err)
+		}
+		return nil
+	}
+
+	return record
+}
+
 // discoverNewRecords scans the list of log files for new sessions not yet in the ledger.
 func (ls *ledgerStore) discoverNewRecords(ctx context.Context, files []string, globalDir string, seen map[string]bool, pricing domain_pricing.PricingData) []sessionCostRecord {
 	var discovered []sessionCostRecord
@@ -147,29 +177,7 @@ func (ls *ledgerStore) discoverNewRecords(ctx context.Context, files []string, g
 			break
 		}
 
-		// Prevent redundant parsing by checking sessionID first
-		sessionID, err := ls.getSessionID(path, globalDir)
-		if err != nil {
-			log.Printf("Recovery: skipping %s: %v\n", path, err)
-			continue
-		}
-		if seen[sessionID] {
-			continue
-		}
-
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-
-		record, err := ls.processLogFile(path, info, globalDir, pricing)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				log.Printf("Recovery: failed to parse %s: %v\n", path, err)
-			}
-			continue
-		}
-
+		record := ls.tryProcessLogFile(ctx, path, globalDir, seen, pricing)
 		if record != nil {
 			discovered = append(discovered, *record)
 			seen[record.Session] = true
