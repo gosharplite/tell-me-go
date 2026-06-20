@@ -37,6 +37,9 @@ var (
 	ledgerMu           sync.Mutex
 )
 
+// filepathRel is the filepath.Rel function, overridable in tests.
+var filepathRel = filepath.Rel
+
 const ledgerRecoveryTimeout = 10 * time.Minute
 
 // ledgerStore handles persistence and recovery of cost metrics.
@@ -212,7 +215,7 @@ func (ls *ledgerStore) getSessionID(path, globalDir string) (string, error) {
 	if ls.getSessionIDFunc != nil {
 		return ls.getSessionIDFunc(path, globalDir)
 	}
-	rel, err := filepath.Rel(globalDir, path)
+	rel, err := filepathRel(globalDir, path)
 	if err != nil {
 		return "", fmt.Errorf("resolving session ID for %s relative to %s: %w", path, globalDir, err)
 	}

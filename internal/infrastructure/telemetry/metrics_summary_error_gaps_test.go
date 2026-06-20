@@ -4,10 +4,12 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -236,4 +238,30 @@ func TestAppendSummaryToLog_MarshalErrorUnreachable(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to marshal cost summary") {
 		t.Error("error format string mismatch")
 	}
+}
+
+// =============================================================================
+// Gap — Silent cost-update warning (metrics.go:109-111)
+// =============================================================================
+
+// TestGetCostSummary_SilentCostUpdateWarning covers the gap at
+// metrics.go:109-111 where recordCostSilently calls EstimateCost
+// and silently logs a warning when EstimateCost fails.
+func TestGetCostSummary_SilentCostUpdateWarning(t *testing.T) {
+	t.Parallel()
+
+	m := &metricsManager{
+		sm:      &mockSMWithError{pathErr: errors.New("path not safe")},
+		logFile: "/nonexistent/path/tokens.log",
+		model:   "test-model",
+	}
+
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
+
+	m.recordCostSilently(context.Background())
+
+	assert.Contains(t, logBuf.String(), "Warning: Failed to record cost before summary")
+	assert.Contains(t, logBuf.String(), "path not safe")
 }
