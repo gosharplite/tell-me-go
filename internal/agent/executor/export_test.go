@@ -10,3 +10,6 @@ var HandleTimeout = (*safetyDecorator).handleTimeout
 
 // NewLivenessTimer exposes the private newLivenessTimer constructor.
 var NewLivenessTimer = newLivenessTimer
+
+// MonitorLiveness exposes the private (*safetyDecorator).monitorLiveness method.
+var MonitorLiveness = (*safetyDecorator).monitorLiveness
