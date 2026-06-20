@@ -111,6 +111,10 @@ type HistoryRenderOptions struct {
 	ShowThoughts bool
 	// UseColor enables ANSI color escape sequences in the output.
 	UseColor bool
+	// CustomRenderer, if non-nil, is used instead of creating a glamour
+	// TermRenderer. The value must have a Render(string)(string,error) method.
+	// Intended for testing. Ignored when Raw is true.
+	CustomRenderer interface{ Render(string) (string, error) }
 }
 
 // SystemMetricsProvider defines the interface for collecting host resource usage.

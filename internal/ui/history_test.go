@@ -280,4 +280,31 @@ func TestHistory_RenderTextError(t *testing.T) {
 			t.Errorf("expected fallback text 'hello world', got: %q", output)
 		}
 	})
+
+	t.Run("renderer error prints [render error:] prefix and raw text", func(t *testing.T) {
+		// Use a fresh history with one entry
+		ctx := context.Background()
+		tmp := t.TempDir()
+		historyPath := filepath.Join(tmp, "history.json")
+		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+		if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello world"}}}); err != nil {
+			t.Fatal(err)
+		}
+
+		var buf bytes.Buffer
+		ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{
+			Raw:            false,
+			CustomRenderer: &failingRenderer{err: errors.New("history render failure")},
+		})
+
+		output := buf.String()
+		// Must contain the [render error: ...] prefix from the degradation path
+		if !strings.Contains(output, "[render error: history render failure]") {
+			t.Errorf("expected [render error: history render failure] in output, got: %q", output)
+		}
+		// Must still contain the raw text after the error line
+		if !strings.Contains(output, "hello world") {
+			t.Errorf("expected raw text 'hello world' after error, got: %q", output)
+		}
+	})
 }

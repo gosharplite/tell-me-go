@@ -22,13 +22,36 @@ import (
 	"golang.org/x/term"
 )
 
+// markdownRenderer abstracts glamour for testability. *glamour.TermRenderer
+// satisfies this interface implicitly via its Render(string)(string,error) method.
+type markdownRenderer interface {
+	Render(text string) (string, error)
+}
+
+// rendererConfig holds optional configuration for NewRenderer.
+type rendererConfig struct {
+	glamourOpts []glamour.TermRendererOption
+}
+
+// RendererOption is a functional option for NewRenderer.
+type RendererOption func(*rendererConfig)
+
+// WithGlamourOption appends a glamour TermRendererOption to be passed to
+// glamour.NewTermRenderer during initialization. Use this in tests to inject
+// a failing option that forces the degradation path.
+func WithGlamourOption(opt glamour.TermRendererOption) RendererOption {
+	return func(c *rendererConfig) {
+		c.glamourOpts = append(c.glamourOpts, opt)
+	}
+}
+
 // stdUIRenderer implements ports.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
 	locker          domain_security.Manager
 	stdout          io.Writer
 	stderr          io.Writer
 	clock           clock.Clock
-	renderer        *glamour.TermRenderer
+	renderer        markdownRenderer
 	mu              sync.RWMutex
 	ioMu            sync.Mutex
 	useColor        bool
@@ -140,17 +163,25 @@ func (bdr *binaryDependencyRenderer) renderBinaries(ui uiState, stderr io.Writer
 }
 
 // NewRenderer creates a new ports.UIRenderer.
-func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock, metricsProvider ports.SystemMetricsProvider) ports.UIRenderer {
+func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock, metricsProvider ports.SystemMetricsProvider, opts ...RendererOption) ports.UIRenderer {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}
 	if metricsProvider == nil {
 		metricsProvider = &defaultMetricsProvider{}
 	}
-	tr, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithEmoji(),
-	)
+
+	cfg := &rendererConfig{
+		glamourOpts: []glamour.TermRendererOption{
+			glamour.WithAutoStyle(),
+			glamour.WithEmoji(),
+		},
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	tr, err := glamour.NewTermRenderer(cfg.glamourOpts...)
 	r := &stdUIRenderer{
 		locker:          locker,
 		stdout:          stdout,

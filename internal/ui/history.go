@@ -48,10 +48,14 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 		useColor:     options.UseColor,
 	}
 	if !options.Raw {
-		hr.renderer, _ = glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithEmoji(),
-		)
+		if options.CustomRenderer != nil {
+			hr.renderer = options.CustomRenderer
+		} else {
+			hr.renderer, _ = glamour.NewTermRenderer(
+				glamour.WithAutoStyle(),
+				glamour.WithEmoji(),
+			)
+		}
 	}
 
 	for _, content := range contents {
@@ -67,7 +71,7 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 }
 
 type historyRenderer struct {
-	renderer     *glamour.TermRenderer
+	renderer     markdownRenderer
 	writer       io.Writer
 	raw          bool
 	showThoughts bool
