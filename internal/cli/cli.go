@@ -176,6 +176,26 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 	return nil
 }
 
+// consumeOptionalIntFlag checks if args[index] is an optional-int flag (-l, --last, -b, --back).
+// If the next argument is a valid integer, it is consumed as the flag value.
+// Returns the normalized "flag=value" string and the number of arguments consumed (1 or 2).
+// Returns ("", 0) if args[index] is not an optional-int flag.
+func consumeOptionalIntFlag(args []string, index int) (string, int) {
+	arg := args[index]
+	if arg != "-l" && arg != "--last" && arg != "-b" && arg != "--back" {
+		return "", 0
+	}
+	val := "1"
+	consumed := 1
+	if index+1 < len(args) {
+		if _, err := strconv.Atoi(args[index+1]); err == nil {
+			val = args[index+1]
+			consumed = 2
+		}
+	}
+	return fmt.Sprintf("%s=%s", arg, val), consumed
+}
+
 // sanitizeArgs preprocessing allows integer flags like -l and -b to behave like boolean flags
 // defaulting to 1 when no argument is explicitly provided, preventing positional arguments
 // (like the prompt string) from being mistakenly parsed as their values.
@@ -183,28 +203,15 @@ func sanitizeArgs(args []string) []string {
 	if len(args) < 2 {
 		return args
 	}
-
 	result := make([]string, 0, len(args))
 	result = append(result, args[0])
-
 	for i := 1; i < len(args); i++ {
-		arg := args[i]
-
-		// Check if the current argument is one of our optional-int flags
-		if arg == "-l" || arg == "--last" || arg == "-b" || arg == "--back" {
-			val := "1"
-			if i+1 < len(args) {
-				if _, err := strconv.Atoi(args[i+1]); err == nil {
-					val = args[i+1]
-					i++ // consume the next arg as the flag value
-				}
-			}
-			// Re-inject as a single joint argument to force pflag to consume it
-			result = append(result, fmt.Sprintf("%s=%s", arg, val))
+		if normalized, consumed := consumeOptionalIntFlag(args, i); consumed > 0 {
+			result = append(result, normalized)
+			i += consumed - 1
 			continue
 		}
-
-		result = append(result, arg)
+		result = append(result, args[i])
 	}
 	return result
 }
