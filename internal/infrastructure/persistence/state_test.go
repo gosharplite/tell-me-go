@@ -4,10 +4,12 @@
 package persistence
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -473,4 +475,30 @@ func TestNewSessionState_InitServicesError(t *testing.T) {
 	assert.Nil(t, state, "state should be nil when initServices fails")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, injectedErr, "error should be the injected initServices error")
+}
+
+func TestSessionState_Close_WALCheckpointError(t *testing.T) {
+	// NOT parallel: overrides slog.Default(), must run sequentially.
+	var buf bytes.Buffer
+	origLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(origLogger) })
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	state, err := NewSessionState(ctx, tempDir)
+	require.NoError(t, err)
+
+	ss := state.(*sessionState)
+	require.NotNil(t, ss.db, "expected non-nil db in sessionState")
+
+	require.NoError(t, ss.db.Close(), "pre-closing db for test setup")
+
+	_ = state.Close()
+	// sql.DB.Close() is idempotent and returns nil on an already-closed DB,
+	// so we do not assert on the error here. The key behavior under test is
+	// the WAL checkpoint failure being logged.
+
+	assert.Contains(t, buf.String(), "WAL checkpoint on close failed")
 }
