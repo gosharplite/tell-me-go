@@ -238,11 +238,12 @@ func TestMatchesTypeName_StarExpr_UnhandledExpr(t *testing.T) {
 	}
 }
 
-func TestDeclMatchers(t *testing.T) {
+// TestMatchFuncDecl verifies the matchFuncDecl helper correctly identifies
+// FuncDecl nodes by name and rejects non-FuncDecl or BadDecl inputs.
+func TestMatchFuncDecl(t *testing.T) {
 	t.Parallel()
 
-	// ---- matchFuncDecl ----
-	t.Run("matchFuncDecl matches by name", func(t *testing.T) {
+	t.Run("matches by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "Hello"}}
 		if !matchFuncDecl(decl, "Hello") {
@@ -250,22 +251,27 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchFuncDecl returns false for non-FuncDecl", func(t *testing.T) {
+	t.Run("non-FuncDecl", func(t *testing.T) {
 		t.Parallel()
 		if matchFuncDecl(&ast.BadDecl{}, "Hello") {
 			t.Error("matchFuncDecl should return false for BadDecl")
 		}
 	})
 
-	t.Run("matchFuncDecl returns false for BadDecl", func(t *testing.T) {
+	t.Run("BadDecl", func(t *testing.T) {
 		t.Parallel()
 		if matchFuncDecl(&ast.BadDecl{}, "Nope") {
 			t.Error("matchFuncDecl should return false for BadDecl")
 		}
 	})
+}
 
-	// ---- matchTypeSpec ----
-	t.Run("matchTypeSpec matches type by name", func(t *testing.T) {
+// TestMatchTypeSpec verifies the matchTypeSpec helper identifies TypeSpec
+// nodes within GenDecl and rejects non-GenDecl inputs like FuncDecl.
+func TestMatchTypeSpec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("matches type by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -277,16 +283,22 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchTypeSpec returns false for FuncDecl", func(t *testing.T) {
+	t.Run("returns false for FuncDecl", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "MyType"}}
 		if matchTypeSpec(decl, "MyType") {
 			t.Error("matchTypeSpec should return false for FuncDecl")
 		}
 	})
+}
 
-	// ---- matchValueSpec ----
-	t.Run("matchValueSpec matches const by name", func(t *testing.T) {
+// TestMatchValueSpec verifies the matchValueSpec helper identifies
+// ValueSpec nodes (const, var, multi-name) and rejects ImportSpec
+// or non-GenDecl inputs.
+func TestMatchValueSpec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("matches const by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -298,7 +310,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec matches var by name", func(t *testing.T) {
+	t.Run("matches var by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -310,7 +322,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec matches second name in multi-name ValueSpec", func(t *testing.T) {
+	t.Run("matches second name in multi-name ValueSpec", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -322,7 +334,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec returns false for import GenDecl", func(t *testing.T) {
+	t.Run("returns false for import GenDecl", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -334,7 +346,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec returns false for FuncDecl", func(t *testing.T) {
+	t.Run("returns false for FuncDecl", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "MyFunc"}}
 		if matchValueSpec(decl, "MyFunc") {
