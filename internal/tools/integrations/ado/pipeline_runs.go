@@ -255,34 +255,54 @@ func (m *AdoManager) ListPipelineLogs(ctx context.Context, args map[string]inter
 	return params.RunId, logsData.Value, nil
 }
 
+// pipelineLogParams holds the parsed arguments for fetching pipeline log content.
+type pipelineLogParams struct {
+	Organization string `json:"organization"`
+	Project      string `json:"project"`
+	PipelineId   int    `json:"pipeline_id"`
+	RunId        int    `json:"run_id"`
+	LogId        int    `json:"log_id"`
+	TailLines    int    `json:"tail_lines"`
+	HeadLines    int    `json:"head_lines"`
+	FilterQuery  string `json:"filter_query"`
+	ContextLines int    `json:"context_lines"`
+	StartLine    int    `json:"start_line"`
+	MaxLines     int    `json:"max_lines"`
+}
+
+// parsePipelineLogParams unmarshals and validates the arguments for
+// getPipelineLogContent. Returns an error if required fields are missing.
+func parsePipelineLogParams(args map[string]interface{}) (pipelineLogParams, error) {
+	var params pipelineLogParams
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return pipelineLogParams{}, fmt.Errorf("parsing get pipeline log content args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 || params.LogId == 0 {
+		return pipelineLogParams{}, fmt.Errorf("organization, project, pipeline_id, run_id, and log_id are required")
+	}
+
+	return params, nil
+}
+
+// buildPipelineLogURL constructs the Azure DevOps API URL for fetching
+// the content of a single pipeline run log.
+func (m *AdoManager) buildPipelineLogURL(p pipelineLogParams) string {
+	return fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
+		m.BaseURL, url.PathEscape(p.Organization), url.PathEscape(p.Project),
+		p.PipelineId, p.RunId, p.LogId)
+}
+
 // getPipelineLogContent is the infrastructure-layer entry point for fetching the
 // content of a single pipeline log. Returns logContent describing the body and
 // whether it was truncated.
 func (m *AdoManager) getPipelineLogContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (logContent, error) {
-	var params struct {
-		Organization string `json:"organization"`
-		Project      string `json:"project"`
-		PipelineId   int    `json:"pipeline_id"`
-		RunId        int    `json:"run_id"`
-		LogId        int    `json:"log_id"`
-		TailLines    int    `json:"tail_lines"`
-		HeadLines    int    `json:"head_lines"`
-		FilterQuery  string `json:"filter_query"`
-		ContextLines int    `json:"context_lines"`
-		StartLine    int    `json:"start_line"`
-		MaxLines     int    `json:"max_lines"`
+	params, err := parsePipelineLogParams(args)
+	if err != nil {
+		return logContent{}, err
 	}
 
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return logContent{}, fmt.Errorf("parsing get pipeline log content args: %w", err)
-	}
-
-	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 || params.LogId == 0 {
-		return logContent{}, fmt.Errorf("organization, project, pipeline_id, run_id, and log_id are required")
-	}
-
-	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
-		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId, params.LogId)
+	u := m.buildPipelineLogURL(params)
 
 	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {

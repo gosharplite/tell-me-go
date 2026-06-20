@@ -16,27 +16,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type searchResponse struct {
-	Results []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	} `json:"results"`
-	Links struct {
-		Next string `json:"next"`
-	} `json:"_links"`
+// isNumeric reports whether s is a positive integer, used to detect
+// numeric space IDs that bypass the key-resolution HTTP call.
+func isNumeric(s string) bool {
+	n, err := strconv.Atoi(s)
+	return err == nil && n >= 0
 }
 
-type searchMatch struct {
-	ID    string
-	Title string
-}
-
-func (m *ConfluenceManager) resolveSpaceID(ctx context.Context, spaceKey string) (string, error) {
-	// If it's already numeric, return it
-	if _, err := strconv.Atoi(spaceKey); err == nil {
-		return spaceKey, nil
-	}
-
+// fetchSpaceByKey resolves a Confluence space key (e.g., "PROJ") to its
+// numeric ID via the /wiki/api/v2/spaces endpoint.
+func (m *ConfluenceManager) fetchSpaceByKey(ctx context.Context, spaceKey string) (string, error) {
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid base url: %w", err)
@@ -57,7 +46,7 @@ func (m *ConfluenceManager) resolveSpaceID(ctx context.Context, spaceKey string)
 		return "", err
 	}
 	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body) // drain to enable connection reuse
+		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 	}()
 
@@ -83,6 +72,30 @@ func (m *ConfluenceManager) resolveSpaceID(ctx context.Context, spaceKey string)
 	}
 
 	return responseData.Results[0].ID, nil
+}
+
+type searchResponse struct {
+	Results []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"results"`
+	Links struct {
+		Next string `json:"next"`
+	} `json:"_links"`
+}
+
+type searchMatch struct {
+	ID    string
+	Title string
+}
+
+func (m *ConfluenceManager) resolveSpaceID(ctx context.Context, spaceKey string) (string, error) {
+	// If it's already numeric, return it
+	if isNumeric(spaceKey) {
+		return spaceKey, nil
+	}
+
+	return m.fetchSpaceByKey(ctx, spaceKey)
 }
 
 func (m *ConfluenceManager) FetchSearchPage(ctx context.Context, url string) (*searchResponse, error) {
@@ -149,6 +162,31 @@ func (m *ConfluenceManager) resolveNextURL(baseURL, nextPath string) string {
 	return parsedBase.ResolveReference(parsedNext).String()
 }
 
+// fetchAllPages performs a paginated search, following next links until
+// maxPages is reached or no more pages exist. It returns accumulated
+// matches and the total number of API results processed.
+func (m *ConfluenceManager) fetchAllPages(ctx context.Context, startURL string, maxPages int, keyword string) ([]searchMatch, int, error) {
+	maxIterations := (maxPages + 49) / 50
+	nextURL := startURL
+	var matches []searchMatch
+	pagesProcessed := 0
+
+	for i := 0; i < maxIterations && nextURL != ""; i++ {
+		responseData, err := m.FetchSearchPage(ctx, nextURL)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		pageMatches := m.processSearchResults(responseData.Results, keyword)
+		matches = append(matches, pageMatches...)
+		pagesProcessed += len(responseData.Results)
+
+		nextURL = m.resolveNextURL(m.provider.baseURL, responseData.Links.Next)
+	}
+
+	return matches, pagesProcessed, nil
+}
+
 func (m *ConfluenceManager) confluenceSearch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Title   string `json:"title"`
@@ -174,22 +212,10 @@ func (m *ConfluenceManager) confluenceSearch(ctx context.Context, args map[strin
 	}
 
 	maxPages, warning := m.getSearchLimit(params.Limit)
-	nextURL := u.String()
-	var matches []searchMatch
-	maxIterations := (maxPages + 49) / 50
-	pagesProcessed := 0
 
-	for i := 0; i < maxIterations && nextURL != ""; i++ {
-		responseData, err := m.FetchSearchPage(ctx, nextURL)
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-
-		pageMatches := m.processSearchResults(responseData.Results, params.Title)
-		matches = append(matches, pageMatches...)
-		pagesProcessed += len(responseData.Results)
-
-		nextURL = m.resolveNextURL(m.provider.baseURL, responseData.Links.Next)
+	matches, pagesProcessed, err := m.fetchAllPages(ctx, u.String(), maxPages, params.Title)
+	if err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	return m.formatSearchResults(matches, warning, pagesProcessed, params.SpaceID, params.Title), nil
