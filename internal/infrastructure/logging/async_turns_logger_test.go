@@ -809,6 +809,119 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 }
 
 // countingErrorFile is a mock that fails Write/Sync for the first N calls, then succeeds.
+
+func TestFormatDisplayName(t *testing.T) {
+	tests := []struct {
+		name string
+		m    *llm.Metrics
+		want string
+	}{
+		{
+			name: "nil metrics",
+			m:    nil,
+			want: "",
+		},
+		{
+			name: "provider takes precedence",
+			m:    &llm.Metrics{Provider: "openai", Model: "gpt-4o"},
+			want: "openai",
+		},
+		{
+			name: "model fallback when provider empty",
+			m:    &llm.Metrics{Provider: "", Model: "gpt-4o"},
+			want: "gpt-4o",
+		},
+		{
+			name: "priority suffix appended",
+			m:    &llm.Metrics{Provider: "openai", TrafficType: "ON_DEMAND_PRIORITY"},
+			want: "openai-priority",
+		},
+		{
+			name: "priority suffix with model fallback",
+			m:    &llm.Metrics{Model: "gpt-4o", TrafficType: "ON_DEMAND_PRIORITY"},
+			want: "gpt-4o-priority",
+		},
+		{
+			name: "both empty returns empty",
+			m:    &llm.Metrics{},
+			want: "",
+		},
+		{
+			name: "case insensitive traffic type",
+			m:    &llm.Metrics{Provider: "openai", TrafficType: "on_demand_priority"},
+			want: "openai-priority",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatDisplayName(tt.m)
+			if got != tt.want {
+				t.Errorf("formatDisplayName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatTiming(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 10, 0, time.UTC)
+	startTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name         string
+		m            *llm.Metrics
+		startTime    time.Time
+		currentTurns int
+		wantContains []string
+	}{
+		{
+			name: "basic timing without start time",
+			m: &llm.Metrics{
+				Duration:               5.5,
+				ToolDuration:           2.5,
+				CumulativeToolDuration: 1.23,
+			},
+			startTime:    time.Time{},
+			currentTurns: 0,
+			wantContains: []string{"8.00s (ΣT: 1.23s)"},
+		},
+		{
+			name: "timing with start time and multi-turn throughput",
+			m: &llm.Metrics{
+				Duration:               5.5,
+				ToolDuration:           2.5,
+				CumulativeToolDuration: 1.23,
+			},
+			startTime:    startTime,
+			currentTurns: 1,
+			wantContains: []string{"8.00s (ΣT: 1.23s) / 10.00s (5.00)"},
+		},
+		{
+			name: "timing with start time and zero current turns",
+			m: &llm.Metrics{
+				Duration:               5.5,
+				ToolDuration:           2.5,
+				CumulativeToolDuration: 1.23,
+			},
+			startTime:    startTime,
+			currentTurns: -1,
+			wantContains: []string{"8.00s (ΣT: 1.23s) / 10.00s"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatTiming(tt.m, tt.startTime, tt.currentTurns, now)
+			for _, want := range tt.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("formatTiming() = %q, want to contain %q", got, want)
+				}
+			}
+		})
+	}
+}
+
+// countingErrorFile is a mock that fails Write/Sync for the first N calls, then succeeds.
 type countingErrorFile struct {
 	infra_persistence.File
 	mu            sync.Mutex

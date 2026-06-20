@@ -75,6 +75,40 @@ func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 	}
 }
 
+// executeRequest creates and executes an HTTP request with heartbeat, returning
+// the response, heartbeat stop function, and any error.
+func (t *networkTool) executeRequest(ctx context.Context, method, url, bodyStr string, headers map[string]string, hb chan<- struct{}) (*http.Response, func(), error) {
+	var reqBody io.Reader
+	if bodyStr != "" {
+		reqBody = strings.NewReader(bodyStr)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	t.sm.Warn(fmt.Sprintf("[Tool Action] HTTP %s %s", method, url))
+
+	var stopHB func()
+	if hb != nil {
+		stopHB = t.startHeartbeat(hb)
+	}
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		if stopHB != nil {
+			stopHB()
+		}
+		return nil, nil, fmt.Errorf("request failed: %w", err)
+	}
+	return resp, stopHB, nil
+}
+
 func (t *networkTool) readResponseWithLimit(r io.Reader, limit int64) (string, bool, error) {
 	limitReader := io.LimitReader(r, limit+1)
 	data, err := io.ReadAll(limitReader)
@@ -121,26 +155,52 @@ func mustFprintf(sb *strings.Builder, format string, args ...interface{}) {
 	_, _ = fmt.Fprintf(sb, format, args...)
 }
 
+// formatHTTPResponse builds the formatted HTTP response string.
+// It is a pure function with no I/O dependencies.
+func formatHTTPResponse(status string, headers http.Header, body string, truncated bool) string {
+	var sb strings.Builder
+	mustFprintf(&sb, "Status: %s\n", status)
+	sb.WriteString("Headers:\n")
+	for k, vs := range headers {
+		mustFprintf(&sb, "  %s: %s\n", k, strings.Join(vs, ", "))
+	}
+	sb.WriteString("\nBody:\n")
+	sb.WriteString(body)
+	if truncated {
+		sb.WriteString("\n... (truncated due to size limit)")
+	}
+	return sb.String()
+}
+
+// handleHTMLToken processes a single HTML token, updating the skip counter
+// for script/style suppression and writing text to sb.
+func (t *networkTool) handleHTMLToken(tok html.Token, skip *int, sb *strings.Builder) {
+	if tok.Type == html.TextToken {
+		if *skip == 0 {
+			sb.WriteString(tok.Data)
+		}
+		return
+	}
+	sb.WriteByte(' ')
+	if tok.Data == "script" || tok.Data == "style" {
+		if tok.Type == html.StartTagToken {
+			*skip++
+		} else if tok.Type == html.EndTagToken && *skip > 0 {
+			*skip--
+		}
+	}
+}
+
 func (t *networkTool) sanitizeHTML(content string) string {
 	var sb strings.Builder
 	z := html.NewTokenizer(strings.NewReader(content))
 	skip := 0
-	for z.Next() != html.ErrorToken {
-		tok := z.Token()
-		if tok.Type == html.TextToken {
-			if skip == 0 {
-				sb.WriteString(tok.Data)
-			}
-			continue
+	for {
+		tt := z.Next()
+		if tt == html.ErrorToken {
+			break
 		}
-		sb.WriteByte(' ')
-		if tok.Data == "script" || tok.Data == "style" {
-			if tok.Type == html.StartTagToken {
-				skip++
-			} else if tok.Type == html.EndTagToken && skip > 0 {
-				skip--
-			}
-		}
+		t.handleHTMLToken(z.Token(), &skip, &sb)
 	}
 	return strings.Join(strings.Fields(sb.String()), " ")
 }
@@ -156,53 +216,18 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 
-	method := params.Method
-	url := params.URL
-	bodyStr := params.Body
-
-	t.sm.Warn(fmt.Sprintf("[Tool Action] HTTP %s %s", method, url))
-
-	var reqBody io.Reader
-	if bodyStr != "" {
-		reqBody = strings.NewReader(bodyStr)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+	resp, _, err := t.executeRequest(ctx, params.Method, params.URL, params.Body, params.Headers, hb)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+		return tools.ToolResult{}, err
 	}
-
-	for k, v := range params.Headers {
-		req.Header.Set(k, v)
-	}
-
-	stopHB := t.startHeartbeat(hb)
-	defer stopHB()
-
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = drainAndClose(resp.Body) }() // drain+close; error non-actionable after read
+	defer func() { _ = drainAndClose(resp.Body) }()
 
 	bodyContent, truncated, err := t.readResponseWithLimit(resp.Body, maxHttpRequestSize)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	if truncated {
-		bodyContent += "\n... (truncated due to size limit)"
-	}
 
-	var sb strings.Builder
-	mustFprintf(&sb, "Status: %s\n", resp.Status)
-	sb.WriteString("Headers:\n")
-	for k, v := range resp.Header {
-		mustFprintf(&sb, "  %s: %s\n", k, strings.Join(v, ", "))
-	}
-	sb.WriteString("\nBody:\n")
-	sb.WriteString(bodyContent)
-
-	return tools.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: formatHTTPResponse(resp.Status, resp.Header, bodyContent, truncated)}, nil
 }
 
 func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

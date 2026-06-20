@@ -454,6 +454,38 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 // declaring package. Skips packages with nil TypesInfo. Returns early
 // on first confirmed match.
 
+// findMethodUsageInFile walks the AST of a single file looking for a
+// method identifier that type-resolves to targetId. Returns true on
+// first confirmed match. The found flag enables early exit from
+// ast.Inspect.
+func (a *defaultDeadCodeAnalyzer) findMethodUsageInFile(
+	file *ast.File,
+	pkg *packages.Package,
+	methodName string,
+	targetId string,
+) bool {
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		ident, ok := n.(*ast.Ident)
+		if !ok || ident.Name != methodName {
+			return true
+		}
+		obj, ok := pkg.TypesInfo.Uses[ident]
+		if !ok || obj == nil {
+			return true
+		}
+		if getSymbolIdentity(obj) == targetId {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // resolveInPackage walks the AST of a single package looking for a
 // method identifier that type-resolves to targetId. Returns true on
 // first confirmed match.
@@ -466,26 +498,7 @@ func (a *defaultDeadCodeAnalyzer) resolveInPackage(
 	targetId string,
 ) bool {
 	for _, file := range pkg.Syntax {
-		found := false
-		ast.Inspect(file, func(n ast.Node) bool {
-			if found {
-				return false
-			}
-			ident, ok := n.(*ast.Ident)
-			if !ok || ident.Name != methodName {
-				return true
-			}
-			obj, ok := pkg.TypesInfo.Uses[ident]
-			if !ok || obj == nil {
-				return true
-			}
-			if getSymbolIdentity(obj) == targetId {
-				found = true
-				return false
-			}
-			return true
-		})
-		if found {
+		if a.findMethodUsageInFile(file, pkg, methodName, targetId) {
 			return true
 		}
 	}

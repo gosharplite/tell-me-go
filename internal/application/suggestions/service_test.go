@@ -680,6 +680,90 @@ func TestMultiSourceSuggestionService_Warnf(t *testing.T) {
 	}
 }
 
+func TestIsPathLike(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{"slash", "/tmp/foo", true},
+		{"dot prefix", "./foo", true},
+		{"plain text", "hello", false},
+		{"empty", "", false},
+		{"dot in middle", "foo.bar", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := suggestions.IsPathLike(tt.query)
+			if got != tt.want {
+				t.Errorf("IsPathLike(%q) = %v, want %v", tt.query, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchHistoryLocked(t *testing.T) {
+	tests := []struct {
+		name     string
+		history  []string
+		query    string
+		expected []string
+	}{
+		{
+			name:     "subsequence match",
+			history:  []string{"hello-world", "foo-bar", "baz-qux"},
+			query:    "hw",
+			expected: []string{"hello-world"},
+		},
+		{
+			name:     "no match",
+			history:  []string{"hello-world", "foo-bar"},
+			query:    "xyz",
+			expected: nil,
+		},
+		{
+			name:     "limit capping at 10",
+			history:  []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12"},
+			query:    "a",
+			expected: []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10"},
+		},
+		{
+			name:     "multiple subsequence matches",
+			history:  []string{"test-foo-1", "test-bar-2", "other-baz"},
+			query:    "test",
+			expected: []string{"test-foo-1", "test-bar-2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			tracker := &mockPromptTracker{}
+			fs := persistence.NewMockFileSystem()
+			svc, err := suggestions.NewMultiSourceSuggestionService(
+				ctx, fs, tracker, tt.history, io.Discard, infra_persistence.NewWorkspacePolicy(),
+			)
+			if err != nil {
+				t.Fatalf("failed to create service: %v", err)
+			}
+
+			got, err := svc.GetSuggestions(ctx, tt.query)
+			if err != nil {
+				t.Fatalf("GetSuggestions failed: %v", err)
+			}
+
+			if len(got) != len(tt.expected) {
+				t.Errorf("got %d suggestions; want %d. Got: %v", len(got), len(tt.expected), got)
+			}
+			for i, v := range got {
+				if v != tt.expected[i] {
+					t.Errorf("at index %d: got %q; want %q", i, v, tt.expected[i])
+				}
+			}
+		})
+	}
+}
 func TestNewService_LoadTopN_LogsWarning(t *testing.T) {
 	var buf strings.Builder
 	tracker := &errorPromptTracker{}

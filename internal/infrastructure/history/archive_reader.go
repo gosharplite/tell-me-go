@@ -115,14 +115,49 @@ func (r *jsonlArchiveReader) ensureIndex(ctx context.Context) error {
 	return nil
 }
 
-func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
+// readLineForIndex reads one complete line from the reader, handling lines
+// that exceed the buffer size. It returns the line, its length, whether EOF
+// was reached with no data, and any error that is not bufio.ErrBufferFull.
+func readLineForIndex(reader *bufio.Reader) (line []byte, lineLen int, eofNoData bool, err error) {
+	for {
+		chunk, readErr := reader.ReadSlice('\n')
+		lineLen += len(chunk)
+		line = append(line, chunk...)
+		if readErr != nil {
+			if readErr == bufio.ErrBufferFull {
+				continue
+			}
+			if readErr == io.EOF {
+				if len(line) == 0 {
+					return nil, 0, true, nil
+				}
+				return line, lineLen, false, nil
+			}
+			return nil, 0, false, fmt.Errorf("read during indexing: %w", readErr)
+		}
+		return line, lineLen, false, nil
+	}
+}
+
+// openForIndex opens the archive file for index building.
+// Returns (file, nil) on success. Returns (nil, nil) when the file does not
+// exist (index is already set to empty). Returns (nil, err) on other errors.
+func (r *jsonlArchiveReader) openForIndex(ctx context.Context) (persistence.File, error) {
 	file, err := r.fs.Open(ctx, r.archivePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			r.index = []int64{}
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("open archive for indexing %s: %w", r.archivePath, err)
+		return nil, fmt.Errorf("open archive for indexing %s: %w", r.archivePath, err)
+	}
+	return file, nil
+}
+
+func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
+	file, err := r.openForIndex(ctx)
+	if file == nil {
+		return err
 	}
 	defer func() { _ = file.Close() }()
 
@@ -131,27 +166,16 @@ func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
 	reader := bufio.NewReader(file)
 	for {
 		index = append(index, offset)
-		for {
-			line, err := reader.ReadSlice('\n')
-			offset += int64(len(line))
-			if err != nil {
-				if err == bufio.ErrBufferFull {
-					// Line exceeds buffer; we still counted the chunk length correctly.
-					// Just clear the error and continue to read the rest of the line.
-					continue
-				}
-				if err == io.EOF {
-					if len(line) == 0 {
-						index = index[:len(index)-1]
-					}
-					goto done
-				}
-				return fmt.Errorf("read during indexing: %w", err)
-			}
+		_, lineLen, eofNoData, err := readLineForIndex(reader)
+		offset += int64(lineLen)
+		if err != nil {
+			return err
+		}
+		if eofNoData {
+			index = index[:len(index)-1]
 			break
 		}
 	}
-done:
 	r.index = index
 	return nil
 }
@@ -165,6 +189,11 @@ func (r *jsonlArchiveReader) readPageInternal(ctx context.Context, limit int, of
 	}
 	defer func() { _ = file.Close() }()
 
+	return r.readLines(ctx, limit, offset, file)
+}
+
+// readLines reads up to limit DTOs from the open file starting at offset.
+func (r *jsonlArchiveReader) readLines(ctx context.Context, limit int, offset int64, file persistence.File) ([]ports.HistoryViewDTO, int64, error) {
 	// Use SectionReader which uses ReadAt internally, ensuring thread-safety
 	// even if 'file' were somehow shared (though here it's local).
 	// We use a very large value for max size as we read until EOF or limit.
@@ -174,31 +203,64 @@ func (r *jsonlArchiveReader) readPageInternal(ctx context.Context, limit int, of
 
 	var dtos []ports.HistoryViewDTO
 	for len(dtos) < limit {
-		select {
-		case <-ctx.Done():
-			return nil, 0, ctx.Err()
-		default:
+		if err := r.checkContext(ctx); err != nil {
+			return nil, 0, err
 		}
 
-		line, err := reader.ReadBytes('\n')
-		lineLen := int64(len(line))
-
-		if len(line) > 0 {
-			var content llm.Content
-			if err := json.Unmarshal(line, &content); err == nil {
-				dtos = append(dtos, r.toDTO(content))
-			}
-			currentOffset += lineLen
+		lineDtos, lineLen, done, err := r.readAndProcessLine(reader)
+		currentOffset += lineLen
+		dtos = append(dtos, lineDtos...)
+		if done {
+			break
 		}
-
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
 			return nil, 0, err
 		}
 	}
 	return dtos, currentOffset, nil
+}
+
+// checkContext returns ctx.Err() if the context is done, nil otherwise.
+func (r *jsonlArchiveReader) checkContext(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
+// readAndProcessLine reads a single JSONL line from reader and converts it.
+// It returns any valid DTO found, the byte length consumed, whether EOF was
+// reached (done), and any non-EOF error.
+func (r *jsonlArchiveReader) readAndProcessLine(reader *bufio.Reader) ([]ports.HistoryViewDTO, int64, bool, error) {
+	line, err := reader.ReadBytes('\n')
+	lineLen := int64(len(line))
+
+	done := err == io.EOF
+	if done {
+		err = nil // EOF is a termination signal, not an error
+	}
+
+	var dtos []ports.HistoryViewDTO
+	if len(line) > 0 {
+		if content, ok := r.processArchiveLine(line); ok {
+			dtos = append(dtos, r.toDTO(content))
+		}
+	}
+
+	return dtos, lineLen, done, err
+}
+
+// processArchiveLine attempts to decode a JSONL line into a content entry.
+// Returns the content and true on success, or zero-value content and false on failure.
+// This intentionally skips malformed JSON lines (archives may contain corruption).
+func (r *jsonlArchiveReader) processArchiveLine(line []byte) (llm.Content, bool) {
+	var content llm.Content
+	if err := json.Unmarshal(line, &content); err != nil {
+		return llm.Content{}, false
+	}
+	return content, true
 }
 
 // toDTO converts an archived llm.Content into a HistoryViewDTO.

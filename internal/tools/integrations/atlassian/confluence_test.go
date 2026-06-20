@@ -17,6 +17,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsNumeric(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"positive integer", "123", true},
+		{"zero", "0", true},
+		{"large number", "999999", true},
+		{"alphabetic", "abc", false},
+		{"empty string", "", false},
+		{"negative number", "-1", false},
+		{"alphanumeric", "abc123", false},
+		{"float", "12.5", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isNumeric(tt.input))
+		})
+	}
+}
+
 func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	t.Run("Missing Email", func(t *testing.T) {

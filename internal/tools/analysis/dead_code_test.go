@@ -1815,6 +1815,113 @@ func TestHarvestPackageSymbols_AbsError(t *testing.T) {
 	analyzer.harvestPackageSymbols(pkg, state)
 }
 
+// TestIsInTargetScope verifies the extracted isInTargetScope predicate
+// independently across all guard-clause branches.
+func TestIsInTargetScope(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil module returns false", func(t *testing.T) {
+		t.Parallel()
+		a := &defaultDeadCodeAnalyzer{}
+		pkg := &packages.Package{
+			PkgPath: "example.com/project/internal/foo",
+			Module:  nil,
+		}
+		state := &scanState{targetModule: "example.com/project"}
+		if a.isInTargetScope(pkg, state) {
+			t.Error("nil Module should return false")
+		}
+	})
+
+	t.Run("wrong module prefix returns false", func(t *testing.T) {
+		t.Parallel()
+		a := &defaultDeadCodeAnalyzer{}
+		pkg := &packages.Package{
+			PkgPath: "other.com/lib/internal/foo",
+			Module:  &packages.Module{Path: "other.com/lib"},
+		}
+		state := &scanState{targetModule: "example.com/project"}
+		if a.isInTargetScope(pkg, state) {
+			t.Error("wrong module prefix should return false")
+		}
+	})
+
+	t.Run("target path mismatch returns false", func(t *testing.T) {
+		t.Parallel()
+		a := &defaultDeadCodeAnalyzer{}
+		tmpDir := t.TempDir()
+		goFile := filepath.Join(tmpDir, "subdir", "file.go")
+		require.NoError(t, os.MkdirAll(filepath.Dir(goFile), 0755))
+		require.NoError(t, os.WriteFile(goFile, []byte("package foo"), 0644))
+
+		pkg := &packages.Package{
+			PkgPath: "example.com/project/internal/foo",
+			Module:  &packages.Module{Path: "example.com/project"},
+			GoFiles: []string{goFile},
+		}
+		state := &scanState{
+			targetModule: "example.com/project",
+			targetPath:   "/completely/different/path",
+		}
+		if a.isInTargetScope(pkg, state) {
+			t.Error("target path mismatch should return false")
+		}
+	})
+
+	t.Run("excluded package returns false", func(t *testing.T) {
+		t.Parallel()
+		a := &defaultDeadCodeAnalyzer{}
+		pkg := &packages.Package{
+			PkgPath: "example.com/project/internal/vendor/foo",
+			Module:  &packages.Module{Path: "example.com/project"},
+		}
+		state := &scanState{
+			targetModule:     "example.com/project",
+			excludedPackages: []string{"vendor"},
+		}
+		if a.isInTargetScope(pkg, state) {
+			t.Error("excluded package should return false")
+		}
+	})
+
+	t.Run("valid package returns true", func(t *testing.T) {
+		t.Parallel()
+		a := &defaultDeadCodeAnalyzer{}
+		tmpDir := t.TempDir()
+		goFile := filepath.Join(tmpDir, "file.go")
+		require.NoError(t, os.WriteFile(goFile, []byte("package foo"), 0644))
+
+		pkg := &packages.Package{
+			PkgPath: "example.com/project/internal/foo",
+			Module:  &packages.Module{Path: "example.com/project"},
+			GoFiles: []string{goFile},
+		}
+		state := &scanState{
+			targetModule: "example.com/project",
+			targetPath:   tmpDir,
+		}
+		if !a.isInTargetScope(pkg, state) {
+			t.Error("valid package should return true")
+		}
+	})
+
+	t.Run("empty target path skips path check", func(t *testing.T) {
+		t.Parallel()
+		a := &defaultDeadCodeAnalyzer{}
+		pkg := &packages.Package{
+			PkgPath: "example.com/project/internal/foo",
+			Module:  &packages.Module{Path: "example.com/project"},
+		}
+		state := &scanState{
+			targetModule: "example.com/project",
+			targetPath:   "",
+		}
+		if !a.isInTargetScope(pkg, state) {
+			t.Error("empty target path should skip path check and return true")
+		}
+	})
+}
+
 // =============================================================================
 // Gap: harvestNamedMethods isExportTestFile guard (L186-187).
 // Covered by creating a named struct type with a method whose position

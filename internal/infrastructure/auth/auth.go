@@ -89,6 +89,41 @@ func (a *VertexAuth) getCachePath() string {
 	return filepath.Join(dir, "token.txt")
 }
 
+// readCacheFile attempts to read a valid cached token from disk.
+// Returns ("", false) when the cache file is missing, expired
+// (older than 55 minutes), or unreadable.
+func (a *VertexAuth) readCacheFile() (string, bool) {
+	cacheFile := a.getCachePath()
+	info, err := os.Stat(cacheFile)
+	if err != nil {
+		return "", false
+	}
+	// Tokens are valid for 1 hour. We use 55 minutes (3300s) as a safe buffer.
+	if time.Since(info.ModTime()) >= 55*time.Minute {
+		return "", false
+	}
+	content, err := os.ReadFile(cacheFile)
+	if err != nil {
+		log.Printf("failed to read auth cache file %s: %v", cacheFile, err)
+		return "", false
+	}
+	return strings.TrimSpace(string(content)), true
+}
+
+// writeCacheFile persists the token to the local cache directory.
+// Failures are logged but not returned — cache writes are best-effort.
+func (a *VertexAuth) writeCacheFile(ctx context.Context, token string) {
+	cacheFile := a.getCachePath()
+	cacheDir := filepath.Dir(cacheFile)
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		log.Printf("failed to create auth cache directory: %v", err)
+		return
+	}
+	if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, cacheFile, []byte(token), 0600); err != nil {
+		log.Printf("failed to write auth cache: %v", err)
+	}
+}
+
 // getToken retrieves the OAuth2 access token with local caching.
 func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 	a.mu.Lock()
@@ -99,17 +134,9 @@ func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 	}
 
 	// 1. Try local cache
-	cacheFile := a.getCachePath()
-	if info, err := os.Stat(cacheFile); err == nil {
-		// Tokens are valid for 1 hour. We use 55 minutes (3300s) as a safe buffer.
-		if time.Since(info.ModTime()) < 55*time.Minute {
-			content, err := os.ReadFile(cacheFile)
-			if err == nil {
-				a.Token = strings.TrimSpace(string(content))
-				return a.Token, nil
-			}
-			log.Printf("failed to read auth cache file %s: %v", cacheFile, err)
-		}
+	if token, ok := a.readCacheFile(); ok {
+		a.Token = token
+		return a.Token, nil
 	}
 
 	// 2. Fallback to gcloud
@@ -121,14 +148,7 @@ func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 	token := strings.TrimSpace(string(out))
 
 	// 3. Save to cache
-	cacheDir := filepath.Dir(cacheFile)
-	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		if writeErr := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, cacheFile, []byte(token), 0600); writeErr != nil {
-			log.Printf("failed to write auth cache: %v", writeErr)
-		}
-	} else {
-		log.Printf("failed to create auth cache directory: %v", err)
-	}
+	a.writeCacheFile(ctx, token)
 
 	a.Token = token
 	return a.Token, nil

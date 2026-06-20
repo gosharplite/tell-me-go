@@ -166,46 +166,30 @@ func (t *persistenceTools) deleteTask(ctx context.Context, id int64) (tools.Tool
 	return tools.ToolResult{Text: fmt.Sprintf("Task %d deleted", id)}, nil
 }
 
+// fetchAndCount retrieves tasks and total count in a single call site.
+// This consolidates two sequential I/O operations so callers don't repeat
+// the paired ListTasks+CountTasks pattern.
+func (t *persistenceTools) fetchAndCount(ctx context.Context, status string, limit, offset int) ([]ports.Task, int, error) {
+	tasks, err := t.tasks.ListTasks(ctx, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	count, err := t.tasks.CountTasks(ctx, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	return tasks, count, nil
+}
+
 func (t *persistenceTools) listTasks(ctx context.Context, status string, limit, offset int) (tools.ToolResult, error) {
 	if limit == 0 {
 		limit = 50
 	}
-	tasks, err := t.tasks.ListTasks(ctx, status, limit, offset)
+	tasks, totalCount, err := t.fetchAndCount(ctx, status, limit, offset)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	totalCount, err := t.tasks.CountTasks(ctx, status)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	if len(tasks) == 0 {
-		if totalCount > 0 {
-			return tools.ToolResult{Text: fmt.Sprintf("No tasks found. (total: %d)", totalCount)}, nil
-		}
-		return tools.ToolResult{Text: "No tasks found."}, nil
-	}
-
-	var sb strings.Builder
-	// Pagination summary header
-	from := offset + 1
-	to := offset + len(tasks)
-	fmt.Fprintf(&sb, "Tasks (showing %d-%d of %d):\n", from, to, totalCount)
-
-	for _, task := range tasks {
-		icon := "[ ]"
-		if task.Status == "completed" {
-			icon = "[x]"
-		}
-		_, _ = fmt.Fprintf(&sb, "%d. %s %s (%s)\n", task.ID, icon, task.Content, task.Status)
-	}
-
-	// Pagination hint when there are more pages
-	if len(tasks) == limit && (offset+limit) < totalCount {
-		fmt.Fprintf(&sb, "\nUse offset=%d for next page.", offset+limit)
-	}
-
-	return tools.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: renderTaskPage(tasks, totalCount, offset, limit)}, nil
 }
 
 func (t *persistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, error) {
@@ -213,4 +197,38 @@ func (t *persistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, er
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: "All tasks cleared."}, nil
+}
+
+// taskIcon returns the checkbox icon for a task's status.
+func taskIcon(task ports.Task) string {
+	if task.Status == "completed" {
+		return "[x]"
+	}
+	return "[ ]"
+}
+
+// renderTaskPage formats a task listing into a human-readable string.
+// It is a pure function with no external dependencies.
+func renderTaskPage(tasks []ports.Task, totalCount, offset, limit int) string {
+	if len(tasks) == 0 {
+		if totalCount > 0 {
+			return fmt.Sprintf("No tasks found. (total: %d)", totalCount)
+		}
+		return "No tasks found."
+	}
+
+	var sb strings.Builder
+	from := offset + 1
+	to := offset + len(tasks)
+	_, _ = fmt.Fprintf(&sb, "Tasks (showing %d-%d of %d):\n", from, to, totalCount)
+
+	for _, task := range tasks {
+		_, _ = fmt.Fprintf(&sb, "%d. %s %s (%s)\n", task.ID, taskIcon(task), task.Content, task.Status)
+	}
+
+	if len(tasks) == limit && (offset+limit) < totalCount {
+		_, _ = fmt.Fprintf(&sb, "\nUse offset=%d for next page.", offset+limit)
+	}
+
+	return sb.String()
 }

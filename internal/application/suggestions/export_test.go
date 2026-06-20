@@ -13,6 +13,9 @@ import (
 // Export for testing
 type MultiSourceSuggestionServiceInternal = multiSourceSuggestionService
 
+var IsPathLike = isPathLike
+var SearchHistoryLocked = (*multiSourceSuggestionService).searchHistoryLocked
+
 func (s *multiSourceSuggestionService) ScanFiles(ctx context.Context, prefix string) []string {
 	return s.scanFiles(ctx, prefix)
 }

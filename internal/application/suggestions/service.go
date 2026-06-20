@@ -82,6 +82,28 @@ func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSys
 	return s, nil
 }
 
+// isPathLike reports whether query looks like a filesystem path
+// (contains a path separator or starts with a dot).
+func isPathLike(query string) bool {
+	return strings.Contains(query, string(os.PathSeparator)) ||
+		strings.Contains(query, "/") ||
+		strings.HasPrefix(query, ".")
+}
+
+// searchHistoryLocked scans the in-memory history for subsequence matches.
+// Caller must hold s.historyMu.RLock.
+func (s *multiSourceSuggestionService) searchHistoryLocked(query string, suggestions []string) []string {
+	for _, h := range s.history {
+		if matcher.IsSubsequence(query, h) {
+			suggestions = append(suggestions, h)
+			if len(suggestions) >= 10 {
+				break
+			}
+		}
+	}
+	return suggestions
+}
+
 // GetSuggestions returns up to 10 suggestions based on fuzzy matching.
 func (s *multiSourceSuggestionService) GetSuggestions(ctx context.Context, query string) ([]string, error) {
 	if ctx.Err() != nil {
@@ -100,19 +122,11 @@ func (s *multiSourceSuggestionService) GetSuggestions(ctx context.Context, query
 		return suggestions, nil
 	}
 
-	// 1. History Search
-	for _, h := range s.history {
-		if matcher.IsSubsequence(query, h) {
-			suggestions = append(suggestions, h)
-			if len(suggestions) >= 10 {
-				break
-			}
-		}
-	}
+	suggestions = s.searchHistoryLocked(query, suggestions)
 	s.historyMu.RUnlock()
 
 	// 2. File System Search if it looks like a path
-	if strings.Contains(query, string(os.PathSeparator)) || strings.Contains(query, "/") || strings.HasPrefix(query, ".") {
+	if isPathLike(query) {
 		fileSuggestions := s.scanFiles(ctx, query)
 		suggestions = s.mergeSuggestions(suggestions, fileSuggestions, 10)
 	}

@@ -79,22 +79,77 @@ func (t *moveTransform) matchesTypeName(expr ast.Expr, typeName string) bool {
 	return false
 }
 
+// declMatcher is a function that reports whether a declaration matches
+// a symbol name. Used in table-driven dispatch for matchSymbol.
+type declMatcher func(ast.Decl, string) bool
+
+// matchFuncDecl matches *ast.FuncDecl by name.
+func matchFuncDecl(decl ast.Decl, symbol string) bool {
+	fd, ok := decl.(*ast.FuncDecl)
+	return ok && fd.Name.Name == symbol
+}
+
+// matchTypeSpec matches *ast.GenDecl containing a *ast.TypeSpec by name.
+func matchTypeSpec(decl ast.Decl, symbol string) bool {
+	gd, ok := decl.(*ast.GenDecl)
+	if !ok {
+		return false
+	}
+	for _, spec := range gd.Specs {
+		if typeSpecIs(spec, symbol) {
+			return true
+		}
+	}
+	return false
+}
+
+// typeSpecIs reports whether an ast.Spec is a *ast.TypeSpec with the given name.
+func typeSpecIs(spec ast.Spec, symbol string) bool {
+	ts, ok := spec.(*ast.TypeSpec)
+	return ok && ts.Name.Name == symbol
+}
+
+// matchValueSpec matches *ast.GenDecl containing a *ast.ValueSpec by name.
+func matchValueSpec(decl ast.Decl, symbol string) bool {
+	gd, ok := decl.(*ast.GenDecl)
+	if !ok {
+		return false
+	}
+	for _, spec := range gd.Specs {
+		if valueSpecHas(spec, symbol) {
+			return true
+		}
+	}
+	return false
+}
+
+// valueSpecHas reports whether an ast.Spec is a *ast.ValueSpec that
+// contains an identifier with the given name.
+func valueSpecHas(spec ast.Spec, symbol string) bool {
+	vs, ok := spec.(*ast.ValueSpec)
+	if !ok {
+		return false
+	}
+	for _, name := range vs.Names {
+		if name.Name == symbol {
+			return true
+		}
+	}
+	return false
+}
+
+// declMatchers is the ordered table of matcher functions for matchSymbol.
+// Order is significant only for performance (FuncDecl is most common).
+var declMatchers = []declMatcher{
+	matchFuncDecl,
+	matchTypeSpec,
+	matchValueSpec,
+}
+
 func (t *moveTransform) matchSymbol(decl ast.Decl) bool {
-	switch d := decl.(type) {
-	case *ast.FuncDecl:
-		return d.Name.Name == t.Plan.Symbol
-	case *ast.GenDecl:
-		for _, spec := range d.Specs {
-			if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == t.Plan.Symbol {
-				return true
-			}
-			if vs, ok := spec.(*ast.ValueSpec); ok {
-				for _, name := range vs.Names {
-					if name.Name == t.Plan.Symbol {
-						return true
-					}
-				}
-			}
+	for _, m := range declMatchers {
+		if m(decl, t.Plan.Symbol) {
+			return true
 		}
 	}
 	return false

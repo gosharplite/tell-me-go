@@ -1022,3 +1022,78 @@ func TestMonitorLiveness_TimerFires_CancelsContext(t *testing.T) {
 	}
 	assert.Equal(t, "zombie_tool", attrs["tool_name"])
 }
+
+// TestMonitorLiveness_TimerChannelFires covers the <-timer.channel() branch
+// at decorators.go:271. Unlike TestMonitorLiveness_TimerFires_CancelsContext
+// (which tests via go d.monitorLiveness(...) and may not register in Go's
+// coverage tooling), this test calls monitorLiveness DIRECTLY — the timer
+// fires synchronously within the test goroutine, guaranteeing coverage
+// instrumentation sees the branch.
+func TestMonitorLiveness_TimerChannelFires(t *testing.T) {
+	t.Parallel()
+
+	logger := &capturingLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+	zombie, _ := tools.NewZombieTool(observer)
+	registry := &panicRegistry{}
+
+	decorator := newSafetyDecorator(
+		&mockExecutor{},
+		registry,
+		logger,
+		bus,
+		zombie,
+		5*time.Second,
+		5*time.Second,
+		10*time.Millisecond,
+	).(*safetyDecorator)
+
+	// Create a context whose cancel func we can observe
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // cleanup in case monitorLiveness doesn't call it
+
+	// hbCh with no sender — the <-hbCh case blocks forever
+	hbCh := make(chan struct{})
+
+	// heartbeat channel — irrelevant for this test, can be nil
+	var heartbeat chan struct{}
+
+	// Liveness threshold: 1ms — timer fires almost immediately
+	opts := tools.ToolOptions{LivenessThreshold: 1 * time.Millisecond}
+
+	// DIRECT CALL (no goroutine) — this is the key difference from
+	// TestMonitorLiveness_TimerFires_CancelsContext
+	MonitorLiveness(decorator, ctx, "test_tool", opts, hbCh, heartbeat, cancel)
+
+	// After MonitorLiveness returns, the cancel func MUST have been called
+	// by handleLivenessTimeout
+	select {
+	case <-ctx.Done():
+		// context cancelled — success
+	default:
+		t.Fatal("expected context to be cancelled after liveness timer fires")
+	}
+
+	// Verify the logger captured the liveness timeout
+	if !logger.errorCalled {
+		t.Fatal("expected Error to be called for tool_liveness_timeout")
+	}
+	if logger.lastMsg != "tool_liveness_timeout" {
+		t.Errorf("expected lastMsg 'tool_liveness_timeout', got %q", logger.lastMsg)
+	}
+
+	// Verify tool name in log attrs
+	attrs := make(map[string]any)
+	for i := 0; i < len(logger.lastArgs); i += 2 {
+		if i+1 < len(logger.lastArgs) {
+			key, ok := logger.lastArgs[i].(string)
+			if ok {
+				attrs[key] = logger.lastArgs[i+1]
+			}
+		}
+	}
+	if attrs["tool_name"] != "test_tool" {
+		t.Errorf("expected tool_name 'test_tool', got %v", attrs["tool_name"])
+	}
+}

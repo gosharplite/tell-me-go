@@ -6,6 +6,7 @@ package ui_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -1010,6 +1012,30 @@ func TestStdUIRenderer_IsTerminalContext(t *testing.T) {
 			t.Error("expected IsTerminalContext to return false for nil stderr")
 		}
 	})
+
+	t.Run("non-TTY spinner produces no output without forceSpinner", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		lock := ui.NewMockLocker()
+		mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+		r := ui.NewRenderer(lock, &stdout, &stderr, mc, nil).(*ui.StdUIRenderer)
+
+		// stderr is bytes.Buffer — IsTerminalContext() returns false
+		if r.IsTerminalContext() {
+			t.Fatal("prerequisite: expected non-TTY context for bytes.Buffer")
+		}
+
+		// Do NOT call SetForceSpinner — we want to test the default behavior
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		stop := r.StartSpinner(ctx)
+		stop()
+
+		// In non-TTY mode without forceSpinner, the spinner should be a no-op:
+		// no spinner frames, no output written to stderr.
+		if stderr.Len() > 0 {
+			t.Errorf("expected no spinner output in non-TTY mode, got: %q", stderr.String())
+		}
+	})
 }
 
 func TestStdUIRenderer_MarkdownRenderingFallback(t *testing.T) {
@@ -1107,7 +1133,31 @@ func TestStdUIRenderer_LogUsage_NilAndEmpty(t *testing.T) {
 	})
 }
 
+// TestStdUIRenderer_LogUsage_MarshalFailure documents the json.Marshal error
+// branch in LogUsage (renderer_metrics.go:244). This branch is defensive dead
+// code: llm.Metrics contains only basic JSON-marshalable types (string, int32,
+// int, float64, bool). json.Marshal cannot fail on this struct.
+//
+// If Metrics ever gains an interface{}, map, or any field that can hold an
+// unmarshalable Go value, replace t.Skip with an actual test:
+//  1. Construct a Metrics with an unmarshalable value via reflection/unsafe
+//  2. Call LogUsage with that Metrics
+//  3. Assert stderr contains "failed to marshal usage metrics" (warn level)
+func TestStdUIRenderer_LogUsage_MarshalFailure(t *testing.T) {
+	t.Skip("Defensive dead code: json.Marshal on llm.Metrics cannot fail with current field types (all basic). " +
+		"See renderer_metrics.go:244. If Metrics gains an interface{} field, implement the test described above.")
+}
+
 // ── Markdown render error logging tests (G4+G5) ──
+
+// failingRenderer is a mock markdownRenderer that always returns an error.
+type failingRenderer struct {
+	err error
+}
+
+func (f *failingRenderer) Render(text string) (string, error) {
+	return "", f.err
+}
 
 func TestStdUIRenderer_MarkdownRenderError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
@@ -1122,6 +1172,23 @@ func TestStdUIRenderer_MarkdownRenderError(t *testing.T) {
 		output := stdout.String()
 		if !strings.Contains(output, "**bold**") {
 			t.Errorf("expected raw markdown text, got: %q", output)
+		}
+	})
+
+	t.Run("renderer error falls back to raw text with warning", func(t *testing.T) {
+		// sync.Once on markdownErrOnce requires a fresh renderer
+		var outBuf, errBuf bytes.Buffer
+		r2 := ui.NewRenderer(locker, &outBuf, &errBuf, nil, nil).(*ui.StdUIRenderer)
+		r2.SetGlamourRenderer(&failingRenderer{err: errors.New("render engine exploded")})
+		r2.RenderMarkdown("**bold** and *italic*")
+
+		// stdout must contain the raw markdown text (fallback)
+		if !strings.Contains(outBuf.String(), "**bold**") {
+			t.Errorf("expected stdout to contain raw markdown '**bold**', got: %q", outBuf.String())
+		}
+		// stderr must contain the degradation warning
+		if !strings.Contains(errBuf.String(), "[WARN] markdown rendering degraded") {
+			t.Errorf("expected stderr to contain '[WARN] markdown rendering degraded', got: %q", errBuf.String())
 		}
 	})
 }
@@ -1157,6 +1224,52 @@ func TestNewRenderer_GlamourFailure(t *testing.T) {
 		output := buf.String()
 		if !strings.Contains(output, "**bold**") {
 			t.Errorf("expected raw markdown fallback, got: %q", output)
+		}
+	})
+}
+
+// ── G3b: Glamour initialization failure path (Issue #383) ──
+
+func TestNewRenderer_GlamourInitFailure(t *testing.T) {
+	t.Run("init-failure degrades and logs", func(t *testing.T) {
+		var buf bytes.Buffer
+		locker := ui.NewMockLocker()
+
+		failingOpt := glamour.TermRendererOption(func(tr *glamour.TermRenderer) error {
+			return errors.New("injected glamour init failure")
+		})
+
+		r := ui.NewRenderer(locker, &buf, &buf, nil, nil, ui.WithGlamourOption(failingOpt)).(*ui.StdUIRenderer)
+
+		// Verify degradation flag
+		if !r.IsRendererDegraded() {
+			t.Error("expected IsRendererDegraded() = true after glamour init failure")
+		}
+
+		// Verify error logged to stderr
+		stderrOutput := buf.String()
+		if !strings.Contains(stderrOutput, "failed to initialize glamour renderer") {
+			t.Errorf("expected stderr to contain 'failed to initialize glamour renderer', got: %q", stderrOutput)
+		}
+		if !strings.Contains(stderrOutput, "injected glamour init failure") {
+			t.Errorf("expected stderr to contain 'injected glamour init failure', got: %q", stderrOutput)
+		}
+
+		// Verify raw text fallback via RenderMarkdown
+		buf.Reset()
+		r.RenderMarkdown("**bold**")
+		stdoutOutput := buf.String()
+		if !strings.Contains(stdoutOutput, "**bold**") {
+			t.Errorf("expected raw markdown fallback '**bold**', got: %q", stdoutOutput)
+		}
+	})
+
+	t.Run("normal renderer is not degraded", func(t *testing.T) {
+		var buf bytes.Buffer
+		locker := ui.NewMockLocker()
+		r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		if r.IsRendererDegraded() {
+			t.Error("expected IsRendererDegraded() = false for normal renderer")
 		}
 	})
 }

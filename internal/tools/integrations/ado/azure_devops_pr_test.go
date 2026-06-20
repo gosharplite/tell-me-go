@@ -15,6 +15,53 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestThreadFilter(t *testing.T) {
+	// Helper to build a thread inline
+	makeThread := func(deleted bool, commentTypes ...string) adoThread {
+		var comments []struct {
+			Author struct {
+				DisplayName string `json:"displayName"`
+			} `json:"author"`
+			Content       string `json:"content"`
+			PublishedDate string `json:"publishedDate"`
+			CommentType   string `json:"commentType"`
+		}
+		for _, ct := range commentTypes {
+			comments = append(comments, struct {
+				Author struct {
+					DisplayName string `json:"displayName"`
+				} `json:"author"`
+				Content       string `json:"content"`
+				PublishedDate string `json:"publishedDate"`
+				CommentType   string `json:"commentType"`
+			}{CommentType: ct, Content: "test", Author: struct {
+				DisplayName string `json:"displayName"`
+			}{DisplayName: "User"}, PublishedDate: "2023-01-01"})
+		}
+		return adoThread{Comments: comments, IsDeleted: deleted}
+	}
+
+	tests := []struct {
+		name   string
+		thread adoThread
+		want   bool
+	}{
+		{"user comments only", makeThread(false, "text", "text"), true},
+		{"mixed system and user", makeThread(false, "system", "text"), true},
+		{"single user comment", makeThread(false, "text"), true},
+		{"deleted thread", makeThread(true, "text"), false},
+		{"all system comments", makeThread(false, "system", "system"), false},
+		{"single system comment", makeThread(false, "system"), false},
+		{"no comments", makeThread(false), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, threadFilter(tt.thread))
+		})
+	}
+}
+
 func TestAdoGetPullRequest(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
@@ -421,17 +468,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 		t.Parallel()
 		m := &AdoManager{}
 		threadData := adoThreadResponse{
-			Value: []struct {
-				Comments []struct {
-					Author struct {
-						DisplayName string `json:"displayName"`
-					} `json:"author"`
-					Content       string `json:"content"`
-					PublishedDate string `json:"publishedDate"`
-					CommentType   string `json:"commentType"`
-				} `json:"comments"`
-				IsDeleted bool `json:"isDeleted"`
-			}{
+			Value: []adoThread{
 				{
 					IsDeleted: false,
 					Comments: []struct {
@@ -461,17 +498,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 		t.Parallel()
 		m := &AdoManager{}
 		threadData := adoThreadResponse{
-			Value: []struct {
-				Comments []struct {
-					Author struct {
-						DisplayName string `json:"displayName"`
-					} `json:"author"`
-					Content       string `json:"content"`
-					PublishedDate string `json:"publishedDate"`
-					CommentType   string `json:"commentType"`
-				} `json:"comments"`
-				IsDeleted bool `json:"isDeleted"`
-			}{
+			Value: []adoThread{
 				{
 					IsDeleted: false,
 					Comments: []struct {
