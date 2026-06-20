@@ -795,61 +795,73 @@ func TestServiceAccountAuth_EmptyKeyFilePath(t *testing.T) {
 }
 
 func TestVertexAuth_GetToken_CorruptCache(t *testing.T) {
-	t.Run("corrupt cache falls back to gcloud", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("Chmod 0000 not reliable on Windows")
-		}
+	if runtime.GOOS == "windows" {
+		t.Skip("Chmod 0000 not reliable on Windows")
+	}
+	t.Parallel()
 
-		ctx := context.Background()
-		tmpDir := t.TempDir()
+	ctx := context.Background()
+	tmpDir := t.TempDir()
 
-		auth := &VertexAuth{
-			CacheDir: tmpDir,
-			tokenCmdFunc: func() ([]byte, error) {
-				return []byte("fresh-gcloud-token"), nil
-			},
-		}
+	auth := &VertexAuth{
+		CacheDir: tmpDir,
+		tokenCmdFunc: func() ([]byte, error) {
+			return []byte("fresh-gcloud-token"), nil
+		},
+	}
 
-		cachePath := auth.getCachePath()
-		dir := filepath.Dir(cachePath)
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			t.Fatalf("failed to create cache dir: %v", err)
-		}
-		if err := os.WriteFile(cachePath, []byte("stale-token"), 0600); err != nil {
-			t.Fatalf("failed to write cache file: %v", err)
-		}
+	cachePath := setupUnreadableCache(t, auth)
 
-		// Make the cache file unreadable to simulate corruption
-		if err := os.Chmod(cachePath, 0000); err != nil {
-			t.Fatalf("failed to chmod cache file: %v", err)
-		}
-
-		// Restore permissions so t.TempDir cleanup can remove the file
-		t.Cleanup(func() {
-			_ = os.Chmod(cachePath, 0600)
-		})
-
-		token, err := auth.getToken(ctx)
-		if err != nil {
-			t.Fatalf("getToken should fall back to gcloud, got error: %v", err)
-		}
-		if token != "fresh-gcloud-token" {
-			t.Errorf("got %q, want fresh-gcloud-token", token)
-		}
-
-		// Verify the corrupt cache was overwritten with the fresh token
-		// (restore readability first)
-		if err := os.Chmod(cachePath, 0600); err != nil {
-			t.Fatalf("failed to restore cache file permissions: %v", err)
-		}
-		content, err := os.ReadFile(cachePath)
-		if err != nil {
-			t.Fatalf("failed to read cache file after getToken: %v", err)
-		}
-		if strings.TrimSpace(string(content)) != "fresh-gcloud-token" {
-			t.Errorf("cache file contains %q, want fresh-gcloud-token", string(content))
-		}
+	// Restore permissions so t.TempDir cleanup can remove the file
+	t.Cleanup(func() {
+		_ = os.Chmod(cachePath, 0600)
 	})
+
+	token, err := auth.getToken(ctx)
+	if err != nil {
+		t.Fatalf("getToken should fall back to gcloud, got error: %v", err)
+	}
+	if token != "fresh-gcloud-token" {
+		t.Errorf("got %q, want fresh-gcloud-token", token)
+	}
+
+	// Verify the corrupt cache was overwritten with the fresh token
+	assertCacheContent(t, cachePath, "fresh-gcloud-token")
+}
+
+// setupUnreadableCache creates the cache directory, writes a stale token,
+// and makes the file unreadable via chmod 0000. Returns the cache path.
+func setupUnreadableCache(t *testing.T, auth *VertexAuth) string {
+	t.Helper()
+
+	cachePath := auth.getCachePath()
+	dir := filepath.Dir(cachePath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("failed to create cache dir: %v", err)
+	}
+	if err := os.WriteFile(cachePath, []byte("stale-token"), 0600); err != nil {
+		t.Fatalf("failed to write cache file: %v", err)
+	}
+	if err := os.Chmod(cachePath, 0000); err != nil {
+		t.Fatalf("failed to chmod cache file: %v", err)
+	}
+	return cachePath
+}
+
+func assertCacheContent(t *testing.T, cachePath, wantToken string) {
+	t.Helper()
+
+	// Restore readability first
+	if err := os.Chmod(cachePath, 0600); err != nil {
+		t.Fatalf("failed to restore cache file permissions: %v", err)
+	}
+	content, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatalf("failed to read cache file after getToken: %v", err)
+	}
+	if strings.TrimSpace(string(content)) != wantToken {
+		t.Errorf("cache file contains %q, want %s", string(content), wantToken)
+	}
 }
 
 // TestNewVertexAuth_DefaultTokenCmdFunc_ExecError verifies that the default

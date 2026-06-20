@@ -1079,52 +1079,53 @@ func TestJSONLStore_Archive(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "Msg 2"}}},
 	}
 
-	// 1. Test Archive empty contents
-	if err := store.Archive(ctx, []*llm.Content{}); err != nil {
-		t.Errorf("expected no error for empty archive, got %v", err)
-	}
+	t.Run("ArchiveEmpty", func(t *testing.T) {
+		if err := store.Archive(ctx, []*llm.Content{}); err != nil {
+			t.Errorf("expected no error for empty archive, got %v", err)
+		}
+	})
 
-	// 2. Test Archive contents
-	if err := store.Archive(ctx, contents); err != nil {
-		t.Fatalf("Archive failed: %v", err)
-	}
+	t.Run("ArchiveContents", func(t *testing.T) {
+		if err := store.Archive(ctx, contents); err != nil {
+			t.Fatalf("Archive failed: %v", err)
+		}
 
-	// 3. Verify archive file exists and contains contents
-	archivePath := filepath.Join(tmpDir, "archive.jsonl")
+		archivePath := filepath.Join(tmpDir, "archive.jsonl")
+		verifyArchiveContents(t, archivePath, 2, "Msg 1")
+	})
+
+	t.Run("ArchiveAppend", func(t *testing.T) {
+		moreContents := []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
+		}
+		if err := store.Archive(ctx, moreContents); err != nil {
+			t.Fatalf("Archive failed: %v", err)
+		}
+
+		archivePath := filepath.Join(tmpDir, "archive.jsonl")
+		verifyArchiveContents(t, archivePath, 3, "")
+	})
+}
+
+func verifyArchiveContents(t *testing.T, archivePath string, wantCount int, firstText string) {
+	t.Helper()
+
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
 		t.Fatal("archive file does not exist")
 	}
 
-	// Use a temporary store to load the archive file
 	archiveStore := newJSONLStore(infrapersistence.NewOSFileSystem(), archivePath, filepath.Join(filepath.Dir(archivePath), "archive.jsonl"))
-	archivedContents, err := archiveStore.Load(ctx)
+	archivedContents, err := archiveStore.Load(context.Background())
 	if err != nil {
 		t.Fatalf("failed to load archive: %v", err)
 	}
 
-	if len(archivedContents) != 2 {
-		t.Fatalf("expected 2 archived entries, got %d", len(archivedContents))
+	if len(archivedContents) != wantCount {
+		t.Fatalf("expected %d archived entries, got %d", wantCount, len(archivedContents))
 	}
 
-	if archivedContents[0].Parts[0].Text != "Msg 1" {
-		t.Errorf("expected 'Msg 1', got %q", archivedContents[0].Parts[0].Text)
-	}
-
-	// 4. Test Archive more contents (append mode)
-	moreContents := []*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
-	}
-	if err := store.Archive(ctx, moreContents); err != nil {
-		t.Fatalf("Archive failed: %v", err)
-	}
-
-	archivedContents, err = archiveStore.Load(ctx)
-	if err != nil {
-		t.Fatalf("failed to load archive again: %v", err)
-	}
-
-	if len(archivedContents) != 3 {
-		t.Fatalf("expected 3 archived entries, got %d", len(archivedContents))
+	if firstText != "" && archivedContents[0].Parts[0].Text != firstText {
+		t.Errorf("expected %q, got %q", firstText, archivedContents[0].Parts[0].Text)
 	}
 }
 

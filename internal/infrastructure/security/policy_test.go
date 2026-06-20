@@ -214,124 +214,115 @@ func TestPolicyTool_SafePathManagement_List(t *testing.T) {
 	})
 }
 
-func TestPolicyTool_SafePathManagement_Remove(t *testing.T) {
+func TestPolicyTool_SafePathManagement_Remove_Existing(t *testing.T) {
 	t.Parallel()
+	sm, p, ctx := setupPolicyTest(t)
+	path := filepath.Join(t.TempDir(), "safe_to_remove")
+	_, _ = p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+	_, _ = p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
 
-	t.Run("Remove Safe Path", func(t *testing.T) {
-		t.Parallel()
-		sm, p, ctx := setupPolicyTest(t)
-		path := filepath.Join(t.TempDir(), "safe_to_remove")
-		_, _ = p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
-		_, _ = p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
-
-		found := false
-		absPath, _ := filepath.Abs(path)
-		for _, sp := range sm.GetSafePaths() {
-			if sp == absPath {
-				found = true
-				break
-			}
+	found := false
+	absPath, _ := filepath.Abs(path)
+	for _, sp := range sm.GetSafePaths() {
+		if sp == absPath {
+			found = true
+			break
 		}
-		if found {
-			t.Errorf("path still in safe list after removal")
-		}
-	})
-
-	t.Run("Remove Safe Path not found", func(t *testing.T) {
-		t.Parallel()
-		_, p, ctx := setupPolicyTest(t)
-		path := filepath.Join(t.TempDir(), "nonexistent_to_remove")
-		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "Error:") && !strings.Contains(res.Text, "not found") {
-			t.Errorf("Expected not-found error message, got %q", res.Text)
-		}
-	})
-
-	t.Run("Remove Safe Path persist error", func(t *testing.T) {
-		t.Parallel()
-		_, p, ctx := setupPolicyWithKVRemoveError(t, fmt.Errorf("persist failed"))
-		path := filepath.Join(t.TempDir(), "safe-rm-persist")
-		_, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "failed to update persistence") {
-			t.Errorf("Expected persist error message, got %q", res.Text)
-		}
-	})
+	}
+	if found {
+		t.Errorf("path still in safe list after removal")
+	}
 }
 
-func TestPolicyTool_ReadPathManagement(t *testing.T) {
+func TestPolicyTool_SafePathManagement_Remove_NotFound(t *testing.T) {
 	t.Parallel()
+	_, p, ctx := setupPolicyTest(t)
+	path := filepath.Join(t.TempDir(), "nonexistent_to_remove")
+	res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "Error:") && !strings.Contains(res.Text, "not found") {
+		t.Errorf("Expected not-found error message, got %q", res.Text)
+	}
+}
 
-	t.Run("Register and Remove Read Path", func(t *testing.T) {
-		t.Parallel()
-		_, p, ctx := setupPolicyTest(t)
-		path := filepath.Join(t.TempDir(), "ro")
-		_, _ = p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+func TestPolicyTool_SafePathManagement_Remove_PersistError(t *testing.T) {
+	t.Parallel()
+	_, p, ctx := setupPolicyWithKVRemoveError(t, fmt.Errorf("persist failed"))
+	path := filepath.Join(t.TempDir(), "safe-rm-persist")
+	_, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		res, _ := p.ListReadPaths(ctx, nil, nil)
+	res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "failed to update persistence") {
+		t.Errorf("Expected persist error message, got %q", res.Text)
+	}
+}
 
-		// Use filepath.Abs to ensure we compare absolute paths consistently
-		absPath, _ := filepath.Abs(path)
-		if !strings.Contains(res.Text, absPath) && !strings.Contains(res.Text, path) {
-			t.Errorf("Expected read-only path %q in list: %s", absPath, res.Text)
-		}
+func TestPolicyTool_ReadPathManagement_RegisterAndRemove(t *testing.T) {
+	t.Parallel()
+	_, p, ctx := setupPolicyTest(t)
+	path := filepath.Join(t.TempDir(), "ro")
+	_, _ = p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
 
-		_, _ = p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
-		res, _ = p.ListReadPaths(ctx, nil, nil)
-		if strings.Contains(res.Text, absPath) {
-			t.Errorf("Did not expect read-only path %q in list after removal", absPath)
-		}
-	})
+	res, _ := p.ListReadPaths(ctx, nil, nil)
 
-	t.Run("Register Read Path persist error", func(t *testing.T) {
-		t.Parallel()
-		_, p, ctx := setupPolicyWithKVError(t, fmt.Errorf("persist failed"))
-		path := filepath.Join(t.TempDir(), "ro-persist-err")
-		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "failed to persist") {
-			t.Errorf("Expected persist error message, got %q", res.Text)
-		}
-	})
+	absPath, _ := filepath.Abs(path)
+	if !strings.Contains(res.Text, absPath) && !strings.Contains(res.Text, path) {
+		t.Errorf("Expected read-only path %q in list: %s", absPath, res.Text)
+	}
 
-	t.Run("Remove Read Path persist error", func(t *testing.T) {
-		t.Parallel()
-		_, p, ctx := setupPolicyWithKVRemoveError(t, fmt.Errorf("persist failed"))
-		path := filepath.Join(t.TempDir(), "ro-rm-persist")
-		_, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+	_, _ = p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
+	res, _ = p.ListReadPaths(ctx, nil, nil)
+	if strings.Contains(res.Text, absPath) {
+		t.Errorf("Did not expect read-only path %q in list after removal", absPath)
+	}
+}
 
-		res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "failed to update persistence") {
-			t.Errorf("Expected persist error message, got %q", res.Text)
-		}
-	})
+func TestPolicyTool_ReadPathManagement_RegisterPersistError(t *testing.T) {
+	t.Parallel()
+	_, p, ctx := setupPolicyWithKVError(t, fmt.Errorf("persist failed"))
+	path := filepath.Join(t.TempDir(), "ro-persist-err")
+	res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "failed to persist") {
+		t.Errorf("Expected persist error message, got %q", res.Text)
+	}
+}
 
-	t.Run("List Empty Read Paths", func(t *testing.T) {
-		t.Parallel()
-		_, p, ctx := setupPolicyTest(t)
-		res, _ := p.ListReadPaths(ctx, nil, nil)
-		if !strings.Contains(res.Text, "No additional read-only paths") {
-			t.Error("Expected no read-only paths message")
-		}
-	})
+func TestPolicyTool_ReadPathManagement_RemovePersistError(t *testing.T) {
+	t.Parallel()
+	_, p, ctx := setupPolicyWithKVRemoveError(t, fmt.Errorf("persist failed"))
+	path := filepath.Join(t.TempDir(), "ro-rm-persist")
+	_, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "failed to update persistence") {
+		t.Errorf("Expected persist error message, got %q", res.Text)
+	}
+}
+
+func TestPolicyTool_ReadPathManagement_ListEmpty(t *testing.T) {
+	t.Parallel()
+	_, p, ctx := setupPolicyTest(t)
+	res, _ := p.ListReadPaths(ctx, nil, nil)
+	if !strings.Contains(res.Text, "No additional read-only paths") {
+		t.Error("Expected no read-only paths message")
+	}
 }
 
 func TestPolicyTool_BypassManagement(t *testing.T) {

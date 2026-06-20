@@ -408,33 +408,40 @@ func TestFallbackCopy_Errors(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			m := tt.setupMock()
 
 			err := fallbackCopy(ctx, m, "/src", "/dst", 0644)
 
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("fallbackCopy() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if tt.wantErr && tt.errContains != "" {
-				if !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("fallbackCopy() error = %q, want it to contain %q", err.Error(), tt.errContains)
-				}
-			}
-
-			if tt.expectRemoved != "" {
-				found := false
-				for _, r := range m.removedFiles {
-					if r == tt.expectRemoved {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("expected %s to be removed, but it wasn't. Removed: %v", tt.expectRemoved, m.removedFiles)
-				}
-			}
+			assertFallbackCopyResult(t, err, tt.wantErr, tt.errContains, tt.expectRemoved, m.removedFiles)
 		})
+	}
+}
+
+func assertFallbackCopyResult(t *testing.T, err error, wantErr bool, errContains, expectRemoved string, removedFiles []string) {
+	t.Helper()
+
+	if (err != nil) != wantErr {
+		t.Fatalf("fallbackCopy() error = %v, wantErr %v", err, wantErr)
+	}
+
+	if wantErr && errContains != "" {
+		if !strings.Contains(err.Error(), errContains) {
+			t.Errorf("fallbackCopy() error = %q, want it to contain %q", err.Error(), errContains)
+		}
+	}
+
+	if expectRemoved != "" {
+		found := false
+		for _, r := range removedFiles {
+			if r == expectRemoved {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected %s to be removed, but it wasn't. Removed: %v", expectRemoved, removedFiles)
+		}
 	}
 }
 

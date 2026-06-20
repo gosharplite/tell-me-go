@@ -256,33 +256,21 @@ func TestMergeRecords_DuplicateKey(t *testing.T) {
 		t.Errorf("expected 2 merged records, got %d", len(merged))
 	}
 
-	// Find the "same-session" record and verify new wins.
-	found := false
-	for _, r := range merged {
-		if r.Session == "same-session" {
-			found = true
-			if r.TotalCost != 2.0 {
-				t.Errorf("expected TotalCost 2.0 for same-session (new wins), got %f", r.TotalCost)
-			}
-		}
-	}
-	if !found {
-		t.Error("expected 'same-session' in merged result")
-	}
+	assertRecordInMerged(t, merged, "same-session", 2.0)
+	assertRecordInMerged(t, merged, "unique-old", 0.5)
+}
 
-	// Verify unique-old is still there.
-	foundOld := false
-	for _, r := range merged {
-		if r.Session == "unique-old" {
-			foundOld = true
-			if r.TotalCost != 0.5 {
-				t.Errorf("expected TotalCost 0.5 for unique-old, got %f", r.TotalCost)
+func assertRecordInMerged(t *testing.T, records []sessionCostRecord, session string, wantCost float64) {
+	t.Helper()
+	for _, r := range records {
+		if r.Session == session {
+			if r.TotalCost != wantCost {
+				t.Errorf("expected TotalCost %f for %s, got %f", wantCost, session, r.TotalCost)
 			}
+			return
 		}
 	}
-	if !foundOld {
-		t.Error("expected 'unique-old' in merged result")
-	}
+	t.Errorf("expected %q in merged result", session)
 }
 
 // ---------------------------------------------------------------------------

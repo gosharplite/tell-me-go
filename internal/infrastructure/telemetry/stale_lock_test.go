@@ -448,6 +448,12 @@ func TestMetricsManager_AcquireLedgerLock_StaleLock_RemoveSucceeds(t *testing.T)
 		t.Fatal(err)
 	}
 
+	assertLockAcquiredAndReleased(t, lockPath)
+}
+
+func assertLockAcquiredAndReleased(t *testing.T, lockPath string) {
+	t.Helper()
+
 	f, err := acquireLedgerLock(lockPath)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
