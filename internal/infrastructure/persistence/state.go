@@ -113,6 +113,15 @@ func (s *sessionState) hydrateInfo(ctx context.Context, storageType string, repo
 
 func (s *sessionState) Close() error {
 	if s.db != nil {
+		// Best-effort WAL checkpoint to merge WAL file back into main DB
+		// and truncate it to zero to reclaim disk space.
+		// A failure here is non-fatal — it only means the WAL file
+		// persists until the next connection checkpoint.
+		if _, err := s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+			// Logged at debug level since this is a cleanup concern,
+			// not a correctness issue.
+			slog.Debug("WAL checkpoint on close failed", "error", err)
+		}
 		return s.db.Close()
 	}
 	return nil
