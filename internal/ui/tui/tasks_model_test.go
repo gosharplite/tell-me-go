@@ -1063,13 +1063,13 @@ func TestTaskListModel_PageNav_PrevClamped_ErrorNoAdvance(t *testing.T) {
 	}
 }
 
-func TestTaskListModel_NextPage(t *testing.T) {
+func TestTaskListModel_CmdNextPage(t *testing.T) {
 	tests := []struct {
-		name       string
-		pageOffset int
-		pageSize   int
-		totalCount int
-		want       int
+		name              string
+		pageOffset        int
+		pageSize          int
+		totalCount        int
+		wantPendingOffset int
 	}{
 		{"advances when room", 0, 50, 100, 50},
 		{"clamped at boundary", 50, 50, 100, 50},
@@ -1080,24 +1080,34 @@ func TestTaskListModel_NextPage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &taskListModel{
+				ctx:        context.Background(),
 				pageOffset: tt.pageOffset,
 				pageSize:   tt.pageSize,
 				totalCount: tt.totalCount,
 			}
-			m.nextPage()
-			if m.pageOffset != tt.want {
-				t.Errorf("nextPage() offset = %d, want %d", m.pageOffset, tt.want)
+			cmd := m.cmdNextPage()
+			if cmd == nil {
+				t.Fatal("expected non-nil cmd from cmdNextPage")
+			}
+			if m.pendingPageOffset != tt.wantPendingOffset {
+				t.Errorf("pendingPageOffset = %d, want %d", m.pendingPageOffset, tt.wantPendingOffset)
+			}
+			if !m.pageNavPending {
+				t.Error("expected pageNavPending to be true")
+			}
+			if m.pageOffset != tt.pageOffset {
+				t.Errorf("pageOffset should not change until fetch succeeds, got %d want %d", m.pageOffset, tt.pageOffset)
 			}
 		})
 	}
 }
 
-func TestTaskListModel_PrevPage(t *testing.T) {
+func TestTaskListModel_CmdPrevPage(t *testing.T) {
 	tests := []struct {
-		name       string
-		pageOffset int
-		pageSize   int
-		want       int
+		name              string
+		pageOffset        int
+		pageSize          int
+		wantPendingOffset int
 	}{
 		{"decrements from 50", 50, 50, 0},
 		{"clamped at zero", 0, 50, 0},
@@ -1108,12 +1118,22 @@ func TestTaskListModel_PrevPage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &taskListModel{
+				ctx:        context.Background(),
 				pageOffset: tt.pageOffset,
 				pageSize:   tt.pageSize,
 			}
-			m.prevPage()
-			if m.pageOffset != tt.want {
-				t.Errorf("prevPage() offset = %d, want %d", m.pageOffset, tt.want)
+			cmd := m.cmdPrevPage()
+			if cmd == nil {
+				t.Fatal("expected non-nil cmd from cmdPrevPage")
+			}
+			if m.pendingPageOffset != tt.wantPendingOffset {
+				t.Errorf("pendingPageOffset = %d, want %d", m.pendingPageOffset, tt.wantPendingOffset)
+			}
+			if !m.pageNavPending {
+				t.Error("expected pageNavPending to be true")
+			}
+			if m.pageOffset != tt.pageOffset {
+				t.Errorf("pageOffset should not change until fetch succeeds, got %d want %d", m.pageOffset, tt.pageOffset)
 			}
 		})
 	}
