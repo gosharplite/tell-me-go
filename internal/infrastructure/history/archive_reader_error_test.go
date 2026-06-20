@@ -61,25 +61,38 @@ func TestJSONLArchiveReader_ReadPage_NonErrNotExistError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Gap 9 — ensureIndex double-check locking (fast path + double-check branches)
-// Code path: archive_reader.go L104-115
-//   r.mu.RLock() → r.indexed is true → return nil  (fast path)
-//   r.mu.Lock()   → r.indexed is true → return nil  (double-check)
+// Gap 9 — ensureIndex fast path after OnceWithRetry success
+// Code path: archive_reader.go ensureIndex → indexOnce.Do → done.Load()
+//   First call primes OnceWithRetry, second call hits lock-free fast path
 // ---------------------------------------------------------------------------
 
 func TestJSONLArchiveReader_EnsureIndex_AlreadyIndexed(t *testing.T) {
-	reader := &jsonlArchiveReader{
-		indexed: true,
-		index:   []int64{0, 100, 200},
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive.jsonl")
+
+	baseFS := persistence.NewOSFileSystem()
+	// Seed with valid JSONL so ensureIndex succeeds
+	if err := baseFS.WriteFile(context.Background(), archivePath,
+		[]byte(`{"role":"user","parts":[{"text":"hello"}]}`+"\n"), 0644); err != nil {
+		t.Fatalf("failed to seed archive: %v", err)
 	}
 
+	reader := &jsonlArchiveReader{
+		fs:          baseFS,
+		archivePath: archivePath,
+	}
+
+	// Prime the OnceWithRetry: first call builds the index
 	err := reader.ensureIndex(context.Background())
+	if err != nil {
+		t.Fatalf("expected nil error on first ensureIndex, got %v", err)
+	}
+
+	// Second call hits the fast path (lock-free atomic check)
+	err = reader.ensureIndex(context.Background())
 	if err != nil {
 		t.Errorf("expected nil error when already indexed (fast path), got %v", err)
 	}
-
-	// The double-check branch under exclusive lock is also exercised
-	// because the RLock sees indexed=true and returns immediately.
 }
 
 // ---------------------------------------------------------------------------
@@ -187,10 +200,10 @@ func TestJSONLArchiveReader_ReadPageInternal_ContextCancelled(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Gap 3 (Issue #949) — ensureIndex double-check locking under exclusive lock
-// Code path: archive_reader.go L107-109
-//   defer r.mu.Unlock()
-//   if r.indexed { return nil }  ← UNCOVERED (double-check after acquiring Lock)
+// Gap 3 (Issue #949) — OnceWithRetry concurrent deduplication
+// Code path: concurrency/once.go Do() → mu.Lock() + double-check done.Load()
+//   Two goroutines enter Do() simultaneously; Mutex serializes them;
+//   second goroutine observes done==true after first completes
 // ---------------------------------------------------------------------------
 
 func TestJSONLArchiveReader_EnsureIndex_DoubleCheckLocked(t *testing.T) {
@@ -245,10 +258,137 @@ func TestJSONLArchiveReader_EnsureIndex_DoubleCheckLocked(t *testing.T) {
 	}
 
 	// Both calls should succeed and the index should be built
-	if !reader.indexed {
-		t.Error("expected reader to be indexed after concurrent ensureIndex calls")
+	if len(reader.index) == 0 {
+		t.Error("expected reader to have a non-empty index after concurrent ensureIndex calls")
 	}
 	if len(reader.index) != 1000 { // 1000 lines
 		t.Errorf("expected 1000 index entries, got %d", len(reader.index))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// readLines L181-183 — context cancellation during line iteration
+// Code path: archive_reader.go L181-183
+//   if err := r.checkContext(ctx); err != nil { return nil, 0, err }
+//
+// We bypass readPageInternal and call readLines directly with a live *os.File
+// opened via os.Open (not through the FS) so fsRetry doesn't pre-empt the
+// cancellation before the loop begins.
+// ---------------------------------------------------------------------------
+
+func TestJSONLArchiveReader_ReadLines_ContextCancelledMidIteration(t *testing.T) {
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive.jsonl")
+
+	baseFS := persistence.NewOSFileSystem()
+
+	// Write 3+ lines so the loop enters and hits checkContext
+	if err := baseFS.WriteFile(context.Background(), archivePath,
+		[]byte(
+			`{"role":"user","parts":[{"text":"line1"}]}`+"\n"+
+				`{"role":"model","parts":[{"text":"line2"}]}`+"\n"+
+				`{"role":"user","parts":[{"text":"line3"}]}`+"\n",
+		), 0644); err != nil {
+		t.Fatalf("failed to write archive: %v", err)
+	}
+
+	reader := &jsonlArchiveReader{
+		fs:          baseFS,
+		archivePath: archivePath,
+	}
+
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		wantErr error
+	}{
+		{
+			name: "canceled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			}(),
+			wantErr: context.Canceled,
+		},
+		{
+			name: "deadline exceeded",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+				cancel()
+				return ctx
+			}(),
+			wantErr: context.DeadlineExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, err := os.Open(archivePath)
+			if err != nil {
+				t.Fatalf("failed to open archive: %v", err)
+			}
+			defer func() { _ = file.Close() }()
+
+			_, _, err = reader.readLines(tt.ctx, 10, 0, file)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// checkContext L203-204 — ctx.Done() signal handling
+// Code path: archive_reader.go L203-204
+//   case <-ctx.Done(): return ctx.Err()
+// ---------------------------------------------------------------------------
+
+func TestJSONLArchiveReader_CheckContext_Done(t *testing.T) {
+	reader := &jsonlArchiveReader{}
+
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		wantErr error
+	}{
+		{
+			name: "canceled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			}(),
+			wantErr: context.Canceled,
+		},
+		{
+			name: "deadline exceeded",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+				cancel()
+				return ctx
+			}(),
+			wantErr: context.DeadlineExceeded,
+		},
+		{
+			name:    "not cancelled",
+			ctx:     context.Background(),
+			wantErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := reader.checkContext(tt.ctx)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("expected nil, got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }

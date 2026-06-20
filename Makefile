@@ -40,7 +40,7 @@ help:
 	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
 	@echo "  make check      - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-coverage"
 	@echo "  make bench       - Run all benchmarks with memory allocation metrics"
-	@echo "  make fuzz       - Run all fuzz targets for 30s each (developer-invoked)"
+	@echo "  make fuzz       - Run all fuzz targets for 40s each (developer-invoked)"
 	@echo "  make fuzz-smoke - Compile-check fuzz tests are buildable (included in make check)"
 	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-race test-coverage"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
@@ -384,7 +384,7 @@ BENCH_PKGS := ./internal/agent/session/context \
 bench:
 	go test -bench=. -benchmem -count=1 $(BENCH_PKGS)
 
-# fuzz runs all fuzz targets for 30 seconds each, iterating per-package
+# fuzz runs all fuzz targets for 40 seconds each, iterating per-package
 # because go test -fuzz does not support ./... wildcard expansion.
 # This is developer-invoked only — not part of the check pipeline.
 # Use make fuzz-smoke for the fast PR-gating compile check.
@@ -397,7 +397,7 @@ ifeq ($(IS_POSIX),true)
 		else \
 			for target in $$targets; do \
 				echo "  fuzz $$pkg/$$target..."; \
-				go test -fuzz=^$$target$$ -fuzztime=30s -run=NONEXISTENT $$pkg || exit 1; \
+				go test -fuzz=^$$target$$ -fuzztime=40s -run=NONEXISTENT $$pkg || exit 1; \
 			done; \
 		fi; \
 	done
@@ -405,7 +405,7 @@ else
 	@for /f "tokens=*" %%p in ('go list ./...') do ( \
 		for /f "tokens=*" %%t in ('go test -list=Fuzz %%p 2^>nul ^| findstr /R "^Fuzz"') do ( \
 			echo fuzz %%p/%%t... & \
-			go test -fuzz=^%%t$$ -fuzztime=30s -run=NONEXISTENT %%p || exit /b 1 \
+			go test -fuzz=^%%t$$ -fuzztime=40s -run=NONEXISTENT %%p || exit /b 1 \
 		) \
 	)
 endif
