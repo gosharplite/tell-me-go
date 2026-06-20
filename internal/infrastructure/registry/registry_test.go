@@ -199,62 +199,61 @@ func TestRegistry_RegisterToToolkitWithOptions(t *testing.T) {
 	assert.True(t, found, "git_serial should be in git toolkit")
 }
 
-func TestRegistry_GetOptions(t *testing.T) {
+func TestRegistry_GetOptions_SerialTool(t *testing.T) {
 	t.Parallel()
 	r := registry.New()
-
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true}); err != nil {
 		t.Fatalf("failed to register serial_tool: %v", err)
 	}
+	got := r.GetOptions("serial_tool")
+	if !got.Serial {
+		t.Errorf("expected serial_tool to have Serial=true, got %+v", got)
+	}
+}
+
+func TestRegistry_GetOptions_LongRunningTool(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_tool"}, nil, registry.ToolOptions{LongRunning: true}); err != nil {
 		t.Fatalf("failed to register long_tool: %v", err)
 	}
+	got := r.GetOptions("long_tool")
+	if !got.LongRunning {
+		t.Errorf("expected long_tool to have LongRunning=true, got %+v", got)
+	}
+}
+
+func TestRegistry_GetOptions_BothTool(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "both_tool"}, nil, registry.ToolOptions{Serial: true, LongRunning: true}); err != nil {
 		t.Fatalf("failed to register both_tool: %v", err)
 	}
+	got := r.GetOptions("both_tool")
+	if !got.Serial {
+		t.Errorf("expected both_tool to have Serial=true, got %+v", got)
+	}
+	if !got.LongRunning {
+		t.Errorf("expected both_tool to have LongRunning=true, got %+v", got)
+	}
+}
 
-	t.Run("serial tool", func(t *testing.T) {
-		t.Parallel()
-		got := r.GetOptions("serial_tool")
-		if !got.Serial {
-			t.Errorf("expected serial_tool to have Serial=true, got %+v", got)
-		}
-	})
+func TestRegistry_GetOptions_NonexistentTool(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+	got := r.GetOptions("no_such_tool")
+	if got != (registry.ToolOptions{}) {
+		t.Errorf("expected zero-value ToolOptions for nonexistent tool, got %+v", got)
+	}
+}
 
-	t.Run("long-running tool", func(t *testing.T) {
-		t.Parallel()
-		got := r.GetOptions("long_tool")
-		if !got.LongRunning {
-			t.Errorf("expected long_tool to have LongRunning=true, got %+v", got)
-		}
-	})
-
-	t.Run("tool with both options", func(t *testing.T) {
-		t.Parallel()
-		got := r.GetOptions("both_tool")
-		if !got.Serial {
-			t.Errorf("expected both_tool to have Serial=true, got %+v", got)
-		}
-		if !got.LongRunning {
-			t.Errorf("expected both_tool to have LongRunning=true, got %+v", got)
-		}
-	})
-
-	t.Run("nonexistent tool", func(t *testing.T) {
-		t.Parallel()
-		got := r.GetOptions("no_such_tool")
-		if got != (registry.ToolOptions{}) {
-			t.Errorf("expected zero-value ToolOptions for nonexistent tool, got %+v", got)
-		}
-	})
-
-	t.Run("empty name", func(t *testing.T) {
-		t.Parallel()
-		got := r.GetOptions("")
-		if got != (registry.ToolOptions{}) {
-			t.Errorf("expected zero-value ToolOptions for empty name, got %+v", got)
-		}
-	})
+func TestRegistry_GetOptions_EmptyName(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+	got := r.GetOptions("")
+	if got != (registry.ToolOptions{}) {
+		t.Errorf("expected zero-value ToolOptions for empty name, got %+v", got)
+	}
 }
 
 func TestRegistry_RegisterToToolkit_EmptyDefaultsToCore(t *testing.T) {

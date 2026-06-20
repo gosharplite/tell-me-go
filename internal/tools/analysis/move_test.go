@@ -165,83 +165,85 @@ func TestMovePlanDescription(t *testing.T) {
 	}
 }
 
-func TestMatchesTypeName_StarExpr(t *testing.T) {
+func TestMatchesTypeName_StarExpr_PointerReceiver(t *testing.T) {
 	t.Parallel()
 
 	tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
-
-	t.Run("pointer receiver matches", func(t *testing.T) {
-		t.Parallel()
-		// *ast.StarExpr{X: *ast.Ident{Name: "MyStruct"}}
-		fset, f, err := parseTestMoveFile("package a\ntype MyStruct struct{}\nfunc (s *MyStruct) Method() {}")
-		if err != nil {
-			t.Fatal(err)
+	fset, f, err := parseTestMoveFile("package a\ntype MyStruct struct{}\nfunc (s *MyStruct) Method() {}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = fset
+	// Find the method decl
+	var methodDecl *ast.FuncDecl
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
+			methodDecl = fd
+			break
 		}
-		_ = fset
-		// Find the method decl
-		var methodDecl *ast.FuncDecl
-		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
-				methodDecl = fd
-				break
-			}
-		}
-		if methodDecl == nil {
-			t.Fatal("expected to find method declaration")
-		}
-		// matchesTypeName on *MyStruct receiver
-		if !tr.matchesTypeName(methodDecl.Recv.List[0].Type, "MyStruct") {
-			t.Error("matchesTypeName should match *MyStruct pointer receiver")
-		}
-	})
-
-	t.Run("pointer receiver non-match", func(t *testing.T) {
-		t.Parallel()
-		fset, f, err := parseTestMoveFile("package a\ntype Other struct{}\nfunc (s *Other) Method() {}")
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = fset
-		var methodDecl *ast.FuncDecl
-		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
-				methodDecl = fd
-				break
-			}
-		}
-		if methodDecl == nil {
-			t.Fatal("expected to find method declaration")
-		}
-		if tr.matchesTypeName(methodDecl.Recv.List[0].Type, "MyStruct") {
-			t.Error("matchesTypeName should NOT match *Other as MyStruct")
-		}
-	})
-
-	t.Run("double pointer handled by recursion", func(t *testing.T) {
-		t.Parallel()
-		// **MyStruct - StarExpr wrapping another StarExpr wrapping Ident
-		// matchesTypeName recurses through StarExpr, so this matches.
-		innerStar := &ast.StarExpr{X: &ast.Ident{Name: "MyStruct"}}
-		doubleStar := &ast.StarExpr{X: innerStar}
-		if !tr.matchesTypeName(doubleStar, "MyStruct") {
-			t.Error("matchesTypeName should match **MyStruct via recursion through StarExpr")
-		}
-	})
-
-	t.Run("unhandled expr type returns false", func(t *testing.T) {
-		t.Parallel()
-		// ArrayType is not handled by the switch
-		if tr.matchesTypeName(&ast.ArrayType{}, "MyStruct") {
-			t.Error("matchesTypeName should return false for unhandled expr type")
-		}
-	})
+	}
+	if methodDecl == nil {
+		t.Fatal("expected to find method declaration")
+	}
+	// matchesTypeName on *MyStruct receiver
+	if !tr.matchesTypeName(methodDecl.Recv.List[0].Type, "MyStruct") {
+		t.Error("matchesTypeName should match *MyStruct pointer receiver")
+	}
 }
 
-func TestDeclMatchers(t *testing.T) {
+func TestMatchesTypeName_StarExpr_NonMatch(t *testing.T) {
 	t.Parallel()
 
-	// ---- matchFuncDecl ----
-	t.Run("matchFuncDecl matches by name", func(t *testing.T) {
+	tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
+	fset, f, err := parseTestMoveFile("package a\ntype Other struct{}\nfunc (s *Other) Method() {}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = fset
+	var methodDecl *ast.FuncDecl
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
+			methodDecl = fd
+			break
+		}
+	}
+	if methodDecl == nil {
+		t.Fatal("expected to find method declaration")
+	}
+	if tr.matchesTypeName(methodDecl.Recv.List[0].Type, "MyStruct") {
+		t.Error("matchesTypeName should NOT match *Other as MyStruct")
+	}
+}
+
+func TestMatchesTypeName_StarExpr_DoublePointer(t *testing.T) {
+	t.Parallel()
+
+	tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
+	// **MyStruct - StarExpr wrapping another StarExpr wrapping Ident
+	// matchesTypeName recurses through StarExpr, so this matches.
+	innerStar := &ast.StarExpr{X: &ast.Ident{Name: "MyStruct"}}
+	doubleStar := &ast.StarExpr{X: innerStar}
+	if !tr.matchesTypeName(doubleStar, "MyStruct") {
+		t.Error("matchesTypeName should match **MyStruct via recursion through StarExpr")
+	}
+}
+
+func TestMatchesTypeName_StarExpr_UnhandledExpr(t *testing.T) {
+	t.Parallel()
+
+	tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
+	// ArrayType is not handled by the switch
+	if tr.matchesTypeName(&ast.ArrayType{}, "MyStruct") {
+		t.Error("matchesTypeName should return false for unhandled expr type")
+	}
+}
+
+// TestMatchFuncDecl verifies the matchFuncDecl helper correctly identifies
+// FuncDecl nodes by name and rejects non-FuncDecl or BadDecl inputs.
+func TestMatchFuncDecl(t *testing.T) {
+	t.Parallel()
+
+	t.Run("matches by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "Hello"}}
 		if !matchFuncDecl(decl, "Hello") {
@@ -249,22 +251,27 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchFuncDecl returns false for non-FuncDecl", func(t *testing.T) {
+	t.Run("non-FuncDecl", func(t *testing.T) {
 		t.Parallel()
 		if matchFuncDecl(&ast.BadDecl{}, "Hello") {
 			t.Error("matchFuncDecl should return false for BadDecl")
 		}
 	})
 
-	t.Run("matchFuncDecl returns false for BadDecl", func(t *testing.T) {
+	t.Run("BadDecl", func(t *testing.T) {
 		t.Parallel()
 		if matchFuncDecl(&ast.BadDecl{}, "Nope") {
 			t.Error("matchFuncDecl should return false for BadDecl")
 		}
 	})
+}
 
-	// ---- matchTypeSpec ----
-	t.Run("matchTypeSpec matches type by name", func(t *testing.T) {
+// TestMatchTypeSpec verifies the matchTypeSpec helper identifies TypeSpec
+// nodes within GenDecl and rejects non-GenDecl inputs like FuncDecl.
+func TestMatchTypeSpec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("matches type by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -276,16 +283,22 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchTypeSpec returns false for FuncDecl", func(t *testing.T) {
+	t.Run("returns false for FuncDecl", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "MyType"}}
 		if matchTypeSpec(decl, "MyType") {
 			t.Error("matchTypeSpec should return false for FuncDecl")
 		}
 	})
+}
 
-	// ---- matchValueSpec ----
-	t.Run("matchValueSpec matches const by name", func(t *testing.T) {
+// TestMatchValueSpec verifies the matchValueSpec helper identifies
+// ValueSpec nodes (const, var, multi-name) and rejects ImportSpec
+// or non-GenDecl inputs.
+func TestMatchValueSpec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("matches const by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -297,7 +310,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec matches var by name", func(t *testing.T) {
+	t.Run("matches var by name", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -309,7 +322,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec matches second name in multi-name ValueSpec", func(t *testing.T) {
+	t.Run("matches second name in multi-name ValueSpec", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -321,7 +334,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec returns false for import GenDecl", func(t *testing.T) {
+	t.Run("returns false for import GenDecl", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.GenDecl{
 			Specs: []ast.Spec{
@@ -333,7 +346,7 @@ func TestDeclMatchers(t *testing.T) {
 		}
 	})
 
-	t.Run("matchValueSpec returns false for FuncDecl", func(t *testing.T) {
+	t.Run("returns false for FuncDecl", func(t *testing.T) {
 		t.Parallel()
 		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "MyFunc"}}
 		if matchValueSpec(decl, "MyFunc") {
@@ -342,96 +355,92 @@ func TestDeclMatchers(t *testing.T) {
 	})
 }
 
-func TestMatchSymbol_GenDeclEdgeCases(t *testing.T) {
+func TestMatchSymbol_GenDecl_ImportReturnsFalse(t *testing.T) {
 	t.Parallel()
-
-	t.Run("non-type non-value GenDecl returns false", func(t *testing.T) {
-		t.Parallel()
-		// GenDecl with an ImportSpec — not a TypeSpec or ValueSpec
-		tr := newMoveTransform(&movePlan{Symbol: "fmt"})
-		code := `package a
+	// GenDecl with an ImportSpec — not a TypeSpec or ValueSpec
+	tr := newMoveTransform(&movePlan{Symbol: "fmt"})
+	code := `package a
 import "fmt"`
-		fset, f, err := parseTestMoveFile(code)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = fset
-		// GenDecl with Tok==token.IMPORT and Specs containing ImportSpec
-		if tr.matchSymbol(f.Decls[0]) {
-			t.Error("matchSymbol should return false for import GenDecl (not TypeSpec or ValueSpec)")
-		}
-	})
+	fset, f, err := parseTestMoveFile(code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = fset
+	// GenDecl with Tok==token.IMPORT and Specs containing ImportSpec
+	if tr.matchSymbol(f.Decls[0]) {
+		t.Error("matchSymbol should return false for import GenDecl (not TypeSpec or ValueSpec)")
+	}
+}
 
-	t.Run("multiple ValueSpecs matches second", func(t *testing.T) {
-		t.Parallel()
-		tr := newMoveTransform(&movePlan{Symbol: "B"})
-		code := `package a
+func TestMatchSymbol_GenDecl_MultiValueSpec(t *testing.T) {
+	t.Parallel()
+	tr := newMoveTransform(&movePlan{Symbol: "B"})
+	code := `package a
 var A, B = 1, 2`
-		fset, f, err := parseTestMoveFile(code)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = fset
-		if !tr.matchSymbol(f.Decls[0]) {
-			t.Error("matchSymbol should match B in multi-name ValueSpec")
-		}
-	})
+	fset, f, err := parseTestMoveFile(code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = fset
+	if !tr.matchSymbol(f.Decls[0]) {
+		t.Error("matchSymbol should match B in multi-name ValueSpec")
+	}
+}
 
-	t.Run("isMethodOf with value receiver", func(t *testing.T) {
-		t.Parallel()
-		tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
-		fset, f, err := parseTestMoveFile("package a\ntype MyStruct struct{}\nfunc (s MyStruct) ValueMethod() {}")
-		if err != nil {
-			t.Fatal(err)
+func TestMatchSymbol_IsMethodOf_ValueReceiver(t *testing.T) {
+	t.Parallel()
+	tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
+	fset, f, err := parseTestMoveFile("package a\ntype MyStruct struct{}\nfunc (s MyStruct) ValueMethod() {}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = fset
+	// Find the method decl
+	var methodDecl ast.Decl
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
+			methodDecl = d
+			break
 		}
-		_ = fset
-		// Find the method decl
-		var methodDecl ast.Decl
-		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
-				methodDecl = d
-				break
-			}
-		}
-		if !tr.isMethodOf(methodDecl, "MyStruct") {
-			t.Error("isMethodOf should match value receiver method of MyStruct")
-		}
-	})
+	}
+	if !tr.isMethodOf(methodDecl, "MyStruct") {
+		t.Error("isMethodOf should match value receiver method of MyStruct")
+	}
+}
 
-	t.Run("isMethodOf non-FuncDecl returns false", func(t *testing.T) {
-		t.Parallel()
-		tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
-		fset, f, err := parseTestMoveFile("package a\ntype MyStruct struct{}")
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = fset
-		if tr.isMethodOf(f.Decls[0], "MyStruct") {
-			t.Error("isMethodOf should return false for GenDecl (not FuncDecl)")
-		}
-	})
+func TestMatchSymbol_IsMethodOf_NonFuncDecl(t *testing.T) {
+	t.Parallel()
+	tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
+	fset, f, err := parseTestMoveFile("package a\ntype MyStruct struct{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = fset
+	if tr.isMethodOf(f.Decls[0], "MyStruct") {
+		t.Error("isMethodOf should return false for GenDecl (not FuncDecl)")
+	}
+}
 
-	t.Run("isMethodOf nil receiver returns false", func(t *testing.T) {
-		t.Parallel()
-		tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
-		fset, f, err := parseTestMoveFile("package a\nfunc PlainFunc() {}")
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = fset
-		if tr.isMethodOf(f.Decls[0], "MyStruct") {
-			t.Error("isMethodOf should return false for function without receiver")
-		}
-	})
+func TestMatchSymbol_IsMethodOf_NilReceiver(t *testing.T) {
+	t.Parallel()
+	tr := newMoveTransform(&movePlan{Symbol: "MyStruct"})
+	fset, f, err := parseTestMoveFile("package a\nfunc PlainFunc() {}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = fset
+	if tr.isMethodOf(f.Decls[0], "MyStruct") {
+		t.Error("isMethodOf should return false for function without receiver")
+	}
+}
 
-	t.Run("matchSymbol non-FuncDecl non-GenDecl returns false", func(t *testing.T) {
-		t.Parallel()
-		tr := newMoveTransform(&movePlan{Symbol: "Anything"})
-		// BadDecl is not *ast.FuncDecl or *ast.GenDecl
-		if tr.matchSymbol(&ast.BadDecl{}) {
-			t.Error("matchSymbol should return false for BadDecl")
-		}
-	})
+func TestMatchSymbol_BadDeclReturnsFalse(t *testing.T) {
+	t.Parallel()
+	tr := newMoveTransform(&movePlan{Symbol: "Anything"})
+	// BadDecl is not *ast.FuncDecl or *ast.GenDecl
+	if tr.matchSymbol(&ast.BadDecl{}) {
+		t.Error("matchSymbol should return false for BadDecl")
+	}
 }
 
 func TestMoveTransform_ErrorContext(t *testing.T) {

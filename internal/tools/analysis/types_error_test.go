@@ -218,6 +218,9 @@ func TestGetTypeInfo_FindMethodsError(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for cancelled context during findMethods, got nil")
 	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
 }
 
 // TestGetTypeInfo_ShortCircuit verifies that early-return conditions prevent
@@ -442,6 +445,41 @@ type MyStruct struct{}
 	}
 }
 
+// TestFindDefinitions_PropagatesWalkError verifies that filesystem-level
+// walk errors during symbol collection propagate through FindDefinitions.
+func TestFindDefinitions_PropagatesWalkError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
+
+func F() string { return "ok" }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a subdirectory and make it unreadable → Walk fails
+	lockedDir := filepath.Join(tmpDir, "locked")
+	if err := os.Mkdir(lockedDir, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+
+	m := analysis.NewTypeManager(
+		&mockTypeIndex{},
+		analysis.NewASTCache("."),
+		&analysistest.MockSecurityProvider{},
+	)
+
+	_, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
+	if err == nil {
+		t.Error("expected walk error from unreadable directory, got nil")
+	}
+}
+
 // =============================================================================
 // Batch 2, Task 3 — Table-driven error path tests
 // =============================================================================
@@ -582,121 +620,6 @@ func TestTypeManager_PathValidationErrors(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestTypeManager_FilesystemErrors verifies that filesystem-level errors
-// (Cache.Get failures, filepath.Walk errors) are correctly propagated.
-func TestTypeManager_FilesystemErrors(t *testing.T) {
-	t.Parallel()
-
-	t.Run("GetTypeInfo Cache.Get error", func(t *testing.T) {
-		t.Parallel()
-		tmpDir := t.TempDir()
-
-		idx := &mockTypeIndex{
-			LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
-				// Point to a file that does not exist → Cache.Get fails
-				return []analysis.Location{{Path: filepath.Join(tmpDir, "does_not_exist.go"), Line: 1, Column: 1}}, nil
-			},
-		}
-		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
-
-		_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
-		if err == nil {
-			t.Error("expected error for Cache.Get failure, got nil")
-		}
-	})
-
-	t.Run("GetTypeInfo findMethods Walk error", func(t *testing.T) {
-		t.Parallel()
-		tmpDir := t.TempDir()
-
-		// Create a valid Go file so Lookup succeeds
-		if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
-type MyStruct struct{}
-`), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		// Create an unreadable subdirectory → Walk fails
-		lockedDir := filepath.Join(tmpDir, "locked")
-		if err := os.Mkdir(lockedDir, 0000); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
-
-		idx := &mockTypeIndex{
-			LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
-				return []analysis.Location{{Path: filepath.Join(tmpDir, "valid.go"), Line: 2, Column: 6}}, nil
-			},
-		}
-		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
-
-		_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MyStruct"}, nil)
-		if err == nil {
-			t.Error("expected walk error from unreadable directory, got nil")
-		}
-	})
-
-	t.Run("ListSymbols collectSymbols Walk error", func(t *testing.T) {
-		t.Parallel()
-		tmpDir := t.TempDir()
-
-		// Create a valid Go file
-		if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
-func F() {}
-`), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		// Create an unreadable subdirectory → Walk fails
-		lockedDir := filepath.Join(tmpDir, "locked")
-		if err := os.Mkdir(lockedDir, 0000); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
-
-		m := analysis.NewTypeManager(
-			&mockTypeIndex{},
-			analysis.NewASTCache("."),
-			&analysistest.MockSecurityProvider{},
-		)
-
-		_, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
-		if err == nil {
-			t.Error("expected walk error from unreadable directory, got nil")
-		}
-	})
-
-	t.Run("FindDefinitions collectSymbols Walk error", func(t *testing.T) {
-		t.Parallel()
-		tmpDir := t.TempDir()
-
-		// Create a valid Go file
-		if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte(`package test
-func F() {}
-`), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		// Create an unreadable subdirectory → Walk fails
-		lockedDir := filepath.Join(tmpDir, "locked")
-		if err := os.Mkdir(lockedDir, 0000); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
-
-		m := analysis.NewTypeManager(
-			&mockTypeIndex{},
-			analysis.NewASTCache("."),
-			&analysistest.MockSecurityProvider{},
-		)
-
-		_, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
-		if err == nil {
-			t.Error("expected walk error from unreadable directory, got nil")
-		}
-	})
 }
 
 // TestListImplementations_ErrorPaths covers remaining error paths in

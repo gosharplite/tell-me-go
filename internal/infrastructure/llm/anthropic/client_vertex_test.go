@@ -321,28 +321,50 @@ func assertMetricsMapping(t *testing.T, m *llm.Metrics, wantPrompt, wantCached, 
 	}
 }
 
+// assertPromptCachingBetaHeader checks the anthropic-beta header is set
+// for prompt caching.
+func assertPromptCachingBetaHeader(t *testing.T, r *http.Request) {
+	t.Helper()
+	if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
+		t.Errorf("expected beta header prompt-caching-2024-07-31, got %s", r.Header.Get("anthropic-beta"))
+	}
+}
+
+// assertPromptCachingSystemBlock validates that the system block in a
+// prompt-caching request has the correct text and ephemeral cache_control.
+func assertPromptCachingSystemBlock(t *testing.T, req messagesRequest) {
+	t.Helper()
+	systemBlocks, ok := req.System.([]interface{})
+	if !ok || len(systemBlocks) != 1 {
+		t.Errorf("expected 1 system block, got %v", req.System)
+		return
+	}
+	block := systemBlocks[0].(map[string]interface{})
+	if block["type"] != "text" || block["text"] != "You are a helpful assistant" {
+		t.Errorf("unexpected system block text: %v", block["text"])
+	}
+	assertPromptCachingCacheControl(t, block)
+}
+
+// assertPromptCachingCacheControl checks that the block has ephemeral
+// cache_control set.
+func assertPromptCachingCacheControl(t *testing.T, block map[string]interface{}) {
+	t.Helper()
+	cache, ok := block["cache_control"].(map[string]interface{})
+	if !ok || cache["type"] != "ephemeral" {
+		t.Errorf("expected ephemeral cache control, got %v", block["cache_control"])
+	}
+}
+
 func TestPromptCaching(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
-			t.Errorf("expected beta header, got %s", r.Header.Get("anthropic-beta"))
-		}
+		assertPromptCachingBetaHeader(t, r)
 
 		var req messagesRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
 
-		systemBlocks, ok := req.System.([]interface{})
-		if !ok || len(systemBlocks) != 1 {
-			t.Errorf("expected 1 system block, got %v", req.System)
-		} else {
-			block := systemBlocks[0].(map[string]interface{})
-			if block["type"] != "text" || block["text"] != "You are a helpful assistant" {
-				t.Errorf("unexpected system block text: %v", block["text"])
-			}
-			cache, ok := block["cache_control"].(map[string]interface{})
-			if !ok || cache["type"] != "ephemeral" {
-				t.Errorf("expected ephemeral cache control, got %v", block["cache_control"])
-			}
-		}
+		assertPromptCachingSystemBlock(t, req)
 
 		resp := messagesResponse{
 			Usage: usage{

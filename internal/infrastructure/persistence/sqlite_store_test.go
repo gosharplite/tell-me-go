@@ -19,7 +19,12 @@ import (
 
 func setupSQLite(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+	// Mirror the production initSQLiteDB DSN parameters (WAL journal mode
+	// and busy_timeout) so that tests exercise the same connection behavior.
+	// While in-memory databases are single-connection and don't benefit from
+	// WAL, this keeps the pattern consistent and prevents accidental
+	// regressions if future tests switch to file-backed databases.
+	db, err := sql.Open("sqlite", ":memory:?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}

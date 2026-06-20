@@ -41,7 +41,7 @@ func (t *importCleanupTransform) formatAndReprocess(fset *token.FileSet, file *a
 	var buf bytes.Buffer
 	if t.testFormatNode != nil {
 		if err := t.testFormatNode(&buf, fset, file); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("formatting %s: %w", t.Path, err)
 		}
 	} else if err := format.Node(&buf, fset, file); err != nil {
 		return nil, fmt.Errorf("formatting %s: %w", t.Path, err)

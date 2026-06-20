@@ -741,6 +741,40 @@ func TestLivenessTimer_ResetAfterFire(t *testing.T) {
 	lt.stop()
 }
 
+// TestLivenessTimer_ResetAfterFire_ChannelDrain covers the drain path
+// in livenessTimer.reset() when timer.Stop() returns false AND the timer
+// channel still has a pending value (decorators.go:271, case <-t.timer.C).
+//
+// Unlike TestLivenessTimer_ResetAfterFire (which drains the channel before
+// calling reset, hitting the default: branch), this test lets the timer fire
+// without draining, so reset() must drain the pending value via the
+// case <-t.timer.C branch.
+func TestLivenessTimer_ResetAfterFire_ChannelDrain(t *testing.T) {
+	t.Parallel()
+
+	lt := NewLivenessTimer(1 * time.Millisecond)
+
+	// Let the timer fire but do NOT drain the channel.
+	// After the sleep, t.timer.C has a pending value.
+	time.Sleep(10 * time.Millisecond)
+
+	// Reset after fire without prior drain — exercises
+	// the !t.timer.Stop() path where case <-t.timer.C
+	// drains the pending value (decorators.go:271).
+	lt.reset()
+
+	// Timer should fire again after reset (proves
+	// the drain didn't break the timer).
+	select {
+	case <-lt.channel():
+		// success — timer fired after reset
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timer did not fire after reset with channel drain")
+	}
+
+	lt.stop()
+}
+
 // TestLivenessTimer_ResetBeforeFire covers the normal reset path
 // when timer.Stop() returns true (timer hasn't fired yet).
 func TestLivenessTimer_ResetBeforeFire(t *testing.T) {

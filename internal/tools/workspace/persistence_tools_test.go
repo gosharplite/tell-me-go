@@ -812,6 +812,33 @@ func TestTaskIcon(t *testing.T) {
 	}
 }
 
+// assertRenderOutput validates renderTaskPage output against expected
+// contains, exact-match, and not-contains criteria. The wantExact check
+// short-circuits: when wantExact is non-empty, contains/not-contains
+// checks are skipped.
+func assertRenderOutput(t *testing.T, got string, wantContains []string, wantExact string, notContains []string) {
+	t.Helper()
+
+	if wantExact != "" {
+		if got != wantExact {
+			t.Errorf("renderTaskPage = %q; want exact %q", got, wantExact)
+		}
+		return
+	}
+
+	for _, want := range wantContains {
+		if !strings.Contains(got, want) {
+			t.Errorf("renderTaskPage missing %q in:\n%s", want, got)
+		}
+	}
+
+	for _, notWant := range notContains {
+		if strings.Contains(got, notWant) {
+			t.Errorf("renderTaskPage unexpectedly contains %q in:\n%s", notWant, got)
+		}
+	}
+}
+
 func TestRenderTaskPage(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -940,105 +967,108 @@ func TestRenderTaskPage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := renderTaskPage(tt.tasks, tt.totalCount, tt.offset, tt.limit)
-
-			if tt.wantExact != "" {
-				if got != tt.wantExact {
-					t.Errorf("renderTaskPage = %q; want exact %q", got, tt.wantExact)
-				}
-				return
-			}
-
-			for _, want := range tt.wantContains {
-				if !strings.Contains(got, want) {
-					t.Errorf("renderTaskPage missing %q in:\n%s", want, got)
-				}
-			}
-
-			for _, notWant := range tt.notContains {
-				if strings.Contains(got, notWant) {
-					t.Errorf("renderTaskPage unexpectedly contains %q in:\n%s", notWant, got)
-				}
-			}
+			assertRenderOutput(t, got, tt.wantContains, tt.wantExact, tt.notContains)
 		})
 	}
 }
 
-func TestFetchAndCount(t *testing.T) {
-	t.Run("success returns tasks and count", func(t *testing.T) {
-		pt, provider := setupPersistenceTools()
-		ctx := context.Background()
+// countErrorStore wraps a ports.TaskStore and overrides CountTasks to
+// return a configurable error, while delegating all other methods (including
+// ListTasks) to the inner store. This enables testing the CountTasks error
+// path independently from ListTasks.
+type countErrorStore struct {
+	ports.TaskStore
+	countErr error
+}
 
-		_, err := provider.tasks.AddTask(ctx, "task one")
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = provider.tasks.AddTask(ctx, "task two")
-		if err != nil {
-			t.Fatal(err)
-		}
+func (s *countErrorStore) CountTasks(ctx context.Context, status string) (int, error) {
+	if s.countErr != nil {
+		return 0, s.countErr
+	}
+	return s.TaskStore.CountTasks(ctx, status)
+}
 
-		tasks, count, err := pt.fetchAndCount(ctx, "", 50, 0)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if count != 2 {
-			t.Errorf("count = %d; want 2", count)
-		}
-		if len(tasks) != 2 {
-			t.Errorf("len(tasks) = %d; want 2", len(tasks))
-		}
-	})
+// TestFetchAndCount_Success verifies the happy path: tasks and count
+// are both returned correctly.
+func TestFetchAndCount_Success(t *testing.T) {
+	t.Parallel()
+	pt, provider := setupPersistenceTools()
+	ctx := context.Background()
 
-	t.Run("ListTasks error propagates", func(t *testing.T) {
-		pt, provider := setupPersistenceTools()
-		provider.listStore.err = errors.New("list failed")
+	_, err := provider.tasks.AddTask(ctx, "task one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = provider.tasks.AddTask(ctx, "task two")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		tasks, count, err := pt.fetchAndCount(context.Background(), "", 50, 0)
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !strings.Contains(err.Error(), "list failed") {
-			t.Errorf("error = %q; want containing 'list failed'", err.Error())
-		}
-		if tasks != nil {
-			t.Errorf("tasks = %v; want nil on error", tasks)
-		}
-		if count != 0 {
-			t.Errorf("count = %d; want 0 on error", count)
-		}
-	})
+	tasks, count, err := pt.fetchAndCount(ctx, "", 50, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("count = %d; want 2", count)
+	}
+	if len(tasks) != 2 {
+		t.Errorf("len(tasks) = %d; want 2", len(tasks))
+	}
+}
 
-	t.Run("CountTasks error propagates", func(t *testing.T) {
-		pt, provider := setupPersistenceTools()
-		ctx := context.Background()
-		// Add a task so ListTasks succeeds
-		_, err := provider.tasks.AddTask(ctx, "task one")
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Now inject error — but CountTasks on the mock delegates to
-		// mockListStore.Count which uses m.err. We need ListTasks to
-		// succeed and CountTasks to fail. The mockListStore shares a
-		// single error field, so we set it after ListTasks would read it.
-		//
-		// Strategy: wrap the store to inject error only on Count.
-		// Simpler approach: verify that a direct store error propagates.
-		// Our mock shares m.err for both, so this test confirms the
-		// second I/O error path is reachable.
-		provider.listStore.err = errors.New("count failed")
+// TestFetchAndCount_ListTasksError verifies that a ListTasks error
+// propagates correctly, returning nil tasks and zero count.
+func TestFetchAndCount_ListTasksError(t *testing.T) {
+	t.Parallel()
+	pt, provider := setupPersistenceTools()
+	provider.listStore.err = errors.New("list failed")
 
-		tasks, count, err := pt.fetchAndCount(ctx, "", 50, 0)
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !strings.Contains(err.Error(), "count failed") {
-			t.Errorf("error = %q; want containing 'count failed'", err.Error())
-		}
-		if tasks != nil {
-			t.Errorf("tasks = %v; want nil on error", tasks)
-		}
-		if count != 0 {
-			t.Errorf("count = %d; want 0 on error", count)
-		}
-	})
+	tasks, count, err := pt.fetchAndCount(context.Background(), "", 50, 0)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "list failed") {
+		t.Errorf("error = %q; want containing 'list failed'", err.Error())
+	}
+	if tasks != nil {
+		t.Errorf("tasks = %v; want nil on error", tasks)
+	}
+	if count != 0 {
+		t.Errorf("count = %d; want 0 on error", count)
+	}
+}
+
+// TestFetchAndCount_CountTasksError verifies that when ListTasks succeeds
+// but CountTasks fails, the error propagates correctly. Uses countErrorStore
+// to independently control the CountTasks error without affecting ListTasks.
+func TestFetchAndCount_CountTasksError(t *testing.T) {
+	t.Parallel()
+	pt, provider := setupPersistenceTools()
+	ctx := context.Background()
+
+	// Add a task so ListTasks succeeds
+	_, err := provider.tasks.AddTask(ctx, "task one")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wrap the real TaskStore so ListTasks works but CountTasks fails
+	pt.tasks = &countErrorStore{
+		TaskStore: provider.tasks,
+		countErr:  errors.New("count failed"),
+	}
+
+	tasks, count, err := pt.fetchAndCount(ctx, "", 50, 0)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "count failed") {
+		t.Errorf("error = %q; want containing 'count failed'", err.Error())
+	}
+	if tasks != nil {
+		t.Errorf("tasks = %v; want nil on error", tasks)
+	}
+	if count != 0 {
+		t.Errorf("count = %d; want 0 on error", count)
+	}
 }

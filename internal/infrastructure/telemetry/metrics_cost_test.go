@@ -152,61 +152,64 @@ func TestRecordSessionCost_EstimateCostFails(t *testing.T) {
 	}
 }
 
-// TestRecordSessionCost_ResolveUsageSummaryErrorUnreachable documents that
-// the resolveUsageForSummary error return branch in RecordSessionCost
-// (metrics.go:134-137) is unreachable in practice.
-//
-// Reasoning:
-//   - When tracker == nil: resolveUsageForSummary calls parseUsage.
-//     If parseUsage returns os.IsNotExist, the error is suppressed (nil returned).
-//     If parseUsage returns any other error, EstimateCost (called first in
-//     RecordSessionCost) would have already hit the same error and returned
-//     before reaching resolveUsageForSummary.
-//   - When tracker != nil: GetStats() returns (UsageStats, float64) with no
-//     error — the signature has no error return.
-//
-// Therefore the "if err != nil { return err }" after resolveUsageForSummary
-// can never execute.
-func TestRecordSessionCost_ResolveUsageSummaryErrorUnreachable(t *testing.T) {
-	t.Parallel()
+// TestRecordSessionCost_ResolveUsageSummaryError covers the gap at
+// metrics.go:145-147 where resolveUsageForSummary returns an error
+// inside RecordSessionCost. Uses the resolveUsageForSummaryFunc injection
+// so EstimateCost succeeds but the injected function returns an error.
+func TestRecordSessionCost_ResolveUsageSummaryError(t *testing.T) {
+	// NOT parallel — overrides package-level var AND uses global ledger mutexes
+	originalFunc := resolveUsageForSummaryFunc
+	resolveUsageForSummaryFunc = func(ctx context.Context, sm domain_security.Manager,
+		tracker domain_pricing.CostTracker, logPath, model string,
+		overrides map[string]domain_pricing.ModelPricing) (domain_pricing.UsageStats, float64, error) {
+		return domain_pricing.UsageStats{}, 0, errors.New("injected resolveUsageForSummary error")
+	}
+	t.Cleanup(func() { resolveUsageForSummaryFunc = originalFunc })
 
-	// Verify the two code paths that make the error branch unreachable.
-
-	// Path A: tracker != nil → GetStats never errors.
-	sm := &mockSM{}
 	tempDir := t.TempDir()
-	logPath := filepath.Join(tempDir, "test.log")
-	if err := os.WriteFile(logPath, []byte(`{"model":"m","prompt_tokens":10,"response_tokens":5}`+"\n"), 0644); err != nil {
+
+	// Place tokens.log inside an output subdirectory so that globalDir
+	// (filepath.Dir(outputDir)) is tempDir itself — keeping all ledger
+	// files (global_costs.json, locks, AtomicWrite temp files) inside
+	// the tempDir for clean teardown.
+	outputDir := filepath.Join(tempDir, "output")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(outputDir, "tokens.log")
+	logContent := `{"prompt_tokens":100,"response_tokens":50,"cost":0.01,"timestamp":"2025-06-15T12:00:00Z"}` + "\n"
+	if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	pricing := domain_pricing.PricingData{
-		Models: map[string]domain_pricing.ModelPricing{
-			"m": {Hit: 0.1, Miss: 1.0, Comp: 2.0},
-		},
-	}
-	tracker := NewSessionCostTracker(sm, logPath, "mode", "m", pricing.Models["m"], pricing)
-	usage, cost := tracker.GetStats(context.Background())
-	// Confirm GetStats returns zero values without error (no error return in signature).
-	_ = usage
-	_ = cost
-	// If this compiles and runs without panic, the error branch is unreachable
-	// when tracker != nil.
-
-	// Path B: tracker == nil + file doesn't exist → os.IsNotExist → nil error.
-	nonexistent := filepath.Join(t.TempDir(), "nonexistent.log")
-	u, c, err := resolveUsageForSummary(context.Background(), sm, nil, nonexistent, "m", nil)
-	if err != nil {
-		t.Fatalf("expected nil error for nonexistent file (IsNotExist suppressed), got: %v", err)
-	}
-	if u.PromptTokens != 0 || c != 0 {
-		t.Errorf("expected zero usage/cost, got %+v / %f", u, c)
+	// Pre-create empty global_costs.json so loadHistory does NOT trigger
+	// async ledger recovery. This avoids a race between the background
+	// recovery goroutine and subsequent RecordSessionCost calls.
+	historyPath := filepath.Join(tempDir, "global_costs.json")
+	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
+		t.Fatal(err)
 	}
 
-	// Path B.2: tracker == nil + parseUsage non-NotExist error.
-	// But with tracker==nil in RecordSessionCost, EstimateCost runs first
-	// and would hit the same parseUsage error before resolveUsageForSummary.
-	// This is structurally unreachable within RecordSessionCost.
+	// Write valid pricing data so EstimateCost succeeds.
+	assetsDir := filepath.Join(tempDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	pricingContent := `{"updated_at":"2025-06-15T00:00:00Z","models":{"test-model":{"hit":0.5,"miss":1.0,"comp":2.0}}}`
+	if err := os.WriteFile(filepath.Join(assetsDir, "pricing.json"), []byte(pricingContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := &mockSM{}
+
+	err := RecordSessionCost(context.Background(), sm, nil, logPath, "test-model", "manual", "session-1", nil)
+
+	if err == nil {
+		t.Fatal("expected error from injected resolveUsageForSummaryFunc")
+	}
+	if !strings.Contains(err.Error(), "injected resolveUsageForSummary error") {
+		t.Errorf("error should contain 'injected resolveUsageForSummary error', got: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -295,7 +295,116 @@ func TestHttpRequest_RequestCreationError(t *testing.T) {
 	}
 }
 
-func TestExecuteRequest(t *testing.T) {
+func TestExecuteRequest_ValidGET(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	wantResp := &http.Response{
+		Status:     "200 OK",
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader("OK")),
+	}
+	mock := &mockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			if req.Method != "GET" {
+				t.Errorf("expected GET, got %s", req.Method)
+			}
+			if req.URL.String() != "https://example.com" {
+				t.Errorf("expected https://example.com, got %s", req.URL.String())
+			}
+			return wantResp, nil
+		},
+	}
+	tool := newnetworkTool(sm, mock)
+	resp, stopHB, err := tool.executeRequest(context.Background(), "GET", "https://example.com", "", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != wantResp {
+		t.Error("response mismatch")
+	}
+	if stopHB != nil {
+		t.Error("stopHB should be nil when hb channel is nil")
+	}
+}
+
+func TestExecuteRequest_InvalidURL(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	tool := newnetworkTool(sm, &mockHTTPClient{})
+	_, stopHB, err := tool.executeRequest(context.Background(), "GET", "://invalid-url", "", nil, nil)
+	if err == nil {
+		t.Error("expected error for invalid URL")
+	}
+	if !strings.Contains(err.Error(), "failed to create request") {
+		t.Errorf("expected 'failed to create request', got: %v", err)
+	}
+	if stopHB != nil {
+		t.Error("stopHB should be nil on error")
+	}
+}
+
+func TestExecuteRequest_ClientError(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	mock := &mockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("connection refused")
+		},
+	}
+	tool := newnetworkTool(sm, mock)
+	_, stopHB, err := tool.executeRequest(context.Background(), "GET", "https://example.com", "", nil, nil)
+	if err == nil {
+		t.Error("expected error from client")
+	}
+	if !strings.Contains(err.Error(), "request failed") {
+		t.Errorf("expected 'request failed', got: %v", err)
+	}
+	if stopHB != nil {
+		t.Error("stopHB should be nil on client error")
+	}
+}
+
+func TestExecuteRequest_POSTWithBodyAndHeaders(t *testing.T) {
+	t.Parallel()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	wantResp := &http.Response{
+		Status:     "201 Created",
+		StatusCode: 201,
+		Body:       io.NopCloser(strings.NewReader("Created")),
+	}
+	mock := &mockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			if req.Method != "POST" {
+				t.Errorf("expected POST, got %s", req.Method)
+			}
+			if req.Header.Get("X-Custom") != "value" {
+				t.Errorf("expected X-Custom: value, got %s", req.Header.Get("X-Custom"))
+			}
+			body, _ := io.ReadAll(req.Body)
+			if string(body) != "request body" {
+				t.Errorf("expected body 'request body', got %q", string(body))
+			}
+			return wantResp, nil
+		},
+	}
+	tool := newnetworkTool(sm, mock)
+	resp, stopHB, err := tool.executeRequest(context.Background(), "POST", "https://example.com", "request body", map[string]string{"X-Custom": "value"}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != wantResp {
+		t.Error("response mismatch")
+	}
+	if stopHB != nil {
+		t.Error("stopHB should be nil when hb channel is nil")
+	}
+}
+
+func TestExecuteRequest_WithHeartbeat(t *testing.T) {
 	defer goleak.VerifyNone(t,
 		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
 		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
@@ -303,134 +412,35 @@ func TestExecuteRequest(t *testing.T) {
 	)
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
-	t.Run("valid GET", func(t *testing.T) {
-		wantResp := &http.Response{
-			Status:     "200 OK",
-			StatusCode: 200,
-			Body:       io.NopCloser(strings.NewReader("OK")),
-		}
-		mock := &mockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				if req.Method != "GET" {
-					t.Errorf("expected GET, got %s", req.Method)
-				}
-				if req.URL.String() != "https://example.com" {
-					t.Errorf("expected https://example.com, got %s", req.URL.String())
-				}
-				return wantResp, nil
-			},
-		}
-		tool := newnetworkTool(sm, mock)
-		resp, stopHB, err := tool.executeRequest(context.Background(), "GET", "https://example.com", "", nil, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if resp != wantResp {
-			t.Error("response mismatch")
-		}
-		if stopHB != nil {
-			t.Error("stopHB should be nil when hb channel is nil")
-		}
-	})
-
-	t.Run("invalid URL", func(t *testing.T) {
-		tool := newnetworkTool(sm, &mockHTTPClient{})
-		_, stopHB, err := tool.executeRequest(context.Background(), "GET", "://invalid-url", "", nil, nil)
-		if err == nil {
-			t.Error("expected error for invalid URL")
-		}
-		if !strings.Contains(err.Error(), "failed to create request") {
-			t.Errorf("expected 'failed to create request', got: %v", err)
-		}
-		if stopHB != nil {
-			t.Error("stopHB should be nil on error")
-		}
-	})
-
-	t.Run("client error propagates", func(t *testing.T) {
-		mock := &mockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return nil, errors.New("connection refused")
-			},
-		}
-		tool := newnetworkTool(sm, mock)
-		_, stopHB, err := tool.executeRequest(context.Background(), "GET", "https://example.com", "", nil, nil)
-		if err == nil {
-			t.Error("expected error from client")
-		}
-		if !strings.Contains(err.Error(), "request failed") {
-			t.Errorf("expected 'request failed', got: %v", err)
-		}
-		if stopHB != nil {
-			t.Error("stopHB should be nil on client error")
-		}
-	})
-
-	t.Run("POST with body and headers", func(t *testing.T) {
-		wantResp := &http.Response{
-			Status:     "201 Created",
-			StatusCode: 201,
-			Body:       io.NopCloser(strings.NewReader("Created")),
-		}
-		mock := &mockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				if req.Method != "POST" {
-					t.Errorf("expected POST, got %s", req.Method)
-				}
-				if req.Header.Get("X-Custom") != "value" {
-					t.Errorf("expected X-Custom: value, got %s", req.Header.Get("X-Custom"))
-				}
-				body, _ := io.ReadAll(req.Body)
-				if string(body) != "request body" {
-					t.Errorf("expected body 'request body', got %q", string(body))
-				}
-				return wantResp, nil
-			},
-		}
-		tool := newnetworkTool(sm, mock)
-		resp, stopHB, err := tool.executeRequest(context.Background(), "POST", "https://example.com", "request body", map[string]string{"X-Custom": "value"}, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if resp != wantResp {
-			t.Error("response mismatch")
-		}
-		if stopHB != nil {
-			t.Error("stopHB should be nil when hb channel is nil")
-		}
-	})
-
-	t.Run("with heartbeat channel", func(t *testing.T) {
-		wantResp := &http.Response{
-			Status:     "200 OK",
-			StatusCode: 200,
-			Body:       io.NopCloser(strings.NewReader("OK")),
-		}
-		mock := &mockHTTPClient{
-			DoFunc: func(req *http.Request) (*http.Response, error) {
-				return wantResp, nil
-			},
-		}
-		tool := newnetworkTool(sm, mock)
-		tool.heartbeatInterval = 10 * time.Millisecond
-		hb := make(chan struct{}, 1)
-		resp, stopHB, err := tool.executeRequest(context.Background(), "GET", "https://example.com", "", nil, hb)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if stopHB == nil {
-			t.Error("stopHB should not be nil when hb channel is provided")
-		}
-		stopHB()
-		// Drain heartbeat
-		select {
-		case <-hb:
-		default:
-		}
-		if resp != wantResp {
-			t.Error("response mismatch")
-		}
-	})
+	wantResp := &http.Response{
+		Status:     "200 OK",
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader("OK")),
+	}
+	mock := &mockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			return wantResp, nil
+		},
+	}
+	tool := newnetworkTool(sm, mock)
+	tool.heartbeatInterval = 10 * time.Millisecond
+	hb := make(chan struct{}, 1)
+	resp, stopHB, err := tool.executeRequest(context.Background(), "GET", "https://example.com", "", nil, hb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stopHB == nil {
+		t.Error("stopHB should not be nil when hb channel is provided")
+	}
+	stopHB()
+	// Drain heartbeat
+	select {
+	case <-hb:
+	default:
+	}
+	if resp != wantResp {
+		t.Error("response mismatch")
+	}
 }
 
 func TestReadExternalDocs_RequestCreationError(t *testing.T) {

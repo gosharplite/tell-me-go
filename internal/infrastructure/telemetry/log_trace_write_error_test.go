@@ -4,17 +4,17 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestLogTrace_WriteError_DevFull covers the f.Write failure branch in logTrace
@@ -36,125 +36,60 @@ func TestLogTrace_WriteError_DevFull(t *testing.T) {
 	// If we reach here without panicking, the write-error branch was exercised.
 }
 
-// TestLogTrace_CloseErrorUnreachable documents that the f.Close() error path
-// inside logTrace (metrics.go:258-260) is UNREACHABLE at the unit-test level.
-//
-// logTrace takes a file path (string), opens it internally with os.OpenFile,
-// and defers f.Close(). Close errors on a regular file only occur due to:
-//   - Disk full (ENOSPC on final metadata flush)
-//   - NFS disconnect during close
-//   - Hardware failure
-//
-// These are integration-level concerns that cannot be triggered in unit tests
-// without filesystem mocking (which the telemetry package does not use, unlike
-// the history package which accepts persistence.FileSystem).
-//
-// This test documents the happy path and confirms the defer structure is correct
-// by verifying logTrace produces valid output to a normal file.
-func TestLogTrace_CloseErrorUnreachable(t *testing.T) {
-	t.Parallel()
+// errCloser wraps an io.Writer and returns an error on Close.
+type errCloser struct {
+	io.Writer
+}
+
+func (e *errCloser) Close() error {
+	return errors.New("injected close error")
+}
+
+// TestLogTrace_CloseError_Mock verifies that when the injected openTraceFile
+// returns an io.WriteCloser whose Close() method returns an error,
+// logTrace logs a warning containing the error message.
+func TestLogTrace_CloseError_Mock(t *testing.T) {
+	// NOT parallel — overrides package-level var
+	originalOpen := openTraceFile
+	openTraceFile = func(path string) (io.WriteCloser, error) {
+		return &errCloser{Writer: &bytes.Buffer{}}, nil
+	}
+	t.Cleanup(func() { openTraceFile = originalOpen })
 
 	tmpDir := t.TempDir()
 	traceFile := filepath.Join(tmpDir, "trace.jsonl")
 
-	// Verify logTrace succeeds with a valid TurnTrace and writable file.
-	trace := &domain_telemetry.TurnTrace{
-		FinalStatus:       "completed",
-		StartTime:         time.Now(),
-		EndTime:           time.Now().Add(time.Second),
-		InferenceDuration: 500 * time.Millisecond,
-		ToolExecutions: []domain_telemetry.ToolExecutionTrace{
-			{
-				ToolName:  "search",
-				StartTime: time.Now(),
-				Duration:  200 * time.Millisecond,
-				Status:    "success",
-			},
-		},
-	}
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
 
-	// Must not panic. The defer f.Close() executes and succeeds silently
-	// on a normal file.
+	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 	logTrace(context.Background(), traceFile, trace)
 
-	// Verify the file was created and contains valid JSON.
-	data, err := os.ReadFile(traceFile)
-	require.NoError(t, err)
-	require.True(t, len(data) > 0, "trace file should not be empty")
-
-	// NOTE: f.Close() on a regular file opened with O_APPEND|O_CREATE|O_WRONLY
-	// only fails on disk-full or hardware failure. The defer in logTrace
-	// handles this gracefully by logging a warning. This defense is correct
-	// but structurally unreachable in unit tests without filesystem mocking.
-	// Integration tests with fault injection (e.g., /dev/full for write,
-	// filesystem quota exhaustion for close) would be required to exercise
-	// the close-error branch at metrics.go:258-260.
+	assert.Contains(t, logBuf.String(), "Warning: Failed to close trace file")
+	assert.Contains(t, logBuf.String(), "injected close error")
 }
 
-// TestLogTrace_MarshalErrorUnreachable documents that the json.Marshal error
-// path in logTrace (metrics.go:246-249) is UNREACHABLE.
-//
-// The marshaled value is *domain_telemetry.TurnTrace, which contains only
-// standard JSON-serializable types: string, time.Time, time.Duration, int,
-// []ToolExecutionTrace, and a sync.Mutex tagged json:"-". json.Marshal on
-// this struct cannot fail.
-//
-// This test exercises edge-case TurnTrace values—zero values, Unicode strings,
-// max durations, nil slices—and verifies they all marshal successfully with
-// round-trip fidelity.
-func TestLogTrace_MarshalErrorUnreachable(t *testing.T) {
-	t.Parallel()
-
-	// Build edge-case TurnTraces that exercise all field types
-	traces := []domain_telemetry.TurnTrace{
-		{
-			FinalStatus:       "completed",
-			StartTime:         time.Now(),
-			EndTime:           time.Now(),
-			InferenceDuration: 500 * time.Millisecond,
-			ToolExecutions: []domain_telemetry.ToolExecutionTrace{
-				{ToolName: "search", StartTime: time.Now(), Duration: 200 * time.Millisecond, Status: "success"},
-				{ToolName: "", StartTime: time.Time{}, Duration: 0, Status: ""},
-			},
-		},
-		{
-			// Zero/empty values
-			FinalStatus:       "",
-			StartTime:         time.Time{},
-			EndTime:           time.Time{},
-			InferenceDuration: 0,
-			ToolExecutions:    nil,
-		},
-		{
-			// Unicode + max values
-			FinalStatus:       "failed: ❌ timeout",
-			StartTime:         time.Now(),
-			EndTime:           time.Now().Add(24 * time.Hour),
-			InferenceDuration: 1<<63 - 1,
-			ToolExecutions: []domain_telemetry.ToolExecutionTrace{
-				{ToolName: "modèle-🎉", StartTime: time.Now(), Duration: 999999, Status: "cancelled"},
-			},
-		},
+// TestLogTrace_MarshalError verifies that when the injected jsonMarshal
+// function returns an error, logTrace logs a warning and returns early.
+func TestLogTrace_MarshalError(t *testing.T) {
+	// NOT parallel — overrides package-level var
+	originalMarshal := jsonMarshal
+	jsonMarshal = func(v interface{}) ([]byte, error) {
+		return nil, errors.New("injected marshal error")
 	}
+	t.Cleanup(func() { jsonMarshal = originalMarshal })
 
-	for i := range traces {
-		tr := &traces[i]
-		data, err := json.Marshal(tr)
-		if err != nil {
-			t.Fatalf("entry %d: json.Marshal unexpectedly failed: %v", i, err)
-		}
+	tmpDir := t.TempDir()
+	traceFile := filepath.Join(tmpDir, "trace.jsonl")
 
-		// Round-trip verification
-		var restored domain_telemetry.TurnTrace
-		if err := json.Unmarshal(data, &restored); err != nil {
-			t.Fatalf("entry %d: json.Unmarshal failed: %v", i, err)
-		}
-		if restored.FinalStatus != tr.FinalStatus {
-			t.Errorf("entry %d: FinalStatus mismatch: got %q, want %q", i, restored.FinalStatus, tr.FinalStatus)
-		}
-	}
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
 
-	// Verify the error-format string exists in source (compile-time check)
-	// The format is: "Warning: Failed to marshal TurnTrace: %v"
-	log.Printf("Warning: Failed to marshal TurnTrace: %v", errors.New("test"))
+	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
+	logTrace(context.Background(), traceFile, trace)
+
+	assert.Contains(t, logBuf.String(), "Warning: Failed to marshal TurnTrace")
+	assert.Contains(t, logBuf.String(), "injected marshal error")
 }

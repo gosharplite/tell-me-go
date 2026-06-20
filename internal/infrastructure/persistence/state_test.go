@@ -454,3 +454,23 @@ func (c *initServicesFailingConn) ExecContext(ctx context.Context, q string, arg
 	}
 	return nil, driver.ErrSkip
 }
+
+func TestNewSessionState_InitServicesError(t *testing.T) {
+	// NOT parallel: overrides package-level initServicesFn, must run sequentially.
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	origInit := initServicesFn
+	t.Cleanup(func() { initServicesFn = origInit })
+
+	injectedErr := errors.New("injected initServices failure")
+	initServicesFn = func(ctx context.Context, _ ports.ListStore[ports.Task]) (ports.TaskStore, error) {
+		return nil, injectedErr
+	}
+
+	state, err := NewSessionState(ctx, tempDir)
+	assert.Nil(t, state, "state should be nil when initServices fails")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, injectedErr, "error should be the injected initServices error")
+}

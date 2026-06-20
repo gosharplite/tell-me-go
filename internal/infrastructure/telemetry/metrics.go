@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -43,6 +44,17 @@ type costSummaryArgs struct {
 }
 
 type estimateCostArgs struct{}
+
+// jsonMarshal is the json.Marshal function, overridable in tests.
+var jsonMarshal = json.Marshal
+
+// openTraceFile opens a trace file for appending, overridable in tests.
+var openTraceFile = func(path string) (io.WriteCloser, error) {
+	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+}
+
+// resolveUsageForSummaryFunc is the resolveUsageForSummary function, overridable in tests.
+var resolveUsageForSummaryFunc = resolveUsageForSummary
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
 func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, kvStore ports.KVStore) error {
@@ -105,10 +117,7 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
 		}
 
-		// Silent update: Calculate and record the current session's latest cost before summary.
-		if _, err := m.EstimateCost(ctx, true, ""); err != nil {
-			log.Printf("Warning: Failed to record cost before summary: %v", err)
-		}
+		m.recordCostSilently(ctx)
 		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
 	}, tools.ToolOptions{Serial: true}); err != nil {
@@ -135,7 +144,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker 
 	}
 
 	// 2. Resolve usage stats
-	usage, totalCost, err := resolveUsageForSummary(ctx, sm, tracker, logPath, model, pricingOverrides)
+	usage, totalCost, err := resolveUsageForSummaryFunc(ctx, sm, tracker, logPath, model, pricingOverrides)
 	if err != nil {
 		return err
 	}
@@ -223,6 +232,14 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 	return nil
 }
 
+// recordCostSilently calls EstimateCost and logs a warning on failure
+// without interrupting the caller. Extracted for testability.
+func (m *metricsManager) recordCostSilently(ctx context.Context) {
+	if _, err := m.EstimateCost(ctx, true, ""); err != nil {
+		log.Printf("Warning: Failed to record cost before summary: %v", err)
+	}
+}
+
 // generateSessionID creates a unique identifier for a session based on its mode and log file name.
 // This ID is used as the unique key in global_costs.json to identify and update session records.
 func generateSessionID(mode, logFile string) string {
@@ -242,25 +259,25 @@ func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.Tur
 	default:
 	}
 
-	data, err := json.Marshal(trace)
+	data, err := jsonMarshal(trace)
 	if err != nil {
 		log.Printf("Warning: Failed to marshal TurnTrace: %v", err)
 		return
 	}
 
 	// 2. Use context-aware AtomicWrite if available or at least check context before I/O
-	f, err := os.OpenFile(traceFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	wc, err := openTraceFile(traceFile)
 	if err != nil {
 		log.Printf("Warning: Failed to open trace file %s: %v", traceFile, err)
 		return
 	}
 	defer func() {
-		if cerr := f.Close(); cerr != nil {
+		if cerr := wc.Close(); cerr != nil {
 			log.Printf("Warning: Failed to close trace file %s: %v", traceFile, cerr)
 		}
 	}()
 
-	if _, err := f.Write(append(data, '\n')); err != nil {
+	if _, err := wc.Write(append(data, '\n')); err != nil {
 		log.Printf("Warning: Failed to write to trace file %s: %v", traceFile, err)
 	}
 }

@@ -497,15 +497,12 @@ func TestGatherComplexities_ContextCancelled(t *testing.T) {
 // g.Wait() is ever reached. To hit g.Wait(), Walk must finish successfully
 // and goroutines must still be running when the context expires.
 //
-// Strategy: use context.WithTimeout with a 50ms timeout. Walk (directory
+// Strategy: use context.WithTimeout with a 10ms timeout. Walk (directory
 // traversal) completes in microseconds, launching all goroutines. Then
 // g.Wait() blocks until the timeout fires; goroutines blocked on
 // sem.Acquire see context.DeadlineExceeded; g.Wait() captures and wraps it
 // with "gathering complexity metrics: %w".
 func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 	tmpDir := t.TempDir()
 
@@ -515,37 +512,21 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 		[]byte("module example.com/test\ngo 1.25"), 0644,
 	))
 
-	// Build a complex function body to make parsing + complexity analysis
-	// take measurable time per file.
-	complexBody := strings.Repeat("if true {\n", 20) +
-		"_ = 1\n" +
-		strings.Repeat("}\n", 20)
-
-	// Create files each with many complex functions. The total work must
-	// exceed what NumCPU workers can finish in the brief window before
-	// we cancel.
-	const numFiles = 500
-	const funcsPerFile = 100
-	var sb strings.Builder
+	// Create enough files that goroutine count exceeds semaphore slots
+	// (runtime.NumCPU). Walk launches all goroutines in microseconds;
+	// most block on sem.Acquire. The timeout fires during g.Wait(),
+	// and blocked goroutines return context.DeadlineExceeded.
+	const numFiles = 1000
 	for i := 0; i < numFiles; i++ {
-		sb.Reset()
-		sb.WriteString("package test\n")
-		for j := 0; j < funcsPerFile; j++ {
-			sb.WriteString("func F")
-			fmt.Fprintf(&sb, "%d_%d", i, j)
-			sb.WriteString("() {\n")
-			sb.WriteString(complexBody)
-			sb.WriteString("}\n")
-		}
 		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
-		require.NoError(t, os.WriteFile(path, []byte(sb.String()), 0644))
+		require.NoError(t, os.WriteFile(path, []byte("package test\nfunc F() {}\n"), 0644))
 	}
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
 	type result struct {

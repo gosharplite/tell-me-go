@@ -74,6 +74,79 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e Event) error {
 	return s.f(ctx, e)
 }
 
+// verifyPanickingSubscriber asserts that a panicking subscriber produces
+// an error containing "subscriber panicked" and logs an ERROR entry.
+func verifyPanickingSubscriber(t *testing.T, bus *SimpleEventBus, event Event, panicValue string, logBuf *bytes.Buffer) {
+	t.Helper()
+
+	panicSub := &panickingSubscriber{v: panicValue}
+	err := bus.notifySubscriber(context.Background(), panicSub, event)
+
+	if err == nil {
+		t.Error("panicking subscriber: expected error, got nil")
+	} else if !strings.Contains(err.Error(), "subscriber panicked") {
+		t.Errorf("panicking subscriber: error %q does not contain 'subscriber panicked'", err.Error())
+	}
+	if !strings.Contains(logBuf.String(), `"level":"ERROR"`) {
+		t.Error("panicking subscriber: expected ERROR log")
+	}
+	if !strings.Contains(logBuf.String(), "Subscriber panicked") {
+		t.Error("panicking subscriber: expected 'Subscriber panicked' in log")
+	}
+}
+
+// verifyErrorSubscriber asserts that an error-returning subscriber
+// correctly propagates or suppresses errors based on errMsg.
+func verifyErrorSubscriber(t *testing.T, bus *SimpleEventBus, event Event, errMsg string, logBuf *bytes.Buffer) {
+	t.Helper()
+
+	errSub := &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
+		if errMsg == "" {
+			return nil
+		}
+		return errors.New(errMsg)
+	}}
+	err := bus.notifySubscriber(context.Background(), errSub, event)
+
+	if errMsg == "" {
+		if err != nil {
+			t.Errorf("error subscriber (nil case): expected nil, got %v", err)
+		}
+	} else {
+		if err == nil {
+			t.Error("error subscriber: expected error, got nil")
+		} else if !strings.Contains(err.Error(), errMsg) {
+			t.Errorf("error subscriber: error %q does not contain %q", err.Error(), errMsg)
+		}
+	}
+}
+
+// verifyEventPassthrough asserts that an event reaches the subscriber
+// intact with the correct Type() and StatusUpdate fields.
+func verifyEventPassthrough(t *testing.T, bus *SimpleEventBus, event Event, eventMessage string, logBuf *bytes.Buffer) {
+	t.Helper()
+
+	var capturedEvent Event
+	captureSub := &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
+		capturedEvent = e
+		return nil
+	}}
+	_ = bus.notifySubscriber(context.Background(), captureSub, event)
+
+	if capturedEvent == nil {
+		t.Error("capture subscriber: event was nil")
+	} else if capturedEvent.Type() != "StatusUpdate" {
+		t.Errorf("capture subscriber: expected Type()='StatusUpdate', got %q", capturedEvent.Type())
+	}
+	if su, ok := capturedEvent.(StatusUpdate); ok {
+		if su.Message != eventMessage {
+			t.Errorf("capture subscriber: Message=%q, want %q", su.Message, eventMessage)
+		}
+	} else {
+		t.Errorf("capture subscriber: expected StatusUpdate, got %T", capturedEvent)
+	}
+}
+
 func FuzzNotifySubscriber(f *testing.F) {
 	// Seed corpus: diverse panic values, error messages, and event messages.
 	f.Add("boom", "sub err", "fuzz")                                     // baseline
@@ -90,63 +163,10 @@ func FuzzNotifySubscriber(f *testing.F) {
 
 		event := StatusUpdate{Message: eventMessage}
 
-		// 1. Test panicking subscriber with fuzzed panic value.
-		panicSub := &panickingSubscriber{v: panicValue}
-		err := bus.notifySubscriber(context.Background(), panicSub, event)
-
-		if err == nil {
-			t.Error("panicking subscriber: expected error, got nil")
-		} else if !strings.Contains(err.Error(), "subscriber panicked") {
-			t.Errorf("panicking subscriber: error %q does not contain 'subscriber panicked'", err.Error())
-		}
-		if !strings.Contains(logBuf.String(), `"level":"ERROR"`) {
-			t.Error("panicking subscriber: expected ERROR log")
-		}
-		if !strings.Contains(logBuf.String(), "Subscriber panicked") {
-			t.Error("panicking subscriber: expected 'Subscriber panicked' in log")
-		}
-
-		// 2. Test error-returning subscriber with fuzzed error message.
+		verifyPanickingSubscriber(t, bus, event, panicValue, &logBuf)
 		logBuf.Reset()
-		errSub := &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
-			if errMsg == "" {
-				return nil
-			}
-			return errors.New(errMsg)
-		}}
-		err = bus.notifySubscriber(context.Background(), errSub, event)
-
-		if errMsg == "" {
-			if err != nil {
-				t.Errorf("error subscriber (nil case): expected nil, got %v", err)
-			}
-		} else {
-			if err == nil {
-				t.Error("error subscriber: expected error, got nil")
-			} else if !strings.Contains(err.Error(), errMsg) {
-				t.Errorf("error subscriber: error %q does not contain %q", err.Error(), errMsg)
-			}
-		}
-
-		// 3. Test event passthrough: event reaches subscriber intact.
+		verifyErrorSubscriber(t, bus, event, errMsg, &logBuf)
 		logBuf.Reset()
-		var capturedEvent Event
-		captureSub := &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
-			capturedEvent = e
-			return nil
-		}}
-		_ = bus.notifySubscriber(context.Background(), captureSub, event)
-		if capturedEvent == nil {
-			t.Error("capture subscriber: event was nil")
-		} else if capturedEvent.Type() != "StatusUpdate" {
-			t.Errorf("capture subscriber: expected Type()='StatusUpdate', got %q", capturedEvent.Type())
-		}
-		if su, ok := capturedEvent.(StatusUpdate); ok {
-			if su.Message != eventMessage {
-				t.Errorf("capture subscriber: Message=%q, want %q", su.Message, eventMessage)
-			}
-		} else {
-			t.Errorf("capture subscriber: expected StatusUpdate, got %T", capturedEvent)
-		}
+		verifyEventPassthrough(t, bus, event, eventMessage, &logBuf)
 	})
 }
