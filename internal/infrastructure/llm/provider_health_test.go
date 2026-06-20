@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -494,4 +495,68 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLLMProviderHealthChecker_DefaultTransportFallback verifies the
+// defensive fallback at provider_health.go:52. When http.DefaultTransport
+// is not a *http.Transport (e.g., replaced by middleware), the constructor
+// must gracefully fall back to using http.DefaultTransport directly instead
+// of panicking on a failed type assertion.
+//
+// This test temporarily replaces http.DefaultTransport with a custom
+// RoundTripper that is NOT a *http.Transport, which forces the else branch
+// of the IIFE. The global is restored via t.Cleanup.
+//
+// IMPORTANT: This test is NOT parallel-safe because it mutates a global.
+// Do NOT add t.Parallel().
+func TestLLMProviderHealthChecker_DefaultTransportFallback(t *testing.T) {
+	// NOTE: no t.Parallel() — mutates http.DefaultTransport
+
+	// 1. Save and replace http.DefaultTransport with a non-*http.Transport
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
+	customTransport := &customRoundTripper{}
+	http.DefaultTransport = customTransport
+
+	// 2. Construct the checker — the IIFE should hit the else branch
+	authMock := &auth.BearerAuth{Token: "test-key"}
+	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
+
+	// 3. Verify the transport is our custom one (not a clone)
+	client := GetHTTPClient(checker)
+	if client.Transport != customTransport {
+		t.Errorf("expected Transport to be customRoundTripper (fallback path), got %T", client.Transport)
+	}
+}
+
+// TestLLMProviderHealthChecker_TransportClone verifies the happy path:
+// when http.DefaultTransport is a *http.Transport (normal case), the
+// constructor clones it instead of reusing the pointer.
+func TestLLMProviderHealthChecker_TransportClone(t *testing.T) {
+	t.Parallel()
+
+	authMock := &auth.BearerAuth{Token: "test-key"}
+	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
+
+	client := GetHTTPClient(checker)
+
+	// Transport must be non-nil
+	if client.Transport == nil {
+		t.Fatal("expected Transport to be non-nil")
+	}
+
+	// Transport must NOT be the same pointer as http.DefaultTransport
+	// (proves Clone() was called, not direct assignment)
+	if client.Transport == http.DefaultTransport {
+		t.Error("Transport must be a clone of DefaultTransport, not the same pointer")
+	}
+}
+
+// customRoundTripper is a non-*http.Transport implementation used to
+// force the fallback branch in NewLLMProviderHealthChecker's IIFE.
+type customRoundTripper struct{}
+
+func (c *customRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, errors.New("customRoundTripper: not a real transport")
 }

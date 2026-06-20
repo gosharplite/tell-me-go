@@ -317,3 +317,50 @@ func TestEstimatePartChars_AllPartTypes(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Deep recursion guard tests
+// ---------------------------------------------------------------------------
+
+// buildDeepMap constructs a deeply nested map[string]interface{}.
+// buildDeepMap(0) returns {"k": "v"} (1 level).
+// buildDeepMap(n) returns a map with n+1 levels of nesting.
+func buildDeepMap(depth int) map[string]interface{} {
+	if depth <= 0 {
+		return map[string]interface{}{"k": "v"}
+	}
+	inner := buildDeepMap(depth - 1)
+	return map[string]interface{}{"k": inner}
+}
+
+// TestEstimateMapSizeInternal_DeepRecursionGuard verifies the recursion
+// breaker at token_counter.go:111-113. When a map exceeds maxEstimateDepth
+// (100), estimateMapSizeInternal must return 0 instead of continuing to
+// recurse. The "at boundary" subtest proves normal estimation works at
+// exactly 100 levels; the "exceeds boundary" subtest proves the guard
+// triggers at 101 levels, preventing a stack overflow panic.
+func TestEstimateMapSizeInternal_DeepRecursionGuard(t *testing.T) {
+	t.Parallel()
+
+	t.Run("at_max_depth_returns_normal_estimate", func(t *testing.T) {
+		// 100 levels deep = exactly at maxEstimateDepth
+		m := buildDeepMap(maxEstimateDepth - 1)
+		result := estimateMapSizeInternal(m, 0)
+
+		require.Greater(t, result, 0,
+			"at exactly maxEstimateDepth, estimate must be > 0")
+	})
+
+	t.Run("exceeds_max_depth_returns_zero", func(t *testing.T) {
+		// Call estimateMapSizeInternal directly with depth > maxEstimateDepth.
+		// Through normal recursion the estimateValueSizeInternal guard (at
+		// odd depths) fires before estimateMapSizeInternal's guard (at even
+		// depths), so a direct call with excessive depth is needed to cover
+		// token_counter.go:111-113.
+		m := map[string]interface{}{"key": "value"}
+		result := estimateMapSizeInternal(m, maxEstimateDepth+1)
+
+		require.Equal(t, 0, result,
+			"when depth exceeds maxEstimateDepth, must return 0")
+	})
+}
