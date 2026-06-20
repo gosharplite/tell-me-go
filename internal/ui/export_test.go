@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -93,7 +92,7 @@ func (ui *UIState) C(s string) string {
 	return ui.c(s)
 }
 
-func (r *stdUIRenderer) SetGlamourRenderer(tr *glamour.TermRenderer) {
+func (r *stdUIRenderer) SetGlamourRenderer(tr markdownRenderer) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.renderer = tr
