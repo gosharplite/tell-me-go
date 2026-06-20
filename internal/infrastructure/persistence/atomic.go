@@ -33,19 +33,11 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 
 	tmp := f.Name()
 	cleanup := true
-	defer func() {
-		// Attempt to close; ignore error if already closed
-		_ = f.Close()
-		if cleanup {
-			_ = fs.Remove(context.Background(), tmp)
-		}
-	}()
+	defer cleanupTempFile(fs, f, tmp, &cleanup)
 
 	// Periodic check for cancellation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+	if err := checkCancelled(ctx); err != nil {
+		return err
 	}
 
 	if _, err := f.Write(data); err != nil {
@@ -53,10 +45,8 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 	}
 
 	// Check for cancellation before the expensive sync operation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+	if err := checkCancelled(ctx); err != nil {
+		return err
 	}
 
 	if err := commitTempFile(ctx, fs, f, tmp, path, perm); err != nil {
@@ -65,6 +55,26 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 
 	cleanup = false // Rename or fallback succeeded, no need to remove temp file
 	return nil
+}
+
+// checkCancelled returns ctx.Err() if the context is done, nil otherwise.
+func checkCancelled(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
+// cleanupTempFile closes f and conditionally removes the temp file at tmp.
+// The cleanup flag pointer allows the caller to signal that the temp file
+// was successfully committed (cleanup = false) and should not be removed.
+func cleanupTempFile(fs FileSystem, f File, tmp string, cleanup *bool) {
+	_ = f.Close()
+	if *cleanup {
+		_ = fs.Remove(context.Background(), tmp)
+	}
 }
 
 func prepareTempFile(ctx context.Context, fs FileSystem, dir, pattern string, perm os.FileMode) (File, error) {

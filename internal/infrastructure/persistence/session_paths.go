@@ -36,9 +36,25 @@ func EnsureDirectories(ctx context.Context, fs FileSystem, paths *persistence.Pa
 // RotateSession archives existing session files and cleans up old backups.
 func RotateSession(ctx context.Context, fs FileSystem, w io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error {
 	timestamp := time.Now().Format("20060102_150405")
-	outputDir := filepath.Dir(paths.ModeDir)
 
-	// Archive files
+	var errs []error
+	errs = append(errs, archiveSessionFiles(ctx, fs, w, paths, timestamp)...)
+
+	if cleanupErr := cleanupOldBackups(ctx, fs, paths, retentionDays, logger); cleanupErr != nil {
+		errs = append(errs, cleanupErr)
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+// archiveSessionFiles moves session files into a timestamped backup directory.
+// It returns accumulated errors from individual file moves, or a hard error
+// (as a single-element slice) if backup directory creation fails.
+func archiveSessionFiles(ctx context.Context, fs FileSystem, w io.Writer, paths persistence.Paths, timestamp string) []error {
+	outputDir := filepath.Dir(paths.ModeDir)
 	filesToMove := []string{
 		paths.HistoryPath,
 		paths.HistoryArchivePath,
@@ -49,35 +65,35 @@ func RotateSession(ctx context.Context, fs FileSystem, w io.Writer, paths persis
 	}
 	backupDir := filepath.Join(outputDir, "backups", timestamp)
 
-	var errs []error
-	backupCreated := false
+	// Check if any files exist before creating the backup directory
+	hasFiles := false
 	for _, f := range filesToMove {
 		if _, err := fs.Stat(ctx, f); err == nil {
-			if !backupCreated {
-				if err := fs.MkdirAll(ctx, backupDir, 0755); err != nil {
-					return fmt.Errorf("error creating backup directory: %w", err)
-				}
-				if w != nil {
-					_, _ = fmt.Fprintf(w, "Archiving existing session files to %s\n", backupDir)
-				}
-				backupCreated = true
-			}
+			hasFiles = true
+			break
+		}
+	}
+	if !hasFiles {
+		return nil
+	}
+
+	if err := fs.MkdirAll(ctx, backupDir, 0755); err != nil {
+		return []error{fmt.Errorf("error creating backup directory: %w", err)}
+	}
+	if w != nil {
+		_, _ = fmt.Fprintf(w, "Archiving existing session files to %s\n", backupDir)
+	}
+
+	var errs []error
+	for _, f := range filesToMove {
+		if _, err := fs.Stat(ctx, f); err == nil {
 			dest := filepath.Join(backupDir, filepath.Base(f))
 			if err := fs.Rename(ctx, f, dest); err != nil {
 				errs = append(errs, fmt.Errorf("error archiving %s: %w", f, err))
 			}
 		}
 	}
-
-	// Always execute cleanup regardless of previous file archiving failures
-	if cleanupErr := cleanupOldBackups(ctx, fs, paths, retentionDays, logger); cleanupErr != nil {
-		errs = append(errs, cleanupErr)
-	}
-
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
+	return errs
 }
 
 // cleanupOldBackups removes backups older than the specified retention days.
