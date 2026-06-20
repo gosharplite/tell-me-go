@@ -353,6 +353,9 @@ func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
 
 	// 2. Prepare compacted data in memory (safe for small threshold)
 	var buf bytes.Buffer
+	// bytes.Buffer.Write never returns an error per the Go spec, and
+	// json.Marshal cannot fail for promptEntry (all fields are string).
+	// Coverage gap accepted by architect — structurally unreachable.
 	if !t.writeCompactedData(&buf, entries) {
 		return false
 	}
