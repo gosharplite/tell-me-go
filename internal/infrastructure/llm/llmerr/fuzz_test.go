@@ -5,6 +5,7 @@ package llmerr
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -23,16 +24,18 @@ func FuzzHTTPStatusToDomain(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, status int) {
+		runtime.Gosched() // cooperative yield: prevents fuzz shutdown race at 30s boundary (Issue #958)
+
 		// P1 (No panic): implicit — any panic fails the test.
 
 		// P2 (Valid sentinel): the return value must be nil or one of
 		// the four domain sentinels.
 		err := httpStatusToDomain(status)
 		if err != nil {
-			if !errors.Is(err, llm.ErrAuth) &&
-				!errors.Is(err, llm.ErrRateLimit) &&
-				!errors.Is(err, llm.ErrTransient) &&
-				!errors.Is(err, llm.ErrTerminal) {
+			switch err {
+			case llm.ErrAuth, llm.ErrRateLimit, llm.ErrTransient, llm.ErrTerminal:
+				// valid sentinel — pass
+			default:
 				t.Errorf("httpStatusToDomain(%d) = %v; want nil or a domain sentinel", status, err)
 			}
 		}
