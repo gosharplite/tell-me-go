@@ -257,68 +257,64 @@ func TestCalculate_UnifiedOutputRate(t *testing.T) {
 	}
 }
 
-func TestGetPricing(t *testing.T) {
+func TestGetPricing_LoadFromFile(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Load from file", func(t *testing.T) {
-		t.Parallel()
-		tmpDir := t.TempDir()
-		assetsDir := filepath.Join(tmpDir, "assets")
-		if err := os.MkdirAll(assetsDir, 0755); err != nil {
-			t.Fatalf("failed to create assets dir: %v", err)
-		}
-		outputDir := filepath.Join(tmpDir, "output")
-		pricingFile := filepath.Join(assetsDir, "pricing.json")
-		content := `{
-			"updated_at": "2026-02-03T12:00:00Z",
-			"models": {
-				"test-model": {
-					"hit": 1.0,
-					"miss": 2.0,
-					"comp": 3.0
-				}
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatalf("failed to create assets dir: %v", err)
+	}
+	outputDir := filepath.Join(tmpDir, "output")
+	pricingFile := filepath.Join(assetsDir, "pricing.json")
+	content := `{
+		"updated_at": "2026-02-03T12:00:00Z",
+		"models": {
+			"test-model": {
+				"hit": 1.0,
+				"miss": 2.0,
+				"comp": 3.0
 			}
-		}`
-		if err := os.WriteFile(pricingFile, []byte(content), 0644); err != nil {
-			t.Fatalf("failed to write pricing file: %v", err)
 		}
+	}`
+	if err := os.WriteFile(pricingFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write pricing file: %v", err)
+	}
 
-		pd := GetPricing(context.Background(), nil, outputDir)
-		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
-			t.Errorf("expected UpdatedAt 2026-02-03T12:00:00Z, got %q", pd.UpdatedAt)
-		}
-		if mp, ok := pd.Models["test-model"]; !ok || mp.Hit != 1.0 {
-			t.Errorf("expected test-model hit 1.0, got %v", mp.Hit)
-		}
-	})
+	pd := GetPricing(context.Background(), nil, outputDir)
+	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+		t.Errorf("expected UpdatedAt 2026-02-03T12:00:00Z, got %q", pd.UpdatedAt)
+	}
+	if pd.Models["test-model"].Hit != 1.0 {
+		t.Errorf("expected test-model hit 1.0, got %v", pd.Models["test-model"].Hit)
+	}
+}
 
-	t.Run("Fallback on missing file", func(t *testing.T) {
-		t.Parallel()
-		anotherDir := t.TempDir()
-		pd := GetPricing(context.Background(), nil, filepath.Join(anotherDir, "output"))
-		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
-			t.Errorf("expected hardcoded fallback, got %q", pd.UpdatedAt)
-		}
-	})
+func TestGetPricing_FallbackOnMissingFile(t *testing.T) {
+	t.Parallel()
+	anotherDir := t.TempDir()
+	pd := GetPricing(context.Background(), nil, filepath.Join(anotherDir, "output"))
+	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+		t.Errorf("expected hardcoded fallback, got %q", pd.UpdatedAt)
+	}
+}
 
-	t.Run("Fallback on invalid JSON", func(t *testing.T) {
-		t.Parallel()
-		tmpDir := t.TempDir()
-		assetsDir := filepath.Join(tmpDir, "assets")
-		if err := os.MkdirAll(assetsDir, 0755); err != nil {
-			t.Fatalf("failed to create assets dir: %v", err)
-		}
-		outputDir := filepath.Join(tmpDir, "output")
-		pricingFile := filepath.Join(assetsDir, "pricing.json")
-		if err := os.WriteFile(pricingFile, []byte("invalid json"), 0644); err != nil {
-			t.Fatalf("failed to write invalid pricing file: %v", err)
-		}
+func TestGetPricing_FallbackOnInvalidJSON(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatalf("failed to create assets dir: %v", err)
+	}
+	outputDir := filepath.Join(tmpDir, "output")
+	pricingFile := filepath.Join(assetsDir, "pricing.json")
+	if err := os.WriteFile(pricingFile, []byte("invalid json"), 0644); err != nil {
+		t.Fatalf("failed to write invalid pricing file: %v", err)
+	}
 
-		pd := GetPricing(context.Background(), nil, outputDir)
-		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
-			t.Errorf("expected hardcoded fallback on invalid JSON, got %q", pd.UpdatedAt)
-		}
-	})
+	pd := GetPricing(context.Background(), nil, outputDir)
+	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+		t.Errorf("expected hardcoded fallback on invalid JSON, got %q", pd.UpdatedAt)
+	}
 }
 
 func TestProcessLogLine_SkipsSummaryLine(t *testing.T) {

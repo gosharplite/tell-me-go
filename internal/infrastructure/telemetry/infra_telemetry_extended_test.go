@@ -263,79 +263,76 @@ func TestTraceTelemetry(t *testing.T) {
 	})
 }
 
-func TestLedger_Extended(t *testing.T) {
+func TestLedger_Extended_IsStale(t *testing.T) {
 	t.Parallel()
-	t.Run("IsStale", func(t *testing.T) {
-		t.Parallel()
-		tempFile := filepath.Join(t.TempDir(), "stale.lock")
-		_ = os.WriteFile(tempFile, []byte(""), 0644)
+	tempFile := filepath.Join(t.TempDir(), "stale.lock")
+	_ = os.WriteFile(tempFile, []byte(""), 0644)
 
-		if isStale(tempFile) {
-			t.Error("New file should not be stale")
+	if isStale(tempFile) {
+		t.Error("New file should not be stale")
+	}
+
+	oldTime := time.Now().Add(-10 * time.Minute)
+	_ = os.Chtimes(tempFile, oldTime, oldTime)
+
+	if !isStale(tempFile) {
+		t.Error("Old file should be stale")
+	}
+}
+
+func TestLedger_Extended_FindLogFiles(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	subDir := filepath.Join(tempDir, "subdir")
+	_ = os.Mkdir(subDir, 0755)
+
+	logPath := filepath.Join(subDir, "session_tokens.log")
+	_ = os.WriteFile(logPath, []byte("data"), 0644)
+
+	ls := &ledgerStore{}
+	files, err := ls.findLogFiles(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, f := range files {
+		if filepath.Base(f) == "session_tokens.log" {
+			found = true
+			break
 		}
+	}
+	if !found {
+		t.Error("Expected to find session_tokens.log")
+	}
+}
 
-		oldTime := time.Now().Add(-10 * time.Minute)
-		_ = os.Chtimes(tempFile, oldTime, oldTime)
+func TestLedger_Extended_AcquireAndReleaseLock(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	historyPath := filepath.Join(tempDir, "global_costs.json")
 
-		if !isStale(tempFile) {
-			t.Error("Old file should be stale")
-		}
-	})
+	ls := &ledgerStore{}
+	f, err := acquireLedgerLock(historyPath + ".lock")
+	if err != nil {
+		t.Fatalf("Failed to acquire lock: %v", err)
+	}
 
-	t.Run("FindLogFiles", func(t *testing.T) {
-		t.Parallel()
-		tempDir := t.TempDir()
-		subDir := filepath.Join(tempDir, "subdir")
-		_ = os.Mkdir(subDir, 0755)
+	// Try to acquire again
+	f2, err := acquireLedgerLock(historyPath + ".lock")
+	if err == nil {
+		_ = f2.Close()
+		t.Error("Should not be able to acquire lock again")
+	}
 
-		logPath := filepath.Join(subDir, "session_tokens.log")
-		_ = os.WriteFile(logPath, []byte("data"), 0644)
+	ls.releaseLedgerLock(historyPath, f)
 
-		ls := &ledgerStore{}
-		files, err := ls.findLogFiles(tempDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		found := false
-		for _, f := range files {
-			if filepath.Base(f) == "session_tokens.log" {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Error("Expected to find session_tokens.log")
-		}
-	})
-
-	t.Run("AcquireAndReleaseLock", func(t *testing.T) {
-		t.Parallel()
-		tempDir := t.TempDir()
-		historyPath := filepath.Join(tempDir, "global_costs.json")
-
-		ls := &ledgerStore{}
-		f, err := acquireLedgerLock(historyPath + ".lock")
-		if err != nil {
-			t.Fatalf("Failed to acquire lock: %v", err)
-		}
-
-		// Try to acquire again
-		f2, err := acquireLedgerLock(historyPath + ".lock")
-		if err == nil {
-			_ = f2.Close()
-			t.Error("Should not be able to acquire lock again")
-		}
-
-		ls.releaseLedgerLock(historyPath, f)
-
-		// Should be able to acquire now
-		f3, err := acquireLedgerLock(historyPath + ".lock")
-		if err != nil {
-			t.Errorf("Failed to acquire lock after release: %v", err)
-		}
-		ls.releaseLedgerLock(historyPath, f3)
-	})
+	// Should be able to acquire now
+	f3, err := acquireLedgerLock(historyPath + ".lock")
+	if err != nil {
+		t.Errorf("Failed to acquire lock after release: %v", err)
+	}
+	ls.releaseLedgerLock(historyPath, f3)
 }
 
 func TestMetricsManager_LoadHistory_Corrupted(t *testing.T) {
