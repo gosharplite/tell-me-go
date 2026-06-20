@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -24,6 +25,7 @@ func FuzzLimitsValidate(f *testing.F) {
 	f.Add(math.MinInt, math.MinInt, math.MinInt) // Extreme negative (invalid)
 
 	f.Fuzz(func(t *testing.T, maxHistoryTokens, maxToolTurns, maxHistoryTurns int) {
+		runtime.Gosched() // cooperative yield: prevents fuzz shutdown race at 40s boundary (Issue #958)
 		limits := Limits{
 			MaxHistoryTokens: maxHistoryTokens,
 			MaxToolTurns:     maxToolTurns,
@@ -157,6 +159,7 @@ func FuzzNotifySubscriber(f *testing.F) {
 	f.Add("goroutine panic: send on closed channel", "timeout", "retry") // realistic
 
 	f.Fuzz(func(t *testing.T, panicValue string, errMsg string, eventMessage string) {
+		runtime.Gosched() // cooperative yield: prevents fuzz shutdown race at 40s boundary (Issue #958)
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 		bus := NewSimpleEventBus(context.Background(), WithLogger(logger))
