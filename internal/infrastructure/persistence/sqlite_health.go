@@ -39,13 +39,29 @@ func (c *sqliteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport
 		Details:   details,
 	}
 
-	// Step A: Filesystem Check
+	if c.checkFilesystem(ctx, report, details) {
+		return report, nil
+	}
+	if c.checkConnection(ctx, report) {
+		return report, nil
+	}
+	if c.checkIntegrity(ctx, report, details) {
+		return report, nil
+	}
+	c.checkReadOnly(ctx, report)
+
+	return report, nil
+}
+
+func (c *sqliteHealthChecker) checkFilesystem(ctx context.Context, report *ports.ComponentReport, details map[string]any) bool {
+	_ = ctx
+
 	dir := filepath.Dir(c.dbPath)
 	if _, err := os.Stat(dir); err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("database directory does not exist: %v", err)
 		report.Error = err
-		return report, nil
+		return true
 	}
 
 	// Simple writability check for the directory
@@ -54,7 +70,7 @@ func (c *sqliteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("database directory is not writable: %v", err)
 		report.Error = err
-		return report, nil
+		return true
 	}
 	defer func() {
 		_ = f.Close()
@@ -68,39 +84,45 @@ func (c *sqliteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport
 		details["size_bytes"] = 0
 	}
 
-	// Step B: Connection Check
+	return false
+}
+
+func (c *sqliteHealthChecker) checkConnection(ctx context.Context, report *ports.ComponentReport) bool {
 	if err := c.db.PingContext(ctx); err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("database connection failed: %v", err)
 		report.Error = err
-		return report, nil
+		return true
 	}
+	return false
+}
 
-	// Step C: Integrity Check
+func (c *sqliteHealthChecker) checkIntegrity(ctx context.Context, report *ports.ComponentReport, details map[string]any) bool {
 	var integrityResult string
-	err = c.db.QueryRowContext(ctx, "PRAGMA integrity_check;").Scan(&integrityResult)
+	err := c.db.QueryRowContext(ctx, "PRAGMA integrity_check;").Scan(&integrityResult)
 	if err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("integrity check failed to execute: %v", err)
 		report.Error = err
-		return report, nil
+		return true
 	}
 	details["integrity_result"] = integrityResult
 	if integrityResult != "ok" {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("database corruption detected: %s", integrityResult)
-		return report, nil
+		return true
 	}
+	return false
+}
 
-	// Step D: Read-Only Check
+func (c *sqliteHealthChecker) checkReadOnly(ctx context.Context, report *ports.ComponentReport) bool {
 	var queryOnly int
-	err = c.db.QueryRowContext(ctx, "PRAGMA query_only;").Scan(&queryOnly)
+	err := c.db.QueryRowContext(ctx, "PRAGMA query_only;").Scan(&queryOnly)
 	if err == nil && queryOnly == 1 {
 		report.Status = ports.StatusDegraded
 		report.Message = "database is in read-only mode"
 	}
-
-	return report, nil
+	return false
 }
 
 // noOpHealthChecker is a fallback for when the storage is not SQLite.
