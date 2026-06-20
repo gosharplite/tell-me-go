@@ -490,6 +490,26 @@ func TestCheckBoundary_ErrorPaths(t *testing.T) {
 	})
 }
 
+func TestTryBoundary(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	t.Run("match", func(t *testing.T) {
+		cwd, _ := os.Getwd()
+		ok := p.tryBoundary(filepath.Join(cwd, "test.txt"), cwd)
+		if !ok {
+			t.Error("expected true for path within CWD")
+		}
+	})
+
+	t.Run("no match", func(t *testing.T) {
+		ok := p.tryBoundary("/nonexistent/outside/path", os.TempDir())
+		if ok {
+			t.Error("expected false for path outside temp dir")
+		}
+	})
+}
+
 func TestCheckDefaultBoundaries_ExtraTempDirs(t *testing.T) {
 	t.Parallel()
 	p := newPathPolicy(nil)

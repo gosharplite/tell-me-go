@@ -14,6 +14,38 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// actionType identifies the security action being confirmed.
+type actionType int
+
+const (
+	actionPathWrite      actionType = iota // "persistent access to:"
+	actionPathRemove                       // "to REMOVE authorization for:"
+	actionPathRead                         // "persistent READ-ONLY access to:"
+	actionPathRemoveRead                   // "to REMOVE read-only authorization for:"
+	actionBypassEnable                     // "to DISABLE ALL interactive security prompts."
+	actionSessionUpdate                    // "to update session setting:"
+)
+
+// actionTitle maps an actionType to its human-readable title string.
+func actionTitle(action actionType) string {
+	switch action {
+	case actionPathWrite:
+		return "persistent access to:"
+	case actionPathRemove:
+		return "to REMOVE authorization for:"
+	case actionPathRead:
+		return "persistent READ-ONLY access to:"
+	case actionPathRemoveRead:
+		return "to REMOVE read-only authorization for:"
+	case actionBypassEnable:
+		return "to DISABLE ALL interactive security prompts."
+	case actionSessionUpdate:
+		return "to update session setting:"
+	default:
+		return ""
+	}
+}
+
 type policyTool struct {
 	sm *SecurityManager
 	kv ports.KVStore
@@ -55,7 +87,7 @@ func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 	}
 
 	// Confirmation
-	confirmed, err := t.confirmAction(ctx, "persistent access to:", absPath, reason, true)
+	confirmed, err := t.confirmAction(ctx, actionPathWrite, absPath, reason, true)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -94,7 +126,7 @@ func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 	}
 
 	// Confirmation
-	confirmed, err := t.confirmAction(ctx, "to REMOVE authorization for:", absPath, "", false)
+	confirmed, err := t.confirmAction(ctx, actionPathRemove, absPath, "", false)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -152,7 +184,7 @@ func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 	}
 
 	// Confirmation
-	confirmed, err := t.confirmAction(ctx, "persistent READ-ONLY access to:", absPath, reason, true)
+	confirmed, err := t.confirmAction(ctx, actionPathRead, absPath, reason, true)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -191,7 +223,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 	}
 
 	// Confirmation
-	confirmed, err := t.confirmAction(ctx, "to REMOVE read-only authorization for:", absPath, "", false)
+	confirmed, err := t.confirmAction(ctx, actionPathRemoveRead, absPath, "", false)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -252,7 +284,7 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 	}
 
 	// Confirmation
-	confirmed, err := t.confirmAction(ctx, "to DISABLE ALL interactive security prompts.", "", "This allows the AI to execute commands and write files without further confirmation.", false)
+	confirmed, err := t.confirmAction(ctx, actionBypassEnable, "", "This allows the AI to execute commands and write files without further confirmation.", false)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -303,7 +335,7 @@ func (t *policyTool) UpdateSessionSetting(ctx context.Context, args map[string]i
 	}
 
 	// Confirmation
-	confirmed, err := t.confirmAction(ctx, "to update session setting:", params.Key, fmt.Sprintf("New Value: %s", params.Value), false)
+	confirmed, err := t.confirmAction(ctx, actionSessionUpdate, params.Key, fmt.Sprintf("New Value: %s", params.Value), false)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -338,70 +370,84 @@ func (t *policyTool) ListSessionSettings(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *policyTool) confirmAction(ctx context.Context, title, path, reason string, doubleConfirm bool) (bool, error) {
-	lowerTitle := strings.ToLower(title)
+func (t *policyTool) confirmAction(ctx context.Context, action actionType, path, reason string, doubleConfirm bool) (bool, error) {
 	if t.sm.IsBypassActive() {
-		t.sm.Warn(fmt.Sprintf("[Bypassed] %s auto-approved.", t.getBypassMsg(lowerTitle)))
+		t.sm.Warn(fmt.Sprintf("[Bypassed] %s auto-approved.", t.getBypassMsg(action)))
 		return true, nil
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "[SECURITY] AI is requesting %s %s\n", title, path)
-	if reason != "" {
-		if path == "" {
-			sb.WriteString(reason + "\n")
-		} else {
-			fmt.Fprintf(&sb, "Reason: %s\n", reason)
-		}
-	}
+	fmt.Fprintf(&sb, "[SECURITY] AI is requesting %s %s\n", actionTitle(action), path)
+	t.writeConfirmReason(&sb, reason, path)
 
-	sb.WriteString(t.getPrompt(lowerTitle))
+	sb.WriteString(t.getPrompt(action))
 	confirmed, err := t.sm.interaction.interactorProvider().Confirm(ctx, sb.String())
 	if err != nil || !confirmed {
 		return false, err
 	}
 
 	if doubleConfirm {
-		confirmed, err = t.sm.interaction.interactorProvider().Confirm(ctx, fmt.Sprintf("[DOUBLE CONFIRM] %s (y/N) ", t.getDoubleMsg(lowerTitle)))
-		if err != nil || !confirmed {
-			return false, err
-		}
+		return t.confirmDouble(ctx, action)
 	}
 
 	return true, nil
 }
 
-func (t *policyTool) getBypassMsg(lowerTitle string) string {
-	if strings.Contains(lowerTitle, "remove") {
-		if strings.Contains(lowerTitle, "read-only") {
-			return "Removal of read-only authorization"
-		}
+// writeConfirmReason appends the reason line to the confirmation message builder.
+func (t *policyTool) writeConfirmReason(sb *strings.Builder, reason, path string) {
+	if reason == "" {
+		return
+	}
+	if path == "" {
+		sb.WriteString(reason + "\n")
+	} else {
+		fmt.Fprintf(sb, "Reason: %s\n", reason)
+	}
+}
+
+// confirmDouble performs the second ("double") confirmation step.
+func (t *policyTool) confirmDouble(ctx context.Context, action actionType) (bool, error) {
+	confirmed, err := t.sm.interaction.interactorProvider().Confirm(ctx,
+		fmt.Sprintf("[DOUBLE CONFIRM] %s (y/N) ", t.getDoubleMsg(action)))
+	if err != nil || !confirmed {
+		return false, err
+	}
+	return true, nil
+}
+
+func (t *policyTool) getBypassMsg(action actionType) string {
+	switch action {
+	case actionPathRemove:
 		return "Removal of authorization"
-	}
-	if strings.Contains(lowerTitle, "read-only") {
+	case actionPathRemoveRead:
+		return "Removal of read-only authorization"
+	case actionPathRead:
 		return "Read-only authorization"
+	default:
+		return "Authorization"
 	}
-	return "Authorization"
 }
 
-func (t *policyTool) getPrompt(lowerTitle string) string {
-	if strings.Contains(lowerTitle, "remove") {
+func (t *policyTool) getPrompt(action actionType) string {
+	switch action {
+	case actionPathRemove, actionPathRemoveRead:
 		return "Confirm removal? (y/N) "
-	}
-	if strings.Contains(lowerTitle, "read-only") {
+	case actionPathRead:
 		return "Authorize this path for reading? (y/N) "
-	}
-	if strings.Contains(lowerTitle, "disable all") {
+	case actionBypassEnable:
 		return "Enable bypass mode for this run? (y/N) "
+	default:
+		return "Authorize this path? (y/N) "
 	}
-	return "Authorize this path? (y/N) "
 }
 
-func (t *policyTool) getDoubleMsg(lowerTitle string) string {
-	if strings.Contains(lowerTitle, "read-only") {
+func (t *policyTool) getDoubleMsg(action actionType) string {
+	switch action {
+	case actionPathRead, actionPathRemoveRead:
 		return "Are you absolutely sure? This allows the AI to read files in this location in future sessions."
+	default:
+		return "Are you absolutely sure? This allows the AI to read/write files in this location in future sessions."
 	}
-	return "Are you absolutely sure? This allows the AI to read/write files in this location in future sessions."
 }
 
 type toolEntry struct {

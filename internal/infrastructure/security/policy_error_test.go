@@ -206,7 +206,7 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 
 		confirmed, err := pt.confirmAction(
 			context.Background(),
-			"persistent access to:",
+			actionPathWrite,
 			"/some/test/path",
 			"testing bypass",
 			true,
@@ -227,7 +227,7 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 
 		confirmed, err := pt.confirmAction(
 			context.Background(),
-			"persistent access to:",
+			actionPathWrite,
 			"/some/test/path",
 			"testing double confirm denied",
 			true, // doubleConfirm = true

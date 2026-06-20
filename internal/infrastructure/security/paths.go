@@ -54,29 +54,17 @@ type pathRule func(absPath string, writable bool) (bool, error)
 func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error) {
 	cwd, err := os.Getwd()
 	if err == nil {
-		ok, err := p.checkBoundary(absPath, cwd)
-		if err != nil {
-			log.Printf("security: boundary check error for cwd against %s: %v", absPath, err)
-		}
-		if ok {
+		if p.tryBoundary(absPath, cwd) {
 			return true, nil
 		}
 	}
 
-	// Existing: user-specific temp directory
-	if ok, err := p.checkBoundary(absPath, os.TempDir()); ok {
+	if p.tryBoundary(absPath, os.TempDir()) {
 		return true, nil
-	} else if err != nil {
-		log.Printf("security: boundary check error for temp dir against %s: %v", absPath, err)
 	}
 
-	// Platform-specific extra temp boundaries (e.g., /tmp, /private/tmp for Unix)
 	for _, tmpDir := range getExtraTempDirs() {
-		ok, err := p.checkBoundary(absPath, tmpDir)
-		if err != nil {
-			log.Printf("security: boundary check error for extra temp dir %s against %s: %v", tmpDir, absPath, err)
-		}
-		if ok {
+		if p.tryBoundary(absPath, tmpDir) {
 			return true, nil
 		}
 	}
@@ -327,6 +315,16 @@ func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {
 	rel, err := filepath.Rel(realBoundary, target)
 	ok := err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 	return ok, nil
+}
+
+// tryBoundary checks if absPath is within boundary, logging any error.
+// Returns true if the path is within the boundary.
+func (p *pathPolicy) tryBoundary(absPath, boundary string) bool {
+	ok, err := p.checkBoundary(absPath, boundary)
+	if err != nil {
+		log.Printf("security: boundary check error for %s against %s: %v", boundary, absPath, err)
+	}
+	return ok
 }
 
 func (p *pathPolicy) resolveSymlinks(path string) string {

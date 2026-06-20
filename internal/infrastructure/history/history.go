@@ -254,35 +254,16 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns, hasSystem)
 
 	if newLen == originalLen && actualRemoved == 0 {
-		effectiveLen := originalLen
-		if hasSystem {
-			effectiveLen--
-		}
-		return 0, effectiveLen / 2, originalLen, nil
+		return 0, rollbackRemainingTurns(originalLen, hasSystem), originalLen, nil
 	}
 
 	tempContents := m.Contents[:newLen]
-	if err := m.store.Save(ctx, tempContents); err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to persist rollback: %w", err)
-	}
-
-	// Persisted successfully, now safe to modify memory
-	for i := newLen; i < originalLen; i++ {
-		m.Contents[i] = nil
-	}
-
-	if newLen == 0 {
-		m.Contents = nil
-	} else {
-		m.Contents = tempContents
+	if err := m.commitRollback(ctx, tempContents, newLen, originalLen); err != nil {
+		return 0, 0, 0, err
 	}
 
 	remainingMsgs = len(m.Contents)
-	effectiveLen := remainingMsgs
-	if hasSystem {
-		effectiveLen--
-	}
-	remainingTurns = effectiveLen / 2
+	remainingTurns = rollbackRemainingTurns(remainingMsgs, hasSystem)
 
 	return actualRemoved, remainingTurns, remainingMsgs, nil
 }
@@ -319,6 +300,35 @@ func calculateRollbackBounds(originalLen int, turns int, hasSystem bool) (actual
 	}
 
 	return turns, originalLen - droppedMsgs
+}
+
+// commitRollback persists the truncated contents and nils out removed entries.
+// It follows durability-first semantics: persist succeeds before memory is mutated.
+func (m *Manager) commitRollback(ctx context.Context, tempContents []*llm.Content, newLen, originalLen int) error {
+	if err := m.store.Save(ctx, tempContents); err != nil {
+		return fmt.Errorf("failed to persist rollback: %w", err)
+	}
+
+	// Persisted successfully, now safe to modify memory
+	for i := newLen; i < originalLen; i++ {
+		m.Contents[i] = nil
+	}
+
+	if newLen == 0 {
+		m.Contents = nil
+	} else {
+		m.Contents = tempContents
+	}
+	return nil
+}
+
+// rollbackRemainingTurns computes the number of remaining turns after rollback.
+func rollbackRemainingTurns(remainingMsgs int, hasSystem bool) int {
+	effectiveLen := remainingMsgs
+	if hasSystem {
+		effectiveLen--
+	}
+	return effectiveLen / 2
 }
 
 // GetLastUserMessage finds the text of the last user message and the number of turns to rollback to remove it and everything after it.
