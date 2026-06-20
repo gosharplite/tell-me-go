@@ -91,12 +91,12 @@ func (a *defaultDeadCodeAnalyzer) harvestExportedSymbols(state *scanState) {
 	}
 }
 
-// harvestPackageSymbols collects exported symbols from a single package
-// that belongs to the target module and is within the target path.
-func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *scanState) {
-	// Ensure the package belongs to our module for declaration tracking
+// isInTargetScope reports whether pkg belongs to the target module,
+// resides within the target path (when specified), and is not excluded
+// by user-provided exclusion patterns.
+func (a *defaultDeadCodeAnalyzer) isInTargetScope(pkg *packages.Package, state *scanState) bool {
 	if pkg.Module == nil || !strings.HasPrefix(pkg.PkgPath, state.targetModule) {
-		return
+		return false
 	}
 
 	if state.targetPath != "" && len(pkg.GoFiles) > 0 {
@@ -105,11 +105,17 @@ func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, s
 			absPkg = filepath.Dir(pkg.GoFiles[0]) // fallback to raw dir path
 		}
 		if !strings.HasPrefix(absPkg, state.targetPath) {
-			return
+			return false
 		}
 	}
 
-	if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
+	return !a.shouldExclude(pkg.PkgPath, state.excludedPackages)
+}
+
+// harvestPackageSymbols collects exported symbols from a single package
+// that belongs to the target module and is within the target path.
+func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *scanState) {
+	if !a.isInTargetScope(pkg, state) {
 		return
 	}
 

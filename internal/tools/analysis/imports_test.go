@@ -111,3 +111,85 @@ func TestImportCleanupTransform_Apply_ParseError(t *testing.T) {
 		t.Errorf("expected wrapping message, got: %v", err)
 	}
 }
+
+func TestFormatAndReprocess(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "test.go",
+			"package p\n\nimport \"fmt\"\n\nfunc main() { fmt.Println() }",
+			parser.ParseComments)
+		require.NoError(t, err)
+
+		tx := &importCleanupTransform{Path: "test.go"}
+		newFile, err := tx.formatAndReprocess(fset, file)
+		require.NoError(t, err)
+		require.NotNil(t, newFile)
+	})
+
+	t.Run("format error via test hook", func(t *testing.T) {
+		t.Parallel()
+		formatErr := errors.New("format.Node failed: simulated write error")
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "test.go",
+			"package p\n\nimport \"fmt\"\n\nfunc main() { fmt.Println() }",
+			parser.ParseComments)
+		require.NoError(t, err)
+
+		tx := &importCleanupTransform{
+			Path: "test.go",
+			testFormatNode: func(buf *bytes.Buffer, fset *token.FileSet, file *ast.File) error {
+				return formatErr
+			},
+		}
+		_, err = tx.formatAndReprocess(fset, file)
+		require.Error(t, err)
+		require.ErrorIs(t, err, formatErr)
+	})
+
+	t.Run("process error via test hook", func(t *testing.T) {
+		t.Parallel()
+		processErr := errors.New("imports.Process failed")
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "test.go",
+			"package p\n\nimport \"fmt\"\n\nfunc main() { fmt.Println() }",
+			parser.ParseComments)
+		require.NoError(t, err)
+
+		tx := &importCleanupTransform{
+			Path: "test.go",
+			testProcessFunc: func(path string, src []byte, opts *imports.Options) ([]byte, error) {
+				return nil, processErr
+			},
+		}
+		_, err = tx.formatAndReprocess(fset, file)
+		require.Error(t, err)
+		if !strings.Contains(err.Error(), "processing imports for test.go") {
+			t.Errorf("expected wrapping message, got: %v", err)
+		}
+	})
+
+	t.Run("parse error via test hook", func(t *testing.T) {
+		t.Parallel()
+		parseErr := errors.New("parser.ParseFile failed")
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "test.go",
+			"package p\n\nimport \"fmt\"\n\nfunc main() { fmt.Println() }",
+			parser.ParseComments)
+		require.NoError(t, err)
+
+		tx := &importCleanupTransform{
+			Path: "test.go",
+			testParseFileFunc: func(fset *token.FileSet, filename string, src interface{}, mode parser.Mode) (*ast.File, error) {
+				return nil, parseErr
+			},
+		}
+		_, err = tx.formatAndReprocess(fset, file)
+		require.Error(t, err)
+		if !strings.Contains(err.Error(), "parsing formatted file test.go") {
+			t.Errorf("expected wrapping message, got: %v", err)
+		}
+	})
+}

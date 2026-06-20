@@ -16,6 +16,7 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"golang.org/x/tools/go/packages"
 )
 
 const (
@@ -57,6 +58,35 @@ type indexedPackageProvider struct {
 	idx symbolIndex
 }
 
+// detectModuleFromPackages sets p.m.ModulePath from the first package
+// with a non-nil Module. The sync.Once ensures ModulePath is set at most
+// once across all calls.
+func (p *indexedPackageProvider) detectModuleFromPackages(pkgs []*packages.Package) {
+	for _, pkg := range pkgs {
+		if pkg.Module != nil {
+			p.m.once.Do(func() {
+				p.m.ModulePath = pkg.Module.Path
+			})
+			break
+		}
+	}
+}
+
+// collectTrackedImports returns the module-internal imports for pkg
+// when it is a tracked package. Returns nil when pkg is not tracked.
+func (p *indexedPackageProvider) collectTrackedImports(pkg *packages.Package) []string {
+	if !p.m.isTrackedPackage(pkg.PkgPath) {
+		return nil
+	}
+	trackedImports := make([]string, 0)
+	for impPath := range pkg.Imports {
+		if strings.HasPrefix(impPath, p.m.ModulePath) {
+			trackedImports = append(trackedImports, impPath)
+		}
+	}
+	return trackedImports
+}
+
 func (p *indexedPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
 	pkgs, err := p.idx.Packages(ctx, nil)
 	if err != nil {
@@ -67,25 +97,12 @@ func (p *indexedPackageProvider) LoadPackages(ctx context.Context) (map[string][
 		return nil, fmt.Errorf("no packages found in index")
 	}
 
-	for _, pkg := range pkgs {
-		if pkg.Module != nil {
-			p.m.once.Do(func() {
-				p.m.ModulePath = pkg.Module.Path
-			})
-			break
-		}
-	}
+	p.detectModuleFromPackages(pkgs)
 
 	res := make(map[string][]string)
 	for _, pkg := range pkgs {
-		if p.m.isTrackedPackage(pkg.PkgPath) {
-			var trackedImports []string
-			for impPath := range pkg.Imports {
-				if strings.HasPrefix(impPath, p.m.ModulePath) {
-					trackedImports = append(trackedImports, impPath)
-				}
-			}
-			res[pkg.PkgPath] = trackedImports
+		if imports := p.collectTrackedImports(pkg); imports != nil {
+			res[pkg.PkgPath] = imports
 		}
 	}
 	return res, nil

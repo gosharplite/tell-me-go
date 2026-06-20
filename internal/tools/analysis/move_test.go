@@ -237,6 +237,111 @@ func TestMatchesTypeName_StarExpr(t *testing.T) {
 	})
 }
 
+func TestDeclMatchers(t *testing.T) {
+	t.Parallel()
+
+	// ---- matchFuncDecl ----
+	t.Run("matchFuncDecl matches by name", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "Hello"}}
+		if !matchFuncDecl(decl, "Hello") {
+			t.Error("matchFuncDecl should match FuncDecl by name")
+		}
+	})
+
+	t.Run("matchFuncDecl returns false for non-FuncDecl", func(t *testing.T) {
+		t.Parallel()
+		if matchFuncDecl(&ast.BadDecl{}, "Hello") {
+			t.Error("matchFuncDecl should return false for BadDecl")
+		}
+	})
+
+	t.Run("matchFuncDecl returns false for BadDecl", func(t *testing.T) {
+		t.Parallel()
+		if matchFuncDecl(&ast.BadDecl{}, "Nope") {
+			t.Error("matchFuncDecl should return false for BadDecl")
+		}
+	})
+
+	// ---- matchTypeSpec ----
+	t.Run("matchTypeSpec matches type by name", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.GenDecl{
+			Specs: []ast.Spec{
+				&ast.TypeSpec{Name: &ast.Ident{Name: "MyType"}},
+			},
+		}
+		if !matchTypeSpec(decl, "MyType") {
+			t.Error("matchTypeSpec should match TypeSpec by name")
+		}
+	})
+
+	t.Run("matchTypeSpec returns false for FuncDecl", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "MyType"}}
+		if matchTypeSpec(decl, "MyType") {
+			t.Error("matchTypeSpec should return false for FuncDecl")
+		}
+	})
+
+	// ---- matchValueSpec ----
+	t.Run("matchValueSpec matches const by name", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.GenDecl{
+			Specs: []ast.Spec{
+				&ast.ValueSpec{Names: []*ast.Ident{{Name: "MyConst"}}},
+			},
+		}
+		if !matchValueSpec(decl, "MyConst") {
+			t.Error("matchValueSpec should match const by name")
+		}
+	})
+
+	t.Run("matchValueSpec matches var by name", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.GenDecl{
+			Specs: []ast.Spec{
+				&ast.ValueSpec{Names: []*ast.Ident{{Name: "MyVar"}}},
+			},
+		}
+		if !matchValueSpec(decl, "MyVar") {
+			t.Error("matchValueSpec should match var by name")
+		}
+	})
+
+	t.Run("matchValueSpec matches second name in multi-name ValueSpec", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.GenDecl{
+			Specs: []ast.Spec{
+				&ast.ValueSpec{Names: []*ast.Ident{{Name: "A"}, {Name: "B"}}},
+			},
+		}
+		if !matchValueSpec(decl, "B") {
+			t.Error("matchValueSpec should match second name in multi-name ValueSpec")
+		}
+	})
+
+	t.Run("matchValueSpec returns false for import GenDecl", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.GenDecl{
+			Specs: []ast.Spec{
+				&ast.ImportSpec{Name: &ast.Ident{Name: "fmt"}},
+			},
+		}
+		if matchValueSpec(decl, "fmt") {
+			t.Error("matchValueSpec should return false for ImportSpec (not ValueSpec)")
+		}
+	})
+
+	t.Run("matchValueSpec returns false for FuncDecl", func(t *testing.T) {
+		t.Parallel()
+		decl := &ast.FuncDecl{Name: &ast.Ident{Name: "MyFunc"}}
+		if matchValueSpec(decl, "MyFunc") {
+			t.Error("matchValueSpec should return false for FuncDecl")
+		}
+	})
+}
+
 func TestMatchSymbol_GenDeclEdgeCases(t *testing.T) {
 	t.Parallel()
 

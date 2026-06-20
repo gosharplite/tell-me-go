@@ -283,3 +283,62 @@ func TestResolveInPackage_IdentityResolution(t *testing.T) {
 		"resolveInPackage must NOT match Bar — "+
 			"no such method is called in pkgB.")
 }
+
+// TestFindMethodUsageInFile is a unit test of the extracted
+// findMethodUsageInFile method. It verifies the AST walk correctly
+// resolves identifiers within a single file.
+func TestFindMethodUsageInFile(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	writeFixture(t, tmpDir, deepIdentFixture())
+
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, idx.Refresh(ctx, nil))
+
+	pkgs, err := idx.Packages(ctx, nil)
+	require.NoError(t, err)
+
+	// Find pkgB — it contains the cross-package call `a.Foo()` where
+	// `a` is pkgA.TypeA.
+	var pkgB *packages.Package
+	for _, pkg := range pkgs {
+		if strings.Contains(pkg.PkgPath, "pkgB") {
+			pkgB = pkg
+			break
+		}
+	}
+	require.NotNil(t, pkgB, "must find pkgB package")
+	require.NotNil(t, pkgB.TypesInfo, "pkgB must be type-checked")
+	require.NotEmpty(t, pkgB.Syntax, "pkgB must have syntax trees")
+
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
+
+	// Test each file in pkgB — at least one should contain the Foo call.
+	targetId := "example.com/deepident/pkgA.TypeA.Foo"
+	foundInAnyFile := false
+	for _, file := range pkgB.Syntax {
+		if analyzer.findMethodUsageInFile(file, pkgB, "Foo", targetId) {
+			foundInAnyFile = true
+			break
+		}
+	}
+	assert.True(t, foundInAnyFile,
+		"findMethodUsageInFile must find TypeA.Foo in at least one file of pkgB")
+
+	// Confirm that wrong identity is NOT found.
+	for _, file := range pkgB.Syntax {
+		assert.False(t, analyzer.findMethodUsageInFile(file, pkgB, "Foo",
+			"example.com/deepident/pkgA.OtherType.Foo"),
+			"findMethodUsageInFile must NOT match OtherType.Foo")
+	}
+
+	// Confirm that wrong method name is NOT found.
+	for _, file := range pkgB.Syntax {
+		assert.False(t, analyzer.findMethodUsageInFile(file, pkgB, "Bar", targetId),
+			"findMethodUsageInFile must NOT match method name 'Bar'")
+	}
+}

@@ -17,17 +17,24 @@ type deepVerificationEvaluator struct {
 	analyzer *defaultDeadCodeAnalyzer
 }
 
-func (e *deepVerificationEvaluator) evaluate(ctx *orphanEvalContext) *orphanEvalContext {
+// shouldDeepVerify reports whether the context qualifies for deep
+// type-aware AST verification. It returns false when any required
+// field is nil, deep mode is off, or the symbol is not a method.
+func (e *deepVerificationEvaluator) shouldDeepVerify(ctx *orphanEvalContext) bool {
 	if ctx == nil || ctx.report == nil {
-		return ctx
+		return false
 	}
 	if ctx.meta == nil || ctx.state == nil {
-		return ctx
+		return false
 	}
 	if e.analyzer == nil {
-		return ctx
+		return false
 	}
-	if !ctx.deep || !ctx.meta.isMethod {
+	return ctx.deep && ctx.meta.isMethod
+}
+
+func (e *deepVerificationEvaluator) evaluate(ctx *orphanEvalContext) *orphanEvalContext {
+	if !e.shouldDeepVerify(ctx) {
 		return ctx
 	}
 
