@@ -33,6 +33,27 @@ var (
 	reItalic2 = regexp.MustCompile(`_(.*?)_`)
 )
 
+// headingTags maps Markdown heading prefixes to their XHTML tag names.
+var headingTags = map[string]string{
+	"# ":      "h1",
+	"## ":     "h2",
+	"### ":    "h3",
+	"#### ":   "h4",
+	"##### ":  "h5",
+	"###### ": "h6",
+}
+
+// convertHeading detects a Markdown ATX heading line and returns the XHTML tag,
+// escaped content, and true. Returns zero values and false for non-heading lines.
+func convertHeading(line string) (tag string, content string, ok bool) {
+	for prefix, tag := range headingTags {
+		if strings.HasPrefix(line, prefix) {
+			return tag, html.EscapeString(strings.TrimPrefix(line, prefix)), true
+		}
+	}
+	return "", "", false
+}
+
 func (m *ConfluenceManager) xhtmlToMarkdown(xhtml string) string {
 	// 1. Normalize whitespace - replace all newlines and tabs with spaces
 	content := strings.ReplaceAll(xhtml, "\r", "")
@@ -88,24 +109,8 @@ func (m *ConfluenceManager) markdownToXhtml(markdown string) string {
 			continue
 		}
 
-		if strings.HasPrefix(line, "# ") {
-			content := html.EscapeString(strings.TrimPrefix(line, "# "))
-			result.WriteString("<h1>" + content + "</h1>")
-		} else if strings.HasPrefix(line, "## ") {
-			content := html.EscapeString(strings.TrimPrefix(line, "## "))
-			result.WriteString("<h2>" + content + "</h2>")
-		} else if strings.HasPrefix(line, "### ") {
-			content := html.EscapeString(strings.TrimPrefix(line, "### "))
-			result.WriteString("<h3>" + content + "</h3>")
-		} else if strings.HasPrefix(line, "#### ") {
-			content := html.EscapeString(strings.TrimPrefix(line, "#### "))
-			result.WriteString("<h4>" + content + "</h4>")
-		} else if strings.HasPrefix(line, "##### ") {
-			content := html.EscapeString(strings.TrimPrefix(line, "##### "))
-			result.WriteString("<h5>" + content + "</h5>")
-		} else if strings.HasPrefix(line, "###### ") {
-			content := html.EscapeString(strings.TrimPrefix(line, "###### "))
-			result.WriteString("<h6>" + content + "</h6>")
+		if tag, content, ok := convertHeading(line); ok {
+			result.WriteString("<" + tag + ">" + content + "</" + tag + ">")
 		} else {
 			// Escape first to avoid escaping generated tags
 			line = html.EscapeString(line)

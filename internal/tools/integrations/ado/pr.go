@@ -235,18 +235,46 @@ func formatPrDiffChanges(pullRequestID int, changeEntries []prChangeEntry) strin
 	return resultText.String()
 }
 
+type adoThread struct {
+	Comments []struct {
+		Author struct {
+			DisplayName string `json:"displayName"`
+		} `json:"author"`
+		Content       string `json:"content"`
+		PublishedDate string `json:"publishedDate"`
+		CommentType   string `json:"commentType"`
+	} `json:"comments"`
+	IsDeleted bool `json:"isDeleted"`
+}
+
 type adoThreadResponse struct {
-	Value []struct {
-		Comments []struct {
-			Author struct {
-				DisplayName string `json:"displayName"`
-			} `json:"author"`
-			Content       string `json:"content"`
-			PublishedDate string `json:"publishedDate"`
-			CommentType   string `json:"commentType"`
-		} `json:"comments"`
-		IsDeleted bool `json:"isDeleted"`
-	} `json:"value"`
+	Value []adoThread `json:"value"`
+}
+
+// threadFilter decides whether a thread should be rendered in output.
+// It filters out deleted threads and threads that contain only system comments.
+func threadFilter(thread adoThread) bool {
+	if thread.IsDeleted {
+		return false
+	}
+	for _, c := range thread.Comments {
+		if c.CommentType != "system" {
+			return true // has at least one user comment
+		}
+	}
+	return false
+}
+
+// formatSingleThread renders one thread's comments into the builder.
+func formatSingleThread(sb *strings.Builder, index int, thread adoThread) {
+	fmt.Fprintf(sb, "--- Thread %d ---\n", index)
+	for _, c := range thread.Comments {
+		if c.Content == "" {
+			continue
+		}
+		fmt.Fprintf(sb, "[%s] %s: %s\n", c.PublishedDate, c.Author.DisplayName, c.Content)
+	}
+	sb.WriteString("\n")
 }
 
 func (m *AdoManager) AdoGetPrThreads(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -284,39 +312,18 @@ func (m *AdoManager) AdoGetPrThreads(ctx context.Context, args map[string]interf
 
 func (m *AdoManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
 	var resultText strings.Builder
-	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Discussion Threads:\n\n", pullRequestId)
+	fmt.Fprintf(&resultText, "Pull Request #%d Discussion Threads:\n\n", pullRequestId)
 
-	threadCount := 0
+	idx := 0
 	for _, thread := range threadData.Value {
-		if thread.IsDeleted {
+		if !threadFilter(thread) {
 			continue
 		}
-
-		// Check if it's a system thread (often has only system comments)
-		isSystem := true
-		for _, comment := range thread.Comments {
-			if comment.CommentType != "system" {
-				isSystem = false
-				break
-			}
-		}
-
-		if isSystem {
-			continue
-		}
-
-		threadCount++
-		_, _ = fmt.Fprintf(&resultText, "--- Thread %d ---\n", threadCount)
-		for _, comment := range thread.Comments {
-			if comment.Content == "" {
-				continue
-			}
-			_, _ = fmt.Fprintf(&resultText, "[%s] %s: %s\n", comment.PublishedDate, comment.Author.DisplayName, comment.Content)
-		}
-		resultText.WriteString("\n")
+		idx++
+		formatSingleThread(&resultText, idx, thread)
 	}
 
-	if threadCount == 0 {
+	if idx == 0 {
 		return "No discussion threads found in this pull request."
 	}
 

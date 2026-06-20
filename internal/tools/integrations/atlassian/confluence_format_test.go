@@ -10,6 +10,42 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// convertHeading tests
+// ---------------------------------------------------------------------------
+
+func TestConvertHeading(t *testing.T) {
+	tests := []struct {
+		name        string
+		line        string
+		wantTag     string
+		wantContent string
+		wantOk      bool
+	}{
+		{"h1", "# Title", "h1", "Title", true},
+		{"h2", "## Subtitle", "h2", "Subtitle", true},
+		{"h3", "### Section", "h3", "Section", true},
+		{"h4", "#### Subsection", "h4", "Subsection", true},
+		{"h5", "##### Minor", "h5", "Minor", true},
+		{"h6", "###### Small", "h6", "Small", true},
+		{"seven hashes not a heading", "####### Not heading", "", "", false},
+		{"no space after hash", "#NoSpace", "", "", false},
+		{"plain text", "Just a paragraph", "", "", false},
+		{"empty string", "", "", "", false},
+		{"bold text not heading", "**bold**", "", "", false},
+		{"hash mid-line", "text # not heading", "", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tag, content, ok := convertHeading(tt.line)
+			assert.Equal(t, tt.wantTag, tag)
+			assert.Equal(t, tt.wantContent, content)
+			assert.Equal(t, tt.wantOk, ok)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // xhtmlToMarkdown / markdownToXhtml tests
 // ---------------------------------------------------------------------------
 
