@@ -218,6 +218,9 @@ func TestGetTypeInfo_FindMethodsError(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for cancelled context during findMethods, got nil")
 	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
 }
 
 // TestGetTypeInfo_ShortCircuit verifies that early-return conditions prevent
