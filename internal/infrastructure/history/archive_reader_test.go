@@ -675,3 +675,31 @@ func TestJSONLArchiveReader_ReadPage_ReadError(t *testing.T) {
 		t.Errorf("expected injected read error, got %v", err)
 	}
 }
+
+func TestJSONLArchiveReader_ReadLineForIndex_EOFWithData(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "eof_no_newline.jsonl")
+
+	// Last line deliberately has NO trailing \n to trigger the EOF-with-data branch
+	// in readLineForIndex (line 134 of archive_reader.go).
+	line1 := `{"role":"user","parts":[{"text":"line1"}]}` + "\n"
+	line2 := `{"role":"user","parts":[{"text":"line2"}]}`
+	content := line1 + line2
+
+	err := os.WriteFile(archivePath, []byte(content), 0644)
+	require.NoError(t, err, "failed to write test file")
+
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	dtos, startOffset, err := reader.ReadPrevious(ctx, 10, -1)
+	require.NoError(t, err, "ReadPrevious should not error on EOF-with-data")
+
+	require.Len(t, dtos, 2, "expected 2 DTOs from the two JSON lines")
+	assert.Equal(t, "line1", dtos[0].ContentPreview, "first line content mismatch")
+	assert.Equal(t, "line2", dtos[1].ContentPreview, "second line content mismatch")
+	assert.Equal(t, int64(0), startOffset, "startOffset should be 0")
+}

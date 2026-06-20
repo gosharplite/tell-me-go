@@ -118,6 +118,10 @@ func (s *sessionState) Close() error {
 	return nil
 }
 
+// initServicesFn is the function variable for initServices, allowing tests
+// to inject a failure and exercise the error propagation path in NewSessionState.
+var initServicesFn = initServices
+
 // NewSessionState initializes repositories and services.
 func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
@@ -130,7 +134,7 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 		return nil, fmt.Errorf("initializing persistence repositories: %w", err)
 	}
 
-	tasks, err := initServices(ctx, taskStore)
+	tasks, err := initServicesFn(ctx, taskStore)
 	if err != nil {
 		return nil, err
 	}

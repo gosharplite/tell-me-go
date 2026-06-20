@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -182,5 +183,72 @@ func TestJSONLArchiveReader_ReadPageInternal_ContextCancelled(t *testing.T) {
 				t.Errorf("expected %v, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Gap 3 (Issue #949) — ensureIndex double-check locking under exclusive lock
+// Code path: archive_reader.go L107-109
+//   defer r.mu.Unlock()
+//   if r.indexed { return nil }  ← UNCOVERED (double-check after acquiring Lock)
+// ---------------------------------------------------------------------------
+
+func TestJSONLArchiveReader_EnsureIndex_DoubleCheckLocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive.jsonl")
+
+	baseFS := persistence.NewOSFileSystem()
+	// Seed with enough lines to make index building take non-zero time
+	var content string
+	for i := 0; i < 1000; i++ {
+		content += `{"role":"user","parts":[{"text":"msg"}]}` + "\n"
+	}
+	if err := baseFS.WriteFile(context.Background(), archivePath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to seed archive: %v", err)
+	}
+
+	reader := &jsonlArchiveReader{
+		fs:          baseFS,
+		archivePath: archivePath,
+	}
+
+	// Barrier to ensure both goroutines enter ensureIndex at roughly the same time
+	var start sync.WaitGroup
+	start.Add(2)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	errs := make(chan error, 2)
+
+	go func() {
+		defer wg.Done()
+		start.Done()
+		start.Wait()
+		errs <- reader.ensureIndex(context.Background())
+	}()
+
+	go func() {
+		defer wg.Done()
+		start.Done()
+		start.Wait()
+		errs <- reader.ensureIndex(context.Background())
+	}()
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Errorf("ensureIndex should not error: %v", err)
+		}
+	}
+
+	// Both calls should succeed and the index should be built
+	if !reader.indexed {
+		t.Error("expected reader to be indexed after concurrent ensureIndex calls")
+	}
+	if len(reader.index) != 1000 { // 1000 lines
+		t.Errorf("expected 1000 index entries, got %d", len(reader.index))
 	}
 }

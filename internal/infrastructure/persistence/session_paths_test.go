@@ -408,3 +408,34 @@ func TestRotateSession_CleanupError(t *testing.T) {
 		t.Errorf("expected os.ErrPermission, got %v", err)
 	}
 }
+
+// =============================================================================
+// RotateSession with no session files — archiveSessionFiles early return
+// =============================================================================
+
+func TestRotateSession_NoSessionFiles(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	// All Stat calls return ErrNotExist → hasFiles stays false →
+	// archiveSessionFiles returns nil without creating backup dir.
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+	// Track whether MkdirAll was called — it should NOT be.
+	mkdirCalled := false
+	m.MkdirAllFunc = func(ctx context.Context, path string, perm os.FileMode) error {
+		mkdirCalled = true
+		return nil
+	}
+
+	paths := persistence.ResolvePaths("/home/test", "default")
+	var buf bytes.Buffer
+	err := RotateSession(context.Background(), m, &buf, *paths, 7, slog.Default())
+	if err != nil {
+		t.Fatalf("RotateSession should not error when no files exist: %v", err)
+	}
+	if mkdirCalled {
+		t.Error("MkdirAll should NOT be called when no session files exist")
+	}
+}
