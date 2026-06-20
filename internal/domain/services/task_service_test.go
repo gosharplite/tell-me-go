@@ -288,12 +288,60 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 		}
 	})
 
+	t.Run("CountTasks Query Error", func(t *testing.T) {
+		t.Parallel()
+		sentinel := errors.New("store query failed")
+		repo := &mockTaskRepo{readErr: sentinel}
+		s := NewTaskService(repo)
+		count, err := s.CountTasks(ctx, "")
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if count != 0 {
+			t.Errorf("expected count 0, got %d", count)
+		}
+		if !errors.Is(err, sentinel) {
+			t.Errorf("expected sentinel error, got %v", err)
+		}
+	})
+
 	t.Run("UpdateTask Not Found", func(t *testing.T) {
 		t.Parallel()
 		s, _ := setupTaskService(t)
 		_, err := s.UpdateTask(ctx, 999, "content", "status")
 		if err == nil {
 			t.Error("expected not found error")
+		}
+	})
+
+	t.Run("UpdateTask Query Error", func(t *testing.T) {
+		t.Parallel()
+		sentinel := errors.New("store query failed")
+		repo := &mockTaskRepo{}
+		s := NewTaskService(repo)
+
+		// Add a task first (no read error)
+		task, err := s.AddTask(ctx, "task to update")
+		if err != nil {
+			t.Fatalf("setup AddTask failed: %v", err)
+		}
+
+		// Now inject the read error
+		repo.readErr = sentinel
+
+		// Attempt update — should fail at Query, never reach iteration or Update
+		_, err = s.UpdateTask(ctx, task.ID, "new content", "completed")
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if !errors.Is(err, sentinel) {
+			t.Errorf("expected sentinel error, got %v", err)
+		}
+
+		// Verify no side effects: task should be unchanged
+		if repo.tasks[0].Content != "task to update" || repo.tasks[0].Status != "pending" {
+			t.Errorf("task was mutated despite query error: content=%q status=%q",
+				repo.tasks[0].Content, repo.tasks[0].Status)
 		}
 	})
 
@@ -317,6 +365,37 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 		}
 	})
 
+	t.Run("DeleteTask Query Error", func(t *testing.T) {
+		t.Parallel()
+		sentinel := errors.New("store query failed")
+		repo := &mockTaskRepo{readErr: sentinel}
+		s := NewTaskService(repo)
+
+		// Add a task so it exists in the store (no read error yet)
+		repo.readErr = nil
+		task, err := s.AddTask(ctx, "task to delete")
+		if err != nil {
+			t.Fatalf("setup AddTask failed: %v", err)
+		}
+
+		// Now inject the read error
+		repo.readErr = sentinel
+
+		// Attempt delete — should fail at Query, not reach the not-found or delete logic
+		err = s.DeleteTask(ctx, task.ID)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if !errors.Is(err, sentinel) {
+			t.Errorf("expected sentinel error, got %v", err)
+		}
+
+		// Verify the task still exists (delete didn't happen)
+		if len(repo.tasks) != 1 {
+			t.Errorf("expected task to still exist, got %d tasks", len(repo.tasks))
+		}
+	})
+
 	t.Run("DeleteTask Write Error", func(t *testing.T) {
 		t.Parallel()
 		s, repo := setupTaskService(t)
@@ -325,6 +404,14 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 		err := s.DeleteTask(ctx, task.ID)
 		if err == nil {
 			t.Error("expected write error")
+		}
+	})
+
+	t.Run("Initialize", func(t *testing.T) {
+		t.Parallel()
+		s, _ := setupTaskService(t)
+		if err := s.(ports.Initializer).Initialize(ctx); err != nil {
+			t.Fatalf("Initialize returned unexpected error: %v", err)
 		}
 	})
 }

@@ -142,6 +142,77 @@ func TestFlush_BusShutdownDuringFlush(t *testing.T) {
 	}
 }
 
+// TestShutdown_ContextCancellationDuringSelect exercises the <-ctx.Done()
+// branch in Shutdown's select (event_bus_lifecycle.go:74-75). Unlike the
+// pre-cancelled path (ctx.Err() guard at line 68-70, covered by
+// TestSimpleEventBus_Shutdown_FlushTimeout), this test verifies that a context
+// which is alive when Shutdown enters but expires while waiting for workers
+// correctly returns the context error.
+func TestShutdown_ContextCancellationDuringSelect(t *testing.T) {
+	t.Parallel()
+
+	bus := NewSimpleEventBus(context.Background(), WithAsync(true), WithQueueSize(2))
+
+	// Start Listen with a cancellable context so we can clean up later.
+	listenCtx, listenCancel := context.WithCancel(context.Background())
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		_ = bus.Listen(listenCtx)
+	}()
+	bus.WaitStarted()
+
+	// Subscribe a blocking subscriber that signals when its Handle method is
+	// entered and then blocks until we release it. This keeps a worker
+	// goroutine busy so waitWorkers never returns and done never closes.
+	block := make(chan struct{})
+	started := make(chan struct{}, 1)
+	bus.SubscribeGlobal(&funcSubscriber{f: func(ctx context.Context, e Event) {
+		started <- struct{}{}
+		<-block
+	}})
+
+	// Publish an event so a worker goroutine dequeues it, enters Handle,
+	// and blocks on <-block.
+	if err := bus.Publish(context.Background(), StatusUpdate{Message: "keep worker busy"}); err != nil {
+		close(block)
+		listenCancel()
+		<-listenDone
+		t.Fatalf("Publish failed: %v", err)
+	}
+
+	// Confirm the worker is blocked inside Handle.
+	select {
+	case <-started:
+	case <-time.After(1 * time.Second):
+		close(block)
+		listenCancel()
+		<-listenDone
+		t.Fatal("worker did not start processing")
+	}
+
+	// Call Shutdown with a context that has a short timeout. Inside Shutdown:
+	//   - b.cancel() cancels the bus's internal context
+	//   - waitWorkers goroutine starts but b.workerWG.Wait() won't return
+	//     (worker is blocked on <-block)
+	//   - done channel never closes
+	//   - The early ctx.Err() check passes (context is not yet expired)
+	//   - The select enters, <-done doesn't fire
+	//   - After 50ms, <-ctx.Done() fires → the uncovered path
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer shutdownCancel()
+	err := bus.Shutdown(shutdownCtx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded from ctx.Done() select branch, got %v", err)
+	}
+
+	// Cleanup: unblock the subscriber so the worker drains, then cancel the
+	// listen context and wait for Listen to return.
+	close(block)
+	listenCancel()
+	<-listenDone
+}
+
 // TestWaitStarted_NilBus exercises the nil-receiver early-return guard
 // in WaitStarted. A nil SimpleEventBus must return immediately without
 // panicking or blocking.
