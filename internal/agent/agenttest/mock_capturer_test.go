@@ -244,10 +244,85 @@ func TestMockCapturer_RaceDetection(t *testing.T) {
 	}
 }
 
+// assertIsTTYNilReturnsFalse asserts that a zero-value MockCapturer
+// returns false from IsTTY (the nil-func default).
+func assertIsTTYNilReturnsFalse(t *testing.T, m *MockCapturer) {
+	t.Helper()
+	got := m.IsTTY("any")
+	if got {
+		t.Error("nil IsTTYFn: got true; want false")
+	}
+}
+
+// assertCapturePromptNilReturnsEmpty asserts that a zero-value MockCapturer
+// returns ("", nil) from CapturePrompt (the nil-func default).
+func assertCapturePromptNilReturnsEmpty(t *testing.T, m *MockCapturer) {
+	t.Helper()
+	ctx := context.Background()
+	got, err := m.CapturePrompt(ctx, nil)
+	if got != "" {
+		t.Errorf("nil CapturePromptFn: got %q; want empty", got)
+	}
+	if err != nil {
+		t.Errorf("nil CapturePromptFn: unexpected error: %v", err)
+	}
+}
+
+// assertConfirmNilReturnsFalse asserts that a zero-value MockCapturer
+// returns (false, nil) from Confirm (the nil-func default).
+func assertConfirmNilReturnsFalse(t *testing.T, m *MockCapturer) {
+	t.Helper()
+	ctx := context.Background()
+	got, err := m.Confirm(ctx, "proceed?")
+	if got {
+		t.Error("nil ConfirmFn: got true; want false")
+	}
+	if err != nil {
+		t.Errorf("nil ConfirmFn: unexpected error: %v", err)
+	}
+}
+
+// assertCloseNilReturnsNil asserts that a zero-value MockCapturer
+// returns nil from Close (the nil-func default).
+func assertCloseNilReturnsNil(t *testing.T, m *MockCapturer) {
+	t.Helper()
+	ctx := context.Background()
+	err := m.Close(ctx)
+	if err != nil {
+		t.Errorf("nil CloseFn: unexpected error: %v", err)
+	}
+}
+
+// assertReadSingleKeyNilReturnsEmpty asserts that a zero-value MockCapturer
+// returns ("", nil) from ReadSingleKey (the nil-func default).
+func assertReadSingleKeyNilReturnsEmpty(t *testing.T, m *MockCapturer) {
+	t.Helper()
+	ctx := context.Background()
+	got, err := m.ReadSingleKey(ctx)
+	if got != "" {
+		t.Errorf("nil ReadSingleKeyFn: got %q; want empty", got)
+	}
+	if err != nil {
+		t.Errorf("nil ReadSingleKeyFn: unexpected error: %v", err)
+	}
+}
+
+// assertReadLineNilReturnsEmpty asserts that a zero-value MockCapturer
+// returns ("", nil) from ReadLine (the nil-func default).
+func assertReadLineNilReturnsEmpty(t *testing.T, m *MockCapturer) {
+	t.Helper()
+	ctx := context.Background()
+	got, err := m.ReadLine(ctx)
+	if got != "" {
+		t.Errorf("nil ReadLineFn: got %q; want empty", got)
+	}
+	if err != nil {
+		t.Errorf("nil ReadLineFn: unexpected error: %v", err)
+	}
+}
+
 func TestMockCapturer_NilFuncs(t *testing.T) {
 	t.Parallel()
-
-	ctx := context.Background()
 
 	tests := []struct {
 		name string
@@ -256,67 +331,37 @@ func TestMockCapturer_NilFuncs(t *testing.T) {
 		{
 			name: "IsTTY_nil_func",
 			call: func(m *MockCapturer) {
-				got := m.IsTTY("any")
-				if got {
-					t.Error("nil IsTTYFn: got true; want false")
-				}
+				assertIsTTYNilReturnsFalse(t, m)
 			},
 		},
 		{
 			name: "CapturePrompt_nil_func",
 			call: func(m *MockCapturer) {
-				got, err := m.CapturePrompt(ctx, nil)
-				if got != "" {
-					t.Errorf("nil CapturePromptFn: got %q; want empty", got)
-				}
-				if err != nil {
-					t.Errorf("nil CapturePromptFn: unexpected error: %v", err)
-				}
+				assertCapturePromptNilReturnsEmpty(t, m)
 			},
 		},
 		{
 			name: "Confirm_nil_func",
 			call: func(m *MockCapturer) {
-				got, err := m.Confirm(ctx, "proceed?")
-				if got {
-					t.Error("nil ConfirmFn: got true; want false")
-				}
-				if err != nil {
-					t.Errorf("nil ConfirmFn: unexpected error: %v", err)
-				}
+				assertConfirmNilReturnsFalse(t, m)
 			},
 		},
 		{
 			name: "Close_nil_func",
 			call: func(m *MockCapturer) {
-				err := m.Close(ctx)
-				if err != nil {
-					t.Errorf("nil CloseFn: unexpected error: %v", err)
-				}
+				assertCloseNilReturnsNil(t, m)
 			},
 		},
 		{
 			name: "ReadSingleKey_nil_func",
 			call: func(m *MockCapturer) {
-				got, err := m.ReadSingleKey(ctx)
-				if got != "" {
-					t.Errorf("nil ReadSingleKeyFn: got %q; want empty", got)
-				}
-				if err != nil {
-					t.Errorf("nil ReadSingleKeyFn: unexpected error: %v", err)
-				}
+				assertReadSingleKeyNilReturnsEmpty(t, m)
 			},
 		},
 		{
 			name: "ReadLine_nil_func",
 			call: func(m *MockCapturer) {
-				got, err := m.ReadLine(ctx)
-				if got != "" {
-					t.Errorf("nil ReadLineFn: got %q; want empty", got)
-				}
-				if err != nil {
-					t.Errorf("nil ReadLineFn: unexpected error: %v", err)
-				}
+				assertReadLineNilReturnsEmpty(t, m)
 			},
 		},
 	}
