@@ -332,30 +332,38 @@ func TestPartToContentBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, ok, err := c.partToContentBlock(tt.part, tt.role)
-
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("error %q should contain %q", err.Error(), tt.errContains)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if ok != tt.wantOk {
-				t.Errorf("expected ok=%v, got ok=%v", tt.wantOk, ok)
-			}
-
-			if tt.wantOk && got.Type != tt.wantType {
-				t.Errorf("expected type %q, got %q", tt.wantType, got.Type)
-			}
+			assertPartToContentBlockResult(t, got, ok, err, tt.wantErr, tt.wantOk, tt.wantType, tt.errContains)
 		})
+	}
+}
+
+// assertPartToContentBlockResult validates the result of partToContentBlock
+// against the test case expectations for error, ok, and block type.
+func assertPartToContentBlockResult(t *testing.T, got contentBlock, ok bool, err error, wantErr bool, wantOk bool, wantType, errContains string) {
+	t.Helper()
+
+	if wantErr {
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if errContains != "" && !strings.Contains(err.Error(), errContains) {
+			t.Errorf("error %q should contain %q", err.Error(), errContains)
+		}
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ok != wantOk {
+		t.Errorf("expected ok=%v, got ok=%v", wantOk, ok)
+	}
+
+	if wantOk && got.Type != wantType {
+		t.Errorf("expected type %q, got %q", wantType, got.Type)
 	}
 }
 

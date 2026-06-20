@@ -122,30 +122,14 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			p := &config.LLMProvider{
 				Type:   tt.provider,
 				APIKey: tt.apiKey,
 				URL:    tt.url,
 			}
 			a, err := createAuthenticator(p)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr {
-				if tt.url != "" && strings.Contains(tt.url, "aiplatform.googleapis.com") {
-					if _, ok := a.(*auth.VertexAuth); !ok {
-						t.Errorf("expected *auth.VertexAuth for vertex url, got %T", a)
-					}
-				}
-
-				// If it's the unknown provider with a key, verify it uses APIKeyAuth
-				if tt.provider == "unknown" && tt.apiKey != "" {
-					if _, ok := a.(*auth.APIKeyAuth); !ok {
-						t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
-					}
-				}
-			}
+			assertMissingKeysResult(t, a, err, tt.wantErr, tt.provider, tt.apiKey, tt.url)
 		})
 	}
 }
@@ -183,29 +167,62 @@ func TestCreateAuthenticator_Public(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			a, err := CreateAuthenticator(&tt.provider)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("CreateAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if (a == nil) != tt.wantAuthNil {
-				t.Errorf("CreateAuthenticator() auth = %v, wantAuthNil %v", a, tt.wantAuthNil)
-			}
-
-			if !tt.wantErr && a != nil {
-				switch tt.wantType {
-				case "bearer":
-					if _, ok := a.(*auth.BearerAuth); !ok {
-						t.Errorf("expected *auth.BearerAuth, got %T", a)
-					}
-				case "vertex":
-					if _, ok := a.(*auth.VertexAuth); !ok {
-						t.Errorf("expected *auth.VertexAuth, got %T", a)
-					}
-				}
-			}
+			assertCreateAuthenticatorResult(t, a, err, tt.wantErr, tt.wantAuthNil, tt.wantType)
 		})
+	}
+}
+
+func assertCreateAuthenticatorResult(t *testing.T, a auth.Authenticator, err error, wantErr, wantAuthNil bool, wantType string) {
+	t.Helper()
+	if (err != nil) != wantErr {
+		t.Errorf("CreateAuthenticator() error = %v, wantErr %v", err, wantErr)
+	}
+	if (a == nil) != wantAuthNil {
+		t.Errorf("CreateAuthenticator() auth = %v, wantAuthNil %v", a, wantAuthNil)
+	}
+	if !wantErr && a != nil {
+		assertAuthType(t, a, wantType)
+	}
+}
+
+func assertAuthType(t *testing.T, a auth.Authenticator, wantType string) {
+	t.Helper()
+	switch wantType {
+	case "bearer":
+		if _, ok := a.(*auth.BearerAuth); !ok {
+			t.Errorf("expected *auth.BearerAuth, got %T", a)
+		}
+	case "vertex":
+		if _, ok := a.(*auth.VertexAuth); !ok {
+			t.Errorf("expected *auth.VertexAuth, got %T", a)
+		}
+	}
+}
+
+// assertMissingKeysResult validates the result of createAuthenticator for
+// the missing-keys-and-fallbacks test table. It checks the error contract
+// and, on success, verifies the correct authenticator type was selected
+// (VertexAuth for Vertex URLs, APIKeyAuth for unknown providers with keys).
+func assertMissingKeysResult(t *testing.T, a auth.Authenticator, err error, wantErr bool, provider, apiKey, url string) {
+	t.Helper()
+	if (err != nil) != wantErr {
+		t.Errorf("createAuthenticator() error = %v, wantErr %v", err, wantErr)
+	}
+
+	if !wantErr {
+		if url != "" && strings.Contains(url, "aiplatform.googleapis.com") {
+			if _, ok := a.(*auth.VertexAuth); !ok {
+				t.Errorf("expected *auth.VertexAuth for vertex url, got %T", a)
+			}
+		}
+
+		if provider == "unknown" && apiKey != "" {
+			if _, ok := a.(*auth.APIKeyAuth); !ok {
+				t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
+			}
+		}
 	}
 }
 

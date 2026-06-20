@@ -204,56 +204,8 @@ func TestOpenAIReasoningTokens(t *testing.T) {
 }
 
 func TestToolCalling(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req chatRequest
-		_ = json.NewDecoder(r.Body).Decode(&req)
-
-		// If it's the first call, return a tool call
-		if len(req.Messages) == 1 {
-			resp := chatResponse{
-				Choices: []choice{
-					{
-						Message: message{
-							Role: "assistant",
-							ToolCalls: []toolCall{
-								{
-									ID:   "call_123",
-									Type: "function",
-									Function: functionCall{
-										Name:      "get_weather",
-										Arguments: `{"location": "London"}`,
-									},
-								},
-							},
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-
-		// If it's the second call, check for tool response
-		if len(req.Messages) == 3 {
-			lastMsg := req.Messages[2]
-			if lastMsg.Role != "tool" || lastMsg.ToolCallID != "call_123" || lastMsg.Content != "Sunny" {
-				t.Errorf("unexpected tool response message: %+v", lastMsg)
-			}
-
-			resp := chatResponse{
-				Choices: []choice{
-					{
-						Message: message{
-							Role:    "assistant",
-							Content: "The weather is sunny",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-	}))
+	t.Parallel()
+	server := httptest.NewServer(newToolCallingHandler(t))
 	defer server.Close()
 
 	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"})
@@ -264,33 +216,86 @@ func TestToolCalling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if resp.Parts[0].FunctionCall.ID != "call_123" {
-		t.Errorf("expected tool call ID call_123, got %s", resp.Parts[0].FunctionCall.ID)
-	}
+	assertToolCallResponse(t, resp)
 
 	// 2. Respond to tool call
 	history = append(history, resp)
 	history = append(history, &llm.Content{
 		Role: "tool",
-		Parts: []*llm.Part{
-			{
-				FunctionResponse: &llm.FunctionResponse{
-					ID:       "call_123",
-					Name:     "get_weather",
-					Response: map[string]interface{}{"result": "Sunny"},
-				},
+		Parts: []*llm.Part{{
+			FunctionResponse: &llm.FunctionResponse{
+				ID:       "call_123",
+				Name:     "get_weather",
+				Response: map[string]interface{}{"result": "Sunny"},
 			},
-		},
+		}},
 	})
 
 	resp2, _, err := client.SendChat(context.Background(), history, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertFinalToolResponse(t, resp2)
+}
 
-	if resp2.Parts[0].Text != "The weather is sunny" {
-		t.Errorf("unexpected response: %s", resp2.Parts[0].Text)
+// newToolCallingHandler returns an http.HandlerFunc that simulates a two-turn
+// tool-calling conversation: first call returns a tool_call, second call
+// (with tool response in history) returns the final text.
+func newToolCallingHandler(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		if len(req.Messages) == 1 {
+			resp := chatResponse{
+				Choices: []choice{{
+					Message: message{
+						Role: "assistant",
+						ToolCalls: []toolCall{{
+							ID:   "call_123",
+							Type: "function",
+							Function: functionCall{
+								Name:      "get_weather",
+								Arguments: `{"location": "London"}`,
+							},
+						}},
+					},
+				}},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		if len(req.Messages) == 3 {
+			lastMsg := req.Messages[2]
+			if lastMsg.Role != "tool" || lastMsg.ToolCallID != "call_123" || lastMsg.Content != "Sunny" {
+				t.Errorf("unexpected tool response message: %+v", lastMsg)
+			}
+			resp := chatResponse{
+				Choices: []choice{{
+					Message: message{
+						Role:    "assistant",
+						Content: "The weather is sunny",
+					},
+				}},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}
+	}
+}
+
+func assertToolCallResponse(t *testing.T, resp *llm.Content) {
+	t.Helper()
+	if resp.Parts[0].FunctionCall.ID != "call_123" {
+		t.Errorf("expected tool call ID call_123, got %s", resp.Parts[0].FunctionCall.ID)
+	}
+}
+
+func assertFinalToolResponse(t *testing.T, resp *llm.Content) {
+	t.Helper()
+	if resp.Parts[0].Text != "The weather is sunny" {
+		t.Errorf("unexpected response: %s", resp.Parts[0].Text)
 	}
 }
 
