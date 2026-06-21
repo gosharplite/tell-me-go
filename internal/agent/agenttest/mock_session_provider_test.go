@@ -211,3 +211,57 @@ func TestMockSessionProvider_RaceCondition(t *testing.T) {
 		t.Errorf("total calls: got %d, want %d", got, want)
 	}
 }
+
+func TestMockSessionProvider_NilFuncs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(m *MockSessionProvider)
+	}{
+		{
+			name: "GetSettings_nil_func",
+			call: func(m *MockSessionProvider) {
+				got := m.GetSettings()
+				if got != nil {
+					t.Errorf("GetSettings nil func: got %+v, want nil", got)
+				}
+			},
+		},
+		{
+			name: "GetInfo_nil_func",
+			call: func(m *MockSessionProvider) {
+				got := m.GetInfo()
+				if got.Model != "" {
+					t.Errorf("GetInfo nil func: got Model %q, want empty", got.Model)
+				}
+			},
+		},
+		{
+			name: "Close_nil_func",
+			call: func(m *MockSessionProvider) {
+				err := m.Close()
+				if err != nil {
+					t.Errorf("Close nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "GetHealthChecker_nil_func",
+			call: func(m *MockSessionProvider) {
+				got := m.GetHealthChecker()
+				if got != nil {
+					t.Errorf("GetHealthChecker nil func: got %+v, want nil", got)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockSessionProvider{}
+			tt.call(m)
+		})
+	}
+}
