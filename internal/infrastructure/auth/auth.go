@@ -229,49 +229,65 @@ type ServiceAccountAuth struct {
 	expiry          time.Time
 }
 
+// checkCachedToken returns the cached token if it is still valid.
+// A token is considered valid if it is non-empty and has more than
+// 5 minutes remaining before expiry.
+// Caller MUST hold a.mu.
+func (a *ServiceAccountAuth) checkCachedToken() (string, bool) {
+	if a.token != "" && time.Now().Add(5*time.Minute).Before(a.expiry) {
+		return a.token, true
+	}
+	return "", false
+}
+
+// fetchGoogleToken obtains an OAuth2 token either via the injected
+// tokenSourceFunc (test path) or by reading the service account JSON
+// key from disk and exchanging it with Google's OAuth2 endpoint.
+// Caller MUST hold a.mu.
+func (a *ServiceAccountAuth) fetchGoogleToken(ctx context.Context) (*oauth2.Token, error) {
+	if a.tokenSourceFunc != nil {
+		tok, err := a.tokenSourceFunc()
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch mock oauth2 token: %w", err)
+		}
+		return tok, nil
+	}
+
+	if a.KeyFilePath == "" {
+		return nil, fmt.Errorf("failed to read service account key: KeyFilePath is empty")
+	}
+	data, err := os.ReadFile(a.KeyFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read service account key: %w", err)
+	}
+
+	creds, err := google.CredentialsFromJSONWithType(ctx, data, google.ServiceAccount, "https://www.googleapis.com/auth/cloud-platform")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse service account JSON: %w", err)
+	}
+
+	ts := creds.TokenSource
+	tok, err := ts.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch oauth2 token: %w", err)
+	}
+	return tok, nil
+}
+
 // getToken performs the OAuth2 exchange and returns a valid access token.
 func (a *ServiceAccountAuth) getToken(ctx context.Context) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// 1. Check if cached token is still valid (with 5-minute buffer)
-	if a.token != "" && time.Now().Add(5*time.Minute).Before(a.expiry) {
-		return a.token, nil
+	if token, ok := a.checkCachedToken(); ok {
+		return token, nil
 	}
 
-	var tok *oauth2.Token
-	var err error
-
-	if a.tokenSourceFunc != nil {
-		tok, err = a.tokenSourceFunc()
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch mock oauth2 token: %w", err)
-		}
-	} else {
-		// 2. Read the master secret (key.json) from disk
-		if a.KeyFilePath == "" {
-			return "", fmt.Errorf("failed to read service account key: KeyFilePath is empty")
-		}
-		data, err := os.ReadFile(a.KeyFilePath)
-		if err != nil {
-			return "", fmt.Errorf("failed to read service account key: %w", err)
-		}
-
-		// 3. Exchange JSON key for a Bearer token via Google OAuth2
-		// Scope required for Vertex AI: "https://www.googleapis.com/auth/cloud-platform"
-		creds, err := google.CredentialsFromJSONWithType(ctx, data, google.ServiceAccount, "https://www.googleapis.com/auth/cloud-platform")
-		if err != nil {
-			return "", fmt.Errorf("failed to parse service account JSON: %w", err)
-		}
-
-		ts := creds.TokenSource
-		tok, err = ts.Token()
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch oauth2 token: %w", err)
-		}
+	tok, err := a.fetchGoogleToken(ctx)
+	if err != nil {
+		return "", err
 	}
 
-	// 4. Cache the resulting short-lived token
 	a.token = tok.AccessToken
 	a.expiry = tok.Expiry
 	return a.token, nil
