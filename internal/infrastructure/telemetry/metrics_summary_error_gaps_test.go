@@ -262,6 +262,6 @@ func TestGetCostSummary_SilentCostUpdateWarning(t *testing.T) {
 
 	m.recordCostSilently(context.Background())
 
-	assert.Contains(t, logBuf.String(), "Warning: Failed to record cost before summary")
+	assert.Contains(t, logBuf.String(), "WARN failed to record cost before summary")
 	assert.Contains(t, logBuf.String(), "path not safe")
 }
