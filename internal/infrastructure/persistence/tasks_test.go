@@ -89,9 +89,6 @@ func TestTaskRepository_JSONArrayCompatibility(t *testing.T) {
 }
 
 func TestTaskRepository_CorruptedLine(t *testing.T) {
-	// Set the env var that gates the debug log.
-	t.Setenv("TELL_ME_DEBUG", "migration")
-
 	var buf testfixtures.SyncWriter
 	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -224,13 +221,10 @@ func TestParseJSONLTasks_BlankLine(t *testing.T) {
 }
 
 func TestParseJSONLTasks_CorruptedLineNoDebug(t *testing.T) {
-	// NOTE: t.Parallel() is incompatible with t.Setenv(); this test runs serially.
-
-	// Ensure TELL_ME_DEBUG does NOT contain "migration"
-	t.Setenv("TELL_ME_DEBUG", "")
+	t.Parallel()
 
 	var buf testfixtures.SyncWriter
-	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	testLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	trimmed := `{"id": 1, "content": "Task 1"}
 not valid json
@@ -241,9 +235,9 @@ not valid json
 		t.Fatalf("expected 2 tasks, got %d", len(result))
 	}
 
-	// Verify NO debug message was logged (since TELL_ME_DEBUG doesn't contain migration)
+	// Verify NO debug message was logged (logger is at Info level, above Debug)
 	output := buf.String()
 	if strings.Contains(output, "corrupted task line during migration") {
-		t.Error("expected no debug log when TELL_ME_DEBUG does not contain 'migration'")
+		t.Error("expected no debug log when logger level is above Debug")
 	}
 }
