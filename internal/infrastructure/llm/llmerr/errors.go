@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"regexp"
-	"strings"
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -27,7 +26,10 @@ var (
 	// 2. Uses word boundaries (\b) and specific prefix requirements to avoid greedy false positives
 	//    like "500 tokens" or "context window: 128000".
 	// 3. Delimiters are flexible (space, underscore, colon) to handle varied SDK logging formats.
-	reTransient = regexp.MustCompile(`(?i)(\b(?:HTTP|STATUS|CODE|ERROR|ERR|STATUS_CODE)[\s_:]*(?:5\d{2}|499|408)\b|[:]\s*(?:5\d{2}|499|408)\b|CANCELLED|INTERNAL[\s_:]+SERVER[\s_:]+ERROR|BAD[\s_:]+GATEWAY|SERVICE[\s_:]+UNAVAILABLE|DEADLINE[\s_:]+EXCEEDED|UNAVAILABLE|\b(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[\s_:]+TIMEOUT\b)`)
+	reTransient = regexp.MustCompile(`(?i)(\b(?:HTTP|STATUS|CODE|ERROR|ERR|STATUS_CODE)[\s_:]*(?:5\d{2}|499|408)\b|[:]\s*(?:5\d{2}|499|408)\b|CANCELLED|INTERNAL[\s_:]+SERVER[\s_:]+ERROR|BAD[\s_:]+GATEWAY|SERVICE[\s_:]+UNAVAILABLE|DEADLINE[\s_:]+EXCEEDED|UNAVAILABLE|\b(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[\s_:]+TIMEOUT\b|(?:\bCONNECTION\s+RESET\s+BY\s+PEER\b)|(?:\bBROKEN\s+PIPE\b)|(?:\bEOF\b))`)
+
+	// reAuth identifies authentication and authorization failures in opaque error strings.
+	reAuth = regexp.MustCompile(`(?i)\b(UNAUTHENTICATED|API_KEY_INVALID)\b`)
 )
 
 // APIError represents an error returned by an LLM provider's API.
@@ -162,16 +164,9 @@ func classifyStandard(err error) (error, bool) {
 
 func classifyString(err error) (error, bool) {
 	msg := err.Error() // Regex handles (?i) case-insensitivity
-	upperMsg := strings.ToUpper(msg)
 
-	// Fallback for brittle network errors that wrap syscalls in opaque strings
-	if strings.Contains(upperMsg, "CONNECTION RESET BY PEER") ||
-		strings.Contains(upperMsg, "BROKEN PIPE") ||
-		strings.Contains(upperMsg, "EOF") {
-		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
-	}
-
-	if strings.Contains(upperMsg, "UNAUTHENTICATED") || strings.Contains(upperMsg, "API_KEY_INVALID") {
+	// Auth must be checked first: auth failures are non-retryable
+	if reAuth.MatchString(msg) {
 		return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
 	}
 
@@ -179,6 +174,8 @@ func classifyString(err error) (error, bool) {
 		return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
 	}
 
+	// Transient is the broadest category; evaluate last to let more specific
+	// classifiers (auth, rate-limit) take priority.
 	if reTransient.MatchString(msg) {
 		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 	}
