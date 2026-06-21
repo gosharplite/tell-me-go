@@ -17,17 +17,17 @@ import (
 )
 
 func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArgs) (string, error) {
-	m.metricsMu.Lock()
-	defer m.metricsMu.Unlock()
-
-	ledgerMu.Lock()
-	defer ledgerMu.Unlock()
-
 	outputDir := filepath.Dir(m.logFile)
 	globalDir := filepath.Dir(outputDir)
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 
-	history, status, err := m.ensureLedgerReady(ctx, historyPath, globalDir)
+	history, status, err := func() ([]sessionCostRecord, string, error) {
+		m.metricsMu.Lock()
+		defer m.metricsMu.Unlock()
+		ledgerMu.Lock()
+		defer ledgerMu.Unlock()
+		return m.ensureLedgerReady(ctx, historyPath, globalDir)
+	}()
 	if err != nil {
 		return status, err
 	}
