@@ -5,7 +5,13 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1032,4 +1038,54 @@ func TestVertexAuth_WriteCacheFile(t *testing.T) {
 		// Must not panic
 		auth.writeCacheFile(context.Background(), "should-not-panic")
 	})
+}
+
+// TestServiceAccountAuth_ProductionTokenExchange_Success covers the production
+// (non-mock) success path in fetchGoogleToken where ts.Token() succeeds.
+// It generates an RSA key pair, starts an httptest server to simulate
+// Google's OAuth2 token endpoint, writes a service-account JSON file with
+// the real private key, and verifies that getToken returns the access token
+// from the OAuth2 response.
+func TestServiceAccountAuth_ProductionTokenExchange_Success(t *testing.T) {
+	// Step 1 — Generate RSA key pair
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey failed: %v", err)
+	}
+	privDER := x509.MarshalPKCS1PrivateKey(key)
+	privPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privDER})
+
+	// Step 2 — Start httptest server
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"test-access-token","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer srv.Close()
+
+	// Step 3 — Build service account JSON
+	saJSON := fmt.Sprintf(`{
+  "type": "service_account",
+  "project_id": "test-project",
+  "private_key_id": "test-key-id",
+  "private_key": %q,
+  "client_email": "test@test-project.iam.gserviceaccount.com",
+  "token_uri": %q
+}`, string(privPEM), srv.URL)
+
+	// Step 4 — Write to temp file + create auth
+	tmpDir := t.TempDir()
+	keyFile := filepath.Join(tmpDir, "sa.json")
+	if err := os.WriteFile(keyFile, []byte(saJSON), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	auth := &ServiceAccountAuth{KeyFilePath: keyFile}
+
+	// Step 5 — Call getToken and assert
+	token, err := auth.getToken(context.Background())
+	if err != nil {
+		t.Fatalf("getToken failed: %v", err)
+	}
+	if token != "test-access-token" {
+		t.Errorf("got %q, want test-access-token", token)
+	}
 }
