@@ -114,6 +114,37 @@ func applyGenericErrorHandling(result tools.ToolResult, call *llm.FunctionCall, 
 	return result
 }
 
+// buildSkippedResult constructs a ToolResult for a task that was skipped
+// due to plan halting (serial failure, context cancellation, etc.).
+// When err is non-nil, both Text and Error include the error detail.
+func buildSkippedResult(reason string, err error) tools.ToolResult {
+	if err != nil {
+		return tools.ToolResult{
+			Text:  fmt.Sprintf("%s: %v", reason, err),
+			Error: fmt.Errorf("%s: %w", reason, err),
+		}
+	}
+	return tools.ToolResult{Text: reason}
+}
+
+// isTriggerTask returns true when taskIdx is the task that triggered plan
+// halting in the halting batch — i.e., it is at or before skipTaskIdx within
+// startBatchIdx. This task's existing result must be preserved.
+func isTriggerTask(batchIdx, taskIdx, startBatchIdx, skipTaskIdx int) bool {
+	return batchIdx == startBatchIdx && taskIdx <= skipTaskIdx
+}
+
+// shouldSkipTask returns true when a task in failRemainingTasks should be
+// skipped rather than overwritten with an error result. A task is skipped
+// if it's the trigger task within the halting batch, or if its result slot
+// has already been filled.
+func shouldSkipTask(batchIdx, taskIdx, startBatchIdx, skipTaskIdx int, results []tools.ToolResult) bool {
+	if isTriggerTask(batchIdx, taskIdx, startBatchIdx, skipTaskIdx) {
+		return true
+	}
+	return results[taskIdx].Text != "" || results[taskIdx].Error != nil
+}
+
 func newDefaultToolPipeline(
 	registry tools.Registry,
 	sm domain_security.Manager,
@@ -418,7 +449,7 @@ func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.Function
 func (e *Dispatcher) checkPreconditions(ctx context.Context, batchIdx int, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) error {
 	if err := ctx.Err(); err != nil {
 		e.logger.Debug("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
-		e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
+		e.failRemainingTasks(batches, batchIdx, -1, results, err, "batch interrupted")
 		return err
 	}
 	return nil
@@ -571,7 +602,7 @@ func (e *Dispatcher) evaluateBatchOutcome(ctx context.Context, batchIdx int, bat
 			e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
 				"batch_idx", batchIdx,
 				"tool_name", calls[batch.tasks[0]].Name)
-			e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "skipped: execution halted due to previous serial tool error, timeout or cancellation")
+			e.failRemainingTasks(batches, batchIdx, batch.tasks[0], results, nil, "skipped: execution halted due to previous serial tool error, timeout or cancellation")
 
 			if ctx.Err() != nil {
 				return true, ctx.Err()
@@ -581,38 +612,20 @@ func (e *Dispatcher) evaluateBatchOutcome(ctx context.Context, batchIdx int, bat
 	} else {
 		if err := ctx.Err(); err != nil {
 			e.logger.Debug("Parallel batch interrupted, halting execution plan", "batch_idx", batchIdx)
-			e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
+			e.failRemainingTasks(batches, batchIdx, -1, results, err, "batch interrupted")
 			return true, err
 		}
 	}
 	return false, nil
 }
 
-func (e *Dispatcher) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, results []tools.ToolResult, err error, reason string) {
+func (e *Dispatcher) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, results []tools.ToolResult, err error, reason string) {
 	for j := startBatchIdx; j < len(batches); j++ {
-		for _, skippedIdx := range batches[j].tasks {
-			if j == startBatchIdx && skippedIdx <= skipTaskIdx {
+		for _, taskIdx := range batches[j].tasks {
+			if shouldSkipTask(j, taskIdx, startBatchIdx, skipTaskIdx, results) {
 				continue
 			}
-
-			if results[skippedIdx].Text != "" || results[skippedIdx].Error != nil {
-				continue
-			}
-
-			var text string
-			var resErr error
-			if err != nil {
-				text = fmt.Sprintf("%s: %v", reason, err)
-				resErr = fmt.Errorf("%s: %w", reason, err)
-			} else {
-				text = reason
-				resErr = nil
-			}
-
-			results[skippedIdx] = tools.ToolResult{
-				Text:  text,
-				Error: resErr,
-			}
+			results[taskIdx] = buildSkippedResult(reason, err)
 		}
 	}
 }

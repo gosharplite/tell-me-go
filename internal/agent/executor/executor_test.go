@@ -1156,6 +1156,147 @@ func TestHandleClassifiedError(t *testing.T) {
 	}
 }
 
+func TestBuildSkippedResult(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		reason      string
+		err         error
+		wantTextHas string
+		wantErrNil  bool
+		wantErrIs   error
+	}{
+		{
+			name:        "with_error_wraps_and_includes_detail",
+			reason:      "batch interrupted",
+			err:         errors.New("ctx cancelled"),
+			wantTextHas: "batch interrupted: ctx cancelled",
+			wantErrNil:  false,
+			wantErrIs:   nil, // no sentinel to check, just verify non-nil
+		},
+		{
+			name:        "without_error_text_is_reason_only",
+			reason:      "skipped: execution halted",
+			err:         nil,
+			wantTextHas: "skipped: execution halted",
+			wantErrNil:  true,
+			wantErrIs:   nil,
+		},
+		{
+			name:        "with_error_wraps_with_fmt_errorf_w_verb",
+			reason:      "batch interrupted",
+			err:         context.Canceled,
+			wantTextHas: "batch interrupted: context canceled",
+			wantErrNil:  false,
+			wantErrIs:   context.Canceled,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildSkippedResult(tt.reason, tt.err)
+
+			assert.Contains(t, got.Text, tt.wantTextHas)
+			if tt.wantErrNil {
+				assert.NoError(t, got.Error)
+			} else {
+				assert.Error(t, got.Error)
+				if tt.wantErrIs != nil {
+					assert.ErrorIs(t, got.Error, tt.wantErrIs)
+				}
+			}
+		})
+	}
+}
+
+func TestShouldSkipTask(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		batchIdx      int
+		taskIdx       int
+		startBatchIdx int
+		skipTaskIdx   int
+		results       []tools.ToolResult
+		want          bool
+	}{
+		{
+			name:          "skip_trigger_task_in_halting_batch",
+			batchIdx:      1,
+			taskIdx:       0,
+			startBatchIdx: 1,
+			skipTaskIdx:   0,
+			results:       []tools.ToolResult{{}, {}},
+			want:          true,
+		},
+		{
+			name:          "skip_task_before_skipTaskIdx_in_halting_batch",
+			batchIdx:      1,
+			taskIdx:       0,
+			startBatchIdx: 1,
+			skipTaskIdx:   2,
+			results:       []tools.ToolResult{{}, {}, {}, {}},
+			want:          true,
+		},
+		{
+			name:          "process_task_after_skipTaskIdx_in_halting_batch",
+			batchIdx:      1,
+			taskIdx:       3,
+			startBatchIdx: 1,
+			skipTaskIdx:   2,
+			results:       []tools.ToolResult{{}, {}, {}, {}, {}},
+			want:          false,
+		},
+		{
+			name:          "skip_already_filled_text_in_later_batch",
+			batchIdx:      2,
+			taskIdx:       0,
+			startBatchIdx: 1,
+			skipTaskIdx:   -1,
+			results:       []tools.ToolResult{{Text: "already done"}},
+			want:          true,
+		},
+		{
+			name:          "skip_already_filled_error_in_later_batch",
+			batchIdx:      2,
+			taskIdx:       0,
+			startBatchIdx: 1,
+			skipTaskIdx:   -1,
+			results:       []tools.ToolResult{{Error: errors.New("previous failure")}},
+			want:          true,
+		},
+		{
+			name:          "process_empty_slot_in_later_batch",
+			batchIdx:      2,
+			taskIdx:       0,
+			startBatchIdx: 1,
+			skipTaskIdx:   -1,
+			results:       []tools.ToolResult{{}},
+			want:          false,
+		},
+		{
+			name:          "skipTaskIdx_negative_allows_all_in_start_batch",
+			batchIdx:      0,
+			taskIdx:       0,
+			startBatchIdx: 0,
+			skipTaskIdx:   -1,
+			results:       []tools.ToolResult{{}},
+			want:          false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := shouldSkipTask(tt.batchIdx, tt.taskIdx, tt.startBatchIdx, tt.skipTaskIdx, tt.results)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestAssembleResponse_BinaryData(t *testing.T) {
 	t.Parallel()
 
@@ -1487,7 +1628,6 @@ func TestFailRemainingTasks_SkipsAlreadyFilledSlots(t *testing.T) {
 	t.Run("skips_slot_with_existing_text", func(t *testing.T) {
 		t.Parallel()
 
-		calls := []*llm.FunctionCall{{Name: "a"}, {Name: "b"}}
 		results := []tools.ToolResult{
 			{Text: "already filled", Error: nil}, // slot 0 pre-filled
 			{},                                   // slot 1 empty
@@ -1496,7 +1636,7 @@ func TestFailRemainingTasks_SkipsAlreadyFilledSlots(t *testing.T) {
 			{isSerial: false, tasks: []int{0, 1}},
 		}
 
-		d.failRemainingTasks(batches, 0, -1, calls, results,
+		d.failRemainingTasks(batches, 0, -1, results,
 			errors.New("ctx cancelled"), "batch interrupted")
 
 		// Slot 0 must be UNCHANGED (skip guard fired)
@@ -1511,7 +1651,6 @@ func TestFailRemainingTasks_SkipsAlreadyFilledSlots(t *testing.T) {
 	t.Run("skips_slot_with_existing_error", func(t *testing.T) {
 		t.Parallel()
 
-		calls := []*llm.FunctionCall{{Name: "a"}, {Name: "b"}}
 		results := []tools.ToolResult{
 			{Text: "", Error: errors.New("previous failure")}, // slot 0 has error
 			{}, // slot 1 empty
@@ -1520,7 +1659,7 @@ func TestFailRemainingTasks_SkipsAlreadyFilledSlots(t *testing.T) {
 			{isSerial: false, tasks: []int{0, 1}},
 		}
 
-		d.failRemainingTasks(batches, 0, -1, calls, results,
+		d.failRemainingTasks(batches, 0, -1, results,
 			errors.New("ctx cancelled"), "batch interrupted")
 
 		// Slot 0 must be UNCHANGED
