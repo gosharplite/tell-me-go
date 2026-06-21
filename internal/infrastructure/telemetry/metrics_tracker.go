@@ -30,6 +30,13 @@ type sessionCostTracker struct {
 	mode      string
 	sm        domain_security.Manager
 	initiated bool
+
+	// cachedExternalDailyCost holds the sum of today's other-session costs from the global ledger.
+	cachedExternalDailyCost float64
+	// cachedDate is the UTC-8 date ("2006-01-02") the cache is valid for; zero-value "" triggers refresh on first use.
+	cachedDate string
+	// currentSessionID is computed once from generateSessionID(t.mode, t.logFile) and set inside ensureInitialized().
+	currentSessionID string
 }
 
 // NewSessionCostTracker creates a new tracker.
@@ -51,6 +58,8 @@ func (t *sessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 }
 
 // GetDailyCost aggregates costs from the global ledger for the current date in UTC-8.
+// Uses a cached external cost to avoid synchronous disk I/O on every invocation.
+// The cache is refreshed when the UTC-8 date changes.
 func (t *sessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -59,17 +68,41 @@ func (t *sessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 		return t.totalCost
 	}
 
+	now := time.Now()
+	loc := time.FixedZone("UTC-8", -8*3600)
+	today := now.In(loc).Format("2006-01-02")
+
+	if t.cachedDate != today {
+		t.refreshExternalDailyCache(now)
+	}
+
+	return t.cachedExternalDailyCost + t.totalCost
+}
+
+// refreshExternalDailyCache reads the global ledger and caches the
+// external (other-session) cost for today's UTC-8 date.
+// Must be called with t.mu held.
+func (t *sessionCostTracker) refreshExternalDailyCache(now time.Time) {
+	loc := time.FixedZone("UTC-8", -8*3600)
+	today := now.In(loc).Format("2006-01-02")
+
+	// Always set cachedDate so we don't retry on every call after a failure.
+	t.cachedDate = today
+
+	if t.logFile == "" {
+		t.cachedExternalDailyCost = 0
+		return
+	}
+
 	globalDir := filepath.Dir(filepath.Dir(t.logFile))
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 
-	// Synchronize access to the global ledger file.
-	// Acquire ledgerMu after t.mu to maintain consistent lock ordering.
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
 
-	// If recovery is in progress, return the in-memory cost to avoid blocking or inconsistent reads.
 	if _, recovering := recoveryInProgress.Load(historyPath); recovering {
-		return t.totalCost
+		t.cachedExternalDailyCost = 0
+		return
 	}
 
 	content, err := os.ReadFile(historyPath)
@@ -77,19 +110,23 @@ func (t *sessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 		if !os.IsNotExist(err) {
 			log.Printf("Warning: Failed to read global ledger at %s: %v", historyPath, err)
 		}
-		return t.totalCost
+		t.cachedExternalDailyCost = 0
+		return
 	}
 
 	var history []sessionCostRecord
 	if err := json.Unmarshal(content, &history); err != nil {
 		log.Printf("Warning: Failed to parse global ledger at %s: %v", historyPath, err)
-		return t.totalCost
+		t.cachedExternalDailyCost = 0
+		return
 	}
 
-	// CRITICAL: Must match the ID generated in EstimateCost
-	currentSessionID := generateSessionID(t.mode, t.logFile)
-
-	return t.calculateDailyCost(history, time.Now(), currentSessionID)
+	if t.currentSessionID == "" {
+		t.currentSessionID = generateSessionID(t.mode, t.logFile)
+	}
+	// calculateDailyCost returns external + t.totalCost, so subtract to get external-only.
+	fullDaily := t.calculateDailyCost(history, now, t.currentSessionID)
+	t.cachedExternalDailyCost = fullDaily - t.totalCost
 }
 
 func (t *sessionCostTracker) calculateDailyCost(records []sessionCostRecord, now time.Time, currentSessionID string) float64 {
@@ -141,11 +178,15 @@ func (t *sessionCostTracker) GetStats(ctx context.Context) (domain_pricing.Usage
 	return t.stats, t.totalCost
 }
 
-// Warmup pre-loads the session state from the log file.
+// Warmup pre-loads the session state from the log file and caches
+// the external daily cost from the global ledger.
 func (t *sessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.ensureInitialized()
+	if t.logFile != "" && t.cachedDate == "" {
+		t.refreshExternalDailyCache(time.Now())
+	}
 }
 
 func (t *sessionCostTracker) ensureInitialized() {
@@ -155,6 +196,7 @@ func (t *sessionCostTracker) ensureInitialized() {
 			t.totalCost = totalCost
 		}
 		t.initiated = true
+		t.currentSessionID = generateSessionID(t.mode, t.logFile)
 	}
 }
 
