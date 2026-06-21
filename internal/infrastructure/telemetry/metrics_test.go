@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -242,4 +244,67 @@ func TestAppendSummaryToLog_WritesFile(t *testing.T) {
 	if metrics.Cost != 0.0015 {
 		t.Errorf("expected cost 0.0015, got %f", metrics.Cost)
 	}
+}
+
+// =============================================================================
+// writeTraceEntry table-driven tests — covering direct I/O boundaries
+// =============================================================================
+
+// TestWriteTraceEntry exercises writeTraceEntry (metrics.go:276-294), the
+// fire-and-forget helper that opens, writes, and closes a trace file. All
+// errors are logged via slog.Warn, never returned.
+func TestWriteTraceEntry(t *testing.T) {
+	// NOT parallel — subtest "close error" overrides package-level openTraceFile.
+
+	t.Run("successful write", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		traceFile := filepath.Join(tmpDir, "trace.jsonl")
+
+		writeTraceEntry(traceFile, []byte(`{"status":"ok"}`))
+
+		data, err := os.ReadFile(traceFile)
+		require.NoError(t, err)
+		require.Equal(t, "{\"status\":\"ok\"}\n", string(data))
+	})
+
+	t.Run("open error", func(t *testing.T) {
+		t.Parallel()
+		var logBuf bytes.Buffer
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(os.Stderr)
+
+		writeTraceEntry("/nonexistent/dir/subdir/file", []byte(`{}`))
+
+		require.Contains(t, logBuf.String(), "failed to open trace file")
+	})
+
+	t.Run("write error /dev/full", func(t *testing.T) {
+		if _, err := os.Stat("/dev/full"); os.IsNotExist(err) {
+			t.Skip("/dev/full does not exist on this system")
+		}
+		var logBuf bytes.Buffer
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(os.Stderr)
+
+		writeTraceEntry("/dev/full", []byte(`{}`))
+
+		require.Contains(t, logBuf.String(), "failed to write to trace file")
+	})
+
+	t.Run("close error", func(t *testing.T) {
+		originalOpen := openTraceFile
+		openTraceFile = func(path string) (io.WriteCloser, error) {
+			return &errCloser{Writer: &bytes.Buffer{}}, nil
+		}
+		t.Cleanup(func() { openTraceFile = originalOpen })
+
+		var logBuf bytes.Buffer
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(os.Stderr)
+
+		writeTraceEntry(t.TempDir()+"/dummy.jsonl", []byte(`{}`))
+
+		require.Contains(t, logBuf.String(), "failed to close trace file")
+	})
 }
