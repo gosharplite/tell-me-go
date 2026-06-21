@@ -650,11 +650,9 @@ func TestPolicy_FilepathAbsErrors(t *testing.T) {
 	require.NoError(t, err)
 	origPWD, hadPWD := os.LookupEnv("PWD")
 
-	tmpDir := t.TempDir()
-	require.NoError(t, os.Chdir(tmpDir), "failed to chdir into temp directory")
-	_ = os.Unsetenv("PWD")
-	require.NoError(t, os.RemoveAll(tmpDir), "failed to remove temp directory")
-
+	// Register cleanup BEFORE any destructive process-wide state changes.
+	// This guarantees restoration even if an intermediate require.NoError
+	// fires t.Fatal during the destructive operations below.
 	t.Cleanup(func() {
 		if hadPWD {
 			_ = os.Setenv("PWD", origPWD)
@@ -665,6 +663,11 @@ func TestPolicy_FilepathAbsErrors(t *testing.T) {
 			t.Logf("failed to restore working directory: %v", err)
 		}
 	})
+
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Chdir(tmpDir), "failed to chdir into temp directory")
+	_ = os.Unsetenv("PWD")
+	require.NoError(t, os.RemoveAll(tmpDir), "failed to remove temp directory")
 
 	_, wdErr := os.Getwd()
 	require.Error(t, wdErr, "os.Getwd() should fail after deleting CWD and unsetting PWD")

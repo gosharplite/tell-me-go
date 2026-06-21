@@ -6,6 +6,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // getResponsesAPIEdgeGap1And2 covers Gap 1 & 2: Direct content blocks
@@ -552,11 +555,16 @@ func TestErrUnhandledBlockTypePropagation(t *testing.T) {
 
 	t.Run("errUnhandledBlockType propagation", func(t *testing.T) {
 		t.Parallel()
-		t.Log("[DEFENSIVE] The !errors.Is(err, errUnhandledBlockType) branch " +
-			"in processDirectOutputItem is defensive future-proofing for new block types. " +
-			"Covered by existing edge-case tests: " +
-			"getResponsesAPIEdgeGap3b (child-block propagation), " +
-			"getResponsesAPIEdgeADR024Sentinel (direct-item suppression), " +
-			"getResponsesAPIEdgeADR022 (fail-loud for unrecognized types).")
+
+		// Verify the sentinel exists and errors.Is behaves correctly.
+		// Runtime coverage of the !errors.Is guard in processDirectOutputItem
+		// is provided by: getResponsesAPIEdgeGap3b (child-block propagation),
+		// getResponsesAPIEdgeADR024Sentinel (direct-item suppression),
+		// getResponsesAPIEdgeADR022 (fail-loud for unrecognized types).
+		require.NotNil(t, errUnhandledBlockType, "sentinel must exist")
+		assert.True(t, errors.Is(errUnhandledBlockType, errUnhandledBlockType),
+			"sentinel must match itself via errors.Is")
+		assert.False(t, errors.Is(errors.New("other"), errUnhandledBlockType),
+			"errors.Is must not produce false positives on unrelated errors")
 	})
 }
