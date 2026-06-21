@@ -817,6 +817,76 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 	}
 }
 
+func TestSessionManager_Run_BridgeListenError(t *testing.T) {
+	t.Parallel()
+	mChatter := new(agenttest.MockChatter)
+	mCapturer := new(agenttest.MockCapturer)
+	mHistory := new(agenttest.MockHistoryManager)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, mEventBus)
+
+	factory := func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return mChatter, nil
+	}
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+
+	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
+
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+
+	// bridgeDead signals Chat to unblock after the bridge has processed
+	// the panic-inducing InferenceStartedEvent. This prevents Chat from
+	// returning before bridge.Listen returns its error, which would
+	// cause Chat's result (nil) to win the errgroup race.
+	bridgeDead := make(chan struct{})
+
+	// Renderer panics when StartSpinnerWithStatus is called (triggered by
+	// the dispatcher processing InferenceStartedEvent). Channels are
+	// unsuitable for signalling from a panicking function, so we rely on
+	// the panic/recover chain in Listen() to produce the error.
+	mUIRenderer.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
+		close(bridgeDead)
+		panic("bridge kill switch")
+	}
+
+	// Chat blocks until the bridge has started dying, then returns nil.
+	// The errgroup cancels the context when bridge.Listen returns its
+	// error, so Chat may observe a cancelled context after unblocking.
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		<-bridgeDead
+		return nil
+	}
+
+	// Fire InferenceStartedEvent during Subscribe so the bridge queue
+	// has it ready when Listen starts. Subscribe is called twice (once
+	// for turnsLogger, once for bridge), so the event fires twice; only
+	// the bridge subscriber matters for this test.
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {
+		sub(context.Background(), events.InferenceStartedEvent{})
+	}
+
+	var shutdownCalled bool
+	mChatter.ShutdownFn = func(ctx context.Context) error {
+		shutdownCalled = true
+		return nil
+	}
+
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "uibridge panicked")
+	require.Contains(t, err.Error(), "bridge kill switch")
+	assert.True(t, shutdownCalled, "Shutdown should be called via defer even when bridge panics")
+}
+
 func TestSessionManager_Run_ShutdownError(t *testing.T) {
 	t.Parallel()
 	mChatter := new(agenttest.MockChatter)

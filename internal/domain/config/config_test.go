@@ -8,6 +8,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolveThinkingBudget(t *testing.T) {
@@ -227,6 +228,18 @@ func TestGetActiveProvider(t *testing.T) {
 				Headers:        map[string]string{"X-Test": "value"},
 			},
 		},
+		{
+			name:     "Empty config (no legacy fields, no providers)",
+			config:   Config{},
+			expected: LLMProvider{Type: "gemini"},
+		},
+		{
+			name: "Selected provider not found with empty legacy fields",
+			config: Config{
+				SelectedProvider: "missing",
+			},
+			expected: LLMProvider{Type: "gemini"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -330,6 +343,114 @@ func TestDeepSeekPricingMatch(t *testing.T) {
 			})
 			assert.True(t, found)
 			assert.Equal(t, tt.expected, pricing.Hit)
+		})
+	}
+}
+
+// TestLLMProvider_Validate_EdgeCases pins the boundary values around the
+// Anthropic thinking-budget warning condition. The threshold is
+// ThinkingBudget + anthropicThinkingBudgetHeadroom (1024).
+// For ThinkingBudget=500, the threshold is 1524:
+//
+//	MaxTokens < 1524  → warning (runtime will silently bump)
+//	MaxTokens >= 1524 → no warning
+//
+// Edge cases include zero MaxTokens, zero ThinkingBudget, non-Anthropic
+// providers, and the hard-rejection of negative MaxTokens.
+func TestLLMProvider_Validate_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		maxTokens      int
+		thinkingBudget int
+		providerType   string
+		expectError    bool
+		expectWarning  bool
+	}{
+		{
+			name:           "max_tokens_below_threshold_triggers_warning",
+			maxTokens:      1000,
+			thinkingBudget: 500,
+			providerType:   "anthropic",
+			expectError:    false,
+			expectWarning:  true,
+		},
+		{
+			name:           "max_tokens_exactly_at_threshold_no_warning",
+			maxTokens:      1524,
+			thinkingBudget: 500,
+			providerType:   "anthropic",
+			expectError:    false,
+			expectWarning:  false,
+		},
+		{
+			name:           "max_tokens_above_threshold_no_warning",
+			maxTokens:      2000,
+			thinkingBudget: 500,
+			providerType:   "anthropic",
+			expectError:    false,
+			expectWarning:  false,
+		},
+		{
+			name:           "max_tokens_zero_with_positive_budget_no_warning",
+			maxTokens:      0,
+			thinkingBudget: 500,
+			providerType:   "anthropic",
+			expectError:    false,
+			expectWarning:  false,
+		},
+		{
+			name:           "negative_max_tokens_rejected",
+			maxTokens:      -1,
+			thinkingBudget: 500,
+			providerType:   "anthropic",
+			expectError:    true,
+			expectWarning:  false,
+		},
+		{
+			name:           "non_anthropic_provider_no_warning",
+			maxTokens:      500,
+			thinkingBudget: 1000,
+			providerType:   "openai",
+			expectError:    false,
+			expectWarning:  false,
+		},
+		{
+			name:           "zero_thinking_budget_no_warning",
+			maxTokens:      1000,
+			thinkingBudget: 0,
+			providerType:   "anthropic",
+			expectError:    false,
+			expectWarning:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			logger, buf := newWarnBuffer()
+			p := &LLMProvider{
+				Type:           tt.providerType,
+				MaxTokens:      tt.maxTokens,
+				ThinkingBudget: tt.thinkingBudget,
+			}
+
+			err := p.validate("test-provider", logger)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			logged := buf.String()
+			if tt.expectWarning {
+				assert.Contains(t, logged, "provider_max_tokens_below_thinking_budget_floor")
+			} else {
+				assert.NotContains(t, logged, "provider_max_tokens_below_thinking_budget_floor")
+			}
 		})
 	}
 }
