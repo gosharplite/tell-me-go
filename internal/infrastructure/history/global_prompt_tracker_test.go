@@ -771,3 +771,246 @@ func TestWriteCompactedData_WriteError(t *testing.T) {
 		t.Fatal("expected writeCompactedData to fail on write error")
 	}
 }
+
+func TestOptimisticWrite_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	filePath := filepath.Join(tmpDir, "test.jsonl")
+
+	// Seed the file with known content
+	initialData := []byte("original\n")
+	if err := baseFS.WriteFile(context.Background(), filePath, initialData, 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := baseFS.Stat(context.Background(), filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialSize := info.Size()
+
+	tracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: filePath,
+	}
+
+	newData := []byte("replaced\n")
+	ok := tracker.optimisticWrite(context.Background(), newData, initialSize)
+	if !ok {
+		t.Fatal("expected optimisticWrite to succeed")
+	}
+
+	// Verify file was replaced
+	content, err := baseFS.ReadFile(context.Background(), filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, newData) {
+		t.Errorf("file content = %q; want %q", content, newData)
+	}
+}
+
+func TestOptimisticWrite_SizeMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	filePath := filepath.Join(tmpDir, "test.jsonl")
+
+	initialData := []byte("original content\n")
+	if err := baseFS.WriteFile(context.Background(), filePath, initialData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: filePath,
+	}
+
+	// Pass a deliberately wrong initialSize to simulate concurrent modification
+	wrongSize := int64(0)
+	ok := tracker.optimisticWrite(context.Background(), []byte("should not be written"), wrongSize)
+	if ok {
+		t.Fatal("expected optimisticWrite to fail with size mismatch")
+	}
+
+	// Verify original file untouched
+	content, err := baseFS.ReadFile(context.Background(), filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, initialData) {
+		t.Errorf("file was modified unexpectedly: got %q; want %q", content, initialData)
+	}
+}
+
+func TestOptimisticWrite_StatError(t *testing.T) {
+	baseFS := persistence.NewOSFileSystem()
+	mfs := &mockFS{FileSystem: baseFS, statErr: errors.New("injected stat error")}
+
+	tracker := &globalPromptTracker{
+		fs:       mfs,
+		filepath: "/nonexistent/test.jsonl",
+	}
+
+	ok := tracker.optimisticWrite(context.Background(), []byte("data"), 0)
+	if ok {
+		t.Error("expected optimisticWrite to return false on Stat error")
+	}
+}
+
+func TestOptimisticWrite_AtomicWriteError(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	filePath := filepath.Join(tmpDir, "test.jsonl")
+
+	initialData := []byte("original\n")
+	if err := baseFS.WriteFile(context.Background(), filePath, initialData, 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := baseFS.Stat(context.Background(), filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mfs := &mockFS{FileSystem: baseFS, writeErr: errors.New("injected write error")}
+
+	tracker := &globalPromptTracker{
+		fs:       mfs,
+		filepath: filePath,
+	}
+
+	ok := tracker.optimisticWrite(context.Background(), []byte("new data"), info.Size())
+	if ok {
+		t.Error("expected optimisticWrite to return false on AtomicWrite error")
+	}
+
+	// Verify original file untouched (AtomicWrite uses temp file, so original survives)
+	content, err := baseFS.ReadFile(context.Background(), filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, initialData) {
+		t.Errorf("file was modified unexpectedly: got %q; want %q", content, initialData)
+	}
+}
+
+func TestPrepareCompactedEntries_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	filePath := filepath.Join(tmpDir, "test.jsonl")
+
+	// Seed entries: A (oldest), B, A (most recent)
+	// After dedup and reverse: B (oldest), A (most recent)
+	seed := `{"timestamp":"2026-01-01T00:00:00Z","prompt":"A"}` + "\n" +
+		`{"timestamp":"2026-01-01T00:01:00Z","prompt":"B"}` + "\n" +
+		`{"timestamp":"2026-01-01T00:02:00Z","prompt":"A"}` + "\n"
+	if err := baseFS.WriteFile(context.Background(), filePath, []byte(seed), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: filePath,
+	}
+
+	data, err := tracker.prepareCompactedEntries(context.Background())
+	if err != nil {
+		t.Fatalf("prepareCompactedEntries failed: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty compacted data")
+	}
+
+	// Parse each JSONL line and verify ordering + dedup
+	lines := bytes.Split(bytes.TrimSpace(data), []byte{'\n'})
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 compacted lines, got %d: %q", len(lines), data)
+	}
+
+	var prompts []string
+	for _, line := range lines {
+		var entry promptEntry
+		if err := json.Unmarshal(line, &entry); err != nil {
+			t.Fatalf("failed to unmarshal compacted line %q: %v", line, err)
+		}
+		prompts = append(prompts, entry.Prompt)
+	}
+
+	// Chronological order: B (oldest) then A (most recent)
+	if len(prompts) != 2 || prompts[0] != "B" || prompts[1] != "A" {
+		t.Errorf("got prompts %v; want [B A]", prompts)
+	}
+}
+
+func TestPrepareCompactedEntries_EmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	filePath := filepath.Join(tmpDir, "nonexistent.jsonl")
+
+	tracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: filePath,
+	}
+
+	data, err := tracker.prepareCompactedEntries(context.Background())
+	if err != nil {
+		t.Fatalf("prepareCompactedEntries should not error on missing file: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("expected nil/empty data for missing file, got %d bytes", len(data))
+	}
+}
+
+func TestPrepareCompactedEntries_SingleEntry(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	filePath := filepath.Join(tmpDir, "test.jsonl")
+
+	seed := `{"timestamp":"2026-01-01T00:00:00Z","prompt":"only"}` + "\n"
+	if err := baseFS.WriteFile(context.Background(), filePath, []byte(seed), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: filePath,
+	}
+
+	data, err := tracker.prepareCompactedEntries(context.Background())
+	if err != nil {
+		t.Fatalf("prepareCompactedEntries failed: %v", err)
+	}
+
+	var entry promptEntry
+	if err := json.Unmarshal(bytes.TrimSpace(data), &entry); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if entry.Prompt != "only" {
+		t.Errorf("got prompt %q; want %q", entry.Prompt, "only")
+	}
+}
+
+func TestPrepareCompactedEntries_ReadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	filePath := filepath.Join(tmpDir, "test.jsonl")
+
+	// Seed a file so Stat succeeds, but ReadAt fails
+	if err := baseFS.WriteFile(context.Background(), filePath,
+		[]byte(`{"timestamp":"t","prompt":"hello"}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mfs := &mockFS{FileSystem: baseFS, readAtErr: errors.New("injected read error")}
+
+	tracker := &globalPromptTracker{
+		fs:       mfs,
+		filepath: filePath,
+	}
+
+	data, err := tracker.prepareCompactedEntries(context.Background())
+	if err == nil {
+		t.Error("expected error on read failure, got nil")
+	}
+	if data != nil {
+		t.Errorf("expected nil data on error, got %d bytes", len(data))
+	}
+}
