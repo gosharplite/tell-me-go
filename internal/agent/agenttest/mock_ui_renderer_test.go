@@ -794,3 +794,75 @@ func TestMockUIRenderer_Concurrency(t *testing.T) {
 		t.Errorf("LogTurnStatus = %d; want %d", snap.LogTurnStatus, n)
 	}
 }
+
+// Run: go test -race -run TestMockUIRenderer_SwapLogSystemMessageFn
+func TestMockUIRenderer_SwapLogSystemMessageFn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	// Create initial function and capture whether it was called.
+	origCalled := false
+	origFn := func(_ context.Context, msg string, level string) {
+		origCalled = true
+	}
+
+	m := &MockUIRenderer{
+		LogSystemMessageFn: origFn,
+	}
+
+	// Create new function and capture whether it was called.
+	newCalled := false
+	newFn := func(_ context.Context, msg string, level string) {
+		newCalled = true
+	}
+
+	// Swap and verify returned function is the original.
+	returned := m.SwapLogSystemMessageFn(newFn)
+
+	// Call LogSystemMessage — should invoke newFn.
+	m.LogSystemMessage(ctx, "test", "info")
+	if !newCalled {
+		t.Error("newFn was not called after swap; swap did not take effect")
+	}
+
+	// Call the returned function directly — should invoke origFn.
+	returned(ctx, "test", "info")
+	if !origCalled {
+		t.Error("returned origFn was not called when invoked directly")
+	}
+
+	// Verify the count is exactly 1 (one call to LogSystemMessage).
+	snap := m.Snapshot()
+	if snap.LogSystemMessage != 1 {
+		t.Errorf("LogSystemMessage = %d; want 1", snap.LogSystemMessage)
+	}
+}
+
+// Run: go test -race -run TestMockUIRenderer_SwapLogSystemMessageFn_Concurrency
+func TestMockUIRenderer_SwapLogSystemMessageFn_Concurrency(t *testing.T) {
+	t.Parallel()
+
+	m := &MockUIRenderer{}
+	var wg sync.WaitGroup
+	n := 10
+
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			// Each goroutine creates a unique closure capturing i.
+			fn := func(_ context.Context, msg string, level string) {
+				_ = i // unique per goroutine
+			}
+			_ = m.SwapLogSystemMessageFn(fn)
+			m.LogSystemMessage(context.Background(), "msg", "info")
+		}(i)
+	}
+	wg.Wait()
+
+	snap := m.Snapshot()
+	if snap.LogSystemMessage != n {
+		t.Errorf("LogSystemMessage = %d; want %d", snap.LogSystemMessage, n)
+	}
+}

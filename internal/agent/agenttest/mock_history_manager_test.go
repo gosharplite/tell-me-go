@@ -199,6 +199,26 @@ func TestMockHistoryManager_GetWindow_WithError(t *testing.T) {
 	}
 }
 
+func TestMockHistoryManager_GetWindow_NegativeStartIdx(t *testing.T) {
+	t.Parallel()
+
+	m := newMockWithContents(3)
+
+	window, err := m.GetWindow(context.Background(), -1, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(window) != 3 {
+		t.Fatalf("got %d items; want 3 (startIdx clamped to 0)", len(window))
+	}
+	// Verify deep copy: mutating window should not affect internal contents.
+	window[0].Parts[0].Text = "mutated"
+	internal := m.GetContents()
+	if internal[0].Parts[0].Text == "mutated" {
+		t.Error("GetWindow did not deep-copy; internal state was mutated")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // RollbackTurns
 // ---------------------------------------------------------------------------
