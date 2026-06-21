@@ -310,22 +310,8 @@ func (t *globalPromptTracker) compactLog(ctx context.Context) {
 		if t.performCompactionPass(ctx) {
 			return
 		}
-
-		// If we aborted because of concurrent writes, check if we still need compaction.
-		// If so, loop and try again. This ensures that a burst of appends doesn't
-		// leave the file uncompacted just because the last append arrived while
-		// a previous compaction attempt was finishing.
-		newInfo, err := t.fs.Stat(ctx, t.filepath)
-		if err != nil || newInfo.Size() <= compactionThresholdBytes {
+		if !t.shouldStillCompact(ctx, &backoff) {
 			return
-		}
-
-		// Scalable: Allows immediate exit if the application is shutting down
-		select {
-		case <-ctx.Done():
-			return // Graceful shutdown
-		case <-time.After(backoff):
-			backoff *= 2 // Exponential backoff is safer for I/O locks
 		}
 	}
 }
@@ -338,39 +324,38 @@ func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	initialSize := info.Size()
 
-	// 1. Read entries without holding the lock to allow concurrent appends
-	entries, err := t.doLoadTopUniqueEntries(ctx, maxGlobalPrompts)
-	if err != nil || len(entries) == 0 {
+	data, err := t.prepareCompactedEntries(ctx)
+	if err != nil {
+		return false
+	}
+	if len(data) == 0 {
 		return false
 	}
 
-	// Reverse entries to chronological order (oldest first)
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
-	}
+	return t.optimisticWrite(ctx, data, info.Size())
+}
 
-	// 2. Prepare compacted data in memory (safe for small threshold)
-	var buf bytes.Buffer
-	// bytes.Buffer.Write never returns an error per the Go spec, and
-	// json.Marshal cannot fail for promptEntry (all fields are string).
-	// Coverage gap accepted by architect — structurally unreachable.
-	if !t.writeCompactedData(&buf, entries) {
-		return false
-	}
-
-	// 3. Final check and swap under exclusive lock
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Check if file size has changed (meaning Append was called in the background)
+// shouldStillCompact checks whether compaction should be retried after a
+// failed pass. It verifies the file still exceeds the compaction threshold
+// and applies exponential backoff before returning. Returns true if another
+// compaction attempt is warranted.
+func (t *globalPromptTracker) shouldStillCompact(ctx context.Context, backoff *time.Duration) bool {
 	newInfo, err := t.fs.Stat(ctx, t.filepath)
-	if err != nil || newInfo.Size() != initialSize {
-		return false // Abort this pass
+	if err != nil {
+		return false
+	}
+	if newInfo.Size() <= compactionThresholdBytes {
+		return false
 	}
 
-	return t.fs.AtomicWrite(ctx, t.filepath, buf.Bytes(), 0644) == nil
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(*backoff):
+		*backoff *= 2
+		return true
+	}
 }
 
 func (t *globalPromptTracker) writeCompactedData(w io.Writer, entries []promptEntry) bool {
@@ -387,6 +372,52 @@ func (t *globalPromptTracker) writeCompactedData(w io.Writer, entries []promptEn
 		}
 	}
 	return true
+}
+
+// optimisticWrite atomically writes data to the tracker file only if the file
+// size has not changed since initialSize was observed. It acquires the
+// exclusive lock to serialize with concurrent Append calls and re-stats the
+// file under the lock to detect races. Returns true on successful write.
+func (t *globalPromptTracker) optimisticWrite(ctx context.Context, data []byte, initialSize int64) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	info, err := t.fs.Stat(ctx, t.filepath)
+	if err != nil {
+		return false
+	}
+	if info.Size() != initialSize {
+		return false
+	}
+
+	return t.fs.AtomicWrite(ctx, t.filepath, data, 0644) == nil
+}
+
+// prepareCompactedEntries reads the global prompts file, deduplicates entries,
+// reverses them into chronological order (oldest first), and serializes the
+// result as JSONL bytes. It delegates to doLoadTopUniqueEntries for reading
+// and writeCompactedData for serialization. The caller owns the returned byte
+// slice. Returns nil, nil when no entries exist.
+func (t *globalPromptTracker) prepareCompactedEntries(ctx context.Context) ([]byte, error) {
+	entries, err := t.doLoadTopUniqueEntries(ctx, maxGlobalPrompts)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	// Reverse to chronological order (oldest first)
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	var buf bytes.Buffer
+	if !t.writeCompactedData(&buf, entries) {
+		return nil, fmt.Errorf("failed to serialize compacted entries")
+	}
+
+	return buf.Bytes(), nil
 }
 
 func copyFile(ctx context.Context, fs persistence.FileSystem, src, dst string) (err error) {
