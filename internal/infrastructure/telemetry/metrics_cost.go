@@ -26,7 +26,13 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	// Trigger async recovery if the ledger store exists (no file I/O here —
 	// triggerLedgerRecovery does a sync.Map check + goroutine spawn).
 	m.metricsMu.Lock()
-	m.checkLedgerAndTriggerRecovery(ctx, historyPath, globalDir)
+	// Only trigger recovery if the ledger file is missing. If it exists,
+	// there is nothing to recover. This mirrors the guard in loadHistory()
+	// and avoids spawning an unnecessary background goroutine that can
+	// race with t.TempDir() cleanup in tests.
+	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
+		m.checkLedgerAndTriggerRecovery(ctx, historyPath, globalDir)
+	}
 	m.metricsMu.Unlock()
 
 	// Phase 2: Load configuration outside all locks.
