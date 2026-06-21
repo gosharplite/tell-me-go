@@ -1214,4 +1214,13 @@ func TestSystemDependentBranches_Documented(t *testing.T) {
 			"covered by TestBoundaryChecks_ErrorLogging on platforms where " +
 			"filepath.Abs rejects NUL bytes. Skipped on this platform.")
 	})
+
+	t.Run("G5-line324: tryBoundary error logging", func(t *testing.T) {
+		t.Parallel()
+		t.Log("[SYSTEM-DEPENDENT] line 324: tryBoundary error logging — " +
+			"checkBoundary only errors when filepath.Abs(boundary) fails. " +
+			"Default boundaries (CWD, TempDir, extra temp dirs) are always valid paths. " +
+			"Covered by TestBoundaryChecks_ErrorLogging on platforms where " +
+			"filepath.Abs rejects NUL bytes.")
+	})
 }

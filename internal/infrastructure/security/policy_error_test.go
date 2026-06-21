@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -270,10 +271,11 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		// json.Marshal on a []string never fails, so the error path in
 		// persistPaths is unreachable in practice. This test documents
 		// that fact and serves as a canary in case the type changes.
-		data, err := json.Marshal([]string{"/a", "/b"})
+		data, err := json.Marshal([]string{"/a", "/b", "/c"})
 		require.NoError(t, err)
 		require.NotNil(t, data)
-		t.Log("[UNREACHABLE] json.Marshal([]string{...}) never returns an error")
+		t.Log("[UNREACHABLE] json.Marshal([]string{...}) never returns an error; " +
+			"the error path in persistPaths exists for defensive future-proofing")
 	})
 
 	// 10. RemoveSafePath persist error after removal succeeds
@@ -506,6 +508,46 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "user aborted")
 	})
+
+	// 21. RemoveSafePath user denial
+	t.Run("RemoveSafePath user denial", func(t *testing.T) {
+		t.Parallel()
+
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "n"}
+		})
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		path := filepath.Join(t.TempDir(), "remove-safe-denied")
+		res, err := pt.RemoveSafePath(ctx, map[string]interface{}{
+			"path": path,
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, "Removal denied by user.", res.Text)
+	})
+
+	// 22. RemoveReadPath user denial
+	t.Run("RemoveReadPath user denial", func(t *testing.T) {
+		t.Parallel()
+
+		kv := &funcMockKVStore{}
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "n"}
+		})
+		pt := &policyTool{sm: sm, kv: kv}
+		ctx := context.Background()
+
+		path := filepath.Join(t.TempDir(), "remove-ro-denied")
+		res, err := pt.RemoveReadPath(ctx, map[string]interface{}{
+			"path": path,
+		}, nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, "Removal denied by user.", res.Text)
+	})
 }
 
 // TestPolicyTool_UnmarshalArgsErrors verifies that all five CRUD functions
@@ -601,4 +643,114 @@ func TestPolicyTool_UnmarshalArgsErrors(t *testing.T) {
 
 		require.Error(t, err)
 	})
+}
+
+func TestPolicy_FilepathAbsErrors(t *testing.T) {
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	origPWD, hadPWD := os.LookupEnv("PWD")
+
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Chdir(tmpDir), "failed to chdir into temp directory")
+	_ = os.Unsetenv("PWD")
+	require.NoError(t, os.RemoveAll(tmpDir), "failed to remove temp directory")
+
+	t.Cleanup(func() {
+		if hadPWD {
+			_ = os.Setenv("PWD", origPWD)
+		} else {
+			_ = os.Unsetenv("PWD")
+		}
+		if err := os.Chdir(origDir); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
+	})
+
+	_, wdErr := os.Getwd()
+	require.Error(t, wdErr, "os.Getwd() should fail after deleting CWD and unsetting PWD")
+
+	t.Run("RegisterSafePath filepath.Abs error", func(t *testing.T) {
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		p, pErr := newPolicyTool(sm, new(mockKVStore))
+		require.NoError(t, pErr)
+
+		_, err := p.RegisterSafePath(context.Background(), map[string]interface{}{
+			"path":   "relative/safe/path",
+			"reason": "test",
+		}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid path")
+	})
+
+	t.Run("RemoveSafePath filepath.Abs error", func(t *testing.T) {
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		p, pErr := newPolicyTool(sm, new(mockKVStore))
+		require.NoError(t, pErr)
+
+		_, err := p.RemoveSafePath(context.Background(), map[string]interface{}{
+			"path": "relative/safe/path",
+		}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid path")
+	})
+
+	t.Run("RegisterReadPath filepath.Abs error", func(t *testing.T) {
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		p, pErr := newPolicyTool(sm, new(mockKVStore))
+		require.NoError(t, pErr)
+
+		_, err := p.RegisterReadPath(context.Background(), map[string]interface{}{
+			"path":   "relative/read/path",
+			"reason": "test",
+		}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid path")
+	})
+
+	t.Run("RemoveReadPath filepath.Abs error", func(t *testing.T) {
+		sm := NewSecurityManager(func() domain.UserInteractor {
+			return &mockInteractor{Answer: "y"}
+		})
+		p, pErr := newPolicyTool(sm, new(mockKVStore))
+		require.NoError(t, pErr)
+
+		_, err := p.RemoveReadPath(context.Background(), map[string]interface{}{
+			"path": "relative/read/path",
+		}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid path")
+	})
+}
+
+func TestActionTitle_Default(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		action actionType
+		want   string
+	}{
+		{"path write", actionPathWrite, "persistent access to:"},
+		{"path remove", actionPathRemove, "to REMOVE authorization for:"},
+		{"path read", actionPathRead, "persistent READ-ONLY access to:"},
+		{"path remove read", actionPathRemoveRead, "to REMOVE read-only authorization for:"},
+		{"bypass enable", actionBypassEnable, "to DISABLE ALL interactive security prompts."},
+		{"session update", actionSessionUpdate, "to update session setting:"},
+		{"unknown action type", actionType(999), ""},
+		{"negative action type", actionType(-1), ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := actionTitle(tt.action)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

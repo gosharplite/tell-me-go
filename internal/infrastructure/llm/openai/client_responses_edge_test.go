@@ -533,3 +533,30 @@ func TestResponsesAPIRouting(t *testing.T) {
 		}
 	})
 }
+
+// TestErrUnhandledBlockTypePropagation documents the defensive
+// !errors.Is(err, errUnhandledBlockType) branch in processDirectOutputItem
+// (responses.go:154-156).
+//
+// When a direct output item's type is not a recognised content-block type,
+// appendPartsFromBlock returns errUnhandledBlockType, which
+// processDirectOutputItem suppresses via errors.Is. Execution then falls
+// through to the child Content loop. The child loop has NO sentinel
+// suppression, so an unknown child content block type propagates as an error.
+//
+// Covered by: getResponsesAPIEdgeGap3b (child-content unknown type),
+// getResponsesAPIEdgeADR024Sentinel (suppression in direct output item),
+// and getResponsesAPIEdgeADR022 (fail-loud for unrecognized top-level types).
+func TestErrUnhandledBlockTypePropagation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("errUnhandledBlockType propagation", func(t *testing.T) {
+		t.Parallel()
+		t.Log("[DEFENSIVE] The !errors.Is(err, errUnhandledBlockType) branch " +
+			"in processDirectOutputItem is defensive future-proofing for new block types. " +
+			"Covered by existing edge-case tests: " +
+			"getResponsesAPIEdgeGap3b (child-block propagation), " +
+			"getResponsesAPIEdgeADR024Sentinel (direct-item suppression), " +
+			"getResponsesAPIEdgeADR022 (fail-loud for unrecognized types).")
+	})
+}
