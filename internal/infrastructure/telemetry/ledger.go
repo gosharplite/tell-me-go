@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -73,7 +73,7 @@ func acquireLedgerLock(lockPath string) (*os.File, error) {
 	if err != nil && os.IsExist(err) {
 		if isStale(lockPath) {
 			if err := os.Remove(lockPath); err != nil {
-				log.Printf("Warning: Failed to remove stale lock %s: %v", lockPath, err)
+				slog.Warn("failed to remove stale lock", slog.String("lock_path", lockPath), slog.Any("error", err))
 			}
 			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 		}
@@ -94,7 +94,7 @@ func (ls *ledgerStore) recoverLedger(ctx context.Context, globalDir string) {
 
 	files, err := ls.findLogFiles(globalDir)
 	if err != nil {
-		log.Printf("Recovery: walk errors: %v\n", err)
+		slog.Warn("recovery walk errors", slog.Any("error", err))
 		if len(files) == 0 {
 			return // nothing to recover
 		}
@@ -123,7 +123,7 @@ func (ls *ledgerStore) loadExistingSessionIDs(historyPath string) map[string]boo
 
 	var existing []sessionCostRecord
 	if err := json.Unmarshal(content, &existing); err != nil {
-		log.Printf("Warning: Failed to parse existing ledger during recovery: %v", err)
+		slog.Warn("failed to parse existing ledger during recovery", slog.Any("error", err))
 		return seen
 	}
 
@@ -149,7 +149,7 @@ func (ls *ledgerStore) getPricingWithOverrides(ctx context.Context, globalDir st
 func (ls *ledgerStore) tryProcessLogFile(ctx context.Context, path string, globalDir string, seen map[string]bool, pricing domain_pricing.PricingData) *sessionCostRecord {
 	sessionID, err := ls.getSessionID(path, globalDir)
 	if err != nil {
-		log.Printf("Recovery: skipping %s: %v\n", path, err)
+		slog.Debug("recovery skipping file", slog.String("path", path), slog.Any("error", err))
 		return nil
 	}
 	if seen[sessionID] {
@@ -164,7 +164,7 @@ func (ls *ledgerStore) tryProcessLogFile(ctx context.Context, path string, globa
 	record, err := ls.processLogFile(path, info, globalDir, pricing)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("Recovery: failed to parse %s: %v\n", path, err)
+			slog.Warn("recovery failed to parse file", slog.String("path", path), slog.Any("error", err))
 		}
 		return nil
 	}
@@ -272,7 +272,7 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 
 	f, err := acquireLedgerLock(historyPath + ".lock")
 	if err != nil {
-		log.Printf("Warning: Failed to acquire ledger lock (contention) for %s: %v", historyPath, err)
+		slog.Warn("failed to acquire ledger lock", slog.String("lock_path", historyPath+".lock"), slog.String("reason", "contention"), slog.Any("error", err))
 		return
 	}
 	defer ls.releaseLedgerLock(historyPath, f)
@@ -282,7 +282,7 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 
 	if bytes, err := json.Marshal(merged); err == nil {
 		if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, historyPath, bytes, 0644); err != nil {
-			log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
+			slog.Warn("failed to write ledger", slog.String("path", historyPath), slog.Any("error", err))
 		}
 	}
 }
@@ -291,12 +291,12 @@ func (ls *ledgerStore) releaseLedgerLock(historyPath string, f *os.File) {
 	lockPath := historyPath + ".lock"
 	if f != nil {
 		if err := f.Close(); err != nil {
-			log.Printf("Warning: Failed to close lock file %s: %v", lockPath, err)
+			slog.Warn("failed to close lock file", slog.String("lock_path", lockPath), slog.Any("error", err))
 		}
 	}
 	if err := os.Remove(lockPath); err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("Warning: Failed to remove lock file %s: %v", lockPath, err)
+			slog.Warn("failed to remove lock file", slog.String("lock_path", lockPath), slog.Any("error", err))
 		}
 	}
 }
@@ -308,7 +308,7 @@ func (ls *ledgerStore) readExistingRecords(historyPath string) []sessionCostReco
 		return history
 	}
 	if err := json.Unmarshal(content, &history); err != nil {
-		log.Printf("Warning: Failed to parse ledger %s: %v", historyPath, err)
+		slog.Warn("failed to parse ledger", slog.String("path", historyPath), slog.Any("error", err))
 	}
 	return history
 }
