@@ -5,9 +5,7 @@ package ado
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -66,17 +64,7 @@ func (m *AdoManager) fetchPrStatuses(ctx context.Context, org, project, repo str
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u.String(), nil, nil)
-	if err != nil {
-		return adoStatusResponse{}, fmt.Errorf("executing fetch pr statuses request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var statusData adoStatusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&statusData); err != nil {
-		return adoStatusResponse{}, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return statusData, nil
+	return executeAdoGet[adoStatusResponse](ctx, m, u.String(), nil)
 }
 
 func (m *AdoManager) formatPrStatuses(pullRequestId int, statusData adoStatusResponse) string {
@@ -142,6 +130,25 @@ type adoPolicyType struct {
 	Id          string `json:"id"`
 }
 
+// adoPRMetadataResponse is the minimal PR metadata needed to extract the project ID.
+type adoPRMetadataResponse struct {
+	Repository struct {
+		Project struct {
+			Id string `json:"id"`
+		} `json:"project"`
+	} `json:"repository"`
+}
+
+// adoRepoIDResponse is the minimal repository metadata for ID extraction.
+type adoRepoIDResponse struct {
+	Id string `json:"id"`
+}
+
+// adoPolicyConfigsResponse is the API response envelope for policy configurations.
+type adoPolicyConfigsResponse struct {
+	Value []adoPolicyConfig `json:"value"`
+}
+
 func (m *AdoManager) AdoGetPrPolicyEvaluations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
@@ -177,21 +184,9 @@ func (m *AdoManager) fetchPrProjectID(ctx context.Context, org, project, repo st
 	prRequestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
 		m.BaseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID)
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, prRequestURL, nil, nil)
+	prData, err := executeAdoGet[adoPRMetadataResponse](ctx, m, prRequestURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("executing fetch pr project ID request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var prData struct {
-		Repository struct {
-			Project struct {
-				Id string `json:"id"`
-			} `json:"project"`
-		} `json:"repository"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&prData); err != nil {
-		return "", fmt.Errorf("failed to decode PR metadata: %w", err)
+		return "", fmt.Errorf("fetching PR metadata: %w", err)
 	}
 
 	if prData.Repository.Project.Id == "" {
@@ -219,17 +214,7 @@ func (m *AdoManager) fetchPolicyEvaluations(ctx context.Context, org, project, a
 }
 
 func (m *AdoManager) performPolicyEvaluationRequest(ctx context.Context, requestURL string) (adoPolicyResponse, error) {
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
-	if err != nil {
-		return adoPolicyResponse{}, fmt.Errorf("performing policy evaluation request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var policyData adoPolicyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&policyData); err != nil {
-		return adoPolicyResponse{}, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return policyData, nil
+	return executeAdoGet[adoPolicyResponse](ctx, m, requestURL, nil)
 }
 
 func (m *AdoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPolicyResponse) (tools.ToolResult, error) {
@@ -302,17 +287,9 @@ func (m *AdoManager) fetchRepositoryId(ctx context.Context, org, project, repo s
 	repoURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s?api-version=7.1",
 		m.BaseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo))
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, repoURL, nil, nil)
+	repoData, err := executeAdoGet[adoRepoIDResponse](ctx, m, repoURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch repository metadata: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var repoData struct {
-		Id string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&repoData); err != nil {
-		return "", fmt.Errorf("failed to decode repository metadata: %w", err)
+		return "", fmt.Errorf("fetching repository metadata: %w", err)
 	}
 	return repoData.Id, nil
 }
@@ -321,17 +298,9 @@ func (m *AdoManager) fetchPolicyConfigurations(ctx context.Context, org, project
 	policyURL := fmt.Sprintf("%s/%s/%s/_apis/policy/configurations?api-version=7.1",
 		m.BaseURL, url.PathEscape(org), url.PathEscape(project))
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, policyURL, nil, nil)
+	policyConfigs, err := executeAdoGet[adoPolicyConfigsResponse](ctx, m, policyURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch policy configurations: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var policyConfigs struct {
-		Value []adoPolicyConfig `json:"value"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&policyConfigs); err != nil {
-		return nil, fmt.Errorf("failed to decode policy configurations: %w", err)
+		return nil, fmt.Errorf("fetching policy configurations: %w", err)
 	}
 	return policyConfigs.Value, nil
 }

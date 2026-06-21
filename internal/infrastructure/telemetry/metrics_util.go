@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -26,6 +28,7 @@ import (
 var (
 	pricingCacheMu sync.RWMutex
 	pricingCache   = map[string]cachedPricing{}
+	pricingSF      singleflight.Group
 )
 
 type cachedPricing struct {
@@ -50,35 +53,44 @@ func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir strin
 	}
 	pricingCacheMu.RUnlock()
 
-	// Slow path: read from disk
-	if data, err := os.ReadFile(pricingPath); err == nil {
-		var pd domain_pricing.PricingData
-		if err := json.Unmarshal(data, &pd); err == nil {
-			info, statErr := os.Stat(pricingPath)
+	// Slow path: use singleflight to ensure only one goroutine
+	// performs disk I/O and unmarshaling per pricingPath.
+	result, err, _ := pricingSF.Do(pricingPath, func() (interface{}, error) {
+		pricingCacheMu.Lock()
+		defer pricingCacheMu.Unlock()
 
-			pricingCacheMu.Lock()
-			// Double-check: another goroutine may have populated the cache
-			// while we were doing I/O. If so, use the already-cached value
-			// rather than overwriting it.
-			if existing, ok := pricingCache[pricingPath]; ok {
-				if existingInfo, existErr := os.Stat(pricingPath); existErr == nil &&
-					existingInfo.ModTime().Equal(existing.modTime) {
-					pricingCacheMu.Unlock()
-					return existing.data
-				}
+		// Double-check: another goroutine may have populated the cache
+		// while we were waiting on singleflight.
+		if cached, ok := pricingCache[pricingPath]; ok {
+			if info, statErr := os.Stat(pricingPath); statErr == nil &&
+				info.ModTime().Equal(cached.modTime) {
+				return cached.data, nil
 			}
-			if statErr == nil {
-				pricingCache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
-			}
-			pricingCacheMu.Unlock()
-
-			slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
-			return pd
 		}
-	}
 
-	slog.Debug("falling back to hardcoded default pricing")
-	return config.DefaultPricing()
+		data, err := os.ReadFile(pricingPath)
+		if err != nil {
+			return nil, err
+		}
+
+		var pd domain_pricing.PricingData
+		if err := json.Unmarshal(data, &pd); err != nil {
+			return nil, err
+		}
+
+		info, statErr := os.Stat(pricingPath)
+		if statErr == nil {
+			pricingCache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
+		}
+
+		slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
+		return pd, nil
+	})
+	if err != nil {
+		slog.Debug("falling back to hardcoded default pricing")
+		return config.DefaultPricing()
+	}
+	return result.(domain_pricing.PricingData)
 }
 
 // GetModelPricing finds the best pricing match for a model name.

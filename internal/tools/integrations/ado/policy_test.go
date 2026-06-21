@@ -218,7 +218,7 @@ func TestAdoGetPrStatuses_Errors(t *testing.T) {
 					_, _ = w.Write([]byte(`{invalid`))
 				}))
 			},
-			expectedErr: "failed to decode response",
+			expectedErr: "decoding response",
 		},
 	}
 
@@ -285,7 +285,7 @@ func TestAdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 					_, _ = w.Write([]byte(`{invalid`))
 				}))
 			},
-			expectedErr: "failed to decode PR metadata",
+			expectedErr: "decoding response",
 		},
 		{
 			name: "fetchPrProjectID - empty project ID",
@@ -333,7 +333,7 @@ func TestAdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 					_, _ = w.Write([]byte(`{bad`))
 				}))
 			},
-			expectedErr: "failed to decode response",
+			expectedErr: "decoding response",
 		},
 	}
 

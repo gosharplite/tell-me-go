@@ -17,6 +17,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// adoPipelinesResponse is the API response envelope for listing pipelines.
+type adoPipelinesResponse struct {
+	Value []adoPipeline `json:"value"`
+}
+
+// adoBuildChangesResponse is the API response envelope for build changes.
+type adoBuildChangesResponse struct {
+	Value []interface{} `json:"value"`
+}
+
 func (m *AdoManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
 	cacheKey := org + "/" + project
 
@@ -35,18 +45,9 @@ func (m *AdoManager) fetchPipelines(ctx context.Context, org, project string) ([
 		requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1",
 			m.BaseURL, url.PathEscape(org), url.PathEscape(project))
 
-		resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+		responseData, err := executeAdoGet[adoPipelinesResponse](ctx, m, requestURL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("executing fetch pipelines request: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var responseData struct {
-			Value []adoPipeline `json:"value"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-			return nil, fmt.Errorf("failed to decode response: %w", err)
+			return nil, fmt.Errorf("fetching pipelines: %w", err)
 		}
 
 		// 3. Write to Cache
@@ -345,9 +346,7 @@ func (m *AdoManager) buildGetBuildChangesURL(params adoGetBuildChangesParams) (s
 }
 
 func (m *AdoManager) decodeBuildChangesResponse(body io.Reader) ([]interface{}, error) {
-	var responseData struct {
-		Value []interface{} `json:"value"`
-	}
+	var responseData adoBuildChangesResponse
 
 	if err := json.NewDecoder(body).Decode(&responseData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)

@@ -207,7 +207,7 @@ func TestAdoManager_GetPipelineRun_Errors(t *testing.T) {
 			name:           "Malformed JSON",
 			mockStatusCode: http.StatusOK,
 			mockResponse:   `{ "id": "invalid" }`, // id is expected to be int
-			expectedErr:    "failed to decode response",
+			expectedErr:    "decoding response",
 		},
 	}
 
@@ -279,7 +279,7 @@ func TestAdoManager_ResolvePipelineID_Errors(t *testing.T) {
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		_, err := m.resolvePipelineID(context.Background(), "org", "proj", "name")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 }
 
@@ -346,7 +346,7 @@ func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
 		_, err := m.AdoListRepositoryItems(context.Background(), args, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 }
 
@@ -384,7 +384,7 @@ func TestAdoManager_ListPipelineRuns_Errors(t *testing.T) {
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
 		_, _, err := m.ListPipelineRuns(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 }
 
@@ -422,7 +422,7 @@ func TestAdoManager_ListPipelineLogs_Errors(t *testing.T) {
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
 		_, _, err := m.ListPipelineLogs(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode logs list")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 
 	t.Run("Fetch Log Content - HTTP Error", func(t *testing.T) {
@@ -497,7 +497,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
 		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to fetch policy configurations")
+		assert.Contains(t, err.Error(), "fetching policy configurations")
 	})
 
 	t.Run("Fetch Policy Configs - JSON Decode Error", func(t *testing.T) {
@@ -516,7 +516,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
 		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode policy configurations")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 }
 
@@ -554,7 +554,7 @@ func TestAdoManager_AdoListPullRequests_Errors(t *testing.T) {
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
 		_, err := m.AdoListPullRequests(context.Background(), args, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 }
 
