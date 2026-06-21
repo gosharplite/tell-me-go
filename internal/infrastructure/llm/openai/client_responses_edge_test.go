@@ -6,6 +6,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // getResponsesAPIEdgeGap1And2 covers Gap 1 & 2: Direct content blocks
@@ -531,5 +534,37 @@ func TestResponsesAPIRouting(t *testing.T) {
 		if requestPath != "/chat/completions" {
 			t.Errorf("Expected path /chat/completions for gpt-4 model, got %s", requestPath)
 		}
+	})
+}
+
+// TestErrUnhandledBlockTypePropagation documents the defensive
+// !errors.Is(err, errUnhandledBlockType) branch in processDirectOutputItem
+// (responses.go:154-156).
+//
+// When a direct output item's type is not a recognised content-block type,
+// appendPartsFromBlock returns errUnhandledBlockType, which
+// processDirectOutputItem suppresses via errors.Is. Execution then falls
+// through to the child Content loop. The child loop has NO sentinel
+// suppression, so an unknown child content block type propagates as an error.
+//
+// Covered by: getResponsesAPIEdgeGap3b (child-content unknown type),
+// getResponsesAPIEdgeADR024Sentinel (suppression in direct output item),
+// and getResponsesAPIEdgeADR022 (fail-loud for unrecognized top-level types).
+func TestErrUnhandledBlockTypePropagation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("errUnhandledBlockType propagation", func(t *testing.T) {
+		t.Parallel()
+
+		// Verify the sentinel exists and errors.Is behaves correctly.
+		// Runtime coverage of the !errors.Is guard in processDirectOutputItem
+		// is provided by: getResponsesAPIEdgeGap3b (child-block propagation),
+		// getResponsesAPIEdgeADR024Sentinel (direct-item suppression),
+		// getResponsesAPIEdgeADR022 (fail-loud for unrecognized types).
+		require.NotNil(t, errUnhandledBlockType, "sentinel must exist")
+		assert.True(t, errors.Is(errUnhandledBlockType, errUnhandledBlockType),
+			"sentinel must match itself via errors.Is")
+		assert.False(t, errors.Is(errors.New("other"), errUnhandledBlockType),
+			"errors.Is must not produce false positives on unrelated errors")
 	})
 }

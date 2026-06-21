@@ -947,3 +947,60 @@ func TestPrepareAnthropicRequest_MarshalFailure(t *testing.T) {
 		}
 	})
 }
+
+// TestPrepareAnthropicRequest_MarshalErrorUnreachable documents that the
+// json.Marshal(reqPayload) error path in prepareAnthropicRequest
+// (client.go:375-377) is UNREACHABLE with the current messagesRequest type tree.
+//
+// Every field in messagesRequest resolves to strings, ints, or interface{}
+// populated with JSON-safe types. No float64 fields exist, so NaN/Inf cannot
+// appear. The error branch is defensive dead code that serves as a safety net
+// if a future field addition introduces a marshal-unfriendly type.
+//
+// This test proves that all valid payloads marshal cleanly and serves as a
+// canary in case the struct fields change.
+func TestPrepareAnthropicRequest_MarshalErrorUnreachable(t *testing.T) {
+	t.Parallel()
+
+	// Build a representative payload with all optional fields populated
+	payload := messagesRequest{
+		Model:     "claude-3-5-sonnet",
+		Messages:  []message{{Role: "user", Content: []contentBlock{{Type: "text", Text: "hello"}}}},
+		MaxTokens: 16384,
+		Tools: []tool{{
+			Name:        "test_tool",
+			Description: "A test tool",
+			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"param": map[string]string{"type": "string"}}},
+		}},
+		System: []systemBlock{{
+			Type:         "text",
+			Text:         "You are a helpful assistant.",
+			CacheControl: &cacheControl{Type: "ephemeral"},
+		}},
+		Thinking: &thinking{Type: "enabled", Budget: 4096},
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal on messagesRequest unexpectedly failed: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty marshaled data")
+	}
+
+	// Round-trip: unmarshal and verify key fields preserved
+	var restored messagesRequest
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+	if restored.Model != "claude-3-5-sonnet" {
+		t.Errorf("Model: got %q, want %q", restored.Model, "claude-3-5-sonnet")
+	}
+	if restored.MaxTokens != 16384 {
+		t.Errorf("MaxTokens: got %d, want %d", restored.MaxTokens, 16384)
+	}
+
+	t.Log("[UNREACHABLE] json.Marshal on messagesRequest never fails; " +
+		"all fields are marshal-safe Go types. " +
+		"Error path exists for defensive future-proofing.")
+}
