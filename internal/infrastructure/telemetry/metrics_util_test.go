@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -343,6 +344,128 @@ func TestProcessLogLine_SkipsSummaryLine(t *testing.T) {
 	if state.totalCost != 0 {
 		t.Errorf("expected 0 total cost (line skipped), got %f", state.totalCost)
 	}
+}
+
+func TestGetPricing_CacheHit(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(tmpDir, "output")
+	pricingFile := filepath.Join(assetsDir, "pricing.json")
+
+	content := `{
+		"updated_at": "2026-03-01T00:00:00Z",
+		"models": {
+			"cached-model": {"hit": 1.0, "miss": 2.0, "comp": 3.0}
+		}
+	}`
+	if err := os.WriteFile(pricingFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// First call: populate cache from disk.
+	first := GetPricing(context.Background(), nil, outputDir)
+	if first.Models["cached-model"].Hit != 1.0 {
+		t.Fatalf("first call: expected hit=1.0, got %v", first.Models["cached-model"].Hit)
+	}
+
+	// Second call without touching the file: cache serves data because
+	// os.Stat confirms the ModTime hasn't changed, skipping the slow path.
+	second := GetPricing(context.Background(), nil, outputDir)
+	if second.UpdatedAt != "2026-03-01T00:00:00Z" {
+		t.Errorf("cache miss: expected UpdatedAt '2026-03-01T00:00:00Z' from cache, got %q", second.UpdatedAt)
+	}
+	if second.Models["cached-model"].Hit != 1.0 {
+		t.Errorf("cache miss: expected hit=1.0 from cache, got %v", second.Models["cached-model"].Hit)
+	}
+}
+
+func TestGetPricing_CacheInvalidation(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(tmpDir, "output")
+	pricingFile := filepath.Join(assetsDir, "pricing.json")
+
+	// Write v1 and force mtime to a known past timestamp.
+	v1 := `{"updated_at": "2026-01-01T00:00:00Z", "models": {"m": {"hit": 1.0, "miss": 2.0, "comp": 3.0}}}`
+	if err := os.WriteFile(pricingFile, []byte(v1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t1 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(pricingFile, t1, t1); err != nil {
+		t.Fatal(err)
+	}
+
+	first := GetPricing(context.Background(), nil, outputDir)
+	if first.UpdatedAt != "2026-01-01T00:00:00Z" {
+		t.Fatalf("expected v1, got %q", first.UpdatedAt)
+	}
+
+	// Overwrite with v2 and force mtime to a different timestamp.
+	v2 := `{"updated_at": "2026-06-15T00:00:00Z", "models": {"m": {"hit": 9.0, "miss": 8.0, "comp": 7.0}}}`
+	if err := os.WriteFile(pricingFile, []byte(v2), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t2 := time.Date(2020, 1, 1, 0, 0, 1, 0, time.UTC) // 1 second after t1
+	if err := os.Chtimes(pricingFile, t2, t2); err != nil {
+		t.Fatal(err)
+	}
+
+	second := GetPricing(context.Background(), nil, outputDir)
+	if second.UpdatedAt != "2026-06-15T00:00:00Z" {
+		t.Errorf("cache not invalidated: expected UpdatedAt '2026-06-15T00:00:00Z', got %q", second.UpdatedAt)
+	}
+	if second.Models["m"].Hit != 9.0 {
+		t.Errorf("cache not invalidated: expected hit=9.0, got %v", second.Models["m"].Hit)
+	}
+}
+
+func TestGetPricing_Concurrency(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow concurrency test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(tmpDir, "output")
+	pricingFile := filepath.Join(assetsDir, "pricing.json")
+
+	content := `{"updated_at": "2026-03-15T00:00:00Z", "models": {"test": {"hit": 0.5, "miss": 1.0, "comp": 2.0}}}`
+	if err := os.WriteFile(pricingFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	ctx := context.Background()
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				pd := GetPricing(ctx, nil, outputDir)
+				// Verify we get either the file data or fallback (not zero-value)
+				if pd.UpdatedAt == "" {
+					t.Error("GetPricing returned empty UpdatedAt under concurrency")
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
 }
 
 // Sink variables for benchmarks — prevent compiler optimizations from eliding results.
