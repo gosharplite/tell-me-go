@@ -316,7 +316,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
 			httpStatus:     http.StatusOK,
 			respBody:       `{invalid}`,
-			expectedErrMsg: "failed to decode PR metadata",
+			expectedErrMsg: "decoding response",
 		},
 		{
 			name: "AdoGetFileContent - Unauthorized",
@@ -409,7 +409,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			httpStatus:     http.StatusOK,
 			respBody:       `{bad_json}`,
-			expectedErrMsg: "failed to decode response",
+			expectedErrMsg: "decoding response",
 		},
 		{
 			name: "RunPipeline - Missing Params",
@@ -528,7 +528,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 
 		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to fetch policy configurations")
+		assert.Contains(t, err.Error(), "fetching policy configurations")
 	})
 }
 
@@ -607,44 +607,49 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		call func() (tools.ToolResult, error)
+		name     string
+		call     func() (tools.ToolResult, error)
+		migrated bool
 	}{
-		{"AdoListPullRequests", func() (tools.ToolResult, error) { return m.AdoListPullRequests(ctx, args, nil) }},
-		{"AdoGetPullRequest", func() (tools.ToolResult, error) { return m.adoGetPullRequest(ctx, args, nil) }},
-		{"AdoGetPrDiff", func() (tools.ToolResult, error) { return m.adoGetPrDiff(ctx, args, nil) }},
-		{"AdoGetPrThreads", func() (tools.ToolResult, error) { return m.AdoGetPrThreads(ctx, args, nil) }},
-		{"AdoListRepositoryItems", func() (tools.ToolResult, error) { return m.AdoListRepositoryItems(ctx, args, nil) }},
+		{"AdoListPullRequests", func() (tools.ToolResult, error) { return m.AdoListPullRequests(ctx, args, nil) }, true},
+		{"AdoGetPullRequest", func() (tools.ToolResult, error) { return m.adoGetPullRequest(ctx, args, nil) }, true},
+		{"AdoGetPrDiff", func() (tools.ToolResult, error) { return m.adoGetPrDiff(ctx, args, nil) }, true},
+		{"AdoGetPrThreads", func() (tools.ToolResult, error) { return m.AdoGetPrThreads(ctx, args, nil) }, true},
+		{"AdoListRepositoryItems", func() (tools.ToolResult, error) { return m.AdoListRepositoryItems(ctx, args, nil) }, true},
 		{"ListPipelineRuns", func() (tools.ToolResult, error) {
 			_, _, err := m.ListPipelineRuns(ctx, args)
 			return tools.ToolResult{}, err
-		}},
+		}, true},
 		{"GetPipelineRun", func() (tools.ToolResult, error) {
 			_, err := m.GetPipelineRun(ctx, args)
 			return tools.ToolResult{}, err
-		}},
+		}, true},
 		{"ListPipelineLogs", func() (tools.ToolResult, error) {
 			_, _, err := m.ListPipelineLogs(ctx, args)
 			return tools.ToolResult{}, err
-		}},
-		{"AdoGetPrStatuses", func() (tools.ToolResult, error) { return m.AdoGetPrStatuses(ctx, args, nil) }},
-		{"AdoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.AdoGetPrPolicyEvaluations(ctx, args, nil) }},
-		{"AdoListBranchPolicies", func() (tools.ToolResult, error) { return m.adoListBranchPolicies(ctx, args, nil) }},
+		}, true},
+		{"AdoGetPrStatuses", func() (tools.ToolResult, error) { return m.AdoGetPrStatuses(ctx, args, nil) }, true},
+		{"AdoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.AdoGetPrPolicyEvaluations(ctx, args, nil) }, true},
+		{"AdoListBranchPolicies", func() (tools.ToolResult, error) { return m.adoListBranchPolicies(ctx, args, nil) }, true},
 		{"AdoGetBuildTimeline", func() (tools.ToolResult, error) {
 			_, err := m.GetBuildTimeline(ctx, args)
 			return tools.ToolResult{}, err
-		}},
+		}, false},
 		{"AdoGetBuildChanges", func() (tools.ToolResult, error) {
 			_, err := m.getBuildChanges(ctx, args)
 			return tools.ToolResult{}, err
-		}},
+		}, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := tt.call()
 			if assert.Error(t, err) {
-				assert.Contains(t, err.Error(), "decode")
+				expected := "decode"
+				if tt.migrated {
+					expected = "decoding"
+				}
+				assert.Contains(t, err.Error(), expected)
 			}
 		})
 	}
@@ -761,7 +766,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 				}, nil)
 			},
-			expectedErr: "failed to decode response",
+			expectedErr: "decoding response",
 		},
 	}
 

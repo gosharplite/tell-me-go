@@ -15,6 +15,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// adoPipelineRunsResponse is the API response envelope for listing pipeline runs.
+type adoPipelineRunsResponse struct {
+	Value []adoPipelineRun `json:"value"`
+}
+
+// adoBuildTimelineResponse is the API response envelope for build timeline records.
+type adoBuildTimelineResponse struct {
+	Records []interface{} `json:"records"`
+}
+
+// adoLogEntriesResponse is the API response envelope for listing pipeline logs.
+type adoLogEntriesResponse struct {
+	Value []adoLogEntry `json:"value"`
+}
+
 // ListPipelineRuns is the infrastructure-layer entry point for fetching pipeline
 // runs. It returns raw domain structs together with the resolved pipeline ID
 // (which the formatter needs to caption the output). Presentation is the
@@ -37,17 +52,9 @@ func (m *AdoManager) ListPipelineRuns(ctx context.Context, args map[string]inter
 		return 0, nil, fmt.Errorf("building list pipeline runs URL: %w", err)
 	}
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	responseData, err := executeAdoGet[adoPipelineRunsResponse](ctx, m, requestURL, nil)
 	if err != nil {
-		return 0, nil, fmt.Errorf("executing list pipeline runs request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var responseData struct {
-		Value []adoPipelineRun `json:"value"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return 0, nil, fmt.Errorf("failed to decode response: %w", err)
+		return 0, nil, fmt.Errorf("listing pipeline runs: %w", err)
 	}
 
 	return params.PipelineId, filterAndLimitRuns(responseData.Value, params.Repository, params.OriginalTop), nil
@@ -90,15 +97,9 @@ func (m *AdoManager) GetPipelineRun(ctx context.Context, args map[string]interfa
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d?api-version=7.1",
 		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	runData, err := executeAdoGet[adoPipelineRunDetail](ctx, m, requestURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("executing get pipeline run request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var runData adoPipelineRunDetail
-	if err := json.NewDecoder(resp.Body).Decode(&runData); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("fetching pipeline run %d: %w", params.RunId, err)
 	}
 
 	return &runData, nil
@@ -206,9 +207,7 @@ func (m *AdoManager) GetBuildTimeline(ctx context.Context, args map[string]inter
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var timelineData struct {
-		Records []interface{} `json:"records"`
-	}
+	var timelineData adoBuildTimelineResponse
 
 	if err := json.NewDecoder(resp.Body).Decode(&timelineData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -239,17 +238,9 @@ func (m *AdoManager) ListPipelineLogs(ctx context.Context, args map[string]inter
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
 		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, u, nil, nil)
+	logsData, err := executeAdoGet[adoLogEntriesResponse](ctx, m, u, nil)
 	if err != nil {
-		return 0, nil, fmt.Errorf("executing list pipeline logs request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var logsData struct {
-		Value []adoLogEntry `json:"value"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&logsData); err != nil {
-		return 0, nil, fmt.Errorf("failed to decode logs list: %w", err)
+		return 0, nil, fmt.Errorf("listing pipeline logs: %w", err)
 	}
 
 	return params.RunId, logsData.Value, nil
