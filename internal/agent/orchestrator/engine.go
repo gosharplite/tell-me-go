@@ -25,6 +25,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Turn carries state and configuration for a single agent Turn.
@@ -365,11 +367,20 @@ func (e *Engine) emergencySave(Turn *Turn) {
 }
 
 func (e *Engine) executePhase(ctx context.Context, Turn *Turn) (ProcessResult, error) {
+	ctx, span := otel.Tracer("agent").Start(ctx, "agent.Phase."+string(Turn.State.Phase))
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("phase", string(Turn.State.Phase)),
+		attribute.Int("turn.index", Turn.Index),
+	)
+
 	e.mu.RLock()
 	processor, ok := e.processors[Turn.State.Phase]
 	e.mu.RUnlock()
 
 	if !ok {
+		span.SetStatus(codes.Error, "unknown phase")
 		Turn.State.Phase = PhaseComplete // Force exit to prevent infinite loop in runPhaseLoop
 		return ProcessResult{}, NewAgentError(ErrLogic, fmt.Sprintf("no processor for phase: %s", Turn.State.Phase), nil)
 	}
@@ -377,6 +388,8 @@ func (e *Engine) executePhase(ctx context.Context, Turn *Turn) (ProcessResult, e
 	res, err := processor.Process(ctx, Turn)
 	if err != nil {
 		Turn.State.LastError = err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 	}
 
 	next := e.determineNextPhase(Turn.State.Phase, res, err)
