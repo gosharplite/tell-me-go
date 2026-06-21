@@ -66,7 +66,7 @@ func TestLogTrace_CloseError_Mock(t *testing.T) {
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 	logTrace(context.Background(), traceFile, trace)
 
-	assert.Contains(t, logBuf.String(), "Warning: Failed to close trace file")
+	assert.Contains(t, logBuf.String(), "WARN failed to close trace file")
 	assert.Contains(t, logBuf.String(), "injected close error")
 }
 
@@ -90,6 +90,6 @@ func TestLogTrace_MarshalError(t *testing.T) {
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 	logTrace(context.Background(), traceFile, trace)
 
-	assert.Contains(t, logBuf.String(), "Warning: Failed to marshal TurnTrace")
+	assert.Contains(t, logBuf.String(), "WARN failed to marshal TurnTrace")
 	assert.Contains(t, logBuf.String(), "injected marshal error")
 }

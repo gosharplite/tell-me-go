@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -236,7 +236,8 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 // without interrupting the caller. Extracted for testability.
 func (m *metricsManager) recordCostSilently(ctx context.Context) {
 	if _, err := m.EstimateCost(ctx, true, ""); err != nil {
-		log.Printf("Warning: Failed to record cost before summary: %v", err)
+		slog.Warn("failed to record cost before summary",
+			slog.Any("error", err))
 	}
 }
 
@@ -261,24 +262,31 @@ func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.Tur
 
 	data, err := jsonMarshal(trace)
 	if err != nil {
-		log.Printf("Warning: Failed to marshal TurnTrace: %v", err)
+		slog.Warn("failed to marshal TurnTrace",
+			slog.Any("error", err))
 		return
 	}
 
 	// 2. Use context-aware AtomicWrite if available or at least check context before I/O
 	wc, err := openTraceFile(traceFile)
 	if err != nil {
-		log.Printf("Warning: Failed to open trace file %s: %v", traceFile, err)
+		slog.Warn("failed to open trace file",
+			slog.String("path", traceFile),
+			slog.Any("error", err))
 		return
 	}
 	defer func() {
 		if cerr := wc.Close(); cerr != nil {
-			log.Printf("Warning: Failed to close trace file %s: %v", traceFile, cerr)
+			slog.Warn("failed to close trace file",
+				slog.String("path", traceFile),
+				slog.Any("error", cerr))
 		}
 	}()
 
 	if _, err := wc.Write(append(data, '\n')); err != nil {
-		log.Printf("Warning: Failed to write to trace file %s: %v", traceFile, err)
+		slog.Warn("failed to write to trace file",
+			slog.String("path", traceFile),
+			slog.Any("error", err))
 	}
 }
 

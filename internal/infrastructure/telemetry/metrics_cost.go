@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,7 +33,9 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	// 1. Acquire simple file-based lock (with stale lock protection)
 	lock, err := acquireLedgerLock(lockPath)
 	if err != nil {
-		log.Printf("Warning: Failed to acquire ledger lock (contention) for %s: %v", lockPath, err)
+		slog.Warn("failed to acquire ledger lock (contention)",
+			slog.String("path", lockPath),
+			slog.Any("error", err))
 		return
 	}
 	defer func() {
@@ -49,9 +51,12 @@ func (m *metricsManager) loadHistory(ctx context.Context, historyPath, globalDir
 	var history []sessionCostRecord
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
-			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
+			slog.Warn("failed to parse ledger, backing up and starting fresh",
+				slog.String("path", historyPath),
+				slog.Any("error", err))
 			if err := os.Rename(historyPath, historyPath+".bak"); err != nil {
-				log.Printf("Warning: Failed to backup corrupted ledger: %v", err)
+				slog.Warn("failed to backup corrupted ledger",
+					slog.Any("error", err))
 			}
 			return []sessionCostRecord{}
 		}
@@ -80,11 +85,15 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 	// Write back atomically
 	bytes, err := json.Marshal(history)
 	if err != nil {
-		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
+		slog.Warn("failed to marshal ledger",
+			slog.String("path", historyPath),
+			slog.Any("error", err))
 		return
 	}
 	if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, historyPath, bytes, 0644); err != nil {
-		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
+		slog.Warn("failed to write ledger",
+			slog.String("path", historyPath),
+			slog.Any("error", err))
 	}
 }
 
