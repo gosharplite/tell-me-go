@@ -135,21 +135,24 @@ func (m *metricsManager) accumulateRecord(totals map[string]float64, usage map[s
 	usage[key] = u
 }
 
+// isRecordInRange returns true if the record's timestamp falls within the
+// [start, end) half-open interval. Zero start or end means unbounded in
+// that direction.
+func (m *metricsManager) isRecordInRange(r sessionCostRecord, start, end time.Time) bool {
+	ts := m.getRecordTimestamp(r)
+	if ts.IsZero() {
+		return false
+	}
+	return (start.IsZero() || !ts.Before(start)) &&
+		(end.IsZero() || ts.Before(end))
+}
+
 func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, end time.Time, loc *time.Location, format string, groupBy string) (map[string]float64, map[string]domain_pricing.UsageStats) {
 	intervalTotals := make(map[string]float64)
 	intervalUsage := make(map[string]domain_pricing.UsageStats)
 
 	for _, r := range history {
-		ts := m.getRecordTimestamp(r)
-		if ts.IsZero() {
-			continue
-		}
-
-		// Apply range filter
-		if !start.IsZero() && ts.Before(start) {
-			continue
-		}
-		if !end.IsZero() && !ts.Before(end) {
+		if !m.isRecordInRange(r, start, end) {
 			continue
 		}
 

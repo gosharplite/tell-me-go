@@ -267,7 +267,13 @@ func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.Tur
 		return
 	}
 
-	// 2. Use context-aware AtomicWrite if available or at least check context before I/O
+	writeTraceEntry(traceFile, data)
+}
+
+// writeTraceEntry opens the trace file, writes a JSON line, and closes it.
+// All errors are logged as warnings; this is a fire-and-forget operation
+// called from the event subscriber pipeline.
+func writeTraceEntry(traceFile string, data []byte) {
 	wc, err := openTraceFile(traceFile)
 	if err != nil {
 		slog.Warn("failed to open trace file",
