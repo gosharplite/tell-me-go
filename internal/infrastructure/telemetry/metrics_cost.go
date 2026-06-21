@@ -19,18 +19,26 @@ import (
 )
 
 func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record sessionCostRecord) {
-	m.metricsMu.Lock()
-	defer m.metricsMu.Unlock()
+	globalDir := filepath.Dir(outputDir)
+	historyPath := filepath.Join(globalDir, "global_costs.json")
 
+	// Phase 1: Check ledger store availability under metricsMu only.
+	// Trigger async recovery if the ledger store exists (no file I/O here —
+	// triggerLedgerRecovery does a sync.Map check + goroutine spawn).
+	m.metricsMu.Lock()
+	m.checkLedgerAndTriggerRecovery(ctx, historyPath, globalDir)
+	m.metricsMu.Unlock()
+
+	// Phase 2: Load configuration outside all locks.
+	retentionDays := m.loadRetentionDays(ctx)
+
+	// Phase 3: Read-modify-write under ledgerMu + file lock.
+	// The file lock serialises writers; re-reading after lock acquisition
+	// prevents TOCTOU lost-update races between concurrent recordCost calls.
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
 
-	// Global costs are in the parent output directory
-	globalDir := filepath.Dir(outputDir)
-	historyPath := filepath.Join(globalDir, "global_costs.json")
 	lockPath := historyPath + ".lock"
-
-	// 1. Acquire simple file-based lock (with stale lock protection)
 	lock, err := acquireLedgerLock(lockPath)
 	if err != nil {
 		slog.Warn("failed to acquire ledger lock (contention)",
@@ -43,27 +51,79 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 		_ = os.Remove(lockPath)
 	}()
 
-	// 2. Update history
-	m.updateLedgerHistory(ctx, historyPath, globalDir, outputDir, record)
+	// Re-read the latest state under the write lock to guarantee
+	// a consistent read-modify-write cycle.
+	history, _, err := loadHistoryFromDisk(historyPath)
+	if err != nil {
+		slog.Warn("failed to read ledger under lock",
+			slog.String("path", historyPath),
+			slog.Any("error", err))
+		return
+	}
+
+	history = upsertRecord(history, record)
+	history = m.applyRetentionPolicy(history, retentionDays)
+
+	bytes, err := json.Marshal(history)
+	if err != nil {
+		slog.Warn("failed to marshal ledger",
+			slog.String("path", historyPath),
+			slog.Any("error", err))
+		return
+	}
+	if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, historyPath, bytes, 0644); err != nil {
+		slog.Warn("failed to write ledger",
+			slog.String("path", historyPath),
+			slog.Any("error", err))
+	}
+}
+
+// loadHistoryFromDisk reads and parses the ledger file from disk.
+// It returns the parsed records, whether the file existed on disk,
+// and any non-fatal error (corruption errors are handled internally
+// by backing up the corrupt file and returning an empty slice).
+//
+// This function performs NO mutex-guarded operations and does not
+// access m.ledger — it is safe to call without holding metricsMu.
+func loadHistoryFromDisk(historyPath string) ([]sessionCostRecord, bool, error) {
+	content, err := os.ReadFile(historyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []sessionCostRecord{}, false, nil
+		}
+		return []sessionCostRecord{}, false, err
+	}
+
+	var history []sessionCostRecord
+	if err := json.Unmarshal(content, &history); err != nil {
+		slog.Warn("failed to parse ledger, backing up and starting fresh",
+			slog.String("path", historyPath),
+			slog.Any("error", err))
+		if err := os.Rename(historyPath, historyPath+".bak"); err != nil {
+			slog.Warn("failed to backup corrupted ledger",
+				slog.Any("error", err))
+		}
+		return []sessionCostRecord{}, true, nil
+	}
+
+	return history, true, nil
 }
 
 func (m *metricsManager) loadHistory(ctx context.Context, historyPath, globalDir string) []sessionCostRecord {
-	var history []sessionCostRecord
-	if content, err := os.ReadFile(historyPath); err == nil {
-		if err := json.Unmarshal(content, &history); err != nil {
-			slog.Warn("failed to parse ledger, backing up and starting fresh",
-				slog.String("path", historyPath),
-				slog.Any("error", err))
-			if err := os.Rename(historyPath, historyPath+".bak"); err != nil {
-				slog.Warn("failed to backup corrupted ledger",
-					slog.Any("error", err))
-			}
-			return []sessionCostRecord{}
-		}
-	} else if os.IsNotExist(err) && m.ledger != nil {
-		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
+	history, fileExisted, _ := loadHistoryFromDisk(historyPath)
+	if !fileExisted {
+		m.checkLedgerAndTriggerRecovery(ctx, historyPath, globalDir)
 	}
 	return history
+}
+
+// checkLedgerAndTriggerRecovery checks whether a ledger store is available
+// and, if the ledger file is missing, starts an asynchronous recovery.
+// Must be called under metricsMu.
+func (m *metricsManager) checkLedgerAndTriggerRecovery(ctx context.Context, historyPath, globalDir string) {
+	if m.ledger != nil {
+		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
+	}
 }
 
 func (m *metricsManager) triggerLedgerRecovery(ctx context.Context, historyPath, globalDir string) {
