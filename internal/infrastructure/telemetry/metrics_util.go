@@ -22,46 +22,52 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
-// pricingCache avoids redundant disk reads of $TELL_ME_HOME/assets/pricing.json.
-// The cache is keyed by the fully resolved file path and invalidated when
-// the file's modification time changes.
-var (
-	pricingCacheMu sync.RWMutex
-	pricingCache   = map[string]cachedPricing{}
-	pricingSF      singleflight.Group
-)
-
 type cachedPricing struct {
 	data    domain_pricing.PricingData
 	modTime time.Time
 }
 
-// GetPricing attempts to load pricing data from $TELL_ME_HOME/assets/pricing.json,
-// falling back to hardcoded defaults if the file is missing or invalid.
-func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir string) domain_pricing.PricingData {
-	homeDir := filepath.Dir(outputDir)
-	pricingPath := filepath.Join(homeDir, "assets", "pricing.json")
+// pricingLoader encapsulates caching, singleflight coordination, and disk I/O
+// for loading domain_pricing.PricingData from a JSON file.
+type pricingLoader struct {
+	mu    sync.RWMutex
+	cache map[string]cachedPricing
+	sf    singleflight.Group
+}
 
+// defaultLoader caches pricing data in-memory to avoid redundant
+// disk reads of $TELL_ME_HOME/assets/pricing.json. Cache entries
+// are keyed by the fully resolved file path and invalidated when
+// the file's modification time changes. Singleflight deduplication
+// ensures only one goroutine performs disk I/O per pricingPath.
+var defaultLoader = &pricingLoader{
+	cache: make(map[string]cachedPricing),
+}
+
+// load returns pricing data for the given file path, using a read-locked cache
+// fast path when the file's mtime matches the cached entry. On cache miss, it
+// coordinates via singleflight to ensure only one goroutine performs disk I/O
+// and unmarshaling per path.
+func (pl *pricingLoader) load(ctx context.Context, pricingPath string) (domain_pricing.PricingData, error) {
 	// Fast path: check cache under read lock
-	pricingCacheMu.RLock()
-	if cached, ok := pricingCache[pricingPath]; ok {
+	pl.mu.RLock()
+	if cached, ok := pl.cache[pricingPath]; ok {
 		if info, err := os.Stat(pricingPath); err == nil && info.ModTime().Equal(cached.modTime) {
 			data := cached.data
-			pricingCacheMu.RUnlock()
-			return data
+			pl.mu.RUnlock()
+			return data, nil
 		}
 	}
-	pricingCacheMu.RUnlock()
+	pl.mu.RUnlock()
 
-	// Slow path: use singleflight to ensure only one goroutine
-	// performs disk I/O and unmarshaling per pricingPath.
-	result, err, _ := pricingSF.Do(pricingPath, func() (interface{}, error) {
-		pricingCacheMu.Lock()
-		defer pricingCacheMu.Unlock()
+	// Slow path: singleflight ensures only one goroutine does disk I/O per path.
+	result, err, _ := pl.sf.Do(pricingPath, func() (interface{}, error) {
+		pl.mu.Lock()
+		defer pl.mu.Unlock()
 
 		// Double-check: another goroutine may have populated the cache
 		// while we were waiting on singleflight.
-		if cached, ok := pricingCache[pricingPath]; ok {
+		if cached, ok := pl.cache[pricingPath]; ok {
 			if info, statErr := os.Stat(pricingPath); statErr == nil &&
 				info.ModTime().Equal(cached.modTime) {
 				return cached.data, nil
@@ -80,17 +86,30 @@ func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir strin
 
 		info, statErr := os.Stat(pricingPath)
 		if statErr == nil {
-			pricingCache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
+			pl.cache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
 		}
 
 		slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
 		return pd, nil
 	})
 	if err != nil {
+		return domain_pricing.PricingData{}, err
+	}
+	return result.(domain_pricing.PricingData), nil
+}
+
+// GetPricing attempts to load pricing data from $TELL_ME_HOME/assets/pricing.json,
+// falling back to hardcoded defaults if the file is missing or invalid.
+func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir string) domain_pricing.PricingData {
+	homeDir := filepath.Dir(outputDir)
+	pricingPath := filepath.Join(homeDir, "assets", "pricing.json")
+
+	data, err := defaultLoader.load(ctx, pricingPath)
+	if err != nil {
 		slog.Debug("falling back to hardcoded default pricing")
 		return config.DefaultPricing()
 	}
-	return result.(domain_pricing.PricingData)
+	return data
 }
 
 // GetModelPricing finds the best pricing match for a model name.

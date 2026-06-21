@@ -706,3 +706,102 @@ func TestResolveGroupingKey(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// isRecordInRange boundary tests (Phase: pure-logic coverage)
+// ---------------------------------------------------------------------------
+
+func TestIsRecordInRange(t *testing.T) {
+	t.Parallel()
+
+	// Fixed reference timestamps in UTC
+	jan10 := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	jan15 := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	jan20 := time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC)
+	jan05 := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	jan25 := time.Date(2026, 1, 25, 0, 0, 0, 0, time.UTC)
+
+	m := &metricsManager{}
+
+	tests := []struct {
+		name     string
+		r        sessionCostRecord
+		start    time.Time
+		end      time.Time
+		expected bool
+	}{
+		{
+			name:     "zero timestamp",
+			r:        sessionCostRecord{Timestamp: time.Time{}, Date: "bad"},
+			start:    time.Time{},
+			end:      time.Time{},
+			expected: false,
+		},
+		{
+			name:     "no filters",
+			r:        sessionCostRecord{Timestamp: jan15},
+			start:    time.Time{},
+			end:      time.Time{},
+			expected: true,
+		},
+		{
+			name:     "after start",
+			r:        sessionCostRecord{Timestamp: jan15},
+			start:    jan10,
+			end:      time.Time{},
+			expected: true,
+		},
+		{
+			name:     "before start",
+			r:        sessionCostRecord{Timestamp: jan05},
+			start:    jan10,
+			end:      time.Time{},
+			expected: false,
+		},
+		{
+			name:     "before end",
+			r:        sessionCostRecord{Timestamp: jan15},
+			start:    time.Time{},
+			end:      jan20,
+			expected: true,
+		},
+		{
+			name:     "after end",
+			r:        sessionCostRecord{Timestamp: jan25},
+			start:    time.Time{},
+			end:      jan20,
+			expected: false,
+		},
+		{
+			name:     "in range",
+			r:        sessionCostRecord{Timestamp: jan15},
+			start:    jan10,
+			end:      jan20,
+			expected: true,
+		},
+		{
+			name:     "equal to start boundary (inclusive)",
+			r:        sessionCostRecord{Timestamp: jan10},
+			start:    jan10,
+			end:      time.Time{},
+			expected: true,
+		},
+		{
+			name:     "equal to end boundary (exclusive)",
+			r:        sessionCostRecord{Timestamp: jan20},
+			start:    time.Time{},
+			end:      jan20,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := m.isRecordInRange(tt.r, tt.start, tt.end)
+			if got != tt.expected {
+				t.Errorf("isRecordInRange() = %v; want %v", got, tt.expected)
+			}
+		})
+	}
+}

@@ -472,3 +472,114 @@ func TestAppend_MarshalErrorUnreachable(t *testing.T) {
 		t.Error("error format string mismatch")
 	}
 }
+
+// TestPerformCompactionPass_EmptyData covers the gap at
+// global_prompt_tracker.go:332-334: len(data) == 0 → return false.
+//
+// When the tracker file exists but is empty (0 bytes), prepareCompactedEntries
+// returns nil, nil (len(entries) == 0 → return nil, nil). performCompactionPass
+// must detect this, return false, and leave the file untouched.
+func TestPerformCompactionPass_EmptyData(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	outputDir := filepath.Join(tmpDir, "output")
+	trackerPath := filepath.Join(outputDir, "global_prompts.jsonl")
+
+	// Create an empty file
+	if err := baseFS.MkdirAll(context.Background(), outputDir, 0755); err != nil {
+		t.Fatalf("failed to create output dir: %v", err)
+	}
+	if err := baseFS.WriteFile(context.Background(), trackerPath, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to write empty tracker file: %v", err)
+	}
+
+	tracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: trackerPath,
+	}
+
+	success := tracker.performCompactionPass(context.Background())
+	if success {
+		t.Error("expected performCompactionPass to return false for empty data")
+	}
+
+	// Verify file is still empty (no compaction artifacts)
+	content, err := baseFS.ReadFile(context.Background(), trackerPath)
+	if err != nil {
+		t.Fatalf("failed to read file after aborted pass: %v", err)
+	}
+	if len(content) != 0 {
+		t.Errorf("expected empty file after aborted pass, got %d bytes", len(content))
+	}
+}
+
+// TestShouldStillCompact_BelowThreshold covers the gap at
+// global_prompt_tracker.go:348-350: newInfo.Size() <= compactionThresholdBytes
+// → return false.
+//
+// When the tracker file is below the compaction threshold (150KB),
+// shouldStillCompact must return false, preventing unnecessary retries.
+func TestShouldStillCompact_BelowThreshold(t *testing.T) {
+	tmpDir := t.TempDir()
+	baseFS := persistence.NewOSFileSystem()
+	outputDir := filepath.Join(tmpDir, "output")
+	trackerPath := filepath.Join(outputDir, "global_prompts.jsonl")
+
+	// Write a small file (well below 150KB threshold)
+	smallContent := []byte(`{"timestamp":"t","prompt":"small"}` + "\n")
+	if err := baseFS.MkdirAll(context.Background(), outputDir, 0755); err != nil {
+		t.Fatalf("failed to create output dir: %v", err)
+	}
+	if err := baseFS.WriteFile(context.Background(), trackerPath, smallContent, 0644); err != nil {
+		t.Fatalf("failed to write small tracker file: %v", err)
+	}
+
+	tracker := &globalPromptTracker{
+		fs:       baseFS,
+		filepath: trackerPath,
+	}
+
+	backoff := 100 * time.Millisecond
+	shouldCompact := tracker.shouldStillCompact(context.Background(), &backoff)
+	if shouldCompact {
+		t.Error("expected shouldStillCompact to return false for file below threshold")
+	}
+}
+
+// TestWriteCompactedData_MarshalErrorUnreachable documents that the
+// json.Marshal error path in writeCompactedData
+// (global_prompt_tracker.go:367-369) is UNREACHABLE.
+//
+// writeCompactedData marshals promptEntry values, which contain only
+// string fields (Timestamp string, Prompt string). json.Marshal on a
+// struct with only string fields cannot fail. The error-handling branch
+// exists for defensive future-proofing.
+//
+// This test proves that promptEntry always marshals cleanly and serves
+// as a canary in case the struct fields change.
+func TestWriteCompactedData_MarshalErrorUnreachable(t *testing.T) {
+	t.Parallel()
+
+	// Every valid promptEntry must marshal without error
+	entries := []promptEntry{
+		{Timestamp: "2026-01-01T00:00:00Z", Prompt: "normal"},
+		{Timestamp: "", Prompt: ""},
+		{Timestamp: "2026-01-01T00:00:00Z", Prompt: "unicode: 🚀\n\t\"escaped\""},
+		{Timestamp: "2026-01-01T00:00:00Z", Prompt: "\x00\x01\x7f"},
+		{Timestamp: "2026-01-01T00:00:00Z", Prompt: strings.Repeat("X", 10000)},
+	}
+
+	for i, entry := range entries {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatalf("entry %d: json.Marshal unexpectedly failed: %v", i, err)
+		}
+		if len(data) == 0 {
+			t.Errorf("entry %d: expected non-empty marshaled data", i)
+		}
+	}
+
+	t.Log("[UNREACHABLE] json.Marshal(promptEntry{...}) never fails; " +
+		"all fields are string types. " +
+		"Error path in writeCompactedData is defensive future-proofing")
+}

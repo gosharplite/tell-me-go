@@ -44,6 +44,24 @@ func TestResolveCapabilities(t *testing.T) {
 			isDeepSeek:              false,
 		},
 		{
+			name:                    "gpt-5.3 does not require responses API (minor < 4)",
+			model:                   "gpt-5.3",
+			supportsReasoningEffort: true,
+			requiresResponsesAPI:    false,
+			useDeveloperRole:        true,
+			maxTokensField:          MaxTokensFieldCompletion,
+			isDeepSeek:              false,
+		},
+		{
+			name:                    "gpt-4.5 does not require responses API (major < 5)",
+			model:                   "gpt-4.5",
+			supportsReasoningEffort: false,
+			requiresResponsesAPI:    false,
+			useDeveloperRole:        false,
+			maxTokensField:          MaxTokensFieldLegacy,
+			isDeepSeek:              false,
+		},
+		{
 			model:                   "gpt-5.4",
 			supportsReasoningEffort: true,
 			requiresResponsesAPI:    true,
@@ -196,6 +214,8 @@ func TestParseGPTVersion(t *testing.T) {
 		{"gpt-4", gptVersion{major: 4, minor: 0, ok: true}},
 		{"gpt-5", gptVersion{major: 5, minor: 0, ok: true}},
 		{"gpt-5.4", gptVersion{major: 5, minor: 4, ok: true}},
+		{"gpt-5.3", gptVersion{major: 5, minor: 3, ok: true}},
+		{"gpt-4.5", gptVersion{major: 4, minor: 5, ok: true}},
 		{"gpt-6", gptVersion{major: 6, minor: 0, ok: true}},
 		{"gpt-6.1", gptVersion{major: 6, minor: 1, ok: true}},
 		{"gpt-4o", gptVersion{major: 4, minor: 0, ok: true}}, // Sscanf stops at 'o'

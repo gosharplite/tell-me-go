@@ -176,3 +176,47 @@ func TestMockHealthCheckManager_RaceCondition(t *testing.T) {
 		t.Errorf("calledMethods length: got %d, want %d", len(methods), goroutines*iterations)
 	}
 }
+
+// TestMockHealthCheckManager_NilFuncs exercises the two nil-func fallthrough
+// branches in mock_health.go where CheckAllFunc or CheckComponentFunc is nil.
+func TestMockHealthCheckManager_NilFuncs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(m *MockHealthCheckManager)
+	}{
+		{
+			name: "CheckAll_nil_func",
+			call: func(m *MockHealthCheckManager) {
+				got, err := m.CheckAll(context.Background())
+				if got != nil {
+					t.Errorf("CheckAll nil func: got %+v, want nil", got)
+				}
+				if err != nil {
+					t.Errorf("CheckAll nil func: unexpected error %v", err)
+				}
+			},
+		},
+		{
+			name: "CheckComponent_nil_func",
+			call: func(m *MockHealthCheckManager) {
+				got, err := m.CheckComponent(context.Background(), ports.CompLLMProvider)
+				if got != nil {
+					t.Errorf("CheckComponent nil func: got %+v, want nil", got)
+				}
+				if err != nil {
+					t.Errorf("CheckComponent nil func: unexpected error %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockHealthCheckManager{}
+			tt.call(m)
+		})
+	}
+}

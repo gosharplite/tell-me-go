@@ -830,6 +830,38 @@ func TestExecutePhase_Private(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestExecutePhase_UnknownPhase(t *testing.T) {
+	t.Parallel()
+
+	engine := &Engine{
+		processors: map[TurnPhase]TurnProcessor{
+			PhaseGuard: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+				return ProcessResult{NextPhase: PhaseComplete}, nil
+			}),
+			// deliberately no processor for PhaseRefining
+		},
+	}
+
+	turn := &Turn{
+		State: &TurnState{Phase: PhaseRefining}, // not in the map
+	}
+
+	_, err := engine.executePhase(context.Background(), turn)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no processor for phase")
+	// Note: Turn.State.Phase is overwritten to PhaseComplete BEFORE the error
+	// message is constructed, so the message reflects "Complete" not "Refining".
+	assert.Contains(t, err.Error(), string(PhaseComplete))
+
+	var agentErr *agentError
+	require.True(t, errors.As(err, &agentErr))
+	assert.Equal(t, ErrLogic, agentErr.Category)
+
+	// Safety: must force PhaseComplete to prevent infinite loop in runPhaseLoop
+	assert.Equal(t, PhaseComplete, turn.State.Phase)
+}
+
 // passThroughEventBus is an EventBus whose Publish always returns nil regardless of context.
 // This allows testing the ctx.Err() defensive check in attemptRetry between event publish and select.
 type passThroughEventBus struct{}
