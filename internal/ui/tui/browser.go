@@ -327,11 +327,34 @@ func (m *rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model
 	return m.handleViewportUpdate(msg)
 }
 
+// handleInitialLoad sets the history from the first page of results.
+// It selects the last turn and does NOT update the viewport — the caller
+// is responsible for calling updateViewportContent, updateViewportHeight,
+// and GotoBottom afterwards.
+func (m *rootBrowserModel) handleInitialLoad(msg historyLoadedMsg) {
+	m.history = msg.dtos
+	m.selectedTurn = len(m.history) - 1
+}
+
+// handlePrependLoad prepends older history pages while maintaining scroll
+// position. It adjusts the viewport YOffset and selectedTurn by the
+// number of added items. The caller is responsible for calling
+// updateViewportContent and updateViewportHeight afterwards.
+func (m *rootBrowserModel) handlePrependLoad(msg historyLoadedMsg) {
+	numAdded := len(msg.dtos)
+	m.history = append(msg.dtos, m.history...)
+	m.updateViewportContent()
+	addedLines := 0
+	if numAdded < len(m.turnOffsets) {
+		addedLines = m.turnOffsets[numAdded]
+	}
+	m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
+	m.selectedTurn += numAdded
+}
+
 func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
 	m.isLoading = false
 
-	// If we have data, process it even when there's an error.
-	// Only treat the error as blocking if no data was returned.
 	if msg.err != nil && len(msg.dtos) == 0 {
 		log.Printf("failed to load history: %v", msg.err)
 		m.err = msg.err
@@ -339,32 +362,16 @@ func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mod
 	}
 
 	if msg.err != nil {
-		// Partial result: log the error but still display what we got.
 		log.Printf("partial history load (got %d items): %v", len(msg.dtos), msg.err)
-		// DO NOT set m.err — let the data display. The user can retry by scrolling.
 	}
 
 	isInitialLoad := (m.selectedTurn == -1)
 
 	if len(msg.dtos) > 0 {
 		if isInitialLoad {
-			m.history = msg.dtos
-			m.selectedTurn = len(m.history) - 1
+			m.handleInitialLoad(msg)
 		} else {
-			// Prepend older history
-			numAdded := len(msg.dtos)
-			m.history = append(msg.dtos, m.history...)
-
-			// Update viewport and maintain scroll position
-			m.updateViewportContent()
-			addedLines := 0
-			if numAdded < len(m.turnOffsets) {
-				addedLines = m.turnOffsets[numAdded]
-			}
-			m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
-
-			// Adjust selected turn
-			m.selectedTurn += numAdded
+			m.handlePrependLoad(msg)
 		}
 	}
 

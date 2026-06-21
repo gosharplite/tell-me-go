@@ -119,19 +119,8 @@ func fetchTasksCmd(ctx context.Context, provider ports.TaskStore, status string,
 
 // Update handles incoming messages and updates the model state.
 func (m *taskListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle key presses when in error state — allow retry or quit
 	if m.err != nil {
-		if key, ok := msg.(tea.KeyMsg); ok {
-			switch key.String() {
-			case "q", "esc", "ctrl+c":
-				return m, tea.Quit
-			default:
-				// Any other key clears error and retries
-				m.err = nil
-				return m, fetchTasksCmd(m.ctx, m.provider, m.statusFilter, m.pageOffset, m.pageSize)
-			}
-		}
-		return m, nil
+		return m.handleErrorMsg(msg)
 	}
 
 	switch msg := msg.(type) {
@@ -148,6 +137,24 @@ func (m *taskListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleViewportUpdate(msg)
 	}
 	return m, nil
+}
+
+// handleErrorMsg handles all incoming messages when the model is in an error state.
+// Quit keys ("q", "esc", "ctrl+c") return tea.Quit.
+// Any other key clears the error and triggers a retry fetch.
+// Non-KeyMsg messages are silently ignored (error persists).
+func (m *taskListModel) handleErrorMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch key.String() {
+	case "q", "esc", "ctrl+c":
+		return m, tea.Quit
+	default:
+		m.err = nil
+		return m, fetchTasksCmd(m.ctx, m.provider, m.statusFilter, m.pageOffset, m.pageSize)
+	}
 }
 
 func (m *taskListModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
