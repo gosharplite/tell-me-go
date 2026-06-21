@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -19,23 +20,63 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
+// pricingCache avoids redundant disk reads of $TELL_ME_HOME/assets/pricing.json.
+// The cache is keyed by the fully resolved file path and invalidated when
+// the file's modification time changes.
+var (
+	pricingCacheMu sync.RWMutex
+	pricingCache   = map[string]cachedPricing{}
+)
+
+type cachedPricing struct {
+	data    domain_pricing.PricingData
+	modTime time.Time
+}
+
 // GetPricing attempts to load pricing data from $TELL_ME_HOME/assets/pricing.json,
 // falling back to hardcoded defaults if the file is missing or invalid.
 func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir string) domain_pricing.PricingData {
-	// 1. Try to load from $TELL_ME_HOME/assets/pricing.json
-	// Use the parent of outputDir to find the assets folder
 	homeDir := filepath.Dir(outputDir)
 	pricingPath := filepath.Join(homeDir, "assets", "pricing.json")
 
+	// Fast path: check cache under read lock
+	pricingCacheMu.RLock()
+	if cached, ok := pricingCache[pricingPath]; ok {
+		if info, err := os.Stat(pricingPath); err == nil && info.ModTime().Equal(cached.modTime) {
+			data := cached.data
+			pricingCacheMu.RUnlock()
+			return data
+		}
+	}
+	pricingCacheMu.RUnlock()
+
+	// Slow path: read from disk
 	if data, err := os.ReadFile(pricingPath); err == nil {
 		var pd domain_pricing.PricingData
 		if err := json.Unmarshal(data, &pd); err == nil {
+			info, statErr := os.Stat(pricingPath)
+
+			pricingCacheMu.Lock()
+			// Double-check: another goroutine may have populated the cache
+			// while we were doing I/O. If so, use the already-cached value
+			// rather than overwriting it.
+			if existing, ok := pricingCache[pricingPath]; ok {
+				if existingInfo, existErr := os.Stat(pricingPath); existErr == nil &&
+					existingInfo.ModTime().Equal(existing.modTime) {
+					pricingCacheMu.Unlock()
+					return existing.data
+				}
+			}
+			if statErr == nil {
+				pricingCache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
+			}
+			pricingCacheMu.Unlock()
+
 			slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
 			return pd
 		}
 	}
 
-	// 2. Fallback to hardcoded defaults
 	slog.Debug("falling back to hardcoded default pricing")
 	return config.DefaultPricing()
 }

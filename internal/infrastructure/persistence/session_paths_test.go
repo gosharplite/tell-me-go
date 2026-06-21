@@ -410,6 +410,214 @@ func TestRotateSession_CleanupError(t *testing.T) {
 }
 
 // =============================================================================
+// hasFilesToArchive
+// =============================================================================
+
+func TestHasFilesToArchive_NoneExist(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+
+	filesToMove := []string{"/a", "/b", "/c"}
+	result := hasFilesToArchive(context.Background(), m, filesToMove)
+	if result {
+		t.Error("expected false when no files exist")
+	}
+}
+
+func TestHasFilesToArchive_SomeExist(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	statCount := 0
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		statCount++
+		// First file exists, second and third do not.
+		if name == "/a" {
+			return &mockFileInfo{name: name}, nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	filesToMove := []string{"/a", "/b", "/c"}
+	result := hasFilesToArchive(context.Background(), m, filesToMove)
+	if !result {
+		t.Error("expected true when first file exists")
+	}
+	if statCount != 1 {
+		t.Errorf("expected short-circuit after 1 Stat call, got %d", statCount)
+	}
+}
+
+func TestHasFilesToArchive_AllExist(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.StatFunc = func(ctx context.Context, name string) (os.FileInfo, error) {
+		return &mockFileInfo{name: name}, nil
+	}
+
+	filesToMove := []string{"/a", "/b", "/c"}
+	result := hasFilesToArchive(context.Background(), m, filesToMove)
+	if !result {
+		t.Error("expected true when all files exist")
+	}
+}
+
+// =============================================================================
+// createBackupDir
+// =============================================================================
+
+func TestCreateBackupDir_Success(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	paths := persistence.ResolvePaths("/home/test", "default")
+
+	backupDir, err := createBackupDir(context.Background(), m, nil, *paths, "20250101_120000")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	expected := filepath.Join("/home/test/output", "backups", "20250101_120000")
+	if backupDir != expected {
+		t.Errorf("expected backupDir %s, got %s", expected, backupDir)
+	}
+}
+
+func TestCreateBackupDir_MkdirAllFailure(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.MkdirAllFunc = func(ctx context.Context, path string, perm os.FileMode) error {
+		return errors.New("disk full")
+	}
+
+	paths := persistence.ResolvePaths("/home/test", "default")
+
+	_, err := createBackupDir(context.Background(), m, nil, *paths, "20250101_120000")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "error creating backup directory") {
+		t.Errorf("expected wrapped error, got: %v", err)
+	}
+}
+
+func TestCreateBackupDir_NilWriter(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	paths := persistence.ResolvePaths("/home/test", "default")
+
+	backupDir, err := createBackupDir(context.Background(), m, nil, *paths, "20250101_120000")
+	if err != nil {
+		t.Fatalf("expected no error with nil writer, got: %v", err)
+	}
+
+	expected := filepath.Join("/home/test/output", "backups", "20250101_120000")
+	if backupDir != expected {
+		t.Errorf("expected backupDir %s, got %s", expected, backupDir)
+	}
+}
+
+func TestCreateBackupDir_WithWriter(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	paths := persistence.ResolvePaths("/home/test", "default")
+	var buf bytes.Buffer
+
+	backupDir, err := createBackupDir(context.Background(), m, &buf, *paths, "20250101_120000")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Archiving existing session files to") {
+		t.Errorf("expected archival message in writer output, got: %s", output)
+	}
+	if !strings.Contains(output, backupDir) {
+		t.Errorf("expected backupDir %s in writer output, got: %s", backupDir, output)
+	}
+}
+
+// =============================================================================
+// moveFilesToBackup
+// =============================================================================
+
+func TestMoveFilesToBackup_AllSucceed(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		return nil
+	}
+
+	filesToMove := []string{"/a", "/b", "/c"}
+	errs := moveFilesToBackup(context.Background(), m, filesToMove, "/backup")
+	if errs != nil {
+		t.Errorf("expected nil errors, got %v", errs)
+	}
+}
+
+func TestMoveFilesToBackup_PartialFailure(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	renameCount := 0
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		renameCount++
+		if renameCount == 1 {
+			return nil
+		}
+		return errors.New("rename failed")
+	}
+
+	filesToMove := []string{"/a", "/b"}
+	errs := moveFilesToBackup(context.Background(), m, filesToMove, "/backup")
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestMoveFilesToBackup_NoFilesExist(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		return os.ErrNotExist
+	}
+
+	filesToMove := []string{"/a", "/b", "/c"}
+	errs := moveFilesToBackup(context.Background(), m, filesToMove, "/backup")
+	if errs != nil {
+		t.Errorf("expected nil errors when no files exist, got %v", errs)
+	}
+}
+
+func TestMoveFilesToBackup_MixedExistence(t *testing.T) {
+	t.Parallel()
+
+	m := newMockFS()
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+		if oldpath == "/b" {
+			return os.ErrNotExist
+		}
+		return nil
+	}
+
+	filesToMove := []string{"/a", "/b", "/c"}
+	errs := moveFilesToBackup(context.Background(), m, filesToMove, "/backup")
+	if errs != nil {
+		t.Errorf("expected nil errors (only existing files moved, all renames succeed), got %v", errs)
+	}
+}
+
+// =============================================================================
 // RotateSession with no session files — archiveSessionFiles early return
 // =============================================================================
 
