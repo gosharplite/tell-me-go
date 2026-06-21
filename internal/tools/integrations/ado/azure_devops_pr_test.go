@@ -297,7 +297,7 @@ func TestAdoListPullRequests(t *testing.T) {
 			"organization": "o", "project": "p", "repository": "r",
 		}, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 
 	t.Run("Forbidden", func(t *testing.T) {
@@ -535,7 +535,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 			"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
 		}, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 
 	t.Run("Unauthorized", func(t *testing.T) {
@@ -1104,7 +1104,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 
 		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode repository metadata")
+		assert.Contains(t, err.Error(), "decoding response")
 	})
 }
 

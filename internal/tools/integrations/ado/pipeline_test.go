@@ -73,7 +73,7 @@ func TestListPipelines(t *testing.T) {
 				"project":      "myproj",
 			},
 			wantError: true,
-			errMsg:    "failed to decode response",
+			errMsg:    "decoding response",
 		},
 		{
 			name: "Missing required parameters",

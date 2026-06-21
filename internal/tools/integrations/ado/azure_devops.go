@@ -6,7 +6,6 @@ package ado
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -236,15 +235,9 @@ func (m *AdoManager) AdoListRepositoryItems(ctx context.Context, args map[string
 		return tools.ToolResult{}, fmt.Errorf("building list repository items URL: %w", err)
 	}
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	responseData, err := executeAdoGet[adoRepositoryItemsResponse](ctx, m, requestURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing list repository items request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var responseData adoRepositoryItemsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("listing repository items: %w", err)
 	}
 
 	return formatRepositoryItems(params.ScopePath, params.Version, responseData), nil

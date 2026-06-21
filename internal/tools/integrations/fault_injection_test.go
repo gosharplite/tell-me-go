@@ -107,7 +107,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 				_, err := m.AdoListRepositoryItems(ctx, args, nil)
 				return err
 			},
-			wantErrMsg: "failed to decode response",
+			wantErrMsg: "decoding response",
 		},
 		{
 			name: "Context Cancellation in executeRequest",
@@ -142,7 +142,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 				_, err := m.GetPipelineRun(ctx, args)
 				return err
 			},
-			wantErrMsg: "failed to decode response",
+			wantErrMsg: "decoding response",
 		},
 	}
 
@@ -403,7 +403,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 				_, _, err := m.ListPipelineRuns(ctx, args)
 				return err
 			},
-			wantErrMsg: "failed to decode response",
+			wantErrMsg: "decoding response",
 		},
 		{
 			name: "Unmarshal Failure in ListPipelineLogs",
@@ -425,7 +425,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 				_, _, err := m.ListPipelineLogs(ctx, args)
 				return err
 			},
-			wantErrMsg: "failed to decode logs list",
+			wantErrMsg: "decoding response",
 		},
 		{
 			name: "Unmarshal Failure in adoGetBuildTimeline",
@@ -543,7 +543,7 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 				_, err := m.AdoGetPrStatuses(ctx, args, nil)
 				return err
 			},
-			wantErrMsg: "failed to decode response",
+			wantErrMsg: "decoding response",
 		},
 		{
 			name: "Unmarshal Failure in fetchPrProjectID",
@@ -565,7 +565,7 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 				_, err := m.AdoGetPrPolicyEvaluations(ctx, args, nil)
 				return err
 			},
-			wantErrMsg: "failed to decode PR metadata",
+			wantErrMsg: "decoding response",
 		},
 		{
 			name: "Unmarshal Failure in fetchPolicyEvaluations",
@@ -593,7 +593,7 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 				_, err := m.AdoGetPrPolicyEvaluations(ctx, args, nil)
 				return err
 			},
-			wantErrMsg: "failed to decode response",
+			wantErrMsg: "decoding response",
 		},
 	}
 
@@ -646,7 +646,7 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 				_, err := m.AdoListPullRequests(ctx, args, nil)
 				return err
 			},
-			wantErrMsg: "failed to decode response",
+			wantErrMsg: "decoding response",
 		},
 		{
 			name: "Unmarshal Failure in adoGetPrThreads",
@@ -668,7 +668,7 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 				_, err := m.AdoGetPrThreads(ctx, args, nil)
 				return err
 			},
-			wantErrMsg: "failed to decode response",
+			wantErrMsg: "decoding response",
 		},
 	}
 

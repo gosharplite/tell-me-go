@@ -5,9 +5,7 @@ package ado
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -37,15 +35,9 @@ func (m *AdoManager) adoGetPullRequest(ctx context.Context, args map[string]inte
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
 		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	prData, err := executeAdoGet[adoPullRequestDetail](ctx, m, requestURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get pull request request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var prData adoPullRequestDetail
-	if err := json.NewDecoder(resp.Body).Decode(&prData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("fetching pull request %d: %w", params.PullRequestId, err)
 	}
 
 	return tools.ToolResult{Text: m.formatPullRequestDetail(params.PullRequestId, prData)}, nil
@@ -66,6 +58,17 @@ type adoPullRequestDetail struct {
 		Id   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"repository"`
+}
+
+// adoListPRResponse is the API response envelope for listing pull requests.
+type adoListPRResponse struct {
+	Value []adoPullRequestShort `json:"value"`
+	Count int                   `json:"count"`
+}
+
+// adoChangeEntriesResponse is the API response for PR iteration changes.
+type adoChangeEntriesResponse struct {
+	ChangeEntries []prChangeEntry `json:"changeEntries"`
 }
 
 type prChangeEntry struct {
@@ -111,19 +114,9 @@ func (m *AdoManager) AdoListPullRequests(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, fmt.Errorf("building list pull requests URL: %w", err)
 	}
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	responseData, err := executeAdoGet[adoListPRResponse](ctx, m, requestURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing list pull requests request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var responseData struct {
-		Value []adoPullRequestShort `json:"value"`
-		Count int                   `json:"count"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("listing pull requests: %w", err)
 	}
 
 	return tools.ToolResult{Text: m.formatPullRequestsList(responseData.Value)}, nil
@@ -197,18 +190,9 @@ func (m *AdoManager) adoGetPrDiff(ctx context.Context, args map[string]interface
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/iterations/1/changes?api-version=7.1",
 		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	changeData, err := executeAdoGet[adoChangeEntriesResponse](ctx, m, requestURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get pr diff request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var changeData struct {
-		ChangeEntries []prChangeEntry `json:"changeEntries"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&changeData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("fetching PR diff: %w", err)
 	}
 
 	return tools.ToolResult{Text: formatPrDiffChanges(params.PullRequestId, changeData.ChangeEntries)}, nil
@@ -296,15 +280,9 @@ func (m *AdoManager) AdoGetPrThreads(ctx context.Context, args map[string]interf
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/threads?api-version=7.1",
 		m.BaseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	resp, err := m.ExecuteRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	threadData, err := executeAdoGet[adoThreadResponse](ctx, m, requestURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("executing get pr threads request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var threadData adoThreadResponse
-	if err := json.NewDecoder(resp.Body).Decode(&threadData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("fetching PR threads: %w", err)
 	}
 
 	return tools.ToolResult{Text: m.formatPrThreads(params.PullRequestId, threadData)}, nil
