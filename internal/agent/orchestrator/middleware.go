@@ -13,6 +13,7 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 const LoopWarning = "SYSTEM WARNING: Infinite loop detected. You are repeating the exact same tool call or response. The previous action was aborted. Please analyze your previous steps and try a DIFFERENT tool or strategy."
@@ -58,9 +59,9 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 	var dailyCost float64
 	var totalM, totalH, totalO int64
 	if Turn.CostTracker != nil {
-		cost = Turn.CostTracker.GetTotalCost(ctx)
+		var stats domain_pricing.UsageStats
+		stats, cost = Turn.CostTracker.GetStats(ctx)
 		dailyCost = Turn.CostTracker.GetDailyCost(ctx)
-		stats, _ := Turn.CostTracker.GetStats(ctx)
 		totalM = stats.PromptTokens - stats.CachedTokens
 		totalH = stats.CachedTokens
 		totalO = stats.ResponseTokens + stats.ThinkingTokens
