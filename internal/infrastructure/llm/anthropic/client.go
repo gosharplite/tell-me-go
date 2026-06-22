@@ -67,6 +67,11 @@ type client struct {
 	persona        string
 	logger         ports.Logger
 	timeout        time.Duration
+
+	// marshalFunc serializes a value to JSON. Defaults to json.Marshal.
+	// Overridable in tests to exercise the marshal-error path in
+	// prepareAnthropicRequest without modifying the type tree.
+	marshalFunc func(interface{}) ([]byte, error)
 }
 
 // anthropicOption defines a functional option for configuring the Anthropic Client.
@@ -138,6 +143,7 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		model:         model,
 		logger:        &ports.NoOpLogger{},
+		marshalFunc:   json.Marshal,
 		maxTokens:     defaultMaxTokens,
 	}
 
@@ -364,18 +370,19 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		}
 	}
 
-	// ADR-024 corollary (Issue #782): json.Marshal(reqPayload) cannot fail
+	// ADR-024 corollary (Issue #782): c.marshalFunc(reqPayload) cannot fail
 	// with the current messagesRequest type tree — every field resolves to
 	// strings, ints, or interface{} populated exclusively with JSON-safe
 	// types (json.RawMessage, string, map[string]interface{}, typed string-only
 	// structs). No float64 fields exist, so NaN/Inf cannot appear. The error
 	// branch below is defensive dead code that serves as a safety net if a
-	// future field addition introduces a marshal-unfriendly type.
+	// future field addition introduces a marshal-unfriendly type, or if a
+	// test overrides marshalFunc to inject a synthetic error.
 	// Coverage: accepted gap (defensive dead code per Issue #782 / ADR-024).
-	// json.Marshal(reqPayload) cannot fail with the current messagesRequest
+	// c.marshalFunc(reqPayload) cannot fail with the current messagesRequest
 	// type tree. See TestPrepareAnthropicRequest_MarshalFailure in client_test.go
 	// for the sentinel test that verifies the wrapping format.
-	body, err := json.Marshal(reqPayload)
+	body, err := c.marshalFunc(reqPayload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
