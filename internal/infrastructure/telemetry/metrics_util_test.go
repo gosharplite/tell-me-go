@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
@@ -505,6 +507,48 @@ func TestGetPricing_Concurrency(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+// TestGetPricing_CacheReloadAfterFileRemoval verifies the os.Stat error path
+// in pricingLoader.loadFromDisk (metrics_util.go:81-83). When the pricing file
+// is removed after the cache has been populated, the double-check os.Stat call
+// returns an error, causing loadFromDisk to fall through to os.ReadFile (which
+// also fails because the file is gone). GetPricing then returns the hardcoded
+// default pricing rather than stale cached data.
+func TestGetPricing_CacheReloadAfterFileRemoval(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	require.NoError(t, os.MkdirAll(assetsDir, 0755))
+	outputDir := filepath.Join(tmpDir, "output")
+
+	pricingFile := filepath.Join(assetsDir, "pricing.json")
+
+	// Step 1: Write a valid pricing file and populate the cache.
+	v1 := `{"updated_at": "2026-07-01T00:00:00Z", "models": {"m": {"hit": 5.0, "miss": 4.0, "comp": 3.0}}}`
+	require.NoError(t, os.WriteFile(pricingFile, []byte(v1), 0644))
+
+	first := GetPricing(context.Background(), nil, outputDir)
+	require.Equal(t, "2026-07-01T00:00:00Z", first.UpdatedAt, "first call should load v1 from disk")
+	require.Equal(t, 5.0, first.Models["m"].Hit)
+
+	// Step 2: Delete the pricing file to trigger os.Stat error in the double-check.
+	require.NoError(t, os.Remove(pricingFile))
+
+	// Step 3: Call GetPricing again. The cache check in load() sees
+	// os.Stat returns an error (file gone) → cache miss → enters loadFromDisk.
+	// In loadFromDisk, the double-check os.Stat also fails → falls through
+	// to os.ReadFile which fails with os.IsNotExist → loadFromDisk returns error
+	// → GetPricing returns config.DefaultPricing().
+	second := GetPricing(context.Background(), nil, outputDir)
+
+	// Must NOT return stale v1 data.
+	require.NotEqual(t, "2026-07-01T00:00:00Z", second.UpdatedAt,
+		"must not return stale cached data after file removal")
+	// Must return fallback defaults (non-empty models, non-empty UpdatedAt).
+	require.NotEmpty(t, second.UpdatedAt, "fallback pricing must have non-empty UpdatedAt")
+	require.NotEmpty(t, second.Models, "fallback pricing must have non-empty Models")
 }
 
 // Sink variables for benchmarks — prevent compiler optimizations from eliding results.

@@ -70,7 +70,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	history = upsertRecord(history, record)
 	history = m.applyRetentionPolicy(history, retentionDays)
 
-	bytes, err := json.Marshal(history)
+	bytes, err := jsonMarshal(history)
 	if err != nil {
 		slog.Warn("failed to marshal ledger",
 			slog.String("path", historyPath),
@@ -149,7 +149,7 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 	history = m.applyRetentionPolicy(history, m.loadRetentionDays(ctx))
 
 	// Write back atomically
-	bytes, err := json.Marshal(history)
+	bytes, err := jsonMarshal(history)
 	if err != nil {
 		slog.Warn("failed to marshal ledger",
 			slog.String("path", historyPath),
