@@ -209,6 +209,35 @@ func getResponsesAPIEdgeGap4b(t *testing.T) []responsesAPITestCase {
 	}
 }
 
+// getResponsesAPIEdgeGap5 covers Issue #1093: the !errors.Is(err, errUnhandledBlockType)
+// branch in processDirectOutputItem must propagate non-sentinel errors.
+// When a direct output item (no Message wrapper) has Type "tool_use" with
+// a Name but no ID, appendPartsFromBlock returns errMissingToolID — a
+// non-sentinel error that must NOT be suppressed by the errors.Is guard.
+func getResponsesAPIEdgeGap5(t *testing.T) []responsesAPITestCase {
+	return []responsesAPITestCase{
+		{
+			name:    "direct_tool_use_missing_id_propagates_error",
+			model:   "gpt-5.4",
+			headers: map[string]string{"reasoning_effort": "high"},
+			tools:   []*tools.ToolDeclaration{getStandardToolDecl()},
+			mockHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := responsesAPIResponse{
+					Output: []responseOutputItem{
+						{
+							Type: "tool_use",
+							Name: "test_tool",
+							ID:   "", // ← missing ID triggers errMissingToolID
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(resp)
+			},
+			wantErr: "tool_use content block missing ID",
+		},
+	}
+}
+
 // getResponsesAPIEdgeGap6 covers Gap 6: extractBlockText with map
 // missing "value" key.
 func getResponsesAPIEdgeGap6(t *testing.T) []responsesAPITestCase {
@@ -360,6 +389,7 @@ func getResponsesAPIEdgeCases(t *testing.T) []responsesAPITestCase {
 	cases = append(cases, getResponsesAPIEdgeGap3b(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap4(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap4b(t)...)
+	cases = append(cases, getResponsesAPIEdgeGap5(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap6(t)...)
 	cases = append(cases, getResponsesAPIEdgeGap7(t)...)
 	cases = append(cases, getResponsesAPIEdgeADR022(t)...)

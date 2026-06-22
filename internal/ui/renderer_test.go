@@ -8,12 +8,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -996,22 +999,71 @@ func TestRenderMetricsLine_ThinkingSegmentSuppression(t *testing.T) {
 func TestStdUIRenderer_IsTerminalContext(t *testing.T) {
 	locker := ui.NewMockLocker()
 
-	t.Run("non-os.File stderr returns false", func(t *testing.T) {
-		// When stderr is a bytes.Buffer (not *os.File), IsTerminalContext must
-		// return false without panicking.
-		var buf bytes.Buffer
-		r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
-		if r.IsTerminalContext() {
-			t.Error("expected IsTerminalContext to return false for bytes.Buffer stderr")
+	// Helper: create an os.Pipe reader (*os.File), register cleanup
+	newPipeReader := func(t *testing.T) *os.File {
+		t.Helper()
+		pr, pw, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe: %v", err)
 		}
-	})
+		t.Cleanup(func() { _ = pr.Close() })
+		t.Cleanup(func() { _ = pw.Close() })
+		return pr
+	}
 
-	t.Run("nil writers return false", func(t *testing.T) {
-		r := ui.NewRenderer(locker, nil, nil, nil, nil).(*ui.StdUIRenderer)
-		if r.IsTerminalContext() {
-			t.Error("expected IsTerminalContext to return false for nil stderr")
-		}
-	})
+	tests := []struct {
+		name       string
+		stderrInit io.Writer // passed to NewRenderer as stderr
+		stderrSet  io.Writer // passed to SetWriters after init (nil = skip SetWriters)
+		want       bool
+		skip       string // non-empty = t.Skip with this message
+	}{
+		{
+			name:       "bytes.Buffer stderr returns false",
+			stderrInit: new(bytes.Buffer),
+			want:       false,
+		},
+		{
+			name:       "nil stderr becomes io.Discard returns false",
+			stderrInit: nil,
+			want:       false,
+		},
+		{
+			name:       "os.Pipe stderr (*os.File not TTY) returns false",
+			stderrInit: new(bytes.Buffer),
+			stderrSet:  newPipeReader(t),
+			want:       false,
+		},
+		{
+			name:       "SetWriters with bytes.Buffer overrides *os.File stderr",
+			stderrInit: os.Stderr,
+			stderrSet:  new(bytes.Buffer),
+			want:       false,
+		},
+		{
+			name:       "real TTY returns true (requires terminal, untestable in CI)",
+			stderrInit: os.Stderr,
+			want:       true,
+			skip:       "requires real terminal; 75% coverage is expected — manually verify in an interactive terminal",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skip != "" {
+				t.Skip(tt.skip)
+			}
+			var buf bytes.Buffer
+			stdout := &buf
+			r := ui.NewRenderer(locker, stdout, tt.stderrInit, nil, nil).(*ui.StdUIRenderer)
+			if tt.stderrSet != nil {
+				r.SetWriters(stdout, tt.stderrSet)
+			}
+			if got := r.IsTerminalContext(); got != tt.want {
+				t.Errorf("IsTerminalContext() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 
 	t.Run("non-TTY spinner produces no output without forceSpinner", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
@@ -1133,22 +1185,77 @@ func TestStdUIRenderer_LogUsage_NilAndEmpty(t *testing.T) {
 	})
 }
 
-// TestStdUIRenderer_LogUsage_MarshalFailure documents the json.Marshal error
-// branch in LogUsage (renderer_metrics.go:244). This branch is defensive dead
-// code: llm.Metrics contains only basic JSON-marshalable types (string, int32,
-// int, float64, bool). json.Marshal cannot fail on this struct.
-//
-// If Metrics ever gains an interface{}, map, or any field that can hold an
-// unmarshalable Go value, replace t.Skip with an actual test:
-//  1. Construct a Metrics with an unmarshalable value via reflection/unsafe
-//  2. Call LogUsage with that Metrics
-//  3. Assert stderr contains "failed to marshal usage metrics" (warn level)
+// TestStdUIRenderer_LogUsage_MarshalFailure verifies the json.Marshal error
+// branch in LogUsage (renderer_metrics.go). Uses unsafe to inject
+// math.NaN() into a float64 field, which encoding/json rejects.
 func TestStdUIRenderer_LogUsage_MarshalFailure(t *testing.T) {
-	t.Skip("Defensive dead code: json.Marshal on llm.Metrics cannot fail with current field types (all basic). " +
-		"See renderer_metrics.go:244. If Metrics gains an interface{} field, implement the test described above.")
+	// Safety check: shadowMetrics must be larger than llm.Metrics
+	// because it has the extra poison field.
+	if unsafe.Sizeof(shadowMetrics{}) <= unsafe.Sizeof(llm.Metrics{}) {
+		t.Fatalf("shadowMetrics layout (%d bytes) not larger than llm.Metrics (%d bytes) — update shadowMetrics fields",
+			unsafe.Sizeof(shadowMetrics{}), unsafe.Sizeof(llm.Metrics{}))
+	}
+
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
+	locker := ui.NewMockLocker()
+	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
+
+	// Build a valid Metrics struct
+	m := &llm.Metrics{
+		PromptTokens:   100,
+		ResponseTokens: 50,
+		TotalTokens:    150,
+		Timestamp:      "2026-01-01T12:00:00Z",
+	}
+
+	// Reinterpret as shadowMetrics and inject math.NaN() into the
+	// Duration field. encoding/json rejects NaN and +Inf/-Inf float64
+	// values with "json: unsupported value: NaN".
+	shadow := (*shadowMetrics)(unsafe.Pointer(m))
+	shadow.Duration = math.NaN()
+
+	// Call LogUsage — json.Marshal must fail
+	tmpFile := filepath.Join(t.TempDir(), "test.log")
+	r.LogUsage(context.Background(), m, tmpFile, mc.Now())
+
+	// Assert warning was logged to stderr
+	output := stderr.String()
+	if !strings.Contains(output, "failed to marshal usage metrics") {
+		t.Errorf("expected 'failed to marshal usage metrics' warning, got: %q", output)
+	}
+
+	// Assert the log file was NOT written (empty because we returned early)
+	data, _ := os.ReadFile(tmpFile)
+	if len(data) > 0 {
+		t.Errorf("expected empty log file after marshal failure, got: %q", string(data))
+	}
 }
 
 // ── Markdown render error logging tests (G4+G5) ──
+
+// shadowMetrics mirrors llm.Metrics layout exactly for unsafe-based
+// marshal failure injection. MUST stay in sync with llm.Metrics.
+// See TestStdUIRenderer_LogUsage_MarshalFailure.
+type shadowMetrics struct {
+	Timestamp              string
+	Provider               string
+	Model                  string
+	CachedTokens           int32
+	CacheWriteTokens       int32
+	PromptTokens           int32
+	ResponseTokens         int32
+	TotalTokens            int32
+	ThinkingTokens         int32
+	SearchQueries          int
+	Duration               float64
+	ToolDuration           float64
+	CumulativeToolDuration float64
+	Cost                   float64
+	IsSummary              bool
+	TrafficType            string
+	poison                 chan int // non-marshalable; triggers json.Marshal error
+}
 
 // failingRenderer is a mock markdownRenderer that always returns an error.
 type failingRenderer struct {
@@ -1272,28 +1379,4 @@ func TestNewRenderer_GlamourInitFailure(t *testing.T) {
 			t.Error("expected IsRendererDegraded() = false for normal renderer")
 		}
 	})
-}
-
-// ── G10: IsTerminalContext with redirected *os.File ──
-
-func TestIsTerminalContext_RedirectedFile(t *testing.T) {
-	pr, pw, _ := os.Pipe()
-	defer func() { _ = pr.Close() }()
-	defer func() { _ = pw.Close() }()
-	var buf bytes.Buffer
-	locker := ui.NewMockLocker()
-	r := ui.NewRenderer(locker, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
-	r.SetWriters(&buf, pr)
-	if r.IsTerminalContext() {
-		t.Error("expected IsTerminalContext() = false for redirected *os.File (pipe)")
-	}
-}
-
-func TestIsTerminalContext_SetWritersNonFileStderr(t *testing.T) {
-	locker := ui.NewMockLocker()
-	r := ui.NewRenderer(locker, os.Stdout, os.Stderr, nil, nil).(*ui.StdUIRenderer)
-	r.SetWriters(os.Stdout, new(bytes.Buffer))
-	if r.IsTerminalContext() {
-		t.Error("expected IsTerminalContext() = false when SetWriters injects non-*os.File stderr")
-	}
 }

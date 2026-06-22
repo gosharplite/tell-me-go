@@ -66,3 +66,81 @@ func TestAppendPartsFromBlock_UnknownType_ReturnsSentinel(t *testing.T) {
 		})
 	}
 }
+
+func TestAppendPartsFromBlock_ToolUseValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		blockType    string
+		blockName    string
+		blockID      string
+		wantErr      bool
+		wantSentinel error // sentinel to check with errors.Is, nil = no sentinel check
+		wantSubstr   string
+	}{
+		{
+			name:      "tool_use_with_name_and_id_ok",
+			blockType: "tool_use",
+			blockName: "test_tool",
+			blockID:   "call_123",
+			wantErr:   false,
+		},
+		{
+			name:         "tool_use_with_name_missing_id_errors",
+			blockType:    "tool_use",
+			blockName:    "test_tool",
+			blockID:      "",
+			wantErr:      true,
+			wantSentinel: errMissingToolID,
+			wantSubstr:   `name="test_tool"`,
+		},
+		{
+			name:      "tool_use_with_empty_name_and_id_silent_noop",
+			blockType: "tool_use",
+			blockName: "",
+			blockID:   "",
+			wantErr:   false,
+		},
+		{
+			name:      "tool_use_with_empty_name_but_id_silent_noop",
+			blockType: "tool_use",
+			blockName: "",
+			blockID:   "call_456",
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &client{}
+			content := &llm.Content{}
+			cb := contentBlock{
+				Type: tt.blockType,
+				Name: tt.blockName,
+				ID:   tt.blockID,
+			}
+
+			err := c.appendPartsFromBlock(content, cb)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.wantSentinel != nil && !errors.Is(err, tt.wantSentinel) {
+					t.Errorf("errors.Is(err, %v) = false; want true. err=%v", tt.wantSentinel, err)
+				}
+				if tt.wantSubstr != "" && !strings.Contains(err.Error(), tt.wantSubstr) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.wantSubstr)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}

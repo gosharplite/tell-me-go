@@ -578,4 +578,13 @@ func TestListInternalPackages_ContainsGoFilesError(t *testing.T) {
 
 	_, err := a.listInternalPackages(tmpDir)
 	require.Error(t, err, "expected error from listInternalPackages with unreadable subdirectory")
+
+	// Accept either path: the containsGoFiles error wrapping (L193-195)
+	// or Walk's own permission error propagated through the callback
+	// (L178-179). Both exercise the defense-in-depth described in the
+	// GAP ACCEPTED comment at dependency.go:187-189.
+	assert.True(t,
+		strings.Contains(err.Error(), "checking for Go files in") ||
+			strings.Contains(err.Error(), "permission denied"),
+		"error should mention 'checking for Go files in' or 'permission denied', got: %v", err)
 }

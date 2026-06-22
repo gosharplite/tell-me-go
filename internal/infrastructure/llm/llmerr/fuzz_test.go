@@ -24,7 +24,7 @@ func FuzzHTTPStatusToDomain(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, status int) {
-		runtime.Gosched() // cooperative yield: prevents fuzz shutdown race at 30s boundary (Issue #958)
+		runtime.Gosched() // cooperative yield: prevents fuzz shutdown race at 40s boundary (Issue #958)
 
 		// P1 (No panic): implicit — any panic fails the test.
 

@@ -150,10 +150,9 @@ func (m *AdoManager) executeRunPipeline(ctx context.Context, org, project string
 		Variables:          variables,
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to marshal payload: %w", err)
-	}
+	// json.Marshal cannot fail on a struct composed entirely of JSON-safe
+	// primitives (string, bool, *bool). See ADR-037.
+	body, _ := json.Marshal(payload)
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs?api-version=7.1-preview.1",
 		m.BaseURL, url.PathEscape(org), url.PathEscape(project), pipelineID)

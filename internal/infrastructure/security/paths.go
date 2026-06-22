@@ -21,6 +21,7 @@ type pathPolicy struct {
 	readOnlyPaths   map[string]struct{}
 	readOnlyPathsMu sync.RWMutex
 	resolvedTempDir string
+	customRules     []pathRule // custom path validation rules (ADR #830 safety net)
 }
 
 // newPathPolicy creates a new pathPolicy.
@@ -46,6 +47,13 @@ func newPathPolicy(safePaths []string) *pathPolicy {
 	}
 
 	return policy
+}
+
+// addPathRule registers a custom path validation rule.
+// Custom rules are evaluated before built-in rules.
+// This is an internal extension point per ADR #830.
+func (p *pathPolicy) addPathRule(rule pathRule) {
+	p.customRules = append(p.customRules, rule)
 }
 
 type pathRule func(absPath string, writable bool) (bool, error)
@@ -131,11 +139,9 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 		return "", err
 	}
 
-	rules := []pathRule{
-		p.checkDefaultBoundaries,
-		p.checkSafePaths,
-		p.checkReadOnlyPaths,
-	}
+	rules := make([]pathRule, 0, len(p.customRules)+3)
+	rules = append(rules, p.customRules...)
+	rules = append(rules, p.checkDefaultBoundaries, p.checkSafePaths, p.checkReadOnlyPaths)
 
 	for _, rule := range rules {
 		ok, err := rule(absPath, writable)
@@ -194,21 +200,27 @@ func (p *pathPolicy) isExemptedDirectory(absPath string) bool {
 	}
 
 	// Explicitly exempt the evaluated OS temporary directory
-	if p.resolvedTempDir != "" {
-		temp := filepath.ToSlash(p.resolvedTempDir)
-		absNormalized := filepath.ToSlash(absPath)
-		if !isCaseSensitive() {
-			temp = strings.ToLower(temp)
-			abs := strings.ToLower(absNormalized)
-			if strings.HasPrefix(abs, temp) {
-				return true
-			}
-		} else if strings.HasPrefix(absNormalized, temp) {
-			return true
-		}
+	if p.isTempDirExempted(absPath, isCaseSensitive()) {
+		return true
 	}
 
 	return false
+}
+
+// isTempDirExempted checks if absPath is within the resolved temporary directory.
+// The caseSensitive parameter controls whether path comparison is case-sensitive.
+func (p *pathPolicy) isTempDirExempted(absPath string, caseSensitive bool) bool {
+	if p.resolvedTempDir == "" {
+		return false
+	}
+	temp := filepath.ToSlash(p.resolvedTempDir)
+	absNormalized := filepath.ToSlash(absPath)
+	if !caseSensitive {
+		temp = strings.ToLower(temp)
+		abs := strings.ToLower(absNormalized)
+		return strings.HasPrefix(abs, temp)
+	}
+	return strings.HasPrefix(absNormalized, temp)
 }
 
 // checkSystemDirectoryMatch normalizes a system directory and compares it against absPath.
