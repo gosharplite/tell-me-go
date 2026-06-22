@@ -59,15 +59,10 @@ func (m *ConfluenceManager) fetchPageContent(ctx context.Context, pageID string)
 	q.Set("body-format", "storage")
 	u.RawQuery = q.Encode()
 
-	// NOTE: This branch is structurally unreachable because:
-	//  1. url.Parse(m.provider.baseURL) above already validates the URL
-	//  2. http.NewRequestWithContext internally calls url.Parse on u.String(),
-	//     which is the canonical form of the already-validated URL
-	// Kept as defense-in-depth against future refactoring.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+	// http.NewRequestWithContext cannot fail here: u.String() returns the
+	// canonical form of a URL already validated by url.Parse above.
+	// See ADR-037: unreachable error branches are removed, not tested.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 
 	req.Header.Set("Accept", "application/json")
 
@@ -162,15 +157,10 @@ func (m *ConfluenceManager) getCurrentPageVersion(ctx context.Context, pageID st
 	}
 	u = u.JoinPath("/wiki/api/v2/pages", pageID)
 
-	// NOTE: This branch is structurally unreachable because:
-	//  1. url.Parse(m.provider.baseURL) above already validates the URL
-	//  2. http.NewRequestWithContext internally calls url.Parse on u.String(),
-	//     which is the canonical form of the already-validated URL
-	// Kept as defense-in-depth against future refactoring.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create version fetch request: %w", err)
-	}
+	// http.NewRequestWithContext cannot fail here: u.String() returns the
+	// canonical form of a URL already validated by url.Parse above.
+	// See ADR-037: unreachable error branches are removed, not tested.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := m.provider.Do(ctx, m.client, req)
@@ -202,15 +192,10 @@ func (m *ConfluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 		return fmt.Errorf("failed to marshal update payload: %w", err)
 	}
 
-	// NOTE: This branch is structurally unreachable because:
-	//  1. url.Parse(m.provider.baseURL) above already validates the URL
-	//  2. http.NewRequestWithContext internally calls url.Parse on u.String(),
-	//     which is the canonical form of the already-validated URL
-	// Kept as defense-in-depth against future refactoring.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create update request: %w", err)
-	}
+	// http.NewRequestWithContext cannot fail here: u.String() returns the
+	// canonical form of a URL already validated by url.Parse above.
+	// See ADR-037: unreachable error branches are removed, not tested.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
