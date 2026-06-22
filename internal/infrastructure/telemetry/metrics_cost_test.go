@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -594,4 +595,40 @@ func BenchmarkEstimateCost_Batch100(b *testing.B) {
 		}
 		_, _ = benchSinkEstimate, benchSinkEstimateErr
 	})
+}
+
+// ---------------------------------------------------------------------------
+// TestCostLedger_RecoverySkipsUnreadableFile — verifies graceful degradation
+// when global_costs.json exists but is unreadable (e.g., 0000 permissions).
+// os.ReadFile returns EACCES, which is not os.IsNotExist, so loadHistoryFromDisk
+// returns fileExisted=false with a non-nil error. The error is discarded by
+// loadHistory, and since m.ledger is nil, recovery is a no-op. The function
+// returns an empty slice without panicking.
+// ---------------------------------------------------------------------------
+
+func TestCostLedger_RecoverySkipsUnreadableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file reads on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	historyPath := filepath.Join(tmpDir, "global_costs.json")
+
+	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(historyPath, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(historyPath, 0644) })
+
+	// nil ledger means checkLedgerAndTriggerRecovery is a no-op even if reached.
+	m := &metricsManager{}
+
+	history := m.loadHistory(context.Background(), historyPath, tmpDir)
+
+	if len(history) != 0 {
+		t.Errorf("expected empty history for unreadable file, got %d records", len(history))
+	}
 }
