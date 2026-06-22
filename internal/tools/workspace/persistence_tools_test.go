@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -143,6 +144,19 @@ func (m *mockMetadataProvider) ListAvailableToolkits() []string {
 		return []string{"core"}
 	}
 	return m.toolkits
+}
+
+// busyFunc returns a function that returns a SQLITE_BUSY error for the
+// first n calls, then returns either success (nil) or the given finalErr.
+func busyFunc(busyCount int, finalErr error) func() error {
+	calls := 0
+	return func() error {
+		calls++
+		if calls <= busyCount {
+			return fmt.Errorf("database is locked (SQLITE_BUSY)")
+		}
+		return finalErr
+	}
 }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
@@ -510,6 +524,11 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "clear"}, nil)
 	if err == nil {
 		t.Error("Expected error from clearTasks")
+	}
+
+	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "list"}, nil)
+	if err == nil {
+		t.Error("Expected error from listTasks via fetchAndCount")
 	}
 }
 
@@ -1070,5 +1089,81 @@ func TestFetchAndCount_CountTasksError(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("count = %d; want 0 on error", count)
+	}
+}
+
+// TestRetryOnBusy_ContextCancellation verifies that when the context is
+// cancelled before the first retry, retryOnBusy returns ctx.Err() without
+// executing further retries.
+//
+// Uses a pre-cancelled context per ADR-036 §2 (no time.Sleep).
+func TestRetryOnBusy_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancelled — ADR-036 §2 pattern
+
+	op := busyFunc(99, nil) // always returns BUSY; 99 ensures exhaustion is impossible
+
+	err := retryOnBusy(ctx, op)
+	if err == nil {
+		t.Fatal("expected error from cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+}
+
+// TestRetryOnBusy_Exhaustion verifies that after 3 consecutive BUSY errors,
+// retryOnBusy returns the last error and the operation was called exactly 3 times.
+func TestRetryOnBusy_Exhaustion(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	op := func() error {
+		calls++
+		return fmt.Errorf("database is locked (SQLITE_BUSY)")
+	}
+
+	err := retryOnBusy(context.Background(), op)
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion, got nil")
+	}
+	if !strings.Contains(err.Error(), "database is locked") {
+		t.Errorf("expected BUSY error, got: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 calls after exhaustion, got %d", calls)
+	}
+}
+
+// TestRetryOnBusy_SuccessAfterRetry verifies that retryOnBusy retries
+// after BUSY errors with exponential backoff (100ms → 200ms) and
+// eventually succeeds. The time.After backoff path (lines 70-71) is
+// exercised because the operation returns BUSY twice before succeeding.
+func TestRetryOnBusy_SuccessAfterRetry(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	op := func() error {
+		calls++
+		if calls <= 2 {
+			return fmt.Errorf("database is locked (SQLITE_BUSY)")
+		}
+		return nil
+	}
+
+	start := time.Now()
+	err := retryOnBusy(context.Background(), op)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("expected success after retry, got: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 calls (2 BUSY + 1 success), got %d", calls)
+	}
+	if elapsed < 250*time.Millisecond {
+		t.Errorf("expected backoff delay >= 250ms (100ms + 200ms), got %v", elapsed)
 	}
 }
