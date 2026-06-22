@@ -72,7 +72,7 @@ func TestNolintGateEvaluator(t *testing.T) {
 }
 
 func TestTextMatchWarningEvaluator(t *testing.T) {
-	validReport := &orphanReport{
+	validReport := &OrphanReport{
 		Symbol:   "Symbol",
 		Pkg:      "example.com/pkg",
 		Type:     "Function",
@@ -158,7 +158,7 @@ func TestTextMatchWarningEvaluator(t *testing.T) {
 }
 
 func TestDeepVerificationEvaluator(t *testing.T) {
-	validReport := &orphanReport{
+	validReport := &OrphanReport{
 		Symbol:   "Symbol",
 		Pkg:      "example.com/pkg",
 		Type:     "Method",
@@ -273,7 +273,7 @@ func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
 			name: "nil meta",
 			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
 			ctx: &orphanEvalContext{
-				report: &orphanReport{},
+				report: &OrphanReport{},
 				meta:   nil,
 				state:  &scanState{},
 				deep:   true,
@@ -284,7 +284,7 @@ func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
 			name: "nil state",
 			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
 			ctx: &orphanEvalContext{
-				report: &orphanReport{},
+				report: &OrphanReport{},
 				meta:   &symMeta{isMethod: true},
 				state:  nil,
 				deep:   true,
@@ -295,7 +295,7 @@ func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
 			name: "nil analyzer",
 			e:    &deepVerificationEvaluator{analyzer: nil},
 			ctx: &orphanEvalContext{
-				report: &orphanReport{},
+				report: &OrphanReport{},
 				meta:   &symMeta{isMethod: true},
 				state:  &scanState{},
 				deep:   true,
@@ -306,7 +306,7 @@ func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
 			name: "deep disabled",
 			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
 			ctx: &orphanEvalContext{
-				report: &orphanReport{},
+				report: &OrphanReport{},
 				meta:   &symMeta{isMethod: true},
 				state:  &scanState{},
 				deep:   false,
@@ -317,7 +317,7 @@ func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
 			name: "not a method",
 			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
 			ctx: &orphanEvalContext{
-				report: &orphanReport{},
+				report: &OrphanReport{},
 				meta:   &symMeta{isMethod: false},
 				state:  &scanState{},
 				deep:   true,
@@ -328,7 +328,7 @@ func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
 			name: "all conditions met",
 			e:    &deepVerificationEvaluator{analyzer: &defaultDeadCodeAnalyzer{}},
 			ctx: &orphanEvalContext{
-				report: &orphanReport{},
+				report: &OrphanReport{},
 				meta:   &symMeta{isMethod: true},
 				state:  &scanState{},
 				deep:   true,
@@ -347,7 +347,7 @@ func TestDeepVerificationEvaluator_ShouldDeepVerify(t *testing.T) {
 	}
 }
 func TestAnonInterfaceWarningEvaluator(t *testing.T) {
-	validReport := &orphanReport{
+	validReport := &OrphanReport{
 		Symbol:   "Symbol",
 		Pkg:      "example.com/pkg",
 		Type:     "Method",
@@ -668,7 +668,7 @@ func TestComplexityReclassifierEvaluator(t *testing.T) {
 			ctx: &orphanEvalContext{
 				id:         "example.com/pkg.Symbol",
 				complexity: 5,
-				report: &orphanReport{
+				report: &OrphanReport{
 					Symbol:   "Symbol",
 					Pkg:      "example.com/pkg",
 					Type:     "Function",
@@ -684,7 +684,7 @@ func TestComplexityReclassifierEvaluator(t *testing.T) {
 			ctx: &orphanEvalContext{
 				id:         "example.com/pkg.Symbol",
 				complexity: 10,
-				report: &orphanReport{
+				report: &OrphanReport{
 					Symbol:   "Symbol",
 					Pkg:      "example.com/pkg",
 					Type:     "Function",
@@ -700,7 +700,7 @@ func TestComplexityReclassifierEvaluator(t *testing.T) {
 			ctx: &orphanEvalContext{
 				id:         "example.com/pkg.Symbol",
 				complexity: 15,
-				report: &orphanReport{
+				report: &OrphanReport{
 					Symbol:   "Symbol",
 					Pkg:      "example.com/pkg",
 					Type:     "Function",
@@ -716,7 +716,7 @@ func TestComplexityReclassifierEvaluator(t *testing.T) {
 			ctx: &orphanEvalContext{
 				id:         "example.com/pkg.Symbol",
 				complexity: 25,
-				report: &orphanReport{
+				report: &OrphanReport{
 					Symbol:   "Symbol",
 					Pkg:      "example.com/pkg",
 					Type:     "Function",

@@ -5,7 +5,7 @@ package analysis
 
 // orphanEvalContext carries the full context for a single orphan evaluation step.
 // Read-only fields: id, meta, state, deep, complexity, impact, displayName.
-// Mutable field: report — the *orphanReport being built; nil means "exclude this symbol."
+// Mutable field: report — the *OrphanReport being built; nil means "exclude this symbol."
 type orphanEvalContext struct {
 	id          string
 	meta        *symMeta
@@ -14,7 +14,7 @@ type orphanEvalContext struct {
 	complexity  int
 	impact      int
 	displayName string
-	report      *orphanReport
+	report      *OrphanReport
 }
 
 // orphanEvaluator is a single step in the orphan classification pipeline.

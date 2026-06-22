@@ -26,7 +26,7 @@ func (e *severityClassifierEvaluator) evaluate(ctx *orphanEvalContext) *orphanEv
 		reason = "Exported symbol is only used within its own package."
 	}
 
-	ctx.report = &orphanReport{
+	ctx.report = &OrphanReport{
 		Symbol:     ctx.displayName,
 		Pkg:        ctx.meta.pkgPath,
 		Type:       ctx.meta.symType,

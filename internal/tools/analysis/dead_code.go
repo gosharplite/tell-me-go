@@ -29,8 +29,8 @@ type defaultDeadCodeAnalyzer struct {
 	idx symbolIndex
 }
 
-// orphanReport represents a single finding of dead or effectively private code.
-type orphanReport struct {
+// OrphanReport represents a single finding of dead or effectively private code.
+type OrphanReport struct {
 	Symbol     string `json:"symbol"`
 	Pkg        string `json:"package"`
 	Type       string `json:"type"`     // e.g., "Function", "Method", "Type"
@@ -106,7 +106,7 @@ func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args 
 }
 
 // GatherOrphanReports is an internal helper for health checks that returns structured findings.
-func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]orphanReport, error) {
+func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]OrphanReport, error) {
 	state, err := a.runAnalysisPipeline(ctx, path, nil, deep, hb)
 	if err != nil {
 		return nil, err
