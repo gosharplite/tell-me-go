@@ -141,34 +141,47 @@ func validateTurnContent(ctx context.Context, msg *llm.Content, index int) error
 }
 
 func isTurnBoundary(msg *llm.Content, current []*llm.Content) (bool, error) {
-	if len(current) == 0 {
+	if isNewTurnStart(current) {
 		return false, nil
 	}
 
-	// Boundary usually starts with user or system
-	if msg.Role != "user" && msg.Role != "system" {
+	if !isBoundaryRole(msg.Role) {
 		return false, nil
 	}
 
-	// If the last message was a tool call, and this is a user message,
-	// it's likely a tool response and should stay in the same turn.
-	// System messages always break turns.
 	if msg.Role == "user" {
-		last := current[len(current)-1]
-		if last == nil {
-			return false, fmt.Errorf("%w: nil message in current turn", ErrInvalidPayload)
-		}
-		if last.Role == "model" {
-			toolCall, err := isToolCall(last)
-			if err != nil {
-				return false, err
-			}
-			if toolCall {
-				return false, nil
-			}
-		}
+		return isUserTurnBoundary(current)
 	}
+	return true, nil
+}
 
+func isNewTurnStart(current []*llm.Content) bool {
+	return len(current) == 0
+}
+
+func isBoundaryRole(role string) bool {
+	return role == "user" || role == "system"
+}
+
+func isUserTurnBoundary(current []*llm.Content) (bool, error) {
+	last := current[len(current)-1]
+	if last == nil {
+		return false, fmt.Errorf("%w: nil message in current turn", ErrInvalidPayload)
+	}
+	if last.Role != "model" {
+		return true, nil
+	}
+	return isModelToolCallBoundary(last)
+}
+
+func isModelToolCallBoundary(last *llm.Content) (bool, error) {
+	toolCall, err := isToolCall(last)
+	if err != nil {
+		return false, err
+	}
+	if toolCall {
+		return false, nil
+	}
 	return true, nil
 }
 
