@@ -13,7 +13,7 @@ import (
 )
 
 // formatToolResult converts orphan findings into a human-readable tool result.
-func (a *defaultDeadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolResult {
+func (a *defaultDeadCodeAnalyzer) formatToolResult(findings []OrphanReport) tools.ToolResult {
 	if len(findings) == 0 {
 		return tools.ToolResult{Text: "No dead or effectively private code found."}
 	}
@@ -61,9 +61,9 @@ func formatDisplayName(id string, meta *symMeta) string {
 }
 
 // evaluateOrphan determines whether a symbol qualifies as dead or effectively
-// private, producing an orphanReport if so. The logic is decomposed into a
+// private, producing an OrphanReport if so. The logic is decomposed into a
 // pipeline of single-purpose evaluators (see orphan_evaluator.go).
-func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState, deep bool) *orphanReport {
+func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState, deep bool) *OrphanReport {
 	if meta.obj == nil {
 		return nil
 	}
@@ -81,8 +81,8 @@ func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state
 
 // runOrphanPipeline assembles evaluators conditionally based on --deep mode
 // and executes them in sequence. Returns nil when any evaluator excludes the
-// symbol, or the final orphanReport when all evaluators pass.
-func (a *defaultDeadCodeAnalyzer) runOrphanPipeline(ctx *orphanEvalContext) *orphanReport {
+// symbol, or the final OrphanReport when all evaluators pass.
+func (a *defaultDeadCodeAnalyzer) runOrphanPipeline(ctx *orphanEvalContext) *OrphanReport {
 	evaluators := a.buildEvaluatorPipeline(ctx.deep)
 
 	for _, ev := range evaluators {
@@ -114,15 +114,15 @@ func (a *defaultDeadCodeAnalyzer) buildEvaluatorPipeline(deep bool) []orphanEval
 }
 
 // buildReport orchestrates the full report-building pipeline from scanState to structured findings.
-func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanState, deep bool, hb chan<- struct{}) []orphanReport {
+func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanState, deep bool, hb chan<- struct{}) []OrphanReport {
 	findings := a.collectOrphanFindings(ctx, state, deep, hb)
 	sortOrphanReports(findings)
 	return findings
 }
 
 // collectOrphanFindings iterates over all declarations and evaluates each for orphan status.
-func (a *defaultDeadCodeAnalyzer) collectOrphanFindings(ctx context.Context, state *scanState, deep bool, hb chan<- struct{}) []orphanReport {
-	var findings []orphanReport
+func (a *defaultDeadCodeAnalyzer) collectOrphanFindings(ctx context.Context, state *scanState, deep bool, hb chan<- struct{}) []OrphanReport {
+	var findings []OrphanReport
 
 	// Sort IDs for deterministic iteration
 	ids := make([]string, 0, len(state.declarations))
@@ -148,7 +148,7 @@ func (a *defaultDeadCodeAnalyzer) collectOrphanFindings(ctx context.Context, sta
 
 // sortOrphanReports sorts orphan reports by impact (desc), then complexity (desc),
 // then package (asc), then symbol name (asc).
-func sortOrphanReports(reports []orphanReport) {
+func sortOrphanReports(reports []OrphanReport) {
 	sort.Slice(reports, func(i, j int) bool {
 		if reports[i].Impact != reports[j].Impact {
 			return reports[i].Impact > reports[j].Impact

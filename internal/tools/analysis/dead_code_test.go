@@ -65,12 +65,12 @@ func (m *deadCodeSecurityProvider) Close() error { return nil }
 func getFindOrphanedSymbolsTestCases() []struct {
 	name     string
 	files    map[string]string
-	expected []orphanReport
+	expected []OrphanReport
 } {
 	return []struct {
 		name     string
 		files    map[string]string
-		expected []orphanReport
+		expected []OrphanReport
 	}{
 		{
 			name: "Dead Function",
@@ -78,7 +78,7 @@ func getFindOrphanedSymbolsTestCases() []struct {
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Dead() {}\nfunc Alive() {}\n",
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Alive() }",
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "Dead", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
 			},
 		},
@@ -89,7 +89,7 @@ func getFindOrphanedSymbolsTestCases() []struct {
 				"pkg1/util.go": "package pkg1\n\nfunc Use() { Private() }\n",
 				"main.go":      "package main\n\nfunc main() {}",
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "Private", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
 				{Symbol: "Use", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
 			},
@@ -108,7 +108,7 @@ func getFindOrphanedSymbolsTestCases() []struct {
 				"pkg1/pkg1.go": "package pkg1\n\ntype S struct{}\nfunc (s S) DeadMethod() {}\n",
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { _ = pkg1.S{} }",
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "(S).DeadMethod", Pkg: "example.com/test/pkg1", Type: "Method", Severity: "DEAD"},
 			},
 		},
@@ -118,7 +118,7 @@ func getFindOrphanedSymbolsTestCases() []struct {
 				"pkg1/pkg1.go":      "package pkg1\n\nfunc InternalTestOnly() {}\n",
 				"pkg1/pkg1_test.go": "package pkg1\n\nimport \"testing\"\n\nfunc TestInternal(t *testing.T) { InternalTestOnly() }\n",
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "InternalTestOnly", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
 			},
 		},
@@ -195,7 +195,7 @@ import "example.com/test/pkg1"
 func main() { pkg1.Use() }
 `,
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "Impl", Pkg: "example.com/test/pkg1", Type: "Type", Severity: "PRIVATE"},
 			},
 		},
@@ -260,7 +260,7 @@ func ComplexPrivate(a, b int) {
 				"pkg1/util.go": "package pkg1\n\nfunc Use() { ComplexPrivate(1, 2) }\n",
 				"main.go":      "package main\n\nfunc main() {}",
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "ComplexPrivate", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE", Reason: "High Priority Refactoring Candidate: can be refactored with zero external impact."},
 			},
 		},
@@ -281,7 +281,7 @@ func Target3() {}
 func main() {}
 `,
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "Anchor", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
 				{Symbol: "Target1", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
 				{Symbol: "Target2", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
@@ -369,7 +369,7 @@ func getSafeName(name string) string {
 func setupSharedWorkspace(t *testing.T, tests []struct {
 	name     string
 	files    map[string]string
-	expected []orphanReport
+	expected []OrphanReport
 }) (string, string) {
 	rootTmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)

@@ -21,11 +21,11 @@ import (
 )
 
 type mockDeadCodeAnalyzer struct {
-	reports []orphanReport
+	reports []OrphanReport
 	err     error
 }
 
-func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]orphanReport, error) {
+func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]OrphanReport, error) {
 	return m.reports, m.err
 }
 
@@ -276,7 +276,7 @@ func TestHealthManager_CheckDeadCode(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		mockReports []orphanReport
+		mockReports []OrphanReport
 		mockErr     error
 		wantStatus  string
 		wantDetails string
@@ -295,7 +295,7 @@ func TestHealthManager_CheckDeadCode(t *testing.T) {
 		},
 		{
 			name: "mixed issues",
-			mockReports: []orphanReport{
+			mockReports: []OrphanReport{
 				{Severity: "DEAD"},
 				{Severity: "PRIVATE"},
 				{Severity: "PRIVATE"},

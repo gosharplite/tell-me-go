@@ -8,9 +8,21 @@ import (
 	"fmt"
 	"os"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 )
+
+// deadCodeAnalyzer is the local seam for the dead code analysis engine,
+// allowing tests to inject mocks without touching the analysis package.
+type deadCodeAnalyzer interface {
+	GatherOrphanReports(ctx context.Context, root string, deep bool, heartbeat chan<- struct{}) ([]analysis.OrphanReport, error)
+}
+
+// newAnalyzer is the constructor for the dead code analyzer, overridable in tests.
+var newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
+	return analysis.NewDeadCodeAnalyzerForCLI(sp)
+}
 
 func main() {
 	os.Exit(run())
@@ -20,7 +32,7 @@ func run() int {
 	ctx := context.Background()
 
 	sp := security.NewSecurityManager(nil)
-	analyzer := analysis.NewDeadCodeAnalyzerForCLI(sp)
+	analyzer := newAnalyzer(sp)
 
 	reports, err := analyzer.GatherOrphanReports(ctx, ".", false, nil)
 	if err != nil {
