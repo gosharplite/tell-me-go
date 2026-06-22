@@ -47,73 +47,73 @@ func TestGetSpinnerInfo(t *testing.T) {
 	tests := []struct {
 		name     string
 		event    events.Event
-		expected spinnerInfo
+		expected events.SpinnerInfo
 		ok       bool
 	}{
 		{
 			name:  "InferenceStartedEvent with model",
 			event: events.InferenceStartedEvent{Model: "gpt-4"},
-			expected: spinnerInfo{
-				status:         " Thinking [gpt-4]...",
-				withMetrics:    false,
-				resetRendering: false,
+			expected: events.SpinnerInfo{
+				Status:         " Thinking [gpt-4]...",
+				WithMetrics:    false,
+				ResetRendering: false,
 			},
 			ok: true,
 		},
 		{
 			name:  "InferenceStartedEvent without model",
 			event: events.InferenceStartedEvent{},
-			expected: spinnerInfo{
-				status:         " Thinking...",
-				withMetrics:    false,
-				resetRendering: false,
+			expected: events.SpinnerInfo{
+				Status:         " Thinking...",
+				WithMetrics:    false,
+				ResetRendering: false,
 			},
 			ok: true,
 		},
 		{
 			name:  "SummarizationStartedEvent",
 			event: events.SummarizationStartedEvent{},
-			expected: spinnerInfo{
-				status:         " Compressing context...",
-				withMetrics:    false,
-				resetRendering: true,
+			expected: events.SpinnerInfo{
+				Status:         " Compressing context...",
+				WithMetrics:    false,
+				ResetRendering: true,
 			},
 			ok: true,
 		},
 		{
 			name:  "ToolExecutionStartedEvent single tool",
 			event: events.ToolExecutionStartedEvent{ToolNames: []string{"search"}},
-			expected: spinnerInfo{
-				status:         " Executing [search]...",
-				withMetrics:    true,
-				resetRendering: true,
+			expected: events.SpinnerInfo{
+				Status:         " Executing [search]...",
+				WithMetrics:    true,
+				ResetRendering: true,
 			},
 			ok: true,
 		},
 		{
 			name:  "ToolExecutionStartedEvent multiple tools",
 			event: events.ToolExecutionStartedEvent{ToolNames: []string{"search", "calculator"}},
-			expected: spinnerInfo{
-				status:         " Executing tools [search, calculator]...",
-				withMetrics:    true,
-				resetRendering: true,
+			expected: events.SpinnerInfo{
+				Status:         " Executing tools [search, calculator]...",
+				WithMetrics:    true,
+				ResetRendering: true,
 			},
 			ok: true,
 		},
 		{
 			name:  "RetryWaitingEvent",
 			event: events.RetryWaitingEvent{Duration: 5 * time.Second},
-			expected: spinnerInfo{
-				status:         " Retrying in 5s...",
-				withMetrics:    false,
-				resetRendering: true,
+			expected: events.SpinnerInfo{
+				Status:         " Retrying in 5s...",
+				WithMetrics:    false,
+				ResetRendering: true,
 			},
 			ok: true,
 		},
 		{
 			name:     "Other event",
 			event:    events.ResponseEvent{},
-			expected: spinnerInfo{},
+			expected: events.SpinnerInfo{},
 			ok:       false,
 		},
 	}

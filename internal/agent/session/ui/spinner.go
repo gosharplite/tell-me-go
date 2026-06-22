@@ -79,15 +79,15 @@ func (sc *spinnerCoord) startSpinnerForPhase(ctx context.Context, e events.Event
 
 	// If the event requires a rendering reset and we are currently rendering,
 	// invoke the callback to transition to idle before starting the spinner.
-	if info.resetRendering && state == stateRendering && resetRendering != nil {
+	if info.ResetRendering && state == stateRendering && resetRendering != nil {
 		state = resetRendering()
 	}
 
 	return sc.transitionSpinner(state, func() func() {
-		if info.withMetrics {
-			return sc.renderer.StartSpinnerWithMetrics(ctx, info.status)
+		if info.WithMetrics {
+			return sc.renderer.StartSpinnerWithMetrics(ctx, info.Status)
 		}
-		return sc.renderer.StartSpinnerWithStatus(ctx, info.status)
+		return sc.renderer.StartSpinnerWithStatus(ctx, info.Status)
 	})
 }
 

@@ -6,6 +6,7 @@ package events
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -108,10 +109,25 @@ type InferenceStartedEvent struct {
 
 func (e InferenceStartedEvent) Type() string { return "InferenceStartedEvent" }
 
+// SpinnerInfo returns the spinner presentation for an inference-started event.
+// When Model is set, the model name is included in the status text.
+func (e InferenceStartedEvent) SpinnerInfo() (SpinnerInfo, bool) {
+	status := " Thinking..."
+	if e.Model != "" {
+		status = fmt.Sprintf(" Thinking [%s]...", e.Model)
+	}
+	return SpinnerInfo{Status: status}, true
+}
+
 // SummarizationStartedEvent signals that the history summarization process has begun.
 type SummarizationStartedEvent struct{}
 
 func (e SummarizationStartedEvent) Type() string { return "SummarizationStartedEvent" }
+
+// SpinnerInfo returns the spinner presentation for a summarization-started event.
+func (e SummarizationStartedEvent) SpinnerInfo() (SpinnerInfo, bool) {
+	return SpinnerInfo{Status: " Compressing context...", ResetRendering: true}, true
+}
 
 // ResponseEvent carries the final LLM output.
 type ResponseEvent struct {
@@ -135,6 +151,18 @@ type ToolExecutionStartedEvent struct {
 }
 
 func (e ToolExecutionStartedEvent) Type() string { return "ToolExecutionStartedEvent" }
+
+// SpinnerInfo returns the spinner presentation for a tool-execution-started event.
+// The status text includes tool names when available.
+func (e ToolExecutionStartedEvent) SpinnerInfo() (SpinnerInfo, bool) {
+	status := " Executing tools..."
+	if len(e.ToolNames) == 1 {
+		status = fmt.Sprintf(" Executing [%s]...", e.ToolNames[0])
+	} else if len(e.ToolNames) > 1 {
+		status = fmt.Sprintf(" Executing tools [%s]...", strings.Join(e.ToolNames, ", "))
+	}
+	return SpinnerInfo{Status: status, WithMetrics: true, ResetRendering: true}, true
+}
 
 // ToolResultEvent signals that a tool has finished execution.
 type ToolResultEvent struct {
@@ -192,6 +220,23 @@ type RetryWaitingEvent struct {
 }
 
 func (e RetryWaitingEvent) Type() string { return "RetryWaitingEvent" }
+
+// SpinnerInfo returns the spinner presentation for a retry-waiting event.
+// The status text includes the rounded wait duration.
+func (e RetryWaitingEvent) SpinnerInfo() (SpinnerInfo, bool) {
+	return SpinnerInfo{
+		Status:         fmt.Sprintf(" Retrying in %v...", e.Duration.Round(time.Second)),
+		ResetRendering: true,
+	}, true
+}
+
+// SpinnerInfo describes the spinner presentation for an event.
+// It is a DTO consumed by the UI bridge's spinner coordinator.
+type SpinnerInfo struct {
+	Status         string // The spinner status text (e.g. " Thinking...")
+	WithMetrics    bool   // If true, use StartSpinnerWithMetrics instead of StartSpinnerWithStatus
+	ResetRendering bool   // If true, the spinner transition resets the rendering state
+}
 
 // ConsentStartedEvent signals that the user is being prompted for tool consent.
 type ConsentStartedEvent struct{}
