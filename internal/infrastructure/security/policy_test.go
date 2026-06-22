@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // mockKVStore is a hand-rolled test double for ports.KVStore.
@@ -748,4 +749,21 @@ func TestRegisterPolicyTools_NilKV(t *testing.T) {
 func TestRegisterPolicyTools_NilSecurityManager(t *testing.T) {
 	t.Parallel()
 	t.Skip("[UNREACHABLE] nil SecurityManager cannot be exercised through RegisterPolicyTools — sm must exist to call its method; the nil-SM error path is covered by TestNewPolicyTool_ValidationErrors")
+}
+
+func TestPersistPaths_MarshalError(t *testing.T) {
+	// NOT Parallel — modifies package-level jsonMarshal
+	_, p, ctx := setupPolicyTest(t)
+
+	// Inject a failing marshal function
+	orig := jsonMarshal
+	t.Cleanup(func() { jsonMarshal = orig })
+	jsonMarshal = func(v interface{}) ([]byte, error) {
+		return nil, fmt.Errorf("marshal failure")
+	}
+
+	err := p.persistPaths(ctx, true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to marshal paths")
+	assert.Contains(t, err.Error(), "marshal failure")
 }
