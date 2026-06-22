@@ -1332,3 +1332,117 @@ func TestSimpleEventBus_Shutdown_ActiveWorkers(t *testing.T) {
 	// Ensure Listen goroutine has fully exited.
 	<-listenDone
 }
+
+func TestSpinnerInfo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("InferenceStartedEvent", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			model string
+			want  events.SpinnerInfo
+		}{
+			{
+				name:  "model present",
+				model: "gpt-5",
+				want:  events.SpinnerInfo{Status: " Thinking [gpt-5]..."},
+			},
+			{
+				name:  "model absent",
+				model: "",
+				want:  events.SpinnerInfo{Status: " Thinking..."},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				e := events.InferenceStartedEvent{Model: tt.model}
+				got, ok := e.SpinnerInfo()
+				if !ok {
+					t.Fatal("expected ok=true")
+				}
+				if got != tt.want {
+					t.Errorf("got %+v; want %+v", got, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("SummarizationStartedEvent", func(t *testing.T) {
+		e := events.SummarizationStartedEvent{}
+		got, ok := e.SpinnerInfo()
+		if !ok {
+			t.Fatal("expected ok=true")
+		}
+		want := events.SpinnerInfo{Status: " Compressing context...", ResetRendering: true}
+		if got != want {
+			t.Errorf("got %+v; want %+v", got, want)
+		}
+	})
+
+	t.Run("ToolExecutionStartedEvent", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			toolNames []string
+			want      events.SpinnerInfo
+		}{
+			{
+				name:      "no tools",
+				toolNames: nil,
+				want:      events.SpinnerInfo{Status: " Executing tools...", WithMetrics: true, ResetRendering: true},
+			},
+			{
+				name:      "one tool",
+				toolNames: []string{"bash"},
+				want:      events.SpinnerInfo{Status: " Executing [bash]...", WithMetrics: true, ResetRendering: true},
+			},
+			{
+				name:      "two tools",
+				toolNames: []string{"read", "write"},
+				want:      events.SpinnerInfo{Status: " Executing tools [read, write]...", WithMetrics: true, ResetRendering: true},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				e := events.ToolExecutionStartedEvent{ToolNames: tt.toolNames}
+				got, ok := e.SpinnerInfo()
+				if !ok {
+					t.Fatal("expected ok=true")
+				}
+				if got != tt.want {
+					t.Errorf("got %+v; want %+v", got, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("RetryWaitingEvent", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			duration time.Duration
+			want     events.SpinnerInfo
+		}{
+			{
+				name:     "rounds up to second",
+				duration: 1500 * time.Millisecond,
+				want:     events.SpinnerInfo{Status: " Retrying in 2s...", ResetRendering: true},
+			},
+			{
+				name:     "sub-second rounds to zero",
+				duration: 100 * time.Millisecond,
+				want:     events.SpinnerInfo{Status: " Retrying in 0s...", ResetRendering: true},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				e := events.RetryWaitingEvent{Duration: tt.duration}
+				got, ok := e.SpinnerInfo()
+				if !ok {
+					t.Fatal("expected ok=true")
+				}
+				if got != tt.want {
+					t.Errorf("got %+v; want %+v", got, tt.want)
+				}
+			})
+		}
+	})
+}
