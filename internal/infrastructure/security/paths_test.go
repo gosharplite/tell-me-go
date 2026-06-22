@@ -508,6 +508,30 @@ func TestTryBoundary(t *testing.T) {
 			t.Error("expected false for path outside temp dir")
 		}
 	})
+
+	t.Run("error logging", func(t *testing.T) {
+		// Capture log output to verify tryBoundary's log.Printf side effect.
+		var logBuf strings.Builder
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(os.Stderr)
+
+		// NUL byte in boundary triggers filepath.Abs failure inside checkBoundary.
+		ok := p.tryBoundary("/some/target", "/valid/\x00boundary")
+
+		// Fail-secure: a broken boundary must never authorize a path.
+		if ok {
+			t.Error("expected false for path with NUL-byte boundary (fail-secure)")
+		}
+
+		if logBuf.Len() == 0 {
+			t.Skip("[SYSTEM-DEPENDENT] filepath.Abs did not error on NUL byte; " +
+				"tryBoundary error logging branch unreachable on this platform")
+		}
+
+		if !strings.Contains(logBuf.String(), "security: boundary check error") {
+			t.Errorf("expected log containing 'security: boundary check error', got: %q", logBuf.String())
+		}
+	})
 }
 
 func TestCheckDefaultBoundaries_ExtraTempDirs(t *testing.T) {
@@ -1184,6 +1208,33 @@ func TestSystemDependentBranches_Documented(t *testing.T) {
 			"hardcoded paths always valid. Defensive log statement.")
 	})
 
+	t.Run("G8-lines200-205: isExemptedDirectory case-insensitive branch", func(t *testing.T) {
+		t.Parallel()
+		// This branch normalizes both temp dir and absPath with strings.ToLower
+		// and checks strings.HasPrefix when isCaseSensitive() returns false.
+		// Lines 200-205 (paths.go):
+		//   if !isCaseSensitive() {
+		//       temp = strings.ToLower(temp)
+		//       abs := strings.ToLower(absNormalized)
+		//       if strings.HasPrefix(abs, temp) { return true }
+		//   }
+		//
+		// Trigger condition: isCaseSensitive() == false, which is Windows-only.
+		// On Linux/macOS, isCaseSensitive() returns true, so the entire
+		// !isCaseSensitive() block is unreachable through normal flow.
+		//
+		// Coverage: TestIsExemptedDirectory_CaseInsensitive has a
+		// "case-insensitive match (Windows)" subtest that exercises this
+		// branch on Windows. It calls isExemptedDirectory with an uppercase
+		// variant of the temp dir path and asserts it is still exempted.
+		//
+		// Verdict: [SYSTEM-DEPENDENT] — Windows-only branch, covered by
+		// TestIsExemptedDirectory_CaseInsensitive on Windows.
+		t.Log("[SYSTEM-DEPENDENT] lines 200-205: isExemptedDirectory " +
+			"case-insensitive branch — Windows-only (isCaseSensitive()==false). " +
+			"Covered by TestIsExemptedDirectory_CaseInsensitive on Windows.")
+	})
+
 	t.Run("G9-line156: Rule error propagation in ValidatePath", func(t *testing.T) {
 		t.Parallel()
 		// This branch propagates errors from pathRule functions. However, all
@@ -1195,9 +1246,13 @@ func TestSystemDependentBranches_Documented(t *testing.T) {
 		// Tracking: This is [TECHNICAL DEBT]. Rules should propagate errors
 		// from checkBoundary instead of just logging them, to enable this
 		// fail-secure error path. See ADR in issue #830.
+		// Tracked by issue #1074: this is the paths.go:116 gap. Cannot be
+		// covered without refactoring pathRule implementations per ADR #830.
 		t.Log("[UNREACHABLE] line 156: rule error propagation — dead code " +
 			"because all rule implementations swallow checkBoundary errors " +
-			"instead of returning them. See issue #830 for tracking ADR.")
+			"instead of returning them. See issue #830 for tracking ADR. " +
+			"Also tracked by issue #1074: paths.go:116 gap — cannot be " +
+			"covered without refactoring pathRule implementations per ADR #830.")
 	})
 
 	t.Run("G6-G7-lines96-117: Safe/read-only path error logging", func(t *testing.T) {
@@ -1217,10 +1272,25 @@ func TestSystemDependentBranches_Documented(t *testing.T) {
 
 	t.Run("G5-line324: tryBoundary error logging", func(t *testing.T) {
 		t.Parallel()
+		// This branch logs when checkBoundary returns an error inside tryBoundary.
+		// checkBoundary only errors when filepath.Abs(boundary) fails.
+		// Default boundaries (CWD, TempDir, extra temp dirs) are always valid paths,
+		// so the error-logging branch is never reached through checkDefaultBoundaries.
+		//
+		// TestFilepathAbs_ErrorBranches (deleted-CWD technique) does NOT exercise
+		// this branch: os.Getwd() failure skips the CWD tryBoundary call entirely,
+		// and os.TempDir() returns an absolute path that filepath.Abs handles fine.
+		//
+		// Coverage: TestTryBoundary/error_logging injects a NUL byte directly into
+		// tryBoundary's boundary argument, triggering filepath.Abs failure on
+		// platforms that reject NUL bytes. On platforms where filepath.Abs tolerates
+		// NUL bytes, this test skips with [SYSTEM-DEPENDENT].
+		//
+		// Verdict: [SYSTEM-DEPENDENT] — covered by TestTryBoundary/error_logging
+		// on platforms where filepath.Abs rejects NUL bytes.
 		t.Log("[SYSTEM-DEPENDENT] line 324: tryBoundary error logging — " +
-			"checkBoundary only errors when filepath.Abs(boundary) fails. " +
-			"Default boundaries (CWD, TempDir, extra temp dirs) are always valid paths. " +
-			"Covered by TestBoundaryChecks_ErrorLogging on platforms where " +
-			"filepath.Abs rejects NUL bytes.")
+			"covered by TestTryBoundary/error_logging on platforms where " +
+			"filepath.Abs rejects NUL bytes. TestFilepathAbs_ErrorBranches " +
+			"does not reach this branch (os.TempDir() is always absolute).")
 	})
 }
