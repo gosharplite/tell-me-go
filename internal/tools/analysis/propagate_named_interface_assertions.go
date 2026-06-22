@@ -12,6 +12,18 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// isExternalUsage reports whether a usage from ifacePkg to implPkg
+// crosses a package boundary. Both parameters are base package paths
+// (as returned by getBasePkgPath). Returns false when ifacePkg is
+// empty (defensive: nil-package interface methods cannot produce
+// external usage).
+//
+// Extracted from propagateFromInterfaceAssertion to reduce cyclomatic
+// complexity below the project threshold of 10 (Issue #1069).
+func isExternalUsage(ifacePkg, implPkg string) bool {
+	return ifacePkg != "" && ifacePkg != implPkg
+}
+
 // propagateNamedInterfaceAssertionUsages bridges a gap in dead-code
 // detection: when a method is consumed exclusively through a type
 // assertion to a NAMED but UNEXPORTED interface, the existing
@@ -74,6 +86,91 @@ func (a *defaultDeadCodeAnalyzer) propagateNamedInterfaceAssertionUsages(state *
 	}
 }
 
+// resolveAssertedInterface resolves an *ast.Ident appearing as the
+// asserted type in a type-assertion expression to its underlying
+// *types.Interface via the TypesInfo.Uses → *types.TypeName →
+// Underlying() chain.
+//
+// Returns nil, false if the identifier does not resolve to an
+// interface type (e.g., it names a concrete struct, a builtin, or
+// is not found in TypesInfo.Uses).
+//
+// Extracted from walkFileForNamedInterfaceAssertions to reduce
+// cyclomatic complexity below the project threshold of 10 (Issue #1069).
+func (a *defaultDeadCodeAnalyzer) resolveAssertedInterface(
+	pkg *packages.Package,
+	ident *ast.Ident,
+) (*types.Interface, bool) {
+	obj, ok := pkg.TypesInfo.Uses[ident]
+	if !ok || obj == nil {
+		return nil, false
+	}
+
+	tn, ok := obj.(*types.TypeName)
+	if !ok {
+		return nil, false
+	}
+
+	iface, ok := tn.Type().Underlying().(*types.Interface)
+	if !ok {
+		return nil, false
+	}
+
+	return iface, true
+}
+
+// isNewSite constructs a deduplication key from the package path,
+// filename, and identifier position. It checks the visited map and,
+// if this is the first visit, marks the site and returns true.
+// Returns false if the site has already been processed.
+//
+// The key format "<pkgPath>|<filename>|<line>:<col>" is load-bearing:
+// changing it would break deduplication across AST walks (e.g., the
+// same file appearing in both GoFiles and CompiledGoFiles).
+//
+// Extracted from walkFileForNamedInterfaceAssertions to reduce
+// cyclomatic complexity below the project threshold of 10 (Issue #1069).
+func (a *defaultDeadCodeAnalyzer) isNewSite(
+	visited map[string]bool,
+	pkg *packages.Package,
+	filename string,
+	ident *ast.Ident,
+) bool {
+	pos := pkg.Fset.Position(ident.Pos())
+	key := fmt.Sprintf("%s|%s|%d:%d", pkg.PkgPath, filename, pos.Line, pos.Column)
+	if visited[key] {
+		return false
+	}
+	visited[key] = true
+	return true
+}
+
+// extractAssertedIdent extracts the *ast.Ident naming the asserted type
+// from a type-assertion expression. It returns nil, false for:
+//   - Anonymous interface literals (handled separately by dead_code_anon_interface.go)
+//   - Non-named types (e.g., *ast.StarExpr, *ast.ArrayType)
+//
+// Extracted from walkFileForNamedInterfaceAssertions to reduce
+// cyclomatic complexity below the project threshold of 10 (Issue #1069).
+func extractAssertedIdent(ta *ast.TypeAssertExpr) (*ast.Ident, bool) {
+	// Skip anonymous interface literals — dead_code_anon_interface.go
+	// handles the warning hedge for those. This pass only handles
+	// named types.
+	if _, isAnon := ta.Type.(*ast.InterfaceType); isAnon {
+		return nil, false
+	}
+
+	switch t := ta.Type.(type) {
+	case *ast.Ident:
+		return t, true
+	case *ast.SelectorExpr:
+		return t.Sel, true
+	default:
+		// Not a named type (e.g., *ast.StarExpr, *ast.ArrayType).
+		return nil, false
+	}
+}
+
 // walkFileForNamedInterfaceAssertions inspects a single *ast.File for
 // type-assertion expressions whose asserted type is a named (non-anonymous)
 // interface type, then propagates usage from each interface method to its
@@ -93,45 +190,20 @@ func (a *defaultDeadCodeAnalyzer) walkFileForNamedInterfaceAssertions(
 			return true
 		}
 
-		// Skip anonymous interface literals — dead_code_anon_interface.go
-		// handles the warning hedge for those. This pass only handles
-		// named types.
-		if _, isAnon := ta.Type.(*ast.InterfaceType); isAnon {
-			return true
-		}
-
-		// Resolve the asserted-type identifier.
-		var ident *ast.Ident
-		switch t := ta.Type.(type) {
-		case *ast.Ident:
-			ident = t
-		case *ast.SelectorExpr:
-			ident = t.Sel
-		default:
-			// Not a named type (e.g., *ast.StarExpr, *ast.ArrayType).
-			return true
-		}
-
-		// Deduplicate by position to avoid processing the same site twice.
-		pos := pkg.Fset.Position(ident.Pos())
-		key := fmt.Sprintf("%s|%s|%d:%d", pkg.PkgPath, filename, pos.Line, pos.Column)
-		if visited[key] {
-			return true
-		}
-		visited[key] = true
-
-		// Resolve the type object via TypesInfo.Uses.
-		obj, ok := pkg.TypesInfo.Uses[ident]
-		if !ok || obj == nil {
-			return true
-		}
-
-		tn, ok := obj.(*types.TypeName)
+		// Extract the asserted-type identifier, skipping anonymous
+		// interface literals and non-named types.
+		ident, ok := extractAssertedIdent(ta)
 		if !ok {
 			return true
 		}
 
-		iface, ok := tn.Type().Underlying().(*types.Interface)
+		// Deduplicate by position to avoid processing the same site twice.
+		if !a.isNewSite(visited, pkg, filename, ident) {
+			return true
+		}
+
+		// Resolve the type object via TypesInfo.Uses → TypeName → Interface.
+		iface, ok := a.resolveAssertedInterface(pkg, ident)
 		if !ok {
 			return true
 		}
@@ -142,6 +214,69 @@ func (a *defaultDeadCodeAnalyzer) walkFileForNamedInterfaceAssertions(
 
 		return true
 	})
+}
+
+// propagateSingleMethod propagates usage from a single interface method
+// to its concrete implementations in state.declarations. For each
+// implementation that exists in state.declarations, it ensures at least
+// one total-use and increments externalUses when the implementation
+// lives in a different package than the interface method.
+//
+// Extracted from propagateFromInterfaceAssertion to reduce cyclomatic
+// complexity below the project threshold of 10 (Issue #1069).
+func (a *defaultDeadCodeAnalyzer) propagateSingleMethod(
+	m *types.Func,
+	state *scanState,
+	hb chan<- struct{},
+) {
+	ctx := context.Background()
+
+	ifaceMethodId := getSymbolIdentity(m)
+	if ifaceMethodId == "" {
+		return
+	}
+
+	// Check if the indexer has recorded any usages of this interface
+	// method. If not, there's nothing to propagate.
+	if !a.idx.IsSymbolUsed(ctx, ifaceMethodId, hb) {
+		return
+	}
+
+	// Get the concrete method identities that implement this
+	// interface method.
+	implIds := a.idx.GetImplementations(ctx, ifaceMethodId, hb)
+	if len(implIds) == 0 {
+		return
+	}
+
+	// Determine the calling interface's base package path to decide
+	// whether a concrete implementation's usage is external.
+	// An unexported interface is only reachable from its own package,
+	// so the call site is always in the interface's package. If the
+	// implementation lives in a different package, the usage is external.
+	var ifaceBase string
+	if m.Pkg() != nil {
+		ifaceBase = getBasePkgPath(m.Pkg().Path())
+	}
+
+	for _, implId := range implIds {
+		if _, exists := state.declarations[implId]; !exists {
+			continue
+		}
+
+		// Ensure the implementation has at least one total use.
+		if state.totalUses[implId] == 0 {
+			state.totalUses[implId] = 1
+		}
+
+		// The caller is in a different package than the implementation
+		// (the interface is unexported, so the call site is in the
+		// interface's package; the implementation is elsewhere).
+		implBase := getBasePkgPath(state.declarations[implId].pkgPath)
+		if isExternalUsage(ifaceBase, implBase) {
+			state.externalUses[implId]++
+		}
+	}
 }
 
 // propagateFromInterfaceAssertion iterates the methods of an interface
@@ -156,59 +291,11 @@ func (a *defaultDeadCodeAnalyzer) propagateFromInterfaceAssertion(
 	state *scanState,
 	hb chan<- struct{},
 ) {
-	ctx := context.Background()
-
 	for i := 0; i < iface.NumMethods(); i++ {
 		m := iface.Method(i)
 		if m == nil {
 			continue
 		}
-
-		ifaceMethodId := getSymbolIdentity(m)
-		if ifaceMethodId == "" {
-			continue
-		}
-
-		// Check if the indexer has recorded any usages of this interface
-		// method. If not, there's nothing to propagate.
-		if !a.idx.IsSymbolUsed(ctx, ifaceMethodId, hb) {
-			continue
-		}
-
-		// Get the concrete method identities that implement this
-		// interface method.
-		implIds := a.idx.GetImplementations(ctx, ifaceMethodId, hb)
-		if len(implIds) == 0 {
-			continue
-		}
-
-		// Determine the calling interface's base package path to decide
-		// whether a concrete implementation's usage is external.
-		// An unexported interface is only reachable from its own package,
-		// so the call site is always in the interface's package. If the
-		// implementation lives in a different package, the usage is external.
-		var ifaceBase string
-		if m.Pkg() != nil {
-			ifaceBase = getBasePkgPath(m.Pkg().Path())
-		}
-
-		for _, implId := range implIds {
-			if _, exists := state.declarations[implId]; !exists {
-				continue
-			}
-
-			// Ensure the implementation has at least one total use.
-			if state.totalUses[implId] == 0 {
-				state.totalUses[implId] = 1
-			}
-
-			// The caller is in a different package than the implementation
-			// (the interface is unexported, so the call site is in the
-			// interface's package; the implementation is elsewhere).
-			implBase := getBasePkgPath(state.declarations[implId].pkgPath)
-			if ifaceBase != "" && ifaceBase != implBase {
-				state.externalUses[implId]++
-			}
-		}
+		a.propagateSingleMethod(m, state, hb)
 	}
 }

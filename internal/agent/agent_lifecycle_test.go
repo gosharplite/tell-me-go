@@ -15,6 +15,7 @@ import (
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -192,6 +193,25 @@ func TestAgent_Shutdown(t *testing.T) {
 		assert.Contains(t, err.Error(), assert.AnError.Error())
 	})
 
+	t.Run("TurnsLogger.Close error logs debug message", func(t *testing.T) {
+		spyLogger := &testfixtures.SpyLogger{}
+		sm := &mockSecurityManager{AllowAll: true}
+		tl := &agenttest.MockTurnsLogger{}
+		tl.CloseFunc = func() error { return assert.AnError }
+
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl),
+			WithLogger(spyLogger),
+			WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
+		require.NoError(t, err)
+
+		err = chatter.Shutdown(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), assert.AnError.Error())
+		assert.True(t, spyLogger.CalledWith("Debug", "turns logger shutdown incomplete"),
+			"expected debug log when turns logger Close returns error")
+	})
+
 	t.Run("EventBus.Flush error", func(t *testing.T) {
 		sm := &mockSecurityManager{AllowAll: true}
 		// Use a cancelled context to force Flush to fail
@@ -206,6 +226,24 @@ func TestAgent_Shutdown(t *testing.T) {
 		err = chatter.Shutdown(cancelCtx)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("EventBus.Flush error logs debug message", func(t *testing.T) {
+		spyLogger := &testfixtures.SpyLogger{}
+		sm := &mockSecurityManager{AllowAll: true}
+		bus := &eventstest.MockEventBus{}
+		bus.SetFlushErr(assert.AnError)
+
+		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm),
+			WithLogger(spyLogger),
+			WithProviderName("test-provider"), WithPricing("test-model", "test-mode", nil))
+		require.NoError(t, err)
+
+		err = chatter.Shutdown(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), assert.AnError.Error())
+		assert.True(t, spyLogger.CalledWith("Debug", "event bus flush incomplete during shutdown"),
+			"expected debug log when event bus Flush returns error")
 	})
 
 	t.Run("EventBus.Shutdown error", func(t *testing.T) {

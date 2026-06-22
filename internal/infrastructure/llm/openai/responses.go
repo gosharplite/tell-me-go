@@ -151,6 +151,9 @@ func (c *client) processDirectOutputItem(content *llm.Content, out *responseOutp
 		// Reviewed: Issue #782 (2026-06) — branch remains structurally
 		// unreachable; no testable error path exists without refactoring
 		// appendPartsFromBlock. Accepted as defensive future-proofing.
+		// Re-reviewed: Issue #1075 (2026-07) — architect decision: ACCEPT
+		// as permanent defensive dead code. Do not refactor
+		// appendPartsFromBlock solely for coverage.
 		if !errors.Is(err, errUnhandledBlockType) {
 			return err
 		}

@@ -167,3 +167,24 @@ func TestGetRoot_DefaultAndCustom(t *testing.T) {
 		})
 	}
 }
+
+// TestLinuxMetricsProvider_FallbackToRuntimeCPU verifies that when /proc/stat
+// is completely absent (not just empty), GetCPUStats falls through to
+// getRuntimeCPUStats and returns valid runtime metrics values.
+func TestLinuxMetricsProvider_FallbackToRuntimeCPU(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp root directory that has NO proc/ subdirectory at all.
+	// os.Open(".../proc/stat") will fail with ENOENT, triggering the fallback.
+	root := t.TempDir()
+
+	p := &linuxMetricsProvider{root: root}
+	total, idle := p.GetCPUStats()
+
+	if total < 0 {
+		t.Errorf("GetCPUStats() total = %d, want >= 0 (runtime fallback)", total)
+	}
+	if idle != 0 {
+		t.Errorf("GetCPUStats() idle = %d, want 0 (runtime/metrics fallback has no idle breakdown)", idle)
+	}
+}

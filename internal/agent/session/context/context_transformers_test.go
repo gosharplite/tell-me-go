@@ -643,6 +643,31 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 			},
 			expected: 2,
 		},
+		{
+			name: "all parts empty across entire multi-message turn",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}},
+				{Role: "model", Parts: []*llm.Part{{Text: ""}}},
+			},
+			expected: 0,
+		},
+		{
+			name: "multiple messages all with empty parts across two turns",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}, {Text: ""}}},
+				{Role: "model", Parts: []*llm.Part{{Text: ""}}},
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}},
+			},
+			expected: 1,
+		},
+		{
+			name: "one non-empty part keeps turn",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "hello"}}},
+			},
+			expected: 2,
+		},
 	}
 
 	for _, tt := range tests {
@@ -733,6 +758,10 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "Empty", turn: []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}}, expected: true},
+		{name: "Multi-message all empty", turn: []*llm.Content{
+			{Parts: []*llm.Part{{Text: ""}}},
+			{Parts: []*llm.Part{{Text: ""}}},
+		}, expected: true},
 		{name: "Text", turn: []*llm.Content{{Parts: []*llm.Part{{Text: "hi"}}}}, expected: false},
 		{name: "AssetID", turn: []*llm.Content{{Parts: []*llm.Part{{AssetID: "123"}}}}, expected: false},
 		{name: "Thought", turn: []*llm.Content{{Parts: []*llm.Part{{IsThought: true}}}}, expected: false},

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
@@ -119,6 +120,59 @@ func TestEstimateCost_LogFileNotFound(t *testing.T) {
 	}
 	if !strings.Contains(result, "Error: Log file not found") {
 		t.Errorf("result should contain 'Error: Log file not found', got: %q", result)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Gap — calculateLineCost edge cases (nil pricing, zero tokens)
+// ---------------------------------------------------------------------------
+
+func TestCalculateLineCost_NilPricing(t *testing.T) {
+	t.Parallel()
+
+	// Empty pricing data with no models and no default entry.
+	// getModelPricing returns zero-value ModelPricing, which produces zero cost.
+	pd := domain_pricing.PricingData{}
+
+	cost := calculateLineCost(llm.Metrics{}, domain_pricing.UsageStats{}, pd, "unknown-model")
+
+	if cost != 0 {
+		t.Errorf("expected 0 cost for nil pricing, got %f", cost)
+	}
+}
+
+func TestCalculateLineCost_ZeroTokens(t *testing.T) {
+	t.Parallel()
+
+	pd := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
+			"test-model": {Hit: 1.0, Miss: 2.0, Comp: 3.0},
+		},
+	}
+
+	// All-zero tokens, zero cost field — should compute cost via pricing arithmetic
+	// but with zero token counts the result is zero.
+	cost := calculateLineCost(llm.Metrics{}, domain_pricing.UsageStats{}, pd, "test-model")
+
+	if cost != 0 {
+		t.Errorf("expected 0 cost with zero tokens, got %f", cost)
+	}
+}
+
+func TestCalculateLineCost_ExplicitCost(t *testing.T) {
+	t.Parallel()
+
+	// When mt.Cost > 0, calculateLineCost returns it immediately without
+	// consulting pricing data — even nil pricing should work.
+	cost := calculateLineCost(
+		llm.Metrics{Cost: 0.456},
+		domain_pricing.UsageStats{},
+		domain_pricing.PricingData{}, // nil pricing
+		"any-model",
+	)
+
+	if cost != 0.456 {
+		t.Errorf("expected 0.456 explicit cost, got %f", cost)
 	}
 }
 

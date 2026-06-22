@@ -14,6 +14,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// jsonMarshal is the encoding function used by persistPaths. It is a package-level
+// variable to allow tests to inject a failing implementation for coverage of the
+// error-handling branch (json.Marshal on []string never fails in production).
+var jsonMarshal = json.Marshal
+
 // actionType identifies the security action being confirmed.
 type actionType int
 
@@ -267,7 +272,7 @@ func (t *policyTool) persistPaths(ctx context.Context, safe bool) error {
 		paths = t.sm.getReadOnlyPaths()
 	}
 
-	data, err := json.Marshal(paths)
+	data, err := jsonMarshal(paths)
 	if err != nil {
 		return fmt.Errorf("failed to marshal paths: %w", err)
 	}

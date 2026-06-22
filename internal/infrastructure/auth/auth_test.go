@@ -870,6 +870,19 @@ func assertCacheContent(t *testing.T, cachePath, wantToken string) {
 	}
 }
 
+// generateRSAKeyPEM generates a 2048-bit RSA private key and returns it
+// as PEM-encoded bytes. It is a t.Helper for use in test setup.
+func generateRSAKeyPEM(t *testing.T) []byte {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey failed: %v", err)
+	}
+	privDER := x509.MarshalPKCS1PrivateKey(key)
+	return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privDER})
+}
+
 // TestNewVertexAuth_DefaultTokenCmdFunc_ExecError verifies that the default
 // tokenCmdFunc wired by NewVertexAuth returns an error (not panics) when the
 // underlying execCommand fails. This covers the ERROR_HANDLING gap at
@@ -1048,12 +1061,7 @@ func TestVertexAuth_WriteCacheFile(t *testing.T) {
 // from the OAuth2 response.
 func TestServiceAccountAuth_ProductionTokenExchange_Success(t *testing.T) {
 	// Step 1 — Generate RSA key pair
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("rsa.GenerateKey failed: %v", err)
-	}
-	privDER := x509.MarshalPKCS1PrivateKey(key)
-	privPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privDER})
+	privPEM := generateRSAKeyPEM(t)
 
 	// Step 2 — Start httptest server
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1087,5 +1095,101 @@ func TestServiceAccountAuth_ProductionTokenExchange_Success(t *testing.T) {
 	}
 	if token != "test-access-token" {
 		t.Errorf("got %q, want test-access-token", token)
+	}
+}
+
+// TestServiceAccountAuth_FetchGoogleToken_HTTPErrors covers the HTTP error
+// branch in fetchGoogleToken where ts.Token() fails with various HTTP status
+// codes or network errors. It uses httptest.Server to simulate Google's OAuth2
+// token endpoint returning errors, and verifies that getToken wraps the error
+// with "failed to fetch oauth2 token".
+func TestServiceAccountAuth_FetchGoogleToken_HTTPErrors(t *testing.T) {
+	tests := []struct {
+		name         string
+		statusCode   int
+		responseBody string
+		unreachable  bool // if true, close server before getToken
+		wantErr      string
+	}{
+		{
+			name:         "401 Unauthorized",
+			statusCode:   401,
+			responseBody: `{"error":"unauthorized_client"}`,
+			wantErr:      "failed to fetch oauth2 token",
+		},
+		{
+			name:         "403 Forbidden",
+			statusCode:   403,
+			responseBody: `{"error":"access_denied"}`,
+			wantErr:      "failed to fetch oauth2 token",
+		},
+		{
+			name:         "500 Internal Server Error",
+			statusCode:   500,
+			responseBody: `{"error":"internal_error"}`,
+			wantErr:      "failed to fetch oauth2 token",
+		},
+		{
+			name:         "504 Gateway Timeout",
+			statusCode:   504,
+			responseBody: `{}`,
+			wantErr:      "failed to fetch oauth2 token",
+		},
+		{
+			name:        "unreachable endpoint",
+			unreachable: true,
+			wantErr:     "failed to fetch oauth2 token",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Step 1 — Generate RSA key pair
+			privPEM := generateRSAKeyPEM(t)
+
+			// Step 2 — Start httptest server
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.responseBody))
+			}))
+			if !tt.unreachable {
+				defer srv.Close()
+			}
+
+			// Step 3 — Build service account JSON
+			saJSON := fmt.Sprintf(`{
+  "type": "service_account",
+  "project_id": "test-project",
+  "private_key_id": "test-key-id",
+  "private_key": %q,
+  "client_email": "test@test-project.iam.gserviceaccount.com",
+  "token_uri": %q
+}`, string(privPEM), srv.URL)
+
+			// Step 4 — Write to temp file
+			tmpDir := t.TempDir()
+			keyFile := filepath.Join(tmpDir, "sa.json")
+			if err := os.WriteFile(keyFile, []byte(saJSON), 0600); err != nil {
+				t.Fatalf("WriteFile failed: %v", err)
+			}
+
+			// Step 5 — If unreachable, close server now
+			if tt.unreachable {
+				srv.Close()
+			}
+
+			// Step 6 — Create auth and call getToken
+			auth := &ServiceAccountAuth{KeyFilePath: keyFile}
+			_, err := auth.getToken(context.Background())
+
+			// Step 7 — Assert
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+			}
+		})
 	}
 }
