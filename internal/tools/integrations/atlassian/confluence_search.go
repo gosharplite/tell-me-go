@@ -35,9 +35,14 @@ func (m *ConfluenceManager) fetchSpaceByKey(ctx context.Context, spaceKey string
 	q.Set("keys", spaceKey)
 	u.RawQuery = q.Encode()
 
+	// NOTE: This branch is structurally unreachable because:
+	//  1. url.Parse(m.provider.baseURL) above already validates the URL
+	//  2. http.NewRequestWithContext internally calls url.Parse on u.String(),
+	//     which is the canonical form of the already-validated URL
+	// Kept as defense-in-depth against future refactoring.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create space fetch request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 
