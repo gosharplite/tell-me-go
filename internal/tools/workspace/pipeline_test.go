@@ -5,6 +5,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os/exec"
 	"strings"
@@ -279,6 +280,33 @@ func TestRunPipeline_EnvPropagation(t *testing.T) {
 				t.Errorf("expected no env var output, got %q", res.Output)
 			}
 		})
+	}
+}
+
+// TestNewPipeline_WirePipesError_Propagation verifies that newPipeline
+// correctly propagates an error from wirePipesFn back to the caller.
+// This covers the defensive error path at pipeline.go:41-43 which is
+// structurally unreachable through the normal code path (fresh exec.Cmd
+// objects never fail on the first StderrPipe/StdoutPipe call) but must
+// be exercised via dependency injection.
+func TestNewPipeline_WirePipesError_Propagation(t *testing.T) {
+	e := &processExecutor{
+		wirePipesFn: func(p *pipeline) error {
+			return fmt.Errorf("failed to get stderr pipe for command 0: injected failure")
+		},
+	}
+	ctx := context.Background()
+	pipedParts := [][]string{
+		{helperPath, "echo", "hello"},
+		{helperPath, "cat"},
+	}
+
+	_, err := e.newPipeline(ctx, pipedParts, executionConfig{})
+	if err == nil {
+		t.Fatal("expected error from wirePipes failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to get stderr pipe for command 0") {
+		t.Errorf("expected error containing 'failed to get stderr pipe for command 0', got: %v", err)
 	}
 }
 
