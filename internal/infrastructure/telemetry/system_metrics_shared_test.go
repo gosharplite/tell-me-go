@@ -26,3 +26,19 @@ func TestGetRuntimeCPUStats_KindFloat64Always(t *testing.T) {
 	// If we reach here, KindFloat64 is confirmed, and getRuntimeCPUStats
 	// always takes the if-branch. The else branch is defensive dead code.
 }
+
+// TestGetRuntimeCPUStats_ReturnsValidValues verifies that getRuntimeCPUStats
+// returns non-negative total CPU seconds and zero idle (the runtime/metrics
+// package only exposes total, not idle).
+func TestGetRuntimeCPUStats_ReturnsValidValues(t *testing.T) {
+	t.Parallel()
+
+	total, idle := getRuntimeCPUStats()
+
+	if total < 0 {
+		t.Errorf("getRuntimeCPUStats() total = %d, want >= 0", total)
+	}
+	if idle != 0 {
+		t.Errorf("getRuntimeCPUStats() idle = %d, want 0 (runtime/metrics has no idle breakdown)", idle)
+	}
+}

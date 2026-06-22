@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -315,6 +316,44 @@ func TestGetPricing_FallbackOnInvalidJSON(t *testing.T) {
 	pd := GetPricing(context.Background(), nil, outputDir)
 	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
 		t.Errorf("expected hardcoded fallback on invalid JSON, got %q", pd.UpdatedAt)
+	}
+}
+
+func TestGetPricing_FallbackOnUnreadableFile(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file reads on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatalf("failed to create assets dir: %v", err)
+	}
+	outputDir := filepath.Join(tmpDir, "output")
+	pricingFile := filepath.Join(assetsDir, "pricing.json")
+
+	content := `{"updated_at": "2026-03-01T00:00:00Z", "models": {"m": {"hit": 1.0, "miss": 2.0, "comp": 3.0}}}`
+	if err := os.WriteFile(pricingFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write pricing file: %v", err)
+	}
+
+	// Make the file unreadable so defaultLoader.loadFromDisk returns an error.
+	if err := os.Chmod(pricingFile, 0000); err != nil {
+		t.Fatalf("failed to chmod pricing file: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(pricingFile, 0644) })
+
+	pd := GetPricing(context.Background(), nil, outputDir)
+
+	// Should fall back to hardcoded default pricing.
+	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+		t.Errorf("expected hardcoded fallback on unreadable file, got UpdatedAt=%q", pd.UpdatedAt)
+	}
+	// Also verify we got a real model entry, not a zero-value PricingData.
+	if len(pd.Models) == 0 {
+		t.Error("expected non-empty Models in fallback pricing data")
 	}
 }
 
