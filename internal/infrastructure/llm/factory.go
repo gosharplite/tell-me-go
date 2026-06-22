@@ -56,16 +56,7 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 			anthropic.WithLogger(logger),
 		)
 	case "google", "gemini", "":
-		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
-			gemini.WithHeaders(p.Headers),
-			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
-			gemini.WithMaxOutputTokens(p.MaxTokens),
-			gemini.WithSystemInstruction(persona),
-			gemini.WithSearch(useSearch),
-			gemini.WithEventBus(bus),
-			gemini.WithTimeout(timeout),
-			gemini.WithLogger(logger),
-		)
+		fallthrough
 	default:
 		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
 			gemini.WithHeaders(p.Headers),
