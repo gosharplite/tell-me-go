@@ -584,34 +584,18 @@ func TestWriteCompactedData_MarshalErrorUnreachable(t *testing.T) {
 		"Error path in writeCompactedData is defensive future-proofing")
 }
 
-// TestPrepareCompactedEntries_WriteCompactedDataUnreachable documents that
-// the "failed to serialize compacted entries" error path in
-// prepareCompactedEntries (global_prompt_tracker.go:417) is UNREACHABLE.
-//
-// prepareCompactedEntries delegates serialization to writeCompactedData,
-// passing a bytes.Buffer as the io.Writer. bytes.Buffer.Write never returns
-// an error, and promptEntry (which has only string fields: Timestamp and
-// Prompt) always marshals successfully via json.Marshal. Therefore,
-// writeCompactedData can never return false when called from
-// prepareCompactedEntries, making the "failed to serialize compacted entries"
-// branch structurally unreachable — existing solely as defensive
-// future-proofing.
-//
-// This test exercises the full prepareCompactedEntries pipeline with real
-// filesystem data to prove it always succeeds under valid conditions.
-func TestPrepareCompactedEntries_WriteCompactedDataUnreachable(t *testing.T) {
-	t.Parallel()
+// setupCompactedTestTracker creates a globalPromptTracker with a seeded file
+// containing known entries in chronological order. Returns the tracker and
+// the seed entries for use in output validation.
+func setupCompactedTestTracker(t *testing.T, fs domainpersistence.FileSystem, dir string) (*globalPromptTracker, []promptEntry) {
+	t.Helper()
 
-	tmpDir := t.TempDir()
-	fs := persistence.NewOSFileSystem()
-
-	outputDir := filepath.Join(tmpDir, "output")
+	outputDir := filepath.Join(dir, "output")
 	trackerPath := filepath.Join(outputDir, "global_prompts.jsonl")
 	if err := fs.MkdirAll(context.Background(), outputDir, 0755); err != nil {
 		t.Fatalf("failed to create output dir: %v", err)
 	}
 
-	// Seed the tracker file with known entries in chronological order.
 	seedEntries := []promptEntry{
 		{Timestamp: "2026-01-01T00:00:00Z", Prompt: "alpha"},
 		{Timestamp: "2026-01-01T00:00:01Z", Prompt: "beta"},
@@ -633,8 +617,26 @@ func TestPrepareCompactedEntries_WriteCompactedDataUnreachable(t *testing.T) {
 		fs:       fs,
 		filepath: trackerPath,
 	}
+	return tracker, seedEntries
+}
 
-	// Exercise the full prepareCompactedEntries pipeline.
+// TestPrepareCompactedEntries_PipelineSucceeds exercises the full
+// prepareCompactedEntries pipeline with real filesystem data and verifies
+// it returns non-empty data without error under valid conditions.
+//
+// This test also documents that the "failed to serialize compacted entries"
+// error path at global_prompt_tracker.go:417 is UNREACHABLE:
+// bytes.Buffer.Write never returns an error, and promptEntry (all string
+// fields) always marshals successfully — so writeCompactedData can never
+// return false when called from prepareCompactedEntries.
+func TestPrepareCompactedEntries_PipelineSucceeds(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	fs := persistence.NewOSFileSystem()
+
+	tracker, seedEntries := setupCompactedTestTracker(t, fs, tmpDir)
+
 	data, err := tracker.prepareCompactedEntries(context.Background())
 	if err != nil {
 		t.Fatalf("prepareCompactedEntries unexpectedly failed: %v", err)
@@ -643,11 +645,36 @@ func TestPrepareCompactedEntries_WriteCompactedDataUnreachable(t *testing.T) {
 		t.Fatal("expected non-empty data from prepareCompactedEntries")
 	}
 
-	// Verify the output is valid JSONL with correct content.
+	// Verify line count matches seed.
 	lines := bytes.Split(bytes.TrimSpace(data), []byte{'\n'})
 	if len(lines) != len(seedEntries) {
 		t.Fatalf("expected %d JSONL lines, got %d", len(seedEntries), len(lines))
 	}
+
+	t.Log("[UNREACHABLE] bytes.Buffer.Write never returns an error, " +
+		"and promptEntry (all string fields) always marshals successfully — " +
+		"so the \"failed to serialize compacted entries\" error at " +
+		"global_prompt_tracker.go:417 is structurally unreachable, " +
+		"existing only as defensive future-proofing")
+}
+
+// TestPrepareCompactedEntries_OutputValidation verifies that the output of
+// prepareCompactedEntries is valid JSONL with entries in chronological order
+// (oldest first) and that each entry's Timestamp and Prompt match the seed data.
+func TestPrepareCompactedEntries_OutputValidation(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	fs := persistence.NewOSFileSystem()
+
+	tracker, seedEntries := setupCompactedTestTracker(t, fs, tmpDir)
+
+	data, err := tracker.prepareCompactedEntries(context.Background())
+	if err != nil {
+		t.Fatalf("prepareCompactedEntries unexpectedly failed: %v", err)
+	}
+
+	lines := bytes.Split(bytes.TrimSpace(data), []byte{'\n'})
 
 	for i, line := range lines {
 		var entry promptEntry
@@ -665,10 +692,4 @@ func TestPrepareCompactedEntries_WriteCompactedDataUnreachable(t *testing.T) {
 				i, entry.Prompt, seedEntries[i].Prompt)
 		}
 	}
-
-	t.Log("[UNREACHABLE] bytes.Buffer.Write never returns an error, " +
-		"and promptEntry (all string fields) always marshals successfully — " +
-		"so the \"failed to serialize compacted entries\" error at " +
-		"global_prompt_tracker.go:417 is structurally unreachable, " +
-		"existing only as defensive future-proofing")
 }
