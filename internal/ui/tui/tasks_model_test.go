@@ -1314,6 +1314,71 @@ func TestFetchTasksCmd_CancelledContext(t *testing.T) {
 	}
 }
 
+// ── fetchTasksCmd error path tests (Issue #1024) ──
+
+func TestFetchTasksCmd_ListTasksError(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
+			return nil, errors.New("db connection refused")
+		},
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			t.Error("CountTasks should not be called when ListTasks fails")
+			return 0, nil
+		},
+	}
+
+	cmd := fetchTasksCmd(context.Background(), store, "", 0, 50)
+	msg := cmd()
+	tasksMsg, ok := msg.(tasksLoadedMsg)
+	if !ok {
+		t.Fatalf("expected tasksLoadedMsg, got %T", msg)
+	}
+	if tasksMsg.err == nil {
+		t.Fatal("expected error from ListTasks failure, got nil")
+	}
+	if tasksMsg.err.Error() != "db connection refused" {
+		t.Errorf("expected error 'db connection refused', got %q", tasksMsg.err.Error())
+	}
+	if tasksMsg.tasks != nil {
+		t.Errorf("expected nil tasks on error, got %v", tasksMsg.tasks)
+	}
+	if tasksMsg.totalCount != 0 {
+		t.Errorf("expected totalCount 0 on error, got %d", tasksMsg.totalCount)
+	}
+}
+
+func TestFetchTasksCmd_CountTasksError(t *testing.T) {
+	store := &mockTaskStore{
+		ListTasksFunc: func(ctx context.Context, status string, limit, offset int) ([]ports.Task, error) {
+			return []ports.Task{
+				{ID: 1, Content: "survived list", Status: "pending"},
+			}, nil
+		},
+		CountTasksFunc: func(ctx context.Context, status string) (int, error) {
+			return 0, errors.New("count query timed out")
+		},
+	}
+
+	cmd := fetchTasksCmd(context.Background(), store, "pending", 0, 50)
+	msg := cmd()
+	tasksMsg, ok := msg.(tasksLoadedMsg)
+	if !ok {
+		t.Fatalf("expected tasksLoadedMsg, got %T", msg)
+	}
+	if tasksMsg.err == nil {
+		t.Fatal("expected error from CountTasks failure, got nil")
+	}
+	if tasksMsg.err.Error() != "count query timed out" {
+		t.Errorf("expected error 'count query timed out', got %q", tasksMsg.err.Error())
+	}
+	if tasksMsg.tasks != nil {
+		t.Errorf("expected nil tasks when CountTasks fails (partial result discarded), got %v", tasksMsg.tasks)
+	}
+	if tasksMsg.totalCount != 0 {
+		t.Errorf("expected totalCount 0 on error, got %d", tasksMsg.totalCount)
+	}
+}
+
 // ── G3: Unknown message handling ──
 
 func TestTaskListModel_Update_UnknownMessageNotReady(t *testing.T) {
