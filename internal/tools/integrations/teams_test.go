@@ -86,10 +86,25 @@ func TestTeamsManager_SendTeamsMessage(t *testing.T) {
 			},
 			wantInText: []string{"failed to send message to Teams", "403 Forbidden"},
 		},
+		{
+			name: "Marshal Error",
+			args: map[string]interface{}{
+				"webhook_url": "https://example.com/webhook",
+				"message":     "Hello",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "Marshal Error" {
+				original := marshalJSON
+				marshalJSON = func(v interface{}) ([]byte, error) {
+					return nil, errors.New("injected marshal failure")
+				}
+				defer func() { marshalJSON = original }()
+			}
 			mock := &mockHTTPClient{
 				DoFunc: func(req *http.Request) (*http.Response, error) {
 					if tt.mockErr != nil {
@@ -170,6 +185,22 @@ func TestBuildTeamsRequestBody(t *testing.T) {
 		bodyStr := string(body)
 		if strings.Contains(bodyStr, "Reason:") {
 			t.Errorf("Expected no reason in body when reason is empty, got: %s", bodyStr)
+		}
+	})
+
+	t.Run("marshal error", func(t *testing.T) {
+		original := marshalJSON
+		marshalJSON = func(v interface{}) ([]byte, error) {
+			return nil, errors.New("injected marshal failure")
+		}
+		t.Cleanup(func() { marshalJSON = original })
+
+		_, err := buildTeamsRequestBody("hello", "testing")
+		if err == nil {
+			t.Fatal("expected error from injected marshal failure, got nil")
+		}
+		if !strings.Contains(err.Error(), "injected marshal failure") {
+			t.Errorf("expected 'injected marshal failure', got: %v", err)
 		}
 	})
 }
