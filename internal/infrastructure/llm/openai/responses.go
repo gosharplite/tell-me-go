@@ -13,6 +13,7 @@ import (
 // this error because output-item types such as "call" and "message" are
 // not content-block types and are handled by fallback logic.
 var errUnhandledBlockType = errors.New("unhandled content block type")
+var errMissingToolID = errors.New("tool_use content block missing ID")
 
 // ---------------------------------------------------------------------------
 // Responses API sink
@@ -135,25 +136,19 @@ func (c *client) processDirectOutputItem(content *llm.Content, out *responseOutp
 		Thought:    out.Thought,
 		Reasoning:  out.Reasoning,
 		Refusal:    out.Refusal,
+		ID:         out.ID,
+		Name:       out.Name,
 	}
 	if err := c.appendPartsFromBlock(content, cb); err != nil {
-		// ADR-024 (2026-05): The !errors.Is(err, errUnhandledBlockType) guard
-		// below is structurally unreachable with the current appendPartsFromBlock
-		// implementation — every error path in that function wraps
-		// errUnhandledBlockType. The guard exists as a defensive future-proofing
-		// measure: if appendPartsFromBlock ever gains a new error-returning
-		// code path (e.g., a validation failure in handleToolUseBlock), this
-		// guard ensures the error propagates rather than being silently suppressed
-		// alongside the sentinel suppression for output-item types like "call"
-		// and "message".
+		// ADR-024 (2026-05): Suppress errUnhandledBlockType for
+		// output-item-level types (e.g. "call", "message") whose
+		// block type is not a known content-block type. Non-sentinel
+		// errors (e.g. errMissingToolID from a malformed tool_use
+		// block) must propagate.
 		//
-		// Coverage gap accepted by architect (Issue #617).
-		// Reviewed: Issue #782 (2026-06) — branch remains structurally
-		// unreachable; no testable error path exists without refactoring
-		// appendPartsFromBlock. Accepted as defensive future-proofing.
-		// Re-reviewed: Issue #1075 (2026-07) — architect decision: ACCEPT
-		// as permanent defensive dead code. Do not refactor
-		// appendPartsFromBlock solely for coverage.
+		// Covered: Issue #1093 (2026-07) — errMissingToolID added to
+		// appendPartsFromBlock; both branches of the errors.Is guard
+		// are now testable.
 		if !errors.Is(err, errUnhandledBlockType) {
 			return err
 		}
@@ -207,6 +202,9 @@ func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) err
 	case "thought", "reasoning":
 		c.handleThoughtBlock(content, cb)
 	case "tool_use":
+		if cb.Name != "" && cb.ID == "" {
+			return fmt.Errorf("%w: name=%q", errMissingToolID, cb.Name)
+		}
 		c.handleToolUseBlock(content, cb)
 	case "refusal":
 		c.handleRefusalBlock(content, cb)
