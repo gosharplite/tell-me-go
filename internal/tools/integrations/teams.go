@@ -22,6 +22,9 @@ type teamsManager struct {
 	client tools.HTTPClient
 }
 
+// marshalJSON is the json.Marshal function, overridable in tests.
+var marshalJSON = json.Marshal
+
 func newteamsManager(sm teamsSecurity, client tools.HTTPClient) *teamsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
@@ -88,7 +91,7 @@ func buildTeamsRequestBody(message, reason string) ([]byte, error) {
 		"body":    body,
 		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
 	}
-	return json.Marshal(payload)
+	return marshalJSON(payload)
 }
 
 func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byte) (string, error) {

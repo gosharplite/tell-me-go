@@ -160,6 +160,7 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 	a.harvestExportedSymbols(state)
 	a.analyzeUsages(ctx, state, resolvedPath, hb)
 	a.propagateInterfaceUsages(ctx, state, hb)
+	a.propagateNamedInterfaceAssertionUsages(state, hb)
 	a.propagateConstructorUsagesToReturnTypes(state, hb)
 
 	return state, nil

@@ -22,7 +22,15 @@ import (
 // persistence.FileSystem. It performs no retries, no atomic-write routing,
 // and no context checks during Walk. It is intended exclusively for tests
 // that need to assert behaviour at the bare os.* call boundary.
-type plainOSFS struct{}
+//
+// Function fields allow error-path injection in tests. Constructors
+// always set defaults, so fields are never nil at runtime — "make the
+// zero value useful" is preserved via the constructors.
+type plainOSFS struct {
+	writeFunc func(f *os.File, data []byte) (int, error) // default: f.Write
+	closeFunc func(f *os.File) error                     // default: f.Close
+	chmodFunc func(name string, mode os.FileMode) error  // default: os.Chmod
+}
 
 // NewPlainOSFileSystem returns a FileSystem backed directly by os.* calls
 // with NO atomic-write routing, NO retry wrapper, and NO context check
@@ -38,7 +46,45 @@ type plainOSFS struct{}
 // semantics, use persistence.NewOSFileSystem (in
 // internal/infrastructure/persistence) instead.
 func NewPlainOSFileSystem() persistence.FileSystem {
-	return &plainOSFS{}
+	return &plainOSFS{
+		writeFunc: func(f *os.File, data []byte) (int, error) { return f.Write(data) },
+		closeFunc: func(f *os.File) error { return f.Close() },
+		chmodFunc: os.Chmod,
+	}
+}
+
+// PlainOSFSOption configures a plainOSFS for error-path testing.
+type PlainOSFSOption func(*plainOSFS)
+
+// WithWriteFunc overrides the Write call inside AtomicWrite.
+func WithWriteFunc(fn func(f *os.File, data []byte) (int, error)) PlainOSFSOption {
+	return func(p *plainOSFS) { p.writeFunc = fn }
+}
+
+// WithCloseFunc overrides the Close call inside AtomicWrite.
+func WithCloseFunc(fn func(f *os.File) error) PlainOSFSOption {
+	return func(p *plainOSFS) { p.closeFunc = fn }
+}
+
+// WithChmodFunc overrides the Chmod call inside AtomicWrite.
+func WithChmodFunc(fn func(name string, mode os.FileMode) error) PlainOSFSOption {
+	return func(p *plainOSFS) { p.chmodFunc = fn }
+}
+
+// NewPlainOSFileSystemWithOpts returns a plain OS filesystem with injected
+// error-path hooks for testing. Use WithWriteFunc, WithCloseFunc, or
+// WithChmodFunc to override specific operations inside AtomicWrite.
+// A nil option leaves the default os.* behavior in place.
+func NewPlainOSFileSystemWithOpts(opts ...PlainOSFSOption) persistence.FileSystem {
+	p := &plainOSFS{
+		writeFunc: func(f *os.File, data []byte) (int, error) { return f.Write(data) },
+		closeFunc: func(f *os.File) error { return f.Close() },
+		chmodFunc: os.Chmod,
+	}
+	for _, o := range opts {
+		o(p)
+	}
+	return p
 }
 
 func (m *plainOSFS) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
@@ -64,14 +110,14 @@ func (m *plainOSFS) AtomicWrite(ctx context.Context, name string, data []byte, p
 	tempName := tempFile.Name()
 	defer func() { _ = os.Remove(tempName) }()
 
-	if _, err := tempFile.Write(data); err != nil {
-		_ = tempFile.Close()
+	if _, err := m.writeFunc(tempFile, data); err != nil {
+		_ = m.closeFunc(tempFile)
 		return err
 	}
-	if err := tempFile.Close(); err != nil {
+	if err := m.closeFunc(tempFile); err != nil {
 		return err
 	}
-	if err := os.Chmod(tempName, perm); err != nil {
+	if err := m.chmodFunc(tempName, perm); err != nil {
 		return err
 	}
 	return os.Rename(tempName, name)

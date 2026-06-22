@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -282,10 +281,11 @@ func (b *Bridge) processEvent(ctx context.Context, e events.Event) {
 	b.dispatcher.dispatch(ctx, e)
 }
 
-type spinnerInfo struct {
-	status         string
-	withMetrics    bool
-	resetRendering bool
+// spinnerFormattable is the seam between domain events and the spinner
+// presentation layer. Events that carry spinner-relevant state implement
+// this interface so getSpinnerInfo can avoid a type-switch.
+type spinnerFormattable interface {
+	SpinnerInfo() (events.SpinnerInfo, bool)
 }
 
 func isCriticalEvent(e events.Event) bool {
@@ -300,29 +300,11 @@ func isCriticalEvent(e events.Event) bool {
 		return false
 	}
 }
-func getSpinnerInfo(e events.Event) (spinnerInfo, bool) {
-	switch ev := e.(type) {
-	case events.InferenceStartedEvent:
-		status := " Thinking..."
-		if ev.Model != "" {
-			status = fmt.Sprintf(" Thinking [%s]...", ev.Model)
-		}
-		return spinnerInfo{status: status, withMetrics: false, resetRendering: false}, true
-	case events.SummarizationStartedEvent:
-		return spinnerInfo{status: " Compressing context...", withMetrics: false, resetRendering: true}, true
-	case events.ToolExecutionStartedEvent:
-		status := " Executing tools..."
-		if len(ev.ToolNames) == 1 {
-			status = fmt.Sprintf(" Executing [%s]...", ev.ToolNames[0])
-		} else if len(ev.ToolNames) > 1 {
-			status = fmt.Sprintf(" Executing tools [%s]...", strings.Join(ev.ToolNames, ", "))
-		}
-		return spinnerInfo{status: status, withMetrics: true, resetRendering: true}, true
-	case events.RetryWaitingEvent:
-		return spinnerInfo{status: fmt.Sprintf(" Retrying in %v...", ev.Duration.Round(time.Second)), withMetrics: false, resetRendering: true}, true
-	default:
-		return spinnerInfo{}, false
+func getSpinnerInfo(e events.Event) (events.SpinnerInfo, bool) {
+	if sf, ok := e.(spinnerFormattable); ok {
+		return sf.SpinnerInfo()
 	}
+	return events.SpinnerInfo{}, false
 }
 func (b *Bridge) getLoopContext() context.Context {
 	return b.loopCtx

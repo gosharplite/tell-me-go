@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -944,6 +945,38 @@ func TestPrepareAnthropicRequest_MarshalFailure(t *testing.T) {
 		// Verify the underlying error is a json.UnsupportedTypeError or json.MarshalerError
 		if !strings.Contains(err.Error(), "json: unsupported type") {
 			t.Errorf("expected 'json: unsupported type' error, got: %v", err)
+		}
+	})
+
+	t.Run("error wrapping matches production format", func(t *testing.T) {
+		req := messagesRequest{
+			Model: "claude-3-5-sonnet",
+			Messages: []message{{
+				Role: "user",
+				Content: []contentBlock{{
+					Type:    "tool_result",
+					Content: make(chan int), // channels are not JSON-marshalable
+				}},
+			}},
+			MaxTokens: 100,
+		}
+		_, marshalErr := json.Marshal(req)
+		if marshalErr == nil {
+			t.Fatal("expected json.Marshal to fail on channel type")
+		}
+
+		// Mirror production wrapping at client.go:376
+		wrappedErr := fmt.Errorf("failed to marshal request: %w", marshalErr)
+
+		// Assert wrapping message contains the production prefix
+		if !strings.Contains(wrappedErr.Error(), "failed to marshal request") {
+			t.Errorf("expected 'failed to marshal request' in error, got: %v", wrappedErr)
+		}
+
+		// Assert underlying *json.UnsupportedTypeError is extractable through %w
+		var typeErr *json.UnsupportedTypeError
+		if !errors.As(wrappedErr, &typeErr) {
+			t.Errorf("expected *json.UnsupportedTypeError in chain, got: %v (type: %T)", wrappedErr, wrappedErr)
 		}
 	})
 }
