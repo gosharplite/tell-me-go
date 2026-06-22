@@ -42,7 +42,7 @@ type typeManager interface {
 
 type deadCodeAnalyzer interface {
 	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
-	GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]orphanReport, error)
+	GatherOrphanReports(ctx context.Context, path string, deep bool, hb chan<- struct{}) ([]OrphanReport, error)
 }
 
 // AnalysisGoRunner defines the required Go toolchain methods for analysis.

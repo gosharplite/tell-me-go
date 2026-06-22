@@ -23,7 +23,7 @@ import (
 type nolintTestCase struct {
 	name     string
 	files    map[string]string
-	expected []orphanReport
+	expected []OrphanReport
 }
 
 // getNolintTestCases returns the standard set of nolint:deadcode scenarios.
@@ -51,7 +51,7 @@ func getNolintTestCases() []nolintTestCase {
 				"pkg1/pkg1.go": "package pkg1\n\ntype NotSuppressed struct{}\n",
 				"main.go":      "package main\n\nfunc main() {}\n",
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "NotSuppressed", Pkg: "example.com/test/pkg1", Type: "Type", Severity: "DEAD"},
 			},
 		},
@@ -61,7 +61,7 @@ func getNolintTestCases() []nolintTestCase {
 				"pkg1/pkg1.go": "package pkg1\n\n//nolint:somethingelse\ntype NotSuppressed struct{}\n",
 				"main.go":      "package main\n\nfunc main() {}\n",
 			},
-			expected: []orphanReport{
+			expected: []OrphanReport{
 				{Symbol: "NotSuppressed", Pkg: "example.com/test/pkg1", Type: "Type", Severity: "DEAD"},
 			},
 		},

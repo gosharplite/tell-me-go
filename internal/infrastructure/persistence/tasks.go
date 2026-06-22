@@ -38,7 +38,7 @@ func newTaskRepository(fs persistence.FileSystem, filePath string, logger *slog.
 }
 
 // parseJSONLTasks parses tasks from JSONL format (one JSON object per line).
-// Corrupted lines are skipped; debug logging is emitted when TELL_ME_DEBUG=migration.
+// Corrupted lines are skipped; debug logging is emitted when the logger is at Debug level.
 func parseJSONLTasks(trimmed string, filePath string, logger *slog.Logger) []ports.Task {
 	var loaded []ports.Task
 	scanner := bufio.NewScanner(strings.NewReader(trimmed))
@@ -51,13 +51,10 @@ func parseJSONLTasks(trimmed string, filePath string, logger *slog.Logger) []por
 		if err := json.Unmarshal([]byte(line), &t); err != nil {
 			// Skip corrupted lines in legacy tasks to ensure boot continues.
 			// This handles cases where log lines or other non-JSON data may have leaked into the file.
-			// [DEBUG] Log corrupted lines to help identify the source of leakage on Windows.
-			if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "migration") {
-				logger.Debug("corrupted task line during migration",
-					slog.String("path", filePath),
-					slog.String("line", line),
-					slog.Any("error", err))
-			}
+			logger.Debug("corrupted task line during migration",
+				slog.String("path", filePath),
+				slog.String("line", line),
+				slog.Any("error", err))
 			continue
 		}
 		loaded = append(loaded, t)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -308,5 +309,18 @@ func TestSessionCostTracker_AccumulateAndReturn_EmptyModel(t *testing.T) {
 	}
 	if totalCost < wantCost-1e-12 || totalCost > wantCost+1e-12 {
 		t.Errorf("expected total cost %f, got %f", wantCost, totalCost)
+	}
+}
+
+func TestSessionCostTracker_EmptyLogFile(t *testing.T) {
+	tracker := &sessionCostTracker{
+		logFile: "",
+	}
+	tracker.refreshExternalDailyCache(time.Now())
+	if tracker.cachedExternalDailyCost != 0 {
+		t.Errorf("cachedExternalDailyCost should be 0 for empty logFile, got %f", tracker.cachedExternalDailyCost)
+	}
+	if tracker.cachedDate == "" {
+		t.Errorf("cachedDate should not be empty; refreshExternalDailyCache sets it before early return")
 	}
 }
