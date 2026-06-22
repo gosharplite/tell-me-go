@@ -1560,3 +1560,45 @@ func TestConfluenceManager_RemainingErrorPaths(t *testing.T) {
 		assert.Contains(t, err.Error(), "page_id argument is required")
 	})
 }
+
+func TestConfluenceManager_FetchPageContent_NewRequestError(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	m, err := NewConfluenceManager(nil, nil)
+	require.NoError(t, err)
+	m.provider.baseURL = "://invalid-scheme"
+
+	_, err = m.fetchPageContent(context.Background(), "123")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid base url")
+}
+
+func TestConfluenceManager_GetCurrentPageVersion_NewRequestError(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	m, err := NewConfluenceManager(nil, nil)
+	require.NoError(t, err)
+	m.provider.baseURL = "://invalid-scheme"
+
+	_, err = m.getCurrentPageVersion(context.Background(), "123")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid base url")
+}
+
+func TestConfluenceManager_ExecuteUpdate_NewRequestError(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	m, err := NewConfluenceManager(nil, nil)
+	require.NoError(t, err)
+	m.provider.baseURL = "://invalid-scheme"
+
+	err = m.executeUpdate(context.Background(), "123", map[string]interface{}{"title": "test"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid base url")
+}
