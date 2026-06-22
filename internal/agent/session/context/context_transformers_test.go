@@ -783,6 +783,77 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 	}
 }
 
+func TestIsTurnEmpty_Line155_Coverage(t *testing.T) {
+	tests := []struct {
+		name     string
+		turn     []*llm.Content
+		expected bool
+		wantErr  bool
+		errIs    error
+	}{
+		// ── Business logic: line 155 return true, nil ──
+		{
+			name: "single message with multiple empty parts",
+			turn: []*llm.Content{
+				{Parts: []*llm.Part{{Text: ""}, {Text: ""}, {Text: ""}}},
+			},
+			expected: true,
+		},
+		{
+			name: "multiple messages each with multiple empty parts",
+			turn: []*llm.Content{
+				{Parts: []*llm.Part{{Text: ""}, {Text: ""}}},
+				{Parts: []*llm.Part{{Text: ""}, {Text: ""}}},
+			},
+			expected: true,
+		},
+		{
+			name: "all parts empty with mix of empty text and empty thought",
+			turn: []*llm.Content{
+				{Parts: []*llm.Part{{Text: ""}, {IsThought: false}}},
+				{Parts: []*llm.Part{{Text: ""}}},
+			},
+			expected: true,
+		},
+
+		// ── Error paths: ErrInvalidPayload ──
+		{
+			name:    "nil message in middle of turn",
+			turn:    []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}, nil},
+			wantErr: true,
+			errIs:   ErrInvalidPayload,
+		},
+		{
+			name: "nil part in second message",
+			turn: []*llm.Content{
+				{Parts: []*llm.Part{{Text: ""}}},
+				{Parts: []*llm.Part{{Text: ""}, nil}},
+			},
+			wantErr: true,
+			errIs:   ErrInvalidPayload,
+		},
+		{
+			name:    "nil part in first position of first message",
+			turn:    []*llm.Content{{Parts: []*llm.Part{nil, {Text: ""}}}},
+			wantErr: true,
+			errIs:   ErrInvalidPayload,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isTurnEmpty(tt.turn)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, tt.errIs)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
 func TestIsToolCall_Helper(t *testing.T) {
 	tests := []struct {
 		name     string
