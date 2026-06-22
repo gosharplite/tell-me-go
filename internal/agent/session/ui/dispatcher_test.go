@@ -361,7 +361,7 @@ func TestStartSpinnerForPhase_UnknownEvent(t *testing.T) {
 	logger := &testfixtures.SpyLogger{}
 	sc := newSpinnerCoord(renderer, logger)
 
-	// TurnStarted is not a spinner event → getSpinnerInfo returns spinnerInfo{}, false.
+	// TurnStarted is not a spinner event → getSpinnerInfo returns events.SpinnerInfo{}, false.
 	started := sc.startSpinnerForPhase(context.Background(), events.TurnStarted{}, stateIdle, nil)
 
 	assert.False(t, started, "expected spinner not to be started for unknown event")
