@@ -62,40 +62,44 @@ func (pl *pricingLoader) load(ctx context.Context, pricingPath string) (domain_p
 
 	// Slow path: singleflight ensures only one goroutine does disk I/O per path.
 	result, err, _ := pl.sf.Do(pricingPath, func() (interface{}, error) {
-		pl.mu.Lock()
-		defer pl.mu.Unlock()
-
-		// Double-check: another goroutine may have populated the cache
-		// while we were waiting on singleflight.
-		if cached, ok := pl.cache[pricingPath]; ok {
-			if info, statErr := os.Stat(pricingPath); statErr == nil &&
-				info.ModTime().Equal(cached.modTime) {
-				return cached.data, nil
-			}
-		}
-
-		data, err := os.ReadFile(pricingPath)
-		if err != nil {
-			return nil, err
-		}
-
-		var pd domain_pricing.PricingData
-		if err := json.Unmarshal(data, &pd); err != nil {
-			return nil, err
-		}
-
-		info, statErr := os.Stat(pricingPath)
-		if statErr == nil {
-			pl.cache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
-		}
-
-		slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
-		return pd, nil
+		return pl.loadFromDisk(pricingPath)
 	})
 	if err != nil {
 		return domain_pricing.PricingData{}, err
 	}
 	return result.(domain_pricing.PricingData), nil
+}
+
+func (pl *pricingLoader) loadFromDisk(pricingPath string) (domain_pricing.PricingData, error) {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
+	// Double-check: another goroutine may have populated the cache
+	// while we were waiting on singleflight.
+	if cached, ok := pl.cache[pricingPath]; ok {
+		if info, statErr := os.Stat(pricingPath); statErr == nil &&
+			info.ModTime().Equal(cached.modTime) {
+			return cached.data, nil
+		}
+	}
+
+	data, err := os.ReadFile(pricingPath)
+	if err != nil {
+		return domain_pricing.PricingData{}, err
+	}
+
+	var pd domain_pricing.PricingData
+	if err := json.Unmarshal(data, &pd); err != nil {
+		return domain_pricing.PricingData{}, err
+	}
+
+	info, statErr := os.Stat(pricingPath)
+	if statErr == nil {
+		pl.cache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
+	}
+
+	slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
+	return pd, nil
 }
 
 // GetPricing attempts to load pricing data from $TELL_ME_HOME/assets/pricing.json,
