@@ -1288,3 +1288,12 @@ func TestIsTerminalContext_RedirectedFile(t *testing.T) {
 		t.Error("expected IsTerminalContext() = false for redirected *os.File (pipe)")
 	}
 }
+
+func TestIsTerminalContext_SetWritersNonFileStderr(t *testing.T) {
+	locker := ui.NewMockLocker()
+	r := ui.NewRenderer(locker, os.Stdout, os.Stderr, nil, nil).(*ui.StdUIRenderer)
+	r.SetWriters(os.Stdout, new(bytes.Buffer))
+	if r.IsTerminalContext() {
+		t.Error("expected IsTerminalContext() = false when SetWriters injects non-*os.File stderr")
+	}
+}
