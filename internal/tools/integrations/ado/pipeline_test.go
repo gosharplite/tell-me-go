@@ -895,6 +895,121 @@ func setupMockPipelineServer(t *testing.T, postHandler func(w http.ResponseWrite
 	}))
 }
 
+// TestExecuteCreatePipeline_MarshalEdgeCases verifies the JSON body shape produced
+// by executeCreatePipeline when optional fields are at their zero values. This
+// directly exercises the json.Marshal call in executeCreatePipeline and confirms
+// that the serialized payload is correct for edge-case inputs.
+//
+// NOTE: The json.Marshal error branch in executeCreatePipeline (pipeline_crud.go:201-203)
+// is unreachable with current types (all fields are JSON-safe: string, int, bool, *bool).
+// This is defense-in-depth dead code tracked by issue #1057.
+func TestExecuteCreatePipeline_MarshalEdgeCases(t *testing.T) {
+	t.Run("EmptyVariables", func(t *testing.T) {
+		var capturedReq adoCreatePipelineRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/_apis/pipelines") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"count":0,"value":[]}`))
+				return
+			}
+			if r.Method == http.MethodPost {
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&capturedReq))
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id": 999}`))
+				return
+			}
+		}))
+		t.Cleanup(server.Close)
+		m, ctx := setupADOManager(t, server.URL, true)
+
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"name":          "min-pipe",
+			"repository_id": "repo-uuid",
+			"yaml_path":     "/azure-pipelines.yml",
+		}
+		result, err := m.createPipeline(ctx, args)
+		require.NoError(t, err)
+		assert.Equal(t, 999, result.PipelineID)
+		assert.Empty(t, capturedReq.Configuration.Variables)
+		assert.Empty(t, capturedReq.Configuration.VariableGroups)
+	})
+
+	t.Run("EmptyVariableGroups", func(t *testing.T) {
+		var capturedReq adoCreatePipelineRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/_apis/pipelines") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"count":0,"value":[]}`))
+				return
+			}
+			if r.Method == http.MethodPost {
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&capturedReq))
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id": 1000}`))
+				return
+			}
+		}))
+		t.Cleanup(server.Close)
+		m, ctx := setupADOManager(t, server.URL, true)
+
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"name":          "min-pipe",
+			"repository_id": "repo-uuid",
+			"yaml_path":     "/azure-pipelines.yml",
+			"variables": map[string]interface{}{
+				"DEBUG": map[string]interface{}{
+					"value":    "1",
+					"isSecret": false,
+				},
+			},
+		}
+		result, err := m.createPipeline(ctx, args)
+		require.NoError(t, err)
+		assert.Equal(t, 1000, result.PipelineID)
+		// Variables present but no variable groups
+		assert.Len(t, capturedReq.Configuration.Variables, 1)
+		assert.Empty(t, capturedReq.Configuration.VariableGroups)
+	})
+
+	t.Run("MinimalPayload", func(t *testing.T) {
+		var capturedReq adoCreatePipelineRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/_apis/pipelines") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"count":0,"value":[]}`))
+				return
+			}
+			if r.Method == http.MethodPost {
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&capturedReq))
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id": 1001}`))
+				return
+			}
+		}))
+		t.Cleanup(server.Close)
+		m, ctx := setupADOManager(t, server.URL, true)
+
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"name":          "min-pipe",
+			"repository_id": "repo-uuid",
+			"yaml_path":     "/azure-pipelines.yml",
+		}
+		result, err := m.createPipeline(ctx, args)
+		require.NoError(t, err)
+		assert.Equal(t, 1001, result.PipelineID)
+		assert.Equal(t, "min-pipe", capturedReq.Name)
+		assert.Equal(t, "yaml", capturedReq.Configuration.Type)
+		assert.Empty(t, capturedReq.Configuration.Variables)
+		assert.Empty(t, capturedReq.Configuration.VariableGroups)
+	})
+}
+
 func setupADOManager(t *testing.T, baseURL string, approved bool) (*AdoManager, context.Context) {
 	t.Helper()
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
@@ -969,6 +1084,138 @@ func TestGetPipelineDefinition(t *testing.T) {
 
 	assert.True(t, secretVar["isSecret"].(bool))
 	assert.False(t, secretVar["isSettableAtQueueTime"].(bool))
+}
+
+func TestBuildVariablesUpdatePayload(t *testing.T) {
+	allowTrue := true
+	allowFalse := false
+
+	tests := []struct {
+		name        string
+		existingDef map[string]interface{}
+		inputVars   map[string]adoVariable
+		assertions  func(t *testing.T, body []byte, err error)
+	}{
+		{
+			name:        "Creates variables key when absent",
+			existingDef: map[string]interface{}{},
+			inputVars:   map[string]adoVariable{"k": {Value: "v", IsSecret: false}},
+			assertions: func(t *testing.T, body []byte, err error) {
+				require.NoError(t, err)
+				var result map[string]interface{}
+				err = json.Unmarshal(body, &result)
+				require.NoError(t, err)
+				vars, ok := result["variables"].(map[string]interface{})
+				require.True(t, ok, "variables key should be present")
+				k, ok := vars["k"].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, "v", k["value"])
+			},
+		},
+		{
+			name: "Merges with existing variables",
+			existingDef: map[string]interface{}{
+				"variables": map[string]interface{}{
+					"old": map[string]interface{}{
+						"value":         "old",
+						"isSecret":      true,
+						"allowOverride": true,
+					},
+				},
+			},
+			inputVars: map[string]adoVariable{"new": {Value: "new", IsSecret: false}},
+			assertions: func(t *testing.T, body []byte, err error) {
+				require.NoError(t, err)
+				var result map[string]interface{}
+				err = json.Unmarshal(body, &result)
+				require.NoError(t, err)
+				vars, ok := result["variables"].(map[string]interface{})
+				require.True(t, ok)
+				// Old variable unchanged
+				old, ok := vars["old"].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, "old", old["value"])
+				assert.Equal(t, true, old["isSecret"])
+				assert.Equal(t, true, old["allowOverride"])
+				// New variable present
+				newVar, ok := vars["new"].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, "new", newVar["value"])
+			},
+		},
+		{
+			name: "Omits allowOverride when nil",
+			existingDef: map[string]interface{}{
+				"variables": map[string]interface{}{},
+			},
+			inputVars: map[string]adoVariable{"k": {Value: "v"}},
+			assertions: func(t *testing.T, body []byte, err error) {
+				require.NoError(t, err)
+				var result map[string]interface{}
+				err = json.Unmarshal(body, &result)
+				require.NoError(t, err)
+				vars, ok := result["variables"].(map[string]interface{})
+				require.True(t, ok)
+				k, ok := vars["k"].(map[string]interface{})
+				require.True(t, ok)
+				_, hasOverride := k["allowOverride"]
+				assert.False(t, hasOverride, "allowOverride should be absent when nil")
+			},
+		},
+		{
+			name:        "Includes allowOverride when true",
+			existingDef: map[string]interface{}{},
+			inputVars:   map[string]adoVariable{"k": {Value: "v", AllowOverride: &allowTrue}},
+			assertions: func(t *testing.T, body []byte, err error) {
+				require.NoError(t, err)
+				var result map[string]interface{}
+				err = json.Unmarshal(body, &result)
+				require.NoError(t, err)
+				vars, ok := result["variables"].(map[string]interface{})
+				require.True(t, ok)
+				k, ok := vars["k"].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, true, k["allowOverride"])
+			},
+		},
+		{
+			name:        "Includes allowOverride when false",
+			existingDef: map[string]interface{}{},
+			inputVars:   map[string]adoVariable{"k": {Value: "v", AllowOverride: &allowFalse}},
+			assertions: func(t *testing.T, body []byte, err error) {
+				require.NoError(t, err)
+				var result map[string]interface{}
+				err = json.Unmarshal(body, &result)
+				require.NoError(t, err)
+				vars, ok := result["variables"].(map[string]interface{})
+				require.True(t, ok)
+				k, ok := vars["k"].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, false, k["allowOverride"])
+			},
+		},
+		{
+			name:        "Returns valid JSON",
+			existingDef: map[string]interface{}{"name": "test"},
+			inputVars:   map[string]adoVariable{"v1": {Value: "x"}},
+			assertions: func(t *testing.T, body []byte, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, body)
+				var result map[string]interface{}
+				err = json.Unmarshal(body, &result)
+				require.NoError(t, err)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			body, err := buildVariablesUpdatePayload(tt.existingDef, tt.inputVars)
+			tt.assertions(t, body, err)
+		})
+	}
 }
 
 func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {

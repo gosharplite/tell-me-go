@@ -184,6 +184,59 @@ func TestAdoGetPullRequest(t *testing.T) {
 	})
 }
 
+func TestAdoGetPullRequest_Validation(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+	tests := []struct {
+		name          string
+		args          map[string]interface{}
+		errorContains string
+	}{
+		{
+			name:          "Missing organization",
+			args:          map[string]interface{}{"project": "p", "repository": "r", "pull_request_id": 1},
+			errorContains: "required",
+		},
+		{
+			name:          "Missing project",
+			args:          map[string]interface{}{"organization": "o", "repository": "r", "pull_request_id": 1},
+			errorContains: "required",
+		},
+		{
+			name:          "Missing repository",
+			args:          map[string]interface{}{"organization": "o", "project": "p", "pull_request_id": 1},
+			errorContains: "required",
+		},
+		{
+			name:          "Zero pull_request_id",
+			args:          map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 0},
+			errorContains: "required",
+		},
+		{
+			name:          "All empty",
+			args:          map[string]interface{}{},
+			errorContains: "required",
+		},
+		{
+			name:          "Empty organization",
+			args:          map[string]interface{}{"organization": "", "project": "p", "repository": "r", "pull_request_id": 1},
+			errorContains: "required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewADOManager(sm)
+
+			result, err := m.adoGetPullRequest(context.Background(), tt.args, nil)
+
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errorContains)
+			assert.Equal(t, tools.ToolResult{}, result)
+		})
+	}
+}
+
 func TestAdoListPullRequests(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 

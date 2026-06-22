@@ -521,6 +521,47 @@ func TestAdoRunPipeline(t *testing.T) {
 		assert.NotContains(t, sm.LastConfirmText, "branch: refs/heads/main",
 			"confirmation prompt must not display the fully qualified ref")
 	})
+
+	// NOTE: The json.Marshal error branch in executeRunPipeline (pipeline_runs.go:154-156)
+	// is unreachable with current types (all fields are JSON-safe). This is defense-in-depth
+	// dead code tracked by issue #1057.
+
+	t.Run("MinimalPayload", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var payload map[string]interface{}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+
+			// Verify resources block still present
+			resources := payload["resources"].(map[string]interface{})
+			repos := resources["repositories"].(map[string]interface{})
+			self := repos["self"].(map[string]interface{})
+			assert.Equal(t, "refs/heads/main", self["refName"])
+
+			// Verify optional fields omitted/empty
+			_, hasVars := payload["variables"]
+			_, hasParams := payload["templateParameters"]
+			// Both should be absent when not provided (omitempty)
+			assert.False(t, hasVars || hasParams, "variables and templateParameters should be omitted when empty")
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": 404, "_links": {"web": {"href": "https://dev.azure.com/x"}}}`))
+		}))
+		t.Cleanup(server.Close)
+
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+
+		args := map[string]interface{}{
+			"organization": "o",
+			"project":      "p",
+			"pipeline_id":  1,
+			"branch":       "main",
+			"_ref_name":    "refs/heads/main",
+		}
+		result, err := m.runPipeline(context.Background(), args)
+		require.NoError(t, err)
+		assert.Equal(t, 404, result.RunID)
+	})
 }
 
 func TestListPipelineRuns_Features(t *testing.T) {
