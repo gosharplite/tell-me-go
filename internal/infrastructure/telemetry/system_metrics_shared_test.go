@@ -43,29 +43,21 @@ func TestGetRuntimeCPUStats_ReturnsValidValues(t *testing.T) {
 	}
 }
 
-// TestGetRuntimeCPUStats_DefensiveZeroReturn validates the defensive
-// return 0, 0 fallback at system_metrics_shared.go:21. The else branch
-// is only reachable when runtime/metrics returns a non-Float64 Kind for
-// /cpu/classes/total:cpu-seconds — which does not happen in current Go.
+// TestGetRuntimeCPUStats_MonotonicityInvariants verifies fundamental
+// invariants of getRuntimeCPUStats over 100 consecutive calls:
 //
-// This test calls getRuntimeCPUStats many times. If the defensive branch
-// is ever reached (both total and idle are 0), the test skips instead of
-// failing, because (0, 0) is the correct fallback behavior.
+//   - total is non-negative (>= 0)
+//   - idle is always 0 (runtime/metrics exposes only total, not idle breakdown)
+//   - total is monotonically non-decreasing (CPU time only increases)
 //
-// In normal operation, total must be monotonically non-negative and idle
-// must be 0 (the metric exposes only total, not idle breakdown).
-func TestGetRuntimeCPUStats_DefensiveZeroReturn(t *testing.T) {
+// Note: the defensive return 0, 0 branch (for Kind() != KindFloat64) is
+// separately verified by TestGetRuntimeCPUStats_KindFloat64Always.
+func TestGetRuntimeCPUStats_MonotonicityInvariants(t *testing.T) {
 	t.Parallel()
 
 	var prevTotal int64
 	for i := 0; i < 100; i++ {
 		total, idle := getRuntimeCPUStats()
-
-		// If the defensive else branch is reached, both values are 0.
-		// This proves the branch is reachable and correctly returns (0, 0).
-		if total == 0 && idle == 0 {
-			t.Skip("defensive return 0, 0 branch was reached — fallback behavior verified")
-		}
 
 		if total < 0 {
 			t.Errorf("iteration %d: total = %d, want >= 0", i, total)
