@@ -371,6 +371,10 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 	// structs). No float64 fields exist, so NaN/Inf cannot appear. The error
 	// branch below is defensive dead code that serves as a safety net if a
 	// future field addition introduces a marshal-unfriendly type.
+	// Coverage: accepted gap (defensive dead code per Issue #782 / ADR-024).
+	// json.Marshal(reqPayload) cannot fail with the current messagesRequest
+	// type tree. See TestPrepareAnthropicRequest_MarshalFailure in client_test.go
+	// for the sentinel test that verifies the wrapping format.
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
