@@ -6,15 +6,20 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -685,4 +690,175 @@ func TestCostLedger_RecoverySkipsUnreadableFile(t *testing.T) {
 	if len(history) != 0 {
 		t.Errorf("expected empty history for unreadable file, got %d records", len(history))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// spySlogHandler — routes slog records to testfixtures.SpyLogger for assertion
+// ---------------------------------------------------------------------------
+
+type spySlogHandler struct {
+	spy   *testfixtures.SpyLogger
+	level slog.Level
+}
+
+func (h *spySlogHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= h.level
+}
+
+func (h *spySlogHandler) Handle(_ context.Context, r slog.Record) error {
+	switch r.Level {
+	case slog.LevelWarn:
+		h.spy.Warn(r.Message)
+	case slog.LevelError:
+		h.spy.Error(r.Message)
+	case slog.LevelInfo:
+		h.spy.Info(r.Message)
+	case slog.LevelDebug:
+		h.spy.Debug(r.Message)
+	}
+	return nil
+}
+
+func (h *spySlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
+func (h *spySlogHandler) WithGroup(name string) slog.Handler       { return h }
+
+// ---------------------------------------------------------------------------
+// Gap — loadHistoryFromDisk failure under lock (metrics_cost.go:63-68)
+// ---------------------------------------------------------------------------
+
+// TestRecordCost_LoadHistoryReadError verifies that when the ledger file exists
+// but is unreadable (e.g., permission denied), recordCost logs a warning and
+// returns early without panicking or modifying the ledger file.
+func TestRecordCost_LoadHistoryReadError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not prevent file reads on Windows")
+	}
+
+	// Install SpyLogger as the slog default handler to capture slog.Warn calls.
+	spy := &testfixtures.SpyLogger{}
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(&spySlogHandler{spy: spy, level: slog.LevelDebug}))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Create output directory so globalDir = tempDir.
+	outputDir := filepath.Join(tempDir, "output")
+	require.NoError(t, os.MkdirAll(outputDir, 0755))
+
+	historyPath := filepath.Join(tempDir, "global_costs.json")
+
+	// Write a valid ledger file, then make it unreadable.
+	require.NoError(t, os.WriteFile(historyPath, []byte("[]"), 0644))
+	require.NoError(t, os.Chmod(historyPath, 0000))
+	t.Cleanup(func() { _ = os.Chmod(historyPath, 0644) })
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+
+	m := &metricsManager{
+		sm:      sm,
+		logFile: filepath.Join(outputDir, "session_tokens.log"),
+		model:   "test-model",
+		mode:    "test-mode",
+		ledger:  nil, // nil prevents async ledger recovery
+	}
+
+	record := sessionCostRecord{
+		Date:      "2026-08-01",
+		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+		Session:   "test-mode/session_tokens.log",
+		Model:     "test-model",
+		TotalCost: 0.01,
+	}
+
+	// Call recordCost directly — must not panic.
+	require.NotPanics(t, func() {
+		m.recordCost(ctx, outputDir, "test-mode", record)
+	}, "recordCost must not panic when ledger file is unreadable")
+
+	// Assert the warning was logged.
+	require.True(t, spy.CalledWith("Warn", "failed to read ledger under lock"),
+		"expected slog.Warn 'failed to read ledger under lock' to be logged")
+
+	// Restore permissions so we can read the file for verification.
+	require.NoError(t, os.Chmod(historyPath, 0644))
+
+	// Assert the file was NOT overwritten (content unchanged).
+	data, err := os.ReadFile(historyPath)
+	require.NoError(t, err)
+	require.Equal(t, "[]", string(data), "ledger file must be unchanged after failed read")
+}
+
+// ---------------------------------------------------------------------------
+// Gap — json.Marshal failure on ledger data (metrics_cost.go:74-79)
+// ---------------------------------------------------------------------------
+
+// TestRecordCost_JsonMarshalError verifies that when json.Marshal fails
+// after reading and upserting ledger data, recordCost logs a warning and
+// returns early without panicking or writing a corrupted ledger file.
+//
+// This test overrides the package-level jsonMarshal variable and therefore
+// must NOT use t.Parallel().
+func TestRecordCost_JsonMarshalError(t *testing.T) {
+	// NOT parallel — overrides package-level jsonMarshal AND slog.SetDefault.
+
+	// Step 1: Override jsonMarshal to simulate a marshal failure.
+	originalMarshal := jsonMarshal
+	jsonMarshal = func(v any) ([]byte, error) {
+		return nil, errors.New("injected marshal error")
+	}
+	t.Cleanup(func() { jsonMarshal = originalMarshal })
+
+	// Step 2: Install SpyLogger as the slog default handler.
+	spy := &testfixtures.SpyLogger{}
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(&spySlogHandler{spy: spy, level: slog.LevelDebug}))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Create output directory so globalDir = tempDir.
+	outputDir := filepath.Join(tempDir, "output")
+	require.NoError(t, os.MkdirAll(outputDir, 0755))
+
+	// Step 3: Create a valid ledger file so loadHistoryFromDisk succeeds.
+	// The upsert will add the new record, then jsonMarshal will fail.
+	historyPath := filepath.Join(tempDir, "global_costs.json")
+	require.NoError(t, os.WriteFile(historyPath, []byte("[]"), 0644))
+
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+
+	m := &metricsManager{
+		sm:      sm,
+		logFile: filepath.Join(outputDir, "session_tokens.log"),
+		model:   "test-model",
+		mode:    "test-mode",
+		ledger:  nil, // nil prevents async ledger recovery
+	}
+
+	record := sessionCostRecord{
+		Date:      "2026-08-01",
+		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+		Session:   "test-mode/session_tokens.log",
+		Model:     "test-model",
+		TotalCost: 0.05,
+	}
+
+	// Step 4: Call recordCost — must not panic, even with marshal failure.
+	require.NotPanics(t, func() {
+		m.recordCost(ctx, outputDir, "test-mode", record)
+	}, "recordCost must not panic when json.Marshal fails")
+
+	// Step 5: Assert the warning was logged.
+	require.True(t, spy.CalledWith("Warn", "failed to marshal ledger"),
+		"expected slog.Warn 'failed to marshal ledger' to be logged")
+
+	// Step 6: Assert the file was NOT modified (marshal failed before AtomicWrite).
+	data, err := os.ReadFile(historyPath)
+	require.NoError(t, err)
+	require.Equal(t, "[]", string(data), "ledger file must be unchanged after failed marshal")
 }

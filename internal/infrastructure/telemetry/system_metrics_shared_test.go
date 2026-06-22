@@ -42,3 +42,33 @@ func TestGetRuntimeCPUStats_ReturnsValidValues(t *testing.T) {
 		t.Errorf("getRuntimeCPUStats() idle = %d, want 0 (runtime/metrics has no idle breakdown)", idle)
 	}
 }
+
+// TestGetRuntimeCPUStats_MonotonicityInvariants verifies fundamental
+// invariants of getRuntimeCPUStats over 100 consecutive calls:
+//
+//   - total is non-negative (>= 0)
+//   - idle is always 0 (runtime/metrics exposes only total, not idle breakdown)
+//   - total is monotonically non-decreasing (CPU time only increases)
+//
+// Note: the defensive return 0, 0 branch (for Kind() != KindFloat64) is
+// separately verified by TestGetRuntimeCPUStats_KindFloat64Always.
+func TestGetRuntimeCPUStats_MonotonicityInvariants(t *testing.T) {
+	t.Parallel()
+
+	var prevTotal int64
+	for i := 0; i < 100; i++ {
+		total, idle := getRuntimeCPUStats()
+
+		if total < 0 {
+			t.Errorf("iteration %d: total = %d, want >= 0", i, total)
+		}
+		if idle != 0 {
+			t.Errorf("iteration %d: idle = %d, want 0 (runtime/metrics has no idle breakdown)", i, idle)
+		}
+		// total should be monotonically non-decreasing (CPU time only increases).
+		if total < prevTotal {
+			t.Errorf("iteration %d: total = %d, previous = %d; total must be non-decreasing", i, total, prevTotal)
+		}
+		prevTotal = total
+	}
+}
