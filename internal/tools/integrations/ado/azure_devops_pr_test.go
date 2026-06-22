@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 )
@@ -158,6 +159,14 @@ func TestAdoGetPullRequest(t *testing.T) {
 		_, err := m.adoGetPullRequest(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
+	})
+
+	t.Run("ZeroValueParams", func(t *testing.T) {
+		m := NewADOManager(sm)
+		result, err := m.adoGetPullRequest(context.Background(), map[string]interface{}{}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "required")
+		assert.Equal(t, tools.ToolResult{}, result)
 	})
 
 	t.Run("Missing PAT", func(t *testing.T) {
