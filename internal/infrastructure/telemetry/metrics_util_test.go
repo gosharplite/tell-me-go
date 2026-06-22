@@ -5,6 +5,7 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -614,4 +615,67 @@ func createBenchLogFile(b *testing.B, content string) string {
 		b.Fatalf("failed to write to temp file: %v", err)
 	}
 	return tmpFile.Name()
+}
+
+// TestLoadFromDisk_DoubleCheckCacheHit verifies the double-check cache-hit
+// branch in pricingLoader.loadFromDisk (metrics_util.go:81-83). When the
+// pricing file's mtime matches the cached entry, loadFromDisk returns cached
+// data even if the file on disk contains different content.
+func TestLoadFromDisk_DoubleCheckCacheHit(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	pricingPath := filepath.Join(assetsDir, "pricing.json")
+
+	// Step 1: Write the initial pricing file (hit=9.0) and capture its mtime.
+	const v1 = `{"updated_at": "2026-06-01T00:00:00Z", "models": {"cache-hit-model": {"hit": 9.0, "miss": 8.0, "comp": 7.0}}}`
+	if err := os.WriteFile(pricingPath, []byte(v1), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(pricingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 2: Parse v1 and pre-populate the cache under the write lock.
+	var pd domain_pricing.PricingData
+	if err := json.Unmarshal([]byte(v1), &pd); err != nil {
+		t.Fatal(err)
+	}
+
+	defaultLoader.mu.Lock()
+	defaultLoader.cache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
+	defaultLoader.mu.Unlock()
+
+	// Step 3: Overwrite the file on disk with DIFFERENT content (hit=1.0).
+	const v2 = `{"updated_at": "2026-07-15T00:00:00Z", "models": {"cache-hit-model": {"hit": 1.0, "miss": 2.0, "comp": 3.0}}}`
+	if err := os.WriteFile(pricingPath, []byte(v2), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 4: Restore the file's mtime to match the cached modTime so that
+	// the double-check os.Stat sees a matching mtime and returns from cache.
+	if err := os.Chtimes(pricingPath, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 5: Call loadFromDisk directly.
+	result, err := defaultLoader.loadFromDisk(pricingPath)
+	if err != nil {
+		t.Fatalf("loadFromDisk returned error: %v", err)
+	}
+
+	// Step 6: Assert the returned data matches the CACHED content (hit=9.0),
+	// proving the double-check returned from cache rather than re-reading disk.
+	if result.UpdatedAt != "2026-06-01T00:00:00Z" {
+		t.Errorf("expected cached UpdatedAt '2026-06-01T00:00:00Z', got %q", result.UpdatedAt)
+	}
+	if hit := result.Models["cache-hit-model"].Hit; hit != 9.0 {
+		t.Errorf("expected cached hit=9.0, got hit=%v", hit)
+	}
 }
