@@ -1037,3 +1037,39 @@ func TestPrepareAnthropicRequest_MarshalErrorUnreachable(t *testing.T) {
 		"all fields are marshal-safe Go types. " +
 		"Error path exists for defensive future-proofing.")
 }
+
+// TestPrepareAnthropicRequest_MarshalFuncError exercises the json.Marshal
+// error branch in prepareAnthropicRequest via the injectable marshalFunc
+// field (ADR-024 / Issue #1075). When marshalFunc returns an error,
+// prepareAnthropicRequest must wrap it with "failed to marshal request: %w"
+// and return a nil *http.Request.
+func TestPrepareAnthropicRequest_MarshalFuncError(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("https://api.anthropic.com/v1", "claude-3-5-sonnet",
+		&auth.AnthropicAuth{APIKey: "test-key"},
+	)
+
+	// Override marshalFunc with a failing implementation
+	c.marshalFunc = func(v interface{}) ([]byte, error) {
+		return nil, errors.New("injected marshal failure")
+	}
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+	}
+
+	req, err := c.prepareAnthropicRequest(context.Background(), history, nil)
+	if err == nil {
+		t.Fatal("expected error from marshalFunc, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to marshal request") {
+		t.Errorf("expected error containing %q, got %q", "failed to marshal request", err.Error())
+	}
+	if !strings.Contains(err.Error(), "injected marshal failure") {
+		t.Errorf("expected error containing %q, got %q", "injected marshal failure", err.Error())
+	}
+	if req != nil {
+		t.Error("expected nil request on marshal error, got non-nil")
+	}
+}
