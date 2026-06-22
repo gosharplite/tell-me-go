@@ -529,7 +529,10 @@ func TestAdoRunPipeline(t *testing.T) {
 	t.Run("MinimalPayload", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var payload map[string]interface{}
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				assert.NoError(t, err)
+				return
+			}
 
 			// Verify resources block still present
 			resources := payload["resources"].(map[string]interface{})
