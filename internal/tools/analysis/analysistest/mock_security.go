@@ -16,15 +16,24 @@ import (
 // and checks the prefix). Set DenyAll to true to simulate a denying security provider
 // that rejects all path access.
 type MockSecurityProvider struct {
-	TempDir string
 	DenyAll bool
+
+	// AbsFunc resolves a path to an absolute form. When nil, filepath.Abs is used.
+	// Override in tests to inject path-resolution errors without OS-level tricks.
+	AbsFunc func(string) (string, error)
+
+	TempDir string
 }
 
 func (m *MockSecurityProvider) IsPathSafe(path string) (string, error) {
 	if m.DenyAll {
 		return "", fmt.Errorf("path not authorized")
 	}
-	abs, err := filepath.Abs(path)
+	absFunc := m.AbsFunc
+	if absFunc == nil {
+		absFunc = filepath.Abs
+	}
+	abs, err := absFunc(path)
 	if err != nil {
 		return "", err
 	}
