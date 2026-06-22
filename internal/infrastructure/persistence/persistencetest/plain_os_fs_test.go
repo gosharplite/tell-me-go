@@ -9,9 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -198,49 +197,67 @@ func TestPlainOSFileSystem_AtomicWrite(t *testing.T) {
 func TestPlainOSFS_AtomicWrite_ErrorPaths(t *testing.T) {
 	t.Parallel()
 
-	// Gap #1: Write error → Close (L69-71)
-	t.Run("write error on read-only descriptor", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		f, err := os.CreateTemp(dir, "write-err-*")
-		require.NoError(t, err)
-		tempName := f.Name()
-		t.Cleanup(func() { _ = os.Remove(tempName) })
-		require.NoError(t, f.Close())
+	// Internal error paths (Write failure, Close failure, Chmod failure)
+	// are now exercised by TestPlainOSFS_AtomicWrite_InternalErrorPaths.
+}
 
-		f, err = os.OpenFile(tempName, os.O_RDONLY, 0)
-		require.NoError(t, err)
-		defer func() { _ = f.Close() }()
+func TestPlainOSFS_AtomicWrite_InternalErrorPaths(t *testing.T) {
+	t.Parallel()
 
-		_, err = f.Write([]byte("data"))
-		require.Error(t, err, "Write on read-only fd must fail")
-		// The AtomicWrite L70 pattern: Close after Write error
-		_ = f.Close()
-	})
+	tests := []struct {
+		name    string
+		opts    []persistencetest.PlainOSFSOption
+		wantErr string
+	}{
+		{
+			name: "Write error",
+			opts: []persistencetest.PlainOSFSOption{
+				persistencetest.WithWriteFunc(func(f *os.File, data []byte) (int, error) {
+					return 0, errors.New("injected write failure")
+				}),
+			},
+			wantErr: "injected write failure",
+		},
+		{
+			name: "Close error",
+			opts: []persistencetest.PlainOSFSOption{
+				persistencetest.WithCloseFunc(func(f *os.File) error {
+					return errors.New("injected close failure")
+				}),
+			},
+			wantErr: "injected close failure",
+		},
+		{
+			name: "Chmod error",
+			opts: []persistencetest.PlainOSFSOption{
+				persistencetest.WithChmodFunc(func(name string, mode os.FileMode) error {
+					return errors.New("injected chmod failure")
+				}),
+			},
+			wantErr: "injected chmod failure",
+		},
+	}
 
-	// Gap #2: Close error after successful Write (L73-74)
-	t.Run("close error branch documented", func(t *testing.T) {
-		t.Parallel()
-		t.Skip("*os.File.Close() on regular files returns nil on all standard " +
-			"Linux filesystems. Fails only on network/FUSE fs with pending " +
-			"writeback errors or kernel bugs. Branch verified by code review.")
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Gap #3: Chmod error after Close (L76-77)
-	t.Run("chmod error on nonexistent path", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		f, err := os.CreateTemp(dir, "chmod-err-*")
-		require.NoError(t, err)
-		tempName := f.Name()
-		_, err = f.Write([]byte("data"))
-		require.NoError(t, err)
-		require.NoError(t, f.Close())
-		require.NoError(t, os.Remove(tempName))
+			fs := persistencetest.NewPlainOSFileSystemWithOpts(tt.opts...)
+			dir := t.TempDir()
+			path := filepath.Join(dir, "target.txt")
 
-		err = os.Chmod(tempName, 0644)
-		require.Error(t, err, "Chmod on removed file must fail")
-	})
+			err := fs.AtomicWrite(context.Background(), path, []byte("data"), 0644)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q should contain %q", err.Error(), tt.wantErr)
+			}
+
+			// Verify no orphan temp file remains
+			assertNoOrphanTempFiles(t, dir)
+		})
+	}
 }
 
 // =============================================================================
