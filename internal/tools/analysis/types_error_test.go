@@ -480,6 +480,41 @@ func F() string { return "ok" }
 	}
 }
 
+// TestCollectSymbols_CancelledContext verifies that a cancelled context
+// causes checkCancellation (types.go:423-425) inside collectSymbols to
+// return context.Canceled, which is then propagated by filepath.Walk.
+func TestCollectSymbols_CancelledContext(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// go.mod required for AST cache to resolve module paths.
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// At least one .go file so Walk enters the callback where
+	// checkCancellation is invoked.
+	if err := os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte("package test\nfunc F() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before ListSymbols starts
+
+	m := analysis.NewTypeManager(
+		&analysistest.MockSymbolIndex{},
+		analysis.NewASTCache("."),
+		&analysistest.MockSecurityProvider{},
+	)
+
+	_, err := m.ListSymbols(ctx, map[string]interface{}{"path": tmpDir}, nil)
+	if err == nil {
+		t.Fatal("expected error from cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+}
+
 // =============================================================================
 // Batch 2, Task 3 — Table-driven error path tests
 // =============================================================================
