@@ -39,7 +39,13 @@ type executionResult struct {
 }
 
 // processExecutor handles running external commands and pipelines.
-type processExecutor struct{}
+type processExecutor struct {
+	// wirePipesFn is an optional override for pipeline.wirePipes used by newPipeline.
+	// When nil (zero value), newPipeline calls p.wirePipes() as before.
+	// When set, newPipeline delegates to this function instead.
+	// This exists solely to enable testing the defensive error path at pipeline.go:41-43.
+	wirePipesFn func(p *pipeline) error
+}
 
 const maxScannerCapacity = 10 * 1024 * 1024
 

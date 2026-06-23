@@ -887,10 +887,89 @@ func TestIsToolCall_Helper(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "Empty parts slice",
+			msg: &llm.Content{
+				Parts: []*llm.Part{},
+			},
+			expected: false,
+		},
+		{
+			name: "Multiple text parts",
+			msg: &llm.Content{
+				Parts: []*llm.Part{{Text: "hello"}, {Text: "world"}},
+			},
+			expected: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := isToolCall(tt.msg)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, ErrInvalidPayload)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, got)
+			}
+		})
+	}
+}
+
+func TestIsTurnBoundary_Helper(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      *llm.Content
+		current  []*llm.Content
+		expected bool
+		wantErr  bool
+	}{
+		{
+			name:     "New turn (empty current)",
+			msg:      &llm.Content{Role: "user"},
+			current:  []*llm.Content{},
+			expected: false,
+		},
+		{
+			name:     "Model role is not a boundary",
+			msg:      &llm.Content{Role: "model"},
+			current:  []*llm.Content{{Role: "user"}},
+			expected: false,
+		},
+		{
+			name:     "User after user is a boundary",
+			msg:      &llm.Content{Role: "user"},
+			current:  []*llm.Content{{Role: "user"}},
+			expected: true,
+		},
+		{
+			name:     "User after model (no tool call) is a boundary",
+			msg:      &llm.Content{Role: "user"},
+			current:  []*llm.Content{{Role: "model", Parts: []*llm.Part{{Text: "hi"}}}},
+			expected: true,
+		},
+		{
+			name:     "System message is always a boundary",
+			msg:      &llm.Content{Role: "system"},
+			current:  []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}},
+			expected: true,
+		},
+		{
+			name:    "Nil last in current turn",
+			msg:     &llm.Content{Role: "user"},
+			current: []*llm.Content{nil},
+			wantErr: true,
+		},
+		{
+			name:    "isToolCall error propagates",
+			msg:     &llm.Content{Role: "user"},
+			current: []*llm.Content{{Role: "model", Parts: []*llm.Part{nil}}},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isTurnBoundary(tt.msg, tt.current)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.ErrorIs(t, err, ErrInvalidPayload)

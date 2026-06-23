@@ -38,7 +38,11 @@ func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string
 		p.cmds[i] = cmd
 	}
 
-	if err := p.wirePipes(); err != nil {
+	wp := p.wirePipes
+	if e.wirePipesFn != nil {
+		wp = func() error { return e.wirePipesFn(p) }
+	}
+	if err := wp(); err != nil {
 		return nil, err
 	}
 
