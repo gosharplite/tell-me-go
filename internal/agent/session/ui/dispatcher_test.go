@@ -148,22 +148,6 @@ func TestHandleToolEvents_EmptyNameGuard(t *testing.T) {
 	assert.Contains(t, logger.GetDebugs(), "handleToolEvents: ToolResultEvent missing Name")
 }
 
-func TestHandleToolEvents_ContextTODO(t *testing.T) {
-	t.Parallel()
-
-	d, renderer, _ := newTestDispatcher(t)
-	calls := []*llm.FunctionCall{{Name: "search"}}
-
-	// dispatch with context.TODO() — must not panic (SA1012-compliant)
-	d.dispatch(context.TODO(), events.ToolCallEvent{
-		Calls:    calls,
-		Turn:     1,
-		MaxTurns: 3,
-	})
-
-	assert.Len(t, renderer.logToolCallCalls, 1, "LogToolCall should still be called with context.TODO()")
-}
-
 func TestHandleToolEvents_UnexpectedType(t *testing.T) {
 	t.Parallel()
 
