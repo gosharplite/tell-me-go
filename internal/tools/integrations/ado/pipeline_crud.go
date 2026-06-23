@@ -308,8 +308,10 @@ func (m *AdoManager) UpdateBuildDefinitionVariables(ctx context.Context, args ma
 	}
 
 	// 2. Build updated payload.
-	// buildVariablesUpdatePayload cannot fail; see ADR-037 comment on that function.
-	body, _ := buildVariablesUpdatePayload(definition, params.Variables)
+	body, err := buildVariablesUpdatePayload(definition, params.Variables)
+	if err != nil {
+		return UpdateVariablesResult{}, fmt.Errorf("failed to build updated payload: %w", err)
+	}
 
 	// 3. Confirm.
 	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Update variables for build definition %d in %s/%s?", params.DefinitionId, params.Organization, params.Project))
