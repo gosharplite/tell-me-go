@@ -15,7 +15,6 @@ func TestNewTurnTrace(t *testing.T) {
 	tt := NewTurnTrace()
 	if tt == nil {
 		t.Fatal("NewTurnTrace() returned nil")
-		return
 	}
 	if tt.StartTime.IsZero() {
 		t.Error("expected StartTime to be non-zero")

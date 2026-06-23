@@ -119,7 +119,6 @@ func TestAsAgentInternal(t *testing.T) {
 		result := AsAgentInternal(chatter)
 		if result == nil {
 			t.Fatal("AsAgentInternal(bare agent) returned nil")
-			return
 		}
 		if result.raw == nil {
 			t.Fatal("AsAgentInternal(bare agent).raw is nil")
@@ -133,7 +132,6 @@ func TestNewBareAgent(t *testing.T) {
 	a := NewBareAgent()
 	if a == nil {
 		t.Fatal("NewBareAgent() returned nil")
-		return
 	}
 	if a.raw == nil {
 		t.Fatal("NewBareAgent().raw is nil")

@@ -344,7 +344,6 @@ func TestProcessExecutor_newPipelineCmd_ValidParts(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected non-nil *exec.Cmd")
-		return
 	}
 	if cmd.Args[0] != "echo" {
 		t.Errorf("expected cmd.Args[0] == 'echo', got %q", cmd.Args[0])
@@ -361,7 +360,6 @@ func TestProcessExecutor_newPipelineCmd_WithEnv(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected non-nil *exec.Cmd")
-		return
 	}
 	if len(cmd.Env) == 0 {
 		t.Fatal("expected cmd.Env to be non-empty")

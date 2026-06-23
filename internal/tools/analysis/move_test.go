@@ -184,7 +184,6 @@ func TestMatchesTypeName_StarExpr_PointerReceiver(t *testing.T) {
 	}
 	if methodDecl == nil {
 		t.Fatal("expected to find method declaration")
-		return
 	}
 	// matchesTypeName on *MyStruct receiver
 	if !tr.matchesTypeName(methodDecl.Recv.List[0].Type, "MyStruct") {
@@ -210,7 +209,6 @@ func TestMatchesTypeName_StarExpr_NonMatch(t *testing.T) {
 	}
 	if methodDecl == nil {
 		t.Fatal("expected to find method declaration")
-		return
 	}
 	if tr.matchesTypeName(methodDecl.Recv.List[0].Type, "MyStruct") {
 		t.Error("matchesTypeName should NOT match *Other as MyStruct")

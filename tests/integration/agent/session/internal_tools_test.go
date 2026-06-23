@@ -138,7 +138,6 @@ func TestRegisterInternal(t *testing.T) {
 func validateTool(t *testing.T, found *tools.ToolDeclaration, expectedParams []string) {
 	if found == nil {
 		t.Fatalf("Tool not registered")
-		return
 	}
 
 	if found.Description == "" {

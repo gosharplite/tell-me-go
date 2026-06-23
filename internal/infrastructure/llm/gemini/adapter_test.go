@@ -189,7 +189,6 @@ func TestFromSDKContent_NilPartFiltering(t *testing.T) {
 
 	if result == nil {
 		t.Fatal("expected non-nil result")
-		return
 	}
 	if len(result.Parts) != 2 {
 		t.Fatalf("expected 2 parts (nil filtered), got %d", len(result.Parts))

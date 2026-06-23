@@ -52,7 +52,6 @@ func TestDecodeStandardResponse_EmitsTimingDebugLog(t *testing.T) {
 	// Verify metrics are populated
 	if metrics == nil {
 		t.Fatal("expected non-nil metrics")
-		return
 	}
 	if metrics.TotalTokens != 3 {
 		t.Errorf("expected TotalTokens=3, got %d", metrics.TotalTokens)
@@ -100,7 +99,6 @@ func TestDecodeResponsesAPIResponse_EmitsTimingDebugLog(t *testing.T) {
 	// Verify metrics are populated
 	if metrics == nil {
 		t.Fatal("expected non-nil metrics")
-		return
 	}
 	if metrics.TotalTokens != 3 {
 		t.Errorf("expected TotalTokens=3, got %d", metrics.TotalTokens)
