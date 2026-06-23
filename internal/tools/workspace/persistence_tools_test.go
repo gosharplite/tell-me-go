@@ -794,14 +794,17 @@ func TestManageTasks_SchemaTaskIDIsInteger(t *testing.T) {
 	}
 	if manageDecl == nil {
 		t.Fatal("manage_tasks not found in declarations")
+		return
 	}
 	if manageDecl.Parameters == nil {
 		t.Fatal("manage_tasks has no parameters schema")
+		return
 	}
 
 	taskIDProp := manageDecl.Parameters.Properties["task_id"]
 	if taskIDProp == nil {
 		t.Fatal("task_id parameter not found in manage_tasks schema")
+		return
 	}
 	if taskIDProp.Type != "INTEGER" {
 		t.Errorf("task_id schema type = %q; want %q", taskIDProp.Type, "INTEGER")

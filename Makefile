@@ -321,11 +321,11 @@ else
 	@echo "Checking for time.Sleep synchronization in test files (Windows)..."
 	@powershell -Command " \
 		$$ErrorActionPreference = 'Stop'; \
-		$$ui = Select-String -Path 'internal/ui/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false; \
+		$$ui = Select-String -Path 'internal/ui/*_test.go' -Pattern 'time\.Sleep\(' -SimpleMatch:$$false; \
 		if ($$ui) { Write-Host '❌ time.Sleep in internal/ui/ test files'; exit 1 }; \
-		$$cfg = Select-String -Path 'internal/infrastructure/config/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false | Where-Object { $$_.Line -notmatch 'simulates I/O latency' }; \
+		$$cfg = Select-String -Path 'internal/infrastructure/config/*_test.go' -Pattern 'time\.Sleep\(' -SimpleMatch:$$false | Where-Object { $$_.Line -notmatch 'simulates I/O latency' }; \
 		if ($$cfg) { Write-Host '❌ Undocumented time.Sleep in config test files'; $$cfg | ForEach-Object { Write-Host $$_ }; exit 1 }; \
-		$$tel = Select-String -Path 'internal/infrastructure/telemetry/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false | Where-Object { $$_.Path -notmatch 'system_metrics_darwin_test\.go' }; \
+		$$tel = Select-String -Path 'internal/infrastructure/telemetry/*_test.go' -Pattern 'time\.Sleep\(' -SimpleMatch:$$false | Where-Object { $$_.Path -notmatch 'system_metrics_darwin_test\.go' }; \
 		if ($$tel) { Write-Host '❌ time.Sleep in telemetry test files outside allow-list'; $$tel | ForEach-Object { Write-Host $$_ }; exit 1 }; \
 	"
 	@echo "  ✓ No time.Sleep for synchronization in test files."

@@ -731,6 +731,7 @@ func TestNewClient_DefaultTransportFallback(t *testing.T) {
 
 	if c == nil {
 		t.Fatal("expected non-nil client from NewClient")
+		return
 	}
 
 	if c.httpClient == nil {

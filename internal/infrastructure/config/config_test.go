@@ -642,6 +642,7 @@ MODELS:
 	}
 	if cfg == nil {
 		t.Fatal("expected non-nil config")
+		return
 	}
 
 	m, ok := cfg.Models["gpt-5"]

@@ -2015,6 +2015,7 @@ func TestDebug_NamedAddMethod(t *testing.T) {
 	m := namedType.Method(0)
 	if m == nil {
 		t.Fatal("method is nil")
+		return
 	}
 	t.Logf("Method: %s, Exported: %v, Pkg: %v", m.Name(), m.Exported(), m.Pkg())
 	if !m.Exported() {

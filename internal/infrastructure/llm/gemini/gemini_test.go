@@ -1328,6 +1328,7 @@ func TestNewClient_WithLocalStubAuthenticator(t *testing.T) {
 	}
 	if client == nil {
 		t.Fatal("expected non-nil client")
+		return
 	}
 	if client.authenticator != stub {
 		t.Fatal("client did not retain the stub authenticator")

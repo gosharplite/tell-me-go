@@ -499,6 +499,7 @@ func TestSetupTransitionTurn_Metadata(t *testing.T) {
 	meta := turn.State.Metadata
 	if meta == nil {
 		t.Fatal("Metadata is nil")
+		return
 	}
 	if len(meta.History) != 1 {
 		t.Fatalf("Metadata.History length = %d; want 1", len(meta.History))
@@ -526,6 +527,7 @@ func TestSetupTransitionTurn_GenerateFunc_FunctionCall(t *testing.T) {
 	}
 	if content == nil {
 		t.Fatal("Generate returned nil content")
+		return
 	}
 	if len(content.Parts) == 0 {
 		t.Fatal("Generate returned content with no parts")
@@ -533,6 +535,7 @@ func TestSetupTransitionTurn_GenerateFunc_FunctionCall(t *testing.T) {
 	fc := content.Parts[0].FunctionCall
 	if fc == nil {
 		t.Fatal("expected FunctionCall part, got nil")
+		return
 	}
 	if fc.Name != "test" {
 		t.Errorf("FunctionCall.Name = %q, want %q", fc.Name, "test")

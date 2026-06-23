@@ -194,6 +194,7 @@ func assertNilGenerateReturnsDefault(t *testing.T, m *MockGateway) {
 	}
 	if content == nil {
 		t.Fatal("nil GenerateFunc: got nil content")
+		return
 	}
 	if content.Role != "model" {
 		t.Errorf("nil GenerateFunc: got role %q; want %q", content.Role, "model")
@@ -217,6 +218,7 @@ func assertNilSendChatReturnsDefault(t *testing.T, m *MockGateway) {
 	}
 	if content == nil {
 		t.Fatal("nil SendChatFn: got nil content")
+		return
 	}
 	if content.Role != "model" {
 		t.Errorf("nil SendChatFn: got role %q; want %q", content.Role, "model")
