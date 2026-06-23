@@ -5,10 +5,7 @@
 > renamed to `GetTrackerForInternalUse()` to bring it under the
 > uniform `*ForInternalUse` brand. Production code obtains the
 > tracker via `ports.SessionDependencies.GetTracker()` (a different
-> interface). The "Compliance & Enforcement" section's reference to
-> `scripts/check_no_test_imports.sh` is also stale: the actual CI
-> guard is the `verify-internal-bridge-brand` target in the
-> top-level `Makefile`. The original ADR text below is preserved
+> interface). The original ADR text below is preserved
 > verbatim for historical context.
 
 **Status:** Accepted
@@ -153,7 +150,18 @@ snapshot on read; on write, the bridge passes the snapshot's fields to
 internal `runtimeConfig`. Tests get a stable, copy-safe API; the
 production type stays unexported.
 
-### The `GetTracker` exception
+### The `GetTracker` exception — RESOLVED (post-#136)
+
+`GetTracker` was the lone test-shaped accessor with confirmed production callers
+in `infrastructure/factory/chatter.go` and `infrastructure/di/container.go`.
+This was resolved by:
+- Renaming `InternalAccessor.GetTracker()` to `GetTrackerForInternalUse()`
+  (uniform `*ForInternalUse` brand)
+- Routing production code through `ports.SessionDependencies.GetTracker()`
+  (a different interface)
+
+<details>
+<summary>Original text (pre-#136, preserved for history)</summary>
 
 `GetTracker` is the lone test-shaped accessor that has confirmed
 **production callers**: `infrastructure/factory/chatter.go` and
@@ -162,6 +170,8 @@ refactor (tracked by issue #87). Until then, `GetTracker` stays
 exported on `InternalAccessor` with a docstring that names this ADR
 and the follow-up issue. The `*ForTest` wrapper adds
 `SetTrackerForTest` (no production caller for the setter).
+
+</details>
 
 ## Hard Rules
 
@@ -290,10 +300,10 @@ the coverage profile. The package's `doc.go` documents the rationale.
   escape hatch.
 - ADR-021 (`2026-04-test-doubles-in-pkgtest-subpackages.md`) — the
   leaf rule and the `*internal/` escape hatch this ADR builds on.
-- Issue #86 — original bug report (superseded by #95).
-- Issue #95 — the v2 issue that drove this ADR.
-- PR #94 — the abandoned first attempt; lessons codified above.
+- Issue #86 — original bug report (**closed**, superseded by #95).
+- Issue #95 — the v2 issue that drove this ADR (**closed** via #136).
+- PR #94 — the abandoned first attempt (**closed**, superseded by #136).
 - Issue #87 — follow-up to refactor `chatter.go` and `container.go`
   off `GetTracker`, after which `GetTracker` itself can be moved
   behind the `*ForInternalUse` brand and removed from the public
-  `InternalAccessor` interface entirely.
+  `InternalAccessor` interface entirely. (**closed**)

@@ -98,6 +98,15 @@ func (r *stdUIRenderer) SetGlamourRenderer(tr markdownRenderer) {
 	r.renderer = tr
 }
 
+// SetStderrIsTerminalFn overrides the function used by IsTerminalContext
+// to check whether an fd is a terminal. Used in tests to exercise the
+// true branch without a real TTY.
+func (r *stdUIRenderer) SetStderrIsTerminalFn(fn func(fd int) bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stderrIsTerminalFn = fn
+}
+
 func (r *stdUIRenderer) GetMetricsProvider() ports.SystemMetricsProvider {
 	return r.metricsProvider
 }

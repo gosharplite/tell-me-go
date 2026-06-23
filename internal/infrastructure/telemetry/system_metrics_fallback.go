@@ -6,6 +6,8 @@
 package telemetry
 
 import (
+	"log/slog"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -16,7 +18,12 @@ func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 }
 
 func (p *defaultMetricsProvider) GetCPUStats() (int64, int64) {
-	return getRuntimeCPUStats()
+	total, err := getRuntimeCPUStatsFn()
+	if err != nil {
+		slog.Debug("getRuntimeCPUStats failed, falling back to zero", "err", err)
+		return 0, 0
+	}
+	return total, 0
 }
 
 func (p *defaultMetricsProvider) GetMemoryPercent() float64 {

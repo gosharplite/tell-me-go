@@ -85,6 +85,12 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 		return nil, nil, err
 	}
 
+	// Coverage gap accepted by architect — the g.Wait() error path
+	// requires all goroutines to fail after Walk completes. The
+	// TestComplexityAnalyzer_ErrgroupError test exercises this via
+	// context timeout; the remaining uncovered branch (all goroutines
+	// returning errors after a successful Walk) requires a filesystem
+	// that fails selectively mid-traversal, which is not reproducible.
 	if err := g.Wait(); err != nil {
 		return nil, nil, fmt.Errorf("gathering complexity metrics: %w", err)
 	}

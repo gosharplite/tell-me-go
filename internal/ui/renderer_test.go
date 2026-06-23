@@ -1088,6 +1088,25 @@ func TestStdUIRenderer_IsTerminalContext(t *testing.T) {
 			t.Errorf("expected no spinner output in non-TTY mode, got: %q", stderr.String())
 		}
 	})
+
+	t.Run("injected stderrIsTerminalFn returns true with os.Pipe fd", func(t *testing.T) {
+		pr, pw, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe: %v", err)
+		}
+		defer func() { _ = pr.Close() }()
+		defer func() { _ = pw.Close() }()
+
+		var buf bytes.Buffer
+		lock := ui.NewMockLocker()
+		r := ui.NewRenderer(lock, &buf, &buf, nil, nil).(*ui.StdUIRenderer)
+		r.SetWriters(&buf, pr)
+		r.SetStderrIsTerminalFn(func(fd int) bool { return true })
+
+		if !r.IsTerminalContext() {
+			t.Error("expected IsTerminalContext() = true when stderrIsTerminalFn returns true")
+		}
+	})
 }
 
 func TestStdUIRenderer_MarkdownRenderingFallback(t *testing.T) {

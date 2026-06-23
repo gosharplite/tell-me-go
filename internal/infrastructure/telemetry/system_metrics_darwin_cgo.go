@@ -12,6 +12,7 @@ package telemetry
 import "C"
 
 import (
+	"log/slog"
 	"unsafe"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -35,7 +36,12 @@ func (p *darwinMetricsProvider) GetCPUStats() (int64, int64) {
 	ret := C.host_statistics64(host, C.HOST_CPU_LOAD_INFO, (C.host_info64_t)(unsafe.Pointer(&cpuInfo)), &count)
 	if ret != C.KERN_SUCCESS {
 		// Fall back to the agent‑only runtime/metrics if Mach API fails
-		return getRuntimeCPUStats()
+		total, err := getRuntimeCPUStatsFn()
+		if err != nil {
+			slog.Debug("getRuntimeCPUStats failed, falling back to zero", "err", err)
+			return 0, 0
+		}
+		return total, 0
 	}
 
 	// cpuInfo.cpu_ticks is an array of integer_t[CPU_STATE_MAX] where:
