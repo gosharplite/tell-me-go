@@ -273,6 +273,9 @@ func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars m
 		vars[k] = varObj
 	}
 
+	// json.Marshal cannot fail on a map[string]interface{} produced by
+	// json.Decode into interface{} plus manual insertion of JSON-safe
+	// primitives (string, bool, *bool). See ADR-037.
 	return json.Marshal(existingDef)
 }
 
