@@ -69,6 +69,11 @@ func load(path string) (*domain_config.Config, error) {
 				slog.Float64("pricing_miss", v.Pricing.Miss))
 		}
 	}
+
+	if err := cfg.ValidateBounds(); err != nil {
+		return nil, err
+	}
+
 	syncLegacyFields(&cfg)
 
 	// Domain-level provider validation. Hard errors fail the load;
