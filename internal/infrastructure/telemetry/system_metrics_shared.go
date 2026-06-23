@@ -8,25 +8,25 @@ import (
 	"runtime/metrics"
 )
 
-// ErrRuntimeMetricKindMismatch is returned by getRuntimeCPUStats when the
+// errRuntimeMetricKindMismatch is returned by getRuntimeCPUStats when the
 // Go runtime/metrics package returns an unexpected Value.Kind for the
 // /cpu/classes/total:cpu-seconds metric. This condition is structurally
 // unreachable (the Go runtime guarantees stable metric kinds), but the
 // sentinel exists so callers can detect a future breaking change without
 // silent data corruption.
-var ErrRuntimeMetricKindMismatch = errors.New(
+var errRuntimeMetricKindMismatch = errors.New(
 	"runtime/metrics: unexpected Value.Kind for /cpu/classes/total:cpu-seconds",
 )
 
 // getRuntimeCPUStatsFn is the active implementation of getRuntimeCPUStats.
 // It exists as a package-level variable so tests can replace it with a
-// stub that returns ErrRuntimeMetricKindMismatch, because metrics.Sample
+// stub that returns errRuntimeMetricKindMismatch, because metrics.Sample
 // uses unexported fields and cannot be constructed with a non-Float64 Kind
 // from outside the runtime/metrics package.
 var getRuntimeCPUStatsFn = getRuntimeCPUStats
 
 // getRuntimeCPUStats returns the Agent's internal CPU seconds converted to
-// nanoseconds, or ErrRuntimeMetricKindMismatch if the runtime/metrics
+// nanoseconds, or errRuntimeMetricKindMismatch if the runtime/metrics
 // package returns an unexpected Value.Kind. This serves as a
 // platform-agnostic fallback when host-level metrics are unavailable.
 func getRuntimeCPUStats() (int64, error) {
@@ -44,5 +44,5 @@ func getRuntimeCPUStats() (int64, error) {
 	// produces a diagnostic sentinel error instead of silent zero-values.
 	// The invariant is validated at runtime by
 	// TestGetRuntimeCPUStats_KindFloat64Always.
-	return 0, ErrRuntimeMetricKindMismatch
+	return 0, errRuntimeMetricKindMismatch
 }

@@ -81,7 +81,7 @@ func TestGetRuntimeCPUStats_MonotonicityInvariants(t *testing.T) {
 
 // TestGetRuntimeCPUStats_UnexpectedKind exercises the sentinel-error path
 // by replacing getRuntimeCPUStatsFn with a stub that returns
-// ErrRuntimeMetricKindMismatch, verifying that callers can detect the
+// errRuntimeMetricKindMismatch, verifying that callers can detect the
 // condition with errors.Is.
 func TestGetRuntimeCPUStats_UnexpectedKind(t *testing.T) {
 	// NOT t.Parallel() — this test mutates package-level state.
@@ -90,14 +90,14 @@ func TestGetRuntimeCPUStats_UnexpectedKind(t *testing.T) {
 	t.Cleanup(func() { getRuntimeCPUStatsFn = orig })
 
 	getRuntimeCPUStatsFn = func() (int64, error) {
-		return 0, ErrRuntimeMetricKindMismatch
+		return 0, errRuntimeMetricKindMismatch
 	}
 
 	total, err := getRuntimeCPUStatsFn()
 	if total != 0 {
 		t.Errorf("total = %d, want 0", total)
 	}
-	if !errors.Is(err, ErrRuntimeMetricKindMismatch) {
-		t.Errorf("err = %v, want ErrRuntimeMetricKindMismatch", err)
+	if !errors.Is(err, errRuntimeMetricKindMismatch) {
+		t.Errorf("err = %v, want errRuntimeMetricKindMismatch", err)
 	}
 }
