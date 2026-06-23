@@ -454,3 +454,110 @@ func TestLLMProvider_Validate_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestConfig_ValidateBounds pins the contract for Config.ValidateBounds(): every
+// non-negative int field is validated, zero is always accepted, and the function
+// short-circuits on the first invalid field found. Viper's WeaklyTypedInput can
+// silently produce negative values from integer overflow, so this guard is
+// critical for startup-time diagnosis.
+func TestConfig_ValidateBounds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		config        Config
+		expectError   bool
+		errorContains []string // substrings expected in the error message
+	}{
+		{
+			name:        "all valid (defaults / zero value)",
+			config:      Config{},
+			expectError: false,
+		},
+		{
+			name:          "MAX_TURNS negative",
+			config:        Config{MaxToolTurns: -1},
+			expectError:   true,
+			errorContains: []string{"MAX_TURNS", "-1"},
+		},
+		{
+			name:          "MAX_HISTORY_TURNS negative",
+			config:        Config{MaxHistoryTurns: -1},
+			expectError:   true,
+			errorContains: []string{"MAX_HISTORY_TURNS", "-1"},
+		},
+		{
+			name:          "MAX_HISTORY_TOKENS negative",
+			config:        Config{MaxHistoryTokens: -1},
+			expectError:   true,
+			errorContains: []string{"MAX_HISTORY_TOKENS", "-1"},
+		},
+		{
+			name:          "THINKING_BUDGET negative",
+			config:        Config{ThinkingBudget: -1},
+			expectError:   true,
+			errorContains: []string{"THINKING_BUDGET", "-1"},
+		},
+		{
+			name:          "MAX_CONCURRENT_TOOLS negative",
+			config:        Config{MaxConcurrentTools: -1},
+			expectError:   true,
+			errorContains: []string{"MAX_CONCURRENT_TOOLS", "-1"},
+		},
+		{
+			name:          "TOOL_TIMEOUT negative",
+			config:        Config{ToolTimeoutSeconds: -1},
+			expectError:   true,
+			errorContains: []string{"TOOL_TIMEOUT", "-1"},
+		},
+		{
+			name:          "HTTP_TIMEOUT negative",
+			config:        Config{HTTPTimeoutSeconds: -1},
+			expectError:   true,
+			errorContains: []string{"HTTP_TIMEOUT", "-1"},
+		},
+		{
+			name: "zero values all valid (explicit)",
+			config: Config{
+				MaxToolTurns:       0,
+				MaxHistoryTurns:    0,
+				MaxHistoryTokens:   0,
+				ThinkingBudget:     0,
+				MaxConcurrentTools: 0,
+				ToolTimeoutSeconds: 0,
+				HTTPTimeoutSeconds: 0,
+			},
+			expectError: false,
+		},
+		{
+			name: "first of multiple negatives short-circuits on MAX_TURNS",
+			config: Config{
+				MaxToolTurns:    -5,
+				MaxHistoryTurns: -3, // should not be reached
+			},
+			expectError:   true,
+			errorContains: []string{"MAX_TURNS", "-5"},
+		},
+		{
+			name:          "large overflow value",
+			config:        Config{MaxToolTurns: -1593095861524629081},
+			expectError:   true,
+			errorContains: []string{"MAX_TURNS", "-1593095861524629081"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.config.ValidateBounds()
+			if tt.expectError {
+				require.Error(t, err)
+				for _, sub := range tt.errorContains {
+					assert.Contains(t, err.Error(), sub)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
