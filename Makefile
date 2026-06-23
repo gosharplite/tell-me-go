@@ -486,6 +486,7 @@ endif
 # and no ADR number is claimed by more than one file.
 .PHONY: verify-adr-index
 verify-adr-index:
+ifeq ($(IS_POSIX),true)
 	@echo "Checking ADR index consistency..."
 	@errors=0; \
 	for f in docs/adr/2*.md; do \
@@ -505,3 +506,30 @@ verify-adr-index:
 		exit 1; \
 	fi; \
 	echo "ADR index is consistent."
+else
+	@echo "Checking ADR index consistency..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$errors = 0; \
+		$$indexContent = Get-Content 'docs/adr/README.md' -Raw; \
+		Get-ChildItem 'docs/adr/2*.md' | ForEach-Object { \
+			$$basename = $$_.Name; \
+			if ($$indexContent -notmatch [regex]::Escape($$basename)) { \
+				Write-Host \"MISSING from index: $$basename\"; \
+				$$errors++ \
+			} \
+		}; \
+		$$dupes = Get-ChildItem 'docs/adr/2*.md' | ForEach-Object { \
+			Select-String -Path $$_.FullName -Pattern '^# ADR-(\d+):' | ForEach-Object { $$_.Matches.Groups[1].Value } \
+		} | Group-Object | Where-Object { $$_.Count -gt 1 } | ForEach-Object { $$_.Name }; \
+		if ($$dupes) { \
+			Write-Host \"DUPLICATE ADR numbers: $$($$dupes -join ' ')\"; \
+			$$errors++ \
+		}; \
+		if ($$errors -gt 0) { \
+			Write-Host \"ADR index is inconsistent ($$errors errors).\"; \
+			exit 1 \
+		}; \
+		Write-Host 'ADR index is consistent.' \
+	"
+endif
