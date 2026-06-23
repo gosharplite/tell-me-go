@@ -12,8 +12,10 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fsnotify/fsnotify"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/require"
 )
 
 type mockHistoryProvider struct {
@@ -1262,5 +1264,20 @@ func TestRefreshTimeoutCmd(t *testing.T) {
 	}
 	if elapsed < 50*time.Millisecond {
 		t.Errorf("expected >=50ms, got %v", elapsed)
+	}
+}
+
+// TestProcessWatcherEvents_ClosedWatcher covers the select dispatch at
+// browser.go:146-147. Injecting a real watcher then closing it immediately
+// exercises the <-watcher.Events case where ok=false, which returns nil.
+func TestProcessWatcherEvents_ClosedWatcher(t *testing.T) {
+	watcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	_ = watcher.Close()
+
+	m := &rootBrowserModel{ctx: context.Background()}
+	msg := m.processWatcherEvents(watcher)
+	if msg != nil {
+		t.Errorf("expected nil msg from closed watcher, got %T: %v", msg, msg)
 	}
 }

@@ -683,13 +683,8 @@ func TestWithinParent_BareDotDot(t *testing.T) {
 // TestValidateAbsPath_SecurityBoundaries exercises all reachable branches
 // of validateAbsPath: CWD boundary hit, TempDir boundary hit, and escape.
 //
-// GAP ACCEPTED (process_executor.go:291-293): The os.Getwd() failure
-// path in validateAbsPath is structurally unreachable in unit tests.
-// Go provides no mechanism to inject a failing Getwd — it is a direct
-// syscall (getcwd) not affected by environment variables. Covering
-// this would require catastrophic filesystem conditions (CWD deleted
-// or permissions revoked from another process). This defensive error
-// path exists to handle edge cases in production. See issue #836.
+// The os.Getwd failure path is covered by TestValidateAbsPath_GetwdError
+// via the osGetwd test hook. See issue #836.
 func TestValidateAbsPath_SecurityBoundaries(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -736,13 +731,8 @@ func TestValidateAbsPath_SecurityBoundaries(t *testing.T) {
 // TestValidateAndResolveRelPath_Boundaries exercises all reachable branches
 // of validateAndResolveRelPath.
 //
-// GAP ACCEPTED (process_executor.go:312-314): The os.Getwd() failure
-// path in validateAndResolveRelPath is structurally unreachable in unit tests.
-// Go provides no mechanism to inject a failing Getwd — it is a direct
-// syscall (getcwd) not affected by environment variables. Covering
-// this would require catastrophic filesystem conditions (CWD deleted
-// or permissions revoked from another process). This defensive error
-// path exists to handle edge cases in production. See issue #836.
+// The os.Getwd failure path is covered by TestValidateAndResolveRelPath_GetwdError
+// via the osGetwd test hook. See issue #836.
 func TestValidateAndResolveRelPath_Boundaries(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -792,48 +782,42 @@ func TestValidateAndResolveRelPath_Boundaries(t *testing.T) {
 	}
 }
 
-// TestValidateAbsPath_ErrorMessageFormat verifies that path-boundary
-// rejection errors are well-formed, even though the os.Getwd failure
-// paths (lines 291-293, 312-314) are structurally unreachable in tests.
-func TestValidateAbsPath_ErrorMessageFormat(t *testing.T) {
-	tests := []struct {
-		name        string
-		cleanedPath string
-		wantErrSub  string
-	}{
-		{
-			name:        "escape rejected with original path in message",
-			cleanedPath: "/etc/passwd",
-			wantErrSub:  "output file path cannot escape current directory",
-		},
-		{
-			name:        "dot-dot escape rejected",
-			cleanedPath: "../outside.txt",
-			wantErrSub:  "output file path cannot escape current directory",
-		},
+// TestValidateAbsPath_GetwdError exercises the osGetwd failure path in
+// validateAbsPath (process_executor.go). It overrides the package-level
+// osGetwd hook to simulate a getcwd syscall failure.
+func TestValidateAbsPath_GetwdError(t *testing.T) {
+	origGetwd := osGetwd
+	defer func() { osGetwd = origGetwd }()
+
+	osGetwd = func() (string, error) {
+		return "", fmt.Errorf("injected getwd failure")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// validateAbsPath for absolute paths
-			if filepath.IsAbs(tt.cleanedPath) {
-				_, err := validateAbsPath(tt.cleanedPath, tt.cleanedPath)
-				if err == nil {
-					t.Fatal("expected error for escape path")
-				}
-				if !strings.Contains(err.Error(), tt.wantErrSub) {
-					t.Errorf("error = %q, want contains %q", err.Error(), tt.wantErrSub)
-				}
-			} else {
-				// validateAndResolveRelPath for relative paths
-				_, err := validateAndResolveRelPath(tt.cleanedPath, tt.cleanedPath)
-				if err == nil {
-					t.Fatal("expected error for escape path")
-				}
-				if !strings.Contains(err.Error(), tt.wantErrSub) {
-					t.Errorf("error = %q, want contains %q", err.Error(), tt.wantErrSub)
-				}
-			}
-		})
+	_, err := validateAbsPath("/some/path", "/some/path")
+	if err == nil {
+		t.Fatal("expected error from getwd failure")
+	}
+	if !strings.Contains(err.Error(), "failed to get current directory") {
+		t.Errorf("expected 'failed to get current directory', got %q", err.Error())
+	}
+}
+
+// TestValidateAndResolveRelPath_GetwdError exercises the osGetwd failure
+// path in validateAndResolveRelPath (process_executor.go). It overrides the
+// package-level osGetwd hook to simulate a getcwd syscall failure.
+func TestValidateAndResolveRelPath_GetwdError(t *testing.T) {
+	origGetwd := osGetwd
+	defer func() { osGetwd = origGetwd }()
+
+	osGetwd = func() (string, error) {
+		return "", fmt.Errorf("injected getwd failure")
+	}
+
+	_, err := validateAndResolveRelPath("subdir/file.txt", "subdir/file.txt")
+	if err == nil {
+		t.Fatal("expected error from getwd failure")
+	}
+	if !strings.Contains(err.Error(), "failed to get current directory") {
+		t.Errorf("expected 'failed to get current directory', got %q", err.Error())
 	}
 }
