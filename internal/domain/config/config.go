@@ -139,6 +139,36 @@ func (c *Config) ValidateProviders(logger *slog.Logger) error {
 	return nil
 }
 
+// ValidateBounds checks every non-negative int field on Config and returns
+// an error for any negative value. Viper's WeaklyTypedInput can silently
+// produce negative values from integer overflow, so this is the guard.
+// Zero is valid for all fields (e.g. MaxHistoryTurns=0 means no pruning,
+// ThinkingBudget=0 means use the provider default).
+func (c *Config) ValidateBounds() error {
+	if c.MaxToolTurns < 0 {
+		return fmt.Errorf("MAX_TURNS must be >= 0, got %d", c.MaxToolTurns)
+	}
+	if c.MaxHistoryTurns < 0 {
+		return fmt.Errorf("MAX_HISTORY_TURNS must be >= 0, got %d", c.MaxHistoryTurns)
+	}
+	if c.MaxHistoryTokens < 0 {
+		return fmt.Errorf("MAX_HISTORY_TOKENS must be >= 0, got %d", c.MaxHistoryTokens)
+	}
+	if c.ThinkingBudget < 0 {
+		return fmt.Errorf("THINKING_BUDGET must be >= 0, got %d", c.ThinkingBudget)
+	}
+	if c.MaxConcurrentTools < 0 {
+		return fmt.Errorf("MAX_CONCURRENT_TOOLS must be >= 0, got %d", c.MaxConcurrentTools)
+	}
+	if c.ToolTimeoutSeconds < 0 {
+		return fmt.Errorf("TOOL_TIMEOUT must be >= 0, got %d", c.ToolTimeoutSeconds)
+	}
+	if c.HTTPTimeoutSeconds < 0 {
+		return fmt.Errorf("HTTP_TIMEOUT must be >= 0, got %d", c.HTTPTimeoutSeconds)
+	}
+	return nil
+}
+
 // ModelConfig defines capabilities and limits for a specific model.
 type ModelConfig struct {
 	MaxThinkingBudget int                  `yaml:"MAX_THINKING_BUDGET"`

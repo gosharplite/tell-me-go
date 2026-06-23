@@ -70,6 +70,9 @@ func FuzzLoadConfig(f *testing.F) {
 	// Seed 15 — Max_tokens negative (should fail validation)
 	f.Add([]byte("SELECTED_PROVIDER: bad\nPROVIDERS:\n  bad:\n    TYPE: openai\n    API_KEY: x\n    MAX_TOKENS: -1"))
 
+	// Seed 16 — Integer overflow (20-digit value exceeding int64 max)
+	f.Add([]byte("MAX_TURNS: 99999999999999999999"))
+
 	// ── Fuzz function ──────────────────────────────────────────────
 
 	// ensure domain_config import is retained for type resolution
@@ -108,7 +111,7 @@ func FuzzLoadConfig(f *testing.F) {
 			return
 		}
 
-		// ── Post-load invariants ────────────────────────────────
+		// ── Post-load invariants (defense-in-depth: ValidateBounds should catch these upstream) ──
 
 		if cfg.MaxToolTurns < 0 {
 			t.Errorf("MaxToolTurns is negative: %d", cfg.MaxToolTurns)

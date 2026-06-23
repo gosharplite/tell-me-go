@@ -682,48 +682,46 @@ PROVIDERS:
 	}
 }
 
-// TestLoad_IntegerOverflowIsDetected documents the known behavior when
-// MAX_TURNS is set to a value exceeding int64 range (e.g., 20-digit integer).
-// Viper+mapstructure with WeaklyTypedInput silently coerces the overflow,
-// wrapping it to a negative value. This test pins the current behavior:
-// either load() returns an error (ideal), or MaxToolTurns lands as a non-negative
-// value. If neither holds, we log the known WeaklyTypedInput limitation.
-//
-// The fuzz test's post-load invariants catch negative MaxToolTurns; this
-// test exists purely to document that such overflow inputs are a recognized
-// limitation rather than a bug that needs fixing.
+// TestLoad_IntegerOverflowIsDetected verifies that load() rejects
+// integer-overflow values for every overflow-vulnerable int field.
+// Viper+mapstructure with WeaklyTypedInput silently wraps a 20-digit
+// integer past the int64 ceiling to a negative value; ValidateBounds()
+// then rejects the negative value with a "must be >= 0" error naming
+// the offending YAML field.
 func TestLoad_IntegerOverflowIsDetected(t *testing.T) {
-	t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
-
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "test_overflow.yaml")
 	// 99999999999999999999 is 20 digits — well beyond int64 max (9223372036854775807)
-	yamlContent := "MAX_TURNS: 99999999999999999999\n"
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
+	const overflow = "99999999999999999999"
+
+	tests := []struct {
+		name    string
+		yamlVal string // "KEY: overflow" line
+		errFrag string // substring expected in the error message
+	}{
+		{name: "MAX_TURNS overflow", yamlVal: "MAX_TURNS: " + overflow, errFrag: "MAX_TURNS"},
+		{name: "MAX_HISTORY_TURNS overflow", yamlVal: "MAX_HISTORY_TURNS: " + overflow, errFrag: "MAX_HISTORY_TURNS"},
+		{name: "MAX_HISTORY_TOKENS overflow", yamlVal: "MAX_HISTORY_TOKENS: " + overflow, errFrag: "MAX_HISTORY_TOKENS"},
 	}
 
-	cfg, err := load(configPath)
-	if err != nil {
-		// Ideal outcome: load() rejects the overflow before it reaches the domain.
-		return
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
 
-	if cfg == nil {
-		t.Fatal("expected non-nil config")
-	}
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "test_overflow.yaml")
+			if err := os.WriteFile(configPath, []byte(tt.yamlVal+"\n"), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
 
-	if cfg.MaxToolTurns >= 0 {
-		// Also acceptable: the value was somehow coerced to a valid int.
-		return
+			_, err := load(configPath)
+			if err == nil {
+				t.Fatal("expected error for integer overflow, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.errFrag) {
+				t.Errorf("expected error containing %q, got %q", tt.errFrag, err.Error())
+			}
+			if !strings.Contains(err.Error(), "must be >= 0") {
+				t.Errorf("expected error containing \"must be >= 0\", got %q", err.Error())
+			}
+		})
 	}
-
-	// If we reach here, MaxToolTurns is negative — this is the known
-	// WeaklyTypedInput overflow case. The fuzz invariant flags this as a
-	// real invariant violation; this test documents that it's a known
-	// limitation, not an unexpected regression.
-	t.Logf("KNOWN LIMITATION: MaxToolTurns overflowed to negative (%d) "+
-		"due to Viper WeaklyTypedInput coercion. "+
-		"The fuzz test post-load invariant correctly catches this.",
-		cfg.MaxToolTurns)
 }
