@@ -43,6 +43,10 @@ func (t *importCleanupTransform) formatAndReprocess(fset *token.FileSet, file *a
 		if err := t.testFormatNode(&buf, fset, file); err != nil {
 			return nil, fmt.Errorf("formatting %s: %w", t.Path, err)
 		}
+		// Coverage gap accepted by architect — format.Node with a
+		// bytes.Buffer writer never returns an error (bytes.Buffer.Write
+		// always returns nil). This path is structurally unreachable,
+		// identical to the json.Marshal guard in global_prompt_tracker.go.
 	} else if err := format.Node(&buf, fset, file); err != nil {
 		return nil, fmt.Errorf("formatting %s: %w", t.Path, err)
 	}

@@ -21,6 +21,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
 )
 
+// osGetwd is a test hook for os.Getwd. It defaults to os.Getwd and
+// is overridden in tests to exercise error paths in validateAbsPath
+// and validateAndResolveRelPath.
+var osGetwd = os.Getwd
+
 // executionConfig defines parameters for command or pipeline execution.
 type executionConfig struct {
 	OutputFile string
@@ -293,7 +298,7 @@ func withinParent(parent, target string) bool {
 // originalPath is used only for error messages.
 func validateAbsPath(cleanedPath, originalPath string) (string, error) {
 	// 1. Check CWD boundary.
-	cwd, err := os.Getwd()
+	cwd, err := osGetwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current directory: %w", err)
 	}
@@ -314,7 +319,7 @@ func validateAbsPath(cleanedPath, originalPath string) (string, error) {
 // validateAndResolveRelPath resolves a relative cleanedPath against CWD
 // and checks that it does not escape. originalPath is used only for error messages.
 func validateAndResolveRelPath(cleanedPath, originalPath string) (string, error) {
-	cwd, err := os.Getwd()
+	cwd, err := osGetwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current directory: %w", err)
 	}

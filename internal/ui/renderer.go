@@ -63,6 +63,11 @@ type stdUIRenderer struct {
 	lastCPUPercent  float64
 	lastMemPercent  float64
 	markdownErrOnce sync.Once
+
+	// stderrIsTerminalFn checks whether an fd is a terminal. Defaults to
+	// term.IsTerminal. Overridable in tests to exercise the true-branch
+	// of IsTerminalContext without a real TTY.
+	stderrIsTerminalFn func(fd int) bool
 }
 
 type defaultMetricsProvider struct{}
@@ -183,13 +188,14 @@ func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk c
 
 	tr, err := glamour.NewTermRenderer(cfg.glamourOpts...)
 	r := &stdUIRenderer{
-		locker:          locker,
-		stdout:          stdout,
-		stderr:          stderr,
-		clock:           clk,
-		renderer:        tr,
-		useColor:        true,
-		metricsProvider: metricsProvider,
+		locker:             locker,
+		stdout:             stdout,
+		stderr:             stderr,
+		clock:              clk,
+		renderer:           tr,
+		useColor:           true,
+		metricsProvider:    metricsProvider,
+		stderrIsTerminalFn: term.IsTerminal,
 	}
 	if err != nil {
 		// ADR-007: Glamour failures are non-fatal. The system degrades gracefully
@@ -341,7 +347,10 @@ func (r *stdUIRenderer) getUIState() uiState {
 
 func (r *stdUIRenderer) IsTerminalContext() bool {
 	ui := r.getUIState()
-	if f, ok := ui.stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+	r.mu.RLock()
+	isTerminal := r.stderrIsTerminalFn
+	r.mu.RUnlock()
+	if f, ok := ui.stderr.(*os.File); ok && isTerminal(int(f.Fd())) {
 		return true
 	}
 	return false
