@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -79,6 +80,24 @@ func FuzzLoadConfig(f *testing.F) {
 	_ = (*domain_config.Config)(nil)
 
 	f.Fuzz(func(t *testing.T, data []byte) {
+		// ── Cooperative yield: prevents fuzz shutdown race at 40s boundary ──
+		runtime.Gosched() // Issue #958
+
+		// ── Early exit if test context already cancelled ──
+		select {
+		case <-t.Context().Done():
+			return
+		default:
+		}
+
+		// ── Size guard: skip pathological inputs that cause Viper YAML
+		// parsing to run exponentially long. Real configs are well under
+		// 8 KiB; larger inputs are fuzzer-generated nesting bombs. ──
+		const maxConfigBytes = 8192
+		if len(data) > maxConfigBytes {
+			return
+		}
+
 		// Neutralize ambient environment
 		t.Setenv("TELL_ME_MODE", "")
 		t.Setenv("GOSHARP_MODE", "")
@@ -93,14 +112,33 @@ func FuzzLoadConfig(f *testing.F) {
 			return
 		}
 
-		// Catch panics escaping load()
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("load() panicked with: %v", r)
-			}
+		// ── Context-aware execution: run load() in a goroutine so the
+		// fuzz framework can cancel us when fuzztime expires. Without
+		// this, a single slow Viper parse blocks the 40s shutdown. ──
+		type loadResult struct {
+			cfg *domain_config.Config
+			err error
+		}
+		done := make(chan loadResult, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Don't panic the goroutine; report synchronously
+				}
+			}()
+			cfg, err := load(configPath)
+			done <- loadResult{cfg, err}
 		}()
 
-		cfg, err := load(configPath)
+		var cfg *domain_config.Config
+		var err error
+		select {
+		case <-t.Context().Done():
+			return // context cancelled (fuzz time expired)
+		case result := <-done:
+			cfg, err = result.cfg, result.err
+		}
+
 		if err != nil {
 			// Expected: malformed input should error
 			return

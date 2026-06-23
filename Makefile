@@ -321,11 +321,11 @@ else
 	@echo "Checking for time.Sleep synchronization in test files (Windows)..."
 	@powershell -Command " \
 		$$ErrorActionPreference = 'Stop'; \
-		$$ui = Select-String -Path 'internal/ui/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false; \
+		$$ui = Select-String -Path 'internal/ui/*_test.go' -Pattern 'time\.Sleep\(' -SimpleMatch:$$false; \
 		if ($$ui) { Write-Host '❌ time.Sleep in internal/ui/ test files'; exit 1 }; \
-		$$cfg = Select-String -Path 'internal/infrastructure/config/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false | Where-Object { $$_.Line -notmatch 'simulates I/O latency' }; \
+		$$cfg = Select-String -Path 'internal/infrastructure/config/*_test.go' -Pattern 'time\.Sleep\(' -SimpleMatch:$$false | Where-Object { $$_.Line -notmatch 'simulates I/O latency' }; \
 		if ($$cfg) { Write-Host '❌ Undocumented time.Sleep in config test files'; $$cfg | ForEach-Object { Write-Host $$_ }; exit 1 }; \
-		$$tel = Select-String -Path 'internal/infrastructure/telemetry/*_test.go' -Pattern 'time\.Sleep' -SimpleMatch:$$false | Where-Object { $$_.Path -notmatch 'system_metrics_darwin_test\.go' }; \
+		$$tel = Select-String -Path 'internal/infrastructure/telemetry/*_test.go' -Pattern 'time\.Sleep\(' -SimpleMatch:$$false | Where-Object { $$_.Path -notmatch 'system_metrics_darwin_test\.go' }; \
 		if ($$tel) { Write-Host '❌ time.Sleep in telemetry test files outside allow-list'; $$tel | ForEach-Object { Write-Host $$_ }; exit 1 }; \
 	"
 	@echo "  ✓ No time.Sleep for synchronization in test files."
@@ -486,6 +486,7 @@ endif
 # and no ADR number is claimed by more than one file.
 .PHONY: verify-adr-index
 verify-adr-index:
+ifeq ($(IS_POSIX),true)
 	@echo "Checking ADR index consistency..."
 	@errors=0; \
 	for f in docs/adr/2*.md; do \
@@ -505,3 +506,30 @@ verify-adr-index:
 		exit 1; \
 	fi; \
 	echo "ADR index is consistent."
+else
+	@echo "Checking ADR index consistency..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$errors = 0; \
+		$$indexContent = Get-Content 'docs/adr/README.md' -Raw; \
+		Get-ChildItem 'docs/adr/2*.md' | ForEach-Object { \
+			$$basename = $$_.Name; \
+			if ($$indexContent -notmatch [regex]::Escape($$basename)) { \
+				Write-Host \"MISSING from index: $$basename\"; \
+				$$errors++ \
+			} \
+		}; \
+		$$dupes = Get-ChildItem 'docs/adr/2*.md' | ForEach-Object { \
+			Select-String -Path $$_.FullName -Pattern '^# ADR-(\d+):' | ForEach-Object { $$_.Matches.Groups[1].Value } \
+		} | Group-Object | Where-Object { $$_.Count -gt 1 } | ForEach-Object { $$_.Name }; \
+		if ($$dupes) { \
+			Write-Host \"DUPLICATE ADR numbers: $$($$dupes -join ' ')\"; \
+			$$errors++ \
+		}; \
+		if ($$errors -gt 0) { \
+			Write-Host \"ADR index is inconsistent ($$errors errors).\"; \
+			exit 1 \
+		}; \
+		Write-Host 'ADR index is consistent.' \
+	"
+endif
