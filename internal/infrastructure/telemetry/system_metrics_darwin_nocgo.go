@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -23,7 +24,12 @@ func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 // Without CGo we cannot read host‑level CPU ticks; we would need sysctl kern.cp_time,
 // which is not available on current macOS versions. Fall back to runtime/metrics.
 func (p *darwinNoCGoMetricsProvider) GetCPUStats() (int64, int64) {
-	return getRuntimeCPUStats()
+	total, err := getRuntimeCPUStatsFn()
+	if err != nil {
+		slog.Debug("getRuntimeCPUStats failed, falling back to zero", "err", err)
+		return 0, 0
+	}
+	return total, 0
 }
 
 // memoryUsageFactor scales the raw used‑memory ratio to approximate the

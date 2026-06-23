@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"log/slog"
 	"unsafe"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -49,7 +50,12 @@ func (p *windowsMetricsProvider) GetCPUStats() (int64, int64) {
 	)
 	if ret == 0 {
 		// Fall back to the agent-only runtime/metrics if Windows API fails
-		return getRuntimeCPUStats()
+		total, err := getRuntimeCPUStatsFn()
+		if err != nil {
+			slog.Debug("getRuntimeCPUStats failed, falling back to zero", "err", err)
+			return 0, 0
+		}
+		return total, 0
 	}
 
 	// Filetime is in 100-nanosecond intervals.

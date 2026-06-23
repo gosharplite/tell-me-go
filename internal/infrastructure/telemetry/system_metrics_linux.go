@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"bufio"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -59,7 +60,12 @@ func (p *linuxMetricsProvider) GetCPUStats() (int64, int64) {
 	}
 
 	// Fallback: Use runtime/metrics for total CPU time (nanoseconds)
-	return getRuntimeCPUStats()
+	total, err := getRuntimeCPUStatsFn()
+	if err != nil {
+		slog.Debug("getRuntimeCPUStats failed, falling back to zero", "err", err)
+		return 0, 0
+	}
+	return total, 0
 }
 
 // parseMeminfoLine extracts memory values from a single /proc/meminfo line.
