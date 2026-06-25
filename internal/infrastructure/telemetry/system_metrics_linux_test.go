@@ -188,3 +188,34 @@ func TestLinuxMetricsProvider_FallbackToRuntimeCPU(t *testing.T) {
 		t.Errorf("GetCPUStats() idle = %d, want 0 (runtime/metrics fallback has no idle breakdown)", idle)
 	}
 }
+
+// TestLinuxMetricsProvider_FallbackToRuntimeCPU_Error verifies that when
+// /proc/stat is absent AND getRuntimeCPUStatsFn returns an error,
+// GetCPUStats() returns (0, 0) without panicking. This covers the
+// slog.Debug fallback path at system_metrics_linux.go:64-67.
+// See Issue #1130.
+func TestLinuxMetricsProvider_FallbackToRuntimeCPU_Error(t *testing.T) {
+	// NOT t.Parallel() — mutates package-level getRuntimeCPUStatsFn.
+
+	orig := getRuntimeCPUStatsFn
+	t.Cleanup(func() { getRuntimeCPUStatsFn = orig })
+
+	getRuntimeCPUStatsFn = func() (int64, error) {
+		return 0, errRuntimeMetricKindMismatch
+	}
+
+	// Create a temp root directory with no proc/ subdirectory at all,
+	// so os.Open(".../proc/stat") fails with ENOENT, triggering the
+	// getRuntimeCPUStatsFn fallback path.
+	root := t.TempDir()
+	p := &linuxMetricsProvider{root: root}
+
+	total, idle := p.GetCPUStats()
+
+	if total != 0 {
+		t.Errorf("GetCPUStats() total = %d, want 0 (fallback error path)", total)
+	}
+	if idle != 0 {
+		t.Errorf("GetCPUStats() idle = %d, want 0 (fallback error path)", idle)
+	}
+}

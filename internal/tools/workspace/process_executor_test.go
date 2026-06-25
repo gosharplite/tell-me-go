@@ -224,11 +224,13 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 //
 // Three structurally unreachable branches are documented as accepted exclusions:
 //
-//	GAP ACCEPTED (process_executor.go:126-128): cmd.StdoutPipe() failure —
-//	  exec.CommandContext always returns a valid pipe reader on the first call;
-//	  only fails if called twice on the same cmd.
-//	GAP ACCEPTED (process_executor.go:130-132): cmd.StderrPipe() failure —
-//	  same reason as StdoutPipe.
+//	GAP ACCEPTED (process_executor.go:137-139): cmd.StdoutPipe() failure —
+//	  setupCommand creates a fresh exec.Cmd and calls StdoutPipe() exactly once.
+//	  StdoutPipe() only fails on a second call (verified by TestStdoutPipe_FailsOnSecondCall
+//	  in process_executor_unit_test.go). See Issue #1130.
+//	GAP ACCEPTED (process_executor.go:141-143): cmd.StderrPipe() failure —
+//	  same reasoning as StdoutPipe; verified by TestStderrPipe_FailsOnSecondCall.
+//	  See Issue #1130.
 //	GAP ACCEPTED (process_executor.go:107-109): Windows cmd.Cancel —
 //	  platform-gated taskkill logic cannot be unit-tested cross-platform.
 //	  Covered by TestSetupCommand_CancelGuard on Windows. See issue #836.
