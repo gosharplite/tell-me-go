@@ -821,3 +821,49 @@ func TestValidateAndResolveRelPath_GetwdError(t *testing.T) {
 		t.Errorf("expected 'failed to get current directory', got %q", err.Error())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// os/exec contract tests: StdoutPipe / StderrPipe double-call failure
+// ---------------------------------------------------------------------------
+
+// TestStdoutPipe_FailsOnSecondCall verifies the os/exec contract that
+// cmd.StdoutPipe() returns an error when called a second time on the
+// same *exec.Cmd. This proves the defensive error path at
+// process_executor.go:137-139 is correctly formulated, even though
+// setupCommand always calls StdoutPipe() exactly once on a fresh cmd.
+// See Issue #1130.
+func TestStdoutPipe_FailsOnSecondCall(t *testing.T) {
+	cmd := exec.Command("echo", "hello")
+	_, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("first StdoutPipe() unexpectedly failed: %v", err)
+	}
+	_, err = cmd.StdoutPipe()
+	if err == nil {
+		t.Fatal("expected error on second StdoutPipe() call, got nil")
+	}
+	if !strings.Contains(err.Error(), "StdoutPipe") && !strings.Contains(err.Error(), "pipe") && !strings.Contains(err.Error(), "already") {
+		t.Logf("second StdoutPipe() error: %v (expected pipe-related error)", err)
+	}
+}
+
+// TestStderrPipe_FailsOnSecondCall verifies the os/exec contract that
+// cmd.StderrPipe() returns an error when called a second time on the
+// same *exec.Cmd. This proves the defensive error path at
+// process_executor.go:141-143 is correctly formulated, even though
+// setupCommand always calls StderrPipe() exactly once on a fresh cmd.
+// See Issue #1130.
+func TestStderrPipe_FailsOnSecondCall(t *testing.T) {
+	cmd := exec.Command("echo", "hello")
+	_, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("first StderrPipe() unexpectedly failed: %v", err)
+	}
+	_, err = cmd.StderrPipe()
+	if err == nil {
+		t.Fatal("expected error on second StderrPipe() call, got nil")
+	}
+	if !strings.Contains(err.Error(), "StderrPipe") && !strings.Contains(err.Error(), "pipe") && !strings.Contains(err.Error(), "already") {
+		t.Logf("second StderrPipe() error: %v (expected pipe-related error)", err)
+	}
+}

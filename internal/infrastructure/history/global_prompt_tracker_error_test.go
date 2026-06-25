@@ -624,11 +624,15 @@ func setupCompactedTestTracker(t *testing.T, fs domainpersistence.FileSystem, di
 // prepareCompactedEntries pipeline with real filesystem data and verifies
 // it returns non-empty data without error under valid conditions.
 //
-// This test also documents that the "failed to serialize compacted entries"
-// error path at global_prompt_tracker.go:417 is UNREACHABLE:
-// bytes.Buffer.Write never returns an error, and promptEntry (all string
-// fields) always marshals successfully — so writeCompactedData can never
-// return false when called from prepareCompactedEntries.
+// GAP ACCEPTED (global_prompt_tracker.go:416-418): The "failed to serialize
+// compacted entries" error path is structurally unreachable from
+// prepareCompactedEntries because (1) bytes.Buffer.Write never returns an
+// error, and (2) promptEntry (all string fields) always marshals successfully
+// via json.Marshal. The writeCompactedData false-return contract IS verified
+// independently by TestWriteCompactedData_WriteError and
+// TestGlobalPromptTracker_WriteCompactedDataFailure. A future refactor that
+// replaces bytes.Buffer with an erroring io.Writer must add coverage for
+// this path. See Issue #1130.
 func TestPrepareCompactedEntries_PipelineSucceeds(t *testing.T) {
 	t.Parallel()
 
@@ -651,11 +655,10 @@ func TestPrepareCompactedEntries_PipelineSucceeds(t *testing.T) {
 		t.Fatalf("expected %d JSONL lines, got %d", len(seedEntries), len(lines))
 	}
 
-	t.Log("[UNREACHABLE] bytes.Buffer.Write never returns an error, " +
-		"and promptEntry (all string fields) always marshals successfully — " +
-		"so the \"failed to serialize compacted entries\" error at " +
-		"global_prompt_tracker.go:417 is structurally unreachable, " +
-		"existing only as defensive future-proofing")
+	t.Log("[ISSUE-1130 ACCEPTED] The \"failed to serialize compacted entries\" " +
+		"error path at global_prompt_tracker.go:416-418 is structurally " +
+		"unreachable (bytes.Buffer cannot error, promptEntry always marshals). " +
+		"writeCompactedData contract is verified by TestWriteCompactedData_WriteError.")
 }
 
 // TestPrepareCompactedEntries_OutputValidation verifies that the output of

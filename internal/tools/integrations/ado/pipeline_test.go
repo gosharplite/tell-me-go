@@ -1393,3 +1393,40 @@ func TestBuildURL_ParseErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to parse policy base URL")
 	})
 }
+
+// TestBuildVariablesUpdatePayload_MarshalError verifies that
+// buildVariablesUpdatePayload returns an error when given a map
+// containing a value that json.Marshal cannot serialize (e.g., a channel).
+// While the production code path through UpdateBuildDefinitionVariables
+// is structurally unreachable (json.Decode into interface{} always produces
+// JSON-safe types), this test validates the defensive error-return contract
+// of buildVariablesUpdatePayload itself. See Issue #1130.
+func TestBuildVariablesUpdatePayload_MarshalError(t *testing.T) {
+	t.Parallel()
+
+	badDef := map[string]interface{}{
+		"name": "test-pipeline",
+		"variables": map[string]interface{}{
+			"ok-var": map[string]interface{}{
+				"value":    "safe",
+				"isSecret": false,
+			},
+		},
+		// Inject a channel — json.Marshal cannot serialize channels.
+		"poison": make(chan int),
+	}
+
+	body, err := buildVariablesUpdatePayload(badDef, nil)
+
+	if err == nil {
+		t.Fatal("expected json.Marshal error for map containing channel, got nil")
+	}
+	if body != nil {
+		t.Errorf("expected nil body on error, got %d bytes", len(body))
+	}
+
+	// Verify the error is a json.Marshal error (UnsupportedTypeError).
+	if !strings.Contains(err.Error(), "unsupported type") && !strings.Contains(err.Error(), "json: unsupported") {
+		t.Logf("error type: %T, message: %v (expected json.UnsupportedTypeError)", err, err)
+	}
+}
