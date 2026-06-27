@@ -15,11 +15,11 @@ import (
 	"time"
 )
 
-// IsProcessAlive checks whether the given PID corresponds to a running process.
+// isProcessAlive checks whether the given PID corresponds to a running process.
 // On Unix, it uses syscall.Signal(0) to probe liveness.
 // On Windows, it always returns true, letting the time-based fallback in IsStale
 // handle stale lock detection.
-func IsProcessAlive(pid int) bool {
+func isProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
@@ -70,7 +70,7 @@ func IsStale(path string) bool {
 		pidStr := strings.TrimSpace(string(data))
 		if pidStr != "" {
 			if pid, parseErr := strconv.Atoi(pidStr); parseErr == nil && pid > 0 {
-				if !IsProcessAlive(pid) {
+				if !isProcessAlive(pid) {
 					return true // owning process is dead, lock is stale
 				}
 				return false // owning process is alive, lock is valid

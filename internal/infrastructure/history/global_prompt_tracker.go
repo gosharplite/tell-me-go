@@ -413,6 +413,10 @@ func (t *globalPromptTracker) prepareCompactedEntries(ctx context.Context) ([]by
 	}
 
 	var buf bytes.Buffer
+	// writeCompactedData cannot return false when writing to bytes.Buffer:
+	// json.Marshal on promptEntry never fails (all string fields), and
+	// bytes.Buffer.Write never returns an error.
+	// Coverage gap accepted by architect — structurally unreachable.
 	if !t.writeCompactedData(&buf, entries) {
 		return nil, fmt.Errorf("failed to serialize compacted entries")
 	}

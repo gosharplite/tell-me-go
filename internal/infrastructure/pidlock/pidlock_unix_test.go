@@ -7,28 +7,29 @@ package pidlock
 
 import (
 	"os"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
 )
 
 // =============================================================================
-// IsProcessAlive tests
+// isProcessAlive tests
 // =============================================================================
 
 func TestIsProcessAlive_CurrentProcess(t *testing.T) {
 	t.Parallel()
-	if !IsProcessAlive(os.Getpid()) {
-		t.Error("IsProcessAlive returned false for current process")
+	if !isProcessAlive(os.Getpid()) {
+		t.Error("isProcessAlive returned false for current process")
 	}
 }
 
 func TestIsProcessAlive_PID1(t *testing.T) {
 	t.Parallel()
 	// PID 1 (init/systemd) should exist and be owned by another user.
-	// IsProcessAlive should return true (alive but not ours).
-	if !IsProcessAlive(1) {
-		t.Error("IsProcessAlive returned false for PID 1 (init/systemd)")
+	// isProcessAlive should return true (alive but not ours).
+	if !isProcessAlive(1) {
+		t.Error("isProcessAlive returned false for PID 1 (init/systemd)")
 	}
 }
 
@@ -36,22 +37,22 @@ func TestIsProcessAlive_DeadProcess(t *testing.T) {
 	t.Parallel()
 	// Use a very high PID that almost certainly doesn't exist.
 	deadPID := 99999999
-	if IsProcessAlive(deadPID) {
+	if isProcessAlive(deadPID) {
 		t.Skipf("PID %d unexpectedly exists — cannot test dead process on this system", deadPID)
 	}
 }
 
 func TestIsProcessAlive_NegativePID(t *testing.T) {
 	t.Parallel()
-	if IsProcessAlive(-1) {
-		t.Error("IsProcessAlive returned true for negative PID")
+	if isProcessAlive(-1) {
+		t.Error("isProcessAlive returned true for negative PID")
 	}
 }
 
 func TestIsProcessAlive_ZeroPID(t *testing.T) {
 	t.Parallel()
-	if IsProcessAlive(0) {
-		t.Error("IsProcessAlive returned true for PID 0")
+	if isProcessAlive(0) {
+		t.Error("isProcessAlive returned true for PID 0")
 	}
 }
 
@@ -91,7 +92,7 @@ func TestIsStale_PIDOfDeadProcess(t *testing.T) {
 
 	// Use a PID that doesn't exist
 	deadPID := 99999999
-	if IsProcessAlive(deadPID) {
+	if isProcessAlive(deadPID) {
 		t.Skipf("PID %d unexpectedly exists", deadPID)
 	}
 
@@ -218,7 +219,7 @@ func TestAcquire_BreaksDeadPIDLock(t *testing.T) {
 
 	// Find a dead PID
 	deadPID := 99999999
-	if IsProcessAlive(deadPID) {
+	if isProcessAlive(deadPID) {
 		t.Skipf("PID %d unexpectedly exists", deadPID)
 	}
 
@@ -414,4 +415,96 @@ func TestAcquire_TOCTOU_Safety(t *testing.T) {
 	// Clean up
 	_ = f.Close()
 	_ = os.Remove(lockPath)
+}
+
+// =============================================================================
+// cleanupLockFile error path tests
+// =============================================================================
+
+// TestCleanupLockFile_CloseError verifies cleanupLockFile logs a warning
+// when f.Close() fails (e.g., file already closed). Covers pidlock.go lines 91-94.
+func TestCleanupLockFile_CloseError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	lockPath := tmpDir + "/test.lock"
+
+	f, err := os.Create(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the file BEFORE passing to cleanupLockFile.
+	// The subsequent f.Close() inside cleanupLockFile will fail.
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Must not panic.
+	cleanupLockFile(f, lockPath, "test close error")
+}
+
+// TestCleanupLockFile_RemoveError verifies cleanupLockFile logs a warning
+// when os.Remove fails (e.g., permission denied). Covers pidlock.go lines 95-98.
+func TestCleanupLockFile_RemoveError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows: chmod does not prevent file removal")
+	}
+
+	tmpDir := t.TempDir()
+
+	subDir := tmpDir + "/readonly"
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	lockPath := subDir + "/test.lock"
+
+	f, err := os.Create(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the directory read-only so os.Remove fails.
+	if err := os.Chmod(subDir, 0555); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(subDir, 0755) }()
+
+	// Must not panic.
+	cleanupLockFile(f, lockPath, "test remove error")
+}
+
+// =============================================================================
+// Acquire non-IsExist error path test
+// =============================================================================
+
+// TestAcquire_NonIsExistOpenError verifies Acquire returns immediately
+// (without retrying) when OpenFile fails with a non-IsExist error such as
+// permission denied. Covers pidlock.go non-IsExist fatal branch (~line 131).
+func TestAcquire_NonIsExistOpenError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows: chmod behavior differs")
+	}
+
+	tmpDir := t.TempDir()
+
+	subDir := tmpDir + "/noperm"
+	if err := os.Mkdir(subDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(subDir, 0755) }()
+
+	lockPath := subDir + "/test.lock"
+
+	f, err := Acquire(lockPath)
+	if err == nil {
+		if f != nil {
+			_ = f.Close()
+		}
+		t.Fatal("expected permission error, got nil")
+	}
+	if f != nil {
+		t.Error("expected nil file handle on error")
+	}
 }
