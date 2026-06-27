@@ -24,6 +24,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pidlock"
 )
 
 // Mock Security Manager
@@ -268,14 +269,14 @@ func TestLedger_Extended_IsStale(t *testing.T) {
 	tempFile := filepath.Join(t.TempDir(), "stale.lock")
 	_ = os.WriteFile(tempFile, []byte(""), 0644)
 
-	if isStale(tempFile) {
+	if pidlock.IsStale(tempFile) {
 		t.Error("New file should not be stale")
 	}
 
 	oldTime := time.Now().Add(-10 * time.Minute)
 	_ = os.Chtimes(tempFile, oldTime, oldTime)
 
-	if !isStale(tempFile) {
+	if !pidlock.IsStale(tempFile) {
 		t.Error("Old file should be stale")
 	}
 }
@@ -311,28 +312,28 @@ func TestLedger_Extended_AcquireAndReleaseLock(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
 	historyPath := filepath.Join(tempDir, "global_costs.json")
+	lockPath := historyPath + ".lock"
 
-	ls := &ledgerStore{}
-	f, err := acquireLedgerLock(historyPath + ".lock")
+	f, err := pidlock.Acquire(lockPath)
 	if err != nil {
 		t.Fatalf("Failed to acquire lock: %v", err)
 	}
 
 	// Try to acquire again
-	f2, err := acquireLedgerLock(historyPath + ".lock")
+	f2, err := pidlock.Acquire(lockPath)
 	if err == nil {
 		_ = f2.Close()
 		t.Error("Should not be able to acquire lock again")
 	}
 
-	ls.releaseLedgerLock(historyPath, f)
+	pidlock.Release(lockPath, f)
 
 	// Should be able to acquire now
-	f3, err := acquireLedgerLock(historyPath + ".lock")
+	f3, err := pidlock.Acquire(lockPath)
 	if err != nil {
 		t.Errorf("Failed to acquire lock after release: %v", err)
 	}
-	ls.releaseLedgerLock(historyPath, f3)
+	pidlock.Release(lockPath, f3)
 }
 
 func TestMetricsManager_LoadHistory_Corrupted(t *testing.T) {
@@ -433,7 +434,7 @@ func TestResolveUsageForSummary_NoTracker(t *testing.T) {
 
 func TestIsStale_NonExistent(t *testing.T) {
 	t.Parallel()
-	if !isStale("/nonexistent/path/to/lock") {
+	if !pidlock.IsStale("/nonexistent/path/to/lock") {
 		t.Error("Non-existent file should be stale (lock is gone, free to acquire)")
 	}
 }

@@ -3,7 +3,7 @@
 
 //go:build !windows
 
-package telemetry
+package pidlock
 
 import (
 	"os"
@@ -12,19 +12,23 @@ import (
 	"time"
 )
 
+// =============================================================================
+// IsProcessAlive tests
+// =============================================================================
+
 func TestIsProcessAlive_CurrentProcess(t *testing.T) {
 	t.Parallel()
-	if !isProcessAlive(os.Getpid()) {
-		t.Error("isProcessAlive returned false for current process")
+	if !IsProcessAlive(os.Getpid()) {
+		t.Error("IsProcessAlive returned false for current process")
 	}
 }
 
 func TestIsProcessAlive_PID1(t *testing.T) {
 	t.Parallel()
 	// PID 1 (init/systemd) should exist and be owned by another user.
-	// isProcessAlive should return true (alive but not ours).
-	if !isProcessAlive(1) {
-		t.Error("isProcessAlive returned false for PID 1 (init/systemd)")
+	// IsProcessAlive should return true (alive but not ours).
+	if !IsProcessAlive(1) {
+		t.Error("IsProcessAlive returned false for PID 1 (init/systemd)")
 	}
 }
 
@@ -32,27 +36,27 @@ func TestIsProcessAlive_DeadProcess(t *testing.T) {
 	t.Parallel()
 	// Use a very high PID that almost certainly doesn't exist.
 	deadPID := 99999999
-	if isProcessAlive(deadPID) {
+	if IsProcessAlive(deadPID) {
 		t.Skipf("PID %d unexpectedly exists — cannot test dead process on this system", deadPID)
 	}
 }
 
 func TestIsProcessAlive_NegativePID(t *testing.T) {
 	t.Parallel()
-	if isProcessAlive(-1) {
-		t.Error("isProcessAlive returned true for negative PID")
+	if IsProcessAlive(-1) {
+		t.Error("IsProcessAlive returned true for negative PID")
 	}
 }
 
 func TestIsProcessAlive_ZeroPID(t *testing.T) {
 	t.Parallel()
-	if isProcessAlive(0) {
-		t.Error("isProcessAlive returned true for PID 0")
+	if IsProcessAlive(0) {
+		t.Error("IsProcessAlive returned true for PID 0")
 	}
 }
 
 // =============================================================================
-// Updated isStale tests for PID-based liveness
+// IsStale tests for PID-based liveness
 // =============================================================================
 
 func TestIsStale_PIDOfAliveProcess(t *testing.T) {
@@ -67,15 +71,15 @@ func TestIsStale_PIDOfAliveProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Even if we make the file appear old, isStale should return false
+	// Even if we make the file appear old, IsStale should return false
 	// because the PID is alive.
 	oldTime := time.Now().Add(-1 * time.Hour)
 	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
 		t.Fatal(err)
 	}
 
-	if isStale(lockPath) {
-		t.Error("isStale returned true for lock owned by alive process")
+	if IsStale(lockPath) {
+		t.Error("IsStale returned true for lock owned by alive process")
 	}
 }
 
@@ -87,7 +91,7 @@ func TestIsStale_PIDOfDeadProcess(t *testing.T) {
 
 	// Use a PID that doesn't exist
 	deadPID := 99999999
-	if isProcessAlive(deadPID) {
+	if IsProcessAlive(deadPID) {
 		t.Skipf("PID %d unexpectedly exists", deadPID)
 	}
 
@@ -96,8 +100,8 @@ func TestIsStale_PIDOfDeadProcess(t *testing.T) {
 	}
 
 	// Lock file is brand new but PID is dead → should be stale
-	if !isStale(lockPath) {
-		t.Error("isStale returned false for lock owned by dead process (brand new file)")
+	if !IsStale(lockPath) {
+		t.Error("IsStale returned false for lock owned by dead process (brand new file)")
 	}
 }
 
@@ -113,8 +117,8 @@ func TestIsStale_EmptyLockFile(t *testing.T) {
 	}
 
 	// Brand new → time check returns false (within 10s threshold)
-	if isStale(lockPath) {
-		t.Error("isStale returned true for brand-new 0-byte lock (within 10s threshold)")
+	if IsStale(lockPath) {
+		t.Error("IsStale returned true for brand-new 0-byte lock (within 10s threshold)")
 	}
 
 	// Make it old → should fallback to time check and return true
@@ -123,8 +127,8 @@ func TestIsStale_EmptyLockFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !isStale(lockPath) {
-		t.Error("isStale returned false for 0-byte lock older than 10s")
+	if !IsStale(lockPath) {
+		t.Error("IsStale returned false for 0-byte lock older than 10s")
 	}
 }
 
@@ -134,8 +138,8 @@ func TestIsStale_MissingFile(t *testing.T) {
 
 	lockPath := tmpDir + "/nonexistent.lock"
 
-	if !isStale(lockPath) {
-		t.Error("isStale returned false for missing lock file")
+	if !IsStale(lockPath) {
+		t.Error("IsStale returned false for missing lock file")
 	}
 }
 
@@ -151,8 +155,8 @@ func TestIsStale_UnparseablePID(t *testing.T) {
 	}
 
 	// Brand new — time check should return false (within 10s threshold)
-	if isStale(lockPath) {
-		t.Error("isStale returned true for brand-new unparseable lock (within 10s threshold)")
+	if IsStale(lockPath) {
+		t.Error("IsStale returned true for brand-new unparseable lock (within 10s threshold)")
 	}
 
 	// Make it old — time fallback should return true
@@ -161,24 +165,24 @@ func TestIsStale_UnparseablePID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !isStale(lockPath) {
-		t.Error("isStale returned false for unparseable lock older than 10s")
+	if !IsStale(lockPath) {
+		t.Error("IsStale returned false for unparseable lock older than 10s")
 	}
 }
 
 // =============================================================================
-// acquireLedgerLock PID-writing tests
+// Acquire PID-writing tests
 // =============================================================================
 
-func TestAcquireLedgerLock_WritesPID(t *testing.T) {
+func TestAcquire_WritesPID(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 
 	lockPath := tmpDir + "/test.lock"
 
-	f, err := acquireLedgerLock(lockPath)
+	f, err := Acquire(lockPath)
 	if err != nil {
-		t.Fatalf("acquireLedgerLock failed: %v", err)
+		t.Fatalf("Acquire failed: %v", err)
 	}
 	if f == nil {
 		t.Fatal("expected non-nil file handle")
@@ -206,7 +210,7 @@ func TestAcquireLedgerLock_WritesPID(t *testing.T) {
 	_ = os.Remove(lockPath)
 }
 
-func TestAcquireLedgerLock_BreaksDeadPIDLock(t *testing.T) {
+func TestAcquire_BreaksDeadPIDLock(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 
@@ -214,7 +218,7 @@ func TestAcquireLedgerLock_BreaksDeadPIDLock(t *testing.T) {
 
 	// Find a dead PID
 	deadPID := 99999999
-	if isProcessAlive(deadPID) {
+	if IsProcessAlive(deadPID) {
 		t.Skipf("PID %d unexpectedly exists", deadPID)
 	}
 
@@ -223,10 +227,10 @@ func TestAcquireLedgerLock_BreaksDeadPIDLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// acquireLedgerLock should detect dead PID and re-acquire
-	f, err := acquireLedgerLock(lockPath)
+	// Acquire should detect dead PID and re-acquire
+	f, err := Acquire(lockPath)
 	if err != nil {
-		t.Fatalf("acquireLedgerLock should have broken dead-PID lock: %v", err)
+		t.Fatalf("Acquire should have broken dead-PID lock: %v", err)
 	}
 	if f == nil {
 		t.Fatal("expected non-nil file handle")
@@ -250,7 +254,7 @@ func TestAcquireLedgerLock_BreaksDeadPIDLock(t *testing.T) {
 	_ = os.Remove(lockPath)
 }
 
-func TestAcquireLedgerLock_RespectsAlivePIDLock(t *testing.T) {
+func TestAcquire_RespectsAlivePIDLock(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 
@@ -261,7 +265,7 @@ func TestAcquireLedgerLock_RespectsAlivePIDLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f, err := acquireLedgerLock(lockPath)
+	f, err := Acquire(lockPath)
 
 	// With retry loop, the error is wrapped in a "failed after N retries" message,
 	// not a bare os.IsExist.
@@ -280,10 +284,10 @@ func TestAcquireLedgerLock_RespectsAlivePIDLock(t *testing.T) {
 }
 
 // =============================================================================
-// acquireLedgerLock retry and TOCTOU tests
+// Acquire retry and TOCTOU tests
 // =============================================================================
 
-func TestAcquireLedgerLock_RetryExhaustion(t *testing.T) {
+func TestAcquire_RetryExhaustion(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 
@@ -295,7 +299,7 @@ func TestAcquireLedgerLock_RetryExhaustion(t *testing.T) {
 	}
 
 	start := time.Now()
-	f, err := acquireLedgerLock(lockPath)
+	f, err := Acquire(lockPath)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -323,7 +327,7 @@ func TestAcquireLedgerLock_RetryExhaustion(t *testing.T) {
 	}
 }
 
-func TestAcquireLedgerLock_StaleLockRemoveThenReacquire(t *testing.T) {
+func TestAcquire_StaleLockRemoveThenReacquire(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 
@@ -338,9 +342,9 @@ func TestAcquireLedgerLock_StaleLockRemoveThenReacquire(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// acquireLedgerLock should detect stale lock, remove it, loop around,
+	// Acquire should detect stale lock, remove it, loop around,
 	// and acquire atomically via O_EXCL.
-	f, err := acquireLedgerLock(lockPath)
+	f, err := Acquire(lockPath)
 	if err != nil {
 		t.Fatalf("expected successful acquisition after stale lock removal, got: %v", err)
 	}
@@ -366,12 +370,12 @@ func TestAcquireLedgerLock_StaleLockRemoveThenReacquire(t *testing.T) {
 	_ = os.Remove(lockPath)
 }
 
-// TestAcquireLedgerLock_TOCTOU_Safety verifies that when a stale lock is
+// TestAcquire_TOCTOU_Safety verifies that when a stale lock is
 // removed, but another process races to create a new (fresh) lock before
 // our retry, we correctly detect the new lock as non-stale and back off.
 // We simulate this by removing the stale lock, then creating a fresh lock
 // (with our PID) before the retry loop comes around.
-func TestAcquireLedgerLock_TOCTOU_Safety(t *testing.T) {
+func TestAcquire_TOCTOU_Safety(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 
@@ -392,7 +396,7 @@ func TestAcquireLedgerLock_TOCTOU_Safety(t *testing.T) {
 	// are not atomic. In a TOCTOU-safe implementation, if another process
 	// had stolen the lock, our O_EXCL would fail with os.IsExist and we'd
 	// evaluate the new lock's staleness.
-	f, err := acquireLedgerLock(lockPath)
+	f, err := Acquire(lockPath)
 	if err != nil {
 		t.Fatalf("expected successful acquisition after stale lock removal: %v", err)
 	}

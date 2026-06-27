@@ -16,6 +16,7 @@ import (
 
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pidlock"
 )
 
 func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record sessionCostRecord) {
@@ -45,7 +46,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	defer ledgerMu.Unlock()
 
 	lockPath := historyPath + ".lock"
-	lock, err := acquireLedgerLock(lockPath)
+	lock, err := pidlock.Acquire(lockPath)
 	if err != nil {
 		slog.Warn("failed to acquire ledger lock (contention)",
 			slog.String("path", lockPath),
