@@ -532,27 +532,28 @@ func TestRegisterAll_ErrorPropagation(t *testing.T) {
 	fs := &mockFileSystem{}
 	client := &mockLLMClient{}
 
-	// Step 1 (registerMedia first call) fails immediately
-	t.Run("media registration fails", func(t *testing.T) {
+	// First plugin (ado) first call fails immediately
+	t.Run("first plugin (ado) fails", func(t *testing.T) {
 		r := newFaultyRegistry(registry.New(), 0)
 		err := RegisterAll(r, fs, sm, client, t.TempDir())
 		if err == nil {
-			t.Fatal("expected error from RegisterAll when media registration fails")
+			t.Fatal("expected error from RegisterAll when ado registration fails")
 		}
-		if !strings.Contains(err.Error(), "simulated registration failure") {
-			t.Errorf("expected simulated error, got: %v", err)
+		if !strings.Contains(err.Error(), "azure-devops") {
+			t.Errorf("expected error to contain 'azure-devops', got: %v", err)
 		}
 	})
 
-	// registerMedia succeeds (2 calls), registerNetwork first call fails (call #3)
-	t.Run("network registration fails", func(t *testing.T) {
-		r := newFaultyRegistry(registry.New(), 2)
+	// ado succeeds (20 calls), atlassian first call fails (call #21)
+	t.Run("atlassian plugin fails", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+		r := newFaultyRegistry(registry.New(), 20)
 		err := RegisterAll(r, fs, sm, client, t.TempDir())
 		if err == nil {
-			t.Fatal("expected error from RegisterAll when network registration fails")
+			t.Fatal("expected error from RegisterAll when atlassian registration fails")
 		}
-		if !strings.Contains(err.Error(), "simulated registration failure") {
-			t.Errorf("expected simulated error, got: %v", err)
+		if !strings.Contains(err.Error(), "atlassian") {
+			t.Errorf("expected error to contain 'atlassian', got: %v", err)
 		}
 	})
 }
@@ -563,17 +564,6 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 
-	// ── Structural impossibility notes ──
-	//
-	// Gaps 14-17 (atlassian http.NewRequestWithContext errors in fetchPageContent,
-	// getCurrentPageVersion, executeUpdate, resolveSpaceID) are structurally
-	// unreachable: all callers parse URLs via url.Parse before constructing
-	// requests, guaranteeing well-formed URLs.
-	//
-	// Gaps 1, 3 (ado json.Marshal errors) are structurally unreachable because
-	// adoCreatePipelineRequest and adoRunPipelineRequest use string-typed struct
-	// fields, making marshal failure impossible for valid UTF-8 strings.
-
 	tests := []struct {
 		name            string
 		failAfter       int
@@ -581,36 +571,30 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 		setAtlassianEnv bool
 	}{
 		{
-			name:          "registerMedia wraps error",
+			name:          "azure-devops wraps error",
 			failAfter:     0,
-			wantSubstring: "registerMedia",
+			wantSubstring: "azure-devops",
 		},
 		{
-			name:          "registerNetwork wraps error",
-			failAfter:     2,
-			wantSubstring: "registerNetwork",
-		},
-		{
-			name:          "registerTeams wraps error",
-			failAfter:     4,
-			wantSubstring: "registerTeams",
-		},
-		{
-			name:            "atlassian.RegisterConfluence wraps error",
-			failAfter:       5,
-			wantSubstring:   "atlassian.RegisterConfluence",
+			name:            "atlassian wraps error",
+			failAfter:       20,
+			wantSubstring:   "atlassian",
 			setAtlassianEnv: true,
 		},
 		{
-			name:            "atlassian.RegisterJira wraps error",
-			failAfter:       8,
-			wantSubstring:   "atlassian.RegisterJira",
-			setAtlassianEnv: true,
+			name:          "media wraps error",
+			failAfter:     25,
+			wantSubstring: "media",
 		},
 		{
-			name:          "ado.Register wraps error",
-			failAfter:     10,
-			wantSubstring: "ado.Register",
+			name:          "network wraps error",
+			failAfter:     27,
+			wantSubstring: "network",
+		},
+		{
+			name:          "teams wraps error",
+			failAfter:     29,
+			wantSubstring: "teams",
 		},
 	}
 

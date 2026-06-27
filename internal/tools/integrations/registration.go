@@ -10,41 +10,35 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/integrations/ado"
-	"github.com/gosharplite/tell-me-go/internal/tools/integrations/atlassian"
+
+	// Side-effect imports: each package's init() calls plugin.Register()
+	// to self-register its integration tools. Registration order is
+	// determined by Go's init() execution order (imports first, then
+	// same-package in filename lexical order).
+	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/ado"
+	_ "github.com/gosharplite/tell-me-go/internal/tools/integrations/atlassian"
+
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 )
 
-// RegisterAll registers all external integration tools.
+// RegisterAll registers all external integration tools by iterating over
+// auto-registered plugins. Adding a new integration requires only:
+// 1. Creating a sub-package with a plugin.Plugin implementation
+// 2. Adding a blank import above (for the init() side effect)
+//
+// No other changes to this file are needed.
 func RegisterAll(r tools.Registry, fs persistence.FileSystem, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
-	// Register Media Tools
-	if err := registerMedia(r, fs, sm, client, assetsDir); err != nil {
-		return fmt.Errorf("registerMedia: %w", err)
+	deps := plugin.PluginDependencies{
+		FileSystem:  fs,
+		SecurityMgr: sm,
+		LLMClient:   client,
+		AssetsDir:   assetsDir,
 	}
 
-	// Register Network Tools
-	net := newnetworkTool(sm, nil)
-	if err := registerNetwork(r, net); err != nil {
-		return fmt.Errorf("registerNetwork: %w", err)
-	}
-
-	// Register Teams Tools
-	if err := registerTeams(r, sm, nil); err != nil {
-		return fmt.Errorf("registerTeams: %w", err)
-	}
-
-	// Register Confluence Tools
-	if err := atlassian.RegisterConfluence(r, sm, nil); err != nil {
-		return fmt.Errorf("atlassian.RegisterConfluence: %w", err)
-	}
-
-	// Register Jira Tools
-	if err := atlassian.RegisterJira(r, sm, nil); err != nil {
-		return fmt.Errorf("atlassian.RegisterJira: %w", err)
-	}
-
-	// Register Azure DevOps Tools
-	if err := ado.Register(r, sm, nil); err != nil {
-		return fmt.Errorf("ado.Register: %w", err)
+	for _, p := range plugin.All() {
+		if err := p.Register(r, deps); err != nil {
+			return fmt.Errorf("%s: %w", p.Name(), err)
+		}
 	}
 
 	return nil
