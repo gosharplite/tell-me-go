@@ -231,32 +231,36 @@ else
 	@echo "  ✓ *ForInternalUse brand contained to bridge package."
 endif
 
+# ADR-021: All test doubles in *test/ packages must use hand-rolled function-field
+# mocks. The testify/mock migration was fully completed (see ADR-021). This guard
+# enforces zero tolerance — any new testify/mock import in a *test/ package fails
+# the build. There is no baseline; the debt has been eliminated.
 verify-mock-pattern:
 ifeq ($(IS_POSIX),true)
-	@echo "Checking for testify/mock imports in *test/ packages (ADR-021 mock pattern)..."
+	@echo "Checking for testify/mock imports in *test/ packages (ADR-021 — zero tolerance)..."
 	@FILES="$$( grep -rl '"github.com/stretchr/testify/mock"' --include='*.go' internal/ \
 		| grep '/[^/]*test/' \
 		| grep -v '_test\.go$$' \
 		| grep -v 'agentinternal/' \
 		| sort -u )"; \
 	COUNT=$$(echo "$$FILES" | grep -c '\.go$$' || true); \
-	if [ "$$COUNT" -gt 11 ]; then \
+	if [ "$$COUNT" -gt 0 ]; then \
 		echo ""; \
-		echo "❌ ADR-021 violation: new testify/mock import in a *test/ package."; \
+		echo "❌ ADR-021 violation: testify/mock import in a *test/ package."; \
 		echo "   Test doubles in *test/ packages must use hand-rolled function-field"; \
-		echo "   mocks, not testify/mock. See ADR-021 Mock construction pattern:"; \
-		echo "   docs/adr/2026-04-test-doubles-in-pkgtest-subpackages.md"; \
+		echo "   mocks, not testify/mock. The migration was fully completed —"; \
+		echo "   there is zero tolerance for new testify/mock imports."; \
+		echo "   See: docs/adr/2026-04-test-doubles-in-pkgtest-subpackages.md"; \
 		echo ""; \
-		echo "Files importing testify/mock:"; \
+		echo "Violating files:"; \
 		echo "$$FILES"; \
 		echo ""; \
-		echo "Baseline: 11 allowed (existing tech debt — tracked for elimination)."; \
-		echo "New: $$((COUNT - 11)) file(s) above baseline."; \
+		echo "Fix: convert to hand-rolled function-field mocks per ADR-021."; \
 		exit 1; \
 	fi; \
-	echo "  ✓ testify/mock count: $$COUNT (baseline: 11, no new violations)"
+	echo "  ✓ No testify/mock imports in *test/ packages (debt eliminated per ADR-021)."
 else
-	@echo "Checking for testify/mock imports in *test/ packages (ADR-021 mock pattern)..."
+	@echo "Checking for testify/mock imports in *test/ packages (ADR-021 — zero tolerance)..."
 	@powershell -Command " \
 		$$ErrorActionPreference = 'Stop'; \
 		$$files = Get-ChildItem -Path internal -Recurse -Filter '*.go' | Where-Object { \
@@ -267,18 +271,19 @@ else
 			(Select-String -Path $$_.FullName -Pattern '\"github.com/stretchr/testify/mock\"' -SimpleMatch:$$true) \
 		} | ForEach-Object { $$_.FullName.Replace('\', '/') } | Sort-Object -Unique; \
 		$$count = ($$files | Measure-Object).Count; \
-		if ($$count -gt 11) { \
+		if ($$count -gt 0) { \
 			Write-Host ''; \
-			Write-Host '❌ ADR-021 violation: new testify/mock import in a *test/ package.'; \
+			Write-Host '❌ ADR-021 violation: testify/mock import in a *test/ package.'; \
+			Write-Host '   The testify/mock migration was fully completed — zero tolerance.'; \
 			Write-Host '   See: docs/adr/2026-04-test-doubles-in-pkgtest-subpackages.md'; \
 			Write-Host ''; \
-			Write-Host 'Files importing testify/mock:'; \
+			Write-Host 'Violating files:'; \
 			$$files | ForEach-Object { Write-Host $$_ }; \
 			Write-Host ''; \
-			Write-Host ('Baseline: 11 allowed. New: ' + ($$count - 11) + ' file(s) above baseline.'); \
+			Write-Host 'Fix: convert to hand-rolled function-field mocks per ADR-021.'; \
 			exit 1 \
 		}; \
-		Write-Host ('  ✓ testify/mock count: ' + $$count + ' (baseline: 11, no new violations)') \
+		Write-Host '  ✓ No testify/mock imports in *test/ packages (debt eliminated per ADR-021).' \
 	"
 endif
 
