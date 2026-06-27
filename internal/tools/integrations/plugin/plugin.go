@@ -110,6 +110,8 @@ func All() []Plugin {
 
 // Reset clears all registered plugins. This is intended for test cleanup
 // only and must not be used in production code paths.
+//
+//nolint:deadcode
 func Reset() {
 	mu.Lock()
 	defer mu.Unlock()
