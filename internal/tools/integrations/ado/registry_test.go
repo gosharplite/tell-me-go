@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 
 	"github.com/stretchr/testify/assert"
@@ -392,4 +393,25 @@ func TestAppendTruncationNote(t *testing.T) {
 			tt.assert(t, result)
 		})
 	}
+}
+
+// TestAdoPlugin_Register_ErrorPropagation verifies that adoPlugin.Register
+// propagates errors from the underlying Register function. This closes
+// the coverage gap at plugin.go:19-21.
+func TestAdoPlugin_Register_ErrorPropagation(t *testing.T) {
+	t.Run("registration failure propagates", func(t *testing.T) {
+		r := &mockRegistry{returnErr: fmt.Errorf("mock registration error")}
+		sm := &toolstest.MockSecurityManager{AllowAll: true}
+
+		p := NewPlugin()
+		deps := plugin.PluginDependencies{
+			SecurityMgr: sm,
+			HTTPClient:  nil,
+		}
+
+		err := p.Register(r, deps)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "mock registration error")
+	})
 }
