@@ -15,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 	"golang.org/x/net/html"
 )
 
@@ -326,4 +327,18 @@ func registerNetwork(r tools.Registry, net *networkTool) error {
 		return err
 	}
 	return nil
+}
+
+// networkPlugin implements plugin.Plugin for the network toolkit.
+type networkPlugin struct{}
+
+func (networkPlugin) Name() string { return "network" }
+
+func (networkPlugin) Register(r tools.Registry, deps plugin.PluginDependencies) error {
+	net := newnetworkTool(deps.SecurityMgr, deps.HTTPClient)
+	return registerNetwork(r, net)
+}
+
+func init() {
+	_ = plugin.Register(&networkPlugin{}) //nolint:errcheck // init() cannot return errors; duplicate names caught in tests
 }

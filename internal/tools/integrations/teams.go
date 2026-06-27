@@ -15,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 )
 
 type teamsManager struct {
@@ -148,4 +149,17 @@ func registerTeams(r tools.Registry, sm security.Manager, client tools.HTTPClien
 		return err
 	}
 	return nil
+}
+
+// teamsPlugin implements plugin.Plugin for the teams toolkit.
+type teamsPlugin struct{}
+
+func (teamsPlugin) Name() string { return "teams" }
+
+func (teamsPlugin) Register(r tools.Registry, deps plugin.PluginDependencies) error {
+	return registerTeams(r, deps.SecurityMgr, deps.HTTPClient)
+}
+
+func init() {
+	_ = plugin.Register(&teamsPlugin{}) //nolint:errcheck // init() cannot return errors; duplicate names caught in tests
 }
