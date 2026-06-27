@@ -433,8 +433,8 @@ func TestResolveUsageForSummary_NoTracker(t *testing.T) {
 
 func TestIsStale_NonExistent(t *testing.T) {
 	t.Parallel()
-	if isStale("/nonexistent/path/to/lock") {
-		t.Error("Non-existent file should not be stale")
+	if !isStale("/nonexistent/path/to/lock") {
+		t.Error("Non-existent file should be stale (lock is gone, free to acquire)")
 	}
 }
 

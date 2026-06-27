@@ -12,8 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -59,26 +62,139 @@ func newLedgerStore(sm domain_security.Manager, model string, pricingOverrides m
 	}
 }
 
-// isStale checks if a file is older than 5 minutes.
+// isProcessAlive checks whether the given PID corresponds to a running process.
+// On Unix, it uses syscall.Signal(0) to probe liveness.
+// On Windows, it always returns true, letting the time-based fallback in isStale
+// handle stale lock detection.
+func isProcessAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+
+	// On Windows, syscall.Signal(0) is not available.
+	// Fall back to time-based staleness in isStale.
+	if runtime.GOOS == "windows" {
+		return true
+	}
+
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+
+	err = p.Signal(syscall.Signal(0))
+	if err == nil {
+		return true
+	}
+
+	// ESRCH: no such process — definitely dead.
+	if errors.Is(err, syscall.ESRCH) {
+		return false
+	}
+
+	// EPERM or os.ErrPermission: process exists but we don't own it — alive.
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EPERM) {
+		return true
+	}
+
+	// Any other error: assume dead.
+	return false
+}
+
+// isStale checks if a lock file is stale and safe to break.
+// It first reads the PID from the lock file and checks process liveness.
+// If the PID-based check is inconclusive, it falls back to a 10-second
+// modification-time threshold. Legitimate lock holds take < 10ms.
 func isStale(path string) bool {
-	if info, err := os.Stat(path); err == nil {
-		return time.Since(info.ModTime()) > 5*time.Minute
+	// Attempt PID-based liveness check.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return true // lock is gone, free to acquire
+		}
+		// Can't read — fall through to stat check below.
+	} else {
+		pidStr := strings.TrimSpace(string(data))
+		if pidStr != "" {
+			if pid, parseErr := strconv.Atoi(pidStr); parseErr == nil && pid > 0 {
+				if !isProcessAlive(pid) {
+					return true // owning process is dead, lock is stale
+				}
+				return false // owning process is alive, lock is valid
+			}
+		}
+	}
+
+	// Fallback: time-based staleness check (10 seconds).
+	if info, statErr := os.Stat(path); statErr == nil {
+		return time.Since(info.ModTime()) > 10*time.Second
 	}
 	return false
 }
 
-// acquireLedgerLock attempts to create an exclusive lock file with stale-lock recovery.
+// acquireLedgerLock attempts to create an exclusive lock file with stale-lock recovery
+// and exponential backoff retry. On success, it writes the current PID into the lock
+// file so that other processes can determine liveness.
+//
+// The function retries up to 5 times with exponential backoff (50ms base) when the
+// lock is held by a live process. For stale locks (dead PID or old timestamp), it
+// removes the lock and continues to the next iteration, where the atomic O_EXCL
+// open prevents TOCTOU races.
 func acquireLedgerLock(lockPath string) (*os.File, error) {
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil && os.IsExist(err) {
-		if isStale(lockPath) {
-			if err := os.Remove(lockPath); err != nil {
-				slog.Warn("failed to remove stale lock", slog.String("lock_path", lockPath), slog.Any("error", err))
+	const maxRetries = 5
+	delay := 50 * time.Millisecond
+
+	for i := 0; i < maxRetries; i++ {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		if err == nil {
+			// Write PID to the lock file for liveness detection.
+			pid := os.Getpid()
+			if _, writeErr := fmt.Fprintf(f, "%d", pid); writeErr != nil {
+				closeErr := f.Close()
+				removeErr := os.Remove(lockPath)
+				if closeErr != nil {
+					slog.Warn("failed to close lock file after PID write failure", slog.String("lock_path", lockPath), slog.Any("error", closeErr))
+				}
+				if removeErr != nil {
+					slog.Warn("failed to remove lock file after PID write failure", slog.String("lock_path", lockPath), slog.Any("error", removeErr))
+				}
+				return nil, fmt.Errorf("write PID to lock file %s: %w", lockPath, writeErr)
 			}
-			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+			if syncErr := f.Sync(); syncErr != nil {
+				closeErr := f.Close()
+				removeErr := os.Remove(lockPath)
+				if closeErr != nil {
+					slog.Warn("failed to close lock file after sync failure", slog.String("lock_path", lockPath), slog.Any("error", closeErr))
+				}
+				if removeErr != nil {
+					slog.Warn("failed to remove lock file after sync failure", slog.String("lock_path", lockPath), slog.Any("error", removeErr))
+				}
+				return nil, fmt.Errorf("sync lock file %s: %w", lockPath, syncErr)
+			}
+			return f, nil
 		}
+
+		// Non-IsExist errors are fatal (e.g., permission denied).
+		if !os.IsExist(err) {
+			return nil, err
+		}
+
+		// Lock exists. Check if it's stale.
+		if isStale(lockPath) {
+			if removeErr := os.Remove(lockPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				slog.Warn("failed to remove stale lock", slog.String("lock_path", lockPath), slog.Any("error", removeErr))
+			}
+			// Do NOT try to open again here — continue to the next loop iteration.
+			// The atomic O_EXCL at the top of the loop prevents TOCTOU races.
+			continue
+		}
+
+		// Lock exists and is held by a live process. Back off and retry.
+		time.Sleep(delay)
+		delay *= 2
 	}
-	return f, err
+
+	return nil, fmt.Errorf("failed to acquire ledger lock after %d retries: file exists", maxRetries)
 }
 
 // recoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.

@@ -358,9 +358,9 @@ func TestLedgerStore_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
 
 	f, err := acquireLedgerLock(historyPath + ".lock")
 
-	// Must return the original os.IsExist error
-	if !os.IsExist(err) {
-		t.Errorf("expected os.IsExist error, got: %v", err)
+	// With retry loop, the error is "failed after N retries", not os.IsExist.
+	if err == nil {
+		t.Error("expected error for fresh lock after retries, got nil")
 	}
 	if f != nil {
 		t.Error("expected nil file handle for fresh lock conflict")
@@ -409,13 +409,13 @@ func TestLedgerStore_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
 
 	f, err := acquireLedgerLock(historyPath + ".lock")
 
-	// The function should still attempt the second OpenFile even though Remove failed.
-	// In a read-only directory, the lock file still exists after Remove fails, so the
-	// second OpenFile also returns os.IsExist. The key coverage goal is executing the
-	// log.Printf inside the `if err := os.Remove(lockPath)` block (visible in test output).
+	// The function should still attempt each loop iteration even though Remove fails.
+	// In a read-only directory, the lock file still exists after each Remove attempt,
+	// and isStale returns true each time. After maxRetries iterations the function
+	// returns with the "failed to acquire ledger lock after N retries" error.
 	// We verify the function returns without panicking and returns a non-nil error.
 	if err == nil {
-		t.Error("expected error when both Remove and second OpenFile fail")
+		t.Error("expected error when Remove fails in all retry iterations")
 	}
 	if f != nil {
 		t.Error("expected nil file handle when acquisition fails")
@@ -498,9 +498,9 @@ func TestMetricsManager_AcquireLedgerLock_FreshLock_NotStale(t *testing.T) {
 
 	f, err := acquireLedgerLock(lockPath)
 
-	// Must return the original os.IsExist error
-	if !os.IsExist(err) {
-		t.Errorf("expected os.IsExist error, got: %v", err)
+	// With retry loop, the error is "failed after N retries", not os.IsExist.
+	if err == nil {
+		t.Error("expected error for fresh lock after retries, got nil")
 	}
 	if f != nil {
 		t.Error("expected nil file handle for fresh lock conflict")
@@ -548,13 +548,13 @@ func TestMetricsManager_AcquireLedgerLock_StaleLock_RemoveFails(t *testing.T) {
 
 	f, err := acquireLedgerLock(lockPath)
 
-	// The function should still attempt the second OpenFile even though Remove failed.
-	// In a read-only directory, the lock file still exists after Remove fails, so the
-	// second OpenFile also returns os.IsExist. The key coverage goal is executing the
-	// log.Printf inside the `if err := os.Remove(lockPath)` block (visible in test output).
+	// The function should still attempt each loop iteration even though Remove fails.
+	// In a read-only directory, the lock file still exists after each Remove attempt,
+	// and isStale returns true each time. After maxRetries iterations the function
+	// returns with the "failed to acquire ledger lock after N retries" error.
 	// We verify the function returns without panicking and returns a non-nil error.
 	if err == nil {
-		t.Error("expected error when both Remove and second OpenFile fail")
+		t.Error("expected error when Remove fails in all retry iterations")
 	}
 	if f != nil {
 		t.Error("expected nil file handle when acquisition fails")
