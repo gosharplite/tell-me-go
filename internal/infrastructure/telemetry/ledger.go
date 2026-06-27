@@ -19,6 +19,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pidlock"
 )
 
 // sessionCostRecord represents a single session's financial footprint.
@@ -57,28 +58,6 @@ func newLedgerStore(sm domain_security.Manager, model string, pricingOverrides m
 		model:            model,
 		pricingOverrides: pricingOverrides,
 	}
-}
-
-// isStale checks if a file is older than 5 minutes.
-func isStale(path string) bool {
-	if info, err := os.Stat(path); err == nil {
-		return time.Since(info.ModTime()) > 5*time.Minute
-	}
-	return false
-}
-
-// acquireLedgerLock attempts to create an exclusive lock file with stale-lock recovery.
-func acquireLedgerLock(lockPath string) (*os.File, error) {
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil && os.IsExist(err) {
-		if isStale(lockPath) {
-			if err := os.Remove(lockPath); err != nil {
-				slog.Warn("failed to remove stale lock", slog.String("lock_path", lockPath), slog.Any("error", err))
-			}
-			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-		}
-	}
-	return f, err
 }
 
 // recoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
@@ -270,12 +249,13 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
 
-	f, err := acquireLedgerLock(historyPath + ".lock")
+	lockPath := historyPath + ".lock"
+	f, err := pidlock.Acquire(lockPath)
 	if err != nil {
-		slog.Warn("failed to acquire ledger lock", slog.String("lock_path", historyPath+".lock"), slog.String("reason", "contention"), slog.Any("error", err))
+		slog.Warn("failed to acquire ledger lock", slog.String("lock_path", lockPath), slog.String("reason", "contention"), slog.Any("error", err))
 		return
 	}
-	defer ls.releaseLedgerLock(historyPath, f)
+	defer pidlock.Release(lockPath, f)
 
 	history := ls.readExistingRecords(historyPath)
 	merged := ls.mergeRecords(history, newRecords)
@@ -283,20 +263,6 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	if bytes, err := json.Marshal(merged); err == nil {
 		if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, historyPath, bytes, 0644); err != nil {
 			slog.Warn("failed to write ledger", slog.String("path", historyPath), slog.Any("error", err))
-		}
-	}
-}
-
-func (ls *ledgerStore) releaseLedgerLock(historyPath string, f *os.File) {
-	lockPath := historyPath + ".lock"
-	if f != nil {
-		if err := f.Close(); err != nil {
-			slog.Warn("failed to close lock file", slog.String("lock_path", lockPath), slog.Any("error", err))
-		}
-	}
-	if err := os.Remove(lockPath); err != nil {
-		if !os.IsNotExist(err) {
-			slog.Warn("failed to remove lock file", slog.String("lock_path", lockPath), slog.Any("error", err))
 		}
 	}
 }
