@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/plugin"
 )
 
 type mediaOption func(*mediaManager)
@@ -216,4 +217,17 @@ func registerMedia(r tools.Registry, fs persistence.FileSystem, sm security.Mana
 		return err
 	}
 	return nil
+}
+
+// mediaPlugin implements plugin.Plugin for the media toolkit.
+type mediaPlugin struct{}
+
+func (mediaPlugin) Name() string { return "media" }
+
+func (mediaPlugin) Register(r tools.Registry, deps plugin.PluginDependencies) error {
+	return registerMedia(r, deps.FileSystem, deps.SecurityMgr, deps.LLMClient, deps.AssetsDir)
+}
+
+func init() {
+	_ = plugin.Register(&mediaPlugin{}) //nolint:errcheck // init() cannot return errors; duplicate names caught in tests
 }
