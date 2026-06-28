@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 func TestHandleLoadToolkit(t *testing.T) {
@@ -69,7 +69,7 @@ func TestHandleLoadToolkit(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sp := &agenttest.MockSessionProvider{
+			sp := &testfixtures.MockSessionProvider{
 				SessionInfo: ports.SessionInfo{
 					ActiveToolkits: tt.initialToolkits,
 				},
@@ -121,7 +121,7 @@ func TestHandleLoadToolkit(t *testing.T) {
 func TestHandleLoadToolkit_UnmarshalError(t *testing.T) {
 	t.Parallel()
 
-	sp := &agenttest.MockSessionProvider{}
+	sp := &testfixtures.MockSessionProvider{}
 	mp := &mockMetadataProvider{
 		toolkits: []string{"core", "git"},
 	}

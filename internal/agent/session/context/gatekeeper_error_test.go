@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
 
@@ -190,7 +191,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(agenttest.MockSessionProvider)}
+	sd := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(testfixtures.MockSessionProvider)}
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {

@@ -246,7 +246,7 @@ func buildTestContextManager(t *testing.T, setupReg func(t *testing.T, reg *agen
 		setupReg(t, reg)
 	}
 	if sessionInfo != nil {
-		sp := &agenttest.MockSessionProvider{SessionInfo: *sessionInfo}
+		sp := &testfixtures.MockSessionProvider{SessionInfo: *sessionInfo}
 		return sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
 	}
 	return sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)

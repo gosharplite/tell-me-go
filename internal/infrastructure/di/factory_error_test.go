@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -24,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -410,7 +410,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 				tt.setup(factory, sm)
 			}
 
-			mockSP := &agenttest.MockSessionProvider{
+			mockSP := &testfixtures.MockSessionProvider{
 				GetSettingsFn: func() ports.KVStore {
 					return &mockKVStore{}
 				},

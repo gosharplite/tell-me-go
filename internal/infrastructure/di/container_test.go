@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -30,6 +29,7 @@ import (
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -720,7 +720,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	tracker := &mockTracker{}
-	sessionProvider := &agenttest.MockSessionProvider{}
+	sessionProvider := &testfixtures.MockSessionProvider{}
 
 	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
 		return client, nil
@@ -815,7 +815,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "SessionProviderCloseFails",
 			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
-				mockSP := &agenttest.MockSessionProvider{
+				mockSP := &testfixtures.MockSessionProvider{
 					GetSettingsFn: func() ports.KVStore {
 						return &mockKVStore{}
 					},
@@ -934,7 +934,7 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 			return "", nil
 		},
 	}
-	mockSP := &agenttest.MockSessionProvider{
+	mockSP := &testfixtures.MockSessionProvider{
 		GetSettingsFn: func() ports.KVStore { return mockKV },
 	}
 
@@ -1111,7 +1111,7 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 
 	busErr := errors.New("bus shutdown failed")
-	mockSP := &agenttest.MockSessionProvider{
+	mockSP := &testfixtures.MockSessionProvider{
 		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
@@ -1322,7 +1322,7 @@ func TestBypassConfirmationPriority(t *testing.T) {
 					}
 				},
 			}
-			mockSP := &agenttest.MockSessionProvider{
+			mockSP := &testfixtures.MockSessionProvider{
 				GetSettingsFn: func() ports.KVStore { return mockKV },
 			}
 
@@ -1684,7 +1684,7 @@ func TestWireHealth(t *testing.T) {
 	bcfg.Stderr = io.Discard
 	b := NewBootstrapper(bcfg)
 
-	mockSP := &agenttest.MockSessionProvider{
+	mockSP := &testfixtures.MockSessionProvider{
 		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
@@ -1715,7 +1715,7 @@ func TestWireToolRegistry(t *testing.T) {
 	b := NewBootstrapper(bcfg)
 
 	paths := &persistence.Paths{LogPath: filepath.Join(tempDir, "test.log"), TracePath: filepath.Join(tempDir, "test.trace.jsonl")}
-	mockSP := &agenttest.MockSessionProvider{
+	mockSP := &testfixtures.MockSessionProvider{
 		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},

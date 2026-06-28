@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 // taskMatchesFilter returns true if task matches the given filter.
@@ -147,12 +147,12 @@ func busyFunc(busyCount int, finalErr error) func() error {
 	}
 }
 
-func setupPersistenceTools() (*persistenceTools, *agenttest.MockSessionProvider, *mockListStore) {
+func setupPersistenceTools() (*persistenceTools, *testfixtures.MockSessionProvider, *mockListStore) {
 	lt := &mockListStore{}
 	ts := services.NewTaskService(lt)
 	mp := &mockMetadataProvider{}
 
-	provider := &agenttest.MockSessionProvider{
+	provider := &testfixtures.MockSessionProvider{
 		SessionInfo: ports.SessionInfo{
 			Env:   make(map[string]string),
 			Paths: make(map[string]string),
@@ -166,21 +166,21 @@ func setupPersistenceTools() (*persistenceTools, *agenttest.MockSessionProvider,
 func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 	tests := []struct {
 		name        string
-		setup       func(*persistenceTools, *agenttest.MockSessionProvider)
+		setup       func(*persistenceTools, *testfixtures.MockSessionProvider)
 		wantModel   string
 		wantErr     bool
 		wantErrText string
 	}{
 		{
 			name: "success",
-			setup: func(pt *persistenceTools, p *agenttest.MockSessionProvider) {
+			setup: func(pt *persistenceTools, p *testfixtures.MockSessionProvider) {
 				p.SessionInfo.Model = "test-model"
 			},
 			wantModel: "test-model",
 		},
 		{
 			name: "marshal error",
-			setup: func(pt *persistenceTools, p *agenttest.MockSessionProvider) {
+			setup: func(pt *persistenceTools, p *testfixtures.MockSessionProvider) {
 				pt.marshalIndent = func(v any, prefix, indent string) ([]byte, error) {
 					return nil, errors.New("marshal exploded")
 				}
@@ -470,7 +470,7 @@ func testManageTasksError(t *testing.T) {
 	}
 }
 
-func setupManageTasks(t *testing.T, setup func(*mockListStore, ports.TaskStore), provider *agenttest.MockSessionProvider, lt *mockListStore) {
+func setupManageTasks(t *testing.T, setup func(*mockListStore, ports.TaskStore), provider *testfixtures.MockSessionProvider, lt *mockListStore) {
 	t.Helper()
 	if setup != nil {
 		setup(lt, provider.GetTasks())
@@ -594,7 +594,7 @@ func TestPersistenceTools_Errors(t *testing.T) {
 func TestNewPersistenceTools_InterfaceNilPointer(t *testing.T) {
 	// Create a typed nil pointer stored in an interface variable:
 	// the interface itself is non-nil, but the underlying pointer is nil.
-	var nilProvider *agenttest.MockSessionProvider = nil
+	var nilProvider *testfixtures.MockSessionProvider = nil
 	var sp ports.SessionProvider = nilProvider // non-nil interface wrapping nil ptr
 
 	pt := newpersistenceTools(sp, nil)

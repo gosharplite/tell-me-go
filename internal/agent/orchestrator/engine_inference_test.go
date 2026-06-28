@@ -8,7 +8,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -48,7 +47,7 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with nil ActiveToolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &agenttest.MockSessionProvider{},
+					SessionProvider: &testfixtures.MockSessionProvider{},
 				},
 			},
 			expected: nil,
@@ -57,7 +56,7 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with empty toolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &agenttest.MockSessionProvider{
+					SessionProvider: &testfixtures.MockSessionProvider{
 						SessionInfo: ports.SessionInfo{ActiveToolkits: []string{}},
 					},
 				},
@@ -68,7 +67,7 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with populated toolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &agenttest.MockSessionProvider{
+					SessionProvider: &testfixtures.MockSessionProvider{
 						SessionInfo: ports.SessionInfo{ActiveToolkits: []string{"tk1", "tk2"}},
 					},
 				},

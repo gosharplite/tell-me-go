@@ -863,7 +863,7 @@ func TestNewManager_WithFactorySummarizer(t *testing.T) {
 
 func TestWithSessionProvider(t *testing.T) {
 	cm := sessctx.NewManager(nil, nil, nil, nil,
-		sessctx.WithSessionProvider(&agenttest.MockSessionProvider{}),
+		sessctx.WithSessionProvider(&testfixtures.MockSessionProvider{}),
 	)
 	assert.NotNil(t, cm.SessionProvider)
 }

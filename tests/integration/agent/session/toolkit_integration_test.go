@@ -7,10 +7,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +19,7 @@ func TestDynamicToolkitDiscovery(t *testing.T) {
 	// that inferenceStep uses.
 
 	reg := registry.New()
-	sp := &agenttest.MockSessionProvider{
+	sp := &testfixtures.MockSessionProvider{
 		SessionInfo: ports.SessionInfo{
 			ActiveToolkits: []string{}, // Initially empty
 		},
