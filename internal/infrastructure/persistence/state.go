@@ -45,7 +45,7 @@ func (s *sessionState) GetInfo() ports.SessionInfo {
 	return cloneSessionInfo(s.Info)
 }
 
-func (s *sessionState) SetInfo(info ports.SessionInfo) {
+func (s *sessionState) SetInfo(ctx context.Context, info ports.SessionInfo) error {
 	// Phase A: Deep-copy outside the lock so the clone doesn't contend.
 	cloned := cloneSessionInfo(info)
 
@@ -62,15 +62,17 @@ func (s *sessionState) SetInfo(info ports.SessionInfo) {
 				"path", s.statePath,
 				"error", err,
 			)
-			return
+			return fmt.Errorf("marshal session state: %w", err)
 		}
-		if err := s.fs.AtomicWrite(context.Background(), s.statePath, data, 0644); err != nil {
+		if err := s.fs.AtomicWrite(ctx, s.statePath, data, 0644); err != nil {
 			s.logger.Error("failed to persist session state",
 				"path", s.statePath,
 				"error", err,
 			)
+			return fmt.Errorf("persist session state to %s: %w", s.statePath, err)
 		}
 	}
+	return nil
 }
 
 // cloneSessionInfo returns a deep copy of src, isolating maps and slices

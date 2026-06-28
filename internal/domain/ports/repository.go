@@ -154,7 +154,9 @@ type SessionStateProvider interface {
 
 	// SetInfo replaces the session metadata. The update is immediate
 	// and visible to subsequent GetInfo calls.
-	SetInfo(info SessionInfo)
+	// ctx carries cancellation/timeout signals for persistence operations.
+	// Returns an error if the underlying I/O fails.
+	SetInfo(ctx context.Context, info SessionInfo) error
 }
 
 // ResourceCloser defines an interface for closing resources.

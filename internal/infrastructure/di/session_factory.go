@@ -61,7 +61,9 @@ func (f *defaultSessionFactory) buildSessionProvider(ctx stdctx.Context, paths *
 	info := state.GetInfo()
 	info.Model = cfg.Model
 	info.Provider = cfg.SelectedProvider
-	state.SetInfo(info)
+	if err := state.SetInfo(ctx, info); err != nil {
+		return nil, nil, fmt.Errorf("set session info: %w", err)
+	}
 
 	cleanup := func(stdctx.Context) error {
 		if sessionProvider != nil {

@@ -81,7 +81,9 @@ func TestSessionState_Persistence(t *testing.T) {
 
 	info := state1.GetInfo()
 	info.ActiveToolkits = []string{"git", "k8s"}
-	state1.SetInfo(info)
+	if err := state1.SetInfo(ctx, info); err != nil {
+		t.Fatalf("SetInfo failed: %v", err)
+	}
 	_ = state1.Close()
 
 	// 2. Reload the session state from disk
@@ -354,8 +356,9 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	info := ss.GetInfo()
 	info.ActiveToolkits = []string{"git", "k8s", "ado"}
 
-	// SetInfo must not panic even when persistence fails.
-	state.SetInfo(info)
+	// SetInfo must return an error when persistence fails.
+	err = ss.SetInfo(ctx, info)
+	assert.Error(t, err, "SetInfo must return an error when persistence fails")
 
 	// Verify the persistence error was logged.
 	logOutput := buf.String()
@@ -388,7 +391,8 @@ func TestSessionState_SetInfo_IsolationFromCallerMutation(t *testing.T) {
 	info.ActiveToolkits = []string{"git"}
 
 	// Store it
-	state.SetInfo(info)
+	err = state.SetInfo(ctx, info)
+	require.NoError(t, err)
 
 	// Mutate the caller's references AFTER SetInfo
 	info.Env["caller_key"] = "mutated"

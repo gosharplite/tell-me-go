@@ -4,6 +4,8 @@
 package agenttest
 
 import (
+	"context"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -15,7 +17,7 @@ type MockSessionProvider struct {
 	// Function fields — nil means return zero value
 	GetSettingsFn      func() ports.KVStore
 	GetInfoFn          func() ports.SessionInfo
-	SetInfoFn          func(info ports.SessionInfo)
+	SetInfoFn          func(ctx context.Context, info ports.SessionInfo) error
 	CloseFn            func() error
 	GetHealthCheckerFn func() ports.HealthChecker
 }
@@ -40,10 +42,11 @@ func (m *MockSessionProvider) GetInfo() ports.SessionInfo {
 	return ports.SessionInfo{}
 }
 
-func (m *MockSessionProvider) SetInfo(info ports.SessionInfo) {
+func (m *MockSessionProvider) SetInfo(ctx context.Context, info ports.SessionInfo) error {
 	if m.SetInfoFn != nil {
-		m.SetInfoFn(info)
+		return m.SetInfoFn(ctx, info)
 	}
+	return nil
 }
 
 func (m *MockSessionProvider) Close() error {

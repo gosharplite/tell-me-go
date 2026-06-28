@@ -4,6 +4,7 @@
 package session_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -20,8 +21,9 @@ func (m *mockToolkitSessionProvider) GetInfo() ports.SessionInfo {
 	return m.info
 }
 
-func (m *mockToolkitSessionProvider) SetInfo(info ports.SessionInfo) {
+func (m *mockToolkitSessionProvider) SetInfo(_ context.Context, info ports.SessionInfo) error {
 	m.info = info
+	return nil
 }
 
 func (m *mockToolkitSessionProvider) GetTasks() ports.TaskStore  { return nil }
@@ -55,7 +57,8 @@ func TestDynamicToolkitDiscovery(t *testing.T) {
 		// Simulate load_toolkit execution
 		info := sp.GetInfo()
 		info.ActiveToolkits = append(info.ActiveToolkits, "git")
-		sp.SetInfo(info)
+		err := sp.SetInfo(context.Background(), info)
+		assert.NoError(t, err)
 
 		activeToolkits := sp.GetInfo().ActiveToolkits
 		activeTools := reg.GetDeclarationsByToolkits(activeToolkits)
