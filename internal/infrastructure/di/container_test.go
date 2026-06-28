@@ -155,7 +155,7 @@ type mockSessionProvider struct {
 	GetTasksFunc         func() ports.TaskStore
 	GetSettingsFunc      func() ports.KVStore
 	GetInfoFunc          func() ports.SessionInfo
-	SetInfoFunc          func(info ports.SessionInfo)
+	SetInfoFunc          func(ctx context.Context, info ports.SessionInfo) error
 	CloseFunc            func() error
 	GetHealthCheckerFunc func() ports.HealthChecker
 
@@ -191,11 +191,12 @@ func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 	return ports.SessionInfo{}
 }
 
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {
+func (m *mockSessionProvider) SetInfo(ctx context.Context, info ports.SessionInfo) error {
 	m.setInfoCalls++
 	if m.SetInfoFunc != nil {
-		m.SetInfoFunc(info)
+		return m.SetInfoFunc(ctx, info)
 	}
+	return nil
 }
 
 func (m *mockSessionProvider) Close() error {

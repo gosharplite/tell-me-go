@@ -20,8 +20,9 @@ func (m *mockToolkitSessionProvider) GetInfo() ports.SessionInfo {
 	return m.info
 }
 
-func (m *mockToolkitSessionProvider) SetInfo(info ports.SessionInfo) {
+func (m *mockToolkitSessionProvider) SetInfo(_ context.Context, info ports.SessionInfo) error {
 	m.info = info
+	return nil
 }
 
 func (m *mockToolkitSessionProvider) GetTasks() ports.TaskStore {
