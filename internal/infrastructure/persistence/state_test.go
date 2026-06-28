@@ -337,12 +337,24 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	ss := state.(*sessionState)
 	ss.statePath = filepath.Join(readOnlyDir, "state.json")
 
+	// Inject a logger that writes to a buffer so we can assert the
+	// persistence error is logged.
+	var buf bytes.Buffer
+	ss.logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
 	// Build updated info — copy from current so Env/Paths are intact.
 	info := ss.GetInfo()
 	info.ActiveToolkits = []string{"git", "k8s", "ado"}
 
 	// SetInfo must not panic even when persistence fails.
 	state.SetInfo(info)
+
+	// Verify the persistence error was logged.
+	logOutput := buf.String()
+	assert.Contains(t, logOutput, "failed to persist session state",
+		"persistence error must be logged so operators can diagnose disk failures")
+	assert.Contains(t, logOutput, ss.statePath,
+		"log message must include the path that failed")
 
 	// In-memory state is updated regardless of persistence outcome.
 	restored := state.GetInfo()

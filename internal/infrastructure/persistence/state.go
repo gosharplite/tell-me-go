@@ -27,6 +27,7 @@ type sessionState struct {
 	statePath string
 	fs        domain_persistence.FileSystem
 	mu        sync.RWMutex
+	logger    *slog.Logger
 }
 
 func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
@@ -45,17 +46,25 @@ func (s *sessionState) GetInfo() ports.SessionInfo {
 }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
+	// Phase A: Deep-copy outside the lock so the clone doesn't contend.
+	cloned := cloneSessionInfo(info)
+
+	// Phase B: Swap in-memory state under the shortest possible lock.
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Info = cloned
+	s.mu.Unlock()
 
-	// Deep copy to ensure internal state is isolated from caller mutation
-	s.Info = cloneSessionInfo(info)
-
-	// Persist to disk
-	if s.statePath != "" && s.Info.Env["STORAGE_TYPE"] != "memory" {
-		data, err := json.MarshalIndent(s.Info, "", "  ")
-		if err == nil {
-			_ = s.fs.AtomicWrite(context.Background(), s.statePath, data, 0644)
+	// Phase C: Persist to disk OUTSIDE the mutex using the local 'cloned' copy.
+	if s.statePath != "" && cloned.Env["STORAGE_TYPE"] != "memory" {
+		data, err := json.MarshalIndent(cloned, "", "  ")
+		if err != nil {
+			return
+		}
+		if err := s.fs.AtomicWrite(context.Background(), s.statePath, data, 0644); err != nil {
+			s.logger.Error("failed to persist session state",
+				"path", s.statePath,
+				"error", err,
+			)
 		}
 	}
 }
@@ -165,6 +174,7 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 		db:        db,
 		statePath: statePath,
 		fs:        fs,
+		logger:    slog.Default(),
 	}
 
 	state.hydrateInfo(ctx, storageType, paths)
