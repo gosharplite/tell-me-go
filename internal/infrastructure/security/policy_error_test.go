@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -646,6 +647,14 @@ func TestPolicyTool_UnmarshalArgsErrors(t *testing.T) {
 }
 
 func TestPolicy_FilepathAbsErrors(t *testing.T) {
+	// macOS APFS holds a vnode reference to the current working directory;
+	// os.RemoveAll returns nil but the directory persists until the process
+	// leaves it. os.Getwd() therefore never fails after deleting CWD on
+	// macOS, making the filepath.Abs-error precondition unreachable.
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS APFS prevents CWD deletion while process is in it; filepath.Abs error path unreachable")
+	}
+
 	origDir, err := os.Getwd()
 	require.NoError(t, err)
 	origPWD, hadPWD := os.LookupEnv("PWD")

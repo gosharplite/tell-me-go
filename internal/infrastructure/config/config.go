@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -162,6 +163,7 @@ func unmarshalConfig(v *viper.Viper, cfg *domain_config.Config) error {
 		c.Squash = true
 		c.DecodeHook = mapstructure.ComposeDecodeHookFunc(
 			expandEnvHook,
+			intOverflowHook,
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
 		)
@@ -177,6 +179,31 @@ func expandEnvHook(f reflect.Type, t reflect.Type, data interface{}) (interface{
 		return data, nil
 	}
 	return os.ExpandEnv(data.(string)), nil
+}
+
+// intOverflowHook rejects float64→int conversions where the source value
+// would overflow the target integer type or has a non-integer fractional
+// part. Viper's YAML parser produces float64 for integers that exceed
+// int64 range (≥20 digits); WeaklyTypedInput silently converts these via
+// Go's int(float64) which saturates to math.MaxInt on overflow, bypassing
+// the negative-value guard in ValidateBounds. This hook catches overflow
+// before it reaches the struct decoder.
+func intOverflowHook(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+	if f.Kind() != reflect.Float64 {
+		return data, nil
+	}
+	if t.Kind() != reflect.Int && t.Kind() != reflect.Int64 {
+		return data, nil
+	}
+
+	v := data.(float64)
+	if v != math.Trunc(v) {
+		return nil, fmt.Errorf("cannot decode non-integer float64 %v into integer field", v)
+	}
+	if v > float64(math.MaxInt) || v < float64(math.MinInt) {
+		return nil, fmt.Errorf("integer overflow: value %v exceeds int range [%d, %d]", v, math.MinInt, math.MaxInt)
+	}
+	return data, nil
 }
 
 func setDefaults(cfg *domain_config.Config) {

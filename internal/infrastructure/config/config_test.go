@@ -697,9 +697,9 @@ func TestLoad_IntegerOverflowIsDetected(t *testing.T) {
 		yamlVal string // "KEY: overflow" line
 		errFrag string // substring expected in the error message
 	}{
-		{name: "MAX_TURNS overflow", yamlVal: "MAX_TURNS: " + overflow, errFrag: "MAX_TURNS"},
-		{name: "MAX_HISTORY_TURNS overflow", yamlVal: "MAX_HISTORY_TURNS: " + overflow, errFrag: "MAX_HISTORY_TURNS"},
-		{name: "MAX_HISTORY_TOKENS overflow", yamlVal: "MAX_HISTORY_TOKENS: " + overflow, errFrag: "MAX_HISTORY_TOKENS"},
+		{name: "MAX_TURNS overflow", yamlVal: "MAX_TURNS: " + overflow, errFrag: "integer overflow"},
+		{name: "MAX_HISTORY_TURNS overflow", yamlVal: "MAX_HISTORY_TURNS: " + overflow, errFrag: "integer overflow"},
+		{name: "MAX_HISTORY_TOKENS overflow", yamlVal: "MAX_HISTORY_TOKENS: " + overflow, errFrag: "integer overflow"},
 	}
 
 	for _, tt := range tests {
@@ -719,8 +719,8 @@ func TestLoad_IntegerOverflowIsDetected(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.errFrag) {
 				t.Errorf("expected error containing %q, got %q", tt.errFrag, err.Error())
 			}
-			if !strings.Contains(err.Error(), "must be >= 0") {
-				t.Errorf("expected error containing \"must be >= 0\", got %q", err.Error())
+			if !strings.Contains(err.Error(), "exceeds int range") {
+				t.Errorf("expected error containing \"exceeds int range\", got %q", err.Error())
 			}
 		})
 	}
