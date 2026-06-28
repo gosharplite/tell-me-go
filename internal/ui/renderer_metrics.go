@@ -414,7 +414,7 @@ func (r *stdUIRenderer) renderTurnHeader(ui uiState, status events.TurnStatus) {
 		writeBestEffort(stderr, "%s╭─⠿ %sTurn %d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, modeStr, ui.c(colorGray))
 	}
 
-	r.printTokenLine(ui, timestamp, status.Tokens, status.MaxHistoryTokens, false, status.Mode)
+	r.printTokenLine(ui, timestamp, status.Tokens, status.MaxHistoryTokens, false, status.Mode, status.Model)
 	_, _ = fmt.Fprintln(stderr) // Ensure visual gap before response
 }
 
@@ -430,6 +430,6 @@ func (r *stdUIRenderer) renderPostCallStatus(ui uiState, status events.TurnStatu
 		}
 	}
 
-	r.printTokenLine(ui, timestamp, int(m.PromptTokens), status.MaxHistoryTokens, true, status.Mode)
+	r.printTokenLine(ui, timestamp, int(m.PromptTokens), status.MaxHistoryTokens, true, status.Mode, status.Model)
 	r.renderMetricsLineLocked(ui, m, status.StartTime, status.CurrentTurns+1)
 }
