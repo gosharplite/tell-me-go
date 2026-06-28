@@ -335,20 +335,6 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	}
 	defer func() { _ = os.Chmod(readOnlyDir, 0755) }()
 
-	// Inject a logger that writes to a buffer so we can assert the
-	// persistence error is logged.
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	// Re-create state with the injected logger and a statePath that
-	// points into a read-only directory so persistence fails.
-	_ = state.Close()
-	state, err = NewSessionState(ctx, tempDir, WithLogger(logger))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = state.Close() }()
-
 	ss := state.(*sessionState)
 	ss.statePath = filepath.Join(readOnlyDir, "state.json")
 
@@ -359,13 +345,6 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	// SetInfo must return an error when persistence fails.
 	err = ss.SetInfo(ctx, info)
 	assert.Error(t, err, "SetInfo must return an error when persistence fails")
-
-	// Verify the persistence error was logged.
-	logOutput := buf.String()
-	assert.Contains(t, logOutput, "failed to persist session state",
-		"persistence error must be logged so operators can diagnose disk failures")
-	assert.Contains(t, logOutput, ss.statePath,
-		"log message must include the path that failed")
 
 	// In-memory state is updated regardless of persistence outcome.
 	restored := state.GetInfo()

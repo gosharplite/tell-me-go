@@ -25,7 +25,10 @@ type stubSessionProvider struct {
 }
 
 func (s *stubSessionProvider) GetInfo() ports.SessionInfo            { return s.info }
-func (s *stubSessionProvider) SetInfo(info ports.SessionInfo)        {}
+func (s *stubSessionProvider) SetInfo(_ context.Context, info ports.SessionInfo) error {
+	s.info = info
+	return nil
+}
 func (s *stubSessionProvider) GetTasks() ports.TaskStore             { return nil }
 func (s *stubSessionProvider) GetSettings() ports.KVStore            { return nil }
 func (s *stubSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }

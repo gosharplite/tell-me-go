@@ -58,17 +58,9 @@ func (s *sessionState) SetInfo(ctx context.Context, info ports.SessionInfo) erro
 	if s.statePath != "" && cloned.Env["STORAGE_TYPE"] != "memory" {
 		data, err := json.MarshalIndent(cloned, "", "  ")
 		if err != nil {
-			s.logger.Error("failed to marshal session state for persistence",
-				"path", s.statePath,
-				"error", err,
-			)
 			return fmt.Errorf("marshal session state: %w", err)
 		}
 		if err := s.fs.AtomicWrite(ctx, s.statePath, data, 0644); err != nil {
-			s.logger.Error("failed to persist session state",
-				"path", s.statePath,
-				"error", err,
-			)
 			return fmt.Errorf("persist session state to %s: %w", s.statePath, err)
 		}
 	}
