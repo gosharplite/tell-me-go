@@ -7,36 +7,20 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/assert"
 )
 
-type mockToolkitSessionProvider struct {
-	info ports.SessionInfo
-}
-
-func (m *mockToolkitSessionProvider) GetInfo() ports.SessionInfo {
-	return m.info
-}
-
-func (m *mockToolkitSessionProvider) SetInfo(_ context.Context, info ports.SessionInfo) error {
-	m.info = info
-	return nil
-}
-
-func (m *mockToolkitSessionProvider) GetTasks() ports.TaskStore  { return nil }
-func (m *mockToolkitSessionProvider) GetSettings() ports.KVStore { return nil }
-func (m *mockToolkitSessionProvider) Close() error               { return nil }
-
 func TestDynamicToolkitDiscovery(t *testing.T) {
 	// This test bypasses the full Agent and tests the ContextManager/Registry interaction
 	// that inferenceStep uses.
 
 	reg := registry.New()
-	sp := &mockToolkitSessionProvider{
-		info: ports.SessionInfo{
+	sp := &agenttest.MockSessionProvider{
+		SessionInfo: ports.SessionInfo{
 			ActiveToolkits: []string{}, // Initially empty
 		},
 	}

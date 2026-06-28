@@ -10,11 +10,18 @@ import (
 )
 
 // MockSessionProvider is a hand-rolled stub of ports.SessionProvider.
-// GetTasks always returns nil; all other methods delegate to configurable
-// function fields. When a function field is nil, the method returns its
-// natural zero value.
+// All methods delegate to configurable function fields. When a function
+// field is nil, the method returns its natural zero value (or the shared
+// SessionInfo field for GetInfo/SetInfo).
 type MockSessionProvider struct {
-	// Function fields — nil means return zero value
+	// SessionInfo is a convenience field for tests that just need
+	// GetInfo/SetInfo to share a mutable SessionInfo value.
+	// When GetInfoFn/SetInfoFn are nil, GetInfo returns this field
+	// and SetInfo writes to it.
+	SessionInfo ports.SessionInfo
+
+	// Function fields — nil means use SessionInfo field or zero value
+	GetTasksFn         func() ports.TaskStore
 	GetSettingsFn      func() ports.KVStore
 	GetInfoFn          func() ports.SessionInfo
 	SetInfoFn          func(ctx context.Context, info ports.SessionInfo) error
@@ -25,8 +32,12 @@ type MockSessionProvider struct {
 // Compile-time interface check.
 var _ ports.SessionProvider = (*MockSessionProvider)(nil)
 
-// GetTasks returns nil. This method is not tracked.
-func (m *MockSessionProvider) GetTasks() ports.TaskStore { return nil }
+func (m *MockSessionProvider) GetTasks() ports.TaskStore {
+	if m.GetTasksFn != nil {
+		return m.GetTasksFn()
+	}
+	return nil
+}
 
 func (m *MockSessionProvider) GetSettings() ports.KVStore {
 	if m.GetSettingsFn != nil {
@@ -39,13 +50,14 @@ func (m *MockSessionProvider) GetInfo() ports.SessionInfo {
 	if m.GetInfoFn != nil {
 		return m.GetInfoFn()
 	}
-	return ports.SessionInfo{}
+	return m.SessionInfo
 }
 
 func (m *MockSessionProvider) SetInfo(ctx context.Context, info ports.SessionInfo) error {
 	if m.SetInfoFn != nil {
 		return m.SetInfoFn(ctx, info)
 	}
+	m.SessionInfo = info
 	return nil
 }
 

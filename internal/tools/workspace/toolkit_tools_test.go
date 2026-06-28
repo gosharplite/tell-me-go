@@ -8,26 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
-
-type mockToolkitSessionProvider struct {
-	ports.SessionProvider
-	info ports.SessionInfo
-}
-
-func (m *mockToolkitSessionProvider) GetInfo() ports.SessionInfo {
-	return m.info
-}
-
-func (m *mockToolkitSessionProvider) SetInfo(_ context.Context, info ports.SessionInfo) error {
-	m.info = info
-	return nil
-}
-
-func (m *mockToolkitSessionProvider) GetTasks() ports.TaskStore {
-	return nil
-}
 
 func TestHandleLoadToolkit(t *testing.T) {
 	t.Parallel()
@@ -86,8 +69,8 @@ func TestHandleLoadToolkit(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sp := &mockToolkitSessionProvider{
-				info: ports.SessionInfo{
+			sp := &agenttest.MockSessionProvider{
+				SessionInfo: ports.SessionInfo{
 					ActiveToolkits: tt.initialToolkits,
 				},
 			}
@@ -138,9 +121,7 @@ func TestHandleLoadToolkit(t *testing.T) {
 func TestHandleLoadToolkit_UnmarshalError(t *testing.T) {
 	t.Parallel()
 
-	sp := &mockToolkitSessionProvider{
-		info: ports.SessionInfo{},
-	}
+	sp := &agenttest.MockSessionProvider{}
 	mp := &mockMetadataProvider{
 		toolkits: []string{"core", "git"},
 	}

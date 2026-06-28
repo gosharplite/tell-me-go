@@ -238,22 +238,6 @@ func TestGuardStep_TDT(t *testing.T) {
 	}
 }
 
-// mockSessionProvider is a minimal ports.SessionProvider for tests
-// that need to exercise the active-toolkits code path in InvokeModel.
-type mockSessionProvider struct {
-	info ports.SessionInfo
-}
-
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo            { return m.info }
-func (m *mockSessionProvider) SetInfo(_ context.Context, info ports.SessionInfo) error {
-	m.info = info
-	return nil
-}
-func (m *mockSessionProvider) GetTasks() ports.TaskStore             { return nil }
-func (m *mockSessionProvider) GetSettings() ports.KVStore            { return nil }
-func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }
-func (m *mockSessionProvider) Close() error                          { return nil }
-
 // buildTestContextManager constructs a session context manager for TDT tests.
 // It optionally calls setupReg to register tools and attaches a SessionProvider
 // when sessionInfo is provided.
@@ -262,7 +246,7 @@ func buildTestContextManager(t *testing.T, setupReg func(t *testing.T, reg *agen
 		setupReg(t, reg)
 	}
 	if sessionInfo != nil {
-		sp := &mockSessionProvider{info: *sessionInfo}
+		sp := &agenttest.MockSessionProvider{SessionInfo: *sessionInfo}
 		return sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil, sessctx.WithSessionProvider(sp))
 	}
 	return sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)

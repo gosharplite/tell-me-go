@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -149,70 +150,6 @@ func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 		return m.GetAllFunc(ctx)
 	}
 	return map[string]string{}, nil
-}
-
-type mockSessionProvider struct {
-	GetTasksFunc         func() ports.TaskStore
-	GetSettingsFunc      func() ports.KVStore
-	GetInfoFunc          func() ports.SessionInfo
-	SetInfoFunc          func(ctx context.Context, info ports.SessionInfo) error
-	CloseFunc            func() error
-	GetHealthCheckerFunc func() ports.HealthChecker
-
-	getTasksCalls         int
-	getSettingsCalls      int
-	getInfoCalls          int
-	setInfoCalls          int
-	closeCalls            int
-	getHealthCheckerCalls int
-}
-
-func (m *mockSessionProvider) GetTasks() ports.TaskStore {
-	m.getTasksCalls++
-	if m.GetTasksFunc != nil {
-		return m.GetTasksFunc()
-	}
-	return nil
-}
-
-func (m *mockSessionProvider) GetSettings() ports.KVStore {
-	m.getSettingsCalls++
-	if m.GetSettingsFunc != nil {
-		return m.GetSettingsFunc()
-	}
-	return nil
-}
-
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
-	m.getInfoCalls++
-	if m.GetInfoFunc != nil {
-		return m.GetInfoFunc()
-	}
-	return ports.SessionInfo{}
-}
-
-func (m *mockSessionProvider) SetInfo(ctx context.Context, info ports.SessionInfo) error {
-	m.setInfoCalls++
-	if m.SetInfoFunc != nil {
-		return m.SetInfoFunc(ctx, info)
-	}
-	return nil
-}
-
-func (m *mockSessionProvider) Close() error {
-	m.closeCalls++
-	if m.CloseFunc != nil {
-		return m.CloseFunc()
-	}
-	return nil
-}
-
-func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker {
-	m.getHealthCheckerCalls++
-	if m.GetHealthCheckerFunc != nil {
-		return m.GetHealthCheckerFunc()
-	}
-	return nil
 }
 
 type mockConfigurableSecurityManager struct {
@@ -783,7 +720,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	tracker := &mockTracker{}
-	sessionProvider := new(mockSessionProvider)
+	sessionProvider := &agenttest.MockSessionProvider{}
 
 	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
 		return client, nil
@@ -878,11 +815,11 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "SessionProviderCloseFails",
 			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
-				mockSP := &mockSessionProvider{
-					GetSettingsFunc: func() ports.KVStore {
+				mockSP := &agenttest.MockSessionProvider{
+					GetSettingsFn: func() ports.KVStore {
 						return &mockKVStore{}
 					},
-					CloseFunc: func() error {
+					CloseFn: func() error {
 						return simulatedErr
 					},
 				}
@@ -997,8 +934,8 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 			return "", nil
 		},
 	}
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore { return mockKV },
+	mockSP := &agenttest.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore { return mockKV },
 	}
 
 	// Capture logs
@@ -1174,11 +1111,11 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 
 	busErr := errors.New("bus shutdown failed")
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore {
+	mockSP := &agenttest.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
-		CloseFunc: func() error {
+		CloseFn: func() error {
 			return busErr
 		},
 	}
@@ -1385,8 +1322,8 @@ func TestBypassConfirmationPriority(t *testing.T) {
 					}
 				},
 			}
-			mockSP := &mockSessionProvider{
-				GetSettingsFunc: func() ports.KVStore { return mockKV },
+			mockSP := &agenttest.MockSessionProvider{
+				GetSettingsFn: func() ports.KVStore { return mockKV },
 			}
 
 			factory := &defaultSessionFactory{
@@ -1747,8 +1684,8 @@ func TestWireHealth(t *testing.T) {
 	bcfg.Stderr = io.Discard
 	b := NewBootstrapper(bcfg)
 
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore {
+	mockSP := &agenttest.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
 	}
@@ -1778,8 +1715,8 @@ func TestWireToolRegistry(t *testing.T) {
 	b := NewBootstrapper(bcfg)
 
 	paths := &persistence.Paths{LogPath: filepath.Join(tempDir, "test.log"), TracePath: filepath.Join(tempDir, "test.trace.jsonl")}
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore {
+	mockSP := &agenttest.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
 	}

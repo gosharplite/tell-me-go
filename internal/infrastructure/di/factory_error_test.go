@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -409,8 +410,8 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 				tt.setup(factory, sm)
 			}
 
-			mockSP := &mockSessionProvider{
-				GetSettingsFunc: func() ports.KVStore {
+			mockSP := &agenttest.MockSessionProvider{
+				GetSettingsFn: func() ports.KVStore {
 					return &mockKVStore{}
 				},
 			}

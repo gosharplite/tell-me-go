@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -17,22 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// stubSessionProvider is a minimal implementation of ports.SessionProvider
-// for testing resolveActiveTools.
-type stubSessionProvider struct {
-	info ports.SessionInfo
-}
-
-func (s *stubSessionProvider) GetInfo() ports.SessionInfo            { return s.info }
-func (s *stubSessionProvider) SetInfo(_ context.Context, info ports.SessionInfo) error {
-	s.info = info
-	return nil
-}
-func (s *stubSessionProvider) GetTasks() ports.TaskStore             { return nil }
-func (s *stubSessionProvider) GetSettings() ports.KVStore            { return nil }
-func (s *stubSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }
-func (s *stubSessionProvider) Close() error                          { return nil }
 
 func TestResolveActiveTools(t *testing.T) {
 	t.Parallel()
@@ -63,9 +48,7 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with nil ActiveToolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &stubSessionProvider{
-						info: ports.SessionInfo{ActiveToolkits: nil},
-					},
+					SessionProvider: &agenttest.MockSessionProvider{},
 				},
 			},
 			expected: nil,
@@ -74,8 +57,8 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with empty toolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &stubSessionProvider{
-						info: ports.SessionInfo{ActiveToolkits: []string{}},
+					SessionProvider: &agenttest.MockSessionProvider{
+						SessionInfo: ports.SessionInfo{ActiveToolkits: []string{}},
 					},
 				},
 			},
@@ -85,8 +68,8 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with populated toolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &stubSessionProvider{
-						info: ports.SessionInfo{ActiveToolkits: []string{"tk1", "tk2"}},
+					SessionProvider: &agenttest.MockSessionProvider{
+						SessionInfo: ports.SessionInfo{ActiveToolkits: []string{"tk1", "tk2"}},
 					},
 				},
 			},
