@@ -149,14 +149,6 @@ var initServicesFn = initServices
 // SessionStateOption is a functional option for NewSessionState.
 type SessionStateOption func(*sessionState)
 
-// WithLogger injects a structured logger into the session state.
-// If not provided, slog.Default() is used.
-func WithLogger(logger *slog.Logger) SessionStateOption {
-	return func(s *sessionState) {
-		s.logger = logger
-	}
-}
-
 // NewSessionState initializes repositories and services.
 func NewSessionState(ctx context.Context, configDir string, opts ...SessionStateOption) (ports.SessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
