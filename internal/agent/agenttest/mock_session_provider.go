@@ -13,6 +13,11 @@ import (
 // All other SessionProvider test doubles are forbidden by
 // make verify-session-provider-mock (wired into test/check/check-full).
 //
+// Not safe for concurrent use. When SetInfoFn is nil,
+// SetInfo writes directly to SessionInfo without synchronization.
+// Tests that call SetInfo from multiple goroutines should supply a
+// mutex-guarded SetInfoFn.
+//
 // All methods delegate to configurable function fields. When a function
 // field is nil, the method returns its natural zero value (or the shared
 // SessionInfo field for GetInfo/SetInfo).
@@ -32,8 +37,11 @@ type MockSessionProvider struct {
 	GetHealthCheckerFn func() ports.HealthChecker
 }
 
-// Compile-time interface check.
-var _ ports.SessionProvider = (*MockSessionProvider)(nil)
+// Compile-time interface checks.
+var (
+	_ ports.SessionProvider      = (*MockSessionProvider)(nil)
+	_ ports.SessionStateProvider = (*MockSessionProvider)(nil)
+)
 
 func (m *MockSessionProvider) GetTasks() ports.TaskStore {
 	if m.GetTasksFn != nil {
