@@ -351,6 +351,41 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	}
 }
 
+func TestSessionState_SetInfo_IsolationFromCallerMutation(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Use memory storage so no disk I/O interferes
+	t.Setenv("STORAGE_TYPE", "memory")
+	state, err := NewSessionState(ctx, tempDir)
+	require.NoError(t, err)
+	defer func() { _ = state.Close() }()
+
+	// Build info with known values
+	info := state.GetInfo()
+	info.Env["caller_key"] = "original"
+	info.Paths["caller_path"] = "/original"
+	info.ActiveToolkits = []string{"git"}
+
+	// Store it
+	state.SetInfo(info)
+
+	// Mutate the caller's references AFTER SetInfo
+	info.Env["caller_key"] = "mutated"
+	info.Paths["caller_path"] = "/mutated"
+	info.ActiveToolkits[0] = "corrupted"
+
+	// Read back — stored state must be ISOLATED from caller mutation
+	stored := state.GetInfo()
+
+	assert.Equal(t, "original", stored.Env["caller_key"],
+		"Env map must be a deep copy; caller mutation must not affect stored state")
+	assert.Equal(t, "/original", stored.Paths["caller_path"],
+		"Paths map must be a deep copy; caller mutation must not affect stored state")
+	assert.Equal(t, []string{"git"}, stored.ActiveToolkits,
+		"ActiveToolkits slice must be a deep copy; caller mutation must not affect stored state")
+}
+
 func TestInitServices_InitializeIsNoOp(t *testing.T) {
 	t.Parallel()
 

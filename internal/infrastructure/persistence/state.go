@@ -41,31 +41,7 @@ func (s *sessionState) GetInfo() ports.SessionInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	copied := ports.SessionInfo{
-		Model:    s.Info.Model,
-		Provider: s.Info.Provider,
-	}
-
-	if s.Info.Env != nil {
-		copied.Env = make(map[string]string, len(s.Info.Env))
-		for k, v := range s.Info.Env {
-			copied.Env[k] = v
-		}
-	}
-
-	if s.Info.Paths != nil {
-		copied.Paths = make(map[string]string, len(s.Info.Paths))
-		for k, v := range s.Info.Paths {
-			copied.Paths[k] = v
-		}
-	}
-
-	if s.Info.ActiveToolkits != nil {
-		copied.ActiveToolkits = make([]string, len(s.Info.ActiveToolkits))
-		copy(copied.ActiveToolkits, s.Info.ActiveToolkits)
-	}
-
-	return copied
+	return cloneSessionInfo(s.Info)
 }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
@@ -73,29 +49,7 @@ func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	defer s.mu.Unlock()
 
 	// Deep copy to ensure internal state is isolated from caller mutation
-	s.Info = ports.SessionInfo{
-		Model:    info.Model,
-		Provider: info.Provider,
-	}
-
-	if info.Env != nil {
-		s.Info.Env = make(map[string]string, len(info.Env))
-		for k, v := range info.Env {
-			s.Info.Env[k] = v
-		}
-	}
-
-	if info.Paths != nil {
-		s.Info.Paths = make(map[string]string, len(info.Paths))
-		for k, v := range info.Paths {
-			s.Info.Paths[k] = v
-		}
-	}
-
-	if info.ActiveToolkits != nil {
-		s.Info.ActiveToolkits = make([]string, len(info.ActiveToolkits))
-		copy(s.Info.ActiveToolkits, info.ActiveToolkits)
-	}
+	s.Info = cloneSessionInfo(info)
 
 	// Persist to disk
 	if s.statePath != "" && s.Info.Env["STORAGE_TYPE"] != "memory" {
@@ -104,6 +58,36 @@ func (s *sessionState) SetInfo(info ports.SessionInfo) {
 			_ = s.fs.AtomicWrite(context.Background(), s.statePath, data, 0644)
 		}
 	}
+}
+
+// cloneSessionInfo returns a deep copy of src, isolating maps and slices
+// from external mutation.
+func cloneSessionInfo(src ports.SessionInfo) ports.SessionInfo {
+	dst := ports.SessionInfo{
+		Model:    src.Model,
+		Provider: src.Provider,
+	}
+
+	if src.Env != nil {
+		dst.Env = make(map[string]string, len(src.Env))
+		for k, v := range src.Env {
+			dst.Env[k] = v
+		}
+	}
+
+	if src.Paths != nil {
+		dst.Paths = make(map[string]string, len(src.Paths))
+		for k, v := range src.Paths {
+			dst.Paths[k] = v
+		}
+	}
+
+	if src.ActiveToolkits != nil {
+		dst.ActiveToolkits = make([]string, len(src.ActiveToolkits))
+		copy(dst.ActiveToolkits, src.ActiveToolkits)
+	}
+
+	return dst
 }
 
 // hydrateInfo loads persisted session info from disk (if available) and ensures
