@@ -72,7 +72,31 @@ func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.Info = info
+	// Deep copy to ensure internal state is isolated from caller mutation
+	s.Info = ports.SessionInfo{
+		Model:    info.Model,
+		Provider: info.Provider,
+	}
+
+	if info.Env != nil {
+		s.Info.Env = make(map[string]string, len(info.Env))
+		for k, v := range info.Env {
+			s.Info.Env[k] = v
+		}
+	}
+
+	if info.Paths != nil {
+		s.Info.Paths = make(map[string]string, len(info.Paths))
+		for k, v := range info.Paths {
+			s.Info.Paths[k] = v
+		}
+	}
+
+	if info.ActiveToolkits != nil {
+		s.Info.ActiveToolkits = make([]string, len(info.ActiveToolkits))
+		copy(s.Info.ActiveToolkits, info.ActiveToolkits)
+	}
+
 	// Persist to disk
 	if s.statePath != "" && s.Info.Env["STORAGE_TYPE"] != "memory" {
 		data, err := json.MarshalIndent(s.Info, "", "  ")

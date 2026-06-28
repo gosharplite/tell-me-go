@@ -115,7 +115,11 @@ func (l *asyncTurnsLogger) processMessage(msg string) {
 func (l *asyncTurnsLogger) drainAndSync() {
 	for {
 		select {
-		case msg := <-l.ch:
+		case msg, ok := <-l.ch:
+			if !ok {
+				l.syncAfterDrain()
+				return
+			}
 			if _, err := l.file.Write([]byte(msg)); err != nil {
 				fails := l.consecutiveFailures.Add(1)
 				if fails >= maxConsecutiveWarnBeforeError {
@@ -129,21 +133,25 @@ func (l *asyncTurnsLogger) drainAndSync() {
 				l.consecutiveFailures.Store(0)
 			}
 		default:
-			// Ensure everything is persisted before exiting
-			if err := l.file.Sync(); err != nil {
-				fails := l.consecutiveFailures.Add(1)
-				if fails >= maxConsecutiveWarnBeforeError {
-					l.logger.Error("failed to sync turns log on shutdown after multiple retries",
-						"error", err,
-						"consecutive_failures", fails)
-				} else {
-					l.logger.Warn("failed to sync turns log on shutdown", "error", err)
-				}
-			} else {
-				l.consecutiveFailures.Store(0)
-			}
+			l.syncAfterDrain()
 			return
 		}
+	}
+}
+
+func (l *asyncTurnsLogger) syncAfterDrain() {
+	// Ensure everything is persisted before exiting
+	if err := l.file.Sync(); err != nil {
+		fails := l.consecutiveFailures.Add(1)
+		if fails >= maxConsecutiveWarnBeforeError {
+			l.logger.Error("failed to sync turns log on shutdown after multiple retries",
+				"error", err,
+				"consecutive_failures", fails)
+		} else {
+			l.logger.Warn("failed to sync turns log on shutdown", "error", err)
+		}
+	} else {
+		l.consecutiveFailures.Store(0)
 	}
 }
 
