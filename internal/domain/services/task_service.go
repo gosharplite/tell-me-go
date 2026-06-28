@@ -6,6 +6,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -14,6 +15,16 @@ import (
 // Ensure taskService strictly implements the ports.TaskStore interface.
 // This explicit binding also resolves false positives in dead-code AST analysis.
 var _ ports.TaskStore = (*taskService)(nil)
+
+// taskIDCounter provides monotonically increasing task identifiers.
+// An atomic counter replaces time.Now().UnixNano() which can return
+// identical values on systems where wall-clock resolution is coarser
+// than a nanosecond (e.g., macOS with ~1µs resolution).
+var taskIDCounter int64
+
+func nextTaskID() int64 {
+	return atomic.AddInt64(&taskIDCounter, 1)
+}
 
 // taskService handles the logic for managing tasks.
 // It is a stateless pass-through that delegates all operations to the store.
@@ -37,10 +48,7 @@ func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, 
 	}
 
 	t := ports.Task{
-		// [TECHNICAL DEBT] ID assignment uses time.Now().UnixNano() which is
-		// unique-enough for a single-user CLI tool. A more robust approach would
-		// be store-level auto-increment (e.g., SQLite INTEGER PRIMARY KEY).
-		ID:        time.Now().UnixNano(),
+		ID:        nextTaskID(),
 		Content:   content,
 		Status:    "pending",
 		CreatedAt: time.Now(),
