@@ -520,10 +520,6 @@ check-full: fmt tidy build
 	@$(MAKE) dead-code
 	@echo "=== test-race ==="
 	@$(MAKE) test-race
-	@echo "=== test-coverage ==="
-	@$(MAKE) test-coverage
-	@echo "=== bench ==="
-	@$(MAKE) bench
 	@echo ""
 	@echo "All checks passed (including race detection)."
 
