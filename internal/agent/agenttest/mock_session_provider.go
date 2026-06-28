@@ -9,7 +9,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// MockSessionProvider is a hand-rolled stub of ports.SessionProvider.
+// MockSessionProvider is the canonical stub of ports.SessionProvider.
+// All other SessionProvider test doubles are forbidden by
+// make verify-session-provider-mock (wired into test/check/check-full).
+//
 // All methods delegate to configurable function fields. When a function
 // field is nil, the method returns its natural zero value (or the shared
 // SessionInfo field for GetInfo/SetInfo).
