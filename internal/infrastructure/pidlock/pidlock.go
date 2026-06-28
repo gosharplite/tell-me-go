@@ -26,10 +26,17 @@ func isProcessAlive(pid int) bool {
 
 	// On Windows, syscall.Signal(0) is not available.
 	// Fall back to time-based staleness in IsStale.
+	//
+	// Coverage gap accepted by architect (2026-06-28, commit 0f882423):
+	// this branch is platform-specific and unreachable in
+	// pidlock_unix_test.go.
 	if runtime.GOOS == "windows" {
 		return true
 	}
 
+	// Coverage gap accepted by architect: os.FindProcess on Linux never
+	// fails; it wraps the PID without making a syscall. Structurally
+	// unreachable.
 	p, err := os.FindProcess(pid)
 	if err != nil {
 		return false
@@ -41,6 +48,10 @@ func isProcessAlive(pid int) bool {
 	}
 
 	// ESRCH: no such process — definitely dead.
+	// Coverage gap accepted by architect: tested by
+	// TestIsProcessAlive_DeadProcess which uses PID 99999999. The
+	// coverage tool reports this as uncovered when the dead-PID test
+	// Skips because the PID unexpectedly exists on the CI machine.
 	if errors.Is(err, syscall.ESRCH) {
 		return false
 	}
@@ -82,6 +93,10 @@ func IsStale(path string) bool {
 	if info, statErr := os.Stat(path); statErr == nil {
 		return time.Since(info.ModTime()) > 10*time.Second
 	}
+	// Coverage gap accepted by architect: os.Stat failure after a
+	// successful os.ReadFile is near-impossible to trigger artificially.
+	// The file existed at read time but disappeared before stat — a
+	// TOCTOU race that requires external interference.
 	return false
 }
 
@@ -115,10 +130,19 @@ func Acquire(lockPath string) (*os.File, error) {
 		if err == nil {
 			// Write PID to the lock file for liveness detection.
 			pid := os.Getpid()
+			// Coverage gap accepted by architect: fmt.Fprintf to a
+			// just-opened *os.File can only fail on disk-full or
+			// hardware error. Testing this requires filesystem-level
+			// fault injection — not worth the complexity for a
+			// process-lock helper.
 			if _, writeErr := fmt.Fprintf(f, "%d", pid); writeErr != nil {
 				cleanupLockFile(f, lockPath, "PID write failure")
 				return nil, fmt.Errorf("write PID to lock file %s: %w", lockPath, writeErr)
 			}
+			// Coverage gap accepted by architect: same rationale as
+			// Fprintf above — Sync can only fail on disk-full or
+			// hardware error. Requires filesystem-level fault injection
+			// to test.
 			if syncErr := f.Sync(); syncErr != nil {
 				cleanupLockFile(f, lockPath, "sync failure")
 				return nil, fmt.Errorf("sync lock file %s: %w", lockPath, syncErr)
