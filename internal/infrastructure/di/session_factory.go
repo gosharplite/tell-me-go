@@ -31,11 +31,11 @@ type defaultSessionFactory struct {
 	Stdout            io.Writer
 	Logger            *slog.Logger
 	RotateSession     func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error
-	NewSessionState   func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
+	NewSessionState   func(ctx stdctx.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error)
 	setupSecurityFunc func(paths *persistence.Paths, configPath string) error
 }
 
-func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) sessionFactory {
+func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int, logger *slog.Logger) error, newState func(ctx stdctx.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error)) sessionFactory {
 	f := &defaultSessionFactory{
 		HomeDir:         homeDir,
 		FileSystem:      fs,

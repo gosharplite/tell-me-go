@@ -58,6 +58,10 @@ func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	if s.statePath != "" && cloned.Env["STORAGE_TYPE"] != "memory" {
 		data, err := json.MarshalIndent(cloned, "", "  ")
 		if err != nil {
+			s.logger.Error("failed to marshal session state for persistence",
+				"path", s.statePath,
+				"error", err,
+			)
 			return
 		}
 		if err := s.fs.AtomicWrite(context.Background(), s.statePath, data, 0644); err != nil {
@@ -148,8 +152,19 @@ func (s *sessionState) Close() error {
 // to inject a failure and exercise the error propagation path in NewSessionState.
 var initServicesFn = initServices
 
+// SessionStateOption is a functional option for NewSessionState.
+type SessionStateOption func(*sessionState)
+
+// WithLogger injects a structured logger into the session state.
+// If not provided, slog.Default() is used.
+func WithLogger(logger *slog.Logger) SessionStateOption {
+	return func(s *sessionState) {
+		s.logger = logger
+	}
+}
+
 // NewSessionState initializes repositories and services.
-func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvider, error) {
+func NewSessionState(ctx context.Context, configDir string, opts ...SessionStateOption) (ports.SessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
 	if storageType == "" {
 		storageType = "sqlite" // Set sqlite as default storage
@@ -175,6 +190,10 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 		statePath: statePath,
 		fs:        fs,
 		logger:    slog.Default(),
+	}
+
+	for _, opt := range opts {
+		opt(state)
 	}
 
 	state.hydrateInfo(ctx, storageType, paths)

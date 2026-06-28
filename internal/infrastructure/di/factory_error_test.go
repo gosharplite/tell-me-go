@@ -316,7 +316,7 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 			setup: func(f *defaultSessionFactory) {
 				f.setupSecurityFunc = f.setupSecurity
 				f.FileSystem = &infra_persistence.OSFileSystem{}
-				f.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+				f.NewSessionState = func(ctx context.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error) {
 					return nil, simulatedErr
 				}
 			},

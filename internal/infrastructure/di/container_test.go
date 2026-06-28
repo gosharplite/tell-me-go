@@ -886,7 +886,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					},
 				}
 
-				cfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+				cfg.NewSessionState = func(ctx context.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error) {
 					return mockSP, nil
 				}
 			},
@@ -1196,7 +1196,7 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
 	})
-	bcfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+	bcfg.NewSessionState = func(ctx context.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error) {
 		return mockSP, nil
 	}
 	bootstrapper := NewBootstrapper(bcfg)

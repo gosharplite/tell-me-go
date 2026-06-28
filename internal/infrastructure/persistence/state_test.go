@@ -333,14 +333,22 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	}
 	defer func() { _ = os.Chmod(readOnlyDir, 0755) }()
 
-	// Point statePath inside the read-only directory so persistence fails.
-	ss := state.(*sessionState)
-	ss.statePath = filepath.Join(readOnlyDir, "state.json")
-
 	// Inject a logger that writes to a buffer so we can assert the
 	// persistence error is logged.
 	var buf bytes.Buffer
-	ss.logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	// Re-create state with the injected logger and a statePath that
+	// points into a read-only directory so persistence fails.
+	_ = state.Close()
+	state, err = NewSessionState(ctx, tempDir, WithLogger(logger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.Close() }()
+
+	ss := state.(*sessionState)
+	ss.statePath = filepath.Join(readOnlyDir, "state.json")
 
 	// Build updated info — copy from current so Env/Paths are intact.
 	info := ss.GetInfo()
