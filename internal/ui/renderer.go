@@ -356,7 +356,7 @@ func (r *stdUIRenderer) IsTerminalContext() bool {
 	return false
 }
 
-func (r *stdUIRenderer) printTokenLine(ui uiState, timestamp string, tokens int, maxTokens int, isActual bool, mode string) {
+func (r *stdUIRenderer) printTokenLine(ui uiState, timestamp string, tokens int, maxTokens int, isActual bool, mode string, model string) {
 	stderr := ui.stderr
 	tokenColor := colorReset
 	if float64(tokens) > float64(maxTokens)*config.WarningRatio {
@@ -371,13 +371,18 @@ func (r *stdUIRenderer) printTokenLine(ui uiState, timestamp string, tokens int,
 		modeStr = fmt.Sprintf(" - %s", mode)
 	}
 
+	modelStr := ""
+	if model != "" {
+		modelStr = fmt.Sprintf(" - %s", model)
+	}
+
 	prefix := "~"
 	if isActual {
 		prefix = ""
 	}
 
-	writeBestEffort(stderr, "%s[%s] Payload: %s%s%s%d%s/%d tokens%s%s\n",
-		ui.c(colorGray), timestamp, prefix, ui.c(tokenColor), "", tokens, ui.c(colorGray), maxTokens, modeStr, ui.c(colorReset))
+	writeBestEffort(stderr, "%s[%s] Payload: %s%s%s%d%s/%d tokens%s%s%s\n",
+		ui.c(colorGray), timestamp, prefix, ui.c(tokenColor), "", tokens, ui.c(colorGray), maxTokens, modeStr, modelStr, ui.c(colorReset))
 }
 
 func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) string {

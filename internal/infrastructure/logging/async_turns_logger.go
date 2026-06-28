@@ -242,6 +242,10 @@ func (l *asyncTurnsLogger) renderTurnHeader(sb *strings.Builder, status events.T
 	if status.Mode != "" {
 		modeStr = fmt.Sprintf(" - %s", status.Mode)
 	}
+	modelStr := ""
+	if status.Model != "" {
+		modelStr = fmt.Sprintf(" - %s", status.Model)
+	}
 	if status.MaxHistoryTurns > 0 {
 		fmt.Fprintf(sb, "╭─⠿ Turn %d/%d%s\n", status.SessionTurns+1, status.MaxHistoryTurns, modeStr)
 	} else {
@@ -250,7 +254,7 @@ func (l *asyncTurnsLogger) renderTurnHeader(sb *strings.Builder, status events.T
 
 	// Token line
 	prefix := "~"
-	fmt.Fprintf(sb, "[%s] Payload: %s%d/%d tokens%s\n", timestamp, prefix, status.Tokens, status.MaxHistoryTokens, modeStr)
+	fmt.Fprintf(sb, "[%s] Payload: %s%d/%d tokens%s%s\n", timestamp, prefix, status.Tokens, status.MaxHistoryTokens, modeStr, modelStr)
 }
 
 // formatDisplayName returns the human-readable model identifier for log output.
@@ -295,7 +299,11 @@ func (l *asyncTurnsLogger) renderTurnMetrics(sb *strings.Builder, status events.
 	if status.Mode != "" {
 		modeStr = fmt.Sprintf(" - %s", status.Mode)
 	}
-	fmt.Fprintf(sb, "[%s] Payload: %d/%d tokens%s\n", timestamp, m.PromptTokens, status.MaxHistoryTokens, modeStr)
+	payloadModelStr := ""
+	if status.Model != "" {
+		payloadModelStr = fmt.Sprintf(" - %s", status.Model)
+	}
+	fmt.Fprintf(sb, "[%s] Payload: %d/%d tokens%s%s\n", timestamp, m.PromptTokens, status.MaxHistoryTokens, modeStr, payloadModelStr)
 
 	// Metrics line
 	miss := m.PromptTokens - m.CachedTokens

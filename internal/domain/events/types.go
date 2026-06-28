@@ -76,6 +76,7 @@ type TurnStatus struct {
 	TotalO           int64
 	ToolReasons      []string // Captures tool reasons to print at the end
 	Mode             string
+	Model            string
 }
 
 // TurnStatusEvent carries payload and token metrics for UI display.
