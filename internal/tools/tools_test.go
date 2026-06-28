@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
@@ -46,7 +46,7 @@ func TestRegisterAll_WithSessionProvider(t *testing.T) {
 	t.Parallel()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := registry.New()
-	sp := &agenttest.MockSessionProvider{}
+	sp := &testfixtures.MockSessionProvider{}
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		HealthManager:   nil,
 		Registry:        r,
@@ -221,28 +221,28 @@ func TestRegisterAll_Errors(t *testing.T) {
 			name:      "fail in workspace.RegisterPersistence",
 			failAfter: 21,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 		},
 		{
 			name:      "fail in analysis.Register",
 			failAfter: 25,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 		},
 		{
 			name:      "fail in developer.Register",
 			failAfter: 46,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 		},
 		{
 			name:      "fail in integrations.RegisterAll",
 			failAfter: 53,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 		},
 	}
@@ -287,7 +287,7 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 			name:      "workspace.RegisterPersistence wraps error",
 			failAfter: 23,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 			wantSubstring: "workspace.RegisterPersistence",
 		},
@@ -295,7 +295,7 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 			name:      "analysis.Register wraps error",
 			failAfter: 26,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 			wantSubstring: "analysis.Register",
 		},
@@ -303,7 +303,7 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 			name:      "developer.Register wraps error",
 			failAfter: 47,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 			wantSubstring: "developer.Register",
 		},
@@ -311,7 +311,7 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 			name:      "integrations.RegisterAll wraps error",
 			failAfter: 54,
 			setup: func(p *tools.ToolRegistrationParams) {
-				p.SessionProvider = &agenttest.MockSessionProvider{}
+				p.SessionProvider = &testfixtures.MockSessionProvider{}
 			},
 			wantSubstring: "integrations.RegisterAll",
 		},

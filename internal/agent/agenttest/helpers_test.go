@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 // ---------------------------------------------------------------------------
@@ -218,7 +219,7 @@ func newPopulatedStubChatterComposer() *StubChatterComposer {
 		Logger:           &ports.NoOpLogger{},
 		Tracker:          new(MockCostTracker),
 		PricingOverrides: map[string]pricing.ModelPricing{"gpt-4": {Hit: 0.03, Miss: 0.06}},
-		SessionProvider:  new(MockSessionProvider),
+		SessionProvider:  new(testfixtures.MockSessionProvider),
 		TurnsLogger:      &ports.NoOpTurnsLogger{},
 		SecurityManager:  &MockServiceSecurityManager{},
 		Registry:         NewMockToolRegistry(),

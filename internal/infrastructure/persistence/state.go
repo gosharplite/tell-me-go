@@ -27,6 +27,7 @@ type sessionState struct {
 	statePath string
 	fs        domain_persistence.FileSystem
 	mu        sync.RWMutex
+	logger    *slog.Logger
 }
 
 func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
@@ -41,45 +42,59 @@ func (s *sessionState) GetInfo() ports.SessionInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	copied := ports.SessionInfo{
-		Model:    s.Info.Model,
-		Provider: s.Info.Provider,
-	}
-
-	if s.Info.Env != nil {
-		copied.Env = make(map[string]string, len(s.Info.Env))
-		for k, v := range s.Info.Env {
-			copied.Env[k] = v
-		}
-	}
-
-	if s.Info.Paths != nil {
-		copied.Paths = make(map[string]string, len(s.Info.Paths))
-		for k, v := range s.Info.Paths {
-			copied.Paths[k] = v
-		}
-	}
-
-	if s.Info.ActiveToolkits != nil {
-		copied.ActiveToolkits = make([]string, len(s.Info.ActiveToolkits))
-		copy(copied.ActiveToolkits, s.Info.ActiveToolkits)
-	}
-
-	return copied
+	return cloneSessionInfo(s.Info)
 }
 
-func (s *sessionState) SetInfo(info ports.SessionInfo) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *sessionState) SetInfo(ctx context.Context, info ports.SessionInfo) error {
+	// Phase A: Deep-copy outside the lock so the clone doesn't contend.
+	cloned := cloneSessionInfo(info)
 
-	s.Info = info
-	// Persist to disk
-	if s.statePath != "" && s.Info.Env["STORAGE_TYPE"] != "memory" {
-		data, err := json.MarshalIndent(s.Info, "", "  ")
-		if err == nil {
-			_ = s.fs.AtomicWrite(context.Background(), s.statePath, data, 0644)
+	// Phase B: Swap in-memory state under the shortest possible lock.
+	s.mu.Lock()
+	s.Info = cloned
+	s.mu.Unlock()
+
+	// Phase C: Persist to disk OUTSIDE the mutex using the local 'cloned' copy.
+	if s.statePath != "" && cloned.Env["STORAGE_TYPE"] != "memory" {
+		data, err := json.MarshalIndent(cloned, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal session state: %w", err)
+		}
+		if err := s.fs.AtomicWrite(ctx, s.statePath, data, 0644); err != nil {
+			return fmt.Errorf("persist session state to %s: %w", s.statePath, err)
 		}
 	}
+	return nil
+}
+
+// cloneSessionInfo returns a deep copy of src, isolating maps and slices
+// from external mutation.
+func cloneSessionInfo(src ports.SessionInfo) ports.SessionInfo {
+	dst := ports.SessionInfo{
+		Model:    src.Model,
+		Provider: src.Provider,
+	}
+
+	if src.Env != nil {
+		dst.Env = make(map[string]string, len(src.Env))
+		for k, v := range src.Env {
+			dst.Env[k] = v
+		}
+	}
+
+	if src.Paths != nil {
+		dst.Paths = make(map[string]string, len(src.Paths))
+		for k, v := range src.Paths {
+			dst.Paths[k] = v
+		}
+	}
+
+	if src.ActiveToolkits != nil {
+		dst.ActiveToolkits = make([]string, len(src.ActiveToolkits))
+		copy(dst.ActiveToolkits, src.ActiveToolkits)
+	}
+
+	return dst
 }
 
 // hydrateInfo loads persisted session info from disk (if available) and ensures
@@ -131,8 +146,11 @@ func (s *sessionState) Close() error {
 // to inject a failure and exercise the error propagation path in NewSessionState.
 var initServicesFn = initServices
 
+// SessionStateOption is a functional option for NewSessionState.
+type SessionStateOption func(*sessionState)
+
 // NewSessionState initializes repositories and services.
-func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvider, error) {
+func NewSessionState(ctx context.Context, configDir string, opts ...SessionStateOption) (ports.SessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
 	if storageType == "" {
 		storageType = "sqlite" // Set sqlite as default storage
@@ -157,6 +175,11 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 		db:        db,
 		statePath: statePath,
 		fs:        fs,
+		logger:    slog.Default(),
+	}
+
+	for _, opt := range opts {
+		opt(state)
 	}
 
 	state.hydrateInfo(ctx, storageType, paths)

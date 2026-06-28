@@ -38,7 +38,7 @@ type BootstrapperConfig struct {
 	RegisterAllTools func(infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(tools.Registry, security.Manager, string, string, string, string, map[string]pricing.ModelPricing, ports.KVStore) error
 	RotateSession    func(context.Context, infra_persistence.FileSystem, io.Writer, persistence.Paths, int, *slog.Logger) error
-	NewSessionState  func(context.Context, string) (ports.SessionProvider, error)
+	NewSessionState  func(context.Context, string, ...infra_persistence.SessionStateOption) (ports.SessionProvider, error)
 }
 
 // DefaultBootstrapperConfig returns a BootstrapperConfig populated with

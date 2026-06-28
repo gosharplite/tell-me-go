@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 // taskMatchesFilter returns true if task matches the given filter.
@@ -121,19 +122,6 @@ func (m *mockListStore) Count(ctx context.Context) (int, error) {
 	return len(m.tasks), nil
 }
 
-type mockSessionProvider struct {
-	tasks     ports.TaskStore
-	info      ports.SessionInfo
-	listStore *mockListStore
-}
-
-func (m *mockSessionProvider) GetTasks() ports.TaskStore             { return m.tasks }
-func (m *mockSessionProvider) GetSettings() ports.KVStore            { return nil }
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo            { return m.info }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)        { m.info = info }
-func (m *mockSessionProvider) Close() error                          { return nil }
-func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }
-
 type mockMetadataProvider struct {
 	tools.ToolMetadataProvider
 	toolkits []string
@@ -159,41 +147,40 @@ func busyFunc(busyCount int, finalErr error) func() error {
 	}
 }
 
-func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
+func setupPersistenceTools() (*persistenceTools, *testfixtures.MockSessionProvider, *mockListStore) {
 	lt := &mockListStore{}
 	ts := services.NewTaskService(lt)
 	mp := &mockMetadataProvider{}
 
-	provider := &mockSessionProvider{
-		tasks:     ts,
-		listStore: lt,
-		info: ports.SessionInfo{
+	provider := &testfixtures.MockSessionProvider{
+		SessionInfo: ports.SessionInfo{
 			Env:   make(map[string]string),
 			Paths: make(map[string]string),
 		},
+		GetTasksFn: func() ports.TaskStore { return ts },
 	}
 
-	return newpersistenceTools(provider, mp), provider
+	return newpersistenceTools(provider, mp), provider, lt
 }
 
 func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 	tests := []struct {
 		name        string
-		setup       func(*persistenceTools, *mockSessionProvider)
+		setup       func(*persistenceTools, *testfixtures.MockSessionProvider)
 		wantModel   string
 		wantErr     bool
 		wantErrText string
 	}{
 		{
 			name: "success",
-			setup: func(pt *persistenceTools, p *mockSessionProvider) {
-				p.info.Model = "test-model"
+			setup: func(pt *persistenceTools, p *testfixtures.MockSessionProvider) {
+				p.SessionInfo.Model = "test-model"
 			},
 			wantModel: "test-model",
 		},
 		{
 			name: "marshal error",
-			setup: func(pt *persistenceTools, p *mockSessionProvider) {
+			setup: func(pt *persistenceTools, p *testfixtures.MockSessionProvider) {
 				pt.marshalIndent = func(v any, prefix, indent string) ([]byte, error) {
 					return nil, errors.New("marshal exploded")
 				}
@@ -205,7 +192,7 @@ func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
+			pt, provider, _ := setupPersistenceTools()
 			tt.setup(pt, provider)
 
 			res, err := pt.GetSessionInfo(context.Background(), nil, nil)
@@ -263,8 +250,8 @@ func testManageTasksAdd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
-			setupManageTasks(t, nil, provider)
+			pt, provider, lt := setupPersistenceTools()
+			setupManageTasks(t, nil, provider, lt)
 
 			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 
@@ -333,8 +320,8 @@ func testManageTasksList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
-			setupManageTasks(t, tt.setup, provider)
+			pt, provider, lt := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider, lt)
 
 			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 
@@ -365,8 +352,8 @@ func testManageTasksUpdate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
-			setupManageTasks(t, tt.setup, provider)
+			pt, provider, lt := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider, lt)
 
 			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 
@@ -408,8 +395,8 @@ func testManageTasksDeleteAndClear(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
-			setupManageTasks(t, tt.setup, provider)
+			pt, provider, lt := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider, lt)
 
 			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 
@@ -447,8 +434,8 @@ func testManageTasksCompletedFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
-			setupManageTasks(t, tt.setup, provider)
+			pt, provider, lt := setupPersistenceTools()
+			setupManageTasks(t, tt.setup, provider, lt)
 
 			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 
@@ -473,8 +460,8 @@ func testManageTasksError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
-			setupManageTasks(t, nil, provider)
+			pt, provider, lt := setupPersistenceTools()
+			setupManageTasks(t, nil, provider, lt)
 
 			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 
@@ -483,10 +470,10 @@ func testManageTasksError(t *testing.T) {
 	}
 }
 
-func setupManageTasks(t *testing.T, setup func(*mockListStore, ports.TaskStore), provider *mockSessionProvider) {
+func setupManageTasks(t *testing.T, setup func(*mockListStore, ports.TaskStore), provider *testfixtures.MockSessionProvider, lt *mockListStore) {
 	t.Helper()
 	if setup != nil {
-		setup(provider.listStore, provider.tasks)
+		setup(lt, provider.GetTasks())
 	}
 }
 
@@ -510,11 +497,11 @@ func assertManageTasksResult(t *testing.T, res tools.ToolResult, err error, expe
 }
 
 func TestPersistenceTools_StoreErrors(t *testing.T) {
-	pt, provider := setupPersistenceTools()
+	pt, _, lt := setupPersistenceTools()
 	ctx := context.Background()
 
 	// Inject error into list store
-	provider.listStore.err = fmt.Errorf("list store error")
+	lt.err = fmt.Errorf("list store error")
 
 	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": "task"}, nil)
 	if err == nil {
@@ -533,7 +520,7 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 }
 
 func TestPersistenceTools_Register(t *testing.T) {
-	pt, _ := setupPersistenceTools()
+	pt, _, _ := setupPersistenceTools()
 	reg := registry.New()
 	if err := pt.Register(reg); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -555,7 +542,7 @@ func TestPersistenceTools_Register(t *testing.T) {
 
 func TestRegisterPersistence(t *testing.T) {
 	reg := registry.New()
-	_, provider := setupPersistenceTools()
+	_, provider, _ := setupPersistenceTools()
 	if err := RegisterPersistence(reg, provider); err != nil {
 		t.Fatalf("RegisterPersistence failed: %v", err)
 	}
@@ -582,7 +569,7 @@ func TestNewPersistenceTools_Nil(t *testing.T) {
 }
 
 func TestPersistenceTools_Errors(t *testing.T) {
-	pt, _ := setupPersistenceTools()
+	pt, _, _ := setupPersistenceTools()
 	ctx := context.Background()
 
 	// addTask error (empty content)
@@ -607,7 +594,7 @@ func TestPersistenceTools_Errors(t *testing.T) {
 func TestNewPersistenceTools_InterfaceNilPointer(t *testing.T) {
 	// Create a typed nil pointer stored in an interface variable:
 	// the interface itself is non-nil, but the underlying pointer is nil.
-	var nilProvider *mockSessionProvider = nil
+	var nilProvider *testfixtures.MockSessionProvider = nil
 	var sp ports.SessionProvider = nilProvider // non-nil interface wrapping nil ptr
 
 	pt := newpersistenceTools(sp, nil)
@@ -666,7 +653,7 @@ func (m *mockToolRegistrar) RegisterToToolkitWithOptions(toolkit string, def *to
 }
 
 func TestPersistenceTools_Register_ErrorPaths(t *testing.T) {
-	pt, _ := setupPersistenceTools()
+	pt, _, _ := setupPersistenceTools()
 
 	t.Run("get_session_info Register fails", func(t *testing.T) {
 		reg := &mockToolRegistrar{failOn: "get_session_info"}
@@ -705,12 +692,12 @@ func TestPersistenceTools_Register_ErrorPaths(t *testing.T) {
 // TestManageTasks_ListLastPageNoHint verifies that when listing the last
 // partial page, no "Use offset=" pagination hint is emitted.
 func TestManageTasks_ListLastPageNoHint(t *testing.T) {
-	pt, provider := setupPersistenceTools()
+	pt, provider, _ := setupPersistenceTools()
 	ctx := context.Background()
 
 	// Add 60 tasks
 	for i := 1; i <= 60; i++ {
-		_, err := provider.tasks.AddTask(ctx, fmt.Sprintf("task %d", i))
+		_, err := provider.GetTasks().AddTask(ctx, fmt.Sprintf("task %d", i))
 		if err != nil {
 			t.Fatalf("AddTask failed: %v", err)
 		}
@@ -737,7 +724,7 @@ func TestManageTasks_ListLastPageNoHint(t *testing.T) {
 // triggers an UnmarshalArgs failure in ManageTasks, exercising the error path
 // at line 111-113 in persistence_tools.go.
 func TestManageTasks_UnmarshalError(t *testing.T) {
-	pt, _ := setupPersistenceTools()
+	pt, _, _ := setupPersistenceTools()
 	ctx := context.Background()
 	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": 123}, nil)
 	if err == nil {
@@ -753,14 +740,14 @@ func TestManageTasks_UnmarshalError(t *testing.T) {
 // when tasks exist (totalCount > 0) but offset >= len(tasks) causes an empty
 // result set, listTasks returns "No tasks found. (total: N)".
 func TestListTasks_FilteredNoMatch(t *testing.T) {
-	pt, provider := setupPersistenceTools()
+	pt, provider, _ := setupPersistenceTools()
 	ctx := context.Background()
 
-	_, err := provider.tasks.AddTask(ctx, "pending task 1")
+	_, err := provider.GetTasks().AddTask(ctx, "pending task 1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = provider.tasks.AddTask(ctx, "pending task 2")
+	_, err = provider.GetTasks().AddTask(ctx, "pending task 2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +766,7 @@ func TestListTasks_FilteredNoMatch(t *testing.T) {
 }
 
 func TestManageTasks_SchemaTaskIDIsInteger(t *testing.T) {
-	pt, _ := setupPersistenceTools()
+	pt, _, _ := setupPersistenceTools()
 	reg := registry.New()
 	if err := pt.Register(reg); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -1011,14 +998,14 @@ func (s *countErrorStore) CountTasks(ctx context.Context, status string) (int, e
 // are both returned correctly.
 func TestFetchAndCount_Success(t *testing.T) {
 	t.Parallel()
-	pt, provider := setupPersistenceTools()
+	pt, provider, _ := setupPersistenceTools()
 	ctx := context.Background()
 
-	_, err := provider.tasks.AddTask(ctx, "task one")
+	_, err := provider.GetTasks().AddTask(ctx, "task one")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = provider.tasks.AddTask(ctx, "task two")
+	_, err = provider.GetTasks().AddTask(ctx, "task two")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1039,8 +1026,8 @@ func TestFetchAndCount_Success(t *testing.T) {
 // propagates correctly, returning nil tasks and zero count.
 func TestFetchAndCount_ListTasksError(t *testing.T) {
 	t.Parallel()
-	pt, provider := setupPersistenceTools()
-	provider.listStore.err = errors.New("list failed")
+	pt, _, lt := setupPersistenceTools()
+	lt.err = errors.New("list failed")
 
 	tasks, count, err := pt.fetchAndCount(context.Background(), "", 50, 0)
 	if err == nil {
@@ -1062,18 +1049,18 @@ func TestFetchAndCount_ListTasksError(t *testing.T) {
 // to independently control the CountTasks error without affecting ListTasks.
 func TestFetchAndCount_CountTasksError(t *testing.T) {
 	t.Parallel()
-	pt, provider := setupPersistenceTools()
+	pt, provider, _ := setupPersistenceTools()
 	ctx := context.Background()
 
 	// Add a task so ListTasks succeeds
-	_, err := provider.tasks.AddTask(ctx, "task one")
+	_, err := provider.GetTasks().AddTask(ctx, "task one")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Wrap the real TaskStore so ListTasks works but CountTasks fails
 	pt.tasks = &countErrorStore{
-		TaskStore: provider.tasks,
+		TaskStore: provider.GetTasks(),
 		countErr:  errors.New("count failed"),
 	}
 

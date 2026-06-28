@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -316,7 +317,7 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 			setup: func(f *defaultSessionFactory) {
 				f.setupSecurityFunc = f.setupSecurity
 				f.FileSystem = &infra_persistence.OSFileSystem{}
-				f.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+				f.NewSessionState = func(ctx context.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error) {
 					return nil, simulatedErr
 				}
 			},
@@ -409,8 +410,8 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 				tt.setup(factory, sm)
 			}
 
-			mockSP := &mockSessionProvider{
-				GetSettingsFunc: func() ports.KVStore {
+			mockSP := &testfixtures.MockSessionProvider{
+				GetSettingsFn: func() ports.KVStore {
 					return &mockKVStore{}
 				},
 			}

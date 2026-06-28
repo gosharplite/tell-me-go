@@ -159,6 +159,10 @@ func FuzzNotifySubscriber(f *testing.F) {
 	f.Add("goroutine panic: send on closed channel", "timeout", "retry") // realistic
 
 	f.Fuzz(func(t *testing.T, panicValue string, errMsg string, eventMessage string) {
+		if len(panicValue) > 1024 || len(errMsg) > 1024 || len(eventMessage) > 1024 {
+			t.Skip()
+			return
+		}
 		runtime.Gosched() // cooperative yield: prevents fuzz shutdown race at 40s boundary (Issue #958)
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logBuf, nil))

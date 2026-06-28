@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -48,7 +48,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -287,6 +287,54 @@ else
 	"
 endif
 
+# All ports.SessionProvider / ports.SessionStateProvider test doubles
+# must use agenttest.MockSessionProvider — the single canonical mock.
+# Hand-rolled mocks outside agenttest/ are forbidden. This guard catches
+# any new mock added to a _test.go file outside the canonical location.
+verify-session-provider-mock:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for hand-rolled SessionProvider mocks outside agenttest/ ..."
+	@VIOLATIONS="$$( grep -rn 'type.*[Ss]ession[Pp]rovider.*struct' --include='*_test.go' internal/ \
+		| grep -v 'internal/agent/agenttest/' \
+		| sort -u )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ hand-rolled SessionProvider mock outside agenttest/."; \
+		echo "   Use agenttest.MockSessionProvider — the single canonical mock."; \
+		echo "   All other SessionProvider mocks were eliminated; new ones are forbidden."; \
+		echo ""; \
+		echo "Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		echo "Fix: replace with &agenttest.MockSessionProvider{}."; \
+		exit 1; \
+	fi
+	@echo "  ✓ No hand-rolled SessionProvider mocks outside agenttest/."
+else
+	@echo "Checking for hand-rolled SessionProvider mocks outside agenttest/ ..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path internal -Recurse -Filter '*_test.go' | Where-Object { \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/agent/agenttest/' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'type.*[Ss]ession[Pp]rovider.*struct'; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}:{2}' -f $$m.Path, $$m.LineNumber, $$m.Line.Trim()) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ hand-rolled SessionProvider mock outside agenttest/.'; \
+			Write-Host '   Use agenttest.MockSessionProvider — the single canonical mock.'; \
+			Write-Host ''; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			Write-Host 'Fix: replace with &agenttest.MockSessionProvider{}.'; \
+			exit 1 \
+		}; \
+		Write-Host '  ✓ No hand-rolled SessionProvider mocks outside agenttest/.' \
+	"
+endif
+
 # Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
 # Legitimate I/O simulation and hardware observation sleeps are explicitly allow-listed.
 verify-no-test-sleep:
@@ -430,6 +478,8 @@ check: fmt tidy build
 	@$(MAKE) verify-architecture
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
+	@echo "=== verify-session-provider-mock ==="
+	@$(MAKE) verify-session-provider-mock
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== fuzz-smoke ==="
@@ -454,6 +504,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-architecture
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
+	@echo "=== verify-session-provider-mock ==="
+	@$(MAKE) verify-session-provider-mock
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="

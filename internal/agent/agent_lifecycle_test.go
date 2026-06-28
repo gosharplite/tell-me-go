@@ -42,7 +42,7 @@ func TestNewAgent_Initialization(t *testing.T) {
 		WithSecurityManager(sm),
 		WithInternalTools(),
 		WithHistoryManager(&mockHistoryManager{}),
-		WithSessionProvider(&agenttest.MockSessionProvider{}),
+		WithSessionProvider(&testfixtures.MockSessionProvider{}),
 		WithSummarizer(&agenttest.MockSummarizer{}),
 		WithPricing("model", "mode", map[string]pricing.ModelPricing{"model": {Hit: 1.0}}),
 		WithSessionCostTracker(&agenttest.MockCostTracker{}),

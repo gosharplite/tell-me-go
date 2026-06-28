@@ -43,7 +43,9 @@ func (t *persistenceTools) handleLoadToolkit(ctx context.Context, args map[strin
 
 	if len(status.loaded) > 0 {
 		info.ActiveToolkits = append(info.ActiveToolkits, status.loaded...)
-		t.state.SetInfo(info)
+		if err := t.state.SetInfo(ctx, info); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("set session info: %w", err)
+		}
 	}
 
 	responseText := t.formatLoadToolkitResponse(status)

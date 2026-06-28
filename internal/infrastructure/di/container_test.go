@@ -29,6 +29,7 @@ import (
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -149,69 +150,6 @@ func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 		return m.GetAllFunc(ctx)
 	}
 	return map[string]string{}, nil
-}
-
-type mockSessionProvider struct {
-	GetTasksFunc         func() ports.TaskStore
-	GetSettingsFunc      func() ports.KVStore
-	GetInfoFunc          func() ports.SessionInfo
-	SetInfoFunc          func(info ports.SessionInfo)
-	CloseFunc            func() error
-	GetHealthCheckerFunc func() ports.HealthChecker
-
-	getTasksCalls         int
-	getSettingsCalls      int
-	getInfoCalls          int
-	setInfoCalls          int
-	closeCalls            int
-	getHealthCheckerCalls int
-}
-
-func (m *mockSessionProvider) GetTasks() ports.TaskStore {
-	m.getTasksCalls++
-	if m.GetTasksFunc != nil {
-		return m.GetTasksFunc()
-	}
-	return nil
-}
-
-func (m *mockSessionProvider) GetSettings() ports.KVStore {
-	m.getSettingsCalls++
-	if m.GetSettingsFunc != nil {
-		return m.GetSettingsFunc()
-	}
-	return nil
-}
-
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
-	m.getInfoCalls++
-	if m.GetInfoFunc != nil {
-		return m.GetInfoFunc()
-	}
-	return ports.SessionInfo{}
-}
-
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {
-	m.setInfoCalls++
-	if m.SetInfoFunc != nil {
-		m.SetInfoFunc(info)
-	}
-}
-
-func (m *mockSessionProvider) Close() error {
-	m.closeCalls++
-	if m.CloseFunc != nil {
-		return m.CloseFunc()
-	}
-	return nil
-}
-
-func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker {
-	m.getHealthCheckerCalls++
-	if m.GetHealthCheckerFunc != nil {
-		return m.GetHealthCheckerFunc()
-	}
-	return nil
 }
 
 type mockConfigurableSecurityManager struct {
@@ -782,7 +720,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 	tracker := &mockTracker{}
-	sessionProvider := new(mockSessionProvider)
+	sessionProvider := &testfixtures.MockSessionProvider{}
 
 	lazyClient := newLazyClient(func() (llm.ExtendedClient, error) {
 		return client, nil
@@ -877,16 +815,16 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "SessionProviderCloseFails",
 			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
-				mockSP := &mockSessionProvider{
-					GetSettingsFunc: func() ports.KVStore {
+				mockSP := &testfixtures.MockSessionProvider{
+					GetSettingsFn: func() ports.KVStore {
 						return &mockKVStore{}
 					},
-					CloseFunc: func() error {
+					CloseFn: func() error {
 						return simulatedErr
 					},
 				}
 
-				cfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+				cfg.NewSessionState = func(ctx context.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error) {
 					return mockSP, nil
 				}
 			},
@@ -996,8 +934,8 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 			return "", nil
 		},
 	}
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore { return mockKV },
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore { return mockKV },
 	}
 
 	// Capture logs
@@ -1173,11 +1111,11 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 
 	busErr := errors.New("bus shutdown failed")
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore {
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
-		CloseFunc: func() error {
+		CloseFn: func() error {
 			return busErr
 		},
 	}
@@ -1196,7 +1134,7 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
 	})
-	bcfg.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+	bcfg.NewSessionState = func(ctx context.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error) {
 		return mockSP, nil
 	}
 	bootstrapper := NewBootstrapper(bcfg)
@@ -1384,8 +1322,8 @@ func TestBypassConfirmationPriority(t *testing.T) {
 					}
 				},
 			}
-			mockSP := &mockSessionProvider{
-				GetSettingsFunc: func() ports.KVStore { return mockKV },
+			mockSP := &testfixtures.MockSessionProvider{
+				GetSettingsFn: func() ports.KVStore { return mockKV },
 			}
 
 			factory := &defaultSessionFactory{
@@ -1746,8 +1684,8 @@ func TestWireHealth(t *testing.T) {
 	bcfg.Stderr = io.Discard
 	b := NewBootstrapper(bcfg)
 
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore {
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
 	}
@@ -1777,8 +1715,8 @@ func TestWireToolRegistry(t *testing.T) {
 	b := NewBootstrapper(bcfg)
 
 	paths := &persistence.Paths{LogPath: filepath.Join(tempDir, "test.log"), TracePath: filepath.Join(tempDir, "test.trace.jsonl")}
-	mockSP := &mockSessionProvider{
-		GetSettingsFunc: func() ports.KVStore {
+	mockSP := &testfixtures.MockSessionProvider{
+		GetSettingsFn: func() ports.KVStore {
 			return &mockKVStore{}
 		},
 	}

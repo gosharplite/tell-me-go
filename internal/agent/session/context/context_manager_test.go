@@ -861,16 +861,9 @@ func TestNewManager_WithFactorySummarizer(t *testing.T) {
 	assert.NotNil(t, factory.Logger, "factory.Logger should be set to the manager's logger")
 }
 
-// stubSessionProvider is a minimal implementation of ports.SessionProvider
-// whose methods panic if called. It exists solely to satisfy the type system
-// for testing WithSessionProvider.
-type stubSessionProvider struct {
-	ports.SessionProvider
-}
-
 func TestWithSessionProvider(t *testing.T) {
 	cm := sessctx.NewManager(nil, nil, nil, nil,
-		sessctx.WithSessionProvider(&stubSessionProvider{}),
+		sessctx.WithSessionProvider(&testfixtures.MockSessionProvider{}),
 	)
 	assert.NotNil(t, cm.SessionProvider)
 }

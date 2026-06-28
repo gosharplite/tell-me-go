@@ -18,19 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubSessionProvider is a minimal implementation of ports.SessionProvider
-// for testing resolveActiveTools.
-type stubSessionProvider struct {
-	info ports.SessionInfo
-}
-
-func (s *stubSessionProvider) GetInfo() ports.SessionInfo            { return s.info }
-func (s *stubSessionProvider) SetInfo(info ports.SessionInfo)        {}
-func (s *stubSessionProvider) GetTasks() ports.TaskStore             { return nil }
-func (s *stubSessionProvider) GetSettings() ports.KVStore            { return nil }
-func (s *stubSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }
-func (s *stubSessionProvider) Close() error                          { return nil }
-
 func TestResolveActiveTools(t *testing.T) {
 	t.Parallel()
 
@@ -60,9 +47,7 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with nil ActiveToolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &stubSessionProvider{
-						info: ports.SessionInfo{ActiveToolkits: nil},
-					},
+					SessionProvider: &testfixtures.MockSessionProvider{},
 				},
 			},
 			expected: nil,
@@ -71,8 +56,8 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with empty toolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &stubSessionProvider{
-						info: ports.SessionInfo{ActiveToolkits: []string{}},
+					SessionProvider: &testfixtures.MockSessionProvider{
+						SessionInfo: ports.SessionInfo{ActiveToolkits: []string{}},
 					},
 				},
 			},
@@ -82,8 +67,8 @@ func TestResolveActiveTools(t *testing.T) {
 			name: "SessionProvider with populated toolkits",
 			turn: &Turn{
 				CtxManager: &sessctx.Manager{
-					SessionProvider: &stubSessionProvider{
-						info: ports.SessionInfo{ActiveToolkits: []string{"tk1", "tk2"}},
+					SessionProvider: &testfixtures.MockSessionProvider{
+						SessionInfo: ports.SessionInfo{ActiveToolkits: []string{"tk1", "tk2"}},
 					},
 				},
 			},

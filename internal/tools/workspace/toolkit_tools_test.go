@@ -9,24 +9,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
-
-type mockToolkitSessionProvider struct {
-	ports.SessionProvider
-	info ports.SessionInfo
-}
-
-func (m *mockToolkitSessionProvider) GetInfo() ports.SessionInfo {
-	return m.info
-}
-
-func (m *mockToolkitSessionProvider) SetInfo(info ports.SessionInfo) {
-	m.info = info
-}
-
-func (m *mockToolkitSessionProvider) GetTasks() ports.TaskStore {
-	return nil
-}
 
 func TestHandleLoadToolkit(t *testing.T) {
 	t.Parallel()
@@ -85,8 +69,8 @@ func TestHandleLoadToolkit(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sp := &mockToolkitSessionProvider{
-				info: ports.SessionInfo{
+			sp := &testfixtures.MockSessionProvider{
+				SessionInfo: ports.SessionInfo{
 					ActiveToolkits: tt.initialToolkits,
 				},
 			}
@@ -137,9 +121,7 @@ func TestHandleLoadToolkit(t *testing.T) {
 func TestHandleLoadToolkit_UnmarshalError(t *testing.T) {
 	t.Parallel()
 
-	sp := &mockToolkitSessionProvider{
-		info: ports.SessionInfo{},
-	}
+	sp := &testfixtures.MockSessionProvider{}
 	mp := &mockMetadataProvider{
 		toolkits: []string{"core", "git"},
 	}

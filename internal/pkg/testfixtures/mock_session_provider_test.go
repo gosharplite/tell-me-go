@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agenttest
+package testfixtures
 
 import (
 	"context"
@@ -99,9 +99,11 @@ func TestMockSessionProvider_SetInfo(t *testing.T) {
 	info := ports.SessionInfo{Provider: "openai"}
 	var called bool
 	m := &MockSessionProvider{
-		SetInfoFn: func(in ports.SessionInfo) { called = true; captured = in },
+		SetInfoFn: func(_ context.Context, in ports.SessionInfo) error { called = true; captured = in; return nil },
 	}
-	m.SetInfo(info)
+	if err := m.SetInfo(context.Background(), info); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if captured.Provider != info.Provider {
 		t.Errorf("captured Provider %q; want %q", captured.Provider, info.Provider)
 	}
@@ -185,7 +187,7 @@ func TestMockSessionProvider_RaceCondition(t *testing.T) {
 	m := &MockSessionProvider{
 		GetSettingsFn:      func() ports.KVStore { total.Add(1); return &stubKVStore{} },
 		GetInfoFn:          func() ports.SessionInfo { total.Add(1); return ports.SessionInfo{Model: "r"} },
-		SetInfoFn:          func(_ ports.SessionInfo) { total.Add(1) },
+		SetInfoFn:          func(_ context.Context, _ ports.SessionInfo) error { total.Add(1); return nil },
 		CloseFn:            func() error { total.Add(1); return nil },
 		GetHealthCheckerFn: func() ports.HealthChecker { total.Add(1); return &stubHealthChecker{} },
 	}
@@ -198,7 +200,7 @@ func TestMockSessionProvider_RaceCondition(t *testing.T) {
 			for i := 0; i < 20; i++ {
 				_ = m.GetSettings()
 				_ = m.GetInfo()
-				m.SetInfo(ports.SessionInfo{})
+				_ = m.SetInfo(context.Background(), ports.SessionInfo{})
 				_ = m.Close()
 				_ = m.GetHealthChecker()
 			}

@@ -81,7 +81,9 @@ func TestSessionState_Persistence(t *testing.T) {
 
 	info := state1.GetInfo()
 	info.ActiveToolkits = []string{"git", "k8s"}
-	state1.SetInfo(info)
+	if err := state1.SetInfo(ctx, info); err != nil {
+		t.Fatalf("SetInfo failed: %v", err)
+	}
 	_ = state1.Close()
 
 	// 2. Reload the session state from disk
@@ -333,7 +335,6 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	}
 	defer func() { _ = os.Chmod(readOnlyDir, 0755) }()
 
-	// Point statePath inside the read-only directory so persistence fails.
 	ss := state.(*sessionState)
 	ss.statePath = filepath.Join(readOnlyDir, "state.json")
 
@@ -341,14 +342,51 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	info := ss.GetInfo()
 	info.ActiveToolkits = []string{"git", "k8s", "ado"}
 
-	// SetInfo must not panic even when persistence fails.
-	state.SetInfo(info)
+	// SetInfo must return an error when persistence fails.
+	err = ss.SetInfo(ctx, info)
+	assert.Error(t, err, "SetInfo must return an error when persistence fails")
 
 	// In-memory state is updated regardless of persistence outcome.
 	restored := state.GetInfo()
 	if len(restored.ActiveToolkits) != 3 {
 		t.Errorf("expected 3 active toolkits in memory, got %d", len(restored.ActiveToolkits))
 	}
+}
+
+func TestSessionState_SetInfo_IsolationFromCallerMutation(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Use memory storage so no disk I/O interferes
+	t.Setenv("STORAGE_TYPE", "memory")
+	state, err := NewSessionState(ctx, tempDir)
+	require.NoError(t, err)
+	defer func() { _ = state.Close() }()
+
+	// Build info with known values
+	info := state.GetInfo()
+	info.Env["caller_key"] = "original"
+	info.Paths["caller_path"] = "/original"
+	info.ActiveToolkits = []string{"git"}
+
+	// Store it
+	err = state.SetInfo(ctx, info)
+	require.NoError(t, err)
+
+	// Mutate the caller's references AFTER SetInfo
+	info.Env["caller_key"] = "mutated"
+	info.Paths["caller_path"] = "/mutated"
+	info.ActiveToolkits[0] = "corrupted"
+
+	// Read back — stored state must be ISOLATED from caller mutation
+	stored := state.GetInfo()
+
+	assert.Equal(t, "original", stored.Env["caller_key"],
+		"Env map must be a deep copy; caller mutation must not affect stored state")
+	assert.Equal(t, "/original", stored.Paths["caller_path"],
+		"Paths map must be a deep copy; caller mutation must not affect stored state")
+	assert.Equal(t, []string{"git"}, stored.ActiveToolkits,
+		"ActiveToolkits slice must be a deep copy; caller mutation must not affect stored state")
 }
 
 func TestInitServices_InitializeIsNoOp(t *testing.T) {

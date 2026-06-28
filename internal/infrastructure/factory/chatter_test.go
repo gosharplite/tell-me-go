@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -20,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
 
@@ -221,7 +221,7 @@ func setupNilDepTest(t *testing.T) (*mockSessionDeps, ports.ChatterConfig) {
 		bus:             bus,
 		paths:           &persistence.Paths{ModeDir: modeDir},
 		tracker:         &mockTracker{},
-		sessionProvider: &agenttest.MockSessionProvider{},
+		sessionProvider: &testfixtures.MockSessionProvider{},
 	}
 
 	cfg := ports.ChatterConfig{
