@@ -284,6 +284,13 @@ func (e *processExecutor) formatPipelineResult(stdoutStr, stderrStr string, trun
 
 // withinParent reports whether target resides inside the parent directory.
 func withinParent(parent, target string) bool {
+	// Resolve both paths to a canonical form for consistent cross-platform
+	// comparison. On Windows, os.Getwd() and filepath.Abs may return paths
+	// with different normalization (short vs long names, case differences)
+	// causing filepath.Rel to fail even for valid parent-child relationships.
+	parent = resolveSymlinks(parent)
+	target = resolveSymlinks(target)
+
 	rel, err := filepath.Rel(parent, target)
 	if err != nil {
 		return false
@@ -292,6 +299,22 @@ func withinParent(parent, target string) bool {
 		return false
 	}
 	return true
+}
+
+// resolveSymlinks resolves symbolic links in path. When EvalSymlinks fails
+// (e.g., the path doesn't exist yet), it recursively resolves the parent
+// directory and reconstructs the path. This mirrors pathPolicy.resolveSymlinks
+// for consistent path normalization across the codebase.
+func resolveSymlinks(path string) string {
+	if realPath, err := filepath.EvalSymlinks(path); err == nil {
+		return realPath
+	}
+	dir := filepath.Dir(path)
+	if dir == path || dir == "." {
+		return path
+	}
+	resolvedDir := resolveSymlinks(dir)
+	return filepath.Join(resolvedDir, filepath.Base(path))
 }
 
 // validateAbsPath checks an absolute cleanedPath against CWD and TempDir boundaries.
