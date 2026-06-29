@@ -76,7 +76,6 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] Implement Component Composition (Viewport, SearchBar) to avoid TUI 'God Objects'.
     - [x] Add basic scrolling navigation and thought visibility toggle (spacebar).
     - [x] Add full-text search across the complete conversation timeline.
-    - [x] Support turn jumping and tool call expansion.
     - [x] **Asset Hydration Check**: Render placeholders (`[Image Attached: {ID}]`) to prevent binary blob panics in the TUI.
     - [x] Integrate with existing pin/unpin and rollback functionality via Command Ports.
     - [x] **Immutable Archive Boundary**: Visually disable/block mutation commands (Pin/Rollback) for messages originating from the archive.
