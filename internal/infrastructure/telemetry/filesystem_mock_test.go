@@ -18,6 +18,8 @@ type mockFile struct {
 	closeErr error
 }
 
+var _ File = (*mockFile)(nil)
+
 func (m *mockFile) Close() error {
 	return m.closeErr
 }
@@ -27,6 +29,8 @@ type mockFS struct {
 	openFileFunc func(name string, flag int, perm os.FileMode) (File, error)
 	mkdirAllFunc func(path string, perm os.FileMode) error
 }
+
+var _ FileSystem = (*mockFS)(nil)
 
 func (m *mockFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	if m.openFileFunc != nil {
