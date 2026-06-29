@@ -6,13 +6,16 @@ package telemetry
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,12 +28,9 @@ func TestLogTrace_WriteError_DevFull(t *testing.T) {
 
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 
-	// logTrace calls os.OpenFile(traceFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644).
-	// On /dev/full:
-	//   - O_CREATE is a no-op for device files.
-	//   - O_APPEND|O_WRONLY succeeds.
-	//   - The subsequent f.Write returns ENOSPC, hitting the target branch.
-	logTrace(context.Background(), "/dev/full", trace)
+	// Use a TraceLogger with production defaults.
+	tl := NewTraceLogger(slog.Default())
+	tl.logTrace(context.Background(), "/dev/full", trace)
 
 	// If we reach here without panicking, the write-error branch was exercised.
 }
@@ -48,42 +48,46 @@ func (e *errCloser) Close() error {
 // returns an io.WriteCloser whose Close() method returns an error,
 // logTrace logs a warning containing the error message.
 func TestLogTrace_CloseError_Mock(t *testing.T) {
-	// NOT parallel — overrides package-level var AND slog.SetDefault.
-	originalOpen := openTraceFile
-	openTraceFile = func(path string) (io.WriteCloser, error) {
-		return &errCloser{Writer: &bytes.Buffer{}}, nil
-	}
-	t.Cleanup(func() { openTraceFile = originalOpen })
+	t.Parallel()
 
-	spy := captureSlogOutput(t)
+	spy := &testfixtures.SpyLogger{}
+	tl := &TraceLogger{
+		marshalFunc: json.Marshal,
+		openTraceFile: func(path string) (io.WriteCloser, error) {
+			return &errCloser{Writer: &bytes.Buffer{}}, nil
+		},
+		logger: newSpySlogLogger(spy),
+	}
 
 	tmpDir := t.TempDir()
 	traceFile := filepath.Join(tmpDir, "trace.jsonl")
 
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
-	logTrace(context.Background(), traceFile, trace)
+	tl.logTrace(context.Background(), traceFile, trace)
 
 	assert.True(t, spy.CalledWith("Warn", "failed to close trace file"),
 		"expected slog.Warn 'failed to close trace file' to be logged")
 }
 
-// TestLogTrace_MarshalError verifies that when the injected jsonMarshal
-// function returns an error, logTrace logs a warning and returns early.
+// TestLogTrace_MarshalError verifies that when the injected marshalFunc
+// returns an error, logTrace logs a warning and returns early.
 func TestLogTrace_MarshalError(t *testing.T) {
-	// NOT parallel — overrides package-level var AND slog.SetDefault.
-	originalMarshal := jsonMarshal
-	jsonMarshal = func(v interface{}) ([]byte, error) {
-		return nil, errors.New("injected marshal error")
-	}
-	t.Cleanup(func() { jsonMarshal = originalMarshal })
+	t.Parallel()
 
-	spy := captureSlogOutput(t)
+	spy := &testfixtures.SpyLogger{}
+	tl := &TraceLogger{
+		marshalFunc: func(v interface{}) ([]byte, error) {
+			return nil, errors.New("injected marshal error")
+		},
+		openTraceFile: NewTraceLogger(nil).openTraceFile,
+		logger:        newSpySlogLogger(spy),
+	}
 
 	tmpDir := t.TempDir()
 	traceFile := filepath.Join(tmpDir, "trace.jsonl")
 
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
-	logTrace(context.Background(), traceFile, trace)
+	tl.logTrace(context.Background(), traceFile, trace)
 
 	assert.True(t, spy.CalledWith("Warn", "failed to marshal TurnTrace"),
 		"expected slog.Warn 'failed to marshal TurnTrace' to be logged")

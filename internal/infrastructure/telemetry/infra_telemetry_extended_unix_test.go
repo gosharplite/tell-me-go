@@ -7,8 +7,10 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"testing"
 
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 // ---------------------------------------------------------------------------
@@ -52,7 +55,8 @@ func TestLogTrace_WriteError(t *testing.T) {
 
 	logDone := make(chan struct{})
 	go func() {
-		logTrace(context.Background(), fifoPath, trace)
+		tl := NewTraceLogger(slog.Default())
+		tl.logTrace(context.Background(), fifoPath, trace)
 		close(logDone)
 	}()
 
@@ -66,33 +70,28 @@ func TestLogTrace_WriteError(t *testing.T) {
 }
 
 func TestLogTrace_CloseError(t *testing.T) {
-	// NOT parallel — overrides package-level var.
-	//
-	// Strategy: inject a mock openTraceFile that returns a file whose Write
-	// method fails (simulating EFBIG/ENOSPC). This exercises the write-error
-	// branch in writeTraceEntry, and subsequently the close-error branch
-	// (which on real Linux/ext4 is typically unreachable — the close after a
-	// failed write returns 0).
-	originalOpen := openTraceFile
-	t.Cleanup(func() { openTraceFile = originalOpen })
+	t.Parallel()
 
 	writeErr := errors.New("simulated write error (EFBIG)")
 	closeErr := errors.New("simulated close error")
 
-	openTraceFile = func(path string) (io.WriteCloser, error) {
-		return &mockFile{
-			Writer:   &errorWriter{err: writeErr},
-			closeErr: closeErr,
-		}, nil
+	spy := &testfixtures.SpyLogger{}
+	tl := &TraceLogger{
+		marshalFunc: json.Marshal,
+		openTraceFile: func(path string) (io.WriteCloser, error) {
+			return &mockFile{
+				Writer:   &errorWriter{err: writeErr},
+				closeErr: closeErr,
+			}, nil
+		},
+		logger: newSpySlogLogger(spy),
 	}
-
-	spy := captureSlogOutput(t)
 
 	tmpDir := t.TempDir()
 	traceFile := filepath.Join(tmpDir, "close_err.jsonl")
 
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "complete"}
-	logTrace(context.Background(), traceFile, trace)
+	tl.logTrace(context.Background(), traceFile, trace)
 
 	// Verify the write-error warning was logged.
 	if !spy.CalledWith("Warn", "failed to write to trace file") {

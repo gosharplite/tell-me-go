@@ -31,6 +31,8 @@ func TestMain(m *testing.M) {
 // testfixtures.SpyLogger for the duration of the test. The returned spy
 // can be used to assert that specific WARN/ERROR messages were emitted.
 //
+// Deprecated: Prefer newSpySlogLogger + TraceLogger DI for new tests.
+// This helper remains for legacy tests that still rely on slog.SetDefault.
 // Tests using this helper must NOT use t.Parallel() because
 // slog.SetDefault is a global mutation.
 func captureSlogOutput(t *testing.T) *testfixtures.SpyLogger {
@@ -41,6 +43,13 @@ func captureSlogOutput(t *testing.T) *testfixtures.SpyLogger {
 	slog.SetDefault(slog.New(&spySlogHandler{spy: spy, level: slog.LevelDebug}))
 	t.Cleanup(func() { slog.SetDefault(orig) })
 	return spy
+}
+
+// newSpySlogLogger creates a *slog.Logger that routes all log records
+// to a testfixtures.SpyLogger for assertion. Use with TraceLogger DI
+// to avoid mutating slog.SetDefault(), enabling t.Parallel().
+func newSpySlogLogger(spy *testfixtures.SpyLogger) *slog.Logger {
+	return slog.New(&spySlogHandler{spy: spy, level: slog.LevelDebug})
 }
 
 // spySlogHandler routes slog records to a testfixtures.SpyLogger for

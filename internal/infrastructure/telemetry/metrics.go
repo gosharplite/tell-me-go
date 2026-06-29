@@ -45,19 +45,36 @@ type costSummaryArgs struct {
 
 type estimateCostArgs struct{}
 
-// jsonMarshal is the json.Marshal function, overridable in tests.
-var jsonMarshal = json.Marshal
-
 // fileSystem is the filesystem abstraction, overridable in tests.
 var fileSystem FileSystem = osFS{}
 
-// openTraceFile opens a trace file for appending, overridable in tests.
-var openTraceFile = func(path string) (io.WriteCloser, error) {
-	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-}
-
 // resolveUsageForSummaryFunc is the resolveUsageForSummary function, overridable in tests.
 var resolveUsageForSummaryFunc = resolveUsageForSummary
+
+// TraceLogger encapsulates dependencies for writing TurnTrace events to disk.
+// All fields are injected via the constructor and can be overridden in tests
+// without mutating package-level state, enabling safe test parallelization.
+type TraceLogger struct {
+	marshalFunc   func(v any) ([]byte, error)
+	openTraceFile func(path string) (io.WriteCloser, error)
+	logger        *slog.Logger
+}
+
+// NewTraceLogger creates a TraceLogger with production defaults.
+// marshalFunc is set to json.Marshal and openTraceFile to os.OpenFile.
+// If logger is nil, slog.Default() is used.
+func NewTraceLogger(logger *slog.Logger) *TraceLogger {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &TraceLogger{
+		marshalFunc: json.Marshal,
+		openTraceFile: func(path string) (io.WriteCloser, error) {
+			return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		},
+		logger: logger,
+	}
+}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
 func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, kvStore ports.KVStore) error {
@@ -251,7 +268,7 @@ func generateSessionID(mode, logFile string) string {
 }
 
 // logTrace writes a TurnTrace to a trace log file.
-func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.TurnTrace) {
+func (t *TraceLogger) logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.TurnTrace) {
 	if traceFile == "" || trace == nil {
 		return
 	}
@@ -263,37 +280,37 @@ func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.Tur
 	default:
 	}
 
-	data, err := jsonMarshal(trace)
+	data, err := t.marshalFunc(trace)
 	if err != nil {
-		slog.Warn("failed to marshal TurnTrace",
+		t.logger.Warn("failed to marshal TurnTrace",
 			slog.Any("error", err))
 		return
 	}
 
-	writeTraceEntry(traceFile, data)
+	t.writeTraceEntry(traceFile, data)
 }
 
 // writeTraceEntry opens the trace file, writes a JSON line, and closes it.
 // All errors are logged as warnings; this is a fire-and-forget operation
 // called from the event subscriber pipeline.
-func writeTraceEntry(traceFile string, data []byte) {
-	wc, err := openTraceFile(traceFile)
+func (t *TraceLogger) writeTraceEntry(traceFile string, data []byte) {
+	wc, err := t.openTraceFile(traceFile)
 	if err != nil {
-		slog.Warn("failed to open trace file",
+		t.logger.Warn("failed to open trace file",
 			slog.String("path", traceFile),
 			slog.Any("error", err))
 		return
 	}
 	defer func() {
 		if cerr := wc.Close(); cerr != nil {
-			slog.Warn("failed to close trace file",
+			t.logger.Warn("failed to close trace file",
 				slog.String("path", traceFile),
 				slog.Any("error", cerr))
 		}
 	}()
 
 	if _, err := wc.Write(append(data, '\n')); err != nil {
-		slog.Warn("failed to write to trace file",
+		t.logger.Warn("failed to write to trace file",
 			slog.String("path", traceFile),
 			slog.Any("error", err))
 	}
@@ -301,9 +318,10 @@ func writeTraceEntry(traceFile string, data []byte) {
 
 // RegisterTraceSubscriber subscribes a listener to TraceEvents.
 func RegisterTraceSubscriber(bus events.EventBus, traceFile string) {
+	tl := NewTraceLogger(slog.Default())
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
-			logTrace(ctx, traceFile, te.Trace)
+			tl.logTrace(ctx, traceFile, te.Trace)
 		}
 	})
 }

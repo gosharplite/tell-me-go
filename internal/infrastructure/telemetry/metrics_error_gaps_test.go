@@ -356,7 +356,8 @@ func TestLogTrace_WriteErrorUnreachable(t *testing.T) {
 		FinalStatus: "completed",
 	}
 
-	logTrace(context.Background(), traceFile, trace)
+	tl := NewTraceLogger(nil)
+	tl.logTrace(context.Background(), traceFile, trace)
 
 	// Verify the file was created and contains valid JSON.
 	data, err := os.ReadFile(traceFile)
@@ -411,7 +412,7 @@ func TestLogTrace_WriteErrorUnreachable(t *testing.T) {
 	zeroTrace := &domain_telemetry.TurnTrace{}
 	zeroFile := filepath.Join(tmpDir, "zero_trace.jsonl")
 	// Must not panic.
-	logTrace(context.Background(), zeroFile, zeroTrace)
+	tl.logTrace(context.Background(), zeroFile, zeroTrace)
 
 	zeroData, err := os.ReadFile(zeroFile)
 	require.NoError(t, err)
