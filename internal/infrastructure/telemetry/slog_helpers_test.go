@@ -69,4 +69,4 @@ func (h *spySlogHandler) Handle(_ context.Context, r slog.Record) error {
 }
 
 func (h *spySlogHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
-func (h *spySlogHandler) WithGroup(_ string) slog.Handler       { return h }
+func (h *spySlogHandler) WithGroup(_ string) slog.Handler      { return h }
