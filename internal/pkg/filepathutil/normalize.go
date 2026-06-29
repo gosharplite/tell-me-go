@@ -70,8 +70,14 @@ func NormalizeKey(path string) string {
 // already absolute and on the same filesystem).
 func NormalizeForCompare(path string) string {
 	s := filepath.ToSlash(path)
+	// Strip Windows volume prefix on all platforms.
+	// filepath.VolumeName only detects volumes on the current OS,
+	// so we also check for [A-Za-z]: manually for cross-platform use.
 	if vol := filepath.VolumeName(s); vol != "" {
 		s = s[len(vol):]
+	} else if len(s) >= 2 && s[1] == ':' &&
+		((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) {
+		s = s[2:]
 	}
 	return strings.ToLower(s)
 }
