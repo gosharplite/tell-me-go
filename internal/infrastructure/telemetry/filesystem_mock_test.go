@@ -8,6 +8,10 @@ import (
 	"os"
 )
 
+// NOTE: mockFile and mockFS appear unused on Windows because their only
+// consumers live in //go:build !windows test files (e.g.,
+// infra_telemetry_extended_unix_test.go). Do not delete these types.
+
 // mockFile is a test double for the File interface.
 type mockFile struct {
 	io.Writer
