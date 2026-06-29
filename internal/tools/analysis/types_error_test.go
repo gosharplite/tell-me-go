@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -378,6 +379,9 @@ func broken() { // missing closing brace
 // silently skipped.
 func TestCollectSymbols_PropagatesWalkError(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
+	}
 	tmpDir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
@@ -414,6 +418,9 @@ func ValidFunc() string { return "ok" }
 // walk errors during method discovery propagate through GetTypeInfo.
 func TestGetTypeInfo_PropagatesWalkError(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
+	}
 	tmpDir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
@@ -449,6 +456,9 @@ type MyStruct struct{}
 // walk errors during symbol collection propagate through FindDefinitions.
 func TestFindDefinitions_PropagatesWalkError(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
+	}
 	tmpDir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {

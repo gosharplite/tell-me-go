@@ -219,6 +219,9 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 
 	t.Run("create_temp_file_error_is_wrapped", func(t *testing.T) {
 		t.Parallel()
+		if runtime.GOOS == "windows" {
+			t.Skip("os.Chmod(0500) does not prevent file creation on Windows")
+		}
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "test.go")
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
