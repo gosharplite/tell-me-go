@@ -139,3 +139,40 @@ func TestNormalize_Idempotent(t *testing.T) {
 		t.Errorf("Normalize not idempotent: %q vs %q", first, second)
 	}
 }
+
+func TestNormalizeForCompare_WindowsRoot(t *testing.T) {
+	// C:/ must normalize to / without touching the filesystem.
+	// Volume prefix is stripped, leaving just the root separator.
+	result := NormalizeForCompare("C:/")
+	if result != "/" {
+		t.Errorf("NormalizeForCompare(%q) = %q; want %q", "C:/", result, "/")
+	}
+}
+
+func TestNormalizeForCompare_StripsVolume(t *testing.T) {
+	result := NormalizeForCompare("D:\\Users\\foo\\bar.txt")
+	if result != "/users/foo/bar.txt" {
+		t.Errorf("NormalizeForCompare = %q; want %q", result, "/users/foo/bar.txt")
+	}
+}
+
+func TestNormalizeForCompare_WindowsChildPath(t *testing.T) {
+	result := NormalizeForCompare("C:\\a\\b.go")
+	if result != "/a/b.go" {
+		t.Errorf("NormalizeForCompare = %q; want %q", result, "/a/b.go")
+	}
+}
+
+func TestNormalizeForCompare_UnixPath(t *testing.T) {
+	result := NormalizeForCompare("/usr/local/bin")
+	if result != "/usr/local/bin" {
+		t.Errorf("NormalizeForCompare = %q; want %q", result, "/usr/local/bin")
+	}
+}
+
+func TestNormalizeForCompare_Lowercases(t *testing.T) {
+	result := NormalizeForCompare("/Foo/Bar/BAZ.go")
+	if result != "/foo/bar/baz.go" {
+		t.Errorf("NormalizeForCompare = %q; want %q", result, "/foo/bar/baz.go")
+	}
+}

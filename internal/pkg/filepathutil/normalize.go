@@ -62,3 +62,16 @@ func NormalizeKey(path string) string {
 	}
 	return strings.ToLower(s)
 }
+
+// NormalizeForCompare converts to forward slashes, strips the Windows
+// volume prefix, and lowercases. Unlike NormalizeKey, it does NOT resolve
+// symlinks — suitable when both paths come from the same OS and only
+// format normalization is needed (e.g., comparing two paths that are
+// already absolute and on the same filesystem).
+func NormalizeForCompare(path string) string {
+	s := filepath.ToSlash(path)
+	if vol := filepath.VolumeName(s); vol != "" {
+		s = s[len(vol):]
+	}
+	return strings.ToLower(s)
+}

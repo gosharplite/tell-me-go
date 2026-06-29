@@ -96,8 +96,8 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 }
 
 func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
-	targetPath = filepathutil.NormalizeKey(targetPath)
-	filePath = filepathutil.NormalizeKey(filePath)
+	targetPath = filepathutil.NormalizeForCompare(targetPath)
+	filePath = filepathutil.NormalizeForCompare(filePath)
 
 	if targetPath == filePath {
 		return true
