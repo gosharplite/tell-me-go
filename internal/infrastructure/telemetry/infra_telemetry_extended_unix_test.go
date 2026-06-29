@@ -55,7 +55,7 @@ func TestLogTrace_WriteError(t *testing.T) {
 
 	logDone := make(chan struct{})
 	go func() {
-		tl := NewTraceLogger(slog.Default())
+		tl := newTraceLogger(slog.Default())
 		tl.logTrace(context.Background(), fifoPath, trace)
 		close(logDone)
 	}()
@@ -76,7 +76,7 @@ func TestLogTrace_CloseError(t *testing.T) {
 	closeErr := errors.New("simulated close error")
 
 	spy := &testfixtures.SpyLogger{}
-	tl := &TraceLogger{
+	tl := &traceLogger{
 		marshalFunc: json.Marshal,
 		openTraceFile: func(path string) (io.WriteCloser, error) {
 			return &mockFile{

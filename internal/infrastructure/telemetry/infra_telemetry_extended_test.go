@@ -240,7 +240,7 @@ func TestTraceTelemetry(t *testing.T) {
 		FinalStatus: "success",
 	}
 
-	tl := NewTraceLogger(nil)
+	tl := newTraceLogger(nil)
 	tl.logTrace(context.Background(), traceFile, trace)
 
 	if _, err := os.Stat(traceFile); os.IsNotExist(err) {
@@ -455,7 +455,7 @@ func TestLogTrace_EmptyTraceFile(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Call with empty traceFile — should silently skip (gap 1).
-	tl := NewTraceLogger(nil)
+	tl := newTraceLogger(nil)
 	tl.logTrace(context.Background(), "", trace)
 
 	// Verify no file was created in the temp directory.
@@ -474,7 +474,7 @@ func TestLogTrace_NilTrace(t *testing.T) {
 	traceFile := filepath.Join(t.TempDir(), "nil_trace.jsonl")
 
 	// Call with nil trace — should silently skip (gap 2).
-	tl := NewTraceLogger(nil)
+	tl := newTraceLogger(nil)
 	tl.logTrace(context.Background(), traceFile, nil)
 
 	// Verify no file was created.
@@ -493,7 +493,7 @@ func TestLogTrace_CancelledContext(t *testing.T) {
 	cancel() // immediately cancel
 
 	// Call with cancelled context — should skip (gap 3).
-	tl := NewTraceLogger(nil)
+	tl := newTraceLogger(nil)
 	tl.logTrace(ctx, traceFile, trace)
 
 	// Verify no file was created.
@@ -512,7 +512,7 @@ func TestLogTrace_OpenError(t *testing.T) {
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 
 	// Must not panic.
-	tl := NewTraceLogger(nil)
+	tl := newTraceLogger(nil)
 	tl.logTrace(context.Background(), traceFile, trace)
 
 	// Verify the file was NOT created.

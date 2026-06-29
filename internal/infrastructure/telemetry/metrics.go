@@ -52,7 +52,7 @@ var resolveUsageForSummaryFunc = resolveUsageForSummary
 // TraceLogger encapsulates dependencies for writing TurnTrace events to disk.
 // All fields are injected via the constructor and can be overridden in tests
 // without mutating package-level state, enabling safe test parallelization.
-type TraceLogger struct {
+type traceLogger struct {
 	marshalFunc   func(v any) ([]byte, error)
 	openTraceFile func(path string) (io.WriteCloser, error)
 	logger        *slog.Logger
@@ -61,11 +61,11 @@ type TraceLogger struct {
 // NewTraceLogger creates a TraceLogger with production defaults.
 // marshalFunc is set to json.Marshal and openTraceFile to os.OpenFile.
 // If logger is nil, slog.Default() is used.
-func NewTraceLogger(logger *slog.Logger) *TraceLogger {
+func newTraceLogger(logger *slog.Logger) *traceLogger {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &TraceLogger{
+	return &traceLogger{
 		marshalFunc: json.Marshal,
 		openTraceFile: func(path string) (io.WriteCloser, error) {
 			return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -268,7 +268,7 @@ func generateSessionID(mode, logFile string) string {
 }
 
 // logTrace writes a TurnTrace to a trace log file.
-func (t *TraceLogger) logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.TurnTrace) {
+func (t *traceLogger) logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.TurnTrace) {
 	if traceFile == "" || trace == nil {
 		return
 	}
@@ -293,7 +293,7 @@ func (t *TraceLogger) logTrace(ctx context.Context, traceFile string, trace *dom
 // writeTraceEntry opens the trace file, writes a JSON line, and closes it.
 // All errors are logged as warnings; this is a fire-and-forget operation
 // called from the event subscriber pipeline.
-func (t *TraceLogger) writeTraceEntry(traceFile string, data []byte) {
+func (t *traceLogger) writeTraceEntry(traceFile string, data []byte) {
 	wc, err := t.openTraceFile(traceFile)
 	if err != nil {
 		t.logger.Warn("failed to open trace file",
@@ -318,7 +318,7 @@ func (t *TraceLogger) writeTraceEntry(traceFile string, data []byte) {
 
 // RegisterTraceSubscriber subscribes a listener to TraceEvents.
 func RegisterTraceSubscriber(bus events.EventBus, traceFile string) {
-	tl := NewTraceLogger(slog.Default())
+	tl := newTraceLogger(slog.Default())
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
 			tl.logTrace(ctx, traceFile, te.Trace)

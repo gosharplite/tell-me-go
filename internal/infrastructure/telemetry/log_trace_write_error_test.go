@@ -29,7 +29,7 @@ func TestLogTrace_WriteError_DevFull(t *testing.T) {
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 
 	// Use a TraceLogger with production defaults.
-	tl := NewTraceLogger(slog.Default())
+	tl := newTraceLogger(slog.Default())
 	tl.logTrace(context.Background(), "/dev/full", trace)
 
 	// If we reach here without panicking, the write-error branch was exercised.
@@ -51,7 +51,7 @@ func TestLogTrace_CloseError_Mock(t *testing.T) {
 	t.Parallel()
 
 	spy := &testfixtures.SpyLogger{}
-	tl := &TraceLogger{
+	tl := &traceLogger{
 		marshalFunc: json.Marshal,
 		openTraceFile: func(path string) (io.WriteCloser, error) {
 			return &errCloser{Writer: &bytes.Buffer{}}, nil
@@ -75,11 +75,11 @@ func TestLogTrace_MarshalError(t *testing.T) {
 	t.Parallel()
 
 	spy := &testfixtures.SpyLogger{}
-	tl := &TraceLogger{
+	tl := &traceLogger{
 		marshalFunc: func(v interface{}) ([]byte, error) {
 			return nil, errors.New("injected marshal error")
 		},
-		openTraceFile: NewTraceLogger(nil).openTraceFile,
+		openTraceFile: newTraceLogger(nil).openTraceFile,
 		logger:        newSpySlogLogger(spy),
 	}
 

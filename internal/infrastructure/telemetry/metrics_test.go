@@ -131,7 +131,7 @@ func TestAccumulate(t *testing.T) {
 // file requires OS-level manipulation (e.g., double-close or disk failure);
 // this path is exercised at the integration level, not in unit tests.
 func TestLogTrace_ErrorPaths(t *testing.T) {
-	tl := NewTraceLogger(nil)
+	tl := newTraceLogger(nil)
 
 	t.Run("nil trace", func(t *testing.T) {
 		// Should return immediately without panic.
@@ -264,7 +264,7 @@ func TestWriteTraceEntry(t *testing.T) {
 		tmpDir := t.TempDir()
 		traceFile := filepath.Join(tmpDir, "trace.jsonl")
 
-		tl := NewTraceLogger(nil)
+		tl := newTraceLogger(nil)
 		tl.writeTraceEntry(traceFile, []byte(`{"status":"ok"}`))
 
 		data, err := os.ReadFile(traceFile)
@@ -276,7 +276,7 @@ func TestWriteTraceEntry(t *testing.T) {
 		t.Parallel()
 
 		spy := &testfixtures.SpyLogger{}
-		tl := NewTraceLogger(newSpySlogLogger(spy))
+		tl := newTraceLogger(newSpySlogLogger(spy))
 		tl.writeTraceEntry("/nonexistent/dir/subdir/file", []byte(`{}`))
 
 		require.True(t, spy.CalledWith("Warn", "failed to open trace file"),
@@ -289,7 +289,7 @@ func TestWriteTraceEntry(t *testing.T) {
 		}
 
 		spy := &testfixtures.SpyLogger{}
-		tl := NewTraceLogger(newSpySlogLogger(spy))
+		tl := newTraceLogger(newSpySlogLogger(spy))
 		tl.writeTraceEntry("/dev/full", []byte(`{}`))
 
 		require.True(t, spy.CalledWith("Warn", "failed to write to trace file"),
@@ -300,7 +300,7 @@ func TestWriteTraceEntry(t *testing.T) {
 		t.Parallel()
 
 		spy := &testfixtures.SpyLogger{}
-		tl := &TraceLogger{
+		tl := &traceLogger{
 			marshalFunc: json.Marshal,
 			openTraceFile: func(path string) (io.WriteCloser, error) {
 				return &errCloser{Writer: &bytes.Buffer{}}, nil

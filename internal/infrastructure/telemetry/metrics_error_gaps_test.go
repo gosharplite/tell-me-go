@@ -358,7 +358,7 @@ func TestLogTrace_WriteErrorUnreachable(t *testing.T) {
 		FinalStatus: "completed",
 	}
 
-	tl := NewTraceLogger(nil)
+	tl := newTraceLogger(nil)
 	tl.logTrace(context.Background(), traceFile, trace)
 
 	// Verify the file was created and contains valid JSON.
