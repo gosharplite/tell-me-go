@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 func TestPathPolicy_ValidatePath(t *testing.T) {
