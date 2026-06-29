@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -269,27 +268,24 @@ func TestWriteTraceEntry(t *testing.T) {
 	})
 
 	t.Run("open error", func(t *testing.T) {
-		t.Parallel()
-		var logBuf bytes.Buffer
-		log.SetOutput(&logBuf)
-		defer log.SetOutput(os.Stderr)
+		spy := captureSlogOutput(t)
 
 		writeTraceEntry("/nonexistent/dir/subdir/file", []byte(`{}`))
 
-		require.Contains(t, logBuf.String(), "failed to open trace file")
+		require.True(t, spy.CalledWith("Warn", "failed to open trace file"),
+			"expected slog.Warn 'failed to open trace file' to be logged")
 	})
 
 	t.Run("write error /dev/full", func(t *testing.T) {
 		if _, err := os.Stat("/dev/full"); os.IsNotExist(err) {
 			t.Skip("/dev/full does not exist on this system")
 		}
-		var logBuf bytes.Buffer
-		log.SetOutput(&logBuf)
-		defer log.SetOutput(os.Stderr)
+		spy := captureSlogOutput(t)
 
 		writeTraceEntry("/dev/full", []byte(`{}`))
 
-		require.Contains(t, logBuf.String(), "failed to write to trace file")
+		require.True(t, spy.CalledWith("Warn", "failed to write to trace file"),
+			"expected slog.Warn 'failed to write to trace file' to be logged")
 	})
 
 	t.Run("close error", func(t *testing.T) {
@@ -299,12 +295,11 @@ func TestWriteTraceEntry(t *testing.T) {
 		}
 		t.Cleanup(func() { openTraceFile = originalOpen })
 
-		var logBuf bytes.Buffer
-		log.SetOutput(&logBuf)
-		defer log.SetOutput(os.Stderr)
+		spy := captureSlogOutput(t)
 
 		writeTraceEntry(t.TempDir()+"/dummy.jsonl", []byte(`{}`))
 
-		require.Contains(t, logBuf.String(), "failed to close trace file")
+		require.True(t, spy.CalledWith("Warn", "failed to close trace file"),
+			"expected slog.Warn 'failed to close trace file' to be logged")
 	})
 }
