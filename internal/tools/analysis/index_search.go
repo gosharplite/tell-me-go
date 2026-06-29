@@ -95,6 +95,15 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 }
 
 func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
+	// Normalize both paths to lowercase forward slashes for consistent
+	// cross-platform comparison. On Windows, filepath.Abs(".") and paths
+	// from packages.Load may differ in case (short vs long names) and
+	// slash direction, causing strings.HasPrefix to produce false negatives.
+	// On Unix, case never differs for the same filesystem path, so lowering
+	// is a no-op.
+	targetPath = strings.ToLower(filepath.ToSlash(targetPath))
+	filePath = strings.ToLower(filepath.ToSlash(filePath))
+
 	if targetPath == filePath {
 		return true
 	}
@@ -103,14 +112,14 @@ func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
 		if len(targetPath) == 0 {
 			return true
 		}
-		// If targetPath is a root directory (e.g., "/" or "C:\"),
+		// If targetPath is a root directory (e.g., "/" or "c:/"),
 		// it already ends in a separator.
-		if targetPath[len(targetPath)-1] == filepath.Separator {
+		if targetPath[len(targetPath)-1] == '/' {
 			return true
 		}
 		// Otherwise, require a separator at the boundary to prevent
 		// partial matches (e.g., /foo matching /foobar).
-		if len(filePath) > len(targetPath) && filePath[len(targetPath)] == filepath.Separator {
+		if len(filePath) > len(targetPath) && filePath[len(targetPath)] == '/' {
 			return true
 		}
 	}
