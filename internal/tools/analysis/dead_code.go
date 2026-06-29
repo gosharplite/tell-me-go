@@ -11,6 +11,7 @@ import (
 	"go/types"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -25,8 +26,9 @@ const deepVerifiedDead = " [DEEP: verified no cross-package callers; text-search
 
 // defaultDeadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
 type defaultDeadCodeAnalyzer struct {
-	SP  security.PathValidator
-	idx symbolIndex
+	SP          security.PathValidator
+	idx         symbolIndex
+	resolvePath func(string) (string, error) // default: filepath.Abs
 }
 
 // OrphanReport represents a single finding of dead or effectively private code.
@@ -71,7 +73,7 @@ type scanState struct {
 }
 
 func newDeadCodeAnalyzer(sp security.PathValidator, idx symbolIndex) *defaultDeadCodeAnalyzer {
-	return &defaultDeadCodeAnalyzer{SP: sp, idx: idx}
+	return &defaultDeadCodeAnalyzer{SP: sp, idx: idx, resolvePath: filepath.Abs}
 }
 
 // NewDeadCodeAnalyzerForCLI creates a DeadCodeAnalyzer wired for CLI use.

@@ -127,6 +127,10 @@ func (m *plainOSFS) MkdirAll(ctx context.Context, path string, perm os.FileMode)
 	return os.MkdirAll(path, perm)
 }
 
+func (m *plainOSFS) Chmod(ctx context.Context, name string, mode os.FileMode) error {
+	return os.Chmod(name, mode)
+}
+
 func (m *plainOSFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	return os.Stat(name)
 }
