@@ -163,6 +163,9 @@ func NewSessionState(ctx context.Context, configDir string, opts ...SessionState
 
 	tasks, err := initServicesFn(ctx, taskStore)
 	if err != nil {
+		if db != nil {
+			_ = db.Close()
+		}
 		return nil, err
 	}
 

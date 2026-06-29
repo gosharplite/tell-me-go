@@ -340,6 +340,23 @@ func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, err
 		return validateAbsPath(cleanedPath, originalPath)
 	}
 
+	// On Windows, paths starting with a separator (e.g., "\etc\passwd" from
+	// a Unix-style "/etc/passwd") may not be recognized as absolute by
+	// filepath.IsAbs (Go 1.22+). Treat them as rooted on the current drive
+	// to prevent them from being incorrectly resolved as relative subdirectories.
+	if runtime.GOOS == "windows" && len(cleanedPath) > 0 && os.IsPathSeparator(cleanedPath[0]) {
+		cwd, err := osGetwd()
+		if err != nil {
+			return "", fmt.Errorf("failed to get current directory: %w", err)
+		}
+		vol := filepath.VolumeName(cwd)
+		if vol != "" {
+			return validateAbsPath(vol+cleanedPath, originalPath)
+		}
+		// No volume (UNC path edge case) — reject
+		return "", fmt.Errorf("output file path cannot escape current directory: %q", originalPath)
+	}
+
 	return validateAndResolveRelPath(cleanedPath, originalPath)
 }
 

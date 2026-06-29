@@ -157,8 +157,14 @@ func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []stri
 	}
 
 	// 2. Check for PowerShell Verb-Noun pattern (e.g. "Get-ChildItem")
+	// Must be a bare command name, not a filesystem path containing hyphens.
 	if dashIdx := strings.Index(first, "-"); dashIdx > 0 && dashIdx < len(first)-1 {
-		return true
+		// Only match if the segment before the hyphen contains no path separators
+		// or dots (to avoid false positives on paths like "tell-me-go/helper").
+		prefix := first[:dashIdx]
+		if !strings.ContainsAny(prefix, "/\\.") {
+			return true
+		}
 	}
 
 	// 3. Check for PowerShell-specific substrings in the full command
