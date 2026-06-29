@@ -23,6 +23,7 @@ func TestResilience_504Retry(t *testing.T) {
 
 		if count == 1 {
 			w.WriteHeader(http.StatusGatewayTimeout)
+			w.Header().Set("Content-Type", "application/json")
 			// Return a message that specifically avoids current regex matches but represents a 504
 			if _, err := fmt.Fprint(w, `{"error": {"code": 504, "message": "The server encountered a temporary error and could not complete your request."}}`); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -92,6 +93,7 @@ func TestResilience_429Retry(t *testing.T) {
 
 		if count == 1 {
 			w.WriteHeader(http.StatusTooManyRequests)
+			w.Header().Set("Content-Type", "application/json")
 			// Return a message that specifically avoids legacy regex matches but represents a 429
 			if _, err := fmt.Fprint(w, `{"error": {"code": 429, "message": "Error 429: Rate limit reached"}}`); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
