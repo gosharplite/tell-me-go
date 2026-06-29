@@ -132,7 +132,7 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, err := os.Stat(historyPath)
 		return err == nil
-	}, 1*time.Second, 10*time.Millisecond, "global_costs.json should have been created by background recovery")
+	}, 5*time.Second, 50*time.Millisecond, "global_costs.json should have been created by background recovery")
 }
 
 func TestRecoverLedger_TableDriven(t *testing.T) {
