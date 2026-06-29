@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 // pathPolicy manages allowed boundaries and validates paths.
@@ -133,7 +134,7 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid path: %w", err)
 	}
-	absPath = p.resolveSymlinks(absPath)
+	absPath = filepathutil.NormalizePath(absPath)
 
 	if err := p.isSystemDirectory(absPath); err != nil {
 		return "", err
@@ -172,8 +173,7 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 	// 0. Normalize and resolve input path for internal consistency.
 	// This ensures that short/long names on Windows and symlinks are handled
 	// before prefix matching against system directories and exemptions.
-	absPath = p.resolveSymlinks(absPath)
-	absPath = filepath.ToSlash(absPath)
+	absPath = filepathutil.Normalize(absPath)
 
 	if p.isExemptedDirectory(absPath) {
 		return nil
@@ -322,8 +322,8 @@ func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	realBoundary := p.resolveSymlinks(absBoundary)
-	realTarget := p.resolveSymlinks(target)
+	realBoundary := filepathutil.NormalizePath(absBoundary)
+	realTarget := filepathutil.NormalizePath(target)
 
 	rel, err := filepath.Rel(realBoundary, realTarget)
 	ok := err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
@@ -340,16 +340,8 @@ func (p *pathPolicy) tryBoundary(absPath, boundary string) bool {
 	return ok
 }
 
+// resolveSymlinks delegates to filepathutil.NormalizePath for centralized
+// cross-platform symlink resolution with recursive fallback.
 func (p *pathPolicy) resolveSymlinks(path string) string {
-	if realPath, err := filepath.EvalSymlinks(path); err == nil {
-		return realPath
-	}
-
-	dir := filepath.Dir(path)
-	if dir == path || dir == "." {
-		return path
-	}
-
-	resolvedDir := p.resolveSymlinks(dir)
-	return filepath.Join(resolvedDir, filepath.Base(path))
+	return filepathutil.NormalizePath(path)
 }

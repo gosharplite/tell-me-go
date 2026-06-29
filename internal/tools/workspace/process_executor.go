@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 // osGetwd is a test hook for os.Getwd. It defaults to os.Getwd and
@@ -301,20 +302,10 @@ func withinParent(parent, target string) bool {
 	return true
 }
 
-// resolveSymlinks resolves symbolic links in path. When EvalSymlinks fails
-// (e.g., the path doesn't exist yet), it recursively resolves the parent
-// directory and reconstructs the path. This mirrors pathPolicy.resolveSymlinks
-// for consistent path normalization across the codebase.
+// resolveSymlinks delegates to filepathutil.NormalizePath for centralized
+// cross-platform symlink resolution with recursive fallback.
 func resolveSymlinks(path string) string {
-	if realPath, err := filepath.EvalSymlinks(path); err == nil {
-		return realPath
-	}
-	dir := filepath.Dir(path)
-	if dir == path || dir == "." {
-		return path
-	}
-	resolvedDir := resolveSymlinks(dir)
-	return filepath.Join(resolvedDir, filepath.Base(path))
+	return filepathutil.NormalizePath(path)
 }
 
 // validateAbsPath checks an absolute cleanedPath against CWD and TempDir boundaries.
