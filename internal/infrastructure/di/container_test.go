@@ -1637,6 +1637,7 @@ func TestWireTelemetry(t *testing.T) {
 
 	origCleanup := func(ctx context.Context) error { return nil }
 	pricingData, tracker, turnsLogger, cleanup := b.wireTelemetry(ctx, paths, cfg, nil, origCleanup)
+	defer func() { _ = cleanup(ctx) }()
 
 	assert.NotNil(t, pricingData)
 	assert.NotNil(t, tracker)
