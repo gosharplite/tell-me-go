@@ -339,9 +339,3 @@ func (p *pathPolicy) tryBoundary(absPath, boundary string) bool {
 	}
 	return ok
 }
-
-// resolveSymlinks delegates to filepathutil.NormalizePath for centralized
-// cross-platform symlink resolution with recursive fallback.
-func (p *pathPolicy) resolveSymlinks(path string) string {
-	return filepathutil.NormalizePath(path)
-}
