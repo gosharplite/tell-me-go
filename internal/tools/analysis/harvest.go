@@ -104,14 +104,19 @@ func (a *defaultDeadCodeAnalyzer) isInTargetScope(pkg *packages.Package, state *
 		if err != nil {
 			absPkg = filepath.Dir(pkg.GoFiles[0]) // fallback to raw dir path
 		}
-		// Normalize both paths to forward slashes for cross-platform comparison.
-		// On Windows, filepath.Abs prepends a volume (e.g., C:); strip it so
-		// that targetPath="/some/prefix" matches "C:/some/prefix".
+		// Normalize both paths to forward slashes without volume prefix
+		// for cross-platform comparison. On Windows, filepath.Abs prepends
+		// a volume (e.g., C:); stripping it from both sides ensures that
+		// targetPath="/some/prefix" matches "C:/some/prefix" and
+		// targetPath="C:/some/prefix" matches "D:/some/prefix" (same path).
 		normAbs := filepath.ToSlash(absPkg)
+		normTarget := filepath.ToSlash(state.targetPath)
 		if vol := filepath.VolumeName(normAbs); vol != "" {
 			normAbs = normAbs[len(vol):]
 		}
-		normTarget := filepath.ToSlash(state.targetPath)
+		if vol := filepath.VolumeName(normTarget); vol != "" {
+			normTarget = normTarget[len(vol):]
+		}
 		if !strings.HasPrefix(normAbs, normTarget) {
 			return false
 		}
