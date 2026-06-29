@@ -147,6 +147,11 @@ func runCommandWithEnvInDirEx(dir string, env []string, stdin string, injectConf
 
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
+	} else {
+		// Prevent deadlock on Windows: the child process must not inherit
+		// the parent's stdin when no input is expected. An empty reader
+		// returns EOF immediately, avoiding a blocked read.
+		cmd.Stdin = strings.NewReader("")
 	}
 
 	var stdout, stderr bytes.Buffer
