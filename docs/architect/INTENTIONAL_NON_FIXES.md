@@ -34,6 +34,15 @@ Any AI agent recommending these should consult the rationale below.
 - **See**: `internal/infrastructure/history/global_prompt_tracker.go`
   (architect-acceptance comment at the `prepareCompactedEntries` call site)
 
+### persistence/mock_fs.go — Chmod always returns nil
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `mockFileSystem.Chmod` is a test-double stub that returns `nil`
+  by design. Adding a test for a mock's no-op method would test the mock itself,
+  not production behavior. Mocks exist to satisfy interfaces with canned
+  responses; testing them is circular and provides no value.
+- **See**: `internal/domain/persistence/mock_fs.go:146-148`
+
 ---
 
 ## ADR-021 Follow-Ups (ALL COMPLETE)
@@ -97,4 +106,4 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-06-28*
+*Last Updated: 2026-07*

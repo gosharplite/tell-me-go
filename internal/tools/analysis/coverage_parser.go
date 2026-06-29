@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -409,7 +410,7 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath str
 	}
 
 	if testErr != nil {
-		return blocks, fmt.Errorf("coverage test failed (profile may be incomplete): %w", testErr)
+		return blocks, fmt.Errorf("coverage error (profile may be incomplete): %w", testErr)
 	}
 	return blocks, nil
 }
@@ -452,7 +453,11 @@ func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePa
 
 	report := formatDetailedCoverageReport(packagePath, blocks)
 	if err != nil {
-		report = "⚠️ WARNING: test execution failed, profile may be incomplete\n\n" + report
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			report = fmt.Sprintf("⚠️ NOTE: coverage generation interrupted; profile may be incomplete.\nCause: %v\n\n%s", err, report)
+		} else {
+			report = fmt.Sprintf("⚠️ WARNING: coverage error; profile may be incomplete.\nCause: %v\n\n%s", err, report)
+		}
 	}
 
 	return report, nil

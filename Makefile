@@ -482,6 +482,8 @@ check: fmt tidy build
 	@$(MAKE) verify-session-provider-mock
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
+	@echo "=== verify-adr-index ==="
+	@$(MAKE) verify-adr-index
 	@echo "=== fuzz-smoke ==="
 	@$(MAKE) fuzz-smoke
 	@echo "=== vulncheck ==="
