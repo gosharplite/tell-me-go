@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1779,6 +1780,9 @@ func TestResolveCrossPackage_NilTypesInfo(t *testing.T) {
 // =============================================================================
 func TestHarvestPackageSymbols_AbsError(t *testing.T) {
 	// NOT parallel — changes working directory
+	if runtime.GOOS == "windows" {
+		t.Skip("deleted-CWD technique cannot restore directory on Windows; file handles prevent cleanup")
+	}
 
 	origDir, err := os.Getwd()
 	require.NoError(t, err)
