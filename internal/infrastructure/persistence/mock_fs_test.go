@@ -130,6 +130,10 @@ func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.File
 	return nil
 }
 
+func (m *mockFileSystem) Chmod(ctx context.Context, name string, mode os.FileMode) error {
+	return nil
+}
+
 func (m *mockFileSystem) CreateTemp(ctx context.Context, dir, pattern string) (File, error) {
 	if m.CreateTempFunc != nil {
 		return m.CreateTempFunc(ctx, dir, pattern)

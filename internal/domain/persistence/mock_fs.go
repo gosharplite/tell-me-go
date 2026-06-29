@@ -143,6 +143,10 @@ func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.File
 	return nil
 }
 
+func (m *mockFileSystem) Chmod(ctx context.Context, name string, mode os.FileMode) error {
+	return nil
+}
+
 func (m *mockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
