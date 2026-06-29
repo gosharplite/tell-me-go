@@ -289,8 +289,8 @@ func withinParent(parent, target string) bool {
 	// comparison. On Windows, os.Getwd() and filepath.Abs may return paths
 	// with different normalization (short vs long names, case differences)
 	// causing filepath.Rel to fail even for valid parent-child relationships.
-	parent = resolveSymlinks(parent)
-	target = resolveSymlinks(target)
+	parent = filepathutil.NormalizePath(parent)
+	target = filepathutil.NormalizePath(target)
 
 	rel, err := filepath.Rel(parent, target)
 	if err != nil {
@@ -300,12 +300,6 @@ func withinParent(parent, target string) bool {
 		return false
 	}
 	return true
-}
-
-// resolveSymlinks delegates to filepathutil.NormalizePath for centralized
-// cross-platform symlink resolution with recursive fallback.
-func resolveSymlinks(path string) string {
-	return filepathutil.NormalizePath(path)
 }
 
 // validateAbsPath checks an absolute cleanedPath against CWD and TempDir boundaries.
