@@ -36,6 +36,7 @@ type FileSystem interface {
 	Remove(ctx context.Context, name string) error
 	RemoveAll(ctx context.Context, path string) error
 	Walk(ctx context.Context, root string, fn WalkFunc) error
+	Chmod(ctx context.Context, name string, mode os.FileMode) error
 }
 
 // IsBinary checks if the given data contains null bytes, suggesting it is a binary file.

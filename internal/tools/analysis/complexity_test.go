@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
@@ -46,7 +48,7 @@ func Complex(a, b bool) {
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
@@ -77,7 +79,7 @@ func C() {} // 1
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
@@ -104,7 +106,7 @@ func C() {} // 1
 // — identical to the fn.Type().(*types.Signature) guard in dead_code.go.
 func TestGetConcurrencyLimit_Documented(t *testing.T) {
 	t.Parallel()
-	analyzer := newComplexityAnalyzer(nil, nil)
+	analyzer := newComplexityAnalyzer(nil, nil, infra_persistence.NewOSFileSystem())
 	limit := analyzer.getConcurrencyLimit()
 	if limit < 1 {
 		t.Errorf("getConcurrencyLimit() = %d, want >= 1", limit)
@@ -127,7 +129,7 @@ func TestProcessFileTask_SemAcquireError(t *testing.T) {
 	// Cancel the context so the next Acquire fails
 	cancel()
 
-	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{})
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	var complexities []funcComplexity
 	var mu sync.Mutex
@@ -145,7 +147,7 @@ func TestProcessFileTask_SemAcquireError(t *testing.T) {
 
 func TestFormatResults(t *testing.T) {
 	t.Parallel()
-	analyzer := newComplexityAnalyzer(nil, nil)
+	analyzer := newComplexityAnalyzer(nil, nil, infra_persistence.NewOSFileSystem())
 
 	tests := []struct {
 		name    string
@@ -206,7 +208,7 @@ func TestFormatResults(t *testing.T) {
 
 func TestFormatResults_Truncation(t *testing.T) {
 	t.Parallel()
-	analyzer := newComplexityAnalyzer(nil, nil)
+	analyzer := newComplexityAnalyzer(nil, nil, infra_persistence.NewOSFileSystem())
 
 	t.Run("exactly 100 items no truncation", func(t *testing.T) {
 		t.Parallel()
@@ -258,7 +260,7 @@ func TestGatherComplexities_InvalidPath(t *testing.T) {
 	t.Parallel()
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	_, _, err := analyzer.GatherComplexities(context.Background(), "/nonexistent/path/that/does/not/exist", nil)
 	if err == nil {
@@ -276,7 +278,7 @@ func TestAnalyzeFile_ParseError(t *testing.T) {
 	}
 
 	cache := newASTCache(".")
-	analyzer := newComplexityAnalyzer(cache, &mockSecurityProvider{})
+	analyzer := newComplexityAnalyzer(cache, &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	_, err := analyzer.analyzeFile(invalidPath)
 	if err == nil {
@@ -295,7 +297,7 @@ func TestAnalyze_UnsafePath(t *testing.T) {
 	// So we use a path that doesn't exist - IsPathSafe passes it through
 
 	// Test with path validation error
-	analyzer := newComplexityAnalyzer(cache, denySP)
+	analyzer := newComplexityAnalyzer(cache, denySP, infra_persistence.NewOSFileSystem())
 	_, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": "/some/path"}, nil)
 	// This will fail at GatherComplexities with filepath.Walk error since path doesn't exist
 	if err == nil {
@@ -307,7 +309,7 @@ func TestAnalyze_IsPathSafeRejection(t *testing.T) {
 	t.Parallel()
 	cache := newASTCache(".")
 	denyingSP := &denyingSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, denyingSP)
+	analyzer := newComplexityAnalyzer(cache, denyingSP, infra_persistence.NewOSFileSystem())
 
 	_, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": "/some/valid/path"}, nil)
 	require.Error(t, err)
@@ -329,7 +331,7 @@ type S struct{}
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
@@ -355,7 +357,7 @@ func (s S) ValueMethod() {}
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
@@ -370,32 +372,21 @@ func (s S) ValueMethod() {}
 	}
 }
 
-// TestGatherComplexities_WalkError covers the filepath.Walk error return
+// TestGatherComplexities_WalkError covers the Walk error return
 // at L85–87 in complexity.go (e.g., permission errors while walking the
 // directory tree). The g.Wait() L88–90 error path is covered by
 // TestComplexityAnalyzer_ErrgroupError.
 func TestGatherComplexities_WalkError(t *testing.T) {
 	t.Parallel()
 
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Chmod(0000) does not prevent directory reads on Windows")
-	}
-
-	tmpDir := t.TempDir()
-	// Create an unreadable directory to trigger Walk error
-	unreadableDir := filepath.Join(tmpDir, "unreadable")
-	if err := os.Mkdir(unreadableDir, 0000); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chmod(unreadableDir, 0755) }() // restore on cleanup
-
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	mfs := &walkErrorFS{FileSystem: persistence.NewMockFileSystem(), err: fs.ErrPermission}
+	analyzer := newComplexityAnalyzer(cache, sp, mfs)
 
-	_, _, err := analyzer.GatherComplexities(context.Background(), unreadableDir, nil)
+	_, _, err := analyzer.GatherComplexities(context.Background(), "/some/path", nil)
 	if err == nil {
-		t.Error("expected permission error for unreadable directory")
+		t.Error("expected permission error from Walk")
 	}
 }
 
@@ -413,7 +404,7 @@ func TestGatherComplexities_WithHeartbeat(t *testing.T) {
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	hb := make(chan struct{}, 10)
 	complexities, _, err := analyzer.GatherComplexities(context.Background(), tmpDir, hb)
@@ -448,7 +439,7 @@ func TestGatherComplexities_SoftFailOnParseError(t *testing.T) {
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
@@ -478,7 +469,7 @@ func TestGatherComplexities_ContextCancelled(t *testing.T) {
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately, before GatherComplexities starts
@@ -524,7 +515,7 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
-	analyzer := newComplexityAnalyzer(cache, sp)
+	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()

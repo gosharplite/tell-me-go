@@ -79,11 +79,11 @@ type analysisManager struct {
 func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem, wp services.WorkspacePolicy, dc deadCodeAnalyzer) *analysisManager {
 	runner := toolchain.NewGoRunner(executor)
 	m := &analysisManager{
-		complexity: newComplexityAnalyzer(cache, sp),
-		dependency: newDependencyAnalyzer(runner, sp, bus, wp),
+		complexity: newComplexityAnalyzer(cache, sp, fs),
+		dependency: newDependencyAnalyzer(runner, sp, bus, wp, fs),
 		sequence:   newSequenceAnalyzer(executor, sp, idx),
 		change:     newChangeAnalyzer(cache, executor),
-		types:      newTypeManager(idx, cache, sp),
+		types:      newTypeManager(idx, cache, sp, fs),
 		deadCode:   dc,
 
 		refactor: newRefactorManager(sp),

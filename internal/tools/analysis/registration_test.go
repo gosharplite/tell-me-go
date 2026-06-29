@@ -99,6 +99,10 @@ func (s *stubFileSystem) Walk(ctx context.Context, root string, fn persistence.W
 	return nil
 }
 
+func (s *stubFileSystem) Chmod(ctx context.Context, name string, mode os.FileMode) error {
+	return nil
+}
+
 // stubWorkspacePolicy implements services.WorkspacePolicy minimally.
 type stubWorkspacePolicy struct{}
 

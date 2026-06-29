@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -47,7 +48,7 @@ func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
 		},
 	}
 
-	analyzer := newDependencyAnalyzer(mockRunner, &mockSecurityProvider{}, nil, infra_persistence.NewWorkspacePolicy())
+	analyzer := newDependencyAnalyzer(mockRunner, &mockSecurityProvider{}, nil, infra_persistence.NewWorkspacePolicy(), infra_persistence.NewOSFileSystem())
 
 	// Set workdir to tmpDir so that go list -m works
 	// In a real scenario, the tool would run in the project root.
@@ -75,7 +76,7 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 
 	t.Run("nil hb, already-done channel", func(t *testing.T) {
 		t.Parallel()
-		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
 		done := make(chan struct{})
 		close(done) // already done
 		// Must not panic, must return immediately
@@ -84,7 +85,7 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 
 	t.Run("nil hb, open done channel then close", func(t *testing.T) {
 		t.Parallel()
-		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
 		done := make(chan struct{})
 		// Start heartbeat with nil hb — the `if hb != nil` guard at line 140
 		// must prevent send on nil channel. Close done after a tick would fire.
@@ -97,7 +98,7 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 
 	t.Run("buffered hb, receives heartbeat", func(t *testing.T) {
 		t.Parallel()
-		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
 		done := make(chan struct{})
 		hb := make(chan struct{}, 2)
 		go func() {
@@ -115,7 +116,7 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 
 	t.Run("hb full, does not block", func(t *testing.T) {
 		t.Parallel()
-		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
 		done := make(chan struct{})
 		hb := make(chan struct{}, 1)
 		// Fill the buffer
@@ -187,7 +188,7 @@ func TestDependencyAnalyzer_PublishToolAction(t *testing.T) {
 
 	t.Run("nil EventBus returns silently", func(t *testing.T) {
 		t.Parallel()
-		a := newDependencyAnalyzer(nil, nil, nil, nil)
+		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
 		// Must not panic
 		a.publishToolAction(context.Background(), "test message")
 	})
@@ -196,7 +197,7 @@ func TestDependencyAnalyzer_PublishToolAction(t *testing.T) {
 		t.Parallel()
 		bus := &eventstest.TestEventBus{}
 		bus.SetPublishErr(events.ErrBusNotInitialized)
-		a := newDependencyAnalyzer(nil, nil, bus, nil)
+		a := newDependencyAnalyzer(nil, nil, bus, nil, infra_persistence.NewOSFileSystem())
 		// ErrBusNotInitialized is silently swallowed (no log)
 		// Must not panic
 		a.publishToolAction(context.Background(), "test message")
@@ -206,7 +207,7 @@ func TestDependencyAnalyzer_PublishToolAction(t *testing.T) {
 		t.Parallel()
 		bus := &eventstest.TestEventBus{}
 		bus.SetPublishErr(errors.New("generic publish error"))
-		a := newDependencyAnalyzer(nil, nil, bus, nil)
+		a := newDependencyAnalyzer(nil, nil, bus, nil, infra_persistence.NewOSFileSystem())
 		// error is logged via slog.Error — verify no panic
 		a.publishToolAction(context.Background(), "test message")
 	})
@@ -235,6 +236,7 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 		name            string
 		workspaceSetup  func(t *testing.T) (string, *mockAnalysisGoRunner)
 		wantErrContains string
+		fs              persistence.FileSystem // optional; defaults to infra_persistence.NewOSFileSystem()
 	}{
 		{
 			name: "resolveModulePrefix error",
@@ -269,17 +271,7 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 		{
 			name: "listInternalPackages error (unreadable directory)",
 			workspaceSetup: func(t *testing.T) (string, *mockAnalysisGoRunner) {
-				if runtime.GOOS == "windows" {
-					t.Skip("os.Chmod(0000) does not make directory unreadable on Windows")
-				}
 				dir := setupWorkspace(t)
-
-				// Create a subdirectory with 0000 permissions so that
-				// containsGoFiles fails when Walk reaches it.
-				unreadable := filepath.Join(dir, "unreadable")
-				require.NoError(t, os.MkdirAll(unreadable, 0000))
-				t.Cleanup(func() { _ = os.Chmod(unreadable, 0755) })
-
 				return dir, &mockAnalysisGoRunner{
 					getModulePathFunc: func(ctx context.Context) (string, error) {
 						return "example.com/mod", nil
@@ -290,6 +282,7 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 				}
 			},
 			wantErrContains: "listing packages",
+			fs:              &walkErrorFS{FileSystem: persistence.NewMockFileSystem(), err: fs.ErrPermission},
 		},
 		{
 			name: "GetModuleDir returns empty string",
@@ -314,8 +307,13 @@ func TestBuildGraph_ErrorPaths(t *testing.T) {
 			t.Parallel()
 			_, runner := tt.workspaceSetup(t)
 
+			dfs := tt.fs
+			if dfs == nil {
+				dfs = infra_persistence.NewOSFileSystem()
+			}
+
 			a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
-				infra_persistence.NewWorkspacePolicy())
+				infra_persistence.NewWorkspacePolicy(), dfs)
 
 			_, err := a.buildGraph(context.Background())
 			require.Error(t, err, "expected error from buildGraph")
@@ -354,7 +352,7 @@ func TestBuildGraph_FilepathRelError(t *testing.T) {
 	}
 
 	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), infra_persistence.NewOSFileSystem())
 
 	_, err := a.buildGraph(context.Background())
 	require.Error(t, err, "expected error from buildGraph")
@@ -391,7 +389,7 @@ func TestBuildGraph_GetImportsError(t *testing.T) {
 	}
 
 	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), infra_persistence.NewOSFileSystem())
 
 	// Use a cancelled context so packages.Load inside getImports fails
 	ctx, cancel := context.WithCancel(context.Background())
@@ -408,24 +406,12 @@ func TestBuildGraph_GetImportsError(t *testing.T) {
 func TestListInternalPackages_ErrorPath(t *testing.T) {
 	t.Parallel()
 
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Chmod(0000) does not make directory unreadable on Windows")
-	}
-
-	tmpDir := t.TempDir()
-
-	subdir := filepath.Join(tmpDir, "subdir")
-	require.NoError(t, os.MkdirAll(subdir, 0000))
-	t.Cleanup(func() {
-		if err := os.Chmod(subdir, 0755); err != nil {
-			t.Logf("cleanup: chmod %s: %v", subdir, err)
-		}
-	})
+	mfs := &walkErrorFS{FileSystem: persistence.NewMockFileSystem(), err: fs.ErrPermission}
 
 	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), mfs)
 
-	_, err := a.listInternalPackages(tmpDir)
+	_, err := a.listInternalPackages(context.Background(), "/some/path")
 	require.Error(t, err)
 }
 
@@ -445,7 +431,7 @@ func TestGetImports_ErrorPath(t *testing.T) {
 	cancel() // cancel before call
 
 	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), infra_persistence.NewOSFileSystem())
 	_, err := a.getImports(ctx, pkgDir, "example.com/mod")
 	require.Error(t, err, "expected error from cancelled context")
 }
@@ -466,9 +452,9 @@ func TestListInternalPackages_SkipDir(t *testing.T) {
 	require.NoError(t, os.MkdirAll(ignoredDir, 0755))
 
 	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), infra_persistence.NewOSFileSystem())
 
-	pkgs, err := a.listInternalPackages(tmpDir)
+	pkgs, err := a.listInternalPackages(context.Background(), tmpDir)
 	require.NoError(t, err)
 
 	for _, p := range pkgs {
@@ -503,7 +489,7 @@ func TestResolveModulePrefix_Cached(t *testing.T) {
 		},
 	}
 	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), infra_persistence.NewOSFileSystem())
 
 	prefix1, err := a.resolveModulePrefix(context.Background())
 	require.NoError(t, err)
@@ -531,7 +517,7 @@ func TestResolveModulePrefix_Cached(t *testing.T) {
 func TestRenderGraph_MermaidFormat(t *testing.T) {
 	t.Parallel()
 	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), infra_persistence.NewOSFileSystem())
 
 	graph := map[string][]string{
 		"example.com/mod/pkg1": {"example.com/mod/pkg2"},
@@ -550,41 +536,20 @@ func TestRenderGraph_MermaidFormat(t *testing.T) {
 
 // =============================================================================
 // Gap: listInternalPackages containsGoFiles error path (L187-189).
-// Covered by creating a directory with execute-only permission (0100) so
-// that filepath.Walk can enter it but os.ReadDir inside containsGoFiles fails.
-// NOTE: On some platforms/Go versions, Walk itself may fail to read the
-// directory and return the error via the Walk callback instead (L178-179),
-// which exercises a different but related path. Both are acceptable.
+// Uses walkErrorFS to simulate a Walk failure with fs.ErrPermission,
+// exercising the error propagation path without OS-specific tricks.
 // =============================================================================
 func TestListInternalPackages_ContainsGoFilesError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Chmod execute-only not reliable on Windows")
-	}
+	t.Parallel()
 
-	tmpDir := t.TempDir()
-
-	// Create a subdirectory with execute-only permission (--x------ = 0100).
-	// filepath.Walk uses os.Lstat to detect directories (succeeds with exec bit)
-	// and then calls os.ReadDir to list contents (fails without read bit).
-	// On some Go versions, Walk's own ReadDir fails first and passes the error
-	// to the callback; on others, the callback is called with err==nil and
-	// containsGoFiles' own os.ReadDir fails.
-	subdir := filepath.Join(tmpDir, "subdir")
-	require.NoError(t, os.MkdirAll(subdir, 0100))
-	t.Cleanup(func() { _ = os.Chmod(subdir, 0755) })
+	mfs := &walkErrorFS{FileSystem: persistence.NewMockFileSystem(), err: fs.ErrPermission}
 
 	a := newDependencyAnalyzer(nil, &mockSecurityProvider{}, nil,
-		infra_persistence.NewWorkspacePolicy())
+		infra_persistence.NewWorkspacePolicy(), mfs)
 
-	_, err := a.listInternalPackages(tmpDir)
-	require.Error(t, err, "expected error from listInternalPackages with unreadable subdirectory")
+	_, err := a.listInternalPackages(context.Background(), "/some/path")
+	require.Error(t, err, "expected error from listInternalPackages with Walk error")
 
-	// Accept either path: the containsGoFiles error wrapping (L193-195)
-	// or Walk's own permission error propagated through the callback
-	// (L178-179). Both exercise the defense-in-depth described in the
-	// GAP ACCEPTED comment at dependency.go:187-189.
-	assert.True(t,
-		strings.Contains(err.Error(), "checking for Go files in") ||
-			strings.Contains(err.Error(), "permission denied"),
-		"error should mention 'checking for Go files in' or 'permission denied', got: %v", err)
+	assert.Contains(t, err.Error(), "permission denied",
+		"error should mention 'permission denied', got: %v", err)
 }
