@@ -185,7 +185,8 @@ func TestLogTrace_ErrorPaths(t *testing.T) {
 // full or hardware failure; these are integration-level concerns.
 func TestAppendSummaryToLog_ErrorPaths(t *testing.T) {
 	t.Run("zero usage — early return", func(t *testing.T) {
-		err := appendSummaryToLog("/nonexistent/path", domain_pricing.UsageStats{}, 0, "model")
+		m := &metricsManager{fs: osFS{}}
+		err := m.appendSummaryToLog("/nonexistent/path", domain_pricing.UsageStats{}, 0, "model")
 		require.NoError(t, err)
 	})
 
@@ -197,8 +198,9 @@ func TestAppendSummaryToLog_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.Chmod(tmpDir, 0555))
 		t.Cleanup(func() { _ = os.Chmod(tmpDir, 0755) })
 
+		m := &metricsManager{fs: osFS{}}
 		usage := domain_pricing.UsageStats{PromptTokens: 100, ResponseTokens: 50}
-		err := appendSummaryToLog(filepath.Join(tmpDir, "sub", "log"), usage, 1.0, "model")
+		err := m.appendSummaryToLog(filepath.Join(tmpDir, "sub", "log"), usage, 1.0, "model")
 		require.Error(t, err)
 	})
 }
@@ -215,11 +217,12 @@ func TestAppendSummaryToLog_WritesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "tokens.log")
 
+	m := &metricsManager{fs: osFS{}}
 	usage := domain_pricing.UsageStats{
 		PromptTokens:   100,
 		ResponseTokens: 50,
 	}
-	err := appendSummaryToLog(logPath, usage, 0.0015, "test-model")
+	err := m.appendSummaryToLog(logPath, usage, 0.0015, "test-model")
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(logPath)

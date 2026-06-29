@@ -117,28 +117,28 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 // retry OpenFile still fails. We inject a mock FileSystem that returns
 // os.ErrNotExist on the first call and os.ErrPermission on the retry.
 func TestOpenLogFileForAppend_MkdirAllSucceedsButRetryFails(t *testing.T) {
-	// NOT parallel — overrides package-level var.
-	originalFS := fileSystem
-	t.Cleanup(func() { fileSystem = originalFS })
+	t.Parallel()
 
 	callCount := 0
-	fileSystem = &mockFS{
-		openFileFunc: func(name string, flag int, perm os.FileMode) (File, error) {
-			callCount++
-			if callCount == 1 {
-				return nil, os.ErrNotExist
-			}
-			return nil, os.ErrPermission
-		},
-		mkdirAllFunc: func(path string, perm os.FileMode) error {
-			return nil // MkdirAll succeeds
+	m := &metricsManager{
+		fs: &mockFS{
+			openFileFunc: func(name string, flag int, perm os.FileMode) (File, error) {
+				callCount++
+				if callCount == 1 {
+					return nil, os.ErrNotExist
+				}
+				return nil, os.ErrPermission
+			},
+			mkdirAllFunc: func(path string, perm os.FileMode) error {
+				return nil // MkdirAll succeeds
+			},
 		},
 	}
 
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "missing", "log.jsonl")
 
-	_, err := openLogFileForAppend(logPath)
+	_, err := m.openLogFileForAppend(logPath)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

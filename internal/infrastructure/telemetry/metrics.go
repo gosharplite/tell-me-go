@@ -33,6 +33,7 @@ type metricsManager struct {
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	ledger           *ledgerStore
 	kvStore          ports.KVStore
+	fs               FileSystem
 }
 
 type costSummaryArgs struct {
@@ -44,9 +45,6 @@ type costSummaryArgs struct {
 }
 
 type estimateCostArgs struct{}
-
-// fileSystem is the filesystem abstraction, overridable in tests.
-var fileSystem FileSystem = osFS{}
 
 // resolveUsageForSummaryFunc is the resolveUsageForSummary function, overridable in tests.
 var resolveUsageForSummaryFunc = resolveUsageForSummary
@@ -87,6 +85,7 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 		pricingOverrides: pricingOverrides,
 		ledger:           newLedgerStore(sm, model, pricingOverrides),
 		kvStore:          kvStore,
+		fs:               osFS{},
 	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -155,6 +154,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker 
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
 		ledger:           newLedgerStore(sm, model, pricingOverrides),
+		fs:               osFS{},
 	}
 
 	// 1. Record to global ledger (detailed breakdown)
@@ -170,7 +170,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker 
 	}
 
 	// 3. Append summary to log
-	return appendSummaryToLog(logPath, usage, totalCost, model)
+	return m.appendSummaryToLog(logPath, usage, totalCost, model)
 }
 
 func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tracker domain_pricing.CostTracker, logPath, model string, overrides map[string]domain_pricing.ModelPricing) (domain_pricing.UsageStats, float64, error) {
@@ -196,15 +196,15 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tra
 
 // openLogFileForAppend opens a log file for appending, creating parent directories
 // if they don't exist.
-func openLogFileForAppend(logPath string) (File, error) {
-	f, err := fileSystem.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+func (m *metricsManager) openLogFileForAppend(logPath string) (File, error) {
+	f, err := m.fs.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		// Ensure directory exists if we are meant to create it
 		if os.IsNotExist(err) {
-			if mkdirErr := fileSystem.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
+			if mkdirErr := m.fs.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
 				return nil, fmt.Errorf("failed to open log file %q for summary append (also failed to create dir: %v): %w", logPath, mkdirErr, err)
 			}
-			f, err = fileSystem.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			f, err = m.fs.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 			if err != nil {
 				return nil, fmt.Errorf("failed to open log file %q for summary append after mkdir: %w", logPath, err)
 			}
@@ -215,7 +215,7 @@ func openLogFileForAppend(logPath string) (File, error) {
 	return f, nil
 }
 
-func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCost float64, model string) error {
+func (m *metricsManager) appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCost float64, model string) error {
 	if usage.PromptTokens == 0 && usage.ResponseTokens == 0 && usage.SearchQueries == 0 {
 		return nil
 	}
@@ -237,7 +237,7 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 		return fmt.Errorf("failed to marshal cost summary: %w", err)
 	}
 
-	fAppend, err := openLogFileForAppend(logPath)
+	fAppend, err := m.openLogFileForAppend(logPath)
 	if err != nil {
 		return err
 	}

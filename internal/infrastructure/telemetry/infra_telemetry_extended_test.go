@@ -556,7 +556,8 @@ func TestOpenLogFileForAppend_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f, err := openLogFileForAppend(logPath)
+	m := &metricsManager{fs: osFS{}}
+	f, err := m.openLogFileForAppend(logPath)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -584,7 +585,8 @@ func TestOpenLogFileForAppend_MkdirAllSucceeds(t *testing.T) {
 	// Path where the parent directory does NOT exist.
 	logPath := filepath.Join(tmpDir, "nonexistent", "subdir", "log.jsonl")
 
-	f, err := openLogFileForAppend(logPath)
+	m := &metricsManager{fs: osFS{}}
+	f, err := m.openLogFileForAppend(logPath)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -620,7 +622,8 @@ func TestOpenLogFileForAppend_MkdirAllFails(t *testing.T) {
 
 	logPath := filepath.Join(parentDir, "missing", "log.jsonl")
 
-	_, err := openLogFileForAppend(logPath)
+	m := &metricsManager{fs: osFS{}}
+	_, err := m.openLogFileForAppend(logPath)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -652,7 +655,8 @@ func TestOpenLogFileForAppend_PermissionDenied(t *testing.T) {
 
 	logPath := filepath.Join(parentDir, "log.jsonl")
 
-	_, err := openLogFileForAppend(logPath)
+	m := &metricsManager{fs: osFS{}}
+	_, err := m.openLogFileForAppend(logPath)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -715,7 +719,8 @@ func TestAppendSummaryToLog_ZeroUsage(t *testing.T) {
 	logPath := filepath.Join(tmpDir, "nonexistent.log")
 
 	// All-zero UsageStats — should return nil without creating the file.
-	err := appendSummaryToLog(logPath, domain_pricing.UsageStats{}, 0.0, "model")
+	m := &metricsManager{fs: osFS{}}
+	err := m.appendSummaryToLog(logPath, domain_pricing.UsageStats{}, 0.0, "model")
 	if err != nil {
 		t.Errorf("expected nil error for zero usage, got: %v", err)
 	}
@@ -740,7 +745,8 @@ func TestAppendSummaryToLog_WriteError(t *testing.T) {
 		PromptTokens: 100,
 	}
 
-	err := appendSummaryToLog("/dev/full", usage, 1.0, "model")
+	m := &metricsManager{fs: osFS{}}
+	err := m.appendSummaryToLog("/dev/full", usage, 1.0, "model")
 	if err == nil {
 		t.Fatal("expected write error on /dev/full, got nil")
 	}
@@ -809,7 +815,8 @@ func TestAppendSummaryToLog_OpenError(t *testing.T) {
 	// Non-zero usage to pass the early-return guard.
 	usage := domain_pricing.UsageStats{PromptTokens: 100}
 
-	err := appendSummaryToLog(logPath, usage, 1.0, "model")
+	m := &metricsManager{fs: osFS{}}
+	err := m.appendSummaryToLog(logPath, usage, 1.0, "model")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
