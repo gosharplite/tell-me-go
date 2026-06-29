@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -557,7 +558,7 @@ func TestOpenLogFileForAppend_Success(t *testing.T) {
 	defer func() { _ = f.Close() }()
 
 	// Verify the file is open and writable.
-	if _, err := f.WriteString("new line\n"); err != nil {
+	if _, err := io.WriteString(f, "new line\n"); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
 
@@ -590,7 +591,7 @@ func TestOpenLogFileForAppend_MkdirAllSucceeds(t *testing.T) {
 	}
 
 	// Verify we can write to the file.
-	if _, err := f.WriteString("hello\n"); err != nil {
+	if _, err := io.WriteString(f, "hello\n"); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
 }

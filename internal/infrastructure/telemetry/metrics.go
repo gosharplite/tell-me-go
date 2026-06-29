@@ -48,6 +48,9 @@ type estimateCostArgs struct{}
 // jsonMarshal is the json.Marshal function, overridable in tests.
 var jsonMarshal = json.Marshal
 
+// fileSystem is the filesystem abstraction, overridable in tests.
+var fileSystem FileSystem = osFS{}
+
 // openTraceFile opens a trace file for appending, overridable in tests.
 var openTraceFile = func(path string) (io.WriteCloser, error) {
 	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -176,15 +179,15 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tra
 
 // openLogFileForAppend opens a log file for appending, creating parent directories
 // if they don't exist.
-func openLogFileForAppend(logPath string) (*os.File, error) {
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+func openLogFileForAppend(logPath string) (File, error) {
+	f, err := fileSystem.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		// Ensure directory exists if we are meant to create it
 		if os.IsNotExist(err) {
-			if mkdirErr := os.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
+			if mkdirErr := fileSystem.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
 				return nil, fmt.Errorf("failed to open log file %q for summary append (also failed to create dir: %v): %w", logPath, mkdirErr, err)
 			}
-			f, err = os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			f, err = fileSystem.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 			if err != nil {
 				return nil, fmt.Errorf("failed to open log file %q for summary append after mkdir: %w", logPath, err)
 			}
@@ -225,7 +228,7 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 		_ = fAppend.Close()
 	}()
 
-	_, err = fAppend.WriteString(string(summaryBytes) + "\n")
+	_, err = io.WriteString(fAppend, string(summaryBytes)+"\n")
 	if err != nil {
 		return fmt.Errorf("failed to write cost summary to log: %w", err)
 	}

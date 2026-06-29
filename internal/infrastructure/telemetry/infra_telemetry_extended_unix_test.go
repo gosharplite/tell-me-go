@@ -7,12 +7,13 @@ package telemetry
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 )
@@ -65,79 +66,78 @@ func TestLogTrace_WriteError(t *testing.T) {
 }
 
 func TestLogTrace_CloseError(t *testing.T) {
-	// NOT parallel — uses RLIMIT_FSIZE to trigger EFBIG on write, and
-	// attempts to also trigger a close(2) error.
+	// NOT parallel — overrides package-level var.
 	//
-	// Strategy:
-	//  1. Set RLIMIT_FSIZE to a small value (1KB).
-	//  2. Create a large TurnTrace whose JSON exceeds the limit.
-	//  3. logTrace opens (succeeds), writes → EFBIG (write-error path).
-	//  4. close(2) after a failed O_APPEND write: on Linux/ext4 this
-	//     typically returns 0, so the close-error body is unreachable
-	//     in practice. We retain this test to prove the path exists and
-	//     document the limitation.
+	// Strategy: inject a mock openTraceFile that returns a file whose Write
+	// method fails (simulating EFBIG/ENOSPC). This exercises the write-error
+	// branch in writeTraceEntry, and subsequently the close-error branch
+	// (which on real Linux/ext4 is typically unreachable — the close after a
+	// failed write returns 0).
+	originalOpen := openTraceFile
+	t.Cleanup(func() { openTraceFile = originalOpen })
 
-	tempDir := t.TempDir()
-	traceFile := filepath.Join(tempDir, "close_err.jsonl")
+	writeErr := errors.New("simulated write error (EFBIG)")
+	closeErr := errors.New("simulated close error")
 
-	// Build a trace whose JSON exceeds ~1KB.
-	execs := make([]domain_telemetry.ToolExecutionTrace, 200)
-	for i := range execs {
-		execs[i] = domain_telemetry.ToolExecutionTrace{
-			ToolName:  "very-long-tool-name-to-fill-bytes",
-			StartTime: time.Now(),
-			Duration:  time.Second,
-			Status:    "success",
-			Error:     "a detailed error message that takes up space in the JSON output",
-		}
-	}
-	trace := &domain_telemetry.TurnTrace{
-		StartTime:         time.Now(),
-		EndTime:           time.Now().Add(time.Minute),
-		InferenceDuration: 30 * time.Second,
-		ToolExecutions:    execs,
-		FinalStatus:       "complete",
+	openTraceFile = func(path string) (io.WriteCloser, error) {
+		return &mockFile{
+			Writer:   &errorWriter{err: writeErr},
+			closeErr: closeErr,
+		}, nil
 	}
 
-	var orig syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &orig); err != nil {
-		t.Skipf("cannot get rlimit: %v", err)
-	}
-	defer func() { _ = syscall.Setrlimit(syscall.RLIMIT_FSIZE, &orig) }()
+	spy := captureSlogOutput(t)
 
-	lim := orig
-	lim.Cur = 1024 // 1KB — trace JSON is ~30KB
-	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &lim); err != nil {
-		t.Skipf("cannot set rlimit: %v", err)
-	}
+	tmpDir := t.TempDir()
+	traceFile := filepath.Join(tmpDir, "close_err.jsonl")
 
-	// logTrace will open, marshal, write → EFBIG, then close.
-	// Write-error path is covered. Close-error path depends on kernel/fs.
+	trace := &domain_telemetry.TurnTrace{FinalStatus: "complete"}
 	logTrace(context.Background(), traceFile, trace)
 
-	// Verify the file was created (it should exist but be truncated).
-	if fi, err := os.Stat(traceFile); err == nil {
-		t.Logf("file size after EFBIG write: %d bytes", fi.Size())
+	// Verify the write-error warning was logged.
+	if !spy.CalledWith("Warn", "failed to write to trace file") {
+		t.Error("expected slog.Warn 'failed to write to trace file' to be logged")
 	}
+	// Verify the close-error warning was also logged (mock returns error on both).
+	if !spy.CalledWith("Warn", "failed to close trace file") {
+		t.Error("expected slog.Warn 'failed to close trace file' to be logged")
+	}
+}
+
+// errorWriter is an io.Writer that always returns a predefined error.
+type errorWriter struct {
+	err error
+}
+
+func (w *errorWriter) Write(p []byte) (int, error) {
+	return 0, w.err
 }
 
 // TestOpenLogFileForAppend_MkdirAllSucceedsButRetryFails covers the branch
 // where the first OpenFile fails with ENOENT, MkdirAll succeeds, but the
-// retry OpenFile still fails. We use syscall.Umask(0o777) so that MkdirAll
-// creates the parent directory with mode 0000, causing the retry to fail
-// with EACCES.
-//
-// NOT parallel — syscall.Umask is process-global.
+// retry OpenFile still fails. We inject a mock FileSystem that returns
+// os.ErrNotExist on the first call and os.ErrPermission on the retry.
 func TestOpenLogFileForAppend_MkdirAllSucceedsButRetryFails(t *testing.T) {
-	// NOT parallel: umask is process-global.
+	// NOT parallel — overrides package-level var.
+	originalFS := fileSystem
+	t.Cleanup(func() { fileSystem = originalFS })
+
+	callCount := 0
+	fileSystem = &mockFS{
+		openFileFunc: func(name string, flag int, perm os.FileMode) (File, error) {
+			callCount++
+			if callCount == 1 {
+				return nil, os.ErrNotExist
+			}
+			return nil, os.ErrPermission
+		},
+		mkdirAllFunc: func(path string, perm os.FileMode) error {
+			return nil // MkdirAll succeeds
+		},
+	}
+
 	tmpDir := t.TempDir()
-
-	// Only ONE level of missing directory so MkdirAll itself succeeds.
 	logPath := filepath.Join(tmpDir, "missing", "log.jsonl")
-
-	// Set umask so MkdirAll creates the parent dir with mode 0000.
-	oldUmask := syscall.Umask(0o777)
-	t.Cleanup(func() { syscall.Umask(oldUmask) })
 
 	_, err := openLogFileForAppend(logPath)
 	if err == nil {
@@ -148,9 +148,5 @@ func TestOpenLogFileForAppend_MkdirAllSucceedsButRetryFails(t *testing.T) {
 	errStr := err.Error()
 	if !strings.Contains(errStr, "after mkdir") {
 		t.Errorf("error should mention 'after mkdir', got: %v", err)
-	}
-	// Verify the directory WAS created (MkdirAll succeeded).
-	if _, statErr := os.Stat(filepath.Dir(logPath)); os.IsNotExist(statErr) {
-		t.Error("parent directory was not created by MkdirAll")
 	}
 }

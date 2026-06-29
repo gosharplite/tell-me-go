@@ -1146,19 +1146,13 @@ func TestResolveSymlinks_RecursiveFallback(t *testing.T) {
 	}
 }
 
-// TestFilepathAbs_ErrorBranches verifies that filepath.Abs failures are handled
-// correctly in RegisterPath, RemovePath, ValidatePath, and checkBoundary.
-//
-// Strategy: Unset PWD (to disable Go's $PWD-based os.Getwd fast path), chdir
-// into a temp directory, then delete it. This causes os.Getwd() → syscall.Getwd
-// to fail with ENOENT, which makes filepath.Abs error on any relative path.
-// NUL byte injection does NOT work because filepath.Abs on absolute paths
-// never touches the OS — it just calls filepath.Clean and returns.
-func TestFilepathAbs_ErrorBranches(t *testing.T) {
-	// macOS APFS holds a vnode reference to the current working directory;
-	// os.RemoveAll returns nil but the directory persists until the process
-	// leaves it. os.Getwd() therefore never fails after deleting CWD on
-	// macOS, making the filepath.Abs-error precondition unreachable.
+// setupDeletedCWD creates the precondition for filepath.Abs to fail on
+// relative paths: chdir into a temp directory, unset PWD, then delete the
+// directory. Returns a cleanup function. Skips on platforms where CWD
+// deletion is not possible (macOS APFS, Windows).
+func setupDeletedCWD(t *testing.T) func() {
+	t.Helper()
+
 	if runtime.GOOS == "darwin" {
 		t.Skip("macOS APFS prevents CWD deletion while process is in it; filepath.Abs error path unreachable")
 	}
@@ -1166,163 +1160,166 @@ func TestFilepathAbs_ErrorBranches(t *testing.T) {
 		t.Skip("Windows locks CWD, preventing cleanup after os.RemoveAll on the current directory")
 	}
 
-	// This test manipulates the process working directory and PWD environment
-	// variable — cannot run in parallel with other tests.
-	// t.Parallel() is intentionally omitted.
-
-	// Save original state for restoration.
 	origDir, err := os.Getwd()
 	require.NoError(t, err, "failed to get current working directory")
 	origPWD, hadPWD := os.LookupEnv("PWD")
 
-	// Create a disposable temp directory, chdir into it, then delete it.
 	tmpDir := t.TempDir()
 	require.NoError(t, os.Chdir(tmpDir), "failed to chdir into temp directory")
-
-	// Unset PWD so os.Getwd() falls through to syscall.Getwd (which will fail
-	// on a deleted directory). Without this, Go may return the stale $PWD value.
 	_ = os.Unsetenv("PWD")
-
 	require.NoError(t, os.RemoveAll(tmpDir), "failed to remove temp directory")
 
-	// Restore original state on cleanup.
-	t.Cleanup(func() {
+	// Verify precondition: os.Getwd() must fail.
+	_, wdErr := os.Getwd()
+	require.Error(t, wdErr, "os.Getwd() should fail after deleting current directory and unsetting PWD")
+
+	return func() {
 		if hadPWD {
 			_ = os.Setenv("PWD", origPWD)
 		} else {
 			_ = os.Unsetenv("PWD")
 		}
 		if err := os.Chdir(origDir); err != nil {
-			t.Logf("failed to restore working directory: %v", err)
+			log.Printf("failed to restore working directory: %v", err)
 		}
-	})
+	}
+}
 
-	// Verify os.Getwd() now fails — the precondition for this test.
-	_, wdErr := os.Getwd()
-	require.Error(t, wdErr, "os.Getwd() should fail after deleting current directory and unsetting PWD")
+// testFilepathAbsRegisterPath verifies RegisterPath is a no-op when
+// filepath.Abs fails (deleted CWD + relative path).
+func testFilepathAbsRegisterPath(t *testing.T) {
+	p := newPathPolicy(nil)
+	initialSafe := len(p.GetPaths(true))
+	initialRO := len(p.GetPaths(false))
 
-	// ---- 1. RegisterPath: filepath.Abs error returns early ----
-	t.Run("RegisterPath: filepath.Abs error returns early", func(t *testing.T) {
-		p := newPathPolicy(nil)
-		initialSafe := len(p.GetPaths(true))
-		initialRO := len(p.GetPaths(false))
+	p.RegisterPath("relative/path", true)
+	p.RegisterPath("relative/path", false)
 
-		// Relative path + deleted CWD + no PWD → filepath.Abs fails → RegisterPath is a no-op.
-		p.RegisterPath("relative/path", true)
-		p.RegisterPath("relative/path", false)
+	assert.Equal(t, initialSafe, len(p.GetPaths(true)),
+		"safe paths should not change when filepath.Abs fails")
+	assert.Equal(t, initialRO, len(p.GetPaths(false)),
+		"read-only paths should not change when filepath.Abs fails")
+}
 
-		assert.Equal(t, initialSafe, len(p.GetPaths(true)),
-			"safe paths should not change when filepath.Abs fails")
-		assert.Equal(t, initialRO, len(p.GetPaths(false)),
-			"read-only paths should not change when filepath.Abs fails")
-	})
+// testFilepathAbsRemovePath verifies RemovePath wraps filepath.Abs errors.
+func testFilepathAbsRemovePath(t *testing.T) {
+	p := newPathPolicy(nil)
 
-	// ---- 2. RemovePath: filepath.Abs error returns wrapped error ----
-	t.Run("RemovePath: filepath.Abs error returns wrapped error", func(t *testing.T) {
-		p := newPathPolicy(nil)
+	err := p.RemovePath("relative/path", true)
+	require.Error(t, err, "RemovePath(writable=true) should error when filepath.Abs fails")
+	assert.Contains(t, err.Error(), "invalid path")
 
-		err := p.RemovePath("relative/path", true)
-		require.Error(t, err, "RemovePath(writable=true) should error when filepath.Abs fails")
-		assert.Contains(t, err.Error(), "invalid path",
-			"RemovePath should wrap filepath.Abs error with 'invalid path'")
+	err = p.RemovePath("relative/path", false)
+	require.Error(t, err, "RemovePath(writable=false) should error when filepath.Abs fails")
+	assert.Contains(t, err.Error(), "invalid path")
+}
 
-		err = p.RemovePath("relative/path", false)
-		require.Error(t, err, "RemovePath(writable=false) should error when filepath.Abs fails")
-		assert.Contains(t, err.Error(), "invalid path",
-			"RemovePath should wrap filepath.Abs error with 'invalid path'")
-	})
+// testFilepathAbsValidatePath verifies ValidatePath wraps filepath.Abs errors.
+func testFilepathAbsValidatePath(t *testing.T) {
+	p := newPathPolicy(nil)
 
-	// ---- 3. ValidatePath: filepath.Abs error returns wrapped error ----
-	t.Run("ValidatePath: filepath.Abs error returns wrapped error", func(t *testing.T) {
-		p := newPathPolicy(nil)
+	_, err := p.ValidatePath("relative/path", false)
+	require.Error(t, err, "ValidatePath should error when filepath.Abs fails")
+	assert.Contains(t, err.Error(), "invalid path")
+}
 
-		_, err := p.ValidatePath("relative/path", false)
-		require.Error(t, err, "ValidatePath should error when filepath.Abs fails")
-		assert.Contains(t, err.Error(), "invalid path",
-			"ValidatePath should wrap filepath.Abs error with 'invalid path'")
-	})
+// testFilepathAbsCheckBoundary verifies checkBoundary propagates
+// filepath.Abs errors when the boundary is a relative path.
+func testFilepathAbsCheckBoundary(t *testing.T) {
+	p := newPathPolicy(nil)
 
-	// ---- 4. checkBoundary: filepath.Abs error on boundary propagates ----
-	t.Run("checkBoundary: filepath.Abs error on boundary propagates", func(t *testing.T) {
-		p := newPathPolicy(nil)
+	ok, err := p.checkBoundary("/some/absolute/target", "relative/boundary")
+	require.Error(t, err, "checkBoundary should propagate filepath.Abs error")
+	assert.False(t, ok, "checkBoundary should return ok=false when filepath.Abs fails")
+}
 
-		// Relative boundary + deleted CWD + no PWD → filepath.Abs fails.
-		ok, err := p.checkBoundary("/some/absolute/target", "relative/boundary")
-		require.Error(t, err, "checkBoundary should propagate filepath.Abs error")
-		assert.False(t, ok, "checkBoundary should return ok=false when filepath.Abs fails")
-	})
+// testFilepathAbsCheckSafePaths verifies checkSafePaths logs boundary errors.
+func testFilepathAbsCheckSafePaths(t *testing.T) {
+	var logBuf strings.Builder
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
 
-	// ---- 5. checkSafePaths: logs boundary check error ----
-	t.Run("checkSafePaths: logs boundary check error", func(t *testing.T) {
-		// Capture log output
-		var logBuf strings.Builder
-		log.SetOutput(&logBuf)
-		defer log.SetOutput(os.Stderr)
+	p := newPathPolicy(nil)
+	p.safePaths["relative/boundary"] = struct{}{}
 
-		p := newPathPolicy(nil)
-		// Inject a relative path directly. RegisterPath cannot be used because
-		// filepath.Abs would also fail in this deleted-CWD environment.
-		p.safePaths["relative/boundary"] = struct{}{}
+	ok, err := p.checkSafePaths("/some/absolute/target", false)
+	if err != nil {
+		t.Errorf("checkSafePaths should return nil error (logs only), got: %v", err)
+	}
+	if ok {
+		t.Error("checkSafePaths should return false for path outside boundary")
+	}
+	if !strings.Contains(logBuf.String(), "boundary check error for safe path") {
+		t.Errorf("expected log containing 'boundary check error for safe path', got: %q", logBuf.String())
+	}
+}
 
-		ok, err := p.checkSafePaths("/some/absolute/target", false)
-		// checkSafePaths logs errors from checkBoundary but never returns them.
-		if err != nil {
-			t.Errorf("checkSafePaths should return nil error (logs only), got: %v", err)
-		}
-		if ok {
-			t.Error("checkSafePaths should return false for path outside boundary")
-		}
-		if !strings.Contains(logBuf.String(), "boundary check error for safe path") {
-			t.Errorf("expected log containing 'boundary check error for safe path', got: %q", logBuf.String())
-		}
-	})
+// testFilepathAbsCheckReadOnlyPaths verifies checkReadOnlyPaths logs boundary errors.
+func testFilepathAbsCheckReadOnlyPaths(t *testing.T) {
+	var logBuf strings.Builder
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
 
-	// ---- 6. checkReadOnlyPaths: logs boundary check error ----
-	t.Run("checkReadOnlyPaths: logs boundary check error", func(t *testing.T) {
-		// Capture log output
-		var logBuf strings.Builder
-		log.SetOutput(&logBuf)
-		defer log.SetOutput(os.Stderr)
+	p := newPathPolicy(nil)
+	p.readOnlyPaths["relative/ro_boundary"] = struct{}{}
 
-		p := newPathPolicy(nil)
-		// Inject a relative path directly into readOnlyPaths.
-		p.readOnlyPaths["relative/ro_boundary"] = struct{}{}
+	ok, err := p.checkReadOnlyPaths("/some/absolute/target", false)
+	if err != nil {
+		t.Errorf("checkReadOnlyPaths should return nil error (logs only), got: %v", err)
+	}
+	if ok {
+		t.Error("checkReadOnlyPaths should return false for path outside boundary")
+	}
+	if !strings.Contains(logBuf.String(), "boundary check error for read-only path") {
+		t.Errorf("expected log containing 'boundary check error for read-only path', got: %q", logBuf.String())
+	}
+}
 
-		// Must call with writable=false to enter the loop (writable=true returns early).
-		ok, err := p.checkReadOnlyPaths("/some/absolute/target", false)
-		if err != nil {
-			t.Errorf("checkReadOnlyPaths should return nil error (logs only), got: %v", err)
-		}
-		if ok {
-			t.Error("checkReadOnlyPaths should return false for path outside boundary")
-		}
-		if !strings.Contains(logBuf.String(), "boundary check error for read-only path") {
-			t.Errorf("expected log containing 'boundary check error for read-only path', got: %q", logBuf.String())
-		}
-	})
+// testFilepathAbsTryBoundary verifies tryBoundary logs errors and returns
+// false when checkBoundary fails on a relative boundary.
+func testFilepathAbsTryBoundary(t *testing.T) {
+	var logBuf strings.Builder
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
 
-	// ---- 7. tryBoundary: logs error and returns false ----
-	t.Run("tryBoundary: logs error with relative boundary in deleted CWD", func(t *testing.T) {
-		// Capture log output to verify tryBoundary's log.Printf side effect.
-		var logBuf strings.Builder
-		log.SetOutput(&logBuf)
-		defer log.SetOutput(os.Stderr)
+	p := newPathPolicy(nil)
 
-		p := newPathPolicy(nil)
+	ok := p.tryBoundary("/some/absolute/target", "relative/boundary")
+	assert.False(t, ok, "tryBoundary must return false when checkBoundary fails")
 
-		// Relative boundary + deleted CWD + no PWD → filepath.Abs fails
-		// inside checkBoundary → tryBoundary logs the error and returns false.
-		ok := p.tryBoundary("/some/absolute/target", "relative/boundary")
+	logOutput := logBuf.String()
+	assert.Contains(t, logOutput, "security: boundary check error for relative/boundary against /some/absolute/target",
+		"log must contain boundary and target path for incident response")
+}
 
-		// Fail-secure: a broken boundary must never authorize a path.
-		assert.False(t, ok, "tryBoundary must return false when checkBoundary fails")
+// TestFilepathAbs_ErrorBranches verifies that filepath.Abs failures are handled
+// correctly in RegisterPath, RemovePath, ValidatePath, and checkBoundary.
+//
+// Strategy: Unset PWD (to disable Go's $PWD-based os.Getwd fast path), chdir
+// into a temp directory, then delete it. This causes os.Getwd() → syscall.Getwd
+// to fail with ENOENT, which makes filepath.Abs error on any relative path.
+func TestFilepathAbs_ErrorBranches(t *testing.T) {
+	// This test manipulates the process working directory and PWD environment
+	// variable — cannot run in parallel with other tests.
+	cleanup := setupDeletedCWD(t)
+	t.Cleanup(cleanup)
 
-		// Verify the log message format includes both the boundary and the target path.
-		// Format: "security: boundary check error for %s against %s: %v"
-		logOutput := logBuf.String()
-		assert.Contains(t, logOutput, "security: boundary check error for relative/boundary against /some/absolute/target",
-			"log must contain boundary and target path for incident response")
-	})
+	tests := []struct {
+		name string
+		fn   func(t *testing.T)
+	}{
+		{"RegisterPath: filepath.Abs error returns early", testFilepathAbsRegisterPath},
+		{"RemovePath: filepath.Abs error returns wrapped error", testFilepathAbsRemovePath},
+		{"ValidatePath: filepath.Abs error returns wrapped error", testFilepathAbsValidatePath},
+		{"checkBoundary: filepath.Abs error on boundary propagates", testFilepathAbsCheckBoundary},
+		{"checkSafePaths: logs boundary check error", testFilepathAbsCheckSafePaths},
+		{"checkReadOnlyPaths: logs boundary check error", testFilepathAbsCheckReadOnlyPaths},
+		{"tryBoundary: logs error with relative boundary in deleted CWD", testFilepathAbsTryBoundary},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, tt.fn)
+	}
 }
 
 // TestSystemDependentBranches_Documented catalogs all code paths in paths.go
