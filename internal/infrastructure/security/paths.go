@@ -323,8 +323,9 @@ func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {
 		return false, err
 	}
 	realBoundary := p.resolveSymlinks(absBoundary)
+	realTarget := p.resolveSymlinks(target)
 
-	rel, err := filepath.Rel(realBoundary, target)
+	rel, err := filepath.Rel(realBoundary, realTarget)
 	ok := err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 	return ok, nil
 }
