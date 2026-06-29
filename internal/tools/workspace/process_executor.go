@@ -19,8 +19,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
