@@ -1101,8 +1101,8 @@ func TestGetDetailedCoverageJSON_ErrorWithData(t *testing.T) {
 	if err == nil {
 		t.Error("expected error from failed test execution")
 	}
-	if !strings.Contains(err.Error(), "coverage test failed") {
-		t.Errorf("expected 'coverage test failed' in error, got: %v", err)
+	if !strings.Contains(err.Error(), "coverage error") {
+		t.Errorf("expected 'coverage error' in error, got: %v", err)
 	}
 	if !strings.Contains(jsonStr, "test_file.go") {
 		t.Errorf("expected JSON data with file name, got: %q", jsonStr)
@@ -1139,9 +1139,12 @@ func TestGetDetailedCoverageReport_ErrorWithData(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected nil error (warning in report), got: %v", err)
 	}
-	// Report must contain the warning
-	if !strings.Contains(report, "⚠️ WARNING: test execution failed") {
+	// Report must contain the warning with the new format
+	if !strings.Contains(report, "⚠️ WARNING: coverage error; profile may be incomplete.") {
 		t.Errorf("expected warning in report, got: %q", report)
+	}
+	if !strings.Contains(report, "go test failed: exit status 1") {
+		t.Errorf("expected error cause in report, got: %q", report)
 	}
 	// Report must also contain the coverage data
 	if !strings.Contains(report, "Detailed Coverage Report") {
