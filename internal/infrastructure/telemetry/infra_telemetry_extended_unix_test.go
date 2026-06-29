@@ -7,8 +7,10 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"testing"
 
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 // ---------------------------------------------------------------------------
@@ -52,7 +55,8 @@ func TestLogTrace_WriteError(t *testing.T) {
 
 	logDone := make(chan struct{})
 	go func() {
-		logTrace(context.Background(), fifoPath, trace)
+		tl := newTraceLogger(slog.Default())
+		tl.logTrace(context.Background(), fifoPath, trace)
 		close(logDone)
 	}()
 
@@ -66,33 +70,28 @@ func TestLogTrace_WriteError(t *testing.T) {
 }
 
 func TestLogTrace_CloseError(t *testing.T) {
-	// NOT parallel — overrides package-level var.
-	//
-	// Strategy: inject a mock openTraceFile that returns a file whose Write
-	// method fails (simulating EFBIG/ENOSPC). This exercises the write-error
-	// branch in writeTraceEntry, and subsequently the close-error branch
-	// (which on real Linux/ext4 is typically unreachable — the close after a
-	// failed write returns 0).
-	originalOpen := openTraceFile
-	t.Cleanup(func() { openTraceFile = originalOpen })
+	t.Parallel()
 
 	writeErr := errors.New("simulated write error (EFBIG)")
 	closeErr := errors.New("simulated close error")
 
-	openTraceFile = func(path string) (io.WriteCloser, error) {
-		return &mockFile{
-			Writer:   &errorWriter{err: writeErr},
-			closeErr: closeErr,
-		}, nil
+	spy := &testfixtures.SpyLogger{}
+	tl := &traceLogger{
+		marshalFunc: json.Marshal,
+		openTraceFile: func(path string) (io.WriteCloser, error) {
+			return &mockFile{
+				Writer:   &errorWriter{err: writeErr},
+				closeErr: closeErr,
+			}, nil
+		},
+		logger: newSpySlogLogger(spy),
 	}
-
-	spy := captureSlogOutput(t)
 
 	tmpDir := t.TempDir()
 	traceFile := filepath.Join(tmpDir, "close_err.jsonl")
 
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "complete"}
-	logTrace(context.Background(), traceFile, trace)
+	tl.logTrace(context.Background(), traceFile, trace)
 
 	// Verify the write-error warning was logged.
 	if !spy.CalledWith("Warn", "failed to write to trace file") {
@@ -118,28 +117,28 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 // retry OpenFile still fails. We inject a mock FileSystem that returns
 // os.ErrNotExist on the first call and os.ErrPermission on the retry.
 func TestOpenLogFileForAppend_MkdirAllSucceedsButRetryFails(t *testing.T) {
-	// NOT parallel — overrides package-level var.
-	originalFS := fileSystem
-	t.Cleanup(func() { fileSystem = originalFS })
+	t.Parallel()
 
 	callCount := 0
-	fileSystem = &mockFS{
-		openFileFunc: func(name string, flag int, perm os.FileMode) (File, error) {
-			callCount++
-			if callCount == 1 {
-				return nil, os.ErrNotExist
-			}
-			return nil, os.ErrPermission
-		},
-		mkdirAllFunc: func(path string, perm os.FileMode) error {
-			return nil // MkdirAll succeeds
+	m := &metricsManager{
+		fs: &mockFS{
+			openFileFunc: func(name string, flag int, perm os.FileMode) (File, error) {
+				callCount++
+				if callCount == 1 {
+					return nil, os.ErrNotExist
+				}
+				return nil, os.ErrPermission
+			},
+			mkdirAllFunc: func(path string, perm os.FileMode) error {
+				return nil // MkdirAll succeeds
+			},
 		},
 	}
 
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "missing", "log.jsonl")
 
-	_, err := openLogFileForAppend(logPath)
+	_, err := m.openLogFileForAppend(logPath)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

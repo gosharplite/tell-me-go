@@ -157,7 +157,8 @@ func TestAppendSummaryToLog_WriteErrorUnreachable(t *testing.T) {
 		ResponseTokens: 50,
 	}
 
-	err := appendSummaryToLog(logPath, usage, 1.5, "test-model")
+	m := &metricsManager{fs: osFS{}}
+	err := m.appendSummaryToLog(logPath, usage, 1.5, "test-model")
 	require.NoError(t, err, "appendSummaryToLog should succeed with non-zero usage")
 
 	// Verify the file was created and contains valid JSON.
@@ -218,7 +219,7 @@ func TestAppendSummaryToLog_WriteErrorUnreachable(t *testing.T) {
 	}
 
 	extremeLogPath := filepath.Join(tmpDir, "extreme_summary.log")
-	err = appendSummaryToLog(extremeLogPath, extremeUsage, 999999.99, "extreme-model")
+	err = m.appendSummaryToLog(extremeLogPath, extremeUsage, 999999.99, "extreme-model")
 	require.NoError(t, err, "appendSummaryToLog should succeed with extreme UsageStats")
 
 	// Verify extreme summary is valid JSON.
@@ -285,7 +286,8 @@ func TestAppendSummaryToLog_MarshalError(t *testing.T) {
 	// -------------------------------------------------------------------------
 	// 2. Exercise appendSummaryToLog with NaN cost — marshal fails internally.
 	// -------------------------------------------------------------------------
-	err = appendSummaryToLog(logPath, usage, math.NaN(), "test-model")
+	m := &metricsManager{fs: osFS{}}
+	err = m.appendSummaryToLog(logPath, usage, math.NaN(), "test-model")
 	require.Error(t, err, "appendSummaryToLog should fail with NaN cost")
 	require.ErrorContains(t, err, "failed to marshal cost summary",
 		"error should wrap with 'failed to marshal cost summary'")
@@ -296,7 +298,7 @@ func TestAppendSummaryToLog_MarshalError(t *testing.T) {
 	// 3. Happy-path reinforcement: valid cost produces valid JSON.
 	// -------------------------------------------------------------------------
 	validPath := filepath.Join(tmpDir, "valid_summary.log")
-	err = appendSummaryToLog(validPath, usage, 1.5, "test-model")
+	err = m.appendSummaryToLog(validPath, usage, 1.5, "test-model")
 	require.NoError(t, err, "appendSummaryToLog should succeed with valid cost")
 
 	data, err := os.ReadFile(validPath)
@@ -356,7 +358,8 @@ func TestLogTrace_WriteErrorUnreachable(t *testing.T) {
 		FinalStatus: "completed",
 	}
 
-	logTrace(context.Background(), traceFile, trace)
+	tl := newTraceLogger(nil)
+	tl.logTrace(context.Background(), traceFile, trace)
 
 	// Verify the file was created and contains valid JSON.
 	data, err := os.ReadFile(traceFile)
@@ -411,7 +414,7 @@ func TestLogTrace_WriteErrorUnreachable(t *testing.T) {
 	zeroTrace := &domain_telemetry.TurnTrace{}
 	zeroFile := filepath.Join(tmpDir, "zero_trace.jsonl")
 	// Must not panic.
-	logTrace(context.Background(), zeroFile, zeroTrace)
+	tl.logTrace(context.Background(), zeroFile, zeroTrace)
 
 	zeroData, err := os.ReadFile(zeroFile)
 	require.NoError(t, err)

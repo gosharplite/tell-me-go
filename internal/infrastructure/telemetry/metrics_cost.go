@@ -19,6 +19,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pidlock"
 )
 
+// jsonMarshal is the json.Marshal function, overridable in tests.
+// It is used exclusively by the ledger (recordCost, updateLedgerHistory).
+var jsonMarshal = json.Marshal
+
 func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record sessionCostRecord) {
 	globalDir := filepath.Dir(outputDir)
 	historyPath := filepath.Join(globalDir, "global_costs.json")

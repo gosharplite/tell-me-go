@@ -33,6 +33,7 @@ type metricsManager struct {
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	ledger           *ledgerStore
 	kvStore          ports.KVStore
+	fs               FileSystem
 }
 
 type costSummaryArgs struct {
@@ -45,19 +46,33 @@ type costSummaryArgs struct {
 
 type estimateCostArgs struct{}
 
-// jsonMarshal is the json.Marshal function, overridable in tests.
-var jsonMarshal = json.Marshal
-
-// fileSystem is the filesystem abstraction, overridable in tests.
-var fileSystem FileSystem = osFS{}
-
-// openTraceFile opens a trace file for appending, overridable in tests.
-var openTraceFile = func(path string) (io.WriteCloser, error) {
-	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-}
-
 // resolveUsageForSummaryFunc is the resolveUsageForSummary function, overridable in tests.
 var resolveUsageForSummaryFunc = resolveUsageForSummary
+
+// TraceLogger encapsulates dependencies for writing TurnTrace events to disk.
+// All fields are injected via the constructor and can be overridden in tests
+// without mutating package-level state, enabling safe test parallelization.
+type traceLogger struct {
+	marshalFunc   func(v any) ([]byte, error)
+	openTraceFile func(path string) (io.WriteCloser, error)
+	logger        *slog.Logger
+}
+
+// NewTraceLogger creates a TraceLogger with production defaults.
+// marshalFunc is set to json.Marshal and openTraceFile to os.OpenFile.
+// If logger is nil, slog.Default() is used.
+func newTraceLogger(logger *slog.Logger) *traceLogger {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &traceLogger{
+		marshalFunc: json.Marshal,
+		openTraceFile: func(path string) (io.WriteCloser, error) {
+			return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		},
+		logger: logger,
+	}
+}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
 func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, kvStore ports.KVStore) error {
@@ -70,6 +85,7 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 		pricingOverrides: pricingOverrides,
 		ledger:           newLedgerStore(sm, model, pricingOverrides),
 		kvStore:          kvStore,
+		fs:               osFS{},
 	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -138,6 +154,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker 
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
 		ledger:           newLedgerStore(sm, model, pricingOverrides),
+		fs:               osFS{},
 	}
 
 	// 1. Record to global ledger (detailed breakdown)
@@ -153,7 +170,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker 
 	}
 
 	// 3. Append summary to log
-	return appendSummaryToLog(logPath, usage, totalCost, model)
+	return m.appendSummaryToLog(logPath, usage, totalCost, model)
 }
 
 func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tracker domain_pricing.CostTracker, logPath, model string, overrides map[string]domain_pricing.ModelPricing) (domain_pricing.UsageStats, float64, error) {
@@ -179,15 +196,15 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tra
 
 // openLogFileForAppend opens a log file for appending, creating parent directories
 // if they don't exist.
-func openLogFileForAppend(logPath string) (File, error) {
-	f, err := fileSystem.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+func (m *metricsManager) openLogFileForAppend(logPath string) (File, error) {
+	f, err := m.fs.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		// Ensure directory exists if we are meant to create it
 		if os.IsNotExist(err) {
-			if mkdirErr := fileSystem.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
+			if mkdirErr := m.fs.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
 				return nil, fmt.Errorf("failed to open log file %q for summary append (also failed to create dir: %v): %w", logPath, mkdirErr, err)
 			}
-			f, err = fileSystem.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			f, err = m.fs.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 			if err != nil {
 				return nil, fmt.Errorf("failed to open log file %q for summary append after mkdir: %w", logPath, err)
 			}
@@ -198,7 +215,7 @@ func openLogFileForAppend(logPath string) (File, error) {
 	return f, nil
 }
 
-func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCost float64, model string) error {
+func (m *metricsManager) appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCost float64, model string) error {
 	if usage.PromptTokens == 0 && usage.ResponseTokens == 0 && usage.SearchQueries == 0 {
 		return nil
 	}
@@ -220,7 +237,7 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 		return fmt.Errorf("failed to marshal cost summary: %w", err)
 	}
 
-	fAppend, err := openLogFileForAppend(logPath)
+	fAppend, err := m.openLogFileForAppend(logPath)
 	if err != nil {
 		return err
 	}
@@ -251,7 +268,7 @@ func generateSessionID(mode, logFile string) string {
 }
 
 // logTrace writes a TurnTrace to a trace log file.
-func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.TurnTrace) {
+func (t *traceLogger) logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.TurnTrace) {
 	if traceFile == "" || trace == nil {
 		return
 	}
@@ -263,37 +280,37 @@ func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.Tur
 	default:
 	}
 
-	data, err := jsonMarshal(trace)
+	data, err := t.marshalFunc(trace)
 	if err != nil {
-		slog.Warn("failed to marshal TurnTrace",
+		t.logger.Warn("failed to marshal TurnTrace",
 			slog.Any("error", err))
 		return
 	}
 
-	writeTraceEntry(traceFile, data)
+	t.writeTraceEntry(traceFile, data)
 }
 
 // writeTraceEntry opens the trace file, writes a JSON line, and closes it.
 // All errors are logged as warnings; this is a fire-and-forget operation
 // called from the event subscriber pipeline.
-func writeTraceEntry(traceFile string, data []byte) {
-	wc, err := openTraceFile(traceFile)
+func (t *traceLogger) writeTraceEntry(traceFile string, data []byte) {
+	wc, err := t.openTraceFile(traceFile)
 	if err != nil {
-		slog.Warn("failed to open trace file",
+		t.logger.Warn("failed to open trace file",
 			slog.String("path", traceFile),
 			slog.Any("error", err))
 		return
 	}
 	defer func() {
 		if cerr := wc.Close(); cerr != nil {
-			slog.Warn("failed to close trace file",
+			t.logger.Warn("failed to close trace file",
 				slog.String("path", traceFile),
 				slog.Any("error", cerr))
 		}
 	}()
 
 	if _, err := wc.Write(append(data, '\n')); err != nil {
-		slog.Warn("failed to write to trace file",
+		t.logger.Warn("failed to write to trace file",
 			slog.String("path", traceFile),
 			slog.Any("error", err))
 	}
@@ -301,9 +318,10 @@ func writeTraceEntry(traceFile string, data []byte) {
 
 // RegisterTraceSubscriber subscribes a listener to TraceEvents.
 func RegisterTraceSubscriber(bus events.EventBus, traceFile string) {
+	tl := newTraceLogger(slog.Default())
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
-			logTrace(ctx, traceFile, te.Trace)
+			tl.logTrace(ctx, traceFile, te.Trace)
 		}
 	})
 }

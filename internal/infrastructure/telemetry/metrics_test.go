@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
 
@@ -130,15 +131,17 @@ func TestAccumulate(t *testing.T) {
 // file requires OS-level manipulation (e.g., double-close or disk failure);
 // this path is exercised at the integration level, not in unit tests.
 func TestLogTrace_ErrorPaths(t *testing.T) {
+	tl := newTraceLogger(nil)
+
 	t.Run("nil trace", func(t *testing.T) {
 		// Should return immediately without panic.
-		logTrace(context.Background(), "/some/file", nil)
+		tl.logTrace(context.Background(), "/some/file", nil)
 	})
 
 	t.Run("empty trace file", func(t *testing.T) {
 		trace := &domain_telemetry.TurnTrace{}
 		// Should return immediately without panic.
-		logTrace(context.Background(), "", trace)
+		tl.logTrace(context.Background(), "", trace)
 	})
 
 	t.Run("cancelled context", func(t *testing.T) {
@@ -146,7 +149,7 @@ func TestLogTrace_ErrorPaths(t *testing.T) {
 		cancel()
 		trace := &domain_telemetry.TurnTrace{}
 		// Should detect ctx.Done() and return without writing.
-		logTrace(ctx, "/some/file", trace)
+		tl.logTrace(ctx, "/some/file", trace)
 	})
 
 	t.Run("open file error", func(t *testing.T) {
@@ -161,7 +164,7 @@ func TestLogTrace_ErrorPaths(t *testing.T) {
 		// logTrace calls os.OpenFile directly (no MkdirAll) — writing to a
 		// subdirectory within a read-only parent triggers the "Failed to open
 		// trace file" warning branch.
-		logTrace(context.Background(), filepath.Join(tmpDir, "sub", "trace.log"), trace)
+		tl.logTrace(context.Background(), filepath.Join(tmpDir, "sub", "trace.log"), trace)
 	})
 }
 
@@ -182,7 +185,8 @@ func TestLogTrace_ErrorPaths(t *testing.T) {
 // full or hardware failure; these are integration-level concerns.
 func TestAppendSummaryToLog_ErrorPaths(t *testing.T) {
 	t.Run("zero usage — early return", func(t *testing.T) {
-		err := appendSummaryToLog("/nonexistent/path", domain_pricing.UsageStats{}, 0, "model")
+		m := &metricsManager{fs: osFS{}}
+		err := m.appendSummaryToLog("/nonexistent/path", domain_pricing.UsageStats{}, 0, "model")
 		require.NoError(t, err)
 	})
 
@@ -194,8 +198,9 @@ func TestAppendSummaryToLog_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.Chmod(tmpDir, 0555))
 		t.Cleanup(func() { _ = os.Chmod(tmpDir, 0755) })
 
+		m := &metricsManager{fs: osFS{}}
 		usage := domain_pricing.UsageStats{PromptTokens: 100, ResponseTokens: 50}
-		err := appendSummaryToLog(filepath.Join(tmpDir, "sub", "log"), usage, 1.0, "model")
+		err := m.appendSummaryToLog(filepath.Join(tmpDir, "sub", "log"), usage, 1.0, "model")
 		require.Error(t, err)
 	})
 }
@@ -212,11 +217,12 @@ func TestAppendSummaryToLog_WritesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "tokens.log")
 
+	m := &metricsManager{fs: osFS{}}
 	usage := domain_pricing.UsageStats{
 		PromptTokens:   100,
 		ResponseTokens: 50,
 	}
-	err := appendSummaryToLog(logPath, usage, 0.0015, "test-model")
+	err := m.appendSummaryToLog(logPath, usage, 0.0015, "test-model")
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(logPath)
@@ -253,14 +259,13 @@ func TestAppendSummaryToLog_WritesFile(t *testing.T) {
 // fire-and-forget helper that opens, writes, and closes a trace file. All
 // errors are logged via slog.Warn, never returned.
 func TestWriteTraceEntry(t *testing.T) {
-	// NOT parallel — subtest "close error" overrides package-level openTraceFile.
-
 	t.Run("successful write", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 		traceFile := filepath.Join(tmpDir, "trace.jsonl")
 
-		writeTraceEntry(traceFile, []byte(`{"status":"ok"}`))
+		tl := newTraceLogger(nil)
+		tl.writeTraceEntry(traceFile, []byte(`{"status":"ok"}`))
 
 		data, err := os.ReadFile(traceFile)
 		require.NoError(t, err)
@@ -268,9 +273,11 @@ func TestWriteTraceEntry(t *testing.T) {
 	})
 
 	t.Run("open error", func(t *testing.T) {
-		spy := captureSlogOutput(t)
+		t.Parallel()
 
-		writeTraceEntry("/nonexistent/dir/subdir/file", []byte(`{}`))
+		spy := &testfixtures.SpyLogger{}
+		tl := newTraceLogger(newSpySlogLogger(spy))
+		tl.writeTraceEntry("/nonexistent/dir/subdir/file", []byte(`{}`))
 
 		require.True(t, spy.CalledWith("Warn", "failed to open trace file"),
 			"expected slog.Warn 'failed to open trace file' to be logged")
@@ -280,24 +287,28 @@ func TestWriteTraceEntry(t *testing.T) {
 		if _, err := os.Stat("/dev/full"); os.IsNotExist(err) {
 			t.Skip("/dev/full does not exist on this system")
 		}
-		spy := captureSlogOutput(t)
 
-		writeTraceEntry("/dev/full", []byte(`{}`))
+		spy := &testfixtures.SpyLogger{}
+		tl := newTraceLogger(newSpySlogLogger(spy))
+		tl.writeTraceEntry("/dev/full", []byte(`{}`))
 
 		require.True(t, spy.CalledWith("Warn", "failed to write to trace file"),
 			"expected slog.Warn 'failed to write to trace file' to be logged")
 	})
 
 	t.Run("close error", func(t *testing.T) {
-		originalOpen := openTraceFile
-		openTraceFile = func(path string) (io.WriteCloser, error) {
-			return &errCloser{Writer: &bytes.Buffer{}}, nil
+		t.Parallel()
+
+		spy := &testfixtures.SpyLogger{}
+		tl := &traceLogger{
+			marshalFunc: json.Marshal,
+			openTraceFile: func(path string) (io.WriteCloser, error) {
+				return &errCloser{Writer: &bytes.Buffer{}}, nil
+			},
+			logger: newSpySlogLogger(spy),
 		}
-		t.Cleanup(func() { openTraceFile = originalOpen })
 
-		spy := captureSlogOutput(t)
-
-		writeTraceEntry(t.TempDir()+"/dummy.jsonl", []byte(`{}`))
+		tl.writeTraceEntry(t.TempDir()+"/dummy.jsonl", []byte(`{}`))
 
 		require.True(t, spy.CalledWith("Warn", "failed to close trace file"),
 			"expected slog.Warn 'failed to close trace file' to be logged")
