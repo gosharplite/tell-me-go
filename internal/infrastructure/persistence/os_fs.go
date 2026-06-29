@@ -26,6 +26,7 @@ type File interface {
 // FileSystem defines the interface for filesystem operations to allow mocking.
 type FileSystem interface {
 	MkdirAll(ctx context.Context, path string, perm os.FileMode) error
+	Chmod(ctx context.Context, name string, mode os.FileMode) error
 	CreateTemp(ctx context.Context, dir, pattern string) (File, error)
 	Rename(ctx context.Context, oldpath, newpath string) error
 	Remove(ctx context.Context, name string) error
@@ -43,6 +44,12 @@ type OSFileSystem struct{}
 func (f *OSFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	return fsRetry(ctx, func() error {
 		return os.MkdirAll(path, perm)
+	})
+}
+
+func (f *OSFileSystem) Chmod(ctx context.Context, name string, mode os.FileMode) error {
+	return fsRetry(ctx, func() error {
+		return os.Chmod(name, mode)
 	})
 }
 
@@ -147,6 +154,10 @@ func (f *domainFS) AtomicWrite(ctx context.Context, name string, data []byte, pe
 
 func (f *domainFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	return f.fs.MkdirAll(ctx, path, perm)
+}
+
+func (f *domainFS) Chmod(ctx context.Context, name string, mode os.FileMode) error {
+	return f.fs.Chmod(ctx, name, mode)
 }
 
 func (f *domainFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {

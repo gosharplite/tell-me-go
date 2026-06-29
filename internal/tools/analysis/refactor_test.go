@@ -8,14 +8,27 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// createErrorFS wraps a persistence.FileSystem and overrides OpenFile to
+// return an error, simulating a file-creation failure without OS-specific
+// tricks like os.Chmod(0500).
+type createErrorFS struct {
+	persistence.FileSystem
+}
+
+func (f *createErrorFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
+	return nil, fs.ErrPermission
+}
 
 type mockTransform struct {
 	applyFn func(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error
@@ -224,6 +237,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
 
 		tx := newTransaction()
+		tx.fs = &createErrorFS{FileSystem: persistence.NewMockFileSystem()}
 		_, err := tx.LoadFile(path)
 		require.NoError(t, err)
 
@@ -232,10 +246,6 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 				return nil
 			},
 		})
-
-		// Make the directory read-only so os.Create fails on the .tmp file
-		require.NoError(t, os.Chmod(tmpDir, 0500))
-		t.Cleanup(func() { _ = os.Chmod(tmpDir, 0700) })
 
 		err = tx.Commit(context.Background())
 		require.Error(t, err)

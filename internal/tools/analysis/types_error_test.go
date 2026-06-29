@@ -3,14 +3,29 @@ package analysis_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis/analysistest"
 )
+
+// walkErrorFS wraps a persistence.FileSystem and overrides Walk to return
+// a fixed error, simulating permission-denied or walk-failure scenarios
+// without OS-specific tricks like os.Chmod(0000).
+type walkErrorFS struct {
+	persistence.FileSystem
+	walkErr error
+}
+
+func (f *walkErrorFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	return f.walkErr
+}
 
 // mockTypeIndex embeds analysistest.MockSymbolIndex to inherit all
 // symbolIndex method implementations, overriding Lookup,
@@ -81,7 +96,7 @@ func (s *MyStruct) Foo() string { return "" }
 // (a channel) produces an error and a zero-valued ToolResult.
 func TestGetTypeInfo_UnmarshalArgsError(t *testing.T) {
 	t.Parallel()
-	m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	ch := make(chan struct{})
 	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ch}, nil)
@@ -101,7 +116,7 @@ func TestGetTypeInfo_UnmarshalArgsError(t *testing.T) {
 // a guidance message without error.
 func TestGetTypeInfo_EmptyTypename(t *testing.T) {
 	t.Parallel()
-	m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ""}, nil)
 	if err != nil {
@@ -121,7 +136,7 @@ func TestGetTypeInfo_LookupError(t *testing.T) {
 			return nil, errSentinel
 		},
 	}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
 	if err == nil {
@@ -145,7 +160,7 @@ func TestGetTypeInfo_LookupEmpty(t *testing.T) {
 			return nil, nil
 		},
 	}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
 	if err != nil {
@@ -167,7 +182,7 @@ func TestGetTypeInfo_CacheGetError(t *testing.T) {
 			return []analysis.Location{{Path: filepath.Join(tmpDir, "does_not_exist.go"), Line: 1, Column: 1}}, nil
 		},
 	}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "Foo"}, nil)
 	if err == nil {
@@ -187,7 +202,7 @@ func TestGetTypeInfo_FindTypeSpecNil(t *testing.T) {
 			return []analysis.Location{{Path: filepath.Join(tmpDir, "mismatch.go"), Line: 2, Column: 6}}, nil
 		},
 	}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MissingType"}, nil)
 	if err != nil {
@@ -212,7 +227,7 @@ func TestGetTypeInfo_FindMethodsError(t *testing.T) {
 			return []analysis.Location{{Path: filepath.Join(tmpDir, "hastype.go"), Line: 2, Column: 6}}, nil
 		},
 	}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	_, err := m.GetTypeInfo(cancelCtx, map[string]interface{}{"typename": "MyStruct"}, nil)
 	if err == nil {
@@ -237,7 +252,7 @@ func TestGetTypeInfo_ShortCircuit(t *testing.T) {
 				return nil, nil
 			},
 		}
-		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 		res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ""}, nil)
 		if err != nil {
@@ -254,7 +269,7 @@ func TestGetTypeInfo_ShortCircuit(t *testing.T) {
 	t.Run("missing typename key defaults to empty string", func(t *testing.T) {
 		t.Parallel()
 		idx := &mockTypeIndex{}
-		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 		res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{}, nil)
 		if err != nil {
@@ -267,7 +282,7 @@ func TestGetTypeInfo_ShortCircuit(t *testing.T) {
 
 	t.Run("UnmarshalArgs error returns zero ToolResult", func(t *testing.T) {
 		t.Parallel()
-		m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+		m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 		ch := make(chan struct{})
 		res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": ch}, nil)
@@ -311,7 +326,7 @@ func broken() { // missing closing brace
 	}
 
 	idx := &analysistest.MockSymbolIndex{}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
@@ -362,7 +377,7 @@ func broken() { // missing closing brace
 			return []analysis.Location{{Path: filepath.Join(tmpDir, "valid.go"), Line: 2, Column: 6}}, nil
 		},
 	}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MyStruct"}, nil)
 	if err != nil {
@@ -391,17 +406,13 @@ func ValidFunc() string { return "ok" }
 		t.Fatal(err)
 	}
 
-	// Create a subdirectory and make it unreadable.
-	lockedDir := filepath.Join(tmpDir, "locked")
-	if err := os.Mkdir(lockedDir, 0000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+	mfs := &walkErrorFS{FileSystem: persistence.NewMockFileSystem(), walkErr: fs.ErrPermission}
 
 	m := analysis.NewTypeManager(
 		&analysistest.MockSymbolIndex{},
 		analysis.NewASTCache("."),
 		&analysistest.MockSecurityProvider{},
+		mfs,
 	)
 
 	_, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
@@ -426,18 +437,13 @@ type MyStruct struct{}
 		t.Fatal(err)
 	}
 
-	lockedDir := filepath.Join(tmpDir, "locked")
-	if err := os.Mkdir(lockedDir, 0000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
-
 	idx := &mockTypeIndex{
 		LookupFunc: func(ctx context.Context, symbol string, hb chan<- struct{}) ([]analysis.Location, error) {
 			return []analysis.Location{{Path: filepath.Join(tmpDir, "valid.go"), Line: 2, Column: 6}}, nil
 		},
 	}
-	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+	mfs := &walkErrorFS{FileSystem: persistence.NewMockFileSystem(), walkErr: fs.ErrPermission}
+	m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, mfs)
 
 	_, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": "MyStruct"}, nil)
 	if err == nil {
@@ -461,17 +467,13 @@ func F() string { return "ok" }
 		t.Fatal(err)
 	}
 
-	// Create a subdirectory and make it unreadable → Walk fails
-	lockedDir := filepath.Join(tmpDir, "locked")
-	if err := os.Mkdir(lockedDir, 0000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0700) })
+	mfs := &walkErrorFS{FileSystem: persistence.NewMockFileSystem(), walkErr: fs.ErrPermission}
 
 	m := analysis.NewTypeManager(
 		&mockTypeIndex{},
 		analysis.NewASTCache("."),
 		&analysistest.MockSecurityProvider{},
+		mfs,
 	)
 
 	_, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
@@ -504,6 +506,7 @@ func TestCollectSymbols_CancelledContext(t *testing.T) {
 		&analysistest.MockSymbolIndex{},
 		analysis.NewASTCache("."),
 		&analysistest.MockSecurityProvider{},
+		infra_persistence.NewOSFileSystem(),
 	)
 
 	_, err := m.ListSymbols(ctx, map[string]interface{}{"path": tmpDir}, nil)
@@ -571,7 +574,7 @@ func TestTypeManager_IndexerErrors(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := analysis.NewTypeManager(tt.idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+			m := analysis.NewTypeManager(tt.idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 			var err error
 			switch tt.method {
@@ -635,7 +638,7 @@ func TestTypeManager_PathValidationErrors(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), tt.sp)
+			m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), tt.sp, infra_persistence.NewOSFileSystem())
 
 			var err error
 			switch tt.method {
@@ -664,7 +667,7 @@ func TestListImplementations_ErrorPaths(t *testing.T) {
 
 	t.Run("UnmarshalArgs error", func(t *testing.T) {
 		t.Parallel()
-		m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+		m := analysis.NewTypeManager(&mockTypeIndex{}, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 		ch := make(chan struct{})
 		_, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": ch}, nil)
@@ -680,7 +683,7 @@ func TestListImplementations_ErrorPaths(t *testing.T) {
 				return nil, nil // no error, no results
 			},
 		}
-		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{})
+		m := analysis.NewTypeManager(idx, analysis.NewASTCache("."), &analysistest.MockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 		res, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": "EmptyInterface"}, nil)
 		if err != nil {

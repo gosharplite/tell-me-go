@@ -6,12 +6,25 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
+
+// mkdirErrorFS wraps a persistence.FileSystem and overrides MkdirAll to
+// return an error, simulating a directory-creation failure without
+// OS-specific tricks like os.Chmod(0555).
+type mkdirErrorFS struct {
+	persistence.FileSystem
+}
+
+func (f *mkdirErrorFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	return fs.ErrPermission
+}
 
 func TestProcessExecutor_AtomicWrites(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "atomic_test.txt")
@@ -116,7 +129,7 @@ func TestOpenOutputFile_Security(t *testing.T) {
 				OutputFile: tt.path,
 				Append:     tt.append,
 			}
-			f, err := executor.openOutputFile(config)
+			f, err := executor.openOutputFile(context.Background(), config)
 			validateOpenResult(t, f, err, tt.wantErr, tt.errContain)
 		})
 	}
@@ -249,7 +262,7 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 			config := executionConfig{
 				OutputFile: tt.path,
 			}
-			f, err := executor.openOutputFile(config)
+			f, err := executor.openOutputFile(context.Background(), config)
 			if err != nil {
 				t.Fatalf("openOutputFile(%q) error = %v", tt.path, err)
 			}
@@ -283,32 +296,22 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 }
 
 func TestOpenOutputFile_MkdirAllError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Chmod does not prevent MkdirAll on Windows")
-	}
+	t.Parallel()
 
 	executor := newprocessExecutor()
-	tmpDir := t.TempDir()
-
-	// Create a read-only parent directory so MkdirAll fails
-	parentDir := filepath.Join(tmpDir, "readonly_parent")
-	if err := os.MkdirAll(parentDir, 0555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(parentDir, 0755) })
+	executor.fs = &mkdirErrorFS{FileSystem: persistence.NewMockFileSystem()}
 
 	config := executionConfig{
-		OutputFile: filepath.Join(parentDir, "child", "out.txt"),
+		OutputFile: filepath.Join("readonly_parent", "child", "out.txt"),
 	}
-	f, err := executor.openOutputFile(config)
+	f, err := executor.openOutputFile(context.Background(), config)
 	if f != nil {
 		_ = f.Close()
 	}
 	if err == nil {
-		t.Fatal("expected error from MkdirAll under read-only parent")
+		t.Fatal("expected error from MkdirAll with mkdirErrorFS")
 	}
 	if !strings.Contains(err.Error(), "failed to create output directory") {
 		t.Errorf("expected 'failed to create output directory' in error, got: %v", err)
 	}
-
 }

@@ -8,6 +8,9 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // transform represents a single code transformation.
@@ -20,12 +23,14 @@ type transaction struct {
 	fset       *token.FileSet
 	files      map[string]*ast.File
 	transforms []transform
+	fs         persistence.FileSystem
 }
 
 func newTransaction() *transaction {
 	return &transaction{
 		fset:  token.NewFileSet(),
 		files: make(map[string]*ast.File),
+		fs:    infra_persistence.NewOSFileSystem(),
 	}
 }
 
@@ -43,7 +48,7 @@ func (tx *transaction) Commit(ctx context.Context) error {
 	var writtenFiles []string
 	for path, file := range tx.files {
 		tmpPath := path + ".tmp"
-		f, err := os.Create(tmpPath)
+		f, err := tx.fs.OpenFile(ctx, tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 		if err != nil {
 			tx.rollback(writtenFiles)
 			return fmt.Errorf("create temp file %s: %w", tmpPath, err)

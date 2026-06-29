@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -551,14 +552,14 @@ func TestCheckDefaultBoundaries_ExtraTempDirs(t *testing.T) {
 
 	// A file in /tmp should be permitted by checkDefaultBoundaries.
 	// Whether via os.TempDir() or getExtraTempDirs() depends on the platform.
-	path := p.resolveSymlinks("/tmp/test-extra-temp-file.txt")
+	path := filepathutil.NormalizePath("/tmp/test-extra-temp-file.txt")
 	ok, err := p.checkDefaultBoundaries(path, false)
 	require.NoError(t, err)
 	assert.True(t, ok, "path in /tmp should pass checkDefaultBoundaries (via os.TempDir or getExtraTempDirs)")
 
 	// macOS-specific: /private/tmp is also covered by getExtraTempDirs
 	if runtime.GOOS == "darwin" {
-		path2 := p.resolveSymlinks("/private/tmp/test-extra-temp-file.txt")
+		path2 := filepathutil.NormalizePath("/private/tmp/test-extra-temp-file.txt")
 		ok2, err2 := p.checkDefaultBoundaries(path2, false)
 		require.NoError(t, err2)
 		assert.True(t, ok2, "path in /private/tmp should pass checkDefaultBoundaries on macOS")
@@ -578,7 +579,7 @@ func TestCheckDefaultBoundaries_ExtraTempDirs(t *testing.T) {
 				if _, statErr := os.Stat(extraDir); statErr != nil {
 					continue
 				}
-				path := p.resolveSymlinks(filepath.Join(extraDir, "test-extra-shortcircuit.txt"))
+				path := filepathutil.NormalizePath(filepath.Join(extraDir, "test-extra-shortcircuit.txt"))
 				ok, err := p.checkBoundary(path, extraDir)
 				require.NoError(t, err)
 				assert.True(t, ok, "path in %s should be within boundary", extraDir)
@@ -1102,7 +1103,6 @@ func TestValidatePath_CustomRuleErrorPropagation(t *testing.T) {
 // resolver. Verification: result is non-empty and preserves the base filename.
 func TestResolveSymlinks_RecursiveFallback(t *testing.T) {
 	t.Parallel()
-	p := newPathPolicy(nil)
 	tmpDir := t.TempDir()
 
 	tests := []struct {
@@ -1134,7 +1134,7 @@ func TestResolveSymlinks_RecursiveFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := p.resolveSymlinks(tt.path)
+			result := filepathutil.NormalizePath(tt.path)
 			if result == "" {
 				t.Error("resolveSymlinks returned empty string")
 			}

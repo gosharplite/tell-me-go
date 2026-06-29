@@ -1773,26 +1773,17 @@ func TestResolveCrossPackage_NilTypesInfo(t *testing.T) {
 
 // =============================================================================
 // Gap: harvestPackageSymbols filepath.Abs error fallback (L104-106).
-// Covered by deleting the current working directory so os.Getwd() fails,
-// which causes filepath.Abs to return an error.
-// This test must NOT use t.Parallel() because it temporarily changes CWD.
+// Covered by injecting a resolvePath function that returns an error,
+// which causes the fallback to filepath.Dir("relative.go") = ".".
 // =============================================================================
 func TestHarvestPackageSymbols_AbsError(t *testing.T) {
-	// NOT parallel — changes working directory
+	t.Parallel()
 
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-
-	tmpDir := t.TempDir()
-	require.NoError(t, os.Chdir(tmpDir))
-	require.NoError(t, os.RemoveAll(tmpDir)) // CWD is now a deleted directory
-
-	t.Cleanup(func() {
-		// Restore original CWD
-		_ = os.Chdir(origDir)
-	})
-
-	analyzer := &defaultDeadCodeAnalyzer{}
+	analyzer := &defaultDeadCodeAnalyzer{
+		resolvePath: func(string) (string, error) {
+			return "", fmt.Errorf("simulated Abs failure")
+		},
+	}
 
 	state := &scanState{
 		targetModule: "example.com/mod",
@@ -1810,7 +1801,7 @@ func TestHarvestPackageSymbols_AbsError(t *testing.T) {
 		Types:   types.NewPackage("example.com/mod/pkg", "pkg"),
 	}
 
-	// Must not panic; filepath.Abs should fail because CWD is deleted,
+	// Must not panic; resolvePath returns an error,
 	// falling back to filepath.Dir("relative.go") = "."
 	analyzer.harvestPackageSymbols(pkg, state)
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"golang.org/x/sync/errgroup"
@@ -21,12 +22,14 @@ import (
 type defaultComplexityAnalyzer struct {
 	Cache *astCache
 	SP    security.PathValidator
+	fs    persistence.FileSystem
 }
 
-func newComplexityAnalyzer(cache *astCache, sp security.PathValidator) *defaultComplexityAnalyzer {
+func newComplexityAnalyzer(cache *astCache, sp security.PathValidator, fs persistence.FileSystem) *defaultComplexityAnalyzer {
 	return &defaultComplexityAnalyzer{
 		Cache: cache,
 		SP:    sp,
+		fs:    fs,
 	}
 }
 
@@ -81,7 +84,7 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 	count := 0
 
 	walkFn := a.makeWalkFunc(g, gCtx, sem, hb, &complexities, &mu, &skippedErrs, &skippedMu, &count)
-	if err := filepath.Walk(root, walkFn); err != nil {
+	if err := a.fs.Walk(ctx, root, walkFn); err != nil {
 		return nil, nil, err
 	}
 
@@ -111,7 +114,7 @@ func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
 	return limit
 }
 
-func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex, count *int) filepath.WalkFunc {
+func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, skippedErrs *[]string, skippedMu *sync.Mutex, count *int) persistence.WalkFunc {
 	return func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

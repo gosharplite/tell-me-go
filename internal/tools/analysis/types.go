@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -17,6 +18,7 @@ type defaultTypeManager struct {
 	Indexer symbolIndex
 	Cache   *astCache
 	SP      security.PathValidator
+	fs      persistence.FileSystem
 }
 
 type typeDefinition struct {
@@ -36,15 +38,16 @@ type fieldInfo struct {
 
 // NewTypeManager creates a new defaultTypeManager.
 // This is the exported constructor for use by sub-packages (e.g., analysistest, analysis_test).
-func NewTypeManager(idx SymbolIndex, cache *astCache, sp security.PathValidator) *defaultTypeManager {
-	return newTypeManager(idx, cache, sp)
+func NewTypeManager(idx SymbolIndex, cache *astCache, sp security.PathValidator, fs persistence.FileSystem) *defaultTypeManager {
+	return newTypeManager(idx, cache, sp, fs)
 }
 
-func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator) *defaultTypeManager {
+func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator, fs persistence.FileSystem) *defaultTypeManager {
 	return &defaultTypeManager{
 		Indexer: idx,
 		Cache:   cache,
 		SP:      sp,
+		fs:      fs,
 	}
 }
 
@@ -263,11 +266,11 @@ func (m *defaultTypeManager) findMethodsInPackage(ctx context.Context, dir, type
 	var methods []string
 	count := 0
 	walkFn := m.makeMethodWalkFunc(ctx, typeName, hb, &methods, &count)
-	err := filepath.Walk(dir, walkFn)
+	err := m.fs.Walk(ctx, dir, walkFn)
 	return methods, err
 }
 
-func (m *defaultTypeManager) makeMethodWalkFunc(ctx context.Context, typeName string, hb chan<- struct{}, methods *[]string, count *int) filepath.WalkFunc {
+func (m *defaultTypeManager) makeMethodWalkFunc(ctx context.Context, typeName string, hb chan<- struct{}, methods *[]string, count *int) persistence.WalkFunc {
 	return func(p string, i os.FileInfo, walkErr error) error {
 		// Propagate filesystem-level walk errors (permission denied,
 		// broken symlink) — these are not parse skips.
@@ -414,7 +417,7 @@ func (m *defaultTypeManager) matchSymbolInFile(f *ast.File, fset *token.FileSet,
 func (m *defaultTypeManager) collectSymbols(ctx context.Context, root, query string, exportedOnly bool, hb chan<- struct{}) ([]string, error) {
 	var results []string
 	count := 0
-	walkErr := filepath.Walk(root, func(p string, info os.FileInfo, walkErr error) error {
+	walkErr := m.fs.Walk(ctx, root, func(p string, info os.FileInfo, walkErr error) error {
 		// Propagate filesystem-level walk errors (permission denied,
 		// broken symlink) — these are not parse skips.
 		if walkErr != nil {

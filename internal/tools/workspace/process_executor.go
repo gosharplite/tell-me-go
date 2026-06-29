@@ -18,7 +18,10 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 // osGetwd is a test hook for os.Getwd. It defaults to os.Getwd and
@@ -50,13 +53,16 @@ type processExecutor struct {
 	// When set, newPipeline delegates to this function instead.
 	// This exists solely to enable testing the defensive error path at pipeline.go:41-43.
 	wirePipesFn func(p *pipeline) error
+	fs          persistence.FileSystem
 }
 
 const maxScannerCapacity = 10 * 1024 * 1024
 
 // newprocessExecutor creates a new processExecutor.
 func newprocessExecutor() *processExecutor {
-	return &processExecutor{}
+	return &processExecutor{
+		fs: infra_persistence.NewOSFileSystem(),
+	}
 }
 
 // RunCommand executes a single command.
@@ -98,8 +104,8 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 	}, nil
 }
 
-func (e *processExecutor) prepareOutputFile(config executionConfig) *os.File {
-	file, ferr := e.openOutputFile(config)
+func (e *processExecutor) prepareOutputFile(ctx context.Context, config executionConfig) *os.File {
+	file, ferr := e.openOutputFile(ctx, config)
 	if ferr != nil && config.Feedback != nil {
 		_, _ = fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, ferr)
 	}
@@ -142,7 +148,7 @@ func (e *processExecutor) setupCommand(ctx context.Context, parts []string, conf
 		return nil, nil, nil, nil, fmt.Errorf("failed to get stderr pipe: %w", err)
 	}
 
-	return cmd, stdout, stderr, e.prepareOutputFile(config), nil
+	return cmd, stdout, stderr, e.prepareOutputFile(ctx, config), nil
 }
 
 func (e *processExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.Reader, config executionConfig, file *os.File) *atomic.Bool {
@@ -233,7 +239,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	}
 	defer p.closePipes()
 
-	file := e.prepareOutputFile(config)
+	file := e.prepareOutputFile(ctx, config)
 	if file != nil {
 		defer closeFile(file, &err)
 	}
@@ -284,6 +290,13 @@ func (e *processExecutor) formatPipelineResult(stdoutStr, stderrStr string, trun
 
 // withinParent reports whether target resides inside the parent directory.
 func withinParent(parent, target string) bool {
+	// Resolve both paths to a canonical form for consistent cross-platform
+	// comparison. On Windows, os.Getwd() and filepath.Abs may return paths
+	// with different normalization (short vs long names, case differences)
+	// causing filepath.Rel to fail even for valid parent-child relationships.
+	parent = filepathutil.NormalizePath(parent)
+	target = filepathutil.NormalizePath(target)
+
 	rel, err := filepath.Rel(parent, target)
 	if err != nil {
 		return false
@@ -360,7 +373,7 @@ func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, err
 	return validateAndResolveRelPath(cleanedPath, originalPath)
 }
 
-func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, error) {
+func (e *processExecutor) openOutputFile(ctx context.Context, config executionConfig) (*os.File, error) {
 	if config.OutputFile == "" {
 		return nil, nil
 	}
@@ -387,7 +400,7 @@ func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, erro
 		flags |= os.O_TRUNC
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := e.fs.MkdirAll(ctx, filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 

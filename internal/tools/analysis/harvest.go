@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -100,11 +101,15 @@ func (a *defaultDeadCodeAnalyzer) isInTargetScope(pkg *packages.Package, state *
 	}
 
 	if state.targetPath != "" && len(pkg.GoFiles) > 0 {
-		absPkg, err := filepath.Abs(filepath.Dir(pkg.GoFiles[0]))
+		resolvePath := a.resolvePath
+		if resolvePath == nil {
+			resolvePath = filepath.Abs
+		}
+		absPkg, err := resolvePath(filepath.Dir(pkg.GoFiles[0]))
 		if err != nil {
 			absPkg = filepath.Dir(pkg.GoFiles[0]) // fallback to raw dir path
 		}
-		if !strings.HasPrefix(absPkg, state.targetPath) {
+		if !strings.HasPrefix(filepathutil.NormalizeKey(absPkg), filepathutil.NormalizeKey(state.targetPath)) {
 			return false
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -29,14 +30,16 @@ type defaultDependencyAnalyzer struct {
 	Policy    services.WorkspacePolicy
 	modPrefix string
 	modMu     sync.Mutex
+	fs        persistence.FileSystem
 }
 
-func newDependencyAnalyzer(runner AnalysisGoRunner, sp domain_security.PolicyEvaluator, bus events.EventBus, wp services.WorkspacePolicy) *defaultDependencyAnalyzer {
+func newDependencyAnalyzer(runner AnalysisGoRunner, sp domain_security.PolicyEvaluator, bus events.EventBus, wp services.WorkspacePolicy, fs persistence.FileSystem) *defaultDependencyAnalyzer {
 	return &defaultDependencyAnalyzer{
 		Runner: runner,
 		SP:     sp,
 		Events: bus,
 		Policy: wp,
+		fs:     fs,
 	}
 }
 
@@ -99,7 +102,7 @@ func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string]
 		return nil, fmt.Errorf("getting module root: %w", err)
 	}
 
-	pkgPaths, err := a.listInternalPackages(modRoot)
+	pkgPaths, err := a.listInternalPackages(ctx, modRoot)
 	if err != nil {
 		return nil, fmt.Errorf("listing packages: %w", err)
 	}
@@ -171,9 +174,9 @@ func containsGoFiles(path string) (bool, error) {
 	return false, nil
 }
 
-func (a *defaultDependencyAnalyzer) listInternalPackages(root string) ([]string, error) {
+func (a *defaultDependencyAnalyzer) listInternalPackages(ctx context.Context, root string) ([]string, error) {
 	var pkgs []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := a.fs.Walk(ctx, root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

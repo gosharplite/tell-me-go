@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"path/filepath"
 	"strings"
+
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]typeName, error) {
@@ -95,6 +96,9 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 }
 
 func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
+	targetPath = filepathutil.NormalizeForCompare(targetPath)
+	filePath = filepathutil.NormalizeForCompare(filePath)
+
 	if targetPath == filePath {
 		return true
 	}
@@ -103,14 +107,14 @@ func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
 		if len(targetPath) == 0 {
 			return true
 		}
-		// If targetPath is a root directory (e.g., "/" or "C:\"),
+		// If targetPath is a root directory (e.g., "/" or "c:/"),
 		// it already ends in a separator.
-		if targetPath[len(targetPath)-1] == filepath.Separator {
+		if targetPath[len(targetPath)-1] == '/' {
 			return true
 		}
 		// Otherwise, require a separator at the boundary to prevent
 		// partial matches (e.g., /foo matching /foobar).
-		if len(filePath) > len(targetPath) && filePath[len(targetPath)] == filepath.Separator {
+		if len(filePath) > len(targetPath) && filePath[len(targetPath)] == '/' {
 			return true
 		}
 	}

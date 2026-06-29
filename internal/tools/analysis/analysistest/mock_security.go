@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 // MockSecurityProvider is a configurable mock of domain_security.Manager for use in tests.
@@ -37,7 +39,7 @@ func (m *MockSecurityProvider) IsPathSafe(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if m.TempDir != "" && !strings.HasPrefix(abs, m.TempDir) {
+	if m.TempDir != "" && !strings.HasPrefix(filepathutil.NormalizeKey(abs), filepathutil.NormalizeKey(m.TempDir)) {
 		return "", fmt.Errorf("path out of bounds")
 	}
 	return abs, nil

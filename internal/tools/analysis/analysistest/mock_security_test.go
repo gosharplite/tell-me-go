@@ -58,13 +58,19 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 				TempDir: "/safe",
 			},
 			path: "/safe/sub/file.go",
-			want: "/safe/sub/file.go",
+			want: func() string {
+				abs, _ := filepath.Abs("/safe/sub/file.go")
+				return abs
+			}(), // platform-dependent: Unix preserves "/safe/sub/file.go", Windows prepends volume
 		},
 		{
 			name: "zero_value_happy_path",
 			mock: &MockSecurityProvider{},
 			path: "/tmp/test.go",
-			want: "/tmp/test.go", // filepath.Abs preserves absolute paths
+			want: func() string {
+				abs, _ := filepath.Abs("/tmp/test.go")
+				return abs
+			}(), // platform-dependent: Unix preserves "/tmp/test.go", Windows prepends volume like "C:\\tmp\\test.go"
 		},
 	}
 
@@ -178,7 +184,10 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 				TempDir: "/safe",
 			},
 			path: "/safe/file.go",
-			want: "/safe/file.go",
+			want: func() string {
+				abs, _ := filepath.Abs("/safe/file.go")
+				return abs
+			}(), // platform-dependent: Unix preserves "/safe/file.go", Windows prepends volume
 		},
 	}
 

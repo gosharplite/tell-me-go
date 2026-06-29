@@ -441,8 +441,11 @@ func TestExecutionStep_Process(t *testing.T) {
 
 	t.Run("No trace in context — CumulativeToolDuration not set", func(t *testing.T) {
 		bus := &eventstest.MockEventBus{}
+		mockClock := &agenttest.MockClock{}
+		mockClock.SetCurrentTime(time.Now()) // seed so Now() uses stored time, not real clock
 		ex := &agenttest.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+				mockClock.Sleep(10 * time.Millisecond) // guarantee measurable wall time even on coarse-grained clocks (e.g., Windows)
 				return &llm.Content{Role: "tool"}, nil
 			},
 		}
@@ -455,7 +458,7 @@ func TestExecutionStep_Process(t *testing.T) {
 			Executor:     ex,
 			TokenCounter: counter,
 			CtxManager:   cm,
-			Clock:        &agenttest.MockClock{},
+			Clock:        mockClock,
 			State: &TurnState{
 				HasToolCalls: true,
 				Response: &llm.Content{

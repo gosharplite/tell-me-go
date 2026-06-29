@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestTypeManager_GetTypeInfo(t *testing.T) {
@@ -90,7 +92,7 @@ type I2 interface {
 			idx, _ := newIndexer(tmpDir)
 			cache := newASTCache(".")
 			sp := &mockSecurityProvider{}
-			m := newTypeManager(idx, cache, sp)
+			m := newTypeManager(idx, cache, sp, infra_persistence.NewOSFileSystem())
 
 			res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": tt.typename}, nil)
 			if (err != nil) != tt.wantErr {
@@ -123,7 +125,7 @@ func (s S) M() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": "I"}, nil)
 	if err != nil {
@@ -151,7 +153,7 @@ const C = 1
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +182,7 @@ func F() {
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.FindUsages(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +207,7 @@ func MyFunc() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "MyFunc"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +221,7 @@ func MyFunc() {}
 func TestTypeManager_ListImplementations_Error(t *testing.T) {
 	t.Parallel()
 	idx, _ := newIndexer(".")
-	m := newTypeManager(idx, nil, &mockSecurityProvider{})
+	m := newTypeManager(idx, nil, &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.ListImplementations(context.Background(), map[string]interface{}{}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +234,7 @@ func TestTypeManager_ListImplementations_Error(t *testing.T) {
 func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{})
+	analyzer := newComplexityAnalyzer(newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +259,7 @@ func unexported() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
-	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{})
+	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir, "exported_only": true}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +323,7 @@ func TestRenderTypeInfo_Fields(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newTypeManager(nil, nil, nil)
+			m := newTypeManager(nil, nil, nil, infra_persistence.NewOSFileSystem())
 			def := typeDefinition{Fields: tt.fields}
 			var sb strings.Builder
 			m.renderTypeInfo_fields(def, &sb)
