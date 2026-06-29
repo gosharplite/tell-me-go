@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -16,10 +17,36 @@ var (
 	sharedIdxOnce sync.Once
 )
 
+// findModuleRoot walks up from the current working directory until it finds
+// a go.mod file, returning the absolute path to the module root.
+func findModuleRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("go.mod not found in any parent directory")
+		}
+		dir = parent
+	}
+}
+
 func getSharedIndexer(tb testing.TB) *indexer {
 	sharedIdxOnce.Do(func() {
-		var err error
-		sharedIdx, err = newIndexer(".")
+		dir, err := findModuleRoot()
+		if err != nil {
+			tb.Fatalf("failed to find module root for shared indexer: %v", err)
+		}
+		sharedIdx, err = newIndexer(dir)
 		if err != nil {
 			tb.Fatalf("failed to create shared indexer: %v", err)
 		}
