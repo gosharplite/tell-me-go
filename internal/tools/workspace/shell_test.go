@@ -1112,12 +1112,16 @@ func assertPowerShellWrapping(expectedCommand string) func(*testing.T, []string)
 // It places a fake pwsh executable on PATH so that exec.LookPath("pwsh") succeeds.
 // Cannot use t.Parallel() because t.Setenv is incompatible with parallel tests.
 func TestWindowsShellWrapper_Wrap_PwshFound(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("pwsh lookup uses platform-specific extensions; only meaningful on Windows")
+	}
+
 	tmpDir := t.TempDir()
-	pwshPath := filepath.Join(tmpDir, "pwsh")
-	if err := os.WriteFile(pwshPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+	pwshPath := filepath.Join(tmpDir, "pwsh.exe") // .exe required for exec.LookPath on Windows
+	if err := os.WriteFile(pwshPath, []byte("@echo off\r\nexit /b 0\r\n"), 0755); err != nil {
 		t.Fatalf("failed to create fake pwsh: %v", err)
 	}
-	t.Setenv("PATH", tmpDir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	w := &windowsShellWrapper{}
 	got := w.Wrap("Get-ChildItem .", []string{"Get-ChildItem", "."})

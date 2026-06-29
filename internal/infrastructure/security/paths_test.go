@@ -1162,6 +1162,9 @@ func TestFilepathAbs_ErrorBranches(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("macOS APFS prevents CWD deletion while process is in it; filepath.Abs error path unreachable")
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows locks CWD, preventing cleanup after os.RemoveAll on the current directory")
+	}
 
 	// This test manipulates the process working directory and PWD environment
 	// variable — cannot run in parallel with other tests.

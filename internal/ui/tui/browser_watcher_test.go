@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -322,6 +323,12 @@ func TestProcessWatcherEvents_ChannelClose(t *testing.T) {
 // ── Watcher error handling hardening (G9 + G10) ──
 
 func TestWatchHistoryFileCmd_StatPermissionError(t *testing.T) {
+	// os.Chmod(0000) does not create a real permission error on Windows;
+	// the file remains stat-able and the watcher would block forever.
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod permission model differs on Windows")
+	}
+
 	mockModifier := &mockHistoryModifier{}
 	m := NewRootBrowserModel(context.Background(), nil, mockModifier)
 

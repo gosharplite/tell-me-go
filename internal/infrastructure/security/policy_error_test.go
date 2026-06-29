@@ -654,6 +654,9 @@ func TestPolicy_FilepathAbsErrors(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("macOS APFS prevents CWD deletion while process is in it; filepath.Abs error path unreachable")
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows locks CWD, preventing cleanup after os.RemoveAll on the current directory")
+	}
 
 	origDir, err := os.Getwd()
 	require.NoError(t, err)
