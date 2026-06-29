@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,47 +48,43 @@ func (e *errCloser) Close() error {
 // returns an io.WriteCloser whose Close() method returns an error,
 // logTrace logs a warning containing the error message.
 func TestLogTrace_CloseError_Mock(t *testing.T) {
-	// NOT parallel — overrides package-level var
+	// NOT parallel — overrides package-level var AND slog.SetDefault.
 	originalOpen := openTraceFile
 	openTraceFile = func(path string) (io.WriteCloser, error) {
 		return &errCloser{Writer: &bytes.Buffer{}}, nil
 	}
 	t.Cleanup(func() { openTraceFile = originalOpen })
 
+	spy := captureSlogOutput(t)
+
 	tmpDir := t.TempDir()
 	traceFile := filepath.Join(tmpDir, "trace.jsonl")
-
-	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(os.Stderr)
 
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 	logTrace(context.Background(), traceFile, trace)
 
-	assert.Contains(t, logBuf.String(), "WARN failed to close trace file")
-	assert.Contains(t, logBuf.String(), "injected close error")
+	assert.True(t, spy.CalledWith("Warn", "failed to close trace file"),
+		"expected slog.Warn 'failed to close trace file' to be logged")
 }
 
 // TestLogTrace_MarshalError verifies that when the injected jsonMarshal
 // function returns an error, logTrace logs a warning and returns early.
 func TestLogTrace_MarshalError(t *testing.T) {
-	// NOT parallel — overrides package-level var
+	// NOT parallel — overrides package-level var AND slog.SetDefault.
 	originalMarshal := jsonMarshal
 	jsonMarshal = func(v interface{}) ([]byte, error) {
 		return nil, errors.New("injected marshal error")
 	}
 	t.Cleanup(func() { jsonMarshal = originalMarshal })
 
+	spy := captureSlogOutput(t)
+
 	tmpDir := t.TempDir()
 	traceFile := filepath.Join(tmpDir, "trace.jsonl")
-
-	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(os.Stderr)
 
 	trace := &domain_telemetry.TurnTrace{FinalStatus: "test"}
 	logTrace(context.Background(), traceFile, trace)
 
-	assert.Contains(t, logBuf.String(), "WARN failed to marshal TurnTrace")
-	assert.Contains(t, logBuf.String(), "injected marshal error")
+	assert.True(t, spy.CalledWith("Warn", "failed to marshal TurnTrace"),
+		"expected slog.Warn 'failed to marshal TurnTrace' to be logged")
 }

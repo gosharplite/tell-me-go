@@ -4,12 +4,10 @@
 package telemetry
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,20 +246,16 @@ func TestAppendSummaryToLog_MarshalErrorUnreachable(t *testing.T) {
 // metrics.go:109-111 where recordCostSilently calls EstimateCost
 // and silently logs a warning when EstimateCost fails.
 func TestGetCostSummary_SilentCostUpdateWarning(t *testing.T) {
-	t.Parallel()
-
 	m := &metricsManager{
 		sm:      &mockSMWithError{pathErr: errors.New("path not safe")},
 		logFile: "/nonexistent/path/tokens.log",
 		model:   "test-model",
 	}
 
-	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(os.Stderr)
+	spy := captureSlogOutput(t)
 
 	m.recordCostSilently(context.Background())
 
-	assert.Contains(t, logBuf.String(), "WARN failed to record cost before summary")
-	assert.Contains(t, logBuf.String(), "path not safe")
+	assert.True(t, spy.CalledWith("Warn", "failed to record cost before summary"),
+		"expected slog.Warn 'failed to record cost before summary' to be logged")
 }

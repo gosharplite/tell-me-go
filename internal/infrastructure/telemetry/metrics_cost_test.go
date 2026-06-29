@@ -6,7 +6,6 @@ package telemetry
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,7 +17,6 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
 
@@ -693,36 +691,6 @@ func TestCostLedger_RecoverySkipsUnreadableFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// spySlogHandler — routes slog records to testfixtures.SpyLogger for assertion
-// ---------------------------------------------------------------------------
-
-type spySlogHandler struct {
-	spy   *testfixtures.SpyLogger
-	level slog.Level
-}
-
-func (h *spySlogHandler) Enabled(_ context.Context, level slog.Level) bool {
-	return level >= h.level
-}
-
-func (h *spySlogHandler) Handle(_ context.Context, r slog.Record) error {
-	switch r.Level {
-	case slog.LevelWarn:
-		h.spy.Warn(r.Message)
-	case slog.LevelError:
-		h.spy.Error(r.Message)
-	case slog.LevelInfo:
-		h.spy.Info(r.Message)
-	case slog.LevelDebug:
-		h.spy.Debug(r.Message)
-	}
-	return nil
-}
-
-func (h *spySlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
-func (h *spySlogHandler) WithGroup(name string) slog.Handler       { return h }
-
-// ---------------------------------------------------------------------------
 // Gap — loadHistoryFromDisk failure under lock (metrics_cost.go:63-68)
 // ---------------------------------------------------------------------------
 
@@ -735,10 +703,7 @@ func TestRecordCost_LoadHistoryReadError(t *testing.T) {
 	}
 
 	// Install SpyLogger as the slog default handler to capture slog.Warn calls.
-	spy := &testfixtures.SpyLogger{}
-	originalLogger := slog.Default()
-	slog.SetDefault(slog.New(&spySlogHandler{spy: spy, level: slog.LevelDebug}))
-	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	spy := captureSlogOutput(t)
 
 	ctx := context.Background()
 	tempDir := t.TempDir()
@@ -812,10 +777,7 @@ func TestRecordCost_JsonMarshalError(t *testing.T) {
 	t.Cleanup(func() { jsonMarshal = originalMarshal })
 
 	// Step 2: Install SpyLogger as the slog default handler.
-	spy := &testfixtures.SpyLogger{}
-	originalLogger := slog.Default()
-	slog.SetDefault(slog.New(&spySlogHandler{spy: spy, level: slog.LevelDebug}))
-	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	spy := captureSlogOutput(t)
 
 	ctx := context.Background()
 	tempDir := t.TempDir()
