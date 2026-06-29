@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 // MockSecurityProvider is a configurable mock of domain_security.Manager for use in tests.
@@ -37,19 +39,8 @@ func (m *MockSecurityProvider) IsPathSafe(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if m.TempDir != "" {
-		// Normalize to forward slashes for cross-platform prefix comparison.
-		// On Windows, filepath.Abs prepends a volume (e.g., C:); strip it
-		// so that TempDir="/safe" matches both "/safe/file.go" (Unix) and
-		// "C:/safe/file.go" (Windows).
-		normalizedAbs := filepath.ToSlash(abs)
-		if vol := filepath.VolumeName(normalizedAbs); vol != "" {
-			normalizedAbs = normalizedAbs[len(vol):]
-		}
-		normalizedTempDir := filepath.ToSlash(m.TempDir)
-		if !strings.HasPrefix(normalizedAbs, normalizedTempDir) {
-			return "", fmt.Errorf("path out of bounds")
-		}
+	if m.TempDir != "" && !strings.HasPrefix(filepathutil.NormalizeKey(abs), filepathutil.NormalizeKey(m.TempDir)) {
+		return "", fmt.Errorf("path out of bounds")
 	}
 	return abs, nil
 }

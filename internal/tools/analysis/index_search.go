@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"path/filepath"
 	"strings"
+
+	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 )
 
 func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]typeName, error) {
@@ -95,14 +96,8 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 }
 
 func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
-	// Normalize both paths to lowercase forward slashes for consistent
-	// cross-platform comparison. On Windows, filepath.Abs(".") and paths
-	// from packages.Load may differ in case (short vs long names) and
-	// slash direction, causing strings.HasPrefix to produce false negatives.
-	// On Unix, case never differs for the same filesystem path, so lowering
-	// is a no-op.
-	targetPath = strings.ToLower(filepath.ToSlash(targetPath))
-	filePath = strings.ToLower(filepath.ToSlash(filePath))
+	targetPath = filepathutil.NormalizeForCompare(targetPath)
+	filePath = filepathutil.NormalizeForCompare(filePath)
 
 	if targetPath == filePath {
 		return true
