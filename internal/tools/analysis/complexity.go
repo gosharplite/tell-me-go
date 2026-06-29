@@ -40,6 +40,19 @@ type funcComplexity struct {
 	FilePath   string
 }
 
+// normalizeGoWildcard strips a trailing "/..." Go package wildcard from path.
+// "..." at the end of a path means "this directory and all subdirectories"
+// in Go tooling. Since GatherComplexities already walks recursively,
+// stripping the wildcard is semantically equivalent and avoids passing
+// a non-existent literal directory named "..." to the filesystem.
+func normalizeGoWildcard(path string) string {
+	cleaned := filepath.Clean(path)
+	if filepath.Base(cleaned) == "..." {
+		return filepath.Dir(cleaned)
+	}
+	return cleaned
+}
+
 func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
@@ -48,7 +61,7 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 		return tools.ToolResult{}, err
 	}
 
-	resolvedPath, err := a.SP.IsPathSafe(params.Path)
+	resolvedPath, err := a.SP.IsPathSafe(normalizeGoWildcard(params.Path))
 	if err != nil {
 		return tools.ToolResult{}, err
 	}

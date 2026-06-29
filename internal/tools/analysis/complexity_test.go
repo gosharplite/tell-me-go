@@ -63,6 +63,34 @@ func Complex(a, b bool) {
 	}
 }
 
+func TestNormalizeGoWildcard(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"subdirectory wildcard", "./internal/...", "internal"},
+		{"root wildcard", "./...", "."},
+		{"bare wildcard", "...", "."},
+		{"no wildcard", "./internal/agent", "internal/agent"},
+		{"single file", "./foo.go", "foo.go"},
+		{"absolute with wildcard", "/abs/path/...", "/abs/path"},
+		{"directory no wildcard", "internal/", "internal"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeGoWildcard(tt.in)
+			// filepath.Clean may produce platform-specific results
+			got = filepath.ToSlash(got)
+			want := filepath.ToSlash(tt.want)
+			if got != want {
+				t.Errorf("normalizeGoWildcard(%q) = %q, want %q", tt.in, got, want)
+			}
+		})
+	}
+}
+
 func TestComplexityAnalyzer_Sorting(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
