@@ -70,6 +70,10 @@ func NormalizeKey(path string) string {
 // already absolute and on the same filesystem).
 func NormalizeForCompare(path string) string {
 	s := filepath.ToSlash(path)
+	// On non-Windows platforms, ToSlash does not convert backslashes
+	// because \ is not the OS path separator. Normalize them manually
+	// so that Windows paths (e.g., D:\foo\bar) work cross-platform.
+	s = strings.ReplaceAll(s, "\\", "/")
 	// Strip Windows volume prefix on all platforms.
 	// filepath.VolumeName only detects volumes on the current OS,
 	// so we also check for [A-Za-z]: manually for cross-platform use.
