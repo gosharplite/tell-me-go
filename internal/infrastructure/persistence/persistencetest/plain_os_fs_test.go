@@ -222,6 +222,7 @@ func TestPlainOSFS_AtomicWrite_InternalErrorPaths(t *testing.T) {
 			name: "Close error",
 			opts: []persistencetest.PlainOSFSOption{
 				persistencetest.WithCloseFunc(func(f *os.File) error {
+					_ = f.Close() // release fd so temp file can be removed on all platforms
 					return errors.New("injected close failure")
 				}),
 			},
