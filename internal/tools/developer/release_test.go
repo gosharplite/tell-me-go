@@ -314,6 +314,7 @@ func TestSecretScanner_ScanFile_ErrorPaths(t *testing.T) {
 	// Create a real temp file to get a non-directory os.FileInfo.
 	tmpFile, err := os.CreateTemp(t.TempDir(), "test-*.go")
 	require.NoError(t, err)
+	defer tmpFile.Close()
 	fileInfo, err := os.Stat(tmpFile.Name())
 	require.NoError(t, err)
 
@@ -505,6 +506,7 @@ func TestSecretScanner_ScanFile_BinaryContent(t *testing.T) {
 
 	tmpFile, err := os.CreateTemp(t.TempDir(), "test-*")
 	require.NoError(t, err)
+	defer tmpFile.Close()
 	fileInfo, err := os.Stat(tmpFile.Name())
 	require.NoError(t, err)
 
