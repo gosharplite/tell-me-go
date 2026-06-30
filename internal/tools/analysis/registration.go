@@ -244,7 +244,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
-						"path": {Type: "STRING", Description: "The file or directory to analyze."},
+						"path": {Type: "STRING", Description: "The file or directory to analyze. Go '...' wildcards are supported (e.g., './internal/...' walks all subdirectories)."},
 					},
 					Required: []string{"path"},
 				},

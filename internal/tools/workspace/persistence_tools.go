@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -45,33 +46,6 @@ func newpersistenceTools(state ports.SessionProvider, reg tools.ToolMetadataProv
 		reg:           reg,
 		marshalIndent: json.MarshalIndent,
 	}
-}
-
-// retryOnBusy retries the given operation up to 3 times with exponential
-// backoff (100ms → 200ms → 400ms) when the error contains "database is locked"
-// (SQLITE_BUSY). All other errors are returned immediately. Respects context
-// cancellation between retry attempts.
-func retryOnBusy(ctx context.Context, op func() error) error {
-	delay := 100 * time.Millisecond
-	for attempt := 0; attempt < 3; attempt++ {
-		err := op()
-		if err == nil {
-			return nil
-		}
-		if !strings.Contains(err.Error(), "database is locked") {
-			return err
-		}
-		if attempt == 2 {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			delay *= 2
-		}
-	}
-	return nil // unreachable
 }
 
 // GetSessionInfo handles the get_session_info tool.
@@ -136,7 +110,7 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageTasks, tools.ToolOptions{Serial: false}); err != nil {
+	}, t.ManageTasks, tools.ToolOptions{Serial: true}); err != nil {
 		return err
 	}
 	return nil
@@ -173,34 +147,32 @@ func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 }
 
 func (t *persistenceTools) addTask(ctx context.Context, content string) (tools.ToolResult, error) {
-	var task ports.Task
-	err := retryOnBusy(ctx, func() error {
-		var e error
-		task, e = t.tasks.AddTask(ctx, content)
-		return e
-	})
-	if err != nil {
+	if content == "" {
+		return tools.ToolResult{}, fmt.Errorf("content is required for add")
+	}
+
+	tsk := ports.Task{
+		ID:        services.NextTaskID(),
+		Content:   content,
+		Status:    "pending",
+		CreatedAt: time.Now(),
+	}
+
+	if err := t.tasks.AppendTask(ctx, tsk); err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %d", task.ID)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %d", tsk.ID)}, nil
 }
 
 func (t *persistenceTools) updateTask(ctx context.Context, id int64, content, status string) (tools.ToolResult, error) {
-	err := retryOnBusy(ctx, func() error {
-		_, e := t.tasks.UpdateTask(ctx, id, content, status)
-		return e
-	})
-	if err != nil {
+	if _, err := t.tasks.UpdateTask(ctx, id, content, status); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Task %d updated", id)}, nil
 }
 
 func (t *persistenceTools) deleteTask(ctx context.Context, id int64) (tools.ToolResult, error) {
-	err := retryOnBusy(ctx, func() error {
-		return t.tasks.DeleteTask(ctx, id)
-	})
-	if err != nil {
+	if err := t.tasks.DeleteTask(ctx, id); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Task %d deleted", id)}, nil
@@ -233,10 +205,7 @@ func (t *persistenceTools) listTasks(ctx context.Context, status string, limit, 
 }
 
 func (t *persistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, error) {
-	err := retryOnBusy(ctx, func() error {
-		return t.tasks.ClearTasks(ctx)
-	})
-	if err != nil {
+	if err := t.tasks.ClearTasks(ctx); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: "All tasks cleared."}, nil

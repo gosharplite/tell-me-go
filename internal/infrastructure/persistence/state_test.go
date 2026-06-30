@@ -187,9 +187,9 @@ func TestNewSessionState_InitRepositoriesFailure(t *testing.T) {
 func TestNewSessionState_InitServicesSucceeds(t *testing.T) {
 	// NOT parallel: overrides package-level sqlOpenFn, must run sequentially.
 	//
-	// After Issue #906, initServices is a no-op that never queries the DB.
-	// Even with a connector that would fail on a 6th operation, NewSessionState
-	// succeeds because initServices no longer performs any DB operations.
+	// After Issue #1168, initServices calls InitTaskIDCounter which performs
+	// one Query against the store. With failAfter=5, the 4 operations
+	// (2 CREATE TABLE + 1 COUNT + 1 Query) all succeed.
 
 	ctx := context.Background()
 	tempDir := t.TempDir()
@@ -389,16 +389,18 @@ func TestSessionState_SetInfo_IsolationFromCallerMutation(t *testing.T) {
 		"ActiveToolkits slice must be a deep copy; caller mutation must not affect stored state")
 }
 
-func TestInitServices_InitializeIsNoOp(t *testing.T) {
+func TestInitServices_SeedsTaskIDCounter(t *testing.T) {
 	t.Parallel()
 
-	// After Issue #906, Initialize is a no-op that always returns nil.
-	// initServices ignores the return value. Even with a failing task store,
-	// initServices succeeds because it never calls any store methods during init.
+	// After GitHub issue #1168, initServices seeds the task ID counter by
+	// querying the store for the max existing ID before creating the service.
+	// With a failing task store, the error must propagate.
 	ctx := context.Background()
 	tasks, err := initServices(ctx, &failingTaskStore{})
-	require.NoError(t, err, "initServices should succeed since Initialize is a no-op")
-	require.NotNil(t, tasks)
+	require.Error(t, err, "initServices should fail when store query fails during counter seeding")
+	assert.Contains(t, err.Error(), "seeding task ID counter",
+		"error should wrap the counter seeding failure")
+	assert.Nil(t, tasks)
 }
 
 func TestInitRepositories_MigrationFailure(t *testing.T) {
@@ -431,8 +433,8 @@ func TestInitRepositories_MigrationFailure(t *testing.T) {
 // initServicesFailingConnector wraps the SQLite driver and returns connections
 // whose QueryContext and ExecContext fail after a deterministic number of
 // successful operations. This allows initRepositories to complete normally
-// (5 ops: 2 pragmas + 2 CREATE TABLE + 1 COUNT) while initServices is
-// verified to not perform any DB operations (it's a no-op after Issue #906).
+// (3 ops: 2 CREATE TABLE + 1 COUNT) while initServices' InitTaskIDCounter
+// (1 additional Query) succeeds within the failAfter window.
 type initServicesFailingConnector struct {
 	dsn       string
 	opCount   *atomic.Int32

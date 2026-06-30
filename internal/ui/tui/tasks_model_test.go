@@ -22,6 +22,7 @@ type mockTaskStore struct {
 
 	// TaskWriter methods (unused by taskListModel but needed for interface)
 	AddTaskFunc    func(ctx context.Context, content string) (ports.Task, error)
+	AppendTaskFunc func(ctx context.Context, task ports.Task) error
 	UpdateTaskFunc func(ctx context.Context, id int64, content, status string) (ports.Task, error)
 	DeleteTaskFunc func(ctx context.Context, id int64) error
 	ClearTasksFunc func(ctx context.Context) error
@@ -46,6 +47,13 @@ func (m *mockTaskStore) AddTask(ctx context.Context, content string) (ports.Task
 		return m.AddTaskFunc(ctx, content)
 	}
 	return ports.Task{}, nil
+}
+
+func (m *mockTaskStore) AppendTask(ctx context.Context, task ports.Task) error {
+	if m.AppendTaskFunc != nil {
+		return m.AppendTaskFunc(ctx, task)
+	}
+	return nil
 }
 
 func (m *mockTaskStore) UpdateTask(ctx context.Context, id int64, content, status string) (ports.Task, error) {
