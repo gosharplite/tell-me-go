@@ -17,13 +17,41 @@ import (
 var _ ports.TaskStore = (*taskService)(nil)
 
 // taskIDCounter provides monotonically increasing task identifiers.
-// An atomic counter replaces time.Now().UnixNano() which can return
-// identical values on systems where wall-clock resolution is coarser
-// than a nanosecond (e.g., macOS with ~1µs resolution).
-var taskIDCounter int64
+// It MUST be initialized via InitTaskIDCounter before any AddTask calls.
+// Uses atomic.Int64 for lock-free concurrent access.
+var taskIDCounter atomic.Int64
+
+// InitTaskIDCounter seeds the counter from the persistent store by querying
+// the maximum existing task ID. Must be called once during startup, before
+// any AddTask operations, to prevent UNIQUE constraint violations on the
+// tasks.id column across process restarts.
+//
+// Uses Query with no filters and no limit to scan all rows. Task counts
+// are bounded by human workflow, making a full scan acceptable at startup.
+func InitTaskIDCounter(ctx context.Context, store ports.ListStore[ports.Task]) error {
+	tasks, err := store.Query(ctx, ports.ListFilter{}, 0, 0)
+	if err != nil {
+		return fmt.Errorf("init task id counter: query all tasks: %w", err)
+	}
+	var maxID int64
+	for _, t := range tasks {
+		if t.ID > maxID {
+			maxID = t.ID
+		}
+	}
+	taskIDCounter.Store(maxID)
+	return nil
+}
 
 func nextTaskID() int64 {
-	return atomic.AddInt64(&taskIDCounter, 1)
+	return taskIDCounter.Add(1)
+}
+
+// NextTaskID returns the next monotonically increasing task identifier
+// without creating a task. Exported for use by tool layers that need to
+// pre-assign an ID before retryable persistence operations.
+func NextTaskID() int64 {
+	return nextTaskID()
 }
 
 // taskService handles the logic for managing tasks.
@@ -59,6 +87,12 @@ func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, 
 	}
 
 	return t, nil
+}
+
+// AppendTask directly inserts a pre-constructed task into the store.
+// The caller is responsible for assigning a unique ID via NextTaskID().
+func (s *taskService) AppendTask(ctx context.Context, task ports.Task) error {
+	return s.store.Append(ctx, task)
 }
 
 // UpdateTask updates an existing task.

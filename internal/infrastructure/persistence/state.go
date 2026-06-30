@@ -225,6 +225,12 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 }
 
 func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task]) (ports.TaskStore, error) {
+	// Seed the ID counter from existing data BEFORE creating the service,
+	// so the first AddTask call doesn't collide with persisted task IDs
+	// from previous sessions (fixes GitHub issue #1168).
+	if err := services.InitTaskIDCounter(ctx, taskStore); err != nil {
+		return nil, fmt.Errorf("seeding task ID counter: %w", err)
+	}
 	tasks := services.NewTaskService(taskStore)
 	// Initialize is a no-op since taskService became stateless (Issue #906).
 	// Kept for interface compatibility with ports.Initializer.

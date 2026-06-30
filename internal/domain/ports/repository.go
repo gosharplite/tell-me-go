@@ -109,6 +109,13 @@ type TaskWriter interface {
 	// Returns the created task with its assigned ID.
 	AddTask(ctx context.Context, content string) (Task, error)
 
+	// AppendTask directly inserts a pre-constructed task into the store.
+	// The caller is responsible for assigning a unique ID (via NextTaskID).
+	// Unlike AddTask, this does not generate an ID — it uses the task as-is.
+	// This enables idempotent retry: the same task can be re-submitted
+	// after a transient persistence error without consuming new IDs.
+	AppendTask(ctx context.Context, task Task) error
+
 	// UpdateTask modifies the content and/or status of an existing task.
 	// An empty content string leaves the content unchanged.
 	UpdateTask(ctx context.Context, id int64, content, status string) (Task, error)
