@@ -133,7 +133,6 @@ func (m *mockMetadataProvider) ListAvailableToolkits() []string {
 	return m.toolkits
 }
 
-
 func setupPersistenceTools() (*persistenceTools, *testfixtures.MockSessionProvider, *mockListStore) {
 	lt := &mockListStore{}
 	ts := services.NewTaskService(lt)
@@ -1064,4 +1063,4 @@ func TestFetchAndCount_CountTasksError(t *testing.T) {
 	if count != 0 {
 		t.Errorf("count = %d; want 0 on error", count)
 	}
-	}
+}
