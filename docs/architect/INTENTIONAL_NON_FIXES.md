@@ -104,6 +104,19 @@ Any AI agent recommending these should consult the rationale below.
 - **See**: `docs/adr/2026-05-lazy-implementation-index.md`, "Rejected:
   WarmImplementations(ctx) Opt-In (Won't Do)" section
 
+### Config.load() io.Reader Extraction
+
+- **Status**: REJECTED by architect (2026-07)
+- **Rationale**: `YAMLConfigLoader` is already the filesystem adapter
+  implementing `domain_config.ConfigLoader`. `configureViper` couples
+  environment-variable binding to path-based file discovery; extracting an
+  `io.Reader`-based `Load()` would break the watcher's mtime-based change
+  detection (`watcher_test.go`) and duplicate the existing adapter
+  abstraction. The `JSONSessionLoader` already demonstrates the correct
+  pattern for new loaders: accept a path, return a domain object.
+- **See**: `internal/infrastructure/config/config.go` (`load`, `configureViper`,
+  `YAMLConfigLoader`), `internal/infrastructure/config/watcher_test.go`
+
 ---
 
 *Last Updated: 2026-07*
