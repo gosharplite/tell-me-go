@@ -210,7 +210,9 @@ func (a *defaultDependencyAnalyzer) getImports(ctx context.Context, pkgPath stri
 		Context: ctx,
 		Dir:     pkgPath,
 	}
+	loadMu.Lock()
 	pkgs, err := packages.Load(cfg, ".")
+	loadMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
