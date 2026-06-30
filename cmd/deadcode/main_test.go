@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/race"
+
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 )
@@ -28,6 +30,9 @@ func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, root str
 }
 
 func TestMain_Execution(t *testing.T) {
+	if race.Enabled {
+		t.Skip("skipping self-exec test under race detector: child inherits -race and times out on full-module AST analysis")
+	}
 	if os.Getenv("TEST_DEADCODE_MAIN") == "1" {
 		main()
 		return

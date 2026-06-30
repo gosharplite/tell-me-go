@@ -403,6 +403,7 @@ ifeq ($(IS_POSIX),true)
 	done
 else
 	@echo "Running race tests package-by-package (Windows CMD mode)..."
+	@go clean -testcache
 	@for /f "tokens=*" %%p in ('go list ./...') do ( \
 		echo Testing %%p... & \
 		go test -race -timeout 180s %%p || exit /b 1 \

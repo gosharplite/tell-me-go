@@ -359,11 +359,13 @@ func TestProcessPackage_ContextCancelled(t *testing.T) {
 	}
 
 	fset := token.NewFileSet()
+	loadMu.Lock()
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
 		Dir:  tmpDir,
 		Fset: fset,
 	}, ".")
+	loadMu.Unlock()
 	if err != nil {
 		t.Fatalf("packages.Load: %v", err)
 	}
@@ -417,11 +419,13 @@ func TestProcessPackage_MultipleFiles(t *testing.T) {
 	}
 
 	fset := token.NewFileSet()
+	loadMu.Lock()
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
 		Dir:  tmpDir,
 		Fset: fset,
 	}, ".")
+	loadMu.Unlock()
 	if err != nil {
 		t.Fatalf("packages.Load: %v", err)
 	}
@@ -454,11 +458,13 @@ func TestHarvestPackages(t *testing.T) {
 		}
 
 		fset := token.NewFileSet()
+		loadMu.Lock()
 		pkgs, err := packages.Load(&packages.Config{
 			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
 			Dir:  tmpDir,
 			Fset: fset,
 		}, ".")
+		loadMu.Unlock()
 		if err != nil {
 			t.Fatalf("packages.Load: %v", err)
 		}
@@ -513,11 +519,13 @@ func TestHarvestPackages(t *testing.T) {
 		}
 
 		fset := token.NewFileSet()
+		loadMu.Lock()
 		pkgs, err := packages.Load(&packages.Config{
 			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
 			Dir:  tmpDir,
 			Fset: fset,
 		}, ".")
+		loadMu.Unlock()
 		if err != nil {
 			t.Fatalf("packages.Load: %v", err)
 		}

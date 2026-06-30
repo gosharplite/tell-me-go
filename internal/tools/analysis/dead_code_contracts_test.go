@@ -159,7 +159,9 @@ func TestIsWellKnownContract_RealStdlib(t *testing.T) {
 		Mode: packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax |
 			packages.NeedDeps | packages.NeedImports | packages.NeedName,
 	}
+	loadMu.Lock()
 	pkgs, err := packages.Load(cfg, pkgPaths...)
+	loadMu.Unlock()
 	require.NoError(t, err)
 
 	a := &defaultDeadCodeAnalyzer{}

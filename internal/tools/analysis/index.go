@@ -15,6 +15,10 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// loadMu serializes all packages.Load calls to prevent deadlocks on Windows
+// where concurrent go subprocess invocations contend for the build cache lock.
+var loadMu sync.Mutex
+
 // location represents a position in a source file.
 type location struct {
 	Path   string `json:"path"`
@@ -251,7 +255,10 @@ func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 		// every dead_code_graph consumer.
 		Tests: true,
 	}
-	return packages.Load(cfg, pattern)
+	loadMu.Lock()
+	pkgs, err := packages.Load(cfg, pattern)
+	loadMu.Unlock()
+	return pkgs, err
 }
 
 // discoverModulePath performs a lightweight package load to discover the
@@ -263,7 +270,9 @@ func (idx *indexer) discoverModulePath(ctx context.Context, fset *token.FileSet)
 		Fset:    fset,
 		Context: ctx,
 	}
+	loadMu.Lock()
 	pkgs, err := packages.Load(cfg, ".")
+	loadMu.Unlock()
 	if err != nil || len(pkgs) == 0 {
 		log.Printf("analysis: discoverModulePath failed (dir=%s, err=%v, pkgs=%d), falling back to ./... pattern", idx.dir, err, len(pkgs))
 		return ""
