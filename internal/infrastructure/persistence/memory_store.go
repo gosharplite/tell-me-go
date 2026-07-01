@@ -200,6 +200,20 @@ func (s *memoryListStore[T]) Query(ctx context.Context, filter ports.ListFilter,
 	return applyOffsetLimit(result, offset, limit), nil
 }
 
+// GetByID returns the item with the given ID, or an error wrapping
+// ErrTaskNotFound if no item with that ID exists.
+func (s *memoryListStore[T]) GetByID(ctx context.Context, id int64) (T, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.data {
+		if s.getID(v) == id {
+			return v, nil
+		}
+	}
+	var zero T
+	return zero, fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
+}
+
 func (s *memoryListStore[T]) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

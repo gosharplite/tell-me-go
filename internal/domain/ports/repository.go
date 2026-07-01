@@ -53,6 +53,10 @@ type ListStore[T any] interface {
 	// limit=0 means no limit; offset=0 means start from beginning.
 	Query(ctx context.Context, filter ListFilter, limit, offset int) ([]T, error)
 
+	// GetByID returns the item with the given ID. Returns an error wrapping
+	// ErrTaskNotFound if no item with that ID exists.
+	GetByID(ctx context.Context, id int64) (T, error)
+
 	// Count returns the number of items matching the filter.
 	// An empty filter counts all items.
 	Count(ctx context.Context, filter ListFilter) (int, error)

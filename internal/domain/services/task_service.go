@@ -99,23 +99,9 @@ func (s *taskService) AppendTask(ctx context.Context, task ports.Task) error {
 // UpdateTask updates an existing task.
 func (s *taskService) UpdateTask(ctx context.Context, id int64, content, status string) (ports.Task, error) {
 	// Fetch existing task for merge — empty content/status means "keep current value".
-	// TODO(#1170): Replace Query full-scan with GetByID when added to ListStore.
-	tasks, err := s.store.Query(ctx, ports.ListFilter{}, 0, 0)
+	t, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return ports.Task{}, err
-	}
-
-	var t ports.Task
-	found := false
-	for _, existing := range tasks {
-		if existing.ID == id {
-			t = existing
-			found = true
-			break
-		}
-	}
-	if !found {
-		return ports.Task{}, fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 	}
 
 	if content != "" {

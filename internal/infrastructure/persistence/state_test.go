@@ -228,6 +228,9 @@ func (s *failingTaskStore) Query(ctx context.Context, filter ports.ListFilter, l
 func (s *failingTaskStore) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
 	return 0, errors.New("simulated count failure")
 }
+func (s *failingTaskStore) GetByID(ctx context.Context, id int64) (ports.Task, error) {
+	return ports.Task{}, errors.New("simulated get-by-id failure")
+}
 
 func TestSessionState_HydrateInfo_CorruptedStateFile(t *testing.T) {
 	t.Parallel()
