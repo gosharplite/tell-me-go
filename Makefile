@@ -545,7 +545,7 @@ verify-adr-index:
 ifeq ($(IS_POSIX),true)
 	@echo "Checking ADR index consistency..."
 	@errors=0; \
-	for f in docs/adr/2*.md; do \
+	for f in docs/adr/[0-9]*.md; do \
 		basename=$$(basename $$f); \
 		if ! grep -q "$$basename" docs/adr/README.md; then \
 			echo "MISSING from index: $$basename"; \
@@ -568,14 +568,14 @@ else
 		$$ErrorActionPreference = 'Stop'; \
 		$$errors = 0; \
 		$$indexContent = Get-Content 'docs/adr/README.md' -Raw; \
-		Get-ChildItem 'docs/adr/2*.md' | ForEach-Object { \
+		Get-ChildItem 'docs/adr/[0-9]*.md' | ForEach-Object { \
 			$$basename = $$_.Name; \
 			if ($$indexContent -notmatch [regex]::Escape($$basename)) { \
 				Write-Host \"MISSING from index: $$basename\"; \
 				$$errors++ \
 			} \
 		}; \
-		$$dupes = Get-ChildItem 'docs/adr/2*.md' | ForEach-Object { \
+		$$dupes = Get-ChildItem 'docs/adr/[0-9]*.md' | ForEach-Object { \
 			Select-String -Path $$_.FullName -Pattern '^# ADR-(\d+):' | ForEach-Object { $$_.Matches.Groups[1].Value } \
 		} | Group-Object | Where-Object { $$_.Count -gt 1 } | ForEach-Object { $$_.Name }; \
 		if ($$dupes) { \
