@@ -36,6 +36,9 @@ func (e *agentError) Unwrap() error {
 }
 
 func (e *agentError) Is(target error) bool {
+	// Category is typically a simple sentinel (short-circuits via ==),
+	// but may be a wrapped error for future callers; errors.Is handles
+	// the unwrap.
 	return e.Category == target || errors.Is(e.Category, target)
 }
 
