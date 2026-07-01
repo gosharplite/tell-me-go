@@ -53,8 +53,9 @@ type ListStore[T any] interface {
 	// limit=0 means no limit; offset=0 means start from beginning.
 	Query(ctx context.Context, filter ListFilter, limit, offset int) ([]T, error)
 
-	// Count returns the total number of items in the store.
-	Count(ctx context.Context) (int, error)
+	// Count returns the number of items matching the filter.
+	// An empty filter counts all items.
+	Count(ctx context.Context, filter ListFilter) (int, error)
 
 	// Append adds an item to the end of the store.
 	Append(ctx context.Context, item T) error

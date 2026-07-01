@@ -210,7 +210,25 @@ func runListConcurrency(t *testing.T, ctx context.Context) {
 }
 
 // =============================================================================
-// Count — verifies empty, populated, and after-DeleteAll counts
+// seedMemoryQueryTasks seeds 6 tasks with mixed statuses and staggered
+// CreatedAt timestamps, matching the seed data used in TestMemoryListStore_Query.
+// =============================================================================
+
+func seedMemoryQueryTasks(t *testing.T, store *memoryListStore[ports.Task], ctx context.Context) time.Time {
+	t.Helper()
+	baseTime := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+	_ = store.Append(ctx, ports.Task{ID: 1, Content: "task-1", Status: "pending", CreatedAt: baseTime})
+	_ = store.Append(ctx, ports.Task{ID: 2, Content: "task-2", Status: "completed", CreatedAt: baseTime.Add(1 * time.Hour)})
+	_ = store.Append(ctx, ports.Task{ID: 3, Content: "task-3", Status: "pending", CreatedAt: baseTime.Add(2 * time.Hour)})
+	_ = store.Append(ctx, ports.Task{ID: 4, Content: "task-4", Status: "completed", CreatedAt: baseTime.Add(3 * time.Hour)})
+	_ = store.Append(ctx, ports.Task{ID: 5, Content: "task-5", Status: "pending", CreatedAt: baseTime.Add(4 * time.Hour)})
+	_ = store.Append(ctx, ports.Task{ID: 6, Content: "task-6", Status: "completed", CreatedAt: baseTime.Add(5 * time.Hour)})
+	return baseTime
+}
+
+// =============================================================================
+// Count — verifies empty, populated, and after-DeleteAll counts,
+// plus filtered count scenarios.
 // =============================================================================
 
 func TestMemoryListStore_Count(t *testing.T) {
@@ -220,7 +238,7 @@ func TestMemoryListStore_Count(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		t.Parallel()
 		store := newMemoryListStore[ports.Task]()
-		n, err := store.Count(ctx)
+		n, err := store.Count(ctx, ports.ListFilter{})
 		if err != nil {
 			t.Fatalf("Count failed: %v", err)
 		}
@@ -235,7 +253,7 @@ func TestMemoryListStore_Count(t *testing.T) {
 		_ = store.Append(ctx, ports.Task{ID: 1})
 		_ = store.Append(ctx, ports.Task{ID: 2})
 		_ = store.Append(ctx, ports.Task{ID: 3})
-		n, err := store.Count(ctx)
+		n, err := store.Count(ctx, ports.ListFilter{})
 		if err != nil {
 			t.Fatalf("Count failed: %v", err)
 		}
@@ -250,12 +268,46 @@ func TestMemoryListStore_Count(t *testing.T) {
 		_ = store.Append(ctx, ports.Task{ID: 1})
 		_ = store.Append(ctx, ports.Task{ID: 2})
 		_ = store.DeleteAll(ctx)
-		n, err := store.Count(ctx)
+		n, err := store.Count(ctx, ports.ListFilter{})
 		if err != nil {
 			t.Fatalf("Count failed: %v", err)
 		}
 		if n != 0 {
 			t.Errorf("expected 0, got %d", n)
+		}
+	})
+
+	t.Run("filtered", func(t *testing.T) {
+		t.Parallel()
+		store := newMemoryListStore[ports.Task]()
+		baseTime := seedMemoryQueryTasks(t, store, ctx)
+
+		tests := []struct {
+			name   string
+			filter ports.ListFilter
+			want   int
+		}{
+			{"all (empty filter)", ports.ListFilter{}, 6},
+			{"status=pending", ports.ListFilter{Status: "pending"}, 3},
+			{"status=completed", ports.ListFilter{Status: "completed"}, 3},
+			{"not_status=completed", ports.ListFilter{NotStatus: "completed"}, 3},
+			{"since filter", ports.ListFilter{Since: baseTime.Add(90 * time.Minute)}, 4},
+			{"before filter", ports.ListFilter{Before: baseTime.Add(150 * time.Minute)}, 3},
+			{"combined status+since", ports.ListFilter{Status: "pending", Since: baseTime.Add(90 * time.Minute)}, 2},
+		}
+
+		for _, tt := range tests {
+			tt := tt
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				got, err := store.Count(ctx, tt.filter)
+				if err != nil {
+					t.Fatalf("Count failed: %v", err)
+				}
+				if got != tt.want {
+					t.Errorf("Count() = %d; want %d", got, tt.want)
+				}
+			})
 		}
 	})
 }

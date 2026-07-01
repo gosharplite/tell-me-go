@@ -122,13 +122,19 @@ func applyTaskOffsetLimit(tasks []ports.Task, limit, offset int) []ports.Task {
 	return tasks
 }
 
-func (m *mockTaskRepo) Count(ctx context.Context) (int, error) {
+func (m *mockTaskRepo) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.readErr != nil {
 		return 0, m.readErr
 	}
-	return len(m.tasks), nil
+	count := 0
+	for _, t := range m.tasks {
+		if taskMatchesFilter(t, filter) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func setupTaskService(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
@@ -388,7 +394,7 @@ func TestTaskService_AddTask_WriteError(t *testing.T) {
 	}
 }
 
-func TestTaskService_CountTasks_QueryError(t *testing.T) {
+func TestTaskService_CountTasks_Error(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	sentinel := errors.New("store query failed")

@@ -161,9 +161,11 @@ func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFil
 	return result, nil
 }
 
-func (s *sqliteTaskStore) Count(ctx context.Context) (int, error) {
+func (s *sqliteTaskStore) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
+	wc := buildWhereClause(filter)
+	query := "SELECT COUNT(*) FROM tasks" + wc.sql
 	var count int
-	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count)
+	err := s.db.QueryRowContext(ctx, query, wc.args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting tasks: %w", err)
 	}
