@@ -146,6 +146,30 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
+## Structural Concerns (ACCEPTED)
+
+### infrastructure/testing/ — shared testdata helper directory with no Go package
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `internal/infrastructure/testing/` exists solely as a container
+  for `testdata/helper/` — a test binary providing 14 subcommands (echo, cat,
+  stderr, sleep, exit, grep, diff, etc.) that simulates real OS processes for
+  tests. It is shared by two packages in different subtrees:
+  `internal/infrastructure/exec/main_test.go` and
+  `internal/tools/workspace/main_test.go`. Placing it under either consumer
+  would force a cross-subtree `testdata` reference from the other. The
+  directory contains no production `.go` files, which is why it does not
+  appear in the dependency graph. The Makefile `test-coverage` target already
+  explicitly excludes this path from coverage metrics alongside the other
+  `*test/` sub-packages. The directory name `testing/` clearly signals its
+  purpose as test infrastructure. No action is needed.
+- **See**: `Makefile` (test-coverage target, line filtering `internal/infrastructure/testing/`),
+  `internal/infrastructure/testing/testdata/helper/main.go`,
+  `internal/infrastructure/exec/main_test.go` (builds the helper),
+  `internal/tools/workspace/main_test.go` (builds the helper)
+
+---
+
 ## ADR-021 Follow-Ups (ALL COMPLETE)
 
 ### verify-testutil-convention CI lint
