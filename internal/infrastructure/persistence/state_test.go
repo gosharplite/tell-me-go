@@ -225,7 +225,7 @@ func (s *failingTaskStore) Append(ctx context.Context, item ports.Task) error   
 func (s *failingTaskStore) Query(ctx context.Context, filter ports.ListFilter, limit, offset int) ([]ports.Task, error) {
 	return nil, errors.New("simulated query failure")
 }
-func (s *failingTaskStore) Count(ctx context.Context) (int, error) {
+func (s *failingTaskStore) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
 	return 0, errors.New("simulated count failure")
 }
 

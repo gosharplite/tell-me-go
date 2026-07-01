@@ -37,7 +37,7 @@ func (m *mockTaskRepo) Update(ctx context.Context, id int64, task ports.Task) er
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 }
 
 func (m *mockTaskRepo) Delete(ctx context.Context, id int64) error {
@@ -46,11 +46,17 @@ func (m *mockTaskRepo) Delete(ctx context.Context, id int64) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
+	found := false
 	var next []ports.Task
 	for _, t := range m.tasks {
 		if t.ID != id {
 			next = append(next, t)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 	}
 	m.tasks = next
 	return nil
@@ -122,13 +128,19 @@ func applyTaskOffsetLimit(tasks []ports.Task, limit, offset int) []ports.Task {
 	return tasks
 }
 
-func (m *mockTaskRepo) Count(ctx context.Context) (int, error) {
+func (m *mockTaskRepo) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.readErr != nil {
 		return 0, m.readErr
 	}
-	return len(m.tasks), nil
+	count := 0
+	for _, t := range m.tasks {
+		if taskMatchesFilter(t, filter) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func setupTaskService(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
@@ -136,6 +148,100 @@ func setupTaskService(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
 	repo := &mockTaskRepo{}
 	s := NewTaskService(repo)
 	return s, repo
+}
+
+// resetTaskIDCounter resets the package-level atomic task ID counter
+// to zero immediately and also schedules a cleanup to restore zero
+// after the test completes.
+func resetTaskIDCounter(t *testing.T) {
+	t.Helper()
+	taskIDCounter.Store(0)
+	t.Cleanup(func() { taskIDCounter.Store(0) })
+}
+
+func TestInitTaskIDCounter_Success(t *testing.T) {
+	tests := []struct {
+		name     string
+		seed     func(repo *mockTaskRepo)
+		wantNext int64
+	}{
+		{
+			name:     "empty store",
+			seed:     func(repo *mockTaskRepo) {},
+			wantNext: 1,
+		},
+		{
+			name: "single task",
+			seed: func(repo *mockTaskRepo) {
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "only"})
+			},
+			wantNext: 6,
+		},
+		{
+			name: "out of order IDs",
+			seed: func(repo *mockTaskRepo) {
+				_ = repo.Append(context.Background(), ports.Task{ID: 3, Content: "c"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 1, Content: "a"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 7, Content: "g"})
+			},
+			wantNext: 8,
+		},
+		{
+			name: "all equal IDs",
+			seed: func(repo *mockTaskRepo) {
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "x"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "y"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "z"})
+			},
+			wantNext: 6,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			resetTaskIDCounter(t)
+
+			repo := &mockTaskRepo{}
+			tt.seed(repo)
+
+			err := InitTaskIDCounter(context.Background(), repo)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			got := NextTaskID()
+			if got != tt.wantNext {
+				t.Errorf("NextTaskID() = %d, want %d", got, tt.wantNext)
+			}
+		})
+	}
+}
+
+func TestInitTaskIDCounter_QueryError(t *testing.T) {
+	// Not Parallel: this test verifies the counter is NOT mutated on the
+	// error path by asserting NextTaskID() returns 1. That assertion is
+	// only valid when no other goroutine touches the shared taskIDCounter.
+	// Running in parallel with TestInitTaskIDCounter_Success subtests
+	// (which call Store+NextTaskID) would create a race window.
+	resetTaskIDCounter(t)
+
+	sentinel := errors.New("disk full")
+	repo := &mockTaskRepo{readErr: sentinel}
+
+	err := InitTaskIDCounter(context.Background(), repo)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel error, got %v", err)
+	}
+
+	// Verify the counter was NOT mutated on the error path.
+	// taskIDCounter.Store(maxID) is only reachable after a successful Query.
+	if got := NextTaskID(); got != 1 {
+		t.Errorf("NextTaskID() = %d after error, want 1 (counter must not be seeded on failure)", got)
+	}
 }
 
 func TestTaskService_Add(t *testing.T) {
@@ -294,7 +400,7 @@ func TestTaskService_AddTask_WriteError(t *testing.T) {
 	}
 }
 
-func TestTaskService_CountTasks_QueryError(t *testing.T) {
+func TestTaskService_CountTasks_Error(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	sentinel := errors.New("store query failed")
@@ -318,6 +424,9 @@ func TestTaskService_UpdateTask_NotFound(t *testing.T) {
 	_, err := s.UpdateTask(ctx, 999, "content", "status")
 	if err == nil {
 		t.Error("expected not found error")
+	}
+	if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("expected ErrTaskNotFound, got %v", err)
 	}
 }
 
@@ -372,35 +481,8 @@ func TestTaskService_DeleteTask_NotFound(t *testing.T) {
 	if err == nil {
 		t.Error("expected not found error")
 	}
-}
-
-func TestTaskService_DeleteTask_QueryError(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	sentinel := errors.New("store query failed")
-	s, repo := setupTaskServiceWithError(t, nil, nil)
-
-	// Add a task so it exists in the store (no read error yet)
-	task, err := s.AddTask(ctx, "task to delete")
-	if err != nil {
-		t.Fatalf("setup AddTask failed: %v", err)
-	}
-
-	// Now inject the read error
-	repo.readErr = sentinel
-
-	// Attempt delete — should fail at Query, not reach the not-found or delete logic
-	err = s.DeleteTask(ctx, task.ID)
-	if err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-	if !errors.Is(err, sentinel) {
-		t.Errorf("expected sentinel error, got %v", err)
-	}
-
-	// Verify the task still exists (delete didn't happen)
-	if len(repo.tasks) != 1 {
-		t.Errorf("expected task to still exist, got %d tasks", len(repo.tasks))
+	if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("expected ErrTaskNotFound, got %v", err)
 	}
 }
 

@@ -5,6 +5,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -97,7 +98,8 @@ func (s *taskService) AppendTask(ctx context.Context, task ports.Task) error {
 
 // UpdateTask updates an existing task.
 func (s *taskService) UpdateTask(ctx context.Context, id int64, content, status string) (ports.Task, error) {
-	// Fetch existing tasks from store to validate existence
+	// Fetch existing task for merge — empty content/status means "keep current value".
+	// TODO(#1170): Replace Query full-scan with GetByID when added to ListStore.
 	tasks, err := s.store.Query(ctx, ports.ListFilter{}, 0, 0)
 	if err != nil {
 		return ports.Task{}, err
@@ -123,7 +125,12 @@ func (s *taskService) UpdateTask(ctx context.Context, id int64, content, status 
 		t.Status = status
 	}
 
+	// Delegate existence check to store — store.Update now returns ErrTaskNotFound
+	// when the ID doesn't exist (race-condition safety between Query and Update).
 	if err := s.store.Update(ctx, id, t); err != nil {
+		if errors.Is(err, ports.ErrTaskNotFound) {
+			return ports.Task{}, fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
+		}
 		return ports.Task{}, err
 	}
 
@@ -132,22 +139,13 @@ func (s *taskService) UpdateTask(ctx context.Context, id int64, content, status 
 
 // DeleteTask removes a task.
 func (s *taskService) DeleteTask(ctx context.Context, id int64) error {
-	// Pre-check existence
-	tasks, err := s.store.Query(ctx, ports.ListFilter{}, 0, 0)
-	if err != nil {
+	if err := s.store.Delete(ctx, id); err != nil {
+		if errors.Is(err, ports.ErrTaskNotFound) {
+			return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
+		}
 		return err
 	}
-	found := false
-	for _, t := range tasks {
-		if t.ID == id {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
-	}
-	return s.store.Delete(ctx, id)
+	return nil
 }
 
 // ListTasks returns all tasks, optionally filtered by status, bounded by limit and offset.
@@ -159,12 +157,7 @@ func (s *taskService) ListTasks(ctx context.Context, status string, limit, offse
 // CountTasks returns the total number of tasks matching the given status filter.
 // status="" returns the total count across all statuses.
 func (s *taskService) CountTasks(ctx context.Context, status string) (int, error) {
-	filter := ports.ListFilter{Status: status}
-	tasks, err := s.store.Query(ctx, filter, 0, 0)
-	if err != nil {
-		return 0, err
-	}
-	return len(tasks), nil
+	return s.store.Count(ctx, ports.ListFilter{Status: status})
 }
 
 // ClearTasks removes all tasks.

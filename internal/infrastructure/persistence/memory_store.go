@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -199,10 +200,22 @@ func (s *memoryListStore[T]) Query(ctx context.Context, filter ports.ListFilter,
 	return applyOffsetLimit(result, offset, limit), nil
 }
 
-func (s *memoryListStore[T]) Count(ctx context.Context) (int, error) {
+func (s *memoryListStore[T]) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.data), nil
+
+	// Fast path: unfiltered
+	if filter.Status == "" && filter.NotStatus == "" && filter.Since.IsZero() && filter.Before.IsZero() {
+		return len(s.data), nil
+	}
+
+	count := 0
+	for _, item := range s.data {
+		if s.matchesFilter(item, filter) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *memoryListStore[T]) Update(ctx context.Context, id int64, item T) error {
@@ -214,7 +227,7 @@ func (s *memoryListStore[T]) Update(ctx context.Context, id int64, item T) error
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 }
 
 func (s *memoryListStore[T]) Delete(ctx context.Context, id int64) error {
@@ -226,7 +239,7 @@ func (s *memoryListStore[T]) Delete(ctx context.Context, id int64) error {
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 }
 
 func (s *memoryListStore[T]) DeleteAll(ctx context.Context) error {

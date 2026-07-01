@@ -52,6 +52,7 @@ func TestSQLiteTaskStore(t *testing.T) {
 	t.Run("Update Task", testTaskStoreUpdate)
 	t.Run("Delete Task", testTaskStoreDelete)
 	t.Run("Delete All Tasks", testTaskStoreDeleteAll)
+	t.Run("Update/Delete NotFound", TestSQLiteTaskStore_UpdateDelete_NotFound)
 }
 
 func testTaskStoreReadEmpty(t *testing.T) {
@@ -162,6 +163,34 @@ func testTaskStoreDeleteAll(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Errorf("DeleteAll failed, remaining tasks: %d", len(tasks))
 	}
+}
+
+func TestSQLiteTaskStore_UpdateDelete_NotFound(t *testing.T) {
+	t.Parallel()
+	db := setupSQLite(t)
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	// Append one real task so the store is non-empty
+	now := time.Now().Truncate(time.Millisecond)
+	task := ports.Task{ID: 1, Content: "real", Status: "pending", CreatedAt: now}
+	require.NoError(t, store.Append(ctx, task))
+
+	// Update non-existent ID
+	err := store.Update(ctx, 999, ports.Task{ID: 999, Content: "ghost", Status: "completed"})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ports.ErrTaskNotFound), "expected ErrTaskNotFound, got %v", err)
+
+	// Delete non-existent ID
+	err = store.Delete(ctx, 999)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ports.ErrTaskNotFound), "expected ErrTaskNotFound, got %v", err)
+
+	// Verify real data untouched
+	tasks, err := store.ReadAll(ctx)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "real", tasks[0].Content)
 }
 
 func TestStoreErrors(t *testing.T) {
@@ -658,7 +687,7 @@ func TestSQLiteTaskStore_ErrorPaths(t *testing.T) {
 		store := newSQLiteTaskStore(db)
 		_ = db.Close()
 
-		count, err := store.Count(context.Background())
+		count, err := store.Count(context.Background(), ports.ListFilter{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "counting tasks")
 		assert.Equal(t, 0, count)
@@ -1075,7 +1104,7 @@ func BenchmarkSQLiteQuery_10000Tasks(b *testing.B) {
 
 	seedBenchmarkTasks(b, store, ctx, now)
 
-	count, err := store.Count(ctx)
+	count, err := store.Count(ctx, ports.ListFilter{})
 	if err != nil {
 		b.Fatalf("count failed: %v", err)
 	}
@@ -1160,7 +1189,7 @@ func testTaskStoreQueryOffsetBeyondTotal(t *testing.T, store *sqliteTaskStore) {
 
 func testTaskStoreQueryCountAccurate(t *testing.T, store *sqliteTaskStore) {
 	ctx := context.Background()
-	count, err := store.Count(ctx)
+	count, err := store.Count(ctx, ports.ListFilter{})
 	if err != nil {
 		t.Fatalf("Count failed: %v", err)
 	}
@@ -1210,6 +1239,66 @@ func TestSQLiteTaskStore_Query_BoundedMemory(t *testing.T) {
 	t.Run("offset_beyond_total", func(t *testing.T) { testTaskStoreQueryOffsetBeyondTotal(t, store) })
 	t.Run("count_accurate", func(t *testing.T) { testTaskStoreQueryCountAccurate(t, store) })
 	t.Run("readall_bounded", func(t *testing.T) { testTaskStoreQueryReadallBounded(t, store) })
+}
+
+// =============================================================================
+// TestSQLiteTaskStore_Count_Filtered — verifies that Count returns the correct
+// number of tasks for each filter combination using the mixed-status seed.
+// =============================================================================
+
+func TestSQLiteTaskStore_Count_Filtered(t *testing.T) {
+	t.Parallel()
+	db := setupSQLite(t)
+	db.SetMaxOpenConns(1) // :memory: DB is per-connection; force single conn for parallel subtests
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	seedMixedStatusTasks(t, store, ctx, now, 5000)
+
+	tests := []struct {
+		name   string
+		filter ports.ListFilter
+		want   int
+	}{
+		{"all (empty filter)", ports.ListFilter{}, 5000},
+		{"status=pending", ports.ListFilter{Status: "pending"}, 500},
+		{"status=in_progress", ports.ListFilter{Status: "in_progress"}, 500},
+		{"status=completed", ports.ListFilter{Status: "completed"}, 4000},
+		{"not_status=completed", ports.ListFilter{NotStatus: "completed"}, 1000},
+		{"status=pending + not_status done (no-op NotStatus)", ports.ListFilter{Status: "pending", NotStatus: "done"}, 500},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := store.Count(ctx, tt.filter)
+			if err != nil {
+				t.Fatalf("Count failed: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Count() = %d; want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// TestSQLiteTaskStore_Count_Filtered_Error — verifies that Count with a filter
+// returns an error when the database is closed.
+// =============================================================================
+
+func TestSQLiteTaskStore_Count_Filtered_Error(t *testing.T) {
+	t.Parallel()
+	db := setupSQLite(t)
+	store := newSQLiteTaskStore(db)
+	_ = db.Close()
+
+	_, err := store.Count(context.Background(), ports.ListFilter{Status: "pending"})
+	if err == nil {
+		t.Error("expected error for Count with closed DB")
+	}
 }
 
 // =============================================================================

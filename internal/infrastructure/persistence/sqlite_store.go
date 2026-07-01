@@ -161,9 +161,11 @@ func (s *sqliteTaskStore) queryOrdered(ctx context.Context, filter ports.ListFil
 	return result, nil
 }
 
-func (s *sqliteTaskStore) Count(ctx context.Context) (int, error) {
+func (s *sqliteTaskStore) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
+	wc := buildWhereClause(filter)
+	query := "SELECT COUNT(*) FROM tasks" + wc.sql
 	var count int
-	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count)
+	err := s.db.QueryRowContext(ctx, query, wc.args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting tasks: %w", err)
 	}
@@ -171,18 +173,32 @@ func (s *sqliteTaskStore) Count(ctx context.Context) (int, error) {
 }
 
 func (s *sqliteTaskStore) Update(ctx context.Context, id int64, item ports.Task) error {
-	_, err := s.db.ExecContext(ctx, "UPDATE tasks SET content = ?, status = ? WHERE id = ?",
+	result, err := s.db.ExecContext(ctx, "UPDATE tasks SET content = ?, status = ? WHERE id = ?",
 		item.Content, item.Status, id)
 	if err != nil {
 		return fmt.Errorf("updating task %d: %w", id, err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("updating task %d: %w", id, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("task %d: %w", id, ports.ErrTaskNotFound)
 	}
 	return nil
 }
 
 func (s *sqliteTaskStore) Delete(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM tasks WHERE id = ?", id)
+	result, err := s.db.ExecContext(ctx, "DELETE FROM tasks WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("deleting task %d: %w", id, err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("deleting task %d: %w", id, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("task %d: %w", id, ports.ErrTaskNotFound)
 	}
 	return nil
 }
