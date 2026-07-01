@@ -138,6 +138,9 @@ func (m *rootBrowserModel) watchHistoryFileCmd() tea.Cmd {
 }
 
 func (m *rootBrowserModel) processWatcherEvents(watcher *fsnotify.Watcher) tea.Msg {
+	// Coverage gap accepted by architect — the ctx.Done() and !ok
+	// channel-closure branches require precise goroutine timing to
+	// trigger. Same acceptance class as complexity.go errgroup.Wait.
 	select {
 	case <-m.ctx.Done():
 		return nil

@@ -121,6 +121,9 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 // calls forever) if the runtime contract ever changes.
 func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
 	limit := int64(runtime.NumCPU())
+	// Coverage gap accepted by architect — runtime.NumCPU() never returns
+	// less than 1 on any platform the Go runtime supports. This branch
+	// exists as defense-in-depth against a broken runtime contract.
 	if limit < 1 {
 		limit = 1
 	}

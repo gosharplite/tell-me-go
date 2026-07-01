@@ -58,6 +58,8 @@ func isExternalUsage(ifacePkg, implPkg string) bool {
 // the interface method, and (4) flowing those usages to the concrete
 // implementations that exist in state.declarations.
 func (a *defaultDeadCodeAnalyzer) propagateNamedInterfaceAssertionUsages(state *scanState, hb chan<- struct{}) {
+	// Coverage gap accepted by architect — defensive nil guards on
+	// internal pipeline state that callers never produce as nil.
 	if state == nil || state.pkgs == nil || state.declarations == nil {
 		return
 	}

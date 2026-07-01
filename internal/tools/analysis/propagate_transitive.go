@@ -27,6 +27,8 @@ import (
 // called from init() that live outside the module are already handled
 // by the standard cross-package usage tracking.
 func (a *defaultDeadCodeAnalyzer) propagateInitUsages(state *scanState, hb chan<- struct{}) {
+	// Coverage gap accepted by architect — defensive nil/empty guards on
+	// internal pipeline state that callers never produce as nil.
 	if state == nil || state.pkgs == nil {
 		return
 	}
@@ -123,6 +125,8 @@ func (a *defaultDeadCodeAnalyzer) walkFileInitFunctions(
 //     (which ARE in state.declarations), resolve their implementations via
 //     the index, and walk those implementation bodies directly.
 func (a *defaultDeadCodeAnalyzer) propagateTransitiveExternalUsage(state *scanState, hb chan<- struct{}) {
+	// Coverage gap accepted by architect — defensive nil guards and
+	// empty hotImpls set (no externally-used interface methods found).
 	if state == nil || state.pkgs == nil {
 		return
 	}
@@ -131,6 +135,9 @@ func (a *defaultDeadCodeAnalyzer) propagateTransitiveExternalUsage(state *scanSt
 	// A method is hot if it implements an interface method that has
 	// externalUses > 0 in state.declarations.
 	hotImpls := a.buildHotImplSet(state, hb)
+	// Coverage gap accepted by architect — len(hotImpls)==0 means no
+	// externally-used interface methods exist; structurally reachable
+	// only on codebases without the plugin pattern this pass targets.
 	if len(hotImpls) == 0 {
 		return
 	}

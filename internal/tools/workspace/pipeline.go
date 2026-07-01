@@ -51,6 +51,9 @@ func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string
 
 // newPipelineCmd creates and configures a single exec.Cmd for use in a pipeline.
 func (e *processExecutor) newPipelineCmd(ctx context.Context, parts []string, index int, config executionConfig) (*exec.Cmd, error) {
+	// Coverage gap accepted by architect — len(parts)==0 is a defensive
+	// guard on already-validated input (pipeline commands are parsed from
+	// shell input and never empty at this call site).
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty command at index %d", index)
 	}

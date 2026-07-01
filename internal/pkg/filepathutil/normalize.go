@@ -57,6 +57,9 @@ func NormalizePath(path string) string {
 // mixed sources (e.g., user-provided Unix-format paths vs OS-resolved paths).
 func NormalizeKey(path string) string {
 	s := Normalize(path)
+	// Coverage gap accepted by architect — filepath.VolumeName only
+	// returns non-empty on Windows. The volume-prefix stripping branch
+	// is platform-specific (same class as pidlock/pidlock.go).
 	if vol := filepath.VolumeName(s); vol != "" {
 		s = s[len(vol):]
 	}

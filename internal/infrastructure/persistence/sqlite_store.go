@@ -199,6 +199,10 @@ func (s *sqliteTaskStore) Update(ctx context.Context, id int64, item ports.Task)
 	if err != nil {
 		return fmt.Errorf("updating task %d: %w", id, err)
 	}
+	// Coverage gap accepted by architect — result.RowsAffected() can only
+	// fail on driver-level errors (corrupted connection, driver bug).
+	// Reproducing this requires DB fault injection disproportionate to
+	// the value. Same acceptance class as sqlite_store.go GetByID.
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("updating task %d: %w", id, err)
@@ -214,6 +218,8 @@ func (s *sqliteTaskStore) Delete(ctx context.Context, id int64) error {
 	if err != nil {
 		return fmt.Errorf("deleting task %d: %w", id, err)
 	}
+	// Coverage gap accepted by architect — result.RowsAffected() can only
+	// fail on driver-level errors. Same acceptance class as Update above.
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("deleting task %d: %w", id, err)

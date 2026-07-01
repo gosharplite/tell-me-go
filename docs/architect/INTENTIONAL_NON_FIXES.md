@@ -244,4 +244,37 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
+## Coverage Gaps (ACCEPTED — 2026-07 Batch Triage)
+
+### Defensive guards, platform-specific, and fault-injection gaps (12 sites)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: After closing all real coverage gaps (batch 1-3), the remaining
+  44 medium-priority gaps were triaged. Of these, 32 were already documented
+  (above entries), mocks/stubs, or trivial getters. The remaining 12 fall into
+  three established acceptance classes:
+  - **Defensive nil/empty guards** on internal pipeline state: `propagateNamedInterfaceAssertionUsages`,
+    `propagateInitUsages`, `propagateTransitiveExternalUsage`, `setupCommand`,
+    `newPipelineCmd` — callers never produce nil/empty inputs.
+  - **Platform-specific branches**: `resolveAndValidateOutputPath` (Windows separator),
+    `NormalizeKey` (Windows volume prefix) — not executable on Linux.
+  - **Fault-injection required**: `sqlite_store.Update`/`Delete` (`RowsAffected` driver error),
+    `state.SetInfo` (`AtomicWrite` disk fault), `getConcurrencyLimit` (`runtime.NumCPU() < 1`
+    structurally unreachable), `processWatcherEvents` (goroutine timing).
+- **See**: Inline architect-acceptance comments at each gap site:
+  `internal/tools/analysis/propagate_named_interface_assertions.go:62`,
+  `internal/tools/analysis/propagate_transitive.go:32`,
+  `internal/tools/analysis/propagate_transitive.go:128`,
+  `internal/tools/workspace/process_executor.go:118`,
+  `internal/tools/workspace/process_executor.go:356`,
+  `internal/tools/workspace/pipeline.go:56`,
+  `internal/tools/analysis/complexity.go:125`,
+  `internal/infrastructure/persistence/sqlite_store.go:200`,
+  `internal/infrastructure/persistence/sqlite_store.go:218`,
+  `internal/infrastructure/persistence/state.go:56`,
+  `internal/ui/tui/browser.go:141`,
+  `internal/pkg/filepathutil/normalize.go:61`
+
+---
+
 *Last Updated: 2026-07*
