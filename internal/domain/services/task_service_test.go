@@ -138,17 +138,16 @@ func setupTaskService(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
 	return s, repo
 }
 
-// resetTaskIDCounter ensures the package-level atomic task ID counter
-// is restored to zero after tests that seed it via InitTaskIDCounter.
-// This prevents test pollution when parallel tests assume a fresh counter.
+// resetTaskIDCounter resets the package-level atomic task ID counter
+// to zero immediately and also schedules a cleanup to restore zero
+// after the test completes.
 func resetTaskIDCounter(t *testing.T) {
 	t.Helper()
+	taskIDCounter.Store(0)
 	t.Cleanup(func() { taskIDCounter.Store(0) })
 }
 
 func TestInitTaskIDCounter_Success(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name     string
 		seed     func(repo *mockTaskRepo)
@@ -189,7 +188,6 @@ func TestInitTaskIDCounter_Success(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			resetTaskIDCounter(t)
 
 			repo := &mockTaskRepo{}
@@ -215,7 +213,6 @@ func TestInitTaskIDCounter_QueryError(t *testing.T) {
 	// Running in parallel with TestInitTaskIDCounter_Success subtests
 	// (which call Store+NextTaskID) would create a race window.
 	resetTaskIDCounter(t)
-	taskIDCounter.Store(0)
 
 	sentinel := errors.New("disk full")
 	repo := &mockTaskRepo{readErr: sentinel}
