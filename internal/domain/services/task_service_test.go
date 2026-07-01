@@ -138,6 +138,100 @@ func setupTaskService(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
 	return s, repo
 }
 
+// resetTaskIDCounter resets the package-level atomic task ID counter
+// to zero immediately and also schedules a cleanup to restore zero
+// after the test completes.
+func resetTaskIDCounter(t *testing.T) {
+	t.Helper()
+	taskIDCounter.Store(0)
+	t.Cleanup(func() { taskIDCounter.Store(0) })
+}
+
+func TestInitTaskIDCounter_Success(t *testing.T) {
+	tests := []struct {
+		name     string
+		seed     func(repo *mockTaskRepo)
+		wantNext int64
+	}{
+		{
+			name:     "empty store",
+			seed:     func(repo *mockTaskRepo) {},
+			wantNext: 1,
+		},
+		{
+			name: "single task",
+			seed: func(repo *mockTaskRepo) {
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "only"})
+			},
+			wantNext: 6,
+		},
+		{
+			name: "out of order IDs",
+			seed: func(repo *mockTaskRepo) {
+				_ = repo.Append(context.Background(), ports.Task{ID: 3, Content: "c"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 1, Content: "a"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 7, Content: "g"})
+			},
+			wantNext: 8,
+		},
+		{
+			name: "all equal IDs",
+			seed: func(repo *mockTaskRepo) {
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "x"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "y"})
+				_ = repo.Append(context.Background(), ports.Task{ID: 5, Content: "z"})
+			},
+			wantNext: 6,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			resetTaskIDCounter(t)
+
+			repo := &mockTaskRepo{}
+			tt.seed(repo)
+
+			err := InitTaskIDCounter(context.Background(), repo)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			got := NextTaskID()
+			if got != tt.wantNext {
+				t.Errorf("NextTaskID() = %d, want %d", got, tt.wantNext)
+			}
+		})
+	}
+}
+
+func TestInitTaskIDCounter_QueryError(t *testing.T) {
+	// Not Parallel: this test verifies the counter is NOT mutated on the
+	// error path by asserting NextTaskID() returns 1. That assertion is
+	// only valid when no other goroutine touches the shared taskIDCounter.
+	// Running in parallel with TestInitTaskIDCounter_Success subtests
+	// (which call Store+NextTaskID) would create a race window.
+	resetTaskIDCounter(t)
+
+	sentinel := errors.New("disk full")
+	repo := &mockTaskRepo{readErr: sentinel}
+
+	err := InitTaskIDCounter(context.Background(), repo)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel error, got %v", err)
+	}
+
+	// Verify the counter was NOT mutated on the error path.
+	// taskIDCounter.Store(maxID) is only reachable after a successful Query.
+	if got := NextTaskID(); got != 1 {
+		t.Errorf("NextTaskID() = %d after error, want 1 (counter must not be seeded on failure)", got)
+	}
+}
+
 func TestTaskService_Add(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
