@@ -1,4 +1,4 @@
-# ADR-0011: Token Counter Decomposition
+# ADR-044: Token Counter Decomposition
 
 **Status:** Accepted
 **Date:** 2026-01-24

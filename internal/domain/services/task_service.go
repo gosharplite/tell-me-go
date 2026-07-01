@@ -92,6 +92,12 @@ func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, 
 
 // AppendTask directly inserts a pre-constructed task into the store.
 // The caller is responsible for assigning a unique ID via NextTaskID().
+//
+// Architect-accepted coverage gap: AppendTask is a pure delegation wrapper.
+// The store.Append error path is covered indirectly via AddTask_WriteError.
+// Testing a pass-through method provides no value — same rationale as
+// domainFS.Chmod, mockFileSystem.Chmod, plainOSFS.Chmod, and
+// OSFileSystem.Chmod in INTENTIONAL_NON_FIXES.md.
 func (s *taskService) AppendTask(ctx context.Context, task ports.Task) error {
 	return s.store.Append(ctx, task)
 }

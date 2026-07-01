@@ -49,6 +49,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-041** | DI Composition Root — Sub-Provider Decomposition | 2026-05 | Accepted | [2026-05-di-composition-root-decomposition.md](2026-05-di-composition-root-decomposition.md) |
 | **ADR-042** | Pipeline Presentation Extraction via PipelineFormatter Interface | 2026-05 | Accepted | [2026-05-ado-pipeline-formatter.md](2026-05-ado-pipeline-formatter.md) |
 | **ADR-043** | Plugin/Extension System for Tool Discovery via Auto-Registration | 2026-06 | Accepted | [2026-06-plugin-auto-registration.md](2026-06-plugin-auto-registration.md) |
+| **ADR-044** | Token Counter Decomposition | 2026-01 | Accepted | [2026-01-token-counter-decomposition.md](2026-01-token-counter-decomposition.md) |
 
 ## How to Create a New ADR
 
