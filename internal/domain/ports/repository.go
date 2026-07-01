@@ -34,6 +34,15 @@ type KVStore interface {
 	GetAll(ctx context.Context) (map[string]string, error)
 }
 
+// StoredItem is the type constraint for items stored in a ListStore.
+// It guarantees compile-time access to ID, Status, and CreatedAt
+// without reflection.
+type StoredItem interface {
+	GetID() int64
+	GetStatus() string
+	GetCreatedAt() time.Time
+}
+
 // ListFilter provides optional filtering for ListStore.Query.
 // All fields are optional — zero values mean "no filter."
 type ListFilter struct {
@@ -45,7 +54,7 @@ type ListFilter struct {
 
 // ListStore defines a generic list storage interface for ordered,
 // filterable collections of items.
-type ListStore[T any] interface {
+type ListStore[T StoredItem] interface {
 	// ReadAll returns every item in the store in insertion order.
 	ReadAll(ctx context.Context) ([]T, error)
 
@@ -85,6 +94,15 @@ type Task struct {
 	// CreatedAt records when the task was added.
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// GetID returns the task's unique identifier.
+func (t Task) GetID() int64 { return t.ID }
+
+// GetStatus returns the task's current status.
+func (t Task) GetStatus() string { return t.Status }
+
+// GetCreatedAt returns the task's creation timestamp.
+func (t Task) GetCreatedAt() time.Time { return t.CreatedAt }
 
 // SessionInfo holds metadata about the current execution environment.
 type SessionInfo struct {

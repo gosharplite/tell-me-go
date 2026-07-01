@@ -6,9 +6,7 @@ package persistence
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -56,12 +54,12 @@ func (s *memoryKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 }
 
 // memoryListStore is an in-memory implementation of ports.ListStore.
-type memoryListStore[T any] struct {
+type memoryListStore[T ports.StoredItem] struct {
 	mu   sync.RWMutex
 	data []T
 }
 
-func newMemoryListStore[T any]() *memoryListStore[T] {
+func newMemoryListStore[T ports.StoredItem]() *memoryListStore[T] {
 	return &memoryListStore[T]{}
 }
 
@@ -72,7 +70,7 @@ func (s *memoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
 	// Collect active items (not completed) — all of them.
 	var active []T
 	for _, item := range s.data {
-		if s.getStatus(item) == "completed" {
+		if item.GetStatus() == "completed" {
 			continue
 		}
 		active = append(active, item)
@@ -81,7 +79,7 @@ func (s *memoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
 	// Collect completed items, keep only the most recent 500 (by position in slice).
 	var completed []T
 	for _, item := range s.data {
-		if s.getStatus(item) == "completed" {
+		if item.GetStatus() == "completed" {
 			completed = append(completed, item)
 		}
 	}
@@ -99,48 +97,15 @@ func (s *memoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
 	return result, nil
 }
 
-func (s *memoryListStore[T]) getID(item T) int64 {
-	val := reflect.ValueOf(item)
-	if val.Kind() == reflect.Struct {
-		field := val.FieldByName("ID")
-		if field.IsValid() && field.CanInt() {
-			return field.Int()
-		}
-	}
-	return 0
-}
-
-func (s *memoryListStore[T]) getStatus(item T) string {
-	val := reflect.ValueOf(item)
-	if val.Kind() == reflect.Struct {
-		field := val.FieldByName("Status")
-		if field.IsValid() && field.Kind() == reflect.String {
-			return field.String()
-		}
-	}
-	return ""
-}
-
-func (s *memoryListStore[T]) getCreatedAt(item T) time.Time {
-	val := reflect.ValueOf(item)
-	if val.Kind() == reflect.Struct {
-		field := val.FieldByName("CreatedAt")
-		if field.IsValid() && field.Type() == reflect.TypeOf(time.Time{}) {
-			return field.Interface().(time.Time)
-		}
-	}
-	return time.Time{}
-}
-
 // checkStatusMatch returns false when the item's status fails the filter.
 func (s *memoryListStore[T]) checkStatusMatch(item T, filter ports.ListFilter) bool {
 	if filter.Status != "" {
-		if s.getStatus(item) != filter.Status {
+		if item.GetStatus() != filter.Status {
 			return false
 		}
 	}
 	if filter.NotStatus != "" {
-		if s.getStatus(item) == filter.NotStatus {
+		if item.GetStatus() == filter.NotStatus {
 			return false
 		}
 	}
@@ -150,12 +115,12 @@ func (s *memoryListStore[T]) checkStatusMatch(item T, filter ports.ListFilter) b
 // checkTimeMatch returns false when the item's CreatedAt fails the time filter.
 func (s *memoryListStore[T]) checkTimeMatch(item T, filter ports.ListFilter) bool {
 	if !filter.Since.IsZero() {
-		if s.getCreatedAt(item).Before(filter.Since) {
+		if item.GetCreatedAt().Before(filter.Since) {
 			return false
 		}
 	}
 	if !filter.Before.IsZero() {
-		if s.getCreatedAt(item).After(filter.Before) {
+		if item.GetCreatedAt().After(filter.Before) {
 			return false
 		}
 	}
@@ -206,7 +171,7 @@ func (s *memoryListStore[T]) GetByID(ctx context.Context, id int64) (T, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, v := range s.data {
-		if s.getID(v) == id {
+		if v.GetID() == id {
 			return v, nil
 		}
 	}
@@ -236,7 +201,7 @@ func (s *memoryListStore[T]) Update(ctx context.Context, id int64, item T) error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, v := range s.data {
-		if s.getID(v) == id {
+		if v.GetID() == id {
 			s.data[i] = item
 			return nil
 		}
@@ -248,7 +213,7 @@ func (s *memoryListStore[T]) Delete(ctx context.Context, id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, v := range s.data {
-		if s.getID(v) == id {
+		if v.GetID() == id {
 			s.data = append(s.data[:i], s.data[i+1:]...)
 			return nil
 		}

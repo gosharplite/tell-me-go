@@ -124,10 +124,10 @@ func TestMemoryListStore(t *testing.T) {
 }
 
 func runListAppendAndReadAll(t *testing.T, ctx context.Context) {
-	store := newMemoryListStore[string]()
-	val1 := "item1"
+	store := newMemoryListStore[ports.Task]()
+	task := ports.Task{ID: 1, Content: "item1"}
 
-	if err := store.Append(ctx, val1); err != nil {
+	if err := store.Append(ctx, task); err != nil {
 		t.Fatalf("Append failed: %v", err)
 	}
 
@@ -135,7 +135,7 @@ func runListAppendAndReadAll(t *testing.T, ctx context.Context) {
 	if err != nil {
 		t.Fatalf("ReadAll failed: %v", err)
 	}
-	if len(items) != 1 || items[0] != val1 {
+	if len(items) != 1 || items[0].Content != "item1" {
 		t.Errorf("ReadAll returned incorrect data: %v", items)
 	}
 }
@@ -311,21 +311,6 @@ func TestMemoryListStore_Count(t *testing.T) {
 			})
 		}
 	})
-}
-
-// =============================================================================
-// getID edge case — non-struct type falls back to 0
-// =============================================================================
-
-func TestMemoryListStore_GetID_NonStruct(t *testing.T) {
-	t.Parallel()
-
-	// getID on a non-struct type (string) should return 0
-	store := newMemoryListStore[string]()
-	id := store.getID("not-a-struct")
-	if id != 0 {
-		t.Errorf("expected 0 for non-struct type, got %v", id)
-	}
 }
 
 // =============================================================================
@@ -646,24 +631,12 @@ func TestMemoryListStore_MatchesFilter(t *testing.T) {
 func TestMemoryListStore_GetCreatedAt(t *testing.T) {
 	t.Parallel()
 
-	t.Run("struct with valid CreatedAt", func(t *testing.T) {
-		t.Parallel()
-		store := newMemoryListStore[ports.Task]()
-		now := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
-		got := store.getCreatedAt(ports.Task{CreatedAt: now})
-		if !got.Equal(now) {
-			t.Errorf("expected %v, got %v", now, got)
-		}
-	})
-
-	t.Run("non-struct type returns zero time", func(t *testing.T) {
-		t.Parallel()
-		store := newMemoryListStore[string]()
-		got := store.getCreatedAt("not-a-struct")
-		if !got.IsZero() {
-			t.Errorf("expected zero time for non-struct type, got %v", got)
-		}
-	})
+	now := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	task := ports.Task{CreatedAt: now}
+	got := task.GetCreatedAt()
+	if !got.Equal(now) {
+		t.Errorf("expected %v, got %v", now, got)
+	}
 }
 
 // =============================================================================
