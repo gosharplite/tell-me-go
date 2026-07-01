@@ -34,6 +34,24 @@ Any AI agent recommending these should consult the rationale below.
 - **See**: `internal/infrastructure/history/global_prompt_tracker.go`
   (architect-acceptance comment at the `prepareCompactedEntries` call site)
 
+### history/global_prompt_tracker.go — json.Marshal in Append
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `json.Marshal(entry)` cannot fail for `promptEntry` because all fields
+  are `string`. The error path exists only for interface contract compliance.
+  Structurally unreachable — same rationale as the `writeCompactedData` branch
+  already documented below. An architect-acceptance comment already exists at
+  the gap site (`global_prompt_tracker.go:129-130`).
+- **See**: `internal/infrastructure/history/global_prompt_tracker.go:131-133`
+
+### history/global_prompt_tracker.go — json.Marshal in writeCompactedData
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Same as the `Append` gap above: `json.Marshal(entry)` cannot fail
+  for `promptEntry` (all `string` fields). An architect-acceptance comment
+  already exists at the gap site (`global_prompt_tracker.go:365-366`).
+- **See**: `internal/infrastructure/history/global_prompt_tracker.go:367-369`
+
 ### persistence/mock_fs.go — Chmod always returns nil
 
 - **Status**: ACCEPTED (2026-07)
@@ -42,6 +60,113 @@ Any AI agent recommending these should consult the rationale below.
   not production behavior. Mocks exist to satisfy interfaces with canned
   responses; testing them is circular and provides no value.
 - **See**: `internal/domain/persistence/mock_fs.go:146-148`
+
+### persistence/os_fs.go — domainFS.Chmod delegation wrapper
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `domainFS.Chmod` is a pure delegation wrapper that calls
+  `f.fs.Chmod(ctx, name, mode)`. Testing a delegation pass-through provides
+  no value — the underlying `OSFileSystem.Chmod` error path is exercised
+  by the `os_fs.go:50-53` gap (triaged separately as NEEDS TEST). Same
+  rationale as `mockFileSystem.Chmod`.
+- **See**: `internal/infrastructure/persistence/os_fs.go:159-161`
+
+### persistence/os_fs.go — OSFileSystem.Chmod error path
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Triggering `os.Chmod` failure requires OS-level permission manipulation
+  (changing file ownership, read-only filesystem, or Windows ACL restrictions).
+  The `fsRetry` wrapper is already tested through other `OSFileSystem` methods
+  (e.g., `Stat`, `ReadFile`), so the retry logic itself is covered. Same
+  acceptance rationale as `pidlock/pidlock.go` — "require filesystem fault
+  injection... not worth the test complexity for a process-lock helper."
+- **See**: `internal/infrastructure/persistence/os_fs.go:50-53`
+
+### tools/workspace/process_executor.go — StdoutPipe error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `os/exec.Cmd.StdoutPipe()` only returns an error when called after
+  `cmd.Start()` or when called more than once on the same command. In
+  `prepareCommand`, `StdoutPipe()` is called immediately after constructing
+  the `exec.Cmd` and before `Start()`, making this error path structurally
+  unreachable in correct code. Testing it would require deliberately
+  violating the `os/exec` contract (calling `StdoutPipe` after `Start`),
+  which is a programming error, not a recoverable runtime condition.
+- **See**: `internal/tools/workspace/process_executor.go:143-145`
+
+### tools/workspace/process_executor.go — StderrPipe error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Same rationale as `StdoutPipe` above: `os/exec.Cmd.StderrPipe()`
+  only fails when called after `cmd.Start()` or called twice. In
+  `prepareCommand`, it is called before `Start()` and exactly once, making
+  this error path structurally unreachable.
+- **See**: `internal/tools/workspace/process_executor.go:147-149`
+
+### tools/analysis/complexity.go — errgroup.Wait error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `g.Wait()` error path handles a goroutine failure during
+  concurrent complexity metric gathering. The source already contains an
+  architect-acceptance annotation: "fails selectively mid-traversal, which
+  is not reproducible." Reproducing this requires injecting a fault into a
+  specific goroutine mid-walk, which is not feasible without restructuring
+  the concurrency model for testability — a change disproportionate to the
+  value of covering this one error branch.
+- **See**: `internal/tools/analysis/complexity.go:110-112`
+
+### persistence/sqlite_store.go — GetByID general database error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The general database error path (`err != nil && err != sql.ErrNoRows`)
+  in `sqliteTaskStore.GetByID` requires a corrupted database, closed connection,
+  or driver-level failure to trigger. Reproducing this in a unit test requires
+  DB fault injection disproportionate to the value. The `sql.ErrNoRows` path
+  (querying a non-existent ID) is tested separately.
+- **See**: `internal/infrastructure/persistence/sqlite_store.go:70`
+
+### persistence/sqlite_store.go — GetByID time.Parse error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `time.Parse(time.RFC3339Nano, createdAtStr)` error path
+  in `sqliteTaskStore.GetByID` is structurally unreachable. The `created_at`
+  column is always written by this same store using `time.Format(time.RFC3339Nano)`,
+  guaranteeing a round-trippable format. Same acceptance rationale as
+  `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
+- **See**: `internal/infrastructure/persistence/sqlite_store.go:72-73`
+
+### persistence/persistencetest/plain_os_fs.go — Chmod delegation stub
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `plainOSFS.Chmod` is a test-double delegation stub that passes
+  through to `os.Chmod`. Same acceptance rationale as `mockFileSystem.Chmod` and
+  `domainFS.Chmod`: testing a mock's delegation method provides no value — the
+  method exists solely to satisfy the `FileSystem` interface in test contexts.
+- **See**: `internal/infrastructure/persistence/persistencetest/plain_os_fs.go:130-132`
+
+---
+
+## Structural Concerns (ACCEPTED)
+
+### infrastructure/testing/ — shared testdata helper directory with no Go package
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `internal/infrastructure/testing/` exists solely as a container
+  for `testdata/helper/` — a test binary providing 14 subcommands (echo, cat,
+  stderr, sleep, exit, grep, diff, etc.) that simulates real OS processes for
+  tests. It is shared by two packages in different subtrees:
+  `internal/infrastructure/exec/main_test.go` and
+  `internal/tools/workspace/main_test.go`. Placing it under either consumer
+  would force a cross-subtree `testdata` reference from the other. The
+  directory contains no production `.go` files, which is why it does not
+  appear in the dependency graph. The Makefile `test-coverage` target already
+  explicitly excludes this path from coverage metrics alongside the other
+  `*test/` sub-packages. The directory name `testing/` clearly signals its
+  purpose as test infrastructure. No action is needed.
+- **See**: `Makefile` (test-coverage target, line filtering `internal/infrastructure/testing/`),
+  `internal/infrastructure/testing/testdata/helper/main.go`,
+  `internal/infrastructure/exec/main_test.go` (builds the helper),
+  `internal/tools/workspace/main_test.go` (builds the helper)
 
 ---
 
@@ -116,6 +241,39 @@ Any AI agent recommending these should consult the rationale below.
   pattern for new loaders: accept a path, return a domain object.
 - **See**: `internal/infrastructure/config/config.go` (`load`, `configureViper`,
   `YAMLConfigLoader`), `internal/infrastructure/config/watcher_test.go`
+
+---
+
+## Coverage Gaps (ACCEPTED — 2026-07 Batch Triage)
+
+### Defensive guards, platform-specific, and fault-injection gaps (12 sites)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: After closing all real coverage gaps (batch 1-3), the remaining
+  44 medium-priority gaps were triaged. Of these, 32 were already documented
+  (above entries), mocks/stubs, or trivial getters. The remaining 12 fall into
+  three established acceptance classes:
+  - **Defensive nil/empty guards** on internal pipeline state: `propagateNamedInterfaceAssertionUsages`,
+    `propagateInitUsages`, `propagateTransitiveExternalUsage`, `setupCommand`,
+    `newPipelineCmd` — callers never produce nil/empty inputs.
+  - **Platform-specific branches**: `resolveAndValidateOutputPath` (Windows separator),
+    `NormalizeKey` (Windows volume prefix) — not executable on Linux.
+  - **Fault-injection required**: `sqlite_store.Update`/`Delete` (`RowsAffected` driver error),
+    `state.SetInfo` (`AtomicWrite` disk fault), `getConcurrencyLimit` (`runtime.NumCPU() < 1`
+    structurally unreachable), `processWatcherEvents` (goroutine timing).
+- **See**: Inline architect-acceptance comments at each gap site:
+  `internal/tools/analysis/propagate_named_interface_assertions.go:62`,
+  `internal/tools/analysis/propagate_transitive.go:32`,
+  `internal/tools/analysis/propagate_transitive.go:128`,
+  `internal/tools/workspace/process_executor.go:118`,
+  `internal/tools/workspace/process_executor.go:356`,
+  `internal/tools/workspace/pipeline.go:56`,
+  `internal/tools/analysis/complexity.go:125`,
+  `internal/infrastructure/persistence/sqlite_store.go:200`,
+  `internal/infrastructure/persistence/sqlite_store.go:218`,
+  `internal/infrastructure/persistence/state.go:56`,
+  `internal/ui/tui/browser.go:141`,
+  `internal/pkg/filepathutil/normalize.go:61`
 
 ---
 

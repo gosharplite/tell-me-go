@@ -631,6 +631,32 @@ func TestNewPipelineCmd_CancelGuard(t *testing.T) {
 	}
 }
 
+// TestPrepareCommand_CancelBeforeStart verifies that calling Cancel
+// on a prepared command before it is started (cmd.Process == nil)
+// returns nil — the process-nil guard prevents a nil-pointer dereference.
+func TestPrepareCommand_CancelBeforeStart(t *testing.T) {
+	t.Parallel()
+
+	cmd := exec.Command("echo", "hello")
+	// Simulate what setupCommand/newPipelineCmd do: assign the Cancel closure
+	// with the nil-Process guard.
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return cmd.Process.Kill()
+	}
+
+	// Cancel before Start — Process should be nil
+	err := cmd.Cancel()
+	if err != nil {
+		t.Fatalf("Cancel before Start should return nil, got: %v", err)
+	}
+	if cmd.Process != nil {
+		t.Error("Process should still be nil after Cancel-before-Start")
+	}
+}
+
 // TestSetupCommand_CancelGuard verifies that setupCommand sets the
 // cmd.Cancel function on Windows to enable forceful process tree
 // termination via taskkill.

@@ -55,6 +55,11 @@ func (s *sessionState) SetInfo(ctx context.Context, info ports.SessionInfo) erro
 	s.mu.Unlock()
 
 	// Phase C: Persist to disk OUTSIDE the mutex using the local 'cloned' copy.
+	// Coverage gap accepted by architect — json.MarshalIndent on
+	// SessionInfo (all string/map fields) is structurally unreachable
+	// (same class as global_prompt_tracker.go json.Marshal). The
+	// AtomicWrite failure requires disk-full/hardware fault injection
+	// (same class as os_fs.go Chmod).
 	if s.statePath != "" && cloned.Env["STORAGE_TYPE"] != "memory" {
 		data, err := json.MarshalIndent(cloned, "", "  ")
 		if err != nil {

@@ -1152,6 +1152,58 @@ func TestGetDetailedCoverageReport_ErrorWithData(t *testing.T) {
 	}
 }
 
+// TestGetDetailedCoverageReport_ContextDeadlineExceeded verifies that when
+// RunTestsWithCoverage returns context.DeadlineExceeded (but a valid coverage
+// profile was still written), the report uses the "NOTE: coverage generation
+// interrupted" prefix instead of the generic "WARNING" prefix.
+func TestGetDetailedCoverageReport_ContextDeadlineExceeded(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, goFile := setupMockGoFile(t, "package analysis\nfunc F() {}\n")
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					coverageContent := fmt.Sprintf("mode: set\n%s:1.0,2.0 1 0\n", goFile)
+					if err := os.WriteFile(path, []byte(coverageContent), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
+				}
+			}
+			// Return context.DeadlineExceeded — simulates a test timeout
+			// where the coverage profile was still generated.
+			return nil, context.DeadlineExceeded
+		},
+	}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+
+	report, err := hea.getDetailedCoverageReport(ctx, ".", nil, nil)
+	if err != nil {
+		t.Fatalf("expected nil error (note embedded in report), got: %v", err)
+	}
+	// Must use the "NOTE: coverage generation interrupted" prefix
+	if !strings.Contains(report, "⚠️ NOTE: coverage generation interrupted; profile may be incomplete.") {
+		t.Errorf("expected NOTE prefix for context error, got: %q", report)
+	}
+	// Must NOT contain the generic WARNING prefix
+	if strings.Contains(report, "⚠️ WARNING:") {
+		t.Errorf("expected no WARNING prefix for context error, got: %q", report)
+	}
+	// Must contain the context error cause
+	if !strings.Contains(report, "context deadline exceeded") {
+		t.Errorf("expected 'context deadline exceeded' in report, got: %q", report)
+	}
+	// Must still contain the coverage data
+	if !strings.Contains(report, "Detailed Coverage Report") {
+		t.Errorf("expected coverage data in report, got: %q", report)
+	}
+}
+
 func TestGetDetailedCoverageJSON_PriorityFiltering(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

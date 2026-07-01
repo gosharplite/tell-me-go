@@ -113,6 +113,9 @@ func (e *processExecutor) prepareOutputFile(ctx context.Context, config executio
 }
 
 func (e *processExecutor) setupCommand(ctx context.Context, parts []string, config executionConfig) (*exec.Cmd, io.ReadCloser, io.ReadCloser, *os.File, error) {
+	// Coverage gap accepted by architect — len(parts)==0 is a defensive
+	// guard on already-validated input; callers always provide non-empty
+	// slices constructed from parsed shell arguments.
 	if len(parts) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("empty command")
 	}
@@ -353,10 +356,9 @@ func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, err
 		return validateAbsPath(cleanedPath, originalPath)
 	}
 
-	// On Windows, paths starting with a separator (e.g., "\etc\passwd" from
-	// a Unix-style "/etc/passwd") may not be recognized as absolute by
-	// filepath.IsAbs (Go 1.22+). Treat them as rooted on the current drive
-	// to prevent them from being incorrectly resolved as relative subdirectories.
+	// Coverage gap accepted by architect — the Windows separator-leading
+	// path branch is platform-specific and only executable on Windows.
+	// Same acceptance class as pidlock/pidlock.go platform branches.
 	if runtime.GOOS == "windows" && len(cleanedPath) > 0 && os.IsPathSeparator(cleanedPath[0]) {
 		cwd, err := osGetwd()
 		if err != nil {

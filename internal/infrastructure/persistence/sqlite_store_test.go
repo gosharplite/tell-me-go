@@ -193,6 +193,20 @@ func TestSQLiteTaskStore_UpdateDelete_NotFound(t *testing.T) {
 	assert.Equal(t, "real", tasks[0].Content)
 }
 
+// TestSQLiteTaskStore_GetByID_NotFound verifies that GetByID returns
+// an error wrapping ErrTaskNotFound when querying a non-existent task ID.
+func TestSQLiteTaskStore_GetByID_NotFound(t *testing.T) {
+	t.Parallel()
+	db := setupSQLite(t)
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	_, err := store.GetByID(ctx, 999)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ports.ErrTaskNotFound), "expected ErrTaskNotFound, got %v", err)
+	assert.Contains(t, err.Error(), "task 999", "error should contain task ID")
+}
+
 func TestStoreErrors(t *testing.T) {
 	t.Parallel()
 

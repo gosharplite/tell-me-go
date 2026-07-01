@@ -377,5 +377,10 @@ See the [Makefile](Makefile) for additional targets.
 ## Design Decisions
 Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).
 
+**Before proposing structural changes or flagging potential issues**, consult these two files first — they are the authoritative source for project conventions and known anomalies:
+
+- **[Makefile](Makefile)** — Defines all build/test conventions, coverage exclusions (including `*test/` and `testing/` directories), and architectural guard checks (`verify-architecture`, `verify-no-test-sleep`, `verify-testutil-convention`, etc.).
+- **[Intentional Non-Fixes](docs/architect/INTENTIONAL_NON_FIXES.md)** — Catalog of known code patterns and directories deliberately left as-is, with rationale for each. Prevents re-investigation of already-settled decisions.
+
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).
