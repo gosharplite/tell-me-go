@@ -357,6 +357,40 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 	}
 }
 
+// TestBuildSessionProvider_SetInfoError verifies that when state.SetInfo fails
+// (e.g., DB lock contention, disk full), the error is properly wrapped and the
+// returned (sessionProvider, cleanup) are both nil.
+func TestBuildSessionProvider_SetInfoError(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	simulatedErr := errors.New("db locked")
+
+	sm := new(mockConfigurableSecurityManager)
+	factory := newSessionFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, io.Discard, io.Discard, nil, nil, nil).(*defaultSessionFactory)
+
+	// NewSessionState succeeds, but its SetInfo fails.
+	mockSP := &testfixtures.MockSessionProvider{
+		SessionInfo: ports.SessionInfo{Model: "gpt-4o", Provider: "openai"},
+		SetInfoFn: func(ctx context.Context, info ports.SessionInfo) error {
+			return simulatedErr
+		},
+	}
+	factory.NewSessionState = func(ctx context.Context, modeDir string, opts ...infra_persistence.SessionStateOption) (ports.SessionProvider, error) {
+		return mockSP, nil
+	}
+
+	paths := &persistence.Paths{ModeDir: filepath.Join(tempDir, "mode")}
+	cfg := &config.Config{Model: "test-model", SelectedProvider: "test-provider"}
+
+	sp, cleanup, err := factory.buildSessionProvider(ctx, paths, cfg)
+
+	assert.Error(t, err)
+	assert.Nil(t, sp)
+	assert.Nil(t, cleanup)
+	assert.Contains(t, err.Error(), "set session info")
+	assert.ErrorIs(t, err, simulatedErr)
+}
+
 func TestBuildRegistry_FailurePaths(t *testing.T) {
 	tempDir := t.TempDir()
 	simulatedErr := errors.New("registration error")

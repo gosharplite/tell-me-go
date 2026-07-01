@@ -34,6 +34,24 @@ Any AI agent recommending these should consult the rationale below.
 - **See**: `internal/infrastructure/history/global_prompt_tracker.go`
   (architect-acceptance comment at the `prepareCompactedEntries` call site)
 
+### history/global_prompt_tracker.go — json.Marshal in Append
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `json.Marshal(entry)` cannot fail for `promptEntry` because all fields
+  are `string`. The error path exists only for interface contract compliance.
+  Structurally unreachable — same rationale as the `writeCompactedData` branch
+  already documented below. An architect-acceptance comment already exists at
+  the gap site (`global_prompt_tracker.go:129-130`).
+- **See**: `internal/infrastructure/history/global_prompt_tracker.go:131-133`
+
+### history/global_prompt_tracker.go — json.Marshal in writeCompactedData
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Same as the `Append` gap above: `json.Marshal(entry)` cannot fail
+  for `promptEntry` (all `string` fields). An architect-acceptance comment
+  already exists at the gap site (`global_prompt_tracker.go:365-366`).
+- **See**: `internal/infrastructure/history/global_prompt_tracker.go:367-369`
+
 ### persistence/mock_fs.go — Chmod always returns nil
 
 - **Status**: ACCEPTED (2026-07)
@@ -42,6 +60,27 @@ Any AI agent recommending these should consult the rationale below.
   not production behavior. Mocks exist to satisfy interfaces with canned
   responses; testing them is circular and provides no value.
 - **See**: `internal/domain/persistence/mock_fs.go:146-148`
+
+### persistence/os_fs.go — domainFS.Chmod delegation wrapper
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `domainFS.Chmod` is a pure delegation wrapper that calls
+  `f.fs.Chmod(ctx, name, mode)`. Testing a delegation pass-through provides
+  no value — the underlying `OSFileSystem.Chmod` error path is exercised
+  by the `os_fs.go:50-53` gap (triaged separately as NEEDS TEST). Same
+  rationale as `mockFileSystem.Chmod`.
+- **See**: `internal/infrastructure/persistence/os_fs.go:159-161`
+
+### persistence/os_fs.go — OSFileSystem.Chmod error path
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Triggering `os.Chmod` failure requires OS-level permission manipulation
+  (changing file ownership, read-only filesystem, or Windows ACL restrictions).
+  The `fsRetry` wrapper is already tested through other `OSFileSystem` methods
+  (e.g., `Stat`, `ReadFile`), so the retry logic itself is covered. Same
+  acceptance rationale as `pidlock/pidlock.go` — "require filesystem fault
+  injection... not worth the test complexity for a process-lock helper."
+- **See**: `internal/infrastructure/persistence/os_fs.go:50-53`
 
 ---
 

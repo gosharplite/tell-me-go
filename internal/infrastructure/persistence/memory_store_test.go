@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -311,6 +312,33 @@ func TestMemoryListStore_Count(t *testing.T) {
 			})
 		}
 	})
+}
+
+// =============================================================================
+// GetByID with non-existent ID — returns ErrTaskNotFound
+// =============================================================================
+
+func TestMemoryListStore_GetByID_NotFound(t *testing.T) {
+	t.Parallel()
+	store := newMemoryListStore[ports.Task]()
+
+	// Populate with a task of ID 1, then query for ID 999 (non-existent).
+	ctx := context.Background()
+	err := store.Append(ctx, ports.Task{ID: 1, Content: "only task", Status: "pending"})
+	if err != nil {
+		t.Fatalf("setup Append failed: %v", err)
+	}
+
+	_, err = store.GetByID(ctx, 999)
+	if err == nil {
+		t.Fatal("expected error for non-existent ID, got nil")
+	}
+	if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("error should wrap ErrTaskNotFound, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "id 999") {
+		t.Errorf("error should contain 'id 999', got: %v", err)
+	}
 }
 
 // =============================================================================

@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -484,6 +486,36 @@ func TestTaskService_UpdateTask_WriteError(t *testing.T) {
 	_, err := s.UpdateTask(ctx, task.ID, "Updated", "completed")
 	if err == nil {
 		t.Error("expected write error")
+	}
+}
+
+// TestTaskService_UpdateTask_ErrTaskNotFoundOnUpdate verifies that when
+// GetByID succeeds but Update returns ErrTaskNotFound (simulating a race
+// where the task is deleted between fetch and update), the service wraps
+// the error with the task ID for observability.
+func TestTaskService_UpdateTask_ErrTaskNotFoundOnUpdate(t *testing.T) {
+	taskID := int64(42)
+	existing := ports.Task{
+		ID:        taskID,
+		Content:   "original content",
+		Status:    "pending",
+		CreatedAt: time.Now(),
+	}
+	repo := &mockTaskRepo{
+		tasks:    []ports.Task{existing},
+		writeErr: ports.ErrTaskNotFound,
+	}
+	svc := NewTaskService(repo)
+
+	_, err := svc.UpdateTask(context.Background(), taskID, "new content", "completed")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("error should wrap ErrTaskNotFound, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), fmt.Sprintf("id %d", taskID)) {
+		t.Errorf("error should contain task ID %d, got: %v", taskID, err)
 	}
 }
 
