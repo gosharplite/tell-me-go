@@ -82,6 +82,39 @@ Any AI agent recommending these should consult the rationale below.
   injection... not worth the test complexity for a process-lock helper."
 - **See**: `internal/infrastructure/persistence/os_fs.go:50-53`
 
+### tools/workspace/process_executor.go — StdoutPipe error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `os/exec.Cmd.StdoutPipe()` only returns an error when called after
+  `cmd.Start()` or when called more than once on the same command. In
+  `prepareCommand`, `StdoutPipe()` is called immediately after constructing
+  the `exec.Cmd` and before `Start()`, making this error path structurally
+  unreachable in correct code. Testing it would require deliberately
+  violating the `os/exec` contract (calling `StdoutPipe` after `Start`),
+  which is a programming error, not a recoverable runtime condition.
+- **See**: `internal/tools/workspace/process_executor.go:143-145`
+
+### tools/workspace/process_executor.go — StderrPipe error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Same rationale as `StdoutPipe` above: `os/exec.Cmd.StderrPipe()`
+  only fails when called after `cmd.Start()` or called twice. In
+  `prepareCommand`, it is called before `Start()` and exactly once, making
+  this error path structurally unreachable.
+- **See**: `internal/tools/workspace/process_executor.go:147-149`
+
+### tools/analysis/complexity.go — errgroup.Wait error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `g.Wait()` error path handles a goroutine failure during
+  concurrent complexity metric gathering. The source already contains an
+  architect-acceptance annotation: "fails selectively mid-traversal, which
+  is not reproducible." Reproducing this requires injecting a fault into a
+  specific goroutine mid-walk, which is not feasible without restructuring
+  the concurrency model for testability — a change disproportionate to the
+  value of covering this one error branch.
+- **See**: `internal/tools/analysis/complexity.go:110-112`
+
 ---
 
 ## ADR-021 Follow-Ups (ALL COMPLETE)

@@ -5,6 +5,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -150,5 +151,49 @@ func TestHandleLoadToolkit_UnmarshalError(t *testing.T) {
 	}
 	if len(res.Metadata) != 0 {
 		t.Errorf("expected empty Metadata, got %v", res.Metadata)
+	}
+}
+
+// TestHandleLoadToolkit_SetInfoError verifies that when a valid toolkit
+// is loaded but state.SetInfo fails (e.g., DB lock contention), the error
+// is properly wrapped with "set session info" and the sentinel is preserved.
+func TestHandleLoadToolkit_SetInfoError(t *testing.T) {
+	t.Parallel()
+	sentinel := errors.New("db locked")
+
+	sp := &testfixtures.MockSessionProvider{
+		SessionInfo: ports.SessionInfo{
+			ActiveToolkits: []string{},
+		},
+		SetInfoFn: func(ctx context.Context, info ports.SessionInfo) error {
+			return sentinel
+		},
+	}
+	mp := &mockMetadataProvider{
+		toolkits: []string{"core", "git", "k8s"},
+	}
+
+	pt := newpersistenceTools(sp, mp)
+
+	args := map[string]interface{}{
+		"names": []string{"git"},
+	}
+
+	res, err := pt.handleLoadToolkit(context.Background(), args, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("error should wrap sentinel, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "set session info") {
+		t.Errorf("error should contain 'set session info', got: %v", err)
+	}
+	// ToolResult should be zero-valued on error.
+	if res.Text != "" {
+		t.Errorf("expected empty Text on error, got %q", res.Text)
+	}
+	if res.Error != nil {
+		t.Errorf("expected nil Error field, got %v", res.Error)
 	}
 }
