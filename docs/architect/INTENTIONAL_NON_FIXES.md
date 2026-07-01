@@ -275,6 +275,17 @@ Any AI agent recommending these should consult the rationale below.
   `internal/ui/tui/browser.go:141`,
   `internal/pkg/filepathutil/normalize.go:61`
 
+### services/task_service.go — AppendTask delegation wrapper
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `AppendTask` is a pure delegation wrapper that calls
+  `s.store.Append(ctx, task)`. The store's `Append` error path is already
+  covered by `TestTaskService_AddTask_WriteError` (which calls `AddTask` →
+  `store.Append`). Testing a pass-through method provides no value — same
+  acceptance class as `domainFS.Chmod`, `mockFileSystem.Chmod`,
+  `plainOSFS.Chmod`, and `OSFileSystem.Chmod`.
+- **See**: `internal/domain/services/task_service.go:95-97`
+
 ---
 
 *Last Updated: 2026-07*
