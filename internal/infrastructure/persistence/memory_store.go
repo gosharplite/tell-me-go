@@ -54,12 +54,12 @@ func (s *memoryKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 }
 
 // memoryListStore is an in-memory implementation of ports.ListStore.
-type memoryListStore[T ports.StoredItem] struct {
+type memoryListStore[T ports.FilterableItem] struct {
 	mu   sync.RWMutex
 	data []T
 }
 
-func newMemoryListStore[T ports.StoredItem]() *memoryListStore[T] {
+func newMemoryListStore[T ports.FilterableItem]() *memoryListStore[T] {
 	return &memoryListStore[T]{}
 }
 

@@ -34,10 +34,16 @@ type KVStore interface {
 	GetAll(ctx context.Context) (map[string]string, error)
 }
 
-// StoredItem is the type constraint for items stored in a ListStore.
-// It guarantees compile-time access to ID, Status, and CreatedAt
-// without reflection.
-type StoredItem interface {
+// FilterableItem is the type constraint for items stored in a ListStore.
+// It guarantees compile-time access to the three fields that both the
+// SQLite WHERE-clause builder and the in-memory filter logic require:
+// ID, Status, and CreatedAt.
+//
+// ARCHITECTURE NOTE: If a future entity does not need status/time filtering,
+// either relax this constraint (by splitting into separate HasID / HasStatus /
+// HasCreatedAt interfaces and composing them) or introduce a separate, simpler
+// store abstraction (e.g., MapStore[K, V]) that does not embed ListFilter.
+type FilterableItem interface {
 	GetID() int64
 	GetStatus() string
 	GetCreatedAt() time.Time
@@ -54,7 +60,7 @@ type ListFilter struct {
 
 // ListStore defines a generic list storage interface for ordered,
 // filterable collections of items.
-type ListStore[T StoredItem] interface {
+type ListStore[T FilterableItem] interface {
 	// ReadAll returns every item in the store in insertion order.
 	ReadAll(ctx context.Context) ([]T, error)
 
