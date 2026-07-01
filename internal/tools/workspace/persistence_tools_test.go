@@ -127,6 +127,18 @@ func (m *mockListStore) Count(ctx context.Context, filter ports.ListFilter) (int
 	return count, nil
 }
 
+func (m *mockListStore) GetByID(ctx context.Context, id int64) (ports.Task, error) {
+	if m.err != nil {
+		return ports.Task{}, m.err
+	}
+	for _, t := range m.tasks {
+		if t.ID == id {
+			return t, nil
+		}
+	}
+	return ports.Task{}, fmt.Errorf("not found")
+}
+
 type mockMetadataProvider struct {
 	tools.ToolMetadataProvider
 	toolkits []string

@@ -34,6 +34,21 @@ type KVStore interface {
 	GetAll(ctx context.Context) (map[string]string, error)
 }
 
+// FilterableItem is the type constraint for items stored in a ListStore.
+// It guarantees compile-time access to the three fields that both the
+// SQLite WHERE-clause builder and the in-memory filter logic require:
+// ID, Status, and CreatedAt.
+//
+// ARCHITECTURE NOTE: If a future entity does not need status/time filtering,
+// either relax this constraint (by splitting into separate HasID / HasStatus /
+// HasCreatedAt interfaces and composing them) or introduce a separate, simpler
+// store abstraction (e.g., MapStore[K, V]) that does not embed ListFilter.
+type FilterableItem interface {
+	GetID() int64
+	GetStatus() string
+	GetCreatedAt() time.Time
+}
+
 // ListFilter provides optional filtering for ListStore.Query.
 // All fields are optional — zero values mean "no filter."
 type ListFilter struct {
@@ -45,13 +60,17 @@ type ListFilter struct {
 
 // ListStore defines a generic list storage interface for ordered,
 // filterable collections of items.
-type ListStore[T any] interface {
+type ListStore[T FilterableItem] interface {
 	// ReadAll returns every item in the store in insertion order.
 	ReadAll(ctx context.Context) ([]T, error)
 
 	// Query returns items matching the filter, bounded by limit and offset.
 	// limit=0 means no limit; offset=0 means start from beginning.
 	Query(ctx context.Context, filter ListFilter, limit, offset int) ([]T, error)
+
+	// GetByID returns the item with the given ID. Returns an error wrapping
+	// ErrTaskNotFound if no item with that ID exists.
+	GetByID(ctx context.Context, id int64) (T, error)
 
 	// Count returns the number of items matching the filter.
 	// An empty filter counts all items.
@@ -81,6 +100,15 @@ type Task struct {
 	// CreatedAt records when the task was added.
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// GetID returns the task's unique identifier.
+func (t Task) GetID() int64 { return t.ID }
+
+// GetStatus returns the task's current status.
+func (t Task) GetStatus() string { return t.Status }
+
+// GetCreatedAt returns the task's creation timestamp.
+func (t Task) GetCreatedAt() time.Time { return t.CreatedAt }
 
 // SessionInfo holds metadata about the current execution environment.
 type SessionInfo struct {

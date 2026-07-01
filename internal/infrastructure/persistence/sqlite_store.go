@@ -55,6 +55,27 @@ func (s *sqliteTaskStore) Query(ctx context.Context, filter ports.ListFilter, li
 	return s.queryOrdered(ctx, filter, limit, offset, "ASC")
 }
 
+// GetByID returns the task with the given ID, or an error wrapping
+// ErrTaskNotFound if no task with that ID exists.
+func (s *sqliteTaskStore) GetByID(ctx context.Context, id int64) (ports.Task, error) {
+	var t ports.Task
+	var createdAtStr string
+	err := s.db.QueryRowContext(ctx,
+		"SELECT id, content, status, created_at FROM tasks WHERE id = ?", id,
+	).Scan(&t.ID, &t.Content, &t.Status, &createdAtStr)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return t, fmt.Errorf("task %d: %w", id, ports.ErrTaskNotFound)
+		}
+		return t, fmt.Errorf("getting task %d: %w", id, err)
+	}
+	t.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtStr)
+	if err != nil {
+		return t, fmt.Errorf("failed to parse created_at for task %d: %w", int(t.ID), err)
+	}
+	return t, nil
+}
+
 // whereClause holds a parameterized SQL WHERE fragment and its arguments.
 type whereClause struct {
 	sql  string

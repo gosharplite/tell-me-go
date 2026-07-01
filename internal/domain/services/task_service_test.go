@@ -97,6 +97,20 @@ func (m *mockTaskRepo) Query(ctx context.Context, filter ports.ListFilter, limit
 	return applyTaskOffsetLimit(result, limit, offset), nil
 }
 
+func (m *mockTaskRepo) GetByID(ctx context.Context, id int64) (ports.Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.readErr != nil {
+		return ports.Task{}, m.readErr
+	}
+	for _, t := range m.tasks {
+		if t.ID == id {
+			return t, nil
+		}
+	}
+	return ports.Task{}, fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
+}
+
 // taskMatchesFilter returns true when task satisfies all non-zero filter conditions.
 func taskMatchesFilter(task ports.Task, filter ports.ListFilter) bool {
 	if filter.Status != "" && task.Status != filter.Status {
