@@ -115,6 +115,35 @@ Any AI agent recommending these should consult the rationale below.
   value of covering this one error branch.
 - **See**: `internal/tools/analysis/complexity.go:110-112`
 
+### persistence/sqlite_store.go — GetByID general database error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The general database error path (`err != nil && err != sql.ErrNoRows`)
+  in `sqliteTaskStore.GetByID` requires a corrupted database, closed connection,
+  or driver-level failure to trigger. Reproducing this in a unit test requires
+  DB fault injection disproportionate to the value. The `sql.ErrNoRows` path
+  (querying a non-existent ID) is tested separately.
+- **See**: `internal/infrastructure/persistence/sqlite_store.go:70`
+
+### persistence/sqlite_store.go — GetByID time.Parse error
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `time.Parse(time.RFC3339Nano, createdAtStr)` error path
+  in `sqliteTaskStore.GetByID` is structurally unreachable. The `created_at`
+  column is always written by this same store using `time.Format(time.RFC3339Nano)`,
+  guaranteeing a round-trippable format. Same acceptance rationale as
+  `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
+- **See**: `internal/infrastructure/persistence/sqlite_store.go:72-73`
+
+### persistence/persistencetest/plain_os_fs.go — Chmod delegation stub
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `plainOSFS.Chmod` is a test-double delegation stub that passes
+  through to `os.Chmod`. Same acceptance rationale as `mockFileSystem.Chmod` and
+  `domainFS.Chmod`: testing a mock's delegation method provides no value — the
+  method exists solely to satisfy the `FileSystem` interface in test contexts.
+- **See**: `internal/infrastructure/persistence/persistencetest/plain_os_fs.go:130-132`
+
 ---
 
 ## ADR-021 Follow-Ups (ALL COMPLETE)

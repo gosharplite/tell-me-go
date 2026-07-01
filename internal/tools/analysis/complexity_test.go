@@ -509,6 +509,38 @@ func TestGatherComplexities_ContextCancelled(t *testing.T) {
 		"expected context.Canceled, got: %v", err)
 }
 
+// TestGatherComplexities_ContextCancelled_MockFS exercises the ctx.Done()
+// check inside makeWalkFunc when using a mock filesystem that does NOT
+// pre-check ctx.Err() before calling the walk callback (unlike domainFS.Walk).
+// This specifically covers lines 136-137 of complexity.go.
+func TestGatherComplexities_ContextCancelled_MockFS(t *testing.T) {
+	t.Parallel()
+
+	mfs := persistence.NewMockFileSystem()
+	mfs.Files["testdata/main.go"] = []byte("package main\nfunc main() {}\n")
+
+	cache := newASTCache(".")
+	sp := &mockSecurityProvider{}
+	analyzer := newComplexityAnalyzer(cache, sp, mfs)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately, before GatherComplexities starts
+
+	complexities, skipped, err := analyzer.GatherComplexities(ctx, "testdata", nil)
+	if err == nil {
+		t.Fatal("expected error from cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	if complexities != nil {
+		t.Errorf("expected nil complexities on cancellation, got %d", len(complexities))
+	}
+	if skipped != nil {
+		t.Errorf("expected nil skipped on cancellation, got %d", len(skipped))
+	}
+}
+
 // TestComplexityAnalyzer_ErrgroupError exercises the g.Wait() error return
 // path (L88–90 in complexity.go). The challenge is that walkFn checks the
 // derived context (gCtx) before launching each goroutine, so cancelling the

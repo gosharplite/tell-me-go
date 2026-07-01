@@ -2,12 +2,18 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -447,4 +453,50 @@ func TestTypeManager_ErrorPaths(t *testing.T) {
 		// Must not panic when count is nil.
 		m.handleHeartbeat(nil, nil)
 	})
+}
+
+// callbackWalkErrorFS calls the walk callback exactly once with a
+// non-nil walkErr, exercising the walkErr != nil propagation path
+// in makeMethodWalkFunc and collectSymbols.
+type callbackWalkErrorFS struct {
+	persistence.FileSystem
+}
+
+func (c *callbackWalkErrorFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	return fn("/some/path", nil, fs.ErrPermission)
+}
+
+// TestMakeMethodWalkFunc_WalkError verifies that a walk callback receiving
+// a non-nil walkErr (e.g., permission denied from filepath.Walk) propagates
+// the error directly without further processing.
+func TestMakeMethodWalkFunc_WalkError(t *testing.T) {
+	t.Parallel()
+	mfs := &callbackWalkErrorFS{FileSystem: persistence.NewMockFileSystem()}
+	tm := newTypeManager(&mockSymbolIndex{}, newASTCache("."), &mockSecurityProvider{}, mfs)
+	_, err := tm.findMethodsInPackage(context.Background(), "/some/path", "SomeType", nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, fs.ErrPermission))
+}
+
+// TestMakeMethodWalkFunc_ContextCancelled verifies that when the context
+// is cancelled during a method walk, checkCancellation returns the context
+// error and the walk aborts cleanly.
+func TestMakeMethodWalkFunc_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "f.go"), []byte("package pkg"), 0644))
+
+	// contextFreeWalkFS (defined in dependency_test.go) bypasses
+	// domainFS.Walk's ctx.Err() pre-check so the callback actually fires.
+	osFS := infra_persistence.NewOSFileSystem()
+	cfs := &contextFreeWalkFS{FileSystem: osFS}
+
+	tm := newTypeManager(&mockSymbolIndex{}, newASTCache("."), &mockSecurityProvider{}, cfs)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := tm.findMethodsInPackage(ctx, tmpDir, "SomeType", nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled))
 }

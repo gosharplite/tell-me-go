@@ -399,6 +399,61 @@ func TestBuildGraph_GetImportsError(t *testing.T) {
 	require.Error(t, err, "expected error from cancelled context in getImports")
 }
 
+// TestBuildGraph_GetImportsError_ContextCancelled verifies that when
+// getImports fails inside an errgroup goroutine (packages.Load with a
+// cancelled context), the error propagates through errgroup.Wait.
+// Uses a context-free Walk wrapper so listInternalPackages succeeds
+// (domainFS.Walk checks ctx.Err() before calling the callback, which
+// would short-circuit before errgroup goroutines start).
+func TestBuildGraph_GetImportsError_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Create a valid workspace with one package
+	pkgDir := filepath.Join(tmpDir, "pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "f.go"), []byte("package pkg"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/mod"), 0644))
+
+	runner := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "example.com/mod", nil
+		},
+		getModuleDirFunc: func(ctx context.Context) (string, error) {
+			return tmpDir, nil
+		},
+	}
+
+	// Wrap OSFileSystem to bypass domainFS.Walk's ctx.Err() pre-check
+	// so listInternalPackages succeeds and errgroup goroutines run.
+	osFS := infra_persistence.NewOSFileSystem()
+	fs := &contextFreeWalkFS{FileSystem: osFS}
+
+	a := newDependencyAnalyzer(runner, &mockSecurityProvider{}, nil,
+		infra_persistence.NewWorkspacePolicy(), fs)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := a.buildGraph(ctx)
+	require.Error(t, err, "expected error from cancelled context in getImports")
+}
+
+// contextFreeWalkFS wraps a persistence.FileSystem and overrides Walk to
+// directly call filepath.Walk without the ctx.Err() pre-check that
+// domainFS.Walk performs. This allows listInternalPackages to succeed even
+// when the context is cancelled, so that errgroup goroutines actually run
+// and exercise the getImports error path in buildGraph_processPackage.
+type contextFreeWalkFS struct {
+	persistence.FileSystem
+}
+
+func (c *contextFreeWalkFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		return fn(path, info, err)
+	})
+}
+
 // ─────────────────────────────────────────────────────────
 // listInternalPackages error path test
 // ─────────────────────────────────────────────────────────
