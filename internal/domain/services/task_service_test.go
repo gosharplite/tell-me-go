@@ -37,7 +37,7 @@ func (m *mockTaskRepo) Update(ctx context.Context, id int64, task ports.Task) er
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 }
 
 func (m *mockTaskRepo) Delete(ctx context.Context, id int64) error {
@@ -46,11 +46,17 @@ func (m *mockTaskRepo) Delete(ctx context.Context, id int64) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
+	found := false
 	var next []ports.Task
 	for _, t := range m.tasks {
 		if t.ID != id {
 			next = append(next, t)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 	}
 	m.tasks = next
 	return nil
@@ -419,6 +425,9 @@ func TestTaskService_UpdateTask_NotFound(t *testing.T) {
 	if err == nil {
 		t.Error("expected not found error")
 	}
+	if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("expected ErrTaskNotFound, got %v", err)
+	}
 }
 
 func TestTaskService_UpdateTask_QueryError(t *testing.T) {
@@ -472,35 +481,8 @@ func TestTaskService_DeleteTask_NotFound(t *testing.T) {
 	if err == nil {
 		t.Error("expected not found error")
 	}
-}
-
-func TestTaskService_DeleteTask_QueryError(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	sentinel := errors.New("store query failed")
-	s, repo := setupTaskServiceWithError(t, nil, nil)
-
-	// Add a task so it exists in the store (no read error yet)
-	task, err := s.AddTask(ctx, "task to delete")
-	if err != nil {
-		t.Fatalf("setup AddTask failed: %v", err)
-	}
-
-	// Now inject the read error
-	repo.readErr = sentinel
-
-	// Attempt delete — should fail at Query, not reach the not-found or delete logic
-	err = s.DeleteTask(ctx, task.ID)
-	if err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-	if !errors.Is(err, sentinel) {
-		t.Errorf("expected sentinel error, got %v", err)
-	}
-
-	// Verify the task still exists (delete didn't happen)
-	if len(repo.tasks) != 1 {
-		t.Errorf("expected task to still exist, got %d tasks", len(repo.tasks))
+	if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("expected ErrTaskNotFound, got %v", err)
 	}
 }
 

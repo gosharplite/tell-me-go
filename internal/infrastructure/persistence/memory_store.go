@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -226,7 +227,7 @@ func (s *memoryListStore[T]) Update(ctx context.Context, id int64, item T) error
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 }
 
 func (s *memoryListStore[T]) Delete(ctx context.Context, id int64) error {
@@ -238,7 +239,7 @@ func (s *memoryListStore[T]) Delete(ctx context.Context, id int64) error {
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("id %d: %w", id, ports.ErrTaskNotFound)
 }
 
 func (s *memoryListStore[T]) DeleteAll(ctx context.Context) error {

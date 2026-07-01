@@ -52,6 +52,7 @@ func TestSQLiteTaskStore(t *testing.T) {
 	t.Run("Update Task", testTaskStoreUpdate)
 	t.Run("Delete Task", testTaskStoreDelete)
 	t.Run("Delete All Tasks", testTaskStoreDeleteAll)
+	t.Run("Update/Delete NotFound", TestSQLiteTaskStore_UpdateDelete_NotFound)
 }
 
 func testTaskStoreReadEmpty(t *testing.T) {
@@ -162,6 +163,34 @@ func testTaskStoreDeleteAll(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Errorf("DeleteAll failed, remaining tasks: %d", len(tasks))
 	}
+}
+
+func TestSQLiteTaskStore_UpdateDelete_NotFound(t *testing.T) {
+	t.Parallel()
+	db := setupSQLite(t)
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	// Append one real task so the store is non-empty
+	now := time.Now().Truncate(time.Millisecond)
+	task := ports.Task{ID: 1, Content: "real", Status: "pending", CreatedAt: now}
+	require.NoError(t, store.Append(ctx, task))
+
+	// Update non-existent ID
+	err := store.Update(ctx, 999, ports.Task{ID: 999, Content: "ghost", Status: "completed"})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ports.ErrTaskNotFound), "expected ErrTaskNotFound, got %v", err)
+
+	// Delete non-existent ID
+	err = store.Delete(ctx, 999)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ports.ErrTaskNotFound), "expected ErrTaskNotFound, got %v", err)
+
+	// Verify real data untouched
+	tasks, err := store.ReadAll(ctx)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "real", tasks[0].Content)
 }
 
 func TestStoreErrors(t *testing.T) {
