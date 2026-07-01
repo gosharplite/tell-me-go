@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -276,7 +277,7 @@ func TestMemoryListStore_GetID_NonStruct(t *testing.T) {
 }
 
 // =============================================================================
-// Update with non-existent ID — no-op, returns nil
+// Update with non-existent ID — returns ErrTaskNotFound
 // =============================================================================
 
 func TestMemoryListStore_Update_NotFound(t *testing.T) {
@@ -288,8 +289,10 @@ func TestMemoryListStore_Update_NotFound(t *testing.T) {
 	_ = store.Append(ctx, ports.Task{ID: 1, Content: "existing"})
 
 	err := store.Update(ctx, 999, ports.Task{ID: 999, Content: "not found"})
-	if err != nil {
-		t.Errorf("Update for non-existent ID should not error, got: %v", err)
+	if err == nil {
+		t.Error("Update for non-existent ID should return an error")
+	} else if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("expected ErrTaskNotFound, got: %v", err)
 	}
 
 	// Verify existing data is unchanged
@@ -300,7 +303,7 @@ func TestMemoryListStore_Update_NotFound(t *testing.T) {
 }
 
 // =============================================================================
-// Delete with non-existent ID — no-op, returns nil
+// Delete with non-existent ID — returns ErrTaskNotFound
 // =============================================================================
 
 func TestMemoryListStore_Delete_NotFound(t *testing.T) {
@@ -311,8 +314,10 @@ func TestMemoryListStore_Delete_NotFound(t *testing.T) {
 	_ = store.Append(ctx, ports.Task{ID: 1, Content: "existing"})
 
 	err := store.Delete(ctx, 999)
-	if err != nil {
-		t.Errorf("Delete for non-existent ID should not error, got: %v", err)
+	if err == nil {
+		t.Error("Delete for non-existent ID should return an error")
+	} else if !errors.Is(err, ports.ErrTaskNotFound) {
+		t.Errorf("expected ErrTaskNotFound, got: %v", err)
 	}
 
 	// Verify existing data is unchanged
