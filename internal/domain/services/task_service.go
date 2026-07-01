@@ -159,12 +159,7 @@ func (s *taskService) ListTasks(ctx context.Context, status string, limit, offse
 // CountTasks returns the total number of tasks matching the given status filter.
 // status="" returns the total count across all statuses.
 func (s *taskService) CountTasks(ctx context.Context, status string) (int, error) {
-	filter := ports.ListFilter{Status: status}
-	tasks, err := s.store.Query(ctx, filter, 0, 0)
-	if err != nil {
-		return 0, err
-	}
-	return len(tasks), nil
+	return s.store.Count(ctx, ports.ListFilter{Status: status})
 }
 
 // ClearTasks removes all tasks.

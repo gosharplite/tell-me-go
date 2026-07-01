@@ -114,11 +114,17 @@ func (m *mockListStore) Query(ctx context.Context, filter ports.ListFilter, limi
 	return applyTaskOffsetLimit(result, limit, offset), nil
 }
 
-func (m *mockListStore) Count(ctx context.Context) (int, error) {
+func (m *mockListStore) Count(ctx context.Context, filter ports.ListFilter) (int, error) {
 	if m.err != nil {
 		return 0, m.err
 	}
-	return len(m.tasks), nil
+	count := 0
+	for _, t := range m.tasks {
+		if taskMatchesFilter(t, filter) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 type mockMetadataProvider struct {
