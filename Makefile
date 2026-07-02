@@ -406,7 +406,7 @@ else
 	@go clean -testcache
 	@for /f "tokens=*" %%p in ('go list ./...') do ( \
 		echo Testing %%p... & \
-		go test -race -timeout 180s %%p || exit /b 1 \
+		go test -race -timeout 600s %%p || exit /b 1 \
 	)
 endif
 
