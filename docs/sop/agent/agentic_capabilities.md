@@ -42,7 +42,7 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
     - Map the `functionCall.name` to a local Go function.
     - Parse arguments based on the schema.
     - Execute the function and capture the output (success or error).
-    - **Context & Timeouts**: Tool execution MUST respect the parent `context.Context` (propagated from the CLI entry point). Apply a `context.WithTimeout` (default 30s) as a child context for non-interactive tools. Interactive tools (e.g., `ask_user`, `execute_command`) are exempt from timeouts but MUST still respect the parent context cancellation (e.g., on `SIGINT`).
+    - **Context & Timeouts**: Tool execution MUST respect the parent `context.Context` (propagated from the CLI entry point). Apply a `context.WithTimeout` (default 30s) as a child context for non-interactive tools. Interactive tools (e.g., `execute_command`) are exempt from timeouts but MUST still respect the parent context cancellation (e.g., on `SIGINT`).
 4.  **Update History**: 
     - **CRITICAL**: Append the model's full `Content` to history, including all `parts` (e.g., `thought`, `thoughtSignature`, `functionCall`). Stripping reasoning parts will cause subsequent API calls to fail on Vertex AI.
     - Append the execution results as a `functionResponse` inside a `Content` with **Role: `user`** (as required by the GenAI SDK).

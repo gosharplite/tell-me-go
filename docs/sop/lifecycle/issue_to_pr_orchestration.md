@@ -72,14 +72,13 @@ Find the Architect and Coder config files. Try these paths, in order:
 
 Stop at the first path that yields both config files.
 
-When you call ask_user for the issue number, include the resolved
+When you ask the user for the issue number, include the resolved
 config paths in the question so I can see and confirm them at a glance.
 ```
 
 This prompt is **self-discovering**: it does not require the user to
 hardcode config paths or the issue number. The orchestrator locates
-configs from the session environment and surfaces them in the `ask_user`
-prompt for easy review.
+configs from the session environment and surfaces them in the prompt to the user for easy review.
 
 ---
 
@@ -96,7 +95,7 @@ Save the output — you will need the issue body for the Architect prompt
 title for the branch name (1).
 
 > If `gh issue view` fails (wrong number, no access), **stop** and
-> report the error to the user with `ask_user`. Do not proceed.
+> report the error to the user by stopping and outputting the message. Do not proceed.
 
 ---
 
@@ -352,7 +351,7 @@ Repeat 3b → 3c for each task.
 **Escape hatch:** If the same task fails 3 consecutive times (Coder
 implements → Architect rejects → Coder re-implements → Architect
 rejects → Coder re-implements → Architect rejects), **stop** and
-escalate to the user with `ask_user`. Do not loop indefinitely.
+escalate to the user by stopping and outputting the question. Do not loop indefinitely.
 
 #### 3e. Cross-check completion against the issue
 
@@ -363,7 +362,7 @@ Cross-check the issue's acceptance criteria against what was implemented.
 2. **If no `- [ ]` checklist items exist**, treat the issue title and
    body description as the sole acceptance criterion — verify it maps
    to at least one changed file. If there is no clear criterion at
-   all, use `ask_user`: *"The issue has no explicit checklist. Here
+   all, stop and ask the user: *"The issue has no explicit checklist. Here
    is what was implemented: <summary>. Does this satisfy the
    requirements?"*
 3. Run `git diff dev --stat` to see all changed files.
@@ -514,7 +513,7 @@ gh pr create \
 | Coverage target not met | Remaining gaps → Architect for coverage plan → Coder (`--new`) for additional tests |
 | Coder times out or produces no output | Check `tell-me-go -t -c ${CODER_CONFIG} \| tail -5` for errors; re-send task with fresh `--new` session |
 | Architect times out or produces no output during Phase 2 dispatch | Check `tell-me-go -t -c ${ARCHITECT_CONFIG} \| tail -5` for errors; re-send the last prompt with same session (no `--new`); if it happens twice, restart Architect with `--new` and a summary of current state |
-| Same task fails 3 consecutive times | **Stop.** Escalate to user with `ask_user` — do not loop indefinitely |
+| Same task fails 3 consecutive times | **Stop.** Escalate to user: stop and output the question — do not loop indefinitely |
 | Architect appears to have forgotten context | Check `tell-me-go -t -c ${ARCHITECT_CONFIG} \| tail -5` for token consumption; if >80% of model limit, summarize progress and restart Architect with `--new` |
 | Architect token count exceeds ~80% of model limit (proactive check) | Assess: if near completion → finish the current task then proceed to Phase 3; if mid-implementation → summarize state, restart Architect with `--new`, continue |
 

@@ -55,7 +55,7 @@ This SOP defines the end-to-end process for reviewing a GitHub PR using two inde
 | **Coder(A)** | deepseek-pro | **Write** via `tell-me-go -r` (the only role with file write access) | Implementation: receives one focused fix task per session (`--new` each time), TDD, reports result. No memory of prior tasks. |
 | **Architect(B)** | vertex-pro | Read-only via `tell-me-go -r` | Independent second reviewer. Provides unbiased review from a different model. Flags issues architect(A) may have missed. Does **not** dispatch tasks — findings go to architect(A) for confirmation. |
 
-**Architect(B) findings must be confirmed by architect(A)** before any code change. If architect(A) disagrees with a finding, the Orchestrator must escalate to the human via `ask_user`. Architect(B) never instructs Coder directly.
+**Architect(B) findings must be confirmed by architect(A)** before any code change. If architect(A) disagrees with a finding, the Orchestrator must escalate to the human by stopping the tool loop and outputting the question directly. Architect(B) never instructs Coder directly.
 
 Communication is **asynchronous and turn-based**. The Orchestrator is the hub — no role talks directly to another.
 
@@ -87,7 +87,7 @@ Try these paths, in order:
 
 Stop at the first path that yields all three config files.
 
-When you call ask_user for the PR number, include the resolved
+When you ask the user for the PR number, include the resolved
 config paths in the question so I can see and confirm them at a glance.
 ```
 
@@ -280,7 +280,7 @@ Architect(A) responds with `TASK:`, `REVISION:`, or `DONE.`
 | Coder always `--new` | Self-contained tasks; no token bloat |
 | Architect(A) never `--new` during fixes | Must remember all prior fixes |
 | One task at a time | Architect reviews each result |
-| Same task fails 3x → escalate | Use `ask_user`; do not loop indefinitely |
+| Same task fails 3x → escalate | Stop and output the question to the user; do not loop indefinitely |
 | Architect(A) token >80% → restart | Summarize state, restart with `--new` |
 
 When Architect(A) declares `DONE.`, proceed to Phase 2.
@@ -397,7 +397,7 @@ tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG_A}
 | Architect(A) response | Action |
 |-----------------------|--------|
 | All CONFIRMED | Proceed to fix loop (3e) |
-| Any DISPUTED | **Escalate to human** via `ask_user` with both Architects' reasoning |
+| Any DISPUTED | **Escalate to human** by stopping the tool loop and outputting both Architects' reasoning |
 | Mixed | Fix CONFIRMED items; escalate DISPUTED items |
 
 #### 3e. Fix confirmed issues
@@ -453,7 +453,7 @@ gh pr view <number> --json comments,state
 | Architect(A) issues task too large | Ask Architect(A) to break it down before forwarding to Coder |
 | Coder produces incorrect output | Send to Architect(A) for review; Architect issues revision |
 | Coder hits unresolvable error | Send error to Architect(A) (no `--new`) for diagnosis |
-| Same task fails 3 consecutive times | **Stop.** Escalate to user with `ask_user` |
+| Same task fails 3 consecutive times | **Stop.** Escalate to user: stop and output the question |
 | Architect(A) token >80% | Summarize state, restart Architect(A) with `--new` |
 | Architect(B) finds gating issue, Architect(A) disputes | **Stop.** Escalate to user with both reasonings |
 | Architect(B) times out or errors | Retry once with fresh `--new`; if still fails, proceed with Architect(A) only and note in comments |
