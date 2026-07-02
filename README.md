@@ -25,6 +25,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
     *   **State & History**: Task tracking, `summarize_history`, `manage_history` (pinning/unpinning turns to protect them from pruning), and **Interactive History Browser** (`tell-me-go browse`) with full-text search and O(1) archive navigation.
     *   **Media**: Imagen 3 image generation and Vision analysis.
+    *   **Network**: Fetch and clean external documentation (`read_external_docs`) and execute custom HTTP requests (`http_request`) for API exploration.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
     *   **Runaway Protection**: Hallucination loop detection (SHA-256 response hashing), tool repetition guards, and recursion limits.
@@ -45,6 +46,8 @@ go install github.com/gosharplite/tell-me-go/cmd/tell-me-go@latest
 
 ## 💻 Usage
 Run the assistant by passing your prompt as an argument. By default, it uses `configs/assistant.yaml`.
+
+> **Note:** The `configs/` directory is not shipped with the repository. You must create `configs/assistant.yaml` before running the tool. Copy the example from the Configuration section below, or run the tool once to see the auto-discovery error message showing the expected path.
 
 **Basic Usage:**
 ```bash
@@ -164,7 +167,7 @@ PROVIDERS:
     MODEL: "claude-opus-4-7"
     URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/anthropic/models"
     API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
-    THINKING_BUDGET: 32768
+    THINKING_BUDGET: 32768       # Anthropic requires MAX_TOKENS > THINKING_BUDGET + 1024 or it silently bumps
   openai:
     TYPE: "openai"
     MODEL: "gpt-5.5"
@@ -177,25 +180,34 @@ PROVIDERS:
     MODEL: "claude-opus-4-7"
     URL: "https://api.anthropic.com/v1"
     API_KEY: "${ANTHROPIC_API_KEY}"
-    THINKING_BUDGET: 32768
+    THINKING_BUDGET: 32768       # Anthropic requires MAX_TOKENS > THINKING_BUDGET + 1024 or it silently bumps
+
+# --- Failover Chain ---
+# Ordered list of provider names from PROVIDERS above. The first reachable
+# provider handles the request; on failure, the next is tried automatically.
+# Leave empty or omit for single-provider operation (default).
+FAILOVER_ORDER: []
 
 # --- Tools & Features ---
 USE_SEARCH: false
 SHOW_THOUGHTS: false
 SHOW_TOOLS: true
+# Auto-launch interactive TUI prompt when no explicit action is requested (-l, -b, --retry, etc.).
+# Set to false or omit to require -i flag for TUI mode.
+USE_TUI_PROMPT: false
 
 # --- Global Timeouts & Streaming ---
 HTTP_TIMEOUT: 300
 
 # --- Concurrent Execution ---
 MAX_CONCURRENT_TOOLS: 5
-TOOL_TIMEOUT: 300
+TOOL_TIMEOUT: 300               # Default: 30
 
 # --- Safety & History ---
 # Set to true to disable all interactive security prompts (ideal for automated workflows)
 # BYPASS_CONFIRMATION: false
-MAX_TURNS: 1000
-MAX_HISTORY_TOKENS: 1000000
+MAX_TURNS: 1000                 # Default: 200
+MAX_HISTORY_TOKENS: 1000000     # Default: 120000
 
 # --- Model Overrides ---
 MODELS:
