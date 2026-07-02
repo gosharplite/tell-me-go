@@ -46,7 +46,7 @@ This SOP defines the automated workflow for publishing a new public release of t
         git push origin dev
         ```
         Then restart this SOP from Step 1.
-4.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `v1.1.0`).
+4.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Stop and ask the user to confirm the target version. Present the last release version and propose the next (e.g., `v1.1.0`).
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
