@@ -306,7 +306,6 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 	}
 
 	shell := newshellTool(sm, validator, translator, wrapper)
-	interaction := newinteractionTool(sm)
 	diagnostic := newDiagnosticTool(health)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -386,23 +385,6 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 			Required: []string{"commands", "reason"},
 		},
 	}, shell.PipeCommands, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "ask_user",
-		Description: "Asks the user a specific question to clarify requirements or request confirmation.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"question": {
-					Type:        "STRING",
-					Description: "The question to ask the user.",
-				},
-			},
-			Required: []string{"question"},
-		},
-	}, interaction.askUser, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
 		return err
 	}
 

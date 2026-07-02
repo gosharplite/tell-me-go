@@ -161,7 +161,6 @@ func DefaultPolicy() *Policy {
 			// Session & Management Tools
 			"get_session_info":         true,
 			"manage_tasks":             true,
-			"ask_user":                 true,
 			"bypass_confirmation":      true,
 			"revoke_bypass":            true,
 			"estimate_cost":            true,

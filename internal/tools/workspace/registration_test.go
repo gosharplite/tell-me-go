@@ -262,20 +262,6 @@ func TestRegisterSystem_PartialFailure(t *testing.T) {
 		}
 	})
 
-	t.Run("ask_user fails", func(t *testing.T) {
-		registry := &failingRegistry{
-			mockToolRegistry: &mockToolRegistry{},
-			failOnTool:       "ask_user",
-		}
-		err := registerSystem(registry, sm, validator, nil)
-		if err == nil {
-			t.Fatal("expected error from registerSystem")
-		}
-		if !strings.Contains(err.Error(), "injected failure") {
-			t.Errorf("expected 'injected failure', got %q", err.Error())
-		}
-	})
-
 	t.Run("check_system_health fails", func(t *testing.T) {
 		registry := &failingRegistry{
 			mockToolRegistry: &mockToolRegistry{},
@@ -449,7 +435,7 @@ func TestRegister_SystemToolsOnly(t *testing.T) {
 		t.Fatalf("registerSystem failed: %v", err)
 	}
 	decls := reg.GetDeclarations()
-	// Should have execute_command, pipe_commands, ask_user (and check_system_health NOT, since health is nil)
+	// Should have execute_command, pipe_commands (and check_system_health NOT, since health is nil)
 	found := make(map[string]bool)
 	for _, d := range decls {
 		found[d.Name] = true
@@ -504,7 +490,7 @@ func TestRegisterSystem_HealthNil(t *testing.T) {
 		names[d.Name] = true
 	}
 
-	required := []string{"execute_command", "pipe_commands", "ask_user"}
+	required := []string{"execute_command", "pipe_commands"}
 	for _, name := range required {
 		if !names[name] {
 			t.Errorf("expected tool %q to be registered", name)
