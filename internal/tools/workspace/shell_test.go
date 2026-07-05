@@ -16,6 +16,7 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
@@ -1447,5 +1448,122 @@ func TestShellTool_PrepareCommand_ValidateStructureError(t *testing.T) {
 	}
 	if parts != nil {
 		t.Errorf("expected nil parts on error, got %v", parts)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests wiring the REAL security.CommandValidator
+// ---------------------------------------------------------------------------
+
+// TestShellTool_BareLFExecutesBoth — Case 11b
+// Verifies that "echo a<LF>echo b" triggers auto-wrap via HasBareNewline
+// and both commands execute (no fusion, no truncation).
+func TestShellTool_BareLFExecutesBoth(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	// Use the REAL validator to exercise Normalize + HasBareNewline routing
+	v := security.NewCommandValidator(sm, nil)
+	tool := newTestShellTool(sm, v)
+	ctx := context.Background()
+
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"command": "echo a\necho b",
+		"reason":  "test bare lf routing",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Error != nil {
+		t.Fatalf("unexpected res.Error: %v", res.Error)
+	}
+
+	// Both "a" and "b" must appear in output (proving no fusion, no truncation)
+	if !strings.Contains(res.Text, "a") {
+		t.Errorf("expected output to contain 'a', got: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "b") {
+		t.Errorf("expected output to contain 'b', got: %s", res.Text)
+	}
+}
+
+// TestShellTool_SHcRouteRegression — Case 12
+// Verifies that "echo a > f<LF>echo b >> f" routes through Wrap and executes
+// correctly. Heredocs must remain functional.
+func TestShellTool_SHcRouteRegression(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	v := security.NewCommandValidator(sm, nil)
+	tool := newTestShellTool(sm, v)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "out.txt")
+
+	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		"command": fmt.Sprintf("echo a > %s\necho b >> %s", outFile, outFile),
+		"reason":  "test sh -c route regression",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Error != nil {
+		t.Fatalf("unexpected res.Error: %v", res.Error)
+	}
+
+	// Verify the output file was written with both lines
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "a") {
+		t.Errorf("expected output file to contain 'a', got: %s", content)
+	}
+	if !strings.Contains(content, "b") {
+		t.Errorf("expected output file to contain 'b', got: %s", content)
+	}
+}
+
+// TestShellTool_EndToEndSplitBrain — Case 13
+// Wires the real validator and executes the original #1186 reproduction with
+// line continuations. Asserts clean argv and that IsSafe's rejection reason
+// is never "newlines are not allowed".
+func TestShellTool_EndToEndSplitBrain(t *testing.T) {
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	v := security.NewCommandValidator(sm, nil)
+	tool := newTestShellTool(sm, v)
+
+	helperSlash := filepath.ToSlash(helperPath)
+
+	// Original #1186 reproduction: continuation-formatted command
+	// Using the test helper to print text after a continuation
+	cmd := fmt.Sprintf("%s echo hello\\\nworld", helperSlash)
+	parts, err := tool.prepareCommand(cmd)
+	if err != nil {
+		t.Fatalf("prepareCommand failed: %v", err)
+	}
+
+	// Must produce clean argv: ["helper", "echo", "helloworld"]
+	if len(parts) < 3 {
+		t.Fatalf("expected at least 3 parts, got %d: %v", len(parts), parts)
+	}
+	// The last argument should be "helloworld" (mid-token continuation collapsed)
+	lastArg := parts[len(parts)-1]
+	if lastArg != "helloworld" {
+		t.Errorf("expected last arg to be 'helloworld', got %q. Parts: %v", lastArg, parts)
+	}
+
+	// Verify IsSafe does NOT reject with "newlines are not allowed"
+	allowed, reason := v.IsSafe(cmd)
+	if !allowed {
+		// If rejected, the reason must NOT be about newlines
+		if strings.Contains(reason, "newlines are not allowed") {
+			t.Errorf("IsSafe rejected with 'newlines are not allowed' — split-brain detected. Reason: %s", reason)
+		}
+		// Other rejection reasons (not whitelisted, etc.) are acceptable
+		t.Logf("IsSafe rejected for acceptable reason: %s", reason)
 	}
 }

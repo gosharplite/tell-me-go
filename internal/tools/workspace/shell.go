@@ -150,6 +150,13 @@ func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []stri
 		return false
 	}
 
+	// 0. Bare newlines require PowerShell: cmd.exe /c does not treat embedded LF
+	// as a command separator; subsequent lines are silently dropped.
+	// PowerShell's -Command handles multi-statement newlines correctly.
+	if strings.Contains(command, "\n") {
+		return true
+	}
+
 	first := parts[0]
 
 	// 1. Check for common PowerShell aliases
@@ -513,14 +520,16 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 }
 
 func (t *shellTool) prepareCommand(command string) ([]string, error) {
-	parts, err := t.validator.Split(command)
+	norm := t.validator.Normalize(command)
+	parts, err := t.validator.Split(norm)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing command: %w", err)
 	}
 
 	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation, cmdlets)
-	if t.validator.HasShellFeatures(parts) {
-		parts = t.wrapper.Wrap(command, parts)
+	// or if residual bare newlines remain after normalization (which act as command separators under sh -c).
+	if t.validator.HasShellFeatures(parts) || t.validator.HasBareNewline(norm) {
+		parts = t.wrapper.Wrap(norm, parts)
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {

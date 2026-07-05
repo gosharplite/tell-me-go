@@ -20,6 +20,8 @@ type MockCommandValidator struct {
 	ValidateStructureFunc func(parts []string) error
 	CheckPathSafetyFunc   func(parts []string) (bool, string)
 	HasShellFeaturesFunc  func(parts []string) bool
+	NormalizeFunc         func(cmd string) string
+	HasBareNewlineFunc    func(normalized string) bool
 }
 
 func (m *MockCommandValidator) IsSafe(command string) (bool, string) {
@@ -64,6 +66,20 @@ func (m *MockCommandValidator) HasShellFeatures(parts []string) bool {
 			(len(p) > 1 && p[0] == '$') {
 			return true
 		}
+	}
+	return false
+}
+
+func (m *MockCommandValidator) Normalize(cmd string) string {
+	if m.NormalizeFunc != nil {
+		return m.NormalizeFunc(cmd)
+	}
+	return cmd
+}
+
+func (m *MockCommandValidator) HasBareNewline(normalized string) bool {
+	if m.HasBareNewlineFunc != nil {
+		return m.HasBareNewlineFunc(normalized)
 	}
 	return false
 }

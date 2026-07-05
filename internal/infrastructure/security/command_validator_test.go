@@ -750,3 +750,209 @@ func TestCommandValidator_GoTestPipeException(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		// 1. Standard Continuation: \<LF> collapsed
+		{
+			name:  "standard continuation",
+			input: "go test \\\n  -run TestFoo \\\n  ./...",
+			want:  "go test   -run TestFoo   ./...",
+		},
+		// 2. Mid-Token Continuation: foobar as single token
+		{
+			name:  "mid-token continuation",
+			input: "echo foo\\\nbar",
+			want:  "echo foobar",
+		},
+		// 3. Double-quoted: \<LF> collapsed
+		{
+			name:  "double-quoted continuation",
+			input: "echo \"a\\\nb\"",
+			want:  "echo \"ab\"",
+		},
+		// 4. Single-quoted: preserved byte-for-byte
+		{
+			name:  "single-quoted preserved",
+			input: "echo 'lit\\\neral'",
+			want:  "echo 'lit\\\neral'",
+		},
+		// 5. Escaped Backslash: literal backslash kept, bare LF remains
+		{
+			name:  "escaped backslash pass-through",
+			input: "echo a\\\\\nb",
+			want:  "echo a\\\\\nb",
+		},
+		// 6. CRLF Tolerance: \<CR><LF> collapsed
+		{
+			name:  "crlf tolerance",
+			input: "echo hello\\\r\nworld",
+			want:  "echo helloworld",
+		},
+		// 7. Issue #44 Interaction: Windows path + continuation
+		{
+			name:  "windows path with continuation",
+			input: "ls C:\\foo\\bar\\\n  baz",
+			want:  "ls C:\\foo\\bar  baz",
+		},
+		// 8. Trailing Backslash at EOF: passed through verbatim
+		{
+			name:  "trailing backslash at eof",
+			input: "echo a\\",
+			want:  "echo a\\",
+		},
+		// 10. Idempotency Property: Normalize(Normalize(s)) == Normalize(s)
+		{
+			name:  "idempotency already normalized",
+			input: "go test -run TestFoo ./...",
+			want:  "go test -run TestFoo ./...",
+		},
+		{
+			name:  "idempotency continuation collapsed",
+			input: "go\\\ntest",
+			want:  "gotest", // after first pass
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := normalize(tt.input)
+
+			// Idempotency: second pass must equal first pass
+			second := normalize(got)
+			if got != second {
+				t.Errorf("idempotency violated: normalize(%q) = %q, normalize(normalize(…)) = %q", tt.input, got, second)
+			}
+
+			if got != tt.want {
+				t.Errorf("normalize(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasBareNewline(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		normalized string
+		want       bool
+	}{
+		// 11. Bare LF triggers auto-wrap
+		{
+			name:       "bare lf between commands",
+			normalized: "echo a\necho b",
+			want:       true,
+		},
+		// Bare LF inside single quotes: not reported
+		{
+			name:       "lf inside single quotes",
+			normalized: "echo 'a\nb'",
+			want:       false,
+		},
+		// Bare LF inside double quotes: not reported
+		{
+			name:       "lf inside double quotes",
+			normalized: "echo \"a\nb\"",
+			want:       false,
+		},
+		// No bare LF
+		{
+			name:       "no bare lf",
+			normalized: "echo hello world",
+			want:       false,
+		},
+		// Backslash-escaped LF in unquoted context: skip, no bare LF
+		{
+			name:       "escaped lf not bare",
+			normalized: "echo a\\\nb",
+			want:       false,
+		},
+		// 5 follow-up: escaped backslash + bare LF
+		{
+			name:       "escaped backslash bare lf",
+			normalized: "echo a\\\\\nb",
+			want:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := hasBareNewline(tt.normalized)
+			if got != tt.want {
+				t.Errorf("hasBareNewline(%q) = %v, want %v", tt.normalized, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSafe_AutoApprovalContinuation(t *testing.T) {
+	t.Parallel()
+	sm := NewSecurityManager(nil)
+	v := NewCommandValidator(sm, nil)
+
+	// 14. Auto-Approval Regression Guard:
+	// Whitelisted continuation-formatted command must pass IsSafe.
+	cmd := "go test \\\n  -run TestFoo \\\n  ./..."
+	allowed, reason := v.IsSafe(cmd)
+	if !allowed {
+		t.Errorf("IsSafe(%q) unexpectedly rejected: %s", cmd, reason)
+	}
+	if reason != "" {
+		t.Errorf("expected empty reason for safe command, got: %s", reason)
+	}
+}
+
+func TestSplit_PipelineContinuationSegment(t *testing.T) {
+	t.Parallel()
+	v := NewCommandValidator(nil, nil)
+
+	// 15. Pipeline Path Guard:
+	// Continuation-formatted segment through Split → clean argv.
+	tests := []struct {
+		name string
+		cmd  string
+		want []string
+	}{
+		{
+			name: "continuation in first pipe segment",
+			cmd:  "echo hello\\\nworld",
+			want: []string{"echo", "helloworld"},
+		},
+		{
+			name: "continuation in second pipe segment",
+			cmd:  "grep foo\\\nbar",
+			want: []string{"grep", "foobar"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			parts, err := v.Split(tt.cmd)
+			if err != nil {
+				t.Fatalf("Split(%q) unexpected error: %v", tt.cmd, err)
+			}
+			if len(parts) != len(tt.want) {
+				t.Fatalf("Split(%q) = %v (len=%d), want %v (len=%d)", tt.cmd, parts, len(parts), tt.want, len(tt.want))
+			}
+			for i := range tt.want {
+				if parts[i] != tt.want[i] {
+					t.Errorf("Split(%q)[%d] = %q, want %q", tt.cmd, i, parts[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
