@@ -10,11 +10,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
 )
@@ -59,14 +58,11 @@ func (e *processExecutor) newPipelineCmd(ctx context.Context, parts []string, in
 	}
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
-	if runtime.GOOS == "windows" {
-		cmd.Cancel = func() error {
-			if cmd.Process == nil {
-				return nil
-			}
-			return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
-		}
-	}
+	// Apply platform-specific process group and cancellation (tree killing)
+	configureProcAttrs(cmd)
+
+	// Ensure pipes are forcefully closed if processes fail to exit gracefully after cancellation
+	cmd.WaitDelay = 2 * time.Second
 
 	if len(config.Env) > 0 {
 		env := os.Environ()

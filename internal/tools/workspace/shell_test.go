@@ -124,7 +124,7 @@ func verifyTruncationResult(t *testing.T, res tools.ToolResult, expected, forbid
 			t.Fatalf("unexpected output format: %q", res.Text)
 		}
 		actual := strings.TrimPrefix(res.Text, prefix)
-		actual = strings.TrimSuffix(actual, "\n... (truncated)")
+		actual = strings.TrimSuffix(actual, "\n... (truncated) - use output_file parameter to capture full output")
 		if actual != exactMatch {
 			t.Errorf("expected exact match %q, got %q", exactMatch, actual)
 		}
