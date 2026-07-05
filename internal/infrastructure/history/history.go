@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -21,6 +20,7 @@ import (
 type Manager struct {
 	mu       sync.RWMutex
 	store    store
+	logger   ports.Logger
 	FilePath string
 	Contents []*llm.Content
 }
@@ -29,9 +29,18 @@ type Manager struct {
 func NewManager(fs persistence.FileSystem, filePath string, archivePath string) *Manager {
 	return &Manager{
 		store:    newJSONLStore(fs, filePath, archivePath),
+		logger:   &ports.NoOpLogger{},
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}
+}
+
+// WithLogger sets the logger for the Manager.
+func (m *Manager) WithLogger(l ports.Logger) *Manager {
+	if l != nil {
+		m.logger = l
+	}
+	return m
 }
 
 // setStore allows injecting a custom store.
@@ -75,7 +84,7 @@ func (m *Manager) Load(ctx context.Context) error {
 	}
 	if backfillCount > 0 {
 		if saveErr := m.store.Save(ctx, m.Contents); saveErr != nil {
-			slog.WarnContext(ctx, "failed to persist backfilled UUIDs; continuing with in-memory IDs", "error", saveErr)
+			m.logger.Warn("failed to persist backfilled UUIDs; continuing with in-memory IDs", "error", saveErr)
 		}
 	}
 

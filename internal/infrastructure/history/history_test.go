@@ -945,3 +945,67 @@ func TestLoad_BackfillsMissingUUIDs(t *testing.T) {
 		}
 	}
 }
+
+type mockLoadRealSaveFailing struct {
+	realStore store
+	err       error
+}
+
+func (m *mockLoadRealSaveFailing) Load(ctx context.Context) ([]*llm.Content, error) {
+	return m.realStore.Load(ctx)
+}
+
+func (m *mockLoadRealSaveFailing) Save(ctx context.Context, contents []*llm.Content) error {
+	return m.err
+}
+
+func (m *mockLoadRealSaveFailing) Append(ctx context.Context, c []*llm.Content) error { return nil }
+func (m *mockLoadRealSaveFailing) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	return nil
+}
+func (m *mockLoadRealSaveFailing) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
+	return nil
+}
+func (m *mockLoadRealSaveFailing) Sync(ctx context.Context) error    { return nil }
+func (m *mockLoadRealSaveFailing) Compact(ctx context.Context) error { return nil }
+func (m *mockLoadRealSaveFailing) Archive(ctx context.Context, c []*llm.Content) error { return nil }
+func (m *mockLoadRealSaveFailing) FilePath() string                  { return "" }
+
+func TestLoad_BackfillSaveFailure_GracefulDegradation(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
+	ctx := context.Background()
+
+	m1 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	legacyContents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}, Pinned: true},
+		{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}},
+	}
+
+	if err := m1.SetContents(ctx, legacyContents); err != nil {
+		t.Fatalf("SetContents (legacy) failed: %v", err)
+	}
+
+	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	m2.setStore(&mockLoadRealSaveFailing{
+		realStore: m2.store,
+		err:       errors.New("simulated save error on read-only FS"),
+	})
+
+	err := m2.Load(ctx)
+	if err != nil {
+		t.Fatalf("expected graceful degradation, but Load returned error: %v", err)
+	}
+
+	if len(m2.Contents) != 2 {
+		t.Fatalf("expected 2 entries in memory, got %d", len(m2.Contents))
+	}
+
+	for i, c := range m2.Contents {
+		if c.ID == "" {
+			t.Errorf("expected Content[%d] to have ID assigned in memory despite save failure", i)
+		}
+	}
+}

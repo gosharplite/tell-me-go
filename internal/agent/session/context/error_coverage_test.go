@@ -496,3 +496,39 @@ func TestCheckWindowSize_EndIdxZero(t *testing.T) {
 	require.Equal(t, 0, endIdx)
 	require.NoError(t, err)
 }
+
+func TestValidateSummarizationSubset_DetectsPinMutation(t *testing.T) {
+	cm := &Manager{}
+	ctx := context.Background()
+
+	current := []*llm.Content{
+		{Role: "user", ID: "id-1", Pinned: false, Parts: []*llm.Part{{Text: "u"}}},
+		{Role: "model", ID: "id-2", Pinned: false, Parts: []*llm.Part{{Text: "m"}}},
+	}
+
+	subset := []*llm.Content{
+		{Role: "user", ID: "id-1", Pinned: false, Parts: []*llm.Part{{Text: "u"}}},
+		{Role: "model", ID: "id-2", Pinned: false, Parts: []*llm.Part{{Text: "m"}}},
+	}
+
+	// Baseline: success
+	err := cm.validateSummarizationSubset(ctx, current, subset, 0)
+	require.NoError(t, err)
+
+	// Mutation 1: ID changed (e.g. somehow replaced)
+	current[0].ID = "id-changed"
+	err = cm.validateSummarizationSubset(ctx, current, subset, 0)
+	require.Error(t, err)
+	require.ErrorIs(t, err, llm.ErrTerminal)
+	require.Contains(t, err.Error(), "history content changed")
+
+	// Revert
+	current[0].ID = "id-1"
+
+	// Mutation 2: Pin state changed during summarization
+	current[1].Pinned = true
+	err = cm.validateSummarizationSubset(ctx, current, subset, 0)
+	require.Error(t, err)
+	require.ErrorIs(t, err, llm.ErrTerminal)
+	require.Contains(t, err.Error(), "history content changed")
+}
