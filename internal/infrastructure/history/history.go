@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -74,7 +75,7 @@ func (m *Manager) Load(ctx context.Context) error {
 	}
 	if backfillCount > 0 {
 		if saveErr := m.store.Save(ctx, m.Contents); saveErr != nil {
-			return fmt.Errorf("failed to persist backfilled UUIDs: %w", saveErr)
+			slog.WarnContext(ctx, "failed to persist backfilled UUIDs; continuing with in-memory IDs", "error", saveErr)
 		}
 	}
 

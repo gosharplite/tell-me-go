@@ -591,7 +591,10 @@ func (cm *Manager) validateSummarizationSubset(ctx context.Context, currentConte
 			}
 		}
 
-		if !llm.EqualContent(currentContents[startIdx+i], expected) {
+		curr := currentContents[startIdx+i]
+
+		// ADR-047: Explicitly check UUID and Pin state, as llm.EqualContent ignores them.
+		if curr.ID != expected.ID || curr.Pinned != expected.Pinned || !llm.EqualContent(curr, expected) {
 			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
 		}
 	}
