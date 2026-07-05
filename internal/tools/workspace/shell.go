@@ -121,7 +121,9 @@ func (p *posixShellWrapper) Wrap(command string, parts []string) []string {
 	return []string{"sh", "-c", command}
 }
 
-type windowsShellWrapper struct{}
+type windowsShellWrapper struct{
+	validator domain_security.CommandValidator
+}
 
 func (w *windowsShellWrapper) Wrap(command string, parts []string) []string {
 	// Windows-specific selection: Prefer PowerShell/pwsh for cmdlets or PS indicators.
@@ -153,7 +155,9 @@ func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []stri
 	// 0. Bare newlines require PowerShell: cmd.exe /c does not treat embedded LF
 	// as a command separator; subsequent lines are silently dropped.
 	// PowerShell's -Command handles multi-statement newlines correctly.
-	if strings.Contains(command, "\n") {
+	// Use the quote-aware validator to avoid false positives on safely quoted
+	// newlines (e.g. echo "a\nb" is a single command, not multi-statement).
+	if w.validator != nil && w.validator.HasBareNewline(command) {
 		return true
 	}
 
@@ -411,6 +415,13 @@ func (t *shellTool) isPipelineSafe(commands []string) bool {
 func (t *shellTool) splitPipeline(commands []string) ([][]string, error) {
 	pipedParts := make([][]string, len(commands))
 	for i, cmdStr := range commands {
+		// Reject bare newlines early: pipeline segments are contractually
+		// single commands; a bare newline would silently fuse into a
+		// multi-command injection under sh -c.
+		if t.validator.HasBareNewline(cmdStr) {
+			return nil, fmt.Errorf("invalid command at index %d: pipeline segment contains unquoted bare newline", i)
+		}
+
 		parts, err := t.validator.Split(cmdStr)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing command at index %d: %w", i, err)
@@ -520,16 +531,15 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 }
 
 func (t *shellTool) prepareCommand(command string) ([]string, error) {
-	norm := t.validator.Normalize(command)
-	parts, err := t.validator.Split(norm)
+	parts, err := t.validator.Split(command)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing command: %w", err)
 	}
 
 	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation, cmdlets)
 	// or if residual bare newlines remain after normalization (which act as command separators under sh -c).
-	if t.validator.HasShellFeatures(parts) || t.validator.HasBareNewline(norm) {
-		parts = t.wrapper.Wrap(norm, parts)
+	if t.validator.HasShellFeatures(parts) || t.validator.HasBareNewline(command) {
+		parts = t.wrapper.Wrap(command, parts)
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {

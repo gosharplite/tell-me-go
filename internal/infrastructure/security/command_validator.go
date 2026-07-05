@@ -38,7 +38,7 @@ func NewCommandValidator(sm domain.Manager, interactor domain.UserInteractor) do
 // IsSafe checks if a command is safe for auto-approval.
 // Returns (isSafe, reason if unsafe).
 func (v *commandValidator) IsSafe(command string) (bool, string) {
-	norm := v.Normalize(command)
+	norm := normalize(command)
 	parts, err := v.Split(norm)
 	if err != nil {
 		return false, fmt.Sprintf("failed to parse command: %v", err)
@@ -87,7 +87,7 @@ func (v *commandValidator) validateSubcommandSpecifics(parts []string) (bool, st
 
 // Split uses shlex to split a command string into arguments.
 func (v *commandValidator) Split(cmd string) ([]string, error) {
-	cmd = v.Normalize(cmd)
+	cmd = normalize(cmd)
 	parts, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("shlex split error: %w", err)
@@ -111,19 +111,13 @@ func (v *commandValidator) Split(cmd string) ([]string, error) {
 	return parts, nil
 }
 
-// Normalize applies POSIX line-continuation collapsing (\<LF> → delete)
-// to a command string. It is a pure filter that is idempotent and
-// quote-aware: single-quoted regions are preserved byte-for-byte.
-func (v *commandValidator) Normalize(cmd string) string {
-	return normalize(cmd)
-}
-
-// HasBareNewline reports whether the normalized command string contains
-// an unquoted bare newline that would act as a command separator under
+// HasBareNewline reports whether the command string contains an
+// unquoted bare newline that would act as a command separator under
 // sh -c. It is quote-aware: newlines inside single/double quotes are
-// legal argv bytes and are not reported.
-func (v *commandValidator) HasBareNewline(normalized string) bool {
-	return hasBareNewline(normalized)
+// legal argv bytes and are not reported. Normalization is applied
+// internally; callers pass the raw command string directly.
+func (v *commandValidator) HasBareNewline(cmd string) bool {
+	return hasBareNewline(normalize(cmd))
 }
 
 // isAlphanumeric reports whether b is an ASCII letter or digit.

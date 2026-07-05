@@ -28,22 +28,26 @@ func normalize(raw string) string {
 			inDouble = !inDouble
 			out.WriteByte(b)
 		} else if b == '\\' && !inSingle {
-			// First check if the backslash itself is escaped.
-			if i > 0 && raw[i-1] == '\\' {
-				out.WriteByte(b)
-				continue
-			}
 			// Line continuation: \<LF>
 			if i+1 < len(raw) && raw[i+1] == '\n' {
-				i++ // skip \n; for-loop i++ advances past it
+				i++ // skip \n
 				continue
 			}
 			// Line continuation: \<CR><LF>
 			if i+2 < len(raw) && raw[i+1] == '\r' && raw[i+2] == '\n' {
-				i += 2 // skip \r\n; for-loop i++ advances past them
+				i += 2 // skip \r\n
 				continue
 			}
+
+			// Not a continuation. Consume this backslash and the next
+			// character as an escaped pair so that subsequent characters
+			// are not mis-parsed (e.g. \\\n must not see the third
+			// backslash as escaping the newline).
 			out.WriteByte(b)
+			if i+1 < len(raw) {
+				out.WriteByte(raw[i+1])
+				i++ // Advance past the escaped character
+			}
 		} else {
 			out.WriteByte(b)
 		}

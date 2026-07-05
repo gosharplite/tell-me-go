@@ -84,7 +84,7 @@ func newTestShellTool(sm shellSecurity, validator domain_security.CommandValidat
 	var wrapper shellWrapper = &posixShellWrapper{}
 	if runtime.GOOS == "windows" {
 		translator = &windowsTranslator{}
-		wrapper = &windowsShellWrapper{}
+		wrapper = &windowsShellWrapper{validator: validator}
 	}
 	return newshellTool(sm, validator, translator, wrapper)
 }

@@ -61,19 +61,15 @@ type UserInteractor interface {
 type CommandValidator interface {
 	IsSafe(command string) (bool, string)
 
-	// Normalize applies POSIX line-continuation collapsing (\<LF> → delete)
-	// to a command string. It is a pure filter that is idempotent and
-	// quote-aware: single-quoted regions are preserved byte-for-byte.
-	Normalize(cmd string) string
-
 	Split(cmd string) ([]string, error)
 	ValidateStructure(parts []string) error
 	CheckPathSafety(parts []string) (bool, string)
 	HasShellFeatures(parts []string) bool
 
-	// HasBareNewline reports whether the normalized command string contains
-	// an unquoted bare newline that would act as a command separator under
+	// HasBareNewline reports whether the command string contains an
+	// unquoted bare newline that would act as a command separator under
 	// sh -c. It is quote-aware: newlines inside single/double quotes are
-	// legal argv bytes and are not reported.
-	HasBareNewline(normalized string) bool
+	// legal argv bytes and are not reported. Normalization is applied
+	// internally; callers pass the raw command string directly.
+	HasBareNewline(cmd string) bool
 }
