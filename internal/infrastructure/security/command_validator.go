@@ -370,7 +370,7 @@ func (v *commandValidator) isExplicitShell(token string) bool {
 }
 
 func (v *commandValidator) hasShellSpecialChars(token string) bool {
-	return v.safety.HasUnsafeInterpolation(token) || strings.ContainsAny(token, "*?[]")
+	return v.safety.HasUnsafeInterpolation(token) || strings.ContainsAny(token, "*?[]>&<|")
 }
 
 func (v *commandValidator) isComplexCommandToken(token string) bool {
