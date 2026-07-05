@@ -57,7 +57,7 @@ func (s *stubHistoryManager) AppendParts(_ stdctx.Context, _ int, _ []*llm.Part)
 func (s *stubHistoryManager) Save(_ stdctx.Context) error                              { return nil }
 func (s *stubHistoryManager) Sync(_ stdctx.Context) error                              { return nil }
 func (s *stubHistoryManager) Archive(_ stdctx.Context, _ []*llm.Content) error         { return nil }
-func (s *stubHistoryManager) SetPinned(_ stdctx.Context, _ int, _ bool) error          { return nil }
+func (s *stubHistoryManager) SetPinned(_ stdctx.Context, _ string, _ bool) error       { return nil }
 func (s *stubHistoryManager) GetFilePath() string                                      { return "" }
 func (s *stubHistoryManager) RollbackTurns(_ stdctx.Context, _ int) (int, int, int, error) {
 	return 0, 0, 0, nil

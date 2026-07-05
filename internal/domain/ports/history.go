@@ -68,10 +68,10 @@ type HistoryModifier interface {
 	// via GetWindow but remains available through ArchiveReader.
 	Archive(ctx context.Context, contents []*llm.Content) error
 
-	// SetPinned marks or unmarks a specific turn as pinned. Pinned turns
-	// are exempt from automatic pruning and summarization. turnIndex
-	// refers to the turn number in active memory.
-	SetPinned(ctx context.Context, turnIndex int, pinned bool) error
+	// SetPinned marks or unmarks a specific turn as pinned by its stable
+	// UUID identifier. Pinned turns are exempt from automatic pruning
+	// and summarization. The turnID corresponds to llm.Content.ID.
+	SetPinned(ctx context.Context, turnID string, pinned bool) error
 
 	// GetFilePath returns the filesystem path to the active history file.
 	// This is primarily used for logging and diagnostic purposes.

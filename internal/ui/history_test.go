@@ -189,7 +189,7 @@ func (m *mockErrorHistoryReader) Sync(ctx context.Context) error { return nil }
 func (m *mockErrorHistoryReader) Archive(ctx context.Context, contents []*llm.Content) error {
 	return nil
 }
-func (m *mockErrorHistoryReader) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *mockErrorHistoryReader) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	return nil
 }
 func (m *mockErrorHistoryReader) GetFilePath() string { return "" }

@@ -101,9 +101,15 @@ func (m *mockHistoryManager) GetResolver() llm.AssetResolver {
 	return m.Resolver
 }
 
-func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *mockHistoryManager) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Parse turnID as integer for backward compatibility with index-based tests.
+	// Production code passes stable UUIDs; internal tests pass stringified indices.
+	var turnIndex int
+	if _, err := fmt.Sscanf(turnID, "%d", &turnIndex); err != nil {
+		return fmt.Errorf("invalid turn ID: %s", turnID)
+	}
 	startIdx := turnIndex * 2
 	if startIdx < 0 || startIdx+1 >= len(m.Contents) {
 		return fmt.Errorf("invalid turn index")

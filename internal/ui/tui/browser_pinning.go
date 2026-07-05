@@ -47,13 +47,12 @@ func (m *rootBrowserModel) getSystemOffset() int {
 	return 0
 }
 
-// getTurnIndex returns the 0-based turn number (pair of msgs) for a given DTO.
-func (m *rootBrowserModel) getTurnIndex(dto ports.HistoryViewDTO) int {
-	offset := m.getSystemOffset()
-	if dto.OriginalIndex < offset && dto.Role == "system" {
-		return -1
+// truncateID returns a short prefix of a UUID for display in error messages.
+func truncateID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
 	}
-	return (dto.OriginalIndex - offset) / 2
+	return id
 }
 
 // getTurnStartOriginalIndex returns the index of the first message in a turn (usually the 'user' msg).
@@ -67,50 +66,46 @@ func (m *rootBrowserModel) getTurnStartOriginalIndex(dto ports.HistoryViewDTO) i
 }
 
 func (m *rootBrowserModel) getPinningMetrics() (activeTurns int, pinnedTurns int) {
-	lastTurnIdx := -1
+	seen := make(map[string]bool)
 	for _, dto := range m.history {
-		if dto.IsArchived {
+		if dto.IsArchived || dto.ID == "" {
 			continue
 		}
-		turnIdx := m.getTurnIndex(dto)
-		if turnIdx < 0 {
+		if seen[dto.ID] {
 			continue
 		}
-		if turnIdx != lastTurnIdx {
-			activeTurns++
-			if dto.IsPinned {
-				pinnedTurns++
-			}
-			lastTurnIdx = turnIdx
+		seen[dto.ID] = true
+		activeTurns++
+		if dto.IsPinned {
+			pinnedTurns++
 		}
 	}
 	return activeTurns, pinnedTurns
 }
 
-func (m *rootBrowserModel) getTurnForPinning() (ports.HistoryViewDTO, int, bool) {
+func (m *rootBrowserModel) getTurnForPinning() (ports.HistoryViewDTO, bool) {
 	if m.selectedTurn == -1 || m.selectedTurn >= len(m.history) {
-		return ports.HistoryViewDTO{}, 0, false
+		return ports.HistoryViewDTO{}, false
 	}
 
 	dto := m.history[m.selectedTurn]
 	if dto.IsArchived {
-		return ports.HistoryViewDTO{}, 0, false
+		return ports.HistoryViewDTO{}, false
 	}
 
-	turnIdx := m.getTurnIndex(dto)
-	if turnIdx < 0 {
-		return ports.HistoryViewDTO{}, 0, false
+	if dto.ID == "" {
+		return ports.HistoryViewDTO{}, false
 	}
-	return dto, turnIdx, true
+	return dto, true
 }
 
 func (m *rootBrowserModel) togglePin() {
-	dto, turnIdx, ok := m.getTurnForPinning()
+	dto, ok := m.getTurnForPinning()
 	if !ok {
 		return
 	}
 
-	err := m.cmdService.SetPinned(context.Background(), turnIdx, !dto.IsPinned)
+	err := m.cmdService.SetPinned(context.Background(), dto.ID, !dto.IsPinned)
 	if err != nil {
 		m.err = err
 		return
@@ -151,7 +146,7 @@ func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
 
 	dto := m.history[m.selectedTurn]
 	if dto.IsArchived {
-		m.err = fmt.Errorf("cannot rollback: turn %d is archived and read-only", m.getTurnIndex(dto)+1)
+		m.err = fmt.Errorf("cannot rollback: turn %s is archived and read-only", truncateID(dto.ID))
 		return nil
 	}
 

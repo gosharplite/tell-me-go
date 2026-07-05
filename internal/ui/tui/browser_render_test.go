@@ -177,18 +177,18 @@ func TestBrowserModel_Footer(t *testing.T) {
 
 	// Test high pinning pressure (count of pinned turns > 5)
 	m.history = []ports.HistoryViewDTO{
-		{Role: "user", OriginalIndex: 0, IsPinned: true},
-		{Role: "assistant", OriginalIndex: 1, IsPinned: true},
-		{Role: "user", OriginalIndex: 2, IsPinned: true},
-		{Role: "assistant", OriginalIndex: 3, IsPinned: true},
-		{Role: "user", OriginalIndex: 4, IsPinned: true},
-		{Role: "assistant", OriginalIndex: 5, IsPinned: true},
-		{Role: "user", OriginalIndex: 6, IsPinned: true},
-		{Role: "assistant", OriginalIndex: 7, IsPinned: true},
-		{Role: "user", OriginalIndex: 8, IsPinned: true},
-		{Role: "assistant", OriginalIndex: 9, IsPinned: true},
-		{Role: "user", OriginalIndex: 10, IsPinned: true},
-		{Role: "assistant", OriginalIndex: 11, IsPinned: true},
+		{ID: "t0", Role: "user", OriginalIndex: 0, IsPinned: true},
+		{ID: "t0", Role: "assistant", OriginalIndex: 1, IsPinned: true},
+		{ID: "t1", Role: "user", OriginalIndex: 2, IsPinned: true},
+		{ID: "t1", Role: "assistant", OriginalIndex: 3, IsPinned: true},
+		{ID: "t2", Role: "user", OriginalIndex: 4, IsPinned: true},
+		{ID: "t2", Role: "assistant", OriginalIndex: 5, IsPinned: true},
+		{ID: "t3", Role: "user", OriginalIndex: 6, IsPinned: true},
+		{ID: "t3", Role: "assistant", OriginalIndex: 7, IsPinned: true},
+		{ID: "t4", Role: "user", OriginalIndex: 8, IsPinned: true},
+		{ID: "t4", Role: "assistant", OriginalIndex: 9, IsPinned: true},
+		{ID: "t5", Role: "user", OriginalIndex: 10, IsPinned: true},
+		{ID: "t5", Role: "assistant", OriginalIndex: 11, IsPinned: true},
 	}
 	got = m.renderFooter()
 	if !strings.Contains(got, "High Pinning Pressure") {
@@ -576,10 +576,10 @@ func TestBrowserModel_GetTurnLabelSuffix_ArchivedAndSystem(t *testing.T) {
 		t.Errorf("expected empty suffix for archived DTO, got %q", got)
 	}
 
-	// System DTO (turnIdx < 0) returns ""
+	// System DTO returns " - 1" (getTurnLabelSuffix computes from OriginalIndex - offset)
 	systemDto := m.history[0]
-	if got := m.getTurnLabelSuffix(systemDto); got != "" {
-		t.Errorf("expected empty suffix for system DTO, got %q", got)
+	if got := m.getTurnLabelSuffix(systemDto); got != " - 1" {
+		t.Errorf("expected ' - 1' for system DTO, got %q", got)
 	}
 }
 
@@ -615,12 +615,12 @@ func TestBrowserModel_RenderEmptyState_NoHistory(t *testing.T) {
 func TestBrowserModel_HighPinningPressure_CalculateFooterHeight(t *testing.T) {
 	m := &rootBrowserModel{
 		history: []ports.HistoryViewDTO{
-			{Role: "user", OriginalIndex: 0, IsPinned: true},
-			{Role: "assistant", OriginalIndex: 1, IsPinned: true},
-			{Role: "user", OriginalIndex: 2, IsPinned: true},
-			{Role: "assistant", OriginalIndex: 3, IsPinned: true},
-			{Role: "user", OriginalIndex: 4, IsPinned: true},
-			{Role: "assistant", OriginalIndex: 5, IsPinned: true},
+			{ID: "t0", Role: "user", OriginalIndex: 0, IsPinned: true},
+			{ID: "t0", Role: "assistant", OriginalIndex: 1, IsPinned: true},
+			{ID: "t1", Role: "user", OriginalIndex: 2, IsPinned: true},
+			{ID: "t1", Role: "assistant", OriginalIndex: 3, IsPinned: true},
+			{ID: "t2", Role: "user", OriginalIndex: 4, IsPinned: true},
+			{ID: "t2", Role: "assistant", OriginalIndex: 5, IsPinned: true},
 		},
 	}
 	h := m.calculateFooterHeight()

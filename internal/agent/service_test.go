@@ -517,7 +517,7 @@ func (m *mockHistoryManagerForRetry) Save(ctx context.Context) error { return ni
 func (m *mockHistoryManagerForRetry) Archive(ctx context.Context, contents []*llm.Content) error {
 	return nil
 }
-func (m *mockHistoryManagerForRetry) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *mockHistoryManagerForRetry) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	return nil
 }
 func (m *mockHistoryManagerForRetry) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {

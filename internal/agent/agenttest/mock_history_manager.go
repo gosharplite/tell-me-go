@@ -105,7 +105,7 @@ func (m *MockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 }
 
 func (m *MockHistoryManager) GetResolver() llm.AssetResolver { return m.resolver }
-func (m *MockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *MockHistoryManager) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	return nil
 }
 func (m *MockHistoryManager) Save(ctx context.Context) error { return nil }

@@ -398,10 +398,12 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 
 	sumUser := &llm.Content{
 		Role:  "user",
+		ID:    llm.NewID(),
 		Parts: []*llm.Part{{Text: "system auto-summary (context limit reached):\n\n" + summary}},
 	}
 	sumModel := &llm.Content{
 		Role:  "model",
+		ID:    llm.NewID(),
 		Parts: []*llm.Part{{Text: "understood: context compressed"}},
 	}
 

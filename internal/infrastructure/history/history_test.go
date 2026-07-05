@@ -207,9 +207,13 @@ func TestHistoryManager_SetPinned_WithSystemMessage(t *testing.T) {
 	_ = m.addEntry(ctx, "user", "U1")
 	_ = m.addEntry(ctx, "model", "M1")
 
+	// Get the ID of the user message (turn 0, message at index 1)
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	turnID := contents[1].ID
+
 	t.Run("Pin", func(t *testing.T) {
-		if err := m.SetPinned(ctx, 0, true); err != nil {
-			t.Fatalf("SetPinned(0, true) failed: %v", err)
+		if err := m.SetPinned(ctx, turnID, true); err != nil {
+			t.Fatalf("SetPinned(%s, true) failed: %v", turnID, err)
 		}
 
 		contents, _ := m.GetWindow(ctx, 0, -1)
@@ -225,8 +229,8 @@ func TestHistoryManager_SetPinned_WithSystemMessage(t *testing.T) {
 	})
 
 	t.Run("Unpin", func(t *testing.T) {
-		if err := m.SetPinned(ctx, 0, false); err != nil {
-			t.Fatalf("SetPinned(0, false) failed: %v", err)
+		if err := m.SetPinned(ctx, turnID, false); err != nil {
+			t.Fatalf("SetPinned(%s, false) failed: %v", turnID, err)
 		}
 
 		contents, _ := m.GetWindow(ctx, 0, -1)
@@ -249,11 +253,15 @@ func TestHistoryManager_PinValidTurn(t *testing.T) {
 	_ = m.addEntry(ctx, "user", "U2")
 	_ = m.addEntry(ctx, "model", "M2")
 
-	if err := m.SetPinned(ctx, 0, true); err != nil {
-		t.Fatalf("SetPinned(0, true) failed: %v", err)
+	// Get the ID of the first user message (turn 0)
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	turnID := contents[0].ID
+
+	if err := m.SetPinned(ctx, turnID, true); err != nil {
+		t.Fatalf("SetPinned(%s, true) failed: %v", turnID, err)
 	}
 
-	contents, _ := m.GetWindow(ctx, 0, -1)
+	contents, _ = m.GetWindow(ctx, 0, -1)
 	if !contents[0].Pinned || !contents[1].Pinned {
 		t.Error("Turn 0 (messages 0 and 1) should be pinned")
 	}
@@ -272,14 +280,18 @@ func TestHistoryManager_UnpinTurn(t *testing.T) {
 	// Setup: 1 turn pinned
 	_ = m.addEntry(ctx, "user", "U1")
 	_ = m.addEntry(ctx, "model", "M1")
-	if err := m.SetPinned(ctx, 0, true); err != nil {
-		t.Fatalf("SetPinned(0, true) failed: %v", err)
+
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	turnID := contents[0].ID
+
+	if err := m.SetPinned(ctx, turnID, true); err != nil {
+		t.Fatalf("SetPinned(%s, true) failed: %v", turnID, err)
 	}
 
-	if err := m.SetPinned(ctx, 0, false); err != nil {
-		t.Fatalf("SetPinned(0, false) failed: %v", err)
+	if err := m.SetPinned(ctx, turnID, false); err != nil {
+		t.Fatalf("SetPinned(%s, false) failed: %v", turnID, err)
 	}
-	contents, _ := m.GetWindow(ctx, 0, -1)
+	contents, _ = m.GetWindow(ctx, 0, -1)
 	if contents[0].Pinned || contents[1].Pinned {
 		t.Error("Turn 0 should be unpinned")
 	}
@@ -341,18 +353,21 @@ func TestHistoryManager_SetPinned_Error(t *testing.T) {
 	_ = m.addEntry(ctx, "user", "U1")
 	_ = m.addEntry(ctx, "model", "M1")
 
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	turnID := contents[0].ID
+
 	expectedErr := errors.New("update failed")
 
 	// Test failure on first UpdateMetadata
 	m.setStore(&mockStoreErrorMetadata{err: expectedErr, failOnIndex: 0})
-	err := m.SetPinned(ctx, 0, true)
+	err := m.SetPinned(ctx, turnID, true)
 	if err == nil || err.Error() != expectedErr.Error() {
 		t.Errorf("expected error %v on first update, got %v", expectedErr, err)
 	}
 
 	// Test failure on second UpdateMetadata
 	m.setStore(&mockStoreErrorMetadata{err: expectedErr, failOnIndex: 1})
-	err = m.SetPinned(ctx, 0, true)
+	err = m.SetPinned(ctx, turnID, true)
 	if err == nil || err.Error() != expectedErr.Error() {
 		t.Errorf("expected error %v on second update, got %v", expectedErr, err)
 	}
@@ -366,14 +381,9 @@ func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
 	_ = m.addEntry(ctx, "user", "U1")
 	_ = m.addEntry(ctx, "model", "M1")
 
-	// Invalid index (negative)
-	if err := m.SetPinned(ctx, -1, true); err == nil {
-		t.Error("expected error for negative index, got nil")
-	}
-
-	// Invalid index (out of bounds)
-	if err := m.SetPinned(ctx, 1, true); err == nil {
-		t.Error("expected error for out of bounds index, got nil")
+	// Invalid ID (non-existent)
+	if err := m.SetPinned(ctx, "nonexistent-id", true); err == nil {
+		t.Error("expected error for non-existent ID, got nil")
 	}
 }
 
@@ -860,3 +870,78 @@ func (m *mockFailingAppendPartsStore) AppendParts(ctx context.Context, index int
 }
 
 func (m *mockFailingAppendPartsStore) Sync(ctx context.Context) error { return nil }
+
+func TestLoad_BackfillsMissingUUIDs(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
+	ctx := context.Background()
+
+	// Step 1: Write legacy content with no IDs to disk via SetContents.
+	m1 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	legacyContents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}, Pinned: true},
+		{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "How are you?"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "I'm fine"}}, Pinned: true},
+	}
+
+	if err := m1.SetContents(ctx, legacyContents); err != nil {
+		t.Fatalf("SetContents (legacy) failed: %v", err)
+	}
+
+	// Step 2: Load via a fresh Manager — backfill should trigger.
+	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	if err := m2.Load(ctx); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if m2.GetTotalEntries() != 4 {
+		t.Fatalf("expected 4 entries, got %d", m2.GetTotalEntries())
+	}
+
+	// Step 3: Verify all IDs populated and unique.
+	ids := make(map[string]bool)
+	for i, c := range m2.Contents {
+		if c.ID == "" {
+			t.Errorf("Content[%d] has empty ID after backfill", i)
+		}
+		if ids[c.ID] {
+			t.Errorf("Content[%d] has duplicate ID %q", i, c.ID)
+		}
+		ids[c.ID] = true
+	}
+
+	// Step 4: Verify pinned state preserved.
+	if !m2.Contents[0].Pinned {
+		t.Error("Content[0] pinned state not preserved: expected true")
+	}
+	if m2.Contents[1].Pinned {
+		t.Error("Content[1] should not be pinned")
+	}
+	if m2.Contents[2].Pinned {
+		t.Error("Content[2] should not be pinned")
+	}
+	if !m2.Contents[3].Pinned {
+		t.Error("Content[3] pinned state not preserved: expected true")
+	}
+
+	// Step 5: Record IDs and Load again to confirm stability.
+	firstIDs := make([]string, len(m2.Contents))
+	for i, c := range m2.Contents {
+		firstIDs[i] = c.ID
+	}
+
+	m3 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	if err := m3.Load(ctx); err != nil {
+		t.Fatalf("Second Load failed: %v", err)
+	}
+
+	for i, c := range m3.Contents {
+		if c.ID != firstIDs[i] {
+			t.Errorf("Content[%d] ID changed: was %q, now %q (IDs must be stable)",
+				i, firstIDs[i], c.ID)
+		}
+	}
+}

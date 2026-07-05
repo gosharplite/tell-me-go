@@ -155,7 +155,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 	cm := NewManager(NewStrategy(mockCounter), mockHistory, nil, nil)
 	cm.Summarizer = &agenttest.MockSummarizer{}
 
-	subset, _, _, err := cm.prepareSummarizationMetadata(ctx, 2)
+	subset, _, _, _, err := cm.prepareSummarizationMetadata(ctx, 2)
 	require.NoError(t, err)
 	require.NotNil(t, subset)
 	require.Equal(t, "", subset[0].Role, "Sabotage should have taken effect")

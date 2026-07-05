@@ -357,27 +357,30 @@ func TestAgent_PinningFlow(t *testing.T) {
 	})
 }
 
-func verifyPinAction(t *testing.T, it *session.InternalTools, h ports.HistoryManager, ctx context.Context, action string, index float64) {
+func verifyPinAction(t *testing.T, it *session.InternalTools, h ports.HistoryManager, ctx context.Context, action string, turnIndex int) {
 	t.Helper()
-	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": index}, nil)
+	// Get the turn's content ID before the operation
+	contents, _ := h.GetWindow(ctx, 0, -1)
+	turnID := contents[turnIndex*2].ID
+
+	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": float64(turnIndex)}, nil)
 	if err != nil {
 		t.Fatalf("ManageHistory failed: %v", err)
 	}
 
-	expectedMsg := fmt.Sprintf("turn %d has been successfully %sned", int(index), action)
+	expectedMsg := fmt.Sprintf("turn %s has been successfully %sned", turnID, action)
 	if resp.Text != expectedMsg {
 		t.Errorf("unexpected response: got %q, want %q", resp.Text, expectedMsg)
 	}
 
-	contents, _ := h.GetWindow(ctx, 0, -1)
+	contents, _ = h.GetWindow(ctx, 0, -1)
 	isPinned := (action == "pin")
-	idx := int(index)
 
-	if contents[2*idx].Pinned != isPinned || contents[2*idx+1].Pinned != isPinned {
-		t.Errorf("expected turn %d pinned status to be %v", idx, isPinned)
+	if contents[2*turnIndex].Pinned != isPinned || contents[2*turnIndex+1].Pinned != isPinned {
+		t.Errorf("expected turn %d pinned status to be %v", turnIndex, isPinned)
 	}
 
-	if action == "pin" && idx == 0 {
+	if action == "pin" && turnIndex == 0 {
 		if contents[2].Pinned || contents[3].Pinned {
 			t.Error("expected turn 1 to remain unpinned")
 		}
@@ -394,8 +397,8 @@ func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, co
 
 	// Add 2 turns
 	for i := 1; i <= 2; i++ {
-		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("t%d", i)}}})
-		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("r%d", i)}}})
+		_ = h.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("t%d", i)}}})
+		_ = h.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("r%d", i)}}})
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -425,8 +428,9 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	ctx := context.Background()
 	addTurns(ctx, h, 10)
 
-	// 2. Pin the 2nd turn (index 1)
-	_ = h.SetPinned(ctx, 1, true)
+	// 2. Pin the 2nd turn (index 1) — use the content ID of the user message at turn 1
+	contents, _ := h.GetWindow(ctx, 0, -1)
+	_ = h.SetPinned(ctx, contents[2].ID, true)
 
 	// 3. Set limits to only keep 3 turns
 	_ = a.SetLimits(ctx, 10, 100000, 3)
@@ -453,7 +457,14 @@ func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, contex
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	ctx := context.Background()
 
-	mockClient := &agenttest.MockLLMClient{}
+	mockClient := &agenttest.MockLLMClient{
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Hello! How can I help you?"}},
+			}, &llm.Metrics{PromptTokens: 10, ResponseTokens: 5}, nil
+		},
+	}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	a, err := agent.NewAgent(mockClient, bus, reg,
 		agent.WithHistoryManager(h),
@@ -470,8 +481,8 @@ func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, contex
 
 func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
 	for i := 0; i < count; i++ {
-		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("u%d", i)}}})
-		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("m%d", i)}}})
+		_ = h.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("u%d", i)}}})
+		_ = h.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("m%d", i)}}})
 	}
 }
 
