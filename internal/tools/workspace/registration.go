@@ -299,7 +299,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 	var wrapper shellWrapper
 	if runtime.GOOS == "windows" {
 		translator = &windowsTranslator{}
-		wrapper = &windowsShellWrapper{}
+		wrapper = &windowsShellWrapper{validator: validator}
 	} else {
 		translator = &posixTranslator{}
 		wrapper = &posixShellWrapper{}
