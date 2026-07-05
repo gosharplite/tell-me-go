@@ -985,6 +985,39 @@ func TestShellTool_SplitPipelineErrors(t *testing.T) {
 	})
 }
 
+// TestShellTool_PipeCommands_BareNewlineRejection verifies that PipeCommands
+// rejects pipeline segments containing bare unquoted newlines, preventing
+// multi-command injection via the pipeline boundary.
+func TestShellTool_PipeCommands_BareNewlineRejection(t *testing.T) {
+	t.Parallel()
+
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+
+	validator := &toolstest.MockCommandValidator{
+		HasBareNewlineFunc: func(cmd string) bool {
+			return strings.Contains(cmd, "\n")
+		},
+	}
+	tool := newTestShellTool(sm, validator)
+	ctx := context.Background()
+
+	res, err := tool.PipeCommands(ctx, map[string]interface{}{
+		"commands": []interface{}{"echo a", "echo b\necho c"},
+		"reason":   "test bare newline rejection in pipeline",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatal("expected res.Error from bare newline rejection")
+	}
+	if !strings.Contains(res.Error.Error(), "pipeline segment contains unquoted bare newline") {
+		t.Errorf("expected 'pipeline segment contains unquoted bare newline' in error, got: %v", res.Error)
+	}
+}
+
 func TestShellWrapper_Wrap(t *testing.T) {
 	posix := &posixShellWrapper{}
 	windows := &windowsShellWrapper{}

@@ -807,6 +807,14 @@ func TestNormalize(t *testing.T) {
 			input: "echo a\\",
 			want:  "echo a\\",
 		},
+		// 9. Odd consecutive backslashes (3) followed by LF:
+		//    first two form an escaped pair (\\ preserved), third + LF
+		//    is a line continuation (stripped).
+		{
+			name:  "odd consecutive backslashes (3) followed by lf",
+			input: "echo a\\\\\\\nb",
+			want:  "echo a\\\\b",
+		},
 		// 10. Idempotency Property: Normalize(Normalize(s)) == Normalize(s)
 		{
 			name:  "idempotency already normalized",
