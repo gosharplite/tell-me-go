@@ -285,6 +285,27 @@ func (v *commandValidator) validateGoTool(parts []string) error {
 	return nil
 }
 
+// isSafeGoTestPipe reports whether every '|' in a "go test" command appears
+// inside a -run or -bench flag value, making it a regex alternation rather
+// than a shell pipe operator.
+func (v *commandValidator) isSafeGoTestPipe(command string) bool {
+	parts, err := v.Split(command)
+	if err != nil {
+		return false
+	}
+	for i, part := range parts {
+		if !strings.Contains(part, "|") {
+			continue
+		}
+		isRunOrBenchFlag := strings.HasPrefix(part, "-run=") || strings.HasPrefix(part, "-bench=")
+		isFollowingFlag := i > 0 && (parts[i-1] == "-run" || parts[i-1] == "-bench")
+		if !isRunOrBenchFlag && !isFollowingFlag {
+			return false
+		}
+	}
+	return !strings.Contains(command, "||") && rawPipesAllQuoted(command)
+}
+
 func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 	// We are extremely strict here to prevent shell injection.
 	unsafeChars := []struct {
@@ -317,29 +338,9 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 					continue
 				}
 			}
-			// EXCEPTION: Allow | in 'go test' for regex like -run='TestFoo|TestBar'
-			if uc.char == "|" && strings.HasPrefix(command, "go test") {
-				parts, err := v.Split(command)
-				if err == nil {
-					safePipe := true
-					for i, part := range parts {
-						if strings.Contains(part, "|") {
-							// | is only safe if it's the value of -run=X or -bench=X
-							// or if it's the token immediately following -run or -bench
-							isRunOrBenchFlag := strings.HasPrefix(part, "-run=") || strings.HasPrefix(part, "-bench=")
-							isFollowingFlag := i > 0 && (parts[i-1] == "-run" || parts[i-1] == "-bench")
-
-							if !isRunOrBenchFlag && !isFollowingFlag {
-								safePipe = false
-								break
-							}
-						}
-					}
-					// Reject if any unsafe pipe is found or if there is a '||' anywhere
-					if safePipe && !strings.Contains(command, "||") && rawPipesAllQuoted(command) {
-						continue
-					}
-				}
+			// EXCEPTION: Allow | in 'go test' for regex alternation like -run='TestFoo|TestBar'
+			if uc.char == "|" && strings.HasPrefix(command, "go test") && v.isSafeGoTestPipe(command) {
+				continue
 			}
 			return false, uc.reason
 		}
@@ -347,29 +348,35 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 	return true, ""
 }
 
+// advanceQuoteState updates single/double quote tracking for the byte at raw[i],
+// handling backslash escaping. Returns the updated index and quote flags.
+func advanceQuoteState(raw string, i int, inS bool, inD bool) (int, bool, bool) {
+	switch raw[i] {
+	case '\\':
+		if !inS {
+			i++ // inside double quotes or unquoted: skip the escaped character
+		}
+	case '\'':
+		if !inD {
+			inS = !inS
+		}
+	case '"':
+		if !inS {
+			inD = !inD
+		}
+	}
+	return i, inS, inD
+}
+
 // rawPipesAllQuoted reports whether every '|' in raw occurs inside
 // a single- or double-quoted region (never a shell operator under sh -c).
 func rawPipesAllQuoted(raw string) bool {
 	inS, inD := false, false
 	for i := 0; i < len(raw); i++ {
-		switch raw[i] {
-		case '\\':
-			if !inS { // inside single quotes, backslash is literal in sh
-				i++ // skip the escaped char — it cannot open/close a quote
-			}
-		case '\'':
-			if !inD {
-				inS = !inS
-			}
-		case '"':
-			if !inS {
-				inD = !inD
-			}
-		case '|':
-			if !inS && !inD {
-				return false
-			}
+		if raw[i] == '|' && !inS && !inD {
+			return false
 		}
+		i, inS, inD = advanceQuoteState(raw, i, inS, inD)
 	}
 	return true
 }
