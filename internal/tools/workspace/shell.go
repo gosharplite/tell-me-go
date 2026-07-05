@@ -121,7 +121,7 @@ func (p *posixShellWrapper) Wrap(command string, parts []string) []string {
 	return []string{"sh", "-c", command}
 }
 
-type windowsShellWrapper struct{
+type windowsShellWrapper struct {
 	validator domain_security.CommandValidator
 }
 
