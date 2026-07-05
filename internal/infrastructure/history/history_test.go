@@ -966,10 +966,10 @@ func (m *mockLoadRealSaveFailing) AppendParts(ctx context.Context, index int, pa
 func (m *mockLoadRealSaveFailing) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
 	return nil
 }
-func (m *mockLoadRealSaveFailing) Sync(ctx context.Context) error    { return nil }
-func (m *mockLoadRealSaveFailing) Compact(ctx context.Context) error { return nil }
+func (m *mockLoadRealSaveFailing) Sync(ctx context.Context) error                      { return nil }
+func (m *mockLoadRealSaveFailing) Compact(ctx context.Context) error                   { return nil }
 func (m *mockLoadRealSaveFailing) Archive(ctx context.Context, c []*llm.Content) error { return nil }
-func (m *mockLoadRealSaveFailing) FilePath() string                  { return "" }
+func (m *mockLoadRealSaveFailing) FilePath() string                                    { return "" }
 
 func TestLoad_BackfillSaveFailure_GracefulDegradation(t *testing.T) {
 	tmpDir := t.TempDir()
