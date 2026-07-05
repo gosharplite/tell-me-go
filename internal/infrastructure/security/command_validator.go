@@ -317,10 +317,61 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 					continue
 				}
 			}
+			// EXCEPTION: Allow | in 'go test' for regex like -run='TestFoo|TestBar'
+			if uc.char == "|" && strings.HasPrefix(command, "go test") {
+				parts, err := v.Split(command)
+				if err == nil {
+					safePipe := true
+					for i, part := range parts {
+						if strings.Contains(part, "|") {
+							// | is only safe if it's the value of -run=X or -bench=X
+							// or if it's the token immediately following -run or -bench
+							isRunOrBenchFlag := strings.HasPrefix(part, "-run=") || strings.HasPrefix(part, "-bench=")
+							isFollowingFlag := i > 0 && (parts[i-1] == "-run" || parts[i-1] == "-bench")
+
+							if !isRunOrBenchFlag && !isFollowingFlag {
+								safePipe = false
+								break
+							}
+						}
+					}
+					// Reject if any unsafe pipe is found or if there is a '||' anywhere
+					if safePipe && !strings.Contains(command, "||") && rawPipesAllQuoted(command) {
+						continue
+					}
+				}
+			}
 			return false, uc.reason
 		}
 	}
 	return true, ""
+}
+
+// rawPipesAllQuoted reports whether every '|' in raw occurs inside
+// a single- or double-quoted region (never a shell operator under sh -c).
+func rawPipesAllQuoted(raw string) bool {
+	inS, inD := false, false
+	for i := 0; i < len(raw); i++ {
+		switch raw[i] {
+		case '\\':
+			if !inS { // inside single quotes, backslash is literal in sh
+				i++ // skip the escaped char — it cannot open/close a quote
+			}
+		case '\'':
+			if !inD {
+				inS = !inS
+			}
+		case '"':
+			if !inS {
+				inD = !inD
+			}
+		case '|':
+			if !inS && !inD {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // CheckPathSafety ensures all arguments stay within allowed boundaries.
@@ -370,7 +421,7 @@ func (v *commandValidator) isExplicitShell(token string) bool {
 }
 
 func (v *commandValidator) hasShellSpecialChars(token string) bool {
-	return v.safety.HasUnsafeInterpolation(token) || strings.ContainsAny(token, "*?[]")
+	return v.safety.HasUnsafeInterpolation(token) || strings.ContainsAny(token, "*?[]>&<|")
 }
 
 func (v *commandValidator) isComplexCommandToken(token string) bool {

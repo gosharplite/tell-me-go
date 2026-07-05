@@ -5,6 +5,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -248,19 +249,35 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	})
 
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return t.formatTimeoutResult(res, timeout), nil
+		}
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	return tools.ToolResult{Text: t.formatResult(res, false)}, nil
 }
 
+func quoteArg(arg string) string {
+	if arg == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(arg, " \t\n\r\"'|&;<>()$`\\*?[]#~=") {
+		return arg
+	}
+	return "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
+}
+
 func (t *shellTool) prepareExecutionParts(params executeParams) ([]string, string, error) {
 	if len(params.Args) > 0 {
 		parts := make([]string, len(params.Args))
+		displayParts := make([]string, len(params.Args))
 		for i, arg := range params.Args {
 			parts[i] = filepath.FromSlash(arg)
+			displayParts[i] = quoteArg(params.Args[i])
 		}
-		return t.translator.Translate(parts), strings.Join(params.Args, " "), nil
+
+		return t.translator.Translate(parts), strings.Join(displayParts, " "), nil
 	}
 
 	if params.Command == "" {
@@ -337,6 +354,9 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	})
 
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return t.formatTimeoutResult(res, timeout), nil
+		}
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
@@ -432,10 +452,21 @@ func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 	return res, err
 }
 
+func (t *shellTool) formatTimeoutResult(res executionResult, timeout int) tools.ToolResult {
+	text := fmt.Sprintf(
+		"Error: command timed out after %ds (tool-enforced limit; the process tree was terminated). "+
+			"If more time is needed, retry with a larger 'timeout' parameter (e.g., timeout: 120).",
+		timeout)
+	if res.Output != "" {
+		text += "\n\nPartial output before timeout:\n" + res.Output
+	}
+	return tools.ToolResult{Error: context.DeadlineExceeded, Text: text}
+}
+
 func (t *shellTool) formatResult(res executionResult, isPipeline bool) string {
 	output := res.Output
 	if res.Truncated {
-		output += "\n... (truncated)"
+		output += "\n... (truncated) - use output_file parameter to capture full output"
 	}
 	if isPipeline {
 		return fmt.Sprintf("Pipeline result. Exit Code: %d\n%s", res.ExitCode, output)

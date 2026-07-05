@@ -344,6 +344,11 @@ func TestCommandValidator_HasShellFeatures(t *testing.T) {
 		{"ls && echo hi", true},
 		{"ls | grep foo", true},
 		{"ls > out.txt", true},
+		{"ls /tmp 2>&1", true},
+		{"ls 2>/dev/null", true},
+		{"cat <input.txt", true},
+		{"echo hi|wc -l", true},
+		{"grep a>b file", true},
 		{"echo $HOME", true},
 		{"ls *.go", true},
 		{"ls;echo hi", true},
@@ -715,5 +720,33 @@ func TestValidateSinglePath_InteractorWarnFallback(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected Warns to contain '[Safety]', got: %v", mi.Warns)
+	}
+}
+
+func TestCommandValidator_GoTestPipeException(t *testing.T) {
+	v := NewCommandValidator(nil, nil)
+
+	tests := []struct {
+		cmd     string
+		allowed bool
+	}{
+		{"go test -run 'TestFoo|TestBar' ./...", true},
+		{"go test -run='TestFoo|TestBar' ./...", true},
+		{`go test -run "TestFoo|TestBar" ./...`, true},
+		{"go test -bench 'BenchFoo|BenchBar' ./...", true},
+		{"go test -run=TestFoo|TestBar ./...", false},
+		{"go test -run x || rm -rf .", false},
+		{"go test -run x | sh", false},
+		{"go test -bench . | xargs rm -rf", false},
+		{"go test -run=x|rm -rf .", false},
+		{"go test -run x|rm -rf .", false},
+		{`go test -run \"a| rm -rf . \"`, false},
+	}
+
+	for _, tt := range tests {
+		allowed, _ := v.IsSafe(tt.cmd)
+		if allowed != tt.allowed {
+			t.Errorf("IsSafe(%q): allowed=%v, got %v", tt.cmd, tt.allowed, allowed)
+		}
 	}
 }

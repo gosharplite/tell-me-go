@@ -12,10 +12,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -122,17 +122,11 @@ func (e *processExecutor) setupCommand(ctx context.Context, parts []string, conf
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
-	if runtime.GOOS == "windows" {
-		cmd.Cancel = func() error {
-			if cmd.Process == nil {
-				return nil
-			}
-			// /F = Forcefully terminate
-			// /T = Terminate child processes (the tree)
-			// /PID = Process ID
-			return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
-		}
-	}
+	// Apply platform-specific process group and cancellation (tree killing)
+	configureProcAttrs(cmd)
+
+	// Ensure pipes are forcefully closed if processes fail to exit gracefully after cancellation
+	cmd.WaitDelay = 2 * time.Second
 
 	if len(config.Env) > 0 {
 		env := os.Environ()
