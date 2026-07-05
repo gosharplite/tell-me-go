@@ -121,7 +121,9 @@ func (p *posixShellWrapper) Wrap(command string, parts []string) []string {
 	return []string{"sh", "-c", command}
 }
 
-type windowsShellWrapper struct{}
+type windowsShellWrapper struct{
+	validator domain_security.CommandValidator
+}
 
 func (w *windowsShellWrapper) Wrap(command string, parts []string) []string {
 	// Windows-specific selection: Prefer PowerShell/pwsh for cmdlets or PS indicators.
@@ -148,6 +150,15 @@ func (w *windowsShellWrapper) Wrap(command string, parts []string) []string {
 func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []string) bool {
 	if len(parts) == 0 {
 		return false
+	}
+
+	// 0. Bare newlines require PowerShell: cmd.exe /c does not treat embedded LF
+	// as a command separator; subsequent lines are silently dropped.
+	// PowerShell's -Command handles multi-statement newlines correctly.
+	// Use the quote-aware validator to avoid false positives on safely quoted
+	// newlines (e.g. echo "a\nb" is a single command, not multi-statement).
+	if w.validator != nil && w.validator.HasBareNewline(command) {
+		return true
 	}
 
 	first := parts[0]
@@ -220,7 +231,12 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	outputFile, approved, err := t.authorizeAndAudit(ctx, params, displayCmd)
+	// Build the actual executed command string for audit fidelity.
+	// When prepareCommand wraps the command (e.g. sh -c "..."), parts
+	// reflects what is actually executed.
+	executedCmdStr := strings.Join(parts, " ")
+
+	outputFile, approved, err := t.authorizeAndAudit(ctx, params, displayCmd, executedCmdStr)
 	if err != nil || !approved {
 		return t.handleAuthResult(approved, err, "command: "+displayCmd)
 	}
@@ -291,7 +307,7 @@ func (t *shellTool) prepareExecutionParts(params executeParams) ([]string, strin
 	return parts, params.Command, nil
 }
 
-func (t *shellTool) authorizeAndAudit(ctx context.Context, params executeParams, displayCommand string) (string, bool, error) {
+func (t *shellTool) authorizeAndAudit(ctx context.Context, params executeParams, displayCommand string, executedCommand string) (string, bool, error) {
 	outputFile, err := t.resolveOutputFile(params.OutputFile)
 	if err != nil {
 		return "", false, err
@@ -303,7 +319,7 @@ func (t *shellTool) authorizeAndAudit(ctx context.Context, params executeParams,
 		return outputFile, approved, err
 	}
 
-	t.auditExecution(displayCommand, params.Reason, params.OutputFile, params.Append)
+	t.auditExecution(displayCommand, executedCommand, params.Reason, params.OutputFile, params.Append)
 	return outputFile, true, nil
 }
 
@@ -404,6 +420,13 @@ func (t *shellTool) isPipelineSafe(commands []string) bool {
 func (t *shellTool) splitPipeline(commands []string) ([][]string, error) {
 	pipedParts := make([][]string, len(commands))
 	for i, cmdStr := range commands {
+		// Reject bare newlines early: pipeline segments are contractually
+		// single commands; a bare newline would silently fuse into a
+		// multi-command injection under sh -c.
+		if t.validator.HasBareNewline(cmdStr) {
+			return nil, fmt.Errorf("invalid command at index %d: pipeline segment contains unquoted bare newline", i)
+		}
+
 		parts, err := t.validator.Split(cmdStr)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing command at index %d: %w", i, err)
@@ -519,7 +542,8 @@ func (t *shellTool) prepareCommand(command string) ([]string, error) {
 	}
 
 	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation, cmdlets)
-	if t.validator.HasShellFeatures(parts) {
+	// or if residual bare newlines remain after normalization (which act as command separators under sh -c).
+	if t.validator.HasShellFeatures(parts) || t.validator.HasBareNewline(command) {
 		parts = t.wrapper.Wrap(command, parts)
 	}
 
@@ -552,10 +576,13 @@ func (t *shellTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 	}
 }
 
-func (t *shellTool) auditExecution(command, reason, outputFile string, isAppend bool) {
+func (t *shellTool) auditExecution(command, executedCommand, reason, outputFile string, isAppend bool) {
 	argsAudit := []any{
 		"REASON", reason,
 		"COMMAND", command,
+	}
+	if command != executedCommand {
+		argsAudit = append(argsAudit, "EXECUTED", executedCommand)
 	}
 	if outputFile != "" {
 		argsAudit = append(argsAudit, "OUTPUT_FILE", outputFile, "APPEND", isAppend)
