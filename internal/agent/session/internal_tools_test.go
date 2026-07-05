@@ -50,13 +50,19 @@ type setPinnedFailingHM struct {
 	err error
 }
 
-func (m *setPinnedFailingHM) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *setPinnedFailingHM) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	return m.err
 }
 
 func TestManageHistory_SetPinnedError(t *testing.T) {
+	baseHM := &agenttest.MockHistoryManager{}
+	baseHM.SetInternalContents([]*llm.Content{
+		{Role: "user", ID: "turn-0-user", Parts: []*llm.Part{{Text: "hello"}}},
+		{Role: "model", ID: "turn-0-model", Parts: []*llm.Part{{Text: "hi"}}},
+	})
+
 	failingHM := &setPinnedFailingHM{
-		HistoryManager: &failingHMBase{},
+		HistoryManager: baseHM,
 		err:            errors.New("set pinned failed"),
 	}
 
@@ -75,8 +81,14 @@ func TestManageHistory_SetPinnedError(t *testing.T) {
 }
 
 func TestManageHistory_SetPinnedError_Unpin(t *testing.T) {
+	baseHM := &agenttest.MockHistoryManager{}
+	baseHM.SetInternalContents([]*llm.Content{
+		{Role: "user", ID: "turn-1-user", Parts: []*llm.Part{{Text: "hello"}}},
+		{Role: "model", ID: "turn-1-model", Parts: []*llm.Part{{Text: "hi"}}},
+	})
+
 	failingHM := &setPinnedFailingHM{
-		HistoryManager: &failingHMBase{},
+		HistoryManager: baseHM,
 		err:            errors.New("set pinned failed"),
 	}
 
@@ -85,7 +97,7 @@ func TestManageHistory_SetPinnedError_Unpin(t *testing.T) {
 
 	args := map[string]interface{}{
 		"action": "unpin",
-		"index":  float64(1),
+		"index":  float64(0),
 	}
 
 	result, err := tools.ManageHistory(context.Background(), args, nil)
@@ -131,7 +143,7 @@ func (m *failingHMBase) AppendParts(ctx context.Context, i int, p []*llm.Part) e
 func (m *failingHMBase) Save(ctx context.Context) error                              { return nil }
 func (m *failingHMBase) Sync(ctx context.Context) error                              { return nil }
 func (m *failingHMBase) Archive(ctx context.Context, c []*llm.Content) error         { return nil }
-func (m *failingHMBase) SetPinned(ctx context.Context, i int, p bool) error          { return nil }
+func (m *failingHMBase) SetPinned(ctx context.Context, i string, p bool) error       { return nil }
 func (m *failingHMBase) GetFilePath() string                                         { return "" }
 func (m *failingHMBase) RollbackTurns(ctx context.Context, t int) (int, int, int, error) {
 	return 0, 0, 0, nil
@@ -357,21 +369,23 @@ func TestManageHistory_UnsupportedAction(t *testing.T) {
 }
 
 func TestManageHistory_OutOfBoundsIndex(t *testing.T) {
-	failingHM := &setPinnedFailingHM{
-		HistoryManager: &failingHMBase{},
-		err:            errors.New("index out of range"),
-	}
-	cm := &sessctx.Manager{History: failingHM}
+	baseHM := &agenttest.MockHistoryManager{}
+	baseHM.SetInternalContents([]*llm.Content{
+		{Role: "user", ID: "turn-0-user", Parts: []*llm.Part{{Text: "hello"}}},
+		{Role: "model", ID: "turn-0-model", Parts: []*llm.Part{{Text: "hi"}}},
+	})
+
+	cm := &sessctx.Manager{History: baseHM}
 	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	args := map[string]interface{}{
 		"action": "pin",
-		"index":  float64(99999),
+		"index":  float64(5),
 	}
 
 	result, err := it.ManageHistory(context.Background(), args, nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "index out of range")
+	require.Contains(t, err.Error(), "out of range")
 	require.Empty(t, result.Text)
 }
 
@@ -391,27 +405,36 @@ func TestManageHistory_UnmarshalArgsError(t *testing.T) {
 }
 
 func TestManageHistory_Success(t *testing.T) {
-	cm := &sessctx.Manager{History: &failingHMBase{}}
+	history := &agenttest.MockHistoryManager{}
+	history.SetInternalContents([]*llm.Content{
+		{Role: "system", ID: "sys-1", Parts: []*llm.Part{{Text: "system prompt"}}},
+		{Role: "user", ID: "turn-0-user", Parts: []*llm.Part{{Text: "hello"}}},
+		{Role: "model", ID: "turn-0-model", Parts: []*llm.Part{{Text: "hi"}}},
+		{Role: "user", ID: "turn-1-user", Parts: []*llm.Part{{Text: "how are you"}}},
+		{Role: "model", ID: "turn-1-model", Parts: []*llm.Part{{Text: "good"}}},
+	})
+
+	cm := &sessctx.Manager{History: history}
 	it := NewInternalTools(cm, &ports.NoOpLogger{})
 
 	t.Run("pin", func(t *testing.T) {
 		args := map[string]interface{}{
 			"action": "pin",
-			"index":  float64(2),
+			"index":  float64(1),
 		}
 		result, err := it.ManageHistory(context.Background(), args, nil)
 		require.NoError(t, err)
-		require.Contains(t, result.Text, "turn 2 has been successfully pinned")
+		require.Contains(t, result.Text, "turn turn-1-user has been successfully pinned")
 	})
 
 	t.Run("unpin", func(t *testing.T) {
 		args := map[string]interface{}{
 			"action": "unpin",
-			"index":  float64(3),
+			"index":  float64(0),
 		}
 		result, err := it.ManageHistory(context.Background(), args, nil)
 		require.NoError(t, err)
-		require.Contains(t, result.Text, "turn 3 has been successfully unpinned")
+		require.Contains(t, result.Text, "turn turn-0-user has been successfully unpinned")
 	})
 }
 

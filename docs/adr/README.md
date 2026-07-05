@@ -52,6 +52,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-044** | Token Counter Decomposition | 2026-01 | Accepted | [2026-01-token-counter-decomposition.md](2026-01-token-counter-decomposition.md) |
 | **ADR-045** | Single-Process Crew — Rejected | 2026-07 | Rejected | [2026-07-single-process-crew-rejected.md](2026-07-single-process-crew-rejected.md) |
 | **ADR-046** | Remove `ask_user` Tool — Turn Boundaries Replace Mid-Turn Prompts | 2026-07 | Accepted | [2026-07-remove-ask-user-tool.md](2026-07-remove-ask-user-tool.md) |
+| **ADR-047** | Stable Turn Identifiers via UUID | 2026-07 | Accepted | [2026-07-stable-turn-identifiers.md](2026-07-stable-turn-identifiers.md) |
 
 ## How to Create a New ADR
 

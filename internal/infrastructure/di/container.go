@@ -62,7 +62,7 @@ func NewBootstrapper(cfg BootstrapperConfig) *Bootstrapper {
 		cfg.RegisterAllTools, cfg.RegisterMetrics,
 	)
 	b.telemetryFactory = newTelemetryFactory(cfg.HomeDir, cfg.FileSystem, cfg.SM, cfg.Logger)
-	b.historyFactory = newHistoryFactory(cfg.HomeDir, cfg.FileSystem)
+	b.historyFactory = newHistoryFactory(cfg.HomeDir, cfg.FileSystem, cfg.Logger)
 	b.healthFactory = newHealthFactory()
 	b.uiFactory = newUIFactory(cfg.SM, cfg.Stdout, cfg.Stderr, cfg.Logger)
 	b.chatFactory = newChatFactory(cfg.HomeDir, cfg.Version, cfg.Stdout, cfg.Stderr, cfg.SM, cfg.FileSystem, b, b.uiFactory)

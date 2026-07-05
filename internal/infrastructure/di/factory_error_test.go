@@ -94,7 +94,7 @@ type mockHistoryManagerFull struct {
 	SaveFunc                func(ctx context.Context) error
 	SyncFunc                func(ctx context.Context) error
 	ArchiveFunc             func(ctx context.Context, contents []*llm.Content) error
-	SetPinnedFunc           func(ctx context.Context, turnIndex int, pinned bool) error
+	SetPinnedFunc           func(ctx context.Context, turnID string, pinned bool) error
 	GetFilePathFunc         func() string
 	RollbackTurnsFunc       func(ctx context.Context, turns int) (int, int, int, error)
 	getWindowCalls          int
@@ -192,10 +192,10 @@ func (m *mockHistoryManagerFull) Archive(ctx context.Context, contents []*llm.Co
 	return nil
 }
 
-func (m *mockHistoryManagerFull) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *mockHistoryManagerFull) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	m.setPinnedCalls++
 	if m.SetPinnedFunc != nil {
-		return m.SetPinnedFunc(ctx, turnIndex, pinned)
+		return m.SetPinnedFunc(ctx, turnID, pinned)
 	}
 	return nil
 }

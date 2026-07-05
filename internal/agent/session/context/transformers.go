@@ -252,6 +252,7 @@ func (t *HistoryRepairer) Transform(ctx context.Context, req *ports.ContextReque
 	if len(responses) > 0 {
 		req.History = append(req.History, &llm.Content{
 			Role:  "user",
+			ID:    llm.NewID(),
 			Parts: responses,
 		})
 		req.PersistHistory = true

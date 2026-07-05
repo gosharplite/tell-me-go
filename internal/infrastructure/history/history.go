@@ -20,6 +20,7 @@ import (
 type Manager struct {
 	mu       sync.RWMutex
 	store    store
+	logger   ports.Logger
 	FilePath string
 	Contents []*llm.Content
 }
@@ -28,9 +29,18 @@ type Manager struct {
 func NewManager(fs persistence.FileSystem, filePath string, archivePath string) *Manager {
 	return &Manager{
 		store:    newJSONLStore(fs, filePath, archivePath),
+		logger:   &ports.NoOpLogger{},
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}
+}
+
+// WithLogger sets the logger for the Manager.
+func (m *Manager) WithLogger(l ports.Logger) *Manager {
+	if l != nil {
+		m.logger = l
+	}
+	return m
 }
 
 // setStore allows injecting a custom store.
@@ -64,6 +74,20 @@ func (m *Manager) Load(ctx context.Context) error {
 		return err
 	}
 	m.Contents = contents
+
+	backfillCount := 0
+	for _, c := range m.Contents {
+		if c.ID == "" {
+			c.ID = llm.NewID()
+			backfillCount++
+		}
+	}
+	if backfillCount > 0 {
+		if saveErr := m.store.Save(ctx, m.Contents); saveErr != nil {
+			m.logger.Warn("failed to persist backfilled UUIDs; continuing with in-memory IDs", "error", saveErr)
+		}
+	}
+
 	return nil
 }
 
@@ -182,40 +206,115 @@ func (m *Manager) GetResolver() llm.AssetResolver {
 	return nil
 }
 
-// SetPinned toggles the pinned status of messages in a turn.
-func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+// SetPinned toggles the pinned status of both messages in a turn,
+// identified by the stable UUID of either message in the pair.
+func (m *Manager) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	offset := 0
-	if len(m.Contents) > 0 && m.Contents[0].Role == "system" {
-		offset = 1
+	// Find the message with matching ID.
+	i := -1
+	for idx, c := range m.Contents {
+		if c.ID == turnID {
+			i = idx
+			break
+		}
+	}
+	if i == -1 {
+		return fmt.Errorf("turn not found: %s", turnID)
 	}
 
-	// Turns are pairs. Turn 0 is messages offset and offset+1.
-	startIdx := offset + (turnIndex * 2)
-	if startIdx < offset || startIdx+1 >= len(m.Contents) {
-		return fmt.Errorf("invalid turn index: %d (history length: %d)", turnIndex, len(m.Contents))
+	// System messages are not part of any turn.
+	if m.Contents[i].Role == "system" {
+		return fmt.Errorf("turn not found: %s (system message)", turnID)
+	}
+
+	first, second, err := findTurnPair(m.Contents, i)
+	if err != nil {
+		return err
 	}
 
 	metadata := map[string]interface{}{"pinned": pinned}
-	if err := m.store.UpdateMetadata(ctx, startIdx, metadata); err != nil {
+	if err := m.store.UpdateMetadata(ctx, first, metadata); err != nil {
 		return err
 	}
-	if err := m.store.UpdateMetadata(ctx, startIdx+1, metadata); err != nil {
+	if err := m.store.UpdateMetadata(ctx, second, metadata); err != nil {
 		return err
 	}
 
-	m.Contents[startIdx].Pinned = pinned
-	m.Contents[startIdx+1].Pinned = pinned
+	m.Contents[first].Pinned = pinned
+	m.Contents[second].Pinned = pinned
 
 	return nil
+}
+
+// findTurnPair determines the two indices forming the turn containing
+// the message at index i. It handles normal user→model pairs and
+// tool-call model→user (FunctionCall/FunctionResponse) pairs.
+func findTurnPair(contents []*llm.Content, i int) (first, second int, err error) {
+	role := contents[i].Role
+	total := len(contents)
+
+	if role == "model" && contentHasFunctionCall(contents[i]) {
+		// Tool-call turn: model (FunctionCall) → user (FunctionResponse).
+		if i+1 >= total || contents[i+1].Role != "user" || !contentHasFunctionResponse(contents[i+1]) {
+			return 0, 0, fmt.Errorf("invalid turn pair: tool-call model at index %d has no function response", i)
+		}
+		return i, i + 1, nil
+	}
+
+	if role == "user" && contentHasFunctionResponse(contents[i]) {
+		// Tool-call turn: user (FunctionResponse) → preceded by model (FunctionCall).
+		if i-1 < 0 || contents[i-1].Role != "model" || !contentHasFunctionCall(contents[i-1]) {
+			return 0, 0, fmt.Errorf("invalid turn pair: function response at index %d has no preceding function call", i)
+		}
+		return i - 1, i, nil
+	}
+
+	if role == "user" {
+		// Normal turn: user → model.
+		if i+1 >= total || contents[i+1].Role != "model" {
+			return 0, 0, fmt.Errorf("invalid turn pair: user at index %d has no model response", i)
+		}
+		return i, i + 1, nil
+	}
+
+	if role == "model" {
+		// Normal turn: model → preceded by user.
+		if i-1 < 0 || contents[i-1].Role != "user" {
+			return 0, 0, fmt.Errorf("invalid turn pair: model at index %d has no preceding user message", i)
+		}
+		return i - 1, i, nil
+	}
+
+	return 0, 0, fmt.Errorf("invalid role for turn pairing: %s", role)
+}
+
+// contentHasFunctionCall returns true if any part of the content contains a FunctionCall.
+func contentHasFunctionCall(c *llm.Content) bool {
+	for _, p := range c.Parts {
+		if p.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// contentHasFunctionResponse returns true if any part of the content contains a FunctionResponse.
+func contentHasFunctionResponse(c *llm.Content) bool {
+	for _, p := range c.Parts {
+		if p.FunctionResponse != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // addEntry appends a new text message to the history.
 func (m *Manager) addEntry(ctx context.Context, role, text string) error {
 	return m.AddContent(ctx, &llm.Content{
 		Role:  role,
+		ID:    llm.NewID(),
 		Parts: []*llm.Part{{Text: text}},
 	})
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/google/uuid"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -17,6 +18,7 @@ import (
 
 type Content struct {
 	Role           string  `json:"role"`
+	ID             string  `json:"id,omitempty"`
 	Parts          []*Part `json:"parts,omitempty"`
 	TokenCount     int     `json:"token_count,omitempty"`
 	Pinned         bool    `json:"pinned,omitempty"`
@@ -132,6 +134,7 @@ func (p *Part) canMergeWith(other *Part) bool {
 func (c *Content) clone() *Content {
 	clone := &Content{
 		Role:       c.Role,
+		ID:         c.ID,
 		TokenCount: c.TokenCount,
 		Pinned:     c.Pinned,
 	}
@@ -213,6 +216,11 @@ func (fr *FunctionResponse) clone() *FunctionResponse {
 		}
 	}
 	return clone
+}
+
+// NewID returns a new unique identifier string (UUID v4).
+func NewID() string {
+	return uuid.New().String()
 }
 
 // CloneContent returns a deep copy of Content.

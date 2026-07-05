@@ -201,7 +201,8 @@ func (m *rootBrowserModel) getRoleLabel(dto ports.HistoryViewDTO) string {
 
 func (m *rootBrowserModel) getTurnLabelSuffix(dto ports.HistoryViewDTO) string {
 	if !dto.IsArchived {
-		turnIdx := m.getTurnIndex(dto)
+		offset := m.getSystemOffset()
+		turnIdx := (dto.OriginalIndex - offset) / 2
 		if turnIdx >= 0 {
 			return fmt.Sprintf(" - %d", turnIdx+1)
 		}

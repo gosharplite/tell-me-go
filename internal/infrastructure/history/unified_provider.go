@@ -118,9 +118,10 @@ func (p *unifiedProvider) fetchArchiveHistory(ctx context.Context, limit int, of
 }
 
 func (p *unifiedProvider) isAutoSummary(dto ports.HistoryViewDTO) bool {
-	// Filter both the injected summary block and the agent's synthetic acknowledgment
-	return strings.Contains(dto.ContentPreview, "System Auto-Summary") ||
-		dto.ContentPreview == "Understood. Context compressed."
+	lower := strings.ToLower(dto.ContentPreview)
+	return strings.HasPrefix(lower, "system auto-summary") ||
+		lower == "understood: context compressed" ||
+		lower == "understood. context compressed."
 }
 
 func (p *unifiedProvider) processHistoryItem(dto ports.HistoryViewDTO, skipSummaries bool, results []ports.HistoryViewDTO) []ports.HistoryViewDTO {
@@ -159,6 +160,7 @@ func writePartPreview(part *llm.Part, preview *strings.Builder) {
 
 func (p *unifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryViewDTO {
 	dto := ports.HistoryViewDTO{
+		ID:         c.ID,
 		Role:       c.Role,
 		IsArchived: archived,
 		IsPinned:   c.Pinned,
