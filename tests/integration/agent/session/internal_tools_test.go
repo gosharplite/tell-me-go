@@ -27,10 +27,10 @@ func TestAgent_ManageHistory(t *testing.T) {
 	ctx := context.Background()
 
 	// Fill history with 2 turns (4 messages)
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U1"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "M1"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "M2"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "user", Parts: []*llm.Part{{Text: "U1"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "model", Parts: []*llm.Part{{Text: "M1"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{ID: llm.NewID(), Role: "model", Parts: []*llm.Part{{Text: "M2"}}})
 
 	cm := sessctx.NewManager(nil, hManager, nil, nil)
 	it := session.NewInternalTools(cm, &ports.NoOpLogger{})

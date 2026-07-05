@@ -33,6 +33,8 @@ type Manager struct {
 	Summarizer      ports.Summarizer
 	SessionProvider ports.SessionProvider
 	logger          ports.Logger
+
+	candidateSelector candidateSelector
 }
 
 // contextManagerOption defines a functional option for configuring the Manager.
@@ -48,11 +50,12 @@ func WithLogger(l ports.Logger) contextManagerOption {
 // NewManager creates a new context manager.
 func NewManager(strategy *Strategy, history ports.HistoryManager, bus events.EventBus, factory *Factory, opts ...contextManagerOption) *Manager {
 	cm := &Manager{
-		Strategy: strategy,
-		History:  history,
-		Events:   bus,
-		Factory:  factory,
-		logger:   slog.Default(),
+		Strategy:          strategy,
+		History:           history,
+		Events:            bus,
+		Factory:           factory,
+		logger:            slog.Default(),
+		candidateSelector: &contiguousUnpinnedSelector{},
 	}
 
 	for _, opt := range opts {
@@ -253,6 +256,11 @@ func (cm *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	default:
 	}
 
+	// Ensure stable identity for every message entering history
+	if content.ID == "" {
+		content.ID = llm.NewID()
+	}
+
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -364,7 +372,7 @@ func (cm *Manager) SummarizeRange(ctx context.Context, numTurns int, focus strin
 		return "", nil, err
 	}
 
-	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(ctx, numTurns)
+	subset, startIdx, endIdx, tokens, err := cm.prepareSummarizationMetadata(ctx, numTurns)
 	if err != nil || subset == nil {
 		return cm.handleSummarizationPrep(subset, err)
 	}
@@ -382,40 +390,40 @@ func (cm *Manager) SummarizeRange(ctx context.Context, numTurns int, focus strin
 		return "", nil, cm.wrapSummarizationError(err)
 	}
 
-	if err := cm.finalizeSummarization(ctx, subset, endIdx, summary); err != nil {
+	if err := cm.finalizeSummarization(ctx, subset, startIdx, endIdx, summary); err != nil {
 		return "", nil, err
 	}
 
 	return fmt.Sprintf("summarized the first %d turns of history", actualTurns), metrics, nil
 }
 
-func (cm *Manager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
+func (cm *Manager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, startIdx int, endIdx int, tokens int, err error) {
 	cm.mu.RLock()
 	totalEntries := cm.History.GetTotalEntries()
 	strategy := cm.Strategy
 	cm.mu.RUnlock()
 
 	if totalEntries == 0 {
-		return nil, 0, 0, nil
+		return nil, 0, 0, 0, nil
 	}
 
-	subset, endIdx, err = cm.findSummarizationBoundary(ctx, numTurns, totalEntries)
+	subset, startIdx, endIdx, err = cm.findSummarizationBoundary(ctx, numTurns, totalEntries)
 	if err != nil || subset == nil {
-		return subset, endIdx, 0, err
+		return subset, startIdx, endIdx, 0, err
 	}
 
 	tokens = strategy.EstimateTokens(subset)
 
 	window := strategy.getContextWindow()
 	if ok, limit := isTokenCountSafe(tokens, window); !ok {
-		return nil, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, limit)
+		return nil, 0, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, limit)
 	}
 
-	return subset, endIdx, tokens, nil
+	return subset, startIdx, endIdx, tokens, nil
 }
 
-func (cm *Manager) findSummarizationBoundary(ctx context.Context, numTurns int, totalEntries int) (subset []*llm.Content, endIdx int, err error) {
-	// Determine endIdx using a windowed load to avoid cloning the entire history if it's large.
+func (cm *Manager) findSummarizationBoundary(ctx context.Context, numTurns int, totalEntries int) (subset []*llm.Content, startIdx int, endIdx int, err error) {
+	// Determine boundary using a windowed load to avoid cloning the entire history if it's large.
 	// We'll start by loading a chunk that is likely to contain the requested number of turns.
 	windowSize := numTurns * 4 // Conservative estimate: 4 messages per turn on average
 	if windowSize > totalEntries {
@@ -424,15 +432,15 @@ func (cm *Manager) findSummarizationBoundary(ctx context.Context, numTurns int, 
 
 	for {
 		if err := cm.checkContext(ctx); err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 
-		found, subset, endIdx, err := cm.checkWindowSize(ctx, windowSize, numTurns, totalEntries)
+		found, subset, startIdx, endIdx, err := cm.checkWindowSize(ctx, windowSize, numTurns, totalEntries)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		if found {
-			return subset, endIdx, nil
+			return subset, startIdx, endIdx, nil
 		}
 
 		// Not enough turns found, increase window and try again.
@@ -443,31 +451,87 @@ func (cm *Manager) findSummarizationBoundary(ctx context.Context, numTurns int, 
 	}
 }
 
-func (cm *Manager) checkWindowSize(ctx context.Context, windowSize int, numTurns int, totalEntries int) (found bool, subset []*llm.Content, endIdx int, err error) {
+func (cm *Manager) checkWindowSize(ctx context.Context, windowSize int, numTurns int, totalEntries int) (found bool, subset []*llm.Content, startIdx int, endIdx int, err error) {
 	contents, err := cm.History.GetWindow(ctx, 0, windowSize)
 	if err != nil {
-		return false, nil, 0, err
+		return false, nil, 0, 0, err
 	}
 
 	turns, err := groupTurns(ctx, contents)
 	if err != nil {
-		return false, nil, 0, err
+		return false, nil, 0, 0, err
 	}
 
-	if len(turns) >= numTurns || windowSize >= totalEntries {
-		// Found enough turns or reached the end of history.
-		endIdx, _ = calculateSummarizationEndIndex(turns, numTurns)
-		if endIdx == 0 {
-			return true, nil, 0, nil
+	minViable := cm.candidateSelector.MinViableBlock()
+
+	// block tracks a contiguous run of candidate turns during the scan.
+	type block struct {
+		startMsg int
+		endMsg   int
+		count    int
+	}
+	var current *block
+	var best *block
+	msgIdx := 0
+
+	for _, turn := range turns {
+		isCandidate := cm.candidateSelector.IsCandidate(turn)
+
+		if isCandidate {
+			if current == nil {
+				current = &block{startMsg: msgIdx}
+			}
+			current.count++
+			current.endMsg = msgIdx + len(turn)
+
+			if current.count >= numTurns {
+				// Found enough candidate turns in this block.
+				subset = contents[current.startMsg:current.endMsg]
+				return true, subset, current.startMsg, current.endMsg, nil
+			}
+		} else {
+			if current != nil {
+				if best == nil || current.count > best.count {
+					best = current
+				}
+				current = nil
+			}
 		}
-
-		// subset is the first endIdx elements of contents.
-		// Since contents is already a deep clone from GetWindow, we can just slice it.
-		subset = contents[:endIdx]
-		return true, subset, endIdx, nil
+		msgIdx += len(turn)
 	}
 
-	return false, nil, 0, nil
+	// End of turns: check the final block.
+	if current != nil {
+		if best == nil || current.count > best.count {
+			best = current
+		}
+	}
+
+	// If we've reached the end of history, use the best block if viable.
+	if windowSize >= totalEntries {
+		if best != nil && best.count >= minViable {
+			// Leave at least one turn unsummarized by capping the block
+			// at (best.count - 1) turns when more than one turn exists.
+			cappedCount := best.count - 1
+			if cappedCount > 0 {
+				subTurns, err := groupTurns(ctx, contents[best.startMsg:best.endMsg])
+				if err != nil {
+					return false, nil, 0, 0, err
+				}
+				if len(subTurns) > 1 {
+					cappedEnd := best.endMsg - len(subTurns[len(subTurns)-1])
+					subset = contents[best.startMsg:cappedEnd]
+					return true, subset, best.startMsg, cappedEnd, nil
+				}
+			}
+			subset = contents[best.startMsg:best.endMsg]
+			return true, subset, best.startMsg, best.endMsg, nil
+		}
+		return true, nil, 0, 0, nil
+	}
+
+	// Not enough candidate turns yet, caller should increase the window.
+	return false, nil, 0, 0, nil
 }
 
 func isTokenCountSafe(tokens, window int) (bool, int) {
@@ -475,23 +539,7 @@ func isTokenCountSafe(tokens, window int) (bool, int) {
 	return tokens <= limit, limit
 }
 
-func calculateSummarizationEndIndex(turns [][]*llm.Content, requestedTurns int) (int, int) {
-	totalTurns := len(turns)
-	if requestedTurns >= totalTurns {
-		requestedTurns = totalTurns - 1
-	}
-	if requestedTurns < 1 {
-		return 0, 0
-	}
-
-	endIdx := 0
-	for i := 0; i < requestedTurns; i++ {
-		endIdx += len(turns[i])
-	}
-	return endIdx, requestedTurns
-}
-
-func (cm *Manager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
+func (cm *Manager) finalizeSummarization(ctx context.Context, subset []*llm.Content, startIdx int, endIdx int, summary string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -504,12 +552,12 @@ func (cm *Manager) finalizeSummarization(ctx context.Context, subset []*llm.Cont
 	}
 
 	// Robust check: did the messages we summarized change?
-	if err := cm.validateSummarizationSubset(ctx, currentContents, subset); err != nil {
+	if err := cm.validateSummarizationSubset(ctx, currentContents, subset, startIdx); err != nil {
 		return err
 	}
 
 	// Reconstruct history using the robust helper
-	newHistory := applySummaryToHistory(currentContents, 0, endIdx, summary)
+	newHistory := applySummaryToHistory(currentContents, startIdx, endIdx, summary)
 	cm.version++
 
 	// ✅ SCALABLE (Event-Sourced Archival):
@@ -533,7 +581,7 @@ func (cm *Manager) finalizeSummarization(ctx context.Context, subset []*llm.Cont
 	return nil
 }
 
-func (cm *Manager) validateSummarizationSubset(ctx context.Context, currentContents, subset []*llm.Content) error {
+func (cm *Manager) validateSummarizationSubset(ctx context.Context, currentContents, subset []*llm.Content, startIdx int) error {
 	for i, expected := range subset {
 		if i%100 == 0 {
 			select {
@@ -543,7 +591,10 @@ func (cm *Manager) validateSummarizationSubset(ctx context.Context, currentConte
 			}
 		}
 
-		if !llm.EqualContent(currentContents[i], expected) {
+		curr := currentContents[startIdx+i]
+
+		// ADR-047: Explicitly check UUID and Pin state, as llm.EqualContent ignores them.
+		if curr.ID != expected.ID || curr.Pinned != expected.Pinned || !llm.EqualContent(curr, expected) {
 			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
 		}
 	}

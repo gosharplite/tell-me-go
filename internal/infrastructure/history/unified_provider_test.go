@@ -332,3 +332,56 @@ func TestUnifiedProvider_ToDTO_ExtraCases(t *testing.T) {
 		t.Errorf("expected tool calls [get_weather, get_weather], got %v", dto.ToolCalls)
 	}
 }
+
+func TestIsAutoSummary(t *testing.T) {
+	mockActive := &mockHistoryManager{}
+	mockArchive := &mockArchiveReader{}
+	p := NewUnifiedProvider(mockArchive, mockActive)
+
+	tests := []struct {
+		name    string
+		preview string
+		want    bool
+	}{
+		{
+			name:    "production output - lowercase prefix with colon",
+			preview: "system auto-summary (context limit reached):\n\nKey findings...",
+			want:    true,
+		},
+		{
+			name:    "case-insensitive - mixed case",
+			preview: "System Auto-Summary: ...",
+			want:    true,
+		},
+		{
+			name:    "new understood format with colon",
+			preview: "understood: context compressed",
+			want:    true,
+		},
+		{
+			name:    "legacy understood format with period",
+			preview: "Understood. Context compressed.",
+			want:    true,
+		},
+		{
+			name:    "normal user message",
+			preview: "Normal user message",
+			want:    false,
+		},
+		{
+			name:    "does not start with prefix - contains substring",
+			preview: "I read the system auto-summary report",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dto := ports.HistoryViewDTO{ContentPreview: tt.preview}
+			got := p.(*unifiedProvider).isAutoSummary(dto)
+			if got != tt.want {
+				t.Errorf("isAutoSummary(%q) = %v; want %v", tt.preview, got, tt.want)
+			}
+		})
+	}
+}

@@ -356,15 +356,16 @@ func TestManager_WindowSize_BoundaryCondition(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Requesting 5 turns, but history only has 2 turns.
-	// It should reach the end (windowSize = 25), then cap numTurns to totalTurns - 1 = 1.
+	// Requesting 5 turns, but history only has 2 turns (both unpinned candidates).
+	// The pin-aware selector finds 2 candidate turns but leaves at least one
+	// turn unsummarized, so it caps at 1 turn (meets MinViableBlock=2 before capping).
 	msg, _, err := cm.SummarizeRange(ctx, 5, "")
 	assert.NoError(t, err)
 	assert.Contains(t, msg, "summarized the first 1 turns")
 
-	// Verify history was updated (summarized 1 turn = 24 messages replaced by 2 summary messages)
+	// Verify history was updated (summarized 1 turn = 24 messages replaced by 2 summary messages).
 	// Original: 25 messages. Turn 1 (24 msgs), Turn 2 (1 msg).
-	// After summarization of Turn 1: 2 summary messages + 1 message from Turn 2 = 3 messages.
+	// After summarization: 2 summary messages + 1 remaining message = 3.
 	assert.Equal(t, 3, history.GetTotalEntries())
 }
 
@@ -866,4 +867,103 @@ func TestWithSessionProvider(t *testing.T) {
 		sessctx.WithSessionProvider(&testfixtures.MockSessionProvider{}),
 	)
 	assert.NotNil(t, cm.SessionProvider)
+}
+
+// makePinnableTurnsExt creates N turns (each turn = user + model) as []*llm.Content.
+// pinnedIndices contains zero-based turn indices whose messages will have Pinned=true.
+func makePinnableTurnsExt(n int, pinnedIndices ...int) []*llm.Content {
+	pinned := make(map[int]bool)
+	for _, idx := range pinnedIndices {
+		pinned[idx] = true
+	}
+	var contents []*llm.Content
+	for i := 0; i < n; i++ {
+		c1 := &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("u%d", i+1)}}, Pinned: pinned[i]}
+		c2 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("m%d", i+1)}}, Pinned: pinned[i]}
+		contents = append(contents, c1, c2)
+	}
+	return contents
+}
+
+func TestSummarizeRange_PinnedAware(t *testing.T) {
+	tests := []struct {
+		name        string
+		contents    []*llm.Content
+		numTurns    int
+		wantErr     bool
+		errContains string
+		// Captured subset passed to summarizer (verified in non-error/non-skip cases)
+		wantSubsetMsgCount int
+		wantMsgContains    string // text expected in first message of subset
+	}{
+		{
+			name:     "contiguous skip: T2 pinned → T3+T4 summarized, T2 untouched",
+			contents: makePinnableTurnsExt(4, 1), // T0=unpinned, T1=pinned, T2=unpinned, T3=unpinned
+			numTurns: 2,
+			// Subset should be T2+T3 (messages 4-7: "u3","m3","u4","m4")
+			wantSubsetMsgCount: 4,
+			wantMsgContains:    "u3",
+		},
+		{
+			name:        "no viable block: all pinned",
+			contents:    makePinnableTurnsExt(4, 0, 1, 2, 3),
+			numTurns:    2,
+			wantErr:     false,
+			errContains: "too short",
+		},
+		{
+			name:     "normal unpinned: first 2 turns summarized",
+			contents: makePinnableTurnsExt(4),
+			numTurns: 2,
+			// Subset should be T0+T1 (messages 0-3: "u1","m1","u2","m2")
+			wantSubsetMsgCount: 4,
+			wantMsgContains:    "u1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			counter := &agenttest.MockTokenCounter{}
+			strategy := sessctx.NewStrategy(counter)
+			strategy.SetContextWindow(1000000)
+
+			history := &agenttest.MockHistoryManager{}
+			history.SetInternalContents(tt.contents)
+
+			cm := sessctx.NewManager(strategy, history, nil, nil)
+
+			var capturedSubset []*llm.Content
+			mockSum := &agenttest.MockSummarizer{}
+			mockSum.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+				capturedSubset = subset
+				return "summary", &llm.Metrics{PromptTokens: 5}, nil
+			})
+			cm.Summarizer = mockSum
+
+			ctx := context.Background()
+			msg, _, err := cm.SummarizeRange(ctx, tt.numTurns, "")
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+
+			if tt.errContains != "" {
+				// Non-error path that returns a specific message (e.g., "too short")
+				assert.Contains(t, msg, tt.errContains)
+				return
+			}
+
+			// Verify the subset passed to summarizer
+			require.NotNil(t, capturedSubset, "summarizer should have been called")
+			assert.Len(t, capturedSubset, tt.wantSubsetMsgCount, "subset message count mismatch")
+			require.NotEmpty(t, capturedSubset)
+			assert.Contains(t, capturedSubset[0].Parts[0].Text, tt.wantMsgContains)
+		})
+	}
 }

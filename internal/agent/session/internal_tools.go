@@ -122,7 +122,13 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, fmt.Errorf("unsupported action: %s", params.Action)
 	}
 
-	if err := t.ctxManager.History.SetPinned(ctx, params.Index, pinned); err != nil {
+	// Resolve ordinal turn index to stable UUID
+	turnID, err := resolveTurnID(ctx, t.ctxManager.History, params.Index)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if err := t.ctxManager.History.SetPinned(ctx, turnID, pinned); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -130,7 +136,39 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 	if pinned {
 		status = "pinned"
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("turn %d has been successfully %s", params.Index, status)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("turn %s has been successfully %s", turnID, status)}, nil
+}
+
+// resolveTurnID resolves an ordinal turn index to the stable UUID of the
+// first message in that turn. It skips leading system messages and counts
+// turns as user+model pairs (accounting for tool-call messages).
+func resolveTurnID(ctx context.Context, history ports.HistoryReader, index int) (string, error) {
+	contents, err := history.GetWindow(ctx, 0, -1)
+	if err != nil {
+		return "", fmt.Errorf("resolve turn id: %w", err)
+	}
+
+	// Skip system messages at position 0
+	start := 0
+	for start < len(contents) && contents[start].Role == "system" {
+		start++
+	}
+
+	// Count turns from remaining messages (each turn starts with a user message)
+	turnCount := 0
+	for i := start; i < len(contents); i++ {
+		if contents[i].Role == "user" {
+			if turnCount == index {
+				if contents[i].ID == "" {
+					return "", fmt.Errorf("turn %d has no stable ID", index)
+				}
+				return contents[i].ID, nil
+			}
+			turnCount++
+		}
+	}
+
+	return "", fmt.Errorf("turn index %d out of range (only %d turns available)", index, turnCount)
 }
 
 // RegisterInternal registers the internal tools with the provided registrar.

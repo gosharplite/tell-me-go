@@ -251,6 +251,7 @@ func (r *jsonlArchiveReader) toDTO(content llm.Content) ports.HistoryViewDTO {
 		agg.absorb(part)
 	}
 	return ports.HistoryViewDTO{
+		ID:             content.ID,
 		Role:           content.Role,
 		IsArchived:     true,
 		ContentPreview: strings.TrimSpace(agg.preview.String()),

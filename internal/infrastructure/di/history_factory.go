@@ -23,12 +23,14 @@ type historyFactory interface {
 type defaultHistoryFactory struct {
 	HomeDir    string
 	FileSystem infra_persistence.FileSystem
+	Logger     ports.Logger
 }
 
-func newHistoryFactory(homeDir string, fs infra_persistence.FileSystem) historyFactory {
+func newHistoryFactory(homeDir string, fs infra_persistence.FileSystem, logger ports.Logger) historyFactory {
 	return &defaultHistoryFactory{
 		HomeDir:    homeDir,
 		FileSystem: fs,
+		Logger:     logger,
 	}
 }
 
@@ -38,7 +40,7 @@ func (f *defaultHistoryFactory) BuildHistoryManager(ctx stdctx.Context, cfg *con
 		return nil, fmt.Errorf("%w: failed to ensure session directories for %s: %w", errInfraInit, cfg.Mode, err)
 	}
 
-	hManager := history.NewManager(infra_persistence.NewDomainFS(f.FileSystem), paths.HistoryPath, paths.HistoryArchivePath)
+	hManager := history.NewManager(infra_persistence.NewDomainFS(f.FileSystem), paths.HistoryPath, paths.HistoryArchivePath).WithLogger(f.Logger)
 	if err := hManager.Load(ctx); err != nil {
 		if !errors.Is(err, ports.ErrHistoryNotFound) {
 			return nil, fmt.Errorf("%w: failed to load history from %s: %w", errInfraInit, paths.HistoryPath, err)

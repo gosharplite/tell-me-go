@@ -27,7 +27,7 @@ func TestContextManager_FindSummarizationBoundary_Cancelled(t *testing.T) {
 	}}
 	cm := NewManager(nil, hm, nil, nil)
 
-	_, _, err := cm.findSummarizationBoundary(ctx, 1, 1)
+	_, _, _, err := cm.findSummarizationBoundary(ctx, 1, 1)
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -45,7 +45,7 @@ func TestContextManager_ValidateSubset_Cancelled(t *testing.T) {
 		current[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	err := cm.validateSummarizationSubset(ctx, current, subset)
+	err := cm.validateSummarizationSubset(ctx, current, subset, 0)
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -141,7 +141,7 @@ func TestContextManager_FinalizeSummarization_ArchiveError(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
 	}
 
-	err := cm.finalizeSummarization(context.Background(), subset, 2, "summary")
+	err := cm.finalizeSummarization(context.Background(), subset, 0, 2, "summary")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to archive history")
 }
@@ -171,7 +171,7 @@ func TestContextManager_FinalizeSummarization_SetContentsError(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
 	}
 
-	err := cm.finalizeSummarization(context.Background(), subset, 2, "summary")
+	err := cm.finalizeSummarization(context.Background(), subset, 0, 2, "summary")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to update history after summarization")
 }
@@ -190,7 +190,7 @@ func TestContextManager_FinalizeSummarization_PrunedError(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
 	}
 
-	err := cm.finalizeSummarization(context.Background(), subset, 2, "summary")
+	err := cm.finalizeSummarization(context.Background(), subset, 0, 2, "summary")
 	require.Error(t, err)
 	require.ErrorIs(t, err, llm.ErrTerminal)
 	require.Contains(t, err.Error(), "summarization aborted: history was pruned")
@@ -488,10 +488,47 @@ func TestCheckWindowSize_EndIdxZero(t *testing.T) {
 	cm := NewManager(strategy, hm, nil, nil)
 
 	ctx := context.Background()
-	found, subset, endIdx, err := cm.checkWindowSize(ctx, 2, 5, 2)
+	found, subset, startIdx, endIdx, err := cm.checkWindowSize(ctx, 2, 5, 2)
 
 	require.True(t, found)
 	require.Nil(t, subset)
+	require.Equal(t, 0, startIdx)
 	require.Equal(t, 0, endIdx)
 	require.NoError(t, err)
+}
+
+func TestValidateSummarizationSubset_DetectsPinMutation(t *testing.T) {
+	cm := &Manager{}
+	ctx := context.Background()
+
+	current := []*llm.Content{
+		{Role: "user", ID: "id-1", Pinned: false, Parts: []*llm.Part{{Text: "u"}}},
+		{Role: "model", ID: "id-2", Pinned: false, Parts: []*llm.Part{{Text: "m"}}},
+	}
+
+	subset := []*llm.Content{
+		{Role: "user", ID: "id-1", Pinned: false, Parts: []*llm.Part{{Text: "u"}}},
+		{Role: "model", ID: "id-2", Pinned: false, Parts: []*llm.Part{{Text: "m"}}},
+	}
+
+	// Baseline: success
+	err := cm.validateSummarizationSubset(ctx, current, subset, 0)
+	require.NoError(t, err)
+
+	// Mutation 1: ID changed (e.g. somehow replaced)
+	current[0].ID = "id-changed"
+	err = cm.validateSummarizationSubset(ctx, current, subset, 0)
+	require.Error(t, err)
+	require.ErrorIs(t, err, llm.ErrTerminal)
+	require.Contains(t, err.Error(), "history content changed")
+
+	// Revert
+	current[0].ID = "id-1"
+
+	// Mutation 2: Pin state changed during summarization
+	current[1].Pinned = true
+	err = cm.validateSummarizationSubset(ctx, current, subset, 0)
+	require.Error(t, err)
+	require.ErrorIs(t, err, llm.ErrTerminal)
+	require.Contains(t, err.Error(), "history content changed")
 }

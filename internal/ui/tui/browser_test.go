@@ -31,13 +31,13 @@ func (m *mockHistoryProvider) GetHistoryStream(ctx context.Context, limit int, c
 
 type mockHistoryModifier struct {
 	ArchiveFunc       func(ctx context.Context, contents []*llm.Content) error
-	SetPinnedFunc     func(ctx context.Context, turnIndex int, pinned bool) error
+	SetPinnedFunc     func(ctx context.Context, turnID string, pinned bool) error
 	GetFilePathFunc   func() string
 	RollbackTurnsFunc func(ctx context.Context, turns int) (int, int, int, error)
 
 	SetPinnedCalled   bool
 	RollbackCalled    bool
-	LastPinnedIndex   int
+	LastPinnedID      string
 	LastPinnedState   bool
 	LastRollbackTurns int
 }
@@ -49,12 +49,12 @@ func (m *mockHistoryModifier) Archive(ctx context.Context, contents []*llm.Conte
 	return nil
 }
 
-func (m *mockHistoryModifier) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *mockHistoryModifier) SetPinned(ctx context.Context, turnID string, pinned bool) error {
 	m.SetPinnedCalled = true
-	m.LastPinnedIndex = turnIndex
+	m.LastPinnedID = turnID
 	m.LastPinnedState = pinned
 	if m.SetPinnedFunc != nil {
-		return m.SetPinnedFunc(ctx, turnIndex, pinned)
+		return m.SetPinnedFunc(ctx, turnID, pinned)
 	}
 	return nil
 }
@@ -77,8 +77,8 @@ func (m *mockHistoryModifier) RollbackTurns(ctx context.Context, turns int) (int
 
 func newHistoryState(userContent, modelContent string) []ports.HistoryViewDTO {
 	return []ports.HistoryViewDTO{
-		{Role: "user", ContentPreview: userContent, OriginalIndex: 0},
-		{Role: "assistant", ContentPreview: modelContent, OriginalIndex: 1},
+		{ID: "user-0", Role: "user", ContentPreview: userContent, OriginalIndex: 0},
+		{ID: "model-0", Role: "assistant", ContentPreview: modelContent, OriginalIndex: 1},
 	}
 }
 
@@ -89,13 +89,13 @@ func verifyScrollInteraction(t *testing.T, m *rootBrowserModel, expectedTurn int
 	}
 }
 
-func verifyPinInteraction(t *testing.T, m *rootBrowserModel, mock *mockHistoryModifier, expectedTurnIndex int, expectedOriginalIndex int, expectedState bool) {
+func verifyPinInteraction(t *testing.T, m *rootBrowserModel, mock *mockHistoryModifier, expectedTurnID string, expectedOriginalIndex int, expectedState bool) {
 	t.Helper()
 	if !mock.SetPinnedCalled {
 		t.Error("expected SetPinned to be called")
 	}
-	if mock.LastPinnedIndex != expectedTurnIndex {
-		t.Errorf("expected pinned turn index %d, got %d", expectedTurnIndex, mock.LastPinnedIndex)
+	if mock.LastPinnedID != expectedTurnID {
+		t.Errorf("expected pinned turn ID %q, got %q", expectedTurnID, mock.LastPinnedID)
 	}
 	if mock.LastPinnedState != expectedState {
 		t.Errorf("expected pinned state %v, got %v", expectedState, mock.LastPinnedState)
@@ -304,7 +304,7 @@ func actionTestCases() []updateTestCase {
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")},
 			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				verifyPinInteraction(t, m, mock, 0, 0, true)
+				verifyPinInteraction(t, m, mock, "user-0", 0, true)
 			},
 		},
 		{
@@ -317,7 +317,7 @@ func actionTestCases() []updateTestCase {
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")},
 			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				verifyPinInteraction(t, m, mock, 0, 0, false)
+				verifyPinInteraction(t, m, mock, "user-0", 0, false)
 			},
 		},
 		{
@@ -506,16 +506,15 @@ func TestBrowserModel_SystemMessageOffset(t *testing.T) {
 	t.Run("Pinning with system message", func(t *testing.T) {
 		m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
 		m.history = []ports.HistoryViewDTO{
-			{Role: "system", ContentPreview: "sys", OriginalIndex: 0},
-			{Role: "user", ContentPreview: "u1", OriginalIndex: 1},
-			{Role: "assistant", ContentPreview: "m1", OriginalIndex: 2},
+			{ID: "sys-0", Role: "system", ContentPreview: "sys", OriginalIndex: 0},
+			{ID: "u1", Role: "user", ContentPreview: "u1", OriginalIndex: 1},
+			{ID: "m1", Role: "assistant", ContentPreview: "m1", OriginalIndex: 2},
 		}
 		// Select U1 (index 1)
 		m.selectedTurn = 1
 		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
 
-		// Expected turnIndex: (1 - 1) / 2 = 0. ExpectedOriginalIndex: 1.
-		verifyPinInteraction(t, m, mockModifier, 0, 1, true)
+		verifyPinInteraction(t, m, mockModifier, "u1", 1, true)
 	})
 
 	t.Run("Rollback with system message", func(t *testing.T) {
@@ -590,14 +589,14 @@ func checkFileChangedMsgDebounced(t *testing.T, m *rootBrowserModel, _ tea.Cmd, 
 func TestTogglePin_SetPinnedError(t *testing.T) {
 	mockProvider := &mockHistoryProvider{}
 	mockModifier := &mockHistoryModifier{
-		SetPinnedFunc: func(ctx context.Context, turnIndex int, pinned bool) error {
+		SetPinnedFunc: func(ctx context.Context, turnID string, pinned bool) error {
 			return errors.New("set pinned failed")
 		},
 	}
 	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
 	m.history = []ports.HistoryViewDTO{
-		{Role: "user", ContentPreview: "Hello", OriginalIndex: 0},
-		{Role: "assistant", ContentPreview: "Hi", OriginalIndex: 1},
+		{ID: "u0", Role: "user", ContentPreview: "Hello", OriginalIndex: 0},
+		{ID: "m0", Role: "assistant", ContentPreview: "Hi", OriginalIndex: 1},
 	}
 	m.selectedTurn = 0
 
@@ -675,7 +674,7 @@ func TestTogglePin_RecoveryAfterError(t *testing.T) {
 	mockProvider := &mockHistoryProvider{}
 	callCount := 0
 	mockModifier := &mockHistoryModifier{
-		SetPinnedFunc: func(ctx context.Context, turnIndex int, pinned bool) error {
+		SetPinnedFunc: func(ctx context.Context, turnID string, pinned bool) error {
 			callCount++
 			if callCount == 1 {
 				return errors.New("transient error")
@@ -685,8 +684,8 @@ func TestTogglePin_RecoveryAfterError(t *testing.T) {
 	}
 	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
 	m.history = []ports.HistoryViewDTO{
-		{Role: "user", ContentPreview: "Hello", OriginalIndex: 0},
-		{Role: "assistant", ContentPreview: "Hi", OriginalIndex: 1},
+		{ID: "u0", Role: "user", ContentPreview: "Hello", OriginalIndex: 0},
+		{ID: "m0", Role: "assistant", ContentPreview: "Hi", OriginalIndex: 1},
 	}
 	m.selectedTurn = 0
 
@@ -722,8 +721,8 @@ func TestTogglePin_LocalStateUpdateNotFound(t *testing.T) {
 	}
 	m := NewRootBrowserModel(context.Background(), mockProvider, &mockHistoryModifier{})
 	m.history = []ports.HistoryViewDTO{
-		{Role: "user", ContentPreview: "hello", OriginalIndex: 0},
-		{Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+		{ID: "u0", Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+		{ID: "m0", Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
 	}
 	m.selectedTurn = 0
 	m.isLoading = false
@@ -731,7 +730,7 @@ func TestTogglePin_LocalStateUpdateNotFound(t *testing.T) {
 	// Use SetPinnedFunc to clear history between getTurnForPinning and updateLocalPinState,
 	// simulating a concurrent modification that makes the local state stale.
 	mockModifier := &mockHistoryModifier{
-		SetPinnedFunc: func(ctx context.Context, turnIndex int, pinned bool) error {
+		SetPinnedFunc: func(ctx context.Context, turnID string, pinned bool) error {
 			m.history = nil
 			return nil
 		},
@@ -756,8 +755,8 @@ func TestTogglePin_LocalStateUpdateSucceeds(t *testing.T) {
 	mockModifier := &mockHistoryModifier{}
 	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
 	m.history = []ports.HistoryViewDTO{
-		{Role: "user", ContentPreview: "hello", OriginalIndex: 0},
-		{Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+		{ID: "u0", Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+		{ID: "m0", Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
 	}
 	m.selectedTurn = 0
 	m.isLoading = false
@@ -958,15 +957,16 @@ func TestSyncViewportToSelectedTurn_BelowViewport(t *testing.T) {
 	}
 }
 
-func TestGetTurnIndex_SystemDto(t *testing.T) {
+func TestGetTurnStartOriginalIndex_SystemDto(t *testing.T) {
 	m := &rootBrowserModel{
 		history: []ports.HistoryViewDTO{
 			{Role: "system", OriginalIndex: 0},
 		},
 	}
-	turnIdx := m.getTurnIndex(m.history[0])
-	if turnIdx != -1 {
-		t.Errorf("expected -1 for system DTO, got %d", turnIdx)
+	turnIdx := m.getTurnStartOriginalIndex(m.history[0])
+	// System message at index 0: offset=1, msgOffset=-1 (<0), returns OriginalIndex=0
+	if turnIdx != 0 {
+		t.Errorf("expected 0 for system DTO, got %d", turnIdx)
 	}
 }
 
@@ -1145,13 +1145,13 @@ func TestGetTurnForPinning_OutOfBounds(t *testing.T) {
 		history:      []ports.HistoryViewDTO{{Role: "user", OriginalIndex: 0}},
 		selectedTurn: 5,
 	}
-	_, _, ok := m.getTurnForPinning()
+	_, ok := m.getTurnForPinning()
 	if ok {
 		t.Error("expected ok=false for out of bounds selectedTurn")
 	}
 
 	m.selectedTurn = -1
-	_, _, ok = m.getTurnForPinning()
+	_, ok = m.getTurnForPinning()
 	if ok {
 		t.Error("expected ok=false for selectedTurn=-1")
 	}
