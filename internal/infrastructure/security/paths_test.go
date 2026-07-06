@@ -11,7 +11,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -254,8 +256,8 @@ func TestNewPathPolicy_Initialization(t *testing.T) {
 	p := newPathPolicy(original)
 
 	original[0] = filepath.Join(os.TempDir(), "hacked")
-	if _, ok := p.safePaths[filepath.Join(os.TempDir(), "hacked")]; ok {
-		t.Errorf("safePaths suffered from slice reference leak")
+	if _, ok := p.paths[filepath.Join(os.TempDir(), "hacked")]; ok {
+		t.Errorf("paths suffered from slice reference leak")
 	}
 
 	// 2. Test Temp Dir Resolution
@@ -943,7 +945,9 @@ func TestBoundaryChecks_ErrorLogging(t *testing.T) {
 	// ---- checkSafePaths ----
 	// Directly inject a NUL-byte boundary. RegisterPath rejects it because
 	// filepath.Abs also fails on NUL bytes, so we set the map entry directly.
-	p.safePaths["/valid/\x00boundary"] = struct{}{}
+	p.paths["/valid/\x00boundary"] = domain_security.SafePath{
+		Path: "/valid/\x00boundary", Mode: domain_security.SafePathReadWrite, AuthorizedAt: time.Now(),
+	}
 	ok, err := p.checkSafePaths("/some/target", false)
 	if ok {
 		t.Error("expected false for path outside NUL-byte boundary")
@@ -964,7 +968,9 @@ func TestBoundaryChecks_ErrorLogging(t *testing.T) {
 	logBuf.Reset()
 
 	// ---- checkReadOnlyPaths ----
-	p.readOnlyPaths["/valid/\x00roboundary"] = struct{}{}
+	p.paths["/valid/\x00roboundary"] = domain_security.SafePath{
+		Path: "/valid/\x00roboundary", Mode: domain_security.SafePathRead, AuthorizedAt: time.Now(),
+	}
 	ok, err = p.checkReadOnlyPaths("/some/target", false)
 	if ok {
 		t.Error("expected false for path outside NUL-byte RO boundary")
@@ -1004,10 +1010,12 @@ func TestValidatePath_RuleErrorPropagation(t *testing.T) {
 
 	p := newPathPolicy(nil)
 
-	// Inject a NUL-byte boundary directly into safePaths to trigger
+	// Inject a NUL-byte boundary directly into paths to trigger
 	// filepath.Abs failure inside checkBoundary. RegisterPath rejects
 	// NUL bytes (filepath.Abs also fails there), so we set the map entry directly.
-	p.safePaths["/valid/\x00boundary"] = struct{}{}
+	p.paths["/valid/\x00boundary"] = domain_security.SafePath{
+		Path: "/valid/\x00boundary", Mode: domain_security.SafePathReadWrite, AuthorizedAt: time.Now(),
+	}
 
 	_, err := p.ValidatePath("/some/target", true)
 
@@ -1240,7 +1248,9 @@ func testFilepathAbsCheckSafePaths(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 
 	p := newPathPolicy(nil)
-	p.safePaths["relative/boundary"] = struct{}{}
+	p.paths["relative/boundary"] = domain_security.SafePath{
+		Path: "relative/boundary", Mode: domain_security.SafePathReadWrite, AuthorizedAt: time.Now(),
+	}
 
 	ok, err := p.checkSafePaths("/some/absolute/target", false)
 	if err != nil {
@@ -1261,7 +1271,9 @@ func testFilepathAbsCheckReadOnlyPaths(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 
 	p := newPathPolicy(nil)
-	p.readOnlyPaths["relative/ro_boundary"] = struct{}{}
+	p.paths["relative/ro_boundary"] = domain_security.SafePath{
+		Path: "relative/ro_boundary", Mode: domain_security.SafePathRead, AuthorizedAt: time.Now(),
+	}
 
 	ok, err := p.checkReadOnlyPaths("/some/absolute/target", false)
 	if err != nil {
