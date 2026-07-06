@@ -6,6 +6,7 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 
 ## Glossary
 
+- **`Chatter`** — The conversation interface between the `Orchestrator` and the `Provider` gateway. Defines how prompts are sent, responses are streamed, and chat sessions are configured. Not an entity — it is a behavioral role with no persisted state, analogous to `Orchestrator` and `SecurityManager`.
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
 - **`SecurityManager`** — The component that validates `Tool` requests against the `SafePath` registry and delegates to the `UserInteractor` when user confirmation is required.
 - **`Thought`** — A provider-agnostic reasoning block emitted by an LLM — may be a text response, a tool-call request, or (for reasoning models) a chain-of-thought segment. Normalised from provider-specific wire formats.
@@ -186,6 +187,7 @@ A long-running conversation context identified by a unique ID. Owns a sequence o
 - `Provider` — n:1 — referenced — The selected `Provider` for this `Session` (from `Config.PROVIDERS`).
 - `History` — 1:1 — owned — Persisted record of this `Session`'s `Turn`s.
 - `Context` — 1:1 — owned — The in-flight prompt payload assembled before each `Turn`.
+- `Task` — 1:n — owned — User-facing to-do items persisted alongside `History`.
 
 **Attributes**
 
@@ -221,6 +223,30 @@ A block of idiomatic guidance injected into the system prompt when the task is r
 **Invariants**
 
 - **skill-unique-name** — Each `Skill` has a unique name.
+
+### `Task`
+
+A unit of work tracked by the system for the user. `Task`s form a simple to-do list: each has a description, a status (pending or completed), and a creation timestamp. Owned by `Session` — tasks are persisted alongside the session's `History`.
+
+**Attributes**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `id` | integer | Monotonically increasing unique identifier. |
+| `content` | string | Human-readable description of the task. |
+| `status` | string | Current state: "pending" or "completed". |
+| `createdAt` | timestamp |  |
+
+**Actions**
+
+- `add` — actor `Orchestrator` — Create a new `Task` with status "pending".
+- `update` — actor `Orchestrator` — Modify the content or status of an existing `Task`.
+- `delete` — actor `Orchestrator` — Remove a `Task` from the list.
+- `list` — actor `Orchestrator` — Retrieve `Task`s, optionally filtered by status.
+
+**Invariants**
+
+- **task-non-empty-content** — A `Task`'s `content` must not be empty.
 
 ### `Tool`
 
@@ -301,6 +327,7 @@ erDiagram
     SafePath {}
     Session {}
     Skill {}
+    Task {}
     Tool {}
     ToolCall {}
     Turn {}
@@ -311,6 +338,7 @@ erDiagram
     Session }o--|| Provider : "referenced"
     Session ||--|| History : "owned"
     Session ||--|| Context : "owned"
+    Session ||--o{ Task : "owned"
     Turn ||--o{ ToolCall : "owned"
 ```
 
@@ -325,17 +353,18 @@ erDiagram
 
 A user asks a question that requires no `Tool`s. The `Orchestrator` assembles the `Context`, sends it to the selected `Provider`, receives a `Thought` (text), and renders the response.
 
-**Actors:** Orchestrator, Context, Provider, Session
+**Actors:** Orchestrator, Chatter, Context, Provider, Session, Task
 
 **Steps**
 
 1. User submits a prompt via CLI.
 2. `Orchestrator` creates a `Turn` in the current `Session`.
 3. `Orchestrator` assembles the `Context`: system prompt + recent `Turn`s + user prompt.
-4. `Orchestrator` sends the `Context` to the `Provider`.
-5. `Provider` returns a text `Thought`.
+4. `Orchestrator` sends the `Context` to the `Provider` via `Chatter`.
+5. `Provider` returns a text `Thought` via `Chatter`.
 6. `Orchestrator` renders the response and persists the `Turn` to `History`.
 7. Cost and token metrics are updated on the `Session`.
+8. Any pending `Task`s are tracked and can be listed by the user.
 
 **Invariants touched**
 

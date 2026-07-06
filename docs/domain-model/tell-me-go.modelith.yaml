@@ -23,6 +23,11 @@ glossary:
   Turn: >
     One request–response cycle: a user message plus the assistant's full
     response (which may include multiple `Thought`s and tool round-trips).
+  Chatter: >
+    The conversation interface between the `Orchestrator` and the `Provider`
+    gateway. Defines how prompts are sent, responses are streamed, and chat
+    sessions are configured. Not an entity — it is a behavioral role with no
+    persisted state, analogous to `Orchestrator` and `SecurityManager`.
 
 enums:
   ProviderType:
@@ -92,6 +97,10 @@ entities:
         cardinality: "1:1"
         ownership: owned
         note: The in-flight prompt payload assembled before each `Turn`.
+      - entity: Task
+        cardinality: "1:n"
+        ownership: owned
+        note: User-facing to-do items persisted alongside `History`.
     attributes:
       - name: id
         type: string
@@ -351,6 +360,41 @@ entities:
       - id: skill-unique-name
         statement: "Each `Skill` has a unique name."
 
+  Task:
+    definition: >
+      A unit of work tracked by the system for the user. `Task`s form a
+      simple to-do list: each has a description, a status (pending or
+      completed), and a creation timestamp. Owned by `Session` — tasks are
+      persisted alongside the session's `History`.
+    attributes:
+      - name: id
+        type: integer
+        description: Monotonically increasing unique identifier.
+      - name: content
+        type: string
+        description: Human-readable description of the task.
+      - name: status
+        type: string
+        description: 'Current state: "pending" or "completed".'
+      - name: createdAt
+        type: timestamp
+    actions:
+      - name: add
+        actor: Orchestrator
+        description: Create a new `Task` with status "pending".
+      - name: update
+        actor: Orchestrator
+        description: Modify the content or status of an existing `Task`.
+      - name: delete
+        actor: Orchestrator
+        description: Remove a `Task` from the list.
+      - name: list
+        actor: Orchestrator
+        description: Retrieve `Task`s, optionally filtered by status.
+    invariants:
+      - id: task-non-empty-content
+        statement: "A `Task`'s `content` must not be empty."
+
   SafePath:
     definition: >
       A directory or file boundary authorized for `Tool` operations. Before a
@@ -414,15 +458,16 @@ scenarios:
       A user asks a question that requires no `Tool`s. The `Orchestrator`
       assembles the `Context`, sends it to the selected `Provider`, receives a
       `Thought` (text), and renders the response.
-    actors: [Orchestrator, Context, Provider, Session]
+    actors: [Orchestrator, Chatter, Context, Provider, Session, Task]
     steps:
       - User submits a prompt via CLI.
       - "`Orchestrator` creates a `Turn` in the current `Session`."
       - "`Orchestrator` assembles the `Context`: system prompt + recent `Turn`s + user prompt."
-      - "`Orchestrator` sends the `Context` to the `Provider`."
-      - "`Provider` returns a text `Thought`."
+      - "`Orchestrator` sends the `Context` to the `Provider` via `Chatter`."
+      - "`Provider` returns a text `Thought` via `Chatter`."
       - "`Orchestrator` renders the response and persists the `Turn` to `History`."
       - Cost and token metrics are updated on the `Session`.
+      - "Any pending `Task`s are tracked and can be listed by the user."
     invariants_touched: [session-max-turns, history-persisted-after-turn, context-within-budget]
 
   - name: Cost auditing per turn
