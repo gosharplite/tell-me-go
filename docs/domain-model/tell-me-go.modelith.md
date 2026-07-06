@@ -286,7 +286,8 @@ A single invocation of a `Tool` requested by the LLM during a `Turn`. Carries th
 
 ### `Turn`
 
-One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly interleaved with `Tool` executions), and a final response. Every `Turn` belongs to exactly one `Session`.
+One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly interleaved with `Tool` executions), and a final response. Every `Turn` belongs to exactly one `Session`. In the code, `Turn` also serves as the `Orchestrator`'s unit of execution — it carries runtime dependencies (gateway, executor, event bus) needed to process the turn. This hybrid nature is intentional: separating "what a Turn is" from "how a Turn runs" would add indirection without clear benefit.
+`Turn` is both a domain entity and an application-layer execution context. The domain fields (`prompt`, `thoughts`, `tokenCount`, `cost`, `responseHash`) are declared below; runtime fields (gateway, executor, registry, token counter, event bus, cost tracker, context manager, clock, logger) are carried on the struct at `internal/agent/orchestrator/engine.go`.
 
 **Relationships**
 
