@@ -28,7 +28,11 @@ The API family backing an LLM `Provider`.
 
 ### `Config`
 
-The YAML configuration loaded at startup. Defines the active `Provider`, the full `Provider` registry, tool enablement flags, safety limits, and per-model pricing overrides.
+The YAML configuration loaded at startup. Defines the active `Provider`, the full `Provider` registry, tool enablement flags, safety limits, and per-model `Pricing` overrides.
+
+**Relationships**
+
+- `Pricing` — 1:n — owned — Per-model cost rates loaded from the MODELS section.
 
 **Attributes**
 
@@ -68,6 +72,24 @@ The persisted record of a `Session`'s `Turn`s, stored in SQLite. Supports auto-r
 **Invariants**
 
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+
+### `Pricing`
+
+The cost structure for a specific model variant. Maps a model identifier to per-million-token rates for cached hits, cache misses, and completion tokens. Owned by `Config`; `Turn` cost is computed by looking up the active `Provider`'s model in this table.
+
+**Attributes**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `modelName` | string | The model identifier this pricing applies to. |
+| `contextWindow` | integer | Maximum token capacity for this model. |
+| `hitRate` | decimal | USD per million cached input tokens. |
+| `missRate` | decimal | USD per million uncached input tokens. |
+| `compRate` | decimal | USD per million output (completion) tokens. |
+
+**Invariants**
+
+- **pricing-unique-model** — Each `modelName` appears at most once in the pricing table.
 
 ### `Provider`
 
@@ -230,6 +252,7 @@ The interface through which the `SecurityManager` prompts the user for confirmat
 erDiagram
     Config {}
     History {}
+    Pricing {}
     Provider {}
     SafePath {}
     Session {}
@@ -238,6 +261,7 @@ erDiagram
     ToolCall {}
     Turn {}
     UserInteractor {}
+    Config ||--o{ Pricing : "owned"
     Session ||--o{ Turn : "owned"
     Session }o--|| Config : "referenced"
     Session }o--|| Provider : "referenced"
@@ -271,6 +295,26 @@ A user asks a question that requires no `Tool`s. The `Orchestrator` sends the pr
 
 - **session-max-turns** — `Turn` count must not exceed `Config.MAX_TURNS`.
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+
+### Cost auditing per turn
+
+After every `Turn` completes, the `Orchestrator` computes its USD cost using the token counts and the active `Provider`'s `Pricing` rates, then accumulates it on the `Session`. This ensures deterministic, real-time budget visibility — no hidden expenses.
+
+**Actors:** Orchestrator, Turn, Pricing, Session
+
+**Steps**
+
+1. A `Turn` completes with known token counts (input, output, thinking).
+2. `Orchestrator` looks up the active `Provider`'s model in `Pricing`.
+3. Cost is computed: (input × rate) + (output × rate) + (thinking × rate).
+4. The `Turn`'s `cost` attribute is set.
+5. The `Session`'s `totalCost` is updated to include this `Turn`.
+
+**Invariants touched**
+
+- **deterministic-cost-audit** — Every `Turn`'s cost is computed from token counts and the `Provider`'s pricing model before the next `Turn` begins, and accumulated on the `Session`.
+
+- **pricing-unique-model** — Each `modelName` appears at most once in the pricing table.
 
 ### Skill injection on matching prompt
 

@@ -173,7 +173,12 @@ entities:
     definition: >
       The YAML configuration loaded at startup. Defines the active `Provider`,
       the full `Provider` registry, tool enablement flags, safety limits, and
-      per-model pricing overrides.
+      per-model `Pricing` overrides.
+    relationships:
+      - entity: Pricing
+        cardinality: "1:n"
+        ownership: owned
+        note: Per-model cost rates loaded from the MODELS section.
     attributes:
       - name: selectedProvider
         type: string
@@ -195,6 +200,32 @@ entities:
     invariants:
       - id: config-valid-provider
         statement: "`selectedProvider` must reference a key in the PROVIDERS registry."
+
+  Pricing:
+    definition: >
+      The cost structure for a specific model variant. Maps a model identifier
+      to per-million-token rates for cached hits, cache misses, and completion
+      tokens. Owned by `Config`; `Turn` cost is computed by looking up the
+      active `Provider`'s model in this table.
+    attributes:
+      - name: modelName
+        type: string
+        description: The model identifier this pricing applies to.
+      - name: contextWindow
+        type: integer
+        description: Maximum token capacity for this model.
+      - name: hitRate
+        type: decimal
+        description: USD per million cached input tokens.
+      - name: missRate
+        type: decimal
+        description: USD per million uncached input tokens.
+      - name: compRate
+        type: decimal
+        description: USD per million output (completion) tokens.
+    invariants:
+      - id: pricing-unique-model
+        statement: "Each `modelName` appears at most once in the pricing table."
 
   Tool:
     definition: >
@@ -317,6 +348,21 @@ scenarios:
       - "`Orchestrator` renders the response and persists the `Turn` to `History`."
       - Cost and token metrics are updated on the `Session`.
     invariants_touched: [session-max-turns, history-persisted-after-turn]
+
+  - name: Cost auditing per turn
+    description: >
+      After every `Turn` completes, the `Orchestrator` computes its USD cost
+      using the token counts and the active `Provider`'s `Pricing` rates, then
+      accumulates it on the `Session`. This ensures deterministic, real-time
+      budget visibility — no hidden expenses.
+    actors: [Orchestrator, Turn, Pricing, Session]
+    steps:
+      - "A `Turn` completes with known token counts (input, output, thinking)."
+      - "`Orchestrator` looks up the active `Provider`'s model in `Pricing`."
+      - "Cost is computed: (input × rate) + (output × rate) + (thinking × rate)."
+      - "The `Turn`'s `cost` attribute is set."
+      - "The `Session`'s `totalCost` is updated to include this `Turn`."
+    invariants_touched: [deterministic-cost-audit, pricing-unique-model]
 
   - name: Skill injection on matching prompt
     description: >

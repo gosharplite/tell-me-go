@@ -76,8 +76,7 @@ typing."* Naming is a commitment. Fuzziness is a signal. Push on invariants.
 
 ### How our model is doing
 
-We started with 5 completeness warnings and resolved them all (0 errors, 0
-warnings). All modelith-skill conventions are now followed:
+0 errors, 0 warnings. All modelith-skill conventions are followed:
 
 - **Entity names backtick-quoted** in all definitions, invariants, notes, and scenario steps.
 - **`SecurityManager`** added to the glossary as a defined actor.
@@ -90,22 +89,41 @@ that begin with a backtick: `"`Tool` invocations..."`.
 
 ## Layers already modeled
 
-| Entity | Role |
+| Layer | Entity | Role |
+|---|---|---|
+| Core loop | `Session` | Long-running conversation context |
+| | `Turn` | One request–response cycle with thoughts and tool calls |
+| | `ToolCall` | Single tool invocation during a Turn |
+| LLM backend | `Provider` | LLM backend (gemini/openai/deepseek/anthropic) |
+| | `Config` | YAML configuration with provider registry |
+| | `Pricing` | Per-model cost rates (HIT/MISS/COMP per million tokens) |
+| Agent capabilities | `Tool` | Registered capability exposed to the LLM |
+| | `Skill` | Injected guidance (golang-patterns, golang-testing) |
+| Safety | `SafePath` | Authorized directory boundary |
+| | `UserInteractor` | Security confirmation interface |
+| Persistence | `History` | Persisted session storage (SQLite) |
+
+Glossary roles (not entities — they have no persisted state):
+
+| Term | Role |
 |---|---|
-| `Session` | Long-running conversation context |
-| `Turn` | One request–response cycle with thoughts and tool calls |
-| `ToolCall` | Single tool invocation during a Turn |
-| `Provider` | LLM backend (gemini/openai/deepseek/anthropic) |
-| `Config` | YAML configuration with provider registry |
-| `Tool` | Registered capability exposed to the LLM |
-| `Skill` | Injected guidance (golang-patterns, golang-testing) |
-| `SafePath` | Authorized directory boundary |
-| `History` | Persisted session storage (SQLite) |
-| `UserInteractor` | Security confirmation interface |
+| `Orchestrator` | Drives the session loop, dispatches tools, manages turns |
+| `SecurityManager` | Validates tool requests against SafePath, delegates to UserInteractor |
+| `Thought` | Provider-agnostic reasoning block (text, tool-call, chain-of-thought) |
+| `Turn` | One request–response cycle |
 
-## Future work
+## Design decisions
 
-- Fix the 4 convention deviations above
-- Consider adding entities for: `Orchestrator` (currently a glossary term but
-  central to all scenarios), `SecurityManager` (used in scenarios but undefined)
-- Model-level gaps: pricing/cost-audit, telemetry/OTel, TUI/browse layer
+- **`Orchestrator` and `SecurityManager` are glossary terms, not entities.**
+  They are behavioral roles with no persisted state of their own — making them
+  entities would require inventing attributes and invariants that don't exist
+  in the code. The SKILL.md convention that "actors must be defined entities or
+  glossary terms" explicitly allows glossary for this case.
+- **`Pricing` is an entity, not just Config attributes.** Each model variant has
+  a structured cost profile (context window + three rate tiers). The cost-audit
+  scenario demonstrates the lookup: Turn token counts → Pricing rates → USD
+  cost → accumulated on Session. This is a real domain workflow with its own
+  invariant (cost computed before the next Turn begins).
+- **Telemetry (OpenTelemetry) and TUI (bubbletea)** are intentionally omitted.
+  They are infrastructure/presentation concerns, not domain concepts. The
+  domain model captures *what the system is*, not *how it's built*.
