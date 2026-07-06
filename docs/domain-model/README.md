@@ -97,16 +97,18 @@ improving the codebase. Six concrete applications:
 Compare every entity and enum in the model against the codebase. Does `Context`
 have a corresponding struct? Does `LLMError` exist as a type? The first audit
 ([issue #1192](https://github.com/gosharplite/tell-me-go/issues/1192)) found
-six structural gaps:
+six structural gaps — all now resolved:
 
-| # | Gap | Severity |
-|---|---|---|
-| 1 | `Context` — no struct; scattered across 7+ types | High |
-| 2 | `Pricing` — types exist but `contextWindow` is separated from rates | Medium |
-| 3 | `LLMError` — no classification type | Medium |
-| 4 | `SafePath` — no dedicated type; handled procedurally | Medium |
-| 5 | `ToolCall` — only an event, not a domain value object | Low |
-| 6 | `bypassConfirmation` on wrong entity — fixed in model | Low |
+| # | Gap | Severity | Status | Resolution |
+|---|---|---|---|---|
+| 1 | `Context` — no struct; scattered across 7+ types | High | **RESOLVED** (2026-07) | Decomposition is intentional. Model YAML updated to document the cooperating types (`HistoryPruner`, `TokenGatekeeper`, `pinningPolicy`, etc.) that compose the Context pipeline. |
+| 2 | `Pricing` — `contextWindow` separated from rates | Medium | **RESOLVED** (2026-07) | `ModelPricing` struct (`pricing/pricing.go:33`) includes `ContextWindow`. `ModelConfig` (`config/config.go:226`) carries both `ContextWindow` and `Pricing.ModelPricing` together. |
+| 3 | `LLMError` — no classification type | Medium | **RESOLVED** (2026-07) | `llm.LLMError` type alias exists at `llm/llmerror.go:14`, mapping to the five enum values (rate_limited, context_overflow, auth_failure, server_error, timeout). |
+| 4 | `SafePath` — no dedicated type; handled procedurally | Medium | **RESOLVED** (2026-07) | `security.SafePath` struct at `security/safepath.go:21` with `Path`, `Mode` (`SafePathMode`), and `AuthorizedAt` fields. |
+| 5 | `ToolCall` — only an event, not a domain value object | Low | **RESOLVED** (2026-07) | `tools.ToolCall` struct at `tools/types.go:65` with `ToolName`, `Arguments`, `Result`, `Duration`, and `Status` fields. |
+| 6 | `bypassConfirmation` on wrong entity — fixed in model | — | **RESOLVED** (2026-07) | Corrected in model YAML: `bypassConfirmation` now lives on `Config`, matching the code (`Config.BypassConfirmation`). |
+
+**All 6 original gaps are closed.** Re-run `make modelith-drift` and `make modelith-layers` periodically to catch new drift.
 
 Run this audit periodically: `grep` each entity name in `internal/domain/` and
 verify a matching type exists.
@@ -114,10 +116,20 @@ verify a matching type exists.
 ### 2. Reverse audit — code vs. model
 
 The inverse direction: scan `internal/` for packages and types with no
-corresponding entity in the model. For example, `internal/domain/events/`,
-`internal/domain/telemetry/`, and `internal/ui/` have no model entries. For
-each, ask: *is this an intentional omission (infrastructure/presentation) or a
-genuine gap?*
+corresponding entity in the model. A full audit (2026-07) found all
+`internal/domain/` sub-packages are correctly classified:
+
+| Package | Contains | Classification |
+|---|---|---|
+| `events/` | EventBus, event types, pub/sub | Infrastructure — intentionally omitted per model design decisions |
+| `telemetry/` | Telemetry types | Infrastructure — intentionally omitted |
+| `persistence/` | `FileSystem`, `File`, `Paths` | Port interfaces and config-derived types, not domain entities |
+| `ports/` | Repository interfaces, `Task` DTO | Hexagonal port interfaces — not domain entities by definition |
+| `services/` | `taskService` | Application-layer service, not a domain entity |
+| `security/` | `Policy`, `SafetyService` | Supporting types for glossary role `SecurityManager` |
+
+**No gaps found.** The model and code are aligned on what belongs in the domain
+layer. Run `make modelith-drift` periodically to catch new drift.
 
 ### 3. Scenario → test coverage mapping
 
@@ -134,19 +146,30 @@ existing or missing coverage:
 
 ### 4. Invariant audit
 
-The model declares 14 invariants. Each should be enforced in code — an
-aspirational invariant is a latent bug. Audit them:
+The model declares 15 invariants. Each has been traced to its code enforcer
+(audit completed 2026-07). All are enforced or structurally guaranteed:
 
-| Invariant | Enforced by | Status |
-|---|---|---|
-| `session-max-turns` | `MAX_TURNS` config | ? |
-| `context-within-budget` | `TokenGatekeeper` | ? |
-| `context-pinned-preserved` | `pinningPolicy` | ? |
-| `tool-timeout` | `TOOL_TIMEOUT` config | ? |
-| `history-persisted-after-turn` | `emergencySave` | ? |
-| … 9 more | … | ? |
+| # | Invariant ID | Enforced By | Status |
+|---|---|---|---|
+| 1 | `session-max-turns` | `engine_phases.go:24` / `engine_execution.go:49` — checks `CtxManager.GetLimits().MaxToolTurns` | ✅ ENFORCED |
+| 2 | `context-within-budget` | `TokenGatekeeper` at `gatekeeper.go:24` — validates hard limits, triggers summarization | ✅ ENFORCED |
+| 3 | `context-pinned-preserved` | `pinningPolicy` at `pruner.go:234` — marks pinned turns; `TokenGatekeeper` respects pins | ✅ ENFORCED |
+| 4 | `tool-timeout` | `executor.go:202` — `WithToolTimeout` option; fed by `Config.ToolTimeoutSeconds` | ✅ ENFORCED |
+| 5 | `history-persisted-after-turn` | `engine.go:358` — `emergencySave()` called at end of each turn phase loop | ✅ ENFORCED |
+| 6 | `turn-belongs-to-one-session` | Structural — `Turn` composed within `Session`, not independently referenceable | ✅ STRUCTURAL |
+| 7 | `provider-unique-name` | `config.go:158` — `validateProviderUniqueness()` checks map keys before accepting config | ✅ ENFORCED |
+| 8 | `config-valid-provider` | `config.go:126` — `validateSelectedProvider()` verifies key exists in registry | ✅ ENFORCED |
+| 9 | `pricing-unique-model` | `map[string]ModelPricing` — Go maps structurally prevent duplicates; `ValidateUniqueModels()` anchor at `pricing.go:58` | ✅ STRUCTURAL |
+| 10 | `tool-unique-name` | `registry.go:63` — `RegisterToToolkitWithOptions` checks `r.entries[def.Name]`; duplicates update existing entry | ✅ ENFORCED |
+| 11 | `skill-unique-name` | `file_repo.go:36` — `hasSkillName()` checks cache; duplicates trigger `slog.Warn` and skip | ⚠️ SOFT |
+| 12 | `safepath-absolute` | `manager.go:148` — `RegisterSafePath` calls `filepath.Clean()` + `filepath.Abs()`; also enforced in `policy.go:93` | ✅ ENFORCED |
+| 13 | `task-non-empty-content` | `task_service.go:90` — `AddTask` returns error if `content == ""` | ✅ ENFORCED |
+| 14 | `bypass-suppresses-prompts` | `manager.go:96` — `Confirm()` checks `IsBypassActive()` first, returns true without calling `ui.Confirm()` | ✅ ENFORCED |
+| 15 | `deterministic-cost-audit` | `metrics_tracker.go:223` — `AccumulateAndReturn` calculates cost via `CostCalculator` immediately after each turn | ✅ ENFORCED |
 
-Any invariant without a code enforcer is a gap — add it to the issue tracker.
+**14 of 15 invariants are fully enforced.** The one soft spot is `skill-unique-name`:
+duplicate skill names log a warning and skip rather than failing startup. This
+is documented in [INTENTIONAL_NON_FIXES.md](../../architect/INTENTIONAL_NON_FIXES.md).
 
 ### 5. PR review automation
 
@@ -215,3 +238,6 @@ Glossary roles (not entities — they have no persisted state):
   (workspace, analysis, integration, system).
 - **Telemetry (OpenTelemetry) and TUI (bubbletea)** are intentionally omitted.
   They are infrastructure/presentation concerns, not domain concepts.
+
+
+*Last Updated*: 2026-07

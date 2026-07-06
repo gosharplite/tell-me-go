@@ -35,7 +35,7 @@ EOF
 
 entities=$(grep -E '^  [A-Z][A-Za-z]+:$' "$MODEL" \
   | sed 's/^  //;s/:$//' \
-  | grep -v '^ProviderType$\|^LLMError$\|^ToolCategory$')
+  | grep -v '^ProviderType$' | grep -v '^LLMError$' | grep -v '^ToolCategory$')
 
 # ── 2. Build exception map ─────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ missing=0
 warnings=0
 
 for entity in $entities; do
-  def=$(grep -rn "type $entity struct\|type $entity interface" internal/ --include='*.go' 2>/dev/null | head -1 || true)
+  def=$(grep -rn -E "type $entity struct|type $entity interface" internal/ --include='*.go' --exclude='*_test.go' 2>/dev/null | head -1 || true)
 
   if [ -z "$def" ]; then
     if [ -n "${exception_map[$entity]:-}" ]; then
