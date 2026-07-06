@@ -253,6 +253,45 @@ func TestNewFileSkillRepository_ErrorPaths_UnreadableSubdirectory(t *testing.T) 
 	}
 }
 
+func TestNewFileSkillRepository_DuplicateName(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create two skill files with the same name
+	err := os.WriteFile(filepath.Join(tmpDir, "skill_a.md"), []byte(`---
+name: my-skill
+description: First definition
+---
+First content.`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "skill_b.md"), []byte(`---
+name: my-skill
+description: Second definition (should be skipped)
+---
+Second content.`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := NewFileSkillRepository(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	skills, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(skills) != 1 {
+		t.Errorf("expected 1 skill (duplicate skipped), got %d", len(skills))
+	}
+	if skills[0].Description != "First definition" {
+		t.Errorf("expected first-wins, got description %q", skills[0].Description)
+	}
+}
+
 func TestValidateSkill(t *testing.T) {
 	tests := []struct {
 		name      string
