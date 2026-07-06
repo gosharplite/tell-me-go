@@ -717,6 +717,67 @@ func TestRun_Routing(t *testing.T) {
 	})
 }
 
+func TestRun_UndoAndRetry_Integration(t *testing.T) {
+	t.Parallel()
+
+	mHistoryRenderer := new(agenttest.MockHistoryRenderer)
+	mUIRenderer := new(agenttest.MockUIRenderer)
+	mCapturer := new(agenttest.MockCapturer)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
+	eventstest.CleanupBus(t, mEventBus)
+
+	// Pre-populate history with 4 turns (8 messages: user+assistant pairs).
+	mHistory := new(agenttest.MockHistoryManager)
+	mHistory.SetInternalContents(make([]*llm.Content, 8))
+
+	mChatter := new(agenttest.MockChatter)
+	var capturedSession *ports.Session
+
+	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
+		capturedSession = s
+		return nil
+	}
+
+	p := session.RunParams{
+		HomeDir:         "home",
+		Version:         "1.0.0",
+		Stdout:          io.Discard,
+		Stderr:          io.Discard,
+		AgentFactory: func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
+			return mChatter, nil
+		},
+		HistoryRenderer: mHistoryRenderer,
+		UIRenderer:      mUIRenderer,
+		BackN:           1,
+		Prompt:          "retry this",
+		Config: &config.Config{
+			Model: "model",
+			Mode:  "mode",
+		},
+		Deps:     &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(testfixtures.MockSessionProvider)},
+		Capturer: mCapturer,
+	}
+
+	mCapturer.IsTTYFn = func(v any) bool { return v == io.Discard }
+	mUIRenderer.SetUseColorFn = func(use bool) {}
+	mChatter.SubscribeFn = func(sub func(context.Context, events.Event)) {}
+	mChatter.SetLimitsFn = func(ctx context.Context, toolTurns, historyTokens, historyTurns int) error { return nil }
+	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
+
+	err := session.Run(context.Background(), p)
+	require.NoError(t, err)
+
+	// Assert 1: History was reduced by the undo.
+	// MockHistoryManager stores 2 messages per turn; rolling back 1 turn removes 2 messages.
+	// After undo: 8 - 2 = 6 messages remain (3 turns).
+	remainingEntries := mHistory.GetTotalEntries()
+	assert.Equal(t, 6, remainingEntries, "undo should reduce history by 2 messages (1 turn)")
+
+	// Assert 2: Chat was invoked after the undo with a valid session.
+	require.NotNil(t, capturedSession, "Chat should be called after undo completes")
+	assert.NotEmpty(t, capturedSession.ID, "session ID should be populated after undo+retry")
+}
+
 func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
