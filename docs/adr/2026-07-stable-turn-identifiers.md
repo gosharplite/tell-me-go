@@ -12,7 +12,7 @@ This approach is fragile under summarization compaction. When the `summarize_his
 
 1. **Pin identity is lost on re-reference.** After compaction, the agent or TUI cannot reliably toggle the pin state of a previously pinned turn because the index has changed. The in-memory `Pinned` boolean survives on the `llm.Content` struct, but the mapping from the external identifier (the index the agent received) to the correct content entry is broken.
 
-2. **Manual summarization ignores pinned status.** The `summarize_history` tool accepts a raw `turns` count from the LLM and passes it directly to `SummarizeRange`. It does not consult the `Pinned` field at all. The auto-summarization path (via `TokenGatekeeper`) already uses `contiguousUnpinnedSelector` to skip pinned turns, but the tool-driven path has no such guard. An LLM that calls `summarize_history(turns=5)` will bulldoze through pinned turns.
+2. **Manual summarization ignored pinned status (fixed post-acceptance).** When this ADR was drafted, the `summarize_history` tool accepted a raw `turns` count and passed it directly to `SummarizeRange` without consulting the `Pinned` field. This gap was closed shortly after acceptance: `NewManager` now sets `candidateSelector: &contiguousUnpinnedSelector{}` by default, which both the auto-summarization path (`TokenGatekeeper`) and the manual tool path (`SummarizeHistory` → `SummarizeRange` → `scanCandidateBlocks`) share. Pinned turns are skipped during summarization regardless of which path triggers it. Verified by `TestSummarizeRange_PinnedAware`.
 
 A third, related concern is the `manage_history` tool's `index: integer` parameter: the LLM sees only integer indices in its conversation history. After compaction, the index it remembers is stale.
 
@@ -60,7 +60,7 @@ This preserves the LLM's existing mental model while insulating it from index dr
 
 - **Pin identity survives compaction.** Because the UUID is stable across the lifetime of a `Content` entry, pin toggles always target the correct turn regardless of how many compaction rounds occur.
 - **TUI toggle round-trips correctly.** The TUI history browser resolves indices to UUIDs the same way `manage_history` does. Pinning/unpinning a turn in the TUI, then summarizing, then toggling again targets the same turn.
-- **Manual summarization gains pin awareness.** The `summarize_history` tool path can now use `contiguousUnpinnedSelector` (already implemented for auto-summarization) to skip pinned turns, or at minimum warn when pinned turns would be destroyed. This closes the gap between auto-summarization (which respects pins) and manual summarization (which currently does not).
+- **Manual summarization gained pin awareness.** The `summarize_history` tool path uses `contiguousUnpinnedSelector` (the same selector as auto-summarization) to skip pinned turns. This closed the gap between auto-summarization (which respects pins) and manual summarization (which previously did not). Verified by `TestSummarizeRange_PinnedAware`.
 - **Forward-compatible migration.** The lazy backfill on `Load()` means no user-visible migration step. Old sessions silently gain UUIDs on first load.
 
 ### Negative
