@@ -117,7 +117,7 @@ func TestResolveContextWindowFromPricing(t *testing.T) {
 		},
 	}
 
-	got := cfg.ResolveContextWindowFromPricing(pd)
+	got := cfg.resolveContextWindowFromPricing(pd)
 	if got != 1048576 {
 		t.Errorf("expected 1048576 from pricing, got %d", got)
 	}
@@ -141,7 +141,7 @@ func TestResolveContextWindowFromPricing_ConfigOverride(t *testing.T) {
 		},
 	}
 
-	got := cfg.ResolveContextWindowFromPricing(pd)
+	got := cfg.resolveContextWindowFromPricing(pd)
 	if got != 50000 {
 		t.Errorf("expected 50000 from Config override, got %d", got)
 	}
@@ -160,7 +160,7 @@ func TestResolveContextWindowFromPricing_Fallback(t *testing.T) {
 		},
 	}
 
-	got := cfg.ResolveContextWindowFromPricing(pd)
+	got := cfg.resolveContextWindowFromPricing(pd)
 	if got != 120000 {
 		t.Errorf("expected fallback 120000, got %d", got)
 	}
@@ -569,7 +569,7 @@ func TestConfig_ValidateSelectedProvider(t *testing.T) {
 				SelectedProvider: tt.selectedProvider,
 				Providers:        tt.providers,
 			}
-			err := cfg.ValidateSelectedProvider()
+			err := cfg.validateSelectedProvider()
 			if tt.expectError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
@@ -612,13 +612,13 @@ func TestConfig_ValidateProviderUniqueness(t *testing.T) {
 			"openai": {Type: "openai"},
 		},
 	}
-	if err := cfg.ValidateProviderUniqueness(); err != nil {
+	if err := cfg.validateProviderUniqueness(); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 }
 
 // TestConfig_ValidateProviders_SelectedProviderFirst verifies that
-// ValidateSelectedProvider runs before per-provider checks — the operator
+// validateSelectedProvider runs before per-provider checks — the operator
 // sees the config-level error before individual provider errors.
 func TestConfig_ValidateProviders_SelectedProviderFirst(t *testing.T) {
 	t.Parallel()

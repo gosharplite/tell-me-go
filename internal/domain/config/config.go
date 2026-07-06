@@ -120,10 +120,10 @@ func (c *Config) GetActiveProvider() LLMProvider {
 	}
 }
 
-// ValidateSelectedProvider ensures SelectedProvider (when set) references
+// validateSelectedProvider ensures SelectedProvider (when set) references
 // a key that exists in the Providers registry. An empty SelectedProvider
 // is valid — it means "use legacy flat config."
-func (c *Config) ValidateSelectedProvider() error {
+func (c *Config) validateSelectedProvider() error {
 	if c.SelectedProvider == "" {
 		return nil
 	}
@@ -144,7 +144,7 @@ func (c *Config) providerKeys() []string {
 	return keys
 }
 
-// ValidateProviderUniqueness is a named validation anchor for the
+// validateProviderUniqueness is a named validation anchor for the
 // provider-unique-name invariant: each Provider in the registry has
 // a unique name.
 //
@@ -155,7 +155,7 @@ func (c *Config) providerKeys() []string {
 // place to add explicit duplicate detection.
 //
 // In the current single-file architecture, this always returns nil.
-func (c *Config) ValidateProviderUniqueness() error {
+func (c *Config) validateProviderUniqueness() error {
 	// Structurally enforced by map[string]LLMProvider.
 	// If providers are ever assembled from multiple files, add a
 	// duplicate-key check here before the merge.
@@ -177,10 +177,10 @@ func (c *Config) ValidateProviderUniqueness() error {
 // multiple invalid providers will be reported" rather than depending
 // on which one surfaces first.
 func (c *Config) ValidateProviders(logger *slog.Logger) error {
-	if err := c.ValidateSelectedProvider(); err != nil {
+	if err := c.validateSelectedProvider(); err != nil {
 		return err
 	}
-	if err := c.ValidateProviderUniqueness(); err != nil {
+	if err := c.validateProviderUniqueness(); err != nil {
 		return err
 	}
 	for name, p := range c.Providers {
@@ -276,10 +276,10 @@ func (c *Config) ResolveContextWindow() int {
 	return maxTokens
 }
 
-// ResolveContextWindowFromPricing returns the context window for the active
+// resolveContextWindowFromPricing returns the context window for the active
 // model, checking Config.Models first, then falling back to the PricingData
 // table. If neither specifies a context window, returns MaxHistoryTokens.
-func (c *Config) ResolveContextWindowFromPricing(pd pricing.PricingData) int {
+func (c *Config) resolveContextWindowFromPricing(pd pricing.PricingData) int {
 	// 1. Config.Models override (highest priority)
 	if mCfg, ok := findBestMatch(c.Models, c.Model, func(m ModelConfig) bool {
 		return m.ContextWindow > 0
