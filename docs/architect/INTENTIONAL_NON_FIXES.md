@@ -168,6 +168,20 @@ Any AI agent recommending these should consult the rationale below.
 - **See**: `internal/agent/session/context/manager.go`
   (architect-acceptance comment at the `capBestBlock` call site in `checkWindowSize`)
 
+### domain/config/config.go — validateProviderUniqueness always returns nil
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `validateProviderUniqueness` is a named validation anchor that
+  always returns `nil` — the provider-unique-name invariant is structurally
+  enforced by Go's `map[string]LLMProvider` semantics (a map cannot contain
+  duplicate keys). The method exists as a future hook point if providers are
+  ever assembled from multiple config files. The existing
+  `TestConfig_ValidateProviderUniqueness` test exercises the happy path; the
+  error-return branch flagged by coverage tools does not exist in the current
+  single-file architecture. Structurally unreachable — same acceptance class
+  as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
+- **See**: `internal/domain/config/config.go:183-185`
+
 ---
 
 ## Structural Concerns (ACCEPTED)
