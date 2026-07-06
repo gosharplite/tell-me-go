@@ -140,6 +140,7 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 }
 
 func TestLoad_EnvExpansion(t *testing.T) {
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
 	t.Setenv("MOCK_SECRET", "xyz123")
 
 	tmpDir := t.TempDir()
@@ -466,6 +467,8 @@ MODELS:
 // If negative values are accepted, the API later returns a generic
 // 400 with no breadcrumb back to the YAML field.
 func TestLoad_ProviderMaxTokens_RoundTrip(t *testing.T) {
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
 	tests := []struct {
 		name    string
 		yamlVal string // text for the MAX_TOKENS line; empty omits the field
@@ -609,6 +612,8 @@ MODELS: "this-is-a-string-not-a-map"
 // with at least one model entry so both the count log and the per-model
 // iteration body are exercised.
 func TestLoad_ModelDebugLogging(t *testing.T) {
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
 	originalLogger := slog.Default()
 	debugLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	slog.SetDefault(debugLogger)
@@ -657,6 +662,7 @@ MODELS:
 // applies to the new MAX_TOKENS field. Mirrors TestLoad_TELL_ME_EnvOverrides
 // for the THINKING_BUDGET-adjacent precedent.
 func TestLoad_ProviderMaxTokens_EnvOverride(t *testing.T) {
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
 	t.Setenv("TELL_ME_PROVIDERS_GOOGLE_MAX_TOKENS", "8000")
 
 	tmpDir := t.TempDir()
