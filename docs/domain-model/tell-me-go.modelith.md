@@ -78,7 +78,7 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 
 ### `Context`
 
-The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`. Distinct from `History` (persisted) — `Context` is the runtime view: it holds the system prompt, injected `Skill` content, the recent `Turn` history (possibly summarised), and the current user prompt. Its token count is checked against `Config.maxHistoryTokens` before every `Turn`.
+The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`. Distinct from `History` (persisted) — `Context` is the runtime view: it holds the system prompt, injected `Skill` content, the recent `Turn` history (possibly summarised), and the current user prompt. Its token count is checked against `Pricing.contextWindow` before every `Turn`. In the code, `Context` is implemented as a package of cooperating types (`internal/agent/session/context/`) rather than a single struct. Each type has a single responsibility in the assembly pipeline: HistoryPruner removes old turns, TokenGatekeeper enforces the token budget, `pinningPolicy` protects pinned turns, `emptyTurnFilter` removes empty turns, `finalContextValidator` validates the final state, TransientMerger merges transient content, and Strategy orchestrates the pipeline. This decomposition is intentional — it keeps each concern testable in isolation.
 
 **Attributes**
 
