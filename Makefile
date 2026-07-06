@@ -486,8 +486,13 @@ modelith-check:
 # modelith-drift scans the current diff for new exported Go identifiers
 # that look like domain concepts but have no entry in the domain model.
 # Advisory only — never fails the build. Run manually or in CI as a PR nudge.
+# POSIX-only; skipped on Windows (requires grep/sed/git).
 modelith-drift:
+ifeq ($(IS_POSIX),true)
 	@scripts/modelith-drift.sh $(MODELITH_YAML) origin/main
+else
+	@echo "  modelith-drift: skipped (POSIX required — run in WSL or macOS/Linux CI)"
+endif
 # running any tests. This gates PRs by ensuring fuzz tests stay buildable.
 # Uses -run=NONEXISTENT to skip all tests while still verifying compilation.
 fuzz-smoke:
