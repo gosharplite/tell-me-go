@@ -325,6 +325,22 @@ scenarios:
       - Cost and token metrics are updated on the Session.
     invariants_touched: [session-max-turns, history-persisted-after-turn]
 
+  - name: Skill injection on matching prompt
+    description: >
+      When the user's prompt matches a Skill's trigger keywords, the
+      Orchestrator injects that Skill's guidance into the system prompt
+      before sending it to the Provider — so the model responds with
+      domain-appropriate conventions (e.g. idiomatic Go patterns, TDD
+      best practices) without the user needing to ask for them.
+    actors: [Orchestrator, Skill, Provider, Session]
+    steps:
+      - User submits a prompt containing keywords that match a Skill's triggers.
+      - Orchestrator scans registered Skills and finds matching trigger keywords.
+      - The matched Skill's content is injected into the system prompt.
+      - Provider receives the augmented prompt and responds accordingly.
+      - The Turn is persisted as normal.
+    invariants_touched: [skill-unique-name]
+
   - name: Tool-augmented turn
     description: >
       The LLM requests a tool call. The Orchestrator dispatches it, feeds the

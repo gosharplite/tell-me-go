@@ -287,6 +287,24 @@ A user asks a question that requires no tools. The Orchestrator sends the prompt
 - **session-max-turns** — Turn count must not exceed Config.MAX_TURNS.
 - **history-persisted-after-turn** — Every completed Turn is persisted before the next Turn begins.
 
+### Skill injection on matching prompt
+
+When the user's prompt matches a Skill's trigger keywords, the Orchestrator injects that Skill's guidance into the system prompt before sending it to the Provider — so the model responds with domain-appropriate conventions (e.g. idiomatic Go patterns, TDD best practices) without the user needing to ask for them.
+
+**Actors:** Orchestrator, Skill, Provider, Session
+
+**Steps**
+
+1. User submits a prompt containing keywords that match a Skill's triggers.
+2. Orchestrator scans registered Skills and finds matching trigger keywords.
+3. The matched Skill's content is injected into the system prompt.
+4. Provider receives the augmented prompt and responds accordingly.
+5. The Turn is persisted as normal.
+
+**Invariants touched**
+
+- **skill-unique-name** — Each Skill has a unique name.
+
 ### Tool-augmented turn
 
 The LLM requests a tool call. The Orchestrator dispatches it, feeds the result back to the Provider, and continues until the LLM emits a final text response.
