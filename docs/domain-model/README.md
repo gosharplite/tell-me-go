@@ -92,6 +92,7 @@ that begin with a backtick: `"`Tool` invocations..."`.
 | Layer | Entity | Role |
 |---|---|---|
 | Core loop | `Session` | Long-running conversation context |
+| | `Context` | In-flight prompt payload assembled before each `Turn` |
 | | `Turn` | One request–response cycle with thoughts and tool calls |
 | | `ToolCall` | Single tool invocation during a Turn |
 | LLM backend | `Provider` | LLM backend (gemini/openai/deepseek/anthropic) |
@@ -117,13 +118,18 @@ Glossary roles (not entities — they have no persisted state):
 - **`Orchestrator` and `SecurityManager` are glossary terms, not entities.**
   They are behavioral roles with no persisted state of their own — making them
   entities would require inventing attributes and invariants that don't exist
-  in the code. The SKILL.md convention that "actors must be defined entities or
-  glossary terms" explicitly allows glossary for this case.
+  in the code.
 - **`Pricing` is an entity, not just Config attributes.** Each model variant has
   a structured cost profile (context window + three rate tiers). The cost-audit
   scenario demonstrates the lookup: Turn token counts → Pricing rates → USD
-  cost → accumulated on Session. This is a real domain workflow with its own
-  invariant (cost computed before the next Turn begins).
+  cost → accumulated on Session.
+- **`Context` is distinct from `History`.** `History` is persisted (SQLite);
+  `Context` is the runtime prompt payload assembled before each Turn. It has
+  its own invariants: must fit within the model's context window, and pinned
+  Turns are never summarised.
+- **`LLMError` and `ToolCategory` are typed enums.** Error classification
+  drives retry/failover decisions (rate_limited → backoff, auth_failure →
+  abort, context_overflow → summarise). Tool categories group capabilities
+  (workspace, analysis, integration, system).
 - **Telemetry (OpenTelemetry) and TUI (bubbletea)** are intentionally omitted.
-  They are infrastructure/presentation concerns, not domain concepts. The
-  domain model captures *what the system is*, not *how it's built*.
+  They are infrastructure/presentation concerns, not domain concepts.

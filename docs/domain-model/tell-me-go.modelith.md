@@ -13,6 +13,18 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 
 ## Enums
 
+### `LLMError`
+
+Categories of `Provider` error that affect retry and failover behaviour. Distinguishing these lets the `Orchestrator` decide whether to retry the same `Provider`, switch to a fallback, or surface the error to the user.
+
+| Value | Definition |
+| --- | --- |
+| `rate_limited` | The `Provider`'s quota has been exceeded; retry after backoff. |
+| `context_overflow` | The accumulated prompt exceeds the model's context window. |
+| `auth_failure` | The API key or credentials are invalid — no retry. |
+| `server_error` | A transient 5xx from the `Provider`; may succeed on retry or failover. |
+| `timeout` | The `Provider` did not respond within `Config.HTTP_TIMEOUT`. |
+
 ### `ProviderType`
 
 The API family backing an LLM `Provider`.
@@ -23,6 +35,17 @@ The API family backing an LLM `Provider`.
 | `openai` | OpenAI API (GPT-5.4 / 5.5). |
 | `deepseek` | DeepSeek API (V3.2 / V4) or Vertex AI Model-as-a-Service. |
 | `anthropic` | Anthropic API or Vertex AI hosted Claude (Opus 4.7). |
+
+### `ToolCategory`
+
+The logical group a `Tool` belongs to.
+
+| Value | Definition |
+| --- | --- |
+| `workspace` | File system, Git, and search operations. |
+| `analysis` | AST-powered Go analysis, architecture verification, code health. |
+| `integration` | External service connectors (Jira, Confluence, Azure DevOps, Teams). |
+| `system` | Shell execution, testing, linting, and vulnerability scanning. |
 
 ## Entities
 
@@ -50,6 +73,29 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 **Invariants**
 
 - **config-valid-provider** — `selectedProvider` must reference a key in the PROVIDERS registry.
+
+### `Context`
+
+The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`. Distinct from `History` (persisted) — `Context` is the runtime view: it holds the system prompt, injected `Skill` content, the recent `Turn` history (possibly summarised), and the current user prompt. Its token count is checked against `Config.maxHistoryTokens` before every `Turn`.
+
+**Attributes**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `tokenCount` | integer | _Derived:_ Total tokens in the assembled payload. |
+| `summarisedTurnCount` | integer | _Derived:_ Number of `Turn`s that have been summarised into this `Context`. |
+| `pinnedTurnIndices` | []int | Indices of `Turn`s protected from summarisation. |
+
+**Actions**
+
+- `assemble` — actor `Orchestrator` — Build the payload: system prompt + injected `Skill`s + recent `Turn`s (summarised or verbatim) + current user prompt.
+- `inject_skill` — actor `Orchestrator` — Insert a matched `Skill`'s content into the system prompt.
+- `summarise` — actor `Orchestrator` — Compress older, non-pinned `Turn`s to keep token count within budget.
+
+**Invariants**
+
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **context-pinned-preserved** — Pinned `Turn`s are never summarised — they are always included verbatim.
 
 ### `History`
 
@@ -106,6 +152,7 @@ An LLM backend reachable via a specific API. Encapsulates the type (gemini/opena
 | `maxTokens` | integer |  |
 | `thinkingBudget` | integer | Max thinking tokens for reasoning models (0 = disabled). |
 | `thinkingLevel` | string | Provider-specific reasoning effort (e.g. "HIGH"). |
+| `lastError` | LLMError | The most recent error returned by this `Provider`, if any. |
 
 **Invariants**
 
@@ -137,6 +184,7 @@ A long-running conversation context identified by a unique ID. Owns a sequence o
 - `Config` — n:1 — referenced — The `Config` active when the `Session` was created.
 - `Provider` — n:1 — referenced — The selected `Provider` for this `Session` (from `Config.PROVIDERS`).
 - `History` — 1:1 — owned — Persisted record of this `Session`'s `Turn`s.
+- `Context` — 1:1 — owned — The in-flight prompt payload assembled before each `Turn`.
 
 **Attributes**
 
@@ -183,7 +231,7 @@ A capability exposed to the LLM for agentic execution. `Tool`s are registered at
 | --- | --- | --- |
 | `name` | string | Unique tool identifier (e.g. "execute_command"). |
 | `description` | string | Human-readable purpose; injected into the system prompt. |
-| `category` | string | Logical group (workspace, analysis, integrations, system). |
+| `category` | ToolCategory | Logical group (workspace, analysis, integration, system). |
 | `schema` | object | JSON Schema for the tool's parameters. |
 | `requiresSafePath` | boolean | Whether this `Tool` must validate paths against the `SafePath` registry. |
 
@@ -251,6 +299,7 @@ The interface through which the `SecurityManager` prompts the user for confirmat
 ```mermaid
 erDiagram
     Config {}
+    Context {}
     History {}
     Pricing {}
     Provider {}
@@ -266,6 +315,7 @@ erDiagram
     Session }o--|| Config : "referenced"
     Session }o--|| Provider : "referenced"
     Session ||--|| History : "owned"
+    Session ||--|| Context : "owned"
     Turn ||--o{ ToolCall : "owned"
 ```
 
@@ -278,23 +328,25 @@ erDiagram
 
 ### Basic question-answer turn
 
-A user asks a question that requires no `Tool`s. The `Orchestrator` sends the prompt to the selected `Provider`, receives a `Thought` (text), and renders the response.
+A user asks a question that requires no `Tool`s. The `Orchestrator` assembles the `Context`, sends it to the selected `Provider`, receives a `Thought` (text), and renders the response.
 
-**Actors:** Orchestrator, Provider, Session
+**Actors:** Orchestrator, Context, Provider, Session
 
 **Steps**
 
 1. User submits a prompt via CLI.
 2. `Orchestrator` creates a `Turn` in the current `Session`.
-3. `Orchestrator` sends the prompt + context to the `Provider`.
-4. `Provider` returns a text `Thought`.
-5. `Orchestrator` renders the response and persists the `Turn` to `History`.
-6. Cost and token metrics are updated on the `Session`.
+3. `Orchestrator` assembles the `Context`: system prompt + recent `Turn`s + user prompt.
+4. `Orchestrator` sends the `Context` to the `Provider`.
+5. `Provider` returns a text `Thought`.
+6. `Orchestrator` renders the response and persists the `Turn` to `History`.
+7. Cost and token metrics are updated on the `Session`.
 
 **Invariants touched**
 
 - **session-max-turns** — `Turn` count must not exceed `Config.MAX_TURNS`.
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
 
 ### Cost auditing per turn
 
@@ -316,23 +368,24 @@ After every `Turn` completes, the `Orchestrator` computes its USD cost using the
 
 - **pricing-unique-model** — Each `modelName` appears at most once in the pricing table.
 
-### Skill injection on matching prompt
+### Skill injection into context
 
-When the user's prompt matches a `Skill`'s trigger keywords, the `Orchestrator` injects that `Skill`'s guidance into the system prompt before sending it to the `Provider` — so the model responds with domain-appropriate conventions (e.g. idiomatic Go patterns, TDD best practices) without the user needing to ask for them.
+When the user's prompt matches a `Skill`'s trigger keywords, the `Orchestrator` injects that `Skill`'s guidance into the `Context` system prompt before sending it to the `Provider` — so the model responds with domain-appropriate conventions without the user needing to ask.
 
-**Actors:** Orchestrator, Skill, Provider, Session
+**Actors:** Orchestrator, Skill, Context, Provider, Session
 
 **Steps**
 
 1. User submits a prompt containing keywords that match a `Skill`'s triggers.
 2. `Orchestrator` scans registered `Skill`s and finds matching trigger keywords.
-3. The matched `Skill`'s content is injected into the system prompt.
-4. `Provider` receives the augmented prompt and responds accordingly.
+3. The matched `Skill`'s content is injected into the `Context` system prompt.
+4. `Provider` receives the augmented `Context` and responds accordingly.
 5. The `Turn` is persisted as normal.
 
 **Invariants touched**
 
 - **skill-unique-name** — Each `Skill` has a unique name.
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
 
 ### Tool-augmented turn
 
@@ -372,40 +425,47 @@ The `Orchestrator` detects when the LLM is stuck in a loop by hashing consecutiv
 
 - **session-max-turns** — `Turn` count must not exceed `Config.MAX_TURNS`.
 
-### Context overflow protection
+### Context overflow and summarisation
 
-When the accumulated `History` approaches the token budget, the `Orchestrator` summarises older `Turn`s and pins critical context to prevent loss of intent.
+When the assembled `Context` approaches the model's token budget, the `Orchestrator` summarises older `Turn`s while preserving pinned ones verbatim — keeping the `Context` within the `Pricing.contextWindow` limit without losing critical information.
 
-**Actors:** Orchestrator, History, Session
+**Actors:** Orchestrator, Context, History, Session
 
 **Steps**
 
-1. `Orchestrator` checks token count against `Config.maxHistoryTokens`.
-2. If approaching the limit, older (non-pinned) `Turn`s are summarised.
-3. Pinned `Turn`s are preserved verbatim.
-4. The summarised context replaces the original `Turn`s in the prompt.
+1. `Orchestrator` assembles the `Context` and checks `tokenCount`.
+2. `tokenCount` exceeds the model's `Pricing.contextWindow`.
+3. `Orchestrator` identifies the oldest non-pinned `Turn`s.
+4. Those `Turn`s are summarised; pinned `Turn`s are preserved verbatim.
+5. The summarised content replaces the original `Turn`s in `Context`.
+6. `Context.tokenCount` is recomputed and now fits within budget.
 
 **Invariants touched**
 
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **context-pinned-preserved** — Pinned `Turn`s are never summarised — they are always included verbatim.
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
 
-### Provider failover
+### Provider error classification and failover
 
-When the selected `Provider` returns an unrecoverable error, the `Orchestrator` can fall back to an alternative `Provider` from the registry.
+When the selected `Provider` returns an error, the `Orchestrator` classifies it using the `LLMError` taxonomy: rate limits and server errors may retry or fail over; auth failures and context overflows are terminal for that `Provider` and handled differently.
 
-**Actors:** Orchestrator, Provider, Config
+**Actors:** Orchestrator, Provider, Config, Pricing
 
 **Steps**
 
-1. `Provider` returns a 5xx error or a descriptive API error.
-2. `Orchestrator` logs the error with provider attribution.
-3. If `Config` defines a fallback, the `Orchestrator` retries with the alternate `Provider`.
-
-4. The user is informed of the failover.
+1. `Provider` returns an error response.
+2. `Orchestrator` classifies the error: `rate_limited`, `server_error`, `timeout`, `auth_failure`, or `context_overflow`.
+3. For `rate_limited`: `Orchestrator` applies backoff and retries the same `Provider`.
+4. For `server_error` or `timeout`: if `Config` defines a fallback, `Orchestrator` switches to the alternate `Provider`.
+5. For `auth_failure`: `Orchestrator` surfaces the error immediately — no retry.
+6. For `context_overflow`: `Orchestrator` triggers `Context` summarisation and retries.
+7. The user is informed of the resolution path taken.
 
 **Invariants touched**
 
 - **config-valid-provider** — `selectedProvider` must reference a key in the PROVIDERS registry.
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
 
 ### Session undo and retry
 

@@ -37,6 +37,35 @@ enums:
       - name: anthropic
         definition: Anthropic API or Vertex AI hosted Claude (Opus 4.7).
 
+  LLMError:
+    description: >
+      Categories of `Provider` error that affect retry and failover behaviour.
+      Distinguishing these lets the `Orchestrator` decide whether to retry the
+      same `Provider`, switch to a fallback, or surface the error to the user.
+    values:
+      - name: rate_limited
+        definition: The `Provider`'s quota has been exceeded; retry after backoff.
+      - name: context_overflow
+        definition: The accumulated prompt exceeds the model's context window.
+      - name: auth_failure
+        definition: The API key or credentials are invalid — no retry.
+      - name: server_error
+        definition: A transient 5xx from the `Provider`; may succeed on retry or failover.
+      - name: timeout
+        definition: The `Provider` did not respond within `Config.HTTP_TIMEOUT`.
+
+  ToolCategory:
+    description: The logical group a `Tool` belongs to.
+    values:
+      - name: workspace
+        definition: File system, Git, and search operations.
+      - name: analysis
+        definition: AST-powered Go analysis, architecture verification, code health.
+      - name: integration
+        definition: External service connectors (Jira, Confluence, Azure DevOps, Teams).
+      - name: system
+        definition: Shell execution, testing, linting, and vulnerability scanning.
+
 entities:
   Session:
     definition: >
@@ -59,6 +88,10 @@ entities:
         cardinality: "1:1"
         ownership: owned
         note: Persisted record of this `Session`'s `Turn`s.
+      - entity: Context
+        cardinality: "1:1"
+        ownership: owned
+        note: The in-flight prompt payload assembled before each `Turn`.
     attributes:
       - name: id
         type: string
@@ -86,6 +119,45 @@ entities:
     invariants:
       - id: session-max-turns
         statement: "`Turn` count must not exceed `Config.MAX_TURNS`."
+
+  Context:
+    definition: >
+      The in-flight prompt payload assembled by the `Orchestrator` before each
+      `Turn`. Distinct from `History` (persisted) — `Context` is the runtime
+      view: it holds the system prompt, injected `Skill` content, the recent
+      `Turn` history (possibly summarised), and the current user prompt. Its
+      token count is checked against `Config.maxHistoryTokens` before every
+      `Turn`.
+    attributes:
+      - name: tokenCount
+        type: integer
+        derived: true
+        derivation: Total tokens in the assembled payload.
+      - name: summarisedTurnCount
+        type: integer
+        derived: true
+        derivation: Number of `Turn`s that have been summarised into this `Context`.
+      - name: pinnedTurnIndices
+        type: "[]int"
+        description: Indices of `Turn`s protected from summarisation.
+    actions:
+      - name: assemble
+        actor: Orchestrator
+        description: >
+          Build the payload: system prompt + injected `Skill`s + recent `Turn`s
+          (summarised or verbatim) + current user prompt.
+      - name: inject_skill
+        actor: Orchestrator
+        description: Insert a matched `Skill`'s content into the system prompt.
+      - name: summarise
+        actor: Orchestrator
+        description: >
+          Compress older, non-pinned `Turn`s to keep token count within budget.
+    invariants:
+      - id: context-within-budget
+        statement: "`tokenCount` must not exceed the model's `Pricing.contextWindow`."
+      - id: context-pinned-preserved
+        statement: "Pinned `Turn`s are never summarised — they are always included verbatim."
 
   Turn:
     definition: >
@@ -165,6 +237,9 @@ entities:
       - name: thinkingLevel
         type: string
         description: Provider-specific reasoning effort (e.g. "HIGH").
+      - name: lastError
+        type: LLMError
+        description: The most recent error returned by this `Provider`, if any.
     invariants:
       - id: provider-unique-name
         statement: "Each `Provider` in the registry has a unique name."
@@ -242,8 +317,8 @@ entities:
         type: string
         description: Human-readable purpose; injected into the system prompt.
       - name: category
-        type: string
-        description: Logical group (workspace, analysis, integrations, system).
+        type: ToolCategory
+        description: Logical group (workspace, analysis, integration, system).
       - name: schema
         type: object
         description: JSON Schema for the tool's parameters.
@@ -336,18 +411,19 @@ entities:
 scenarios:
   - name: Basic question-answer turn
     description: >
-      A user asks a question that requires no `Tool`s. The `Orchestrator` sends
-      the prompt to the selected `Provider`, receives a `Thought` (text), and
-      renders the response.
-    actors: [Orchestrator, Provider, Session]
+      A user asks a question that requires no `Tool`s. The `Orchestrator`
+      assembles the `Context`, sends it to the selected `Provider`, receives a
+      `Thought` (text), and renders the response.
+    actors: [Orchestrator, Context, Provider, Session]
     steps:
       - User submits a prompt via CLI.
       - "`Orchestrator` creates a `Turn` in the current `Session`."
-      - "`Orchestrator` sends the prompt + context to the `Provider`."
+      - "`Orchestrator` assembles the `Context`: system prompt + recent `Turn`s + user prompt."
+      - "`Orchestrator` sends the `Context` to the `Provider`."
       - "`Provider` returns a text `Thought`."
       - "`Orchestrator` renders the response and persists the `Turn` to `History`."
       - Cost and token metrics are updated on the `Session`.
-    invariants_touched: [session-max-turns, history-persisted-after-turn]
+    invariants_touched: [session-max-turns, history-persisted-after-turn, context-within-budget]
 
   - name: Cost auditing per turn
     description: >
@@ -364,21 +440,20 @@ scenarios:
       - "The `Session`'s `totalCost` is updated to include this `Turn`."
     invariants_touched: [deterministic-cost-audit, pricing-unique-model]
 
-  - name: Skill injection on matching prompt
+  - name: Skill injection into context
     description: >
       When the user's prompt matches a `Skill`'s trigger keywords, the
-      `Orchestrator` injects that `Skill`'s guidance into the system prompt
-      before sending it to the `Provider` — so the model responds with
-      domain-appropriate conventions (e.g. idiomatic Go patterns, TDD
-      best practices) without the user needing to ask for them.
-    actors: [Orchestrator, Skill, Provider, Session]
+      `Orchestrator` injects that `Skill`'s guidance into the `Context` system
+      prompt before sending it to the `Provider` — so the model responds with
+      domain-appropriate conventions without the user needing to ask.
+    actors: [Orchestrator, Skill, Context, Provider, Session]
     steps:
       - "User submits a prompt containing keywords that match a `Skill`'s triggers."
       - "`Orchestrator` scans registered `Skill`s and finds matching trigger keywords."
-      - "The matched `Skill`'s content is injected into the system prompt."
-      - "`Provider` receives the augmented prompt and responds accordingly."
+      - "The matched `Skill`'s content is injected into the `Context` system prompt."
+      - "`Provider` receives the augmented `Context` and responds accordingly."
       - "The `Turn` is persisted as normal."
-    invariants_touched: [skill-unique-name]
+    invariants_touched: [skill-unique-name, context-within-budget]
 
   - name: Tool-augmented turn
     description: >
@@ -409,33 +484,39 @@ scenarios:
         with a warning and asks the LLM to take a different approach.
     invariants_touched: [session-max-turns]
 
-  - name: Context overflow protection
+  - name: Context overflow and summarisation
     description: >
-      When the accumulated `History` approaches the token budget, the
-      `Orchestrator` summarises older `Turn`s and pins critical context to
-      prevent loss of intent.
-    actors: [Orchestrator, History, Session]
+      When the assembled `Context` approaches the model's token budget, the
+      `Orchestrator` summarises older `Turn`s while preserving pinned ones
+      verbatim — keeping the `Context` within the `Pricing.contextWindow` limit
+      without losing critical information.
+    actors: [Orchestrator, Context, History, Session]
     steps:
-      - "`Orchestrator` checks token count against `Config.maxHistoryTokens`."
-      - "If approaching the limit, older (non-pinned) `Turn`s are summarised."
-      - "Pinned `Turn`s are preserved verbatim."
-      - "The summarised context replaces the original `Turn`s in the prompt."
-    invariants_touched: [history-persisted-after-turn]
+      - "`Orchestrator` assembles the `Context` and checks `tokenCount`."
+      - "`tokenCount` exceeds the model's `Pricing.contextWindow`."
+      - "`Orchestrator` identifies the oldest non-pinned `Turn`s."
+      - "Those `Turn`s are summarised; pinned `Turn`s are preserved verbatim."
+      - "The summarised content replaces the original `Turn`s in `Context`."
+      - "`Context.tokenCount` is recomputed and now fits within budget."
+    invariants_touched:
+      [context-within-budget, context-pinned-preserved, history-persisted-after-turn]
 
-  - name: Provider failover
+  - name: Provider error classification and failover
     description: >
-      When the selected `Provider` returns an unrecoverable error, the
-      `Orchestrator` can fall back to an alternative `Provider` from the
-      registry.
-    actors: [Orchestrator, Provider, Config]
+      When the selected `Provider` returns an error, the `Orchestrator`
+      classifies it using the `LLMError` taxonomy: rate limits and server errors
+      may retry or fail over; auth failures and context overflows are terminal
+      for that `Provider` and handled differently.
+    actors: [Orchestrator, Provider, Config, Pricing]
     steps:
-      - "`Provider` returns a 5xx error or a descriptive API error."
-      - "`Orchestrator` logs the error with provider attribution."
-      - >
-        If `Config` defines a fallback, the `Orchestrator` retries with the
-        alternate `Provider`.
-      - The user is informed of the failover.
-    invariants_touched: [config-valid-provider]
+      - "`Provider` returns an error response."
+      - "`Orchestrator` classifies the error: `rate_limited`, `server_error`, `timeout`, `auth_failure`, or `context_overflow`."
+      - "For `rate_limited`: `Orchestrator` applies backoff and retries the same `Provider`."
+      - "For `server_error` or `timeout`: if `Config` defines a fallback, `Orchestrator` switches to the alternate `Provider`."
+      - "For `auth_failure`: `Orchestrator` surfaces the error immediately — no retry."
+      - "For `context_overflow`: `Orchestrator` triggers `Context` summarisation and retries."
+      - The user is informed of the resolution path taken.
+    invariants_touched: [config-valid-provider, context-within-budget]
 
   - name: Session undo and retry
     description: >
