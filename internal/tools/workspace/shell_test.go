@@ -1532,9 +1532,10 @@ func TestShellTool_SHcRouteRegression(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	outFile := filepath.Join(tmpDir, "out.txt")
+	outFileSlash := filepath.ToSlash(outFile) // forward slashes for POSIX parser on Windows
 
 	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
-		"command": fmt.Sprintf("echo a > %s\necho b >> %s", outFile, outFile),
+		"command": fmt.Sprintf("echo a > %s\necho b >> %s", outFileSlash, outFileSlash),
 		"reason":  "test sh -c route regression",
 	}, nil)
 
