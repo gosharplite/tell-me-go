@@ -34,14 +34,6 @@ enums:
       - name: anthropic
         definition: Anthropic API or Vertex AI hosted Claude (Opus 4.7).
 
-  Severity:
-    description: Log / finding severity levels used across the system.
-    values:
-      - name: debug
-      - name: info
-      - name: warn
-      - name: error
-
 entities:
   Session:
     definition: >

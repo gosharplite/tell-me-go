@@ -23,17 +23,6 @@ The API family backing an LLM Provider.
 | `deepseek` | DeepSeek API (V3.2 / V4) or Vertex AI Model-as-a-Service. |
 | `anthropic` | Anthropic API or Vertex AI hosted Claude (Opus 4.7). |
 
-### `Severity`
-
-Log / finding severity levels used across the system.
-
-| Value | Definition |
-| --- | --- |
-| `debug` |  |
-| `info` |  |
-| `warn` |  |
-| `error` |  |
-
 ## Entities
 
 ### `Config`
