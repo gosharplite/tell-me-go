@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -46,6 +46,7 @@ help:
 	@echo "  make modelith-render - Regenerate the domain model Markdown from YAML"
 	@echo "  make modelith-check  - CI gate: fail if the committed .md is stale"
 	@echo "  make modelith-drift  - Check diff for new exports missing from domain model"
+	@echo "  make modelith-layers - Verify domain entities are defined in internal/domain/"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
 build:
@@ -492,6 +493,18 @@ ifeq ($(IS_POSIX),true)
 	@scripts/modelith-drift.sh $(MODELITH_YAML) origin/main
 else
 	@echo "  modelith-drift: skipped (POSIX required — run in WSL or macOS/Linux CI)"
+endif
+
+# modelith-layers checks that modeled domain entities have their primary
+# type definition in internal/domain/. Flags entities whose canonical
+# definition is in application, infrastructure, or tools — indicating
+# the model and code disagree about what belongs in the domain layer.
+# Advisory only; POSIX-only.
+modelith-layers:
+ifeq ($(IS_POSIX),true)
+	@scripts/modelith-layers.sh $(MODELITH_YAML)
+else
+	@echo "  modelith-layers: skipped (POSIX required — run in WSL or macOS/Linux CI)"
 endif
 # running any tests. This gates PRs by ensuring fuzz tests stay buildable.
 # Uses -run=NONEXISTENT to skip all tests while still verifying compilation.
