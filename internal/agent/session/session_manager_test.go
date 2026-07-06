@@ -739,10 +739,10 @@ func TestRun_UndoAndRetry_Integration(t *testing.T) {
 	}
 
 	p := session.RunParams{
-		HomeDir:         "home",
-		Version:         "1.0.0",
-		Stdout:          io.Discard,
-		Stderr:          io.Discard,
+		HomeDir: "home",
+		Version: "1.0.0",
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
 		AgentFactory: func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {
 			return mChatter, nil
 		},

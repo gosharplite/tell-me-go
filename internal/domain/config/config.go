@@ -366,7 +366,7 @@ func DefaultPricing() pricing.PricingData {
 				Miss:           0.50,
 				Comp:           3.00,
 				ThinkingBudget: 32768,
-				SearchQuery:    0.014, // Updated from 0.035
+				SearchQuery:    0.014,   // Updated from 0.035
 				ContextWindow:  1048576, // 1M token context window
 			},
 			"gemini-3-pro-preview": {
@@ -374,7 +374,7 @@ func DefaultPricing() pricing.PricingData {
 				Miss:           2.00,  // Updated from 1.25
 				Comp:           12.00, // Updated from 5.00
 				ThinkingBudget: 65536,
-				SearchQuery:    0.014, // Updated from 0.035
+				SearchQuery:    0.014,   // Updated from 0.035
 				ContextWindow:  2097152, // 2M token context window
 			},
 		},

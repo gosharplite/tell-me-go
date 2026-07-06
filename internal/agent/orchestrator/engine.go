@@ -263,7 +263,7 @@ func (e *Engine) CreateTurn(index int, startTime time.Time, sessionID string) *T
 	counter := e.tokenCounter
 
 	Turn := &Turn{
-		SessionID:   sessionID,
+		SessionID:    sessionID,
 		Index:        index,
 		StartTime:    startTime,
 		State:        &TurnState{CurrentTurns: index, Phase: PhaseGuard, RetryCount: 0},
