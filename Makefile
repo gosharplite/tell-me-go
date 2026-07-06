@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -42,7 +42,9 @@ help:
 	@echo "  make bench       - Run all benchmarks with memory allocation metrics"
 	@echo "  make fuzz       - Run all fuzz targets for 40s each (developer-invoked)"
 	@echo "  make fuzz-smoke - Compile-check fuzz tests are buildable (included in make check)"
-	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-race test-coverage"
+	@echo "  make modelith-lint   - Validate the domain model YAML (docs/domain-model/)"
+	@echo "  make modelith-render - Regenerate the domain model Markdown from YAML"
+	@echo "  make modelith-check  - CI gate: fail if the committed .md is stale"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
 build:
@@ -464,7 +466,21 @@ else
 	)
 endif
 
-# fuzz-smoke compiles all test files (including fuzz harnesses) without
+# Domain model validation (modelith).
+# Requires modelith: go install github.com/stacklok/modelith/cmd/modelith@latest
+# Falls back to 'go run' if the binary is not on PATH.
+MODELITH := $(shell command -v modelith 2>/dev/null)
+MODELITH_CMD := $(if $(MODELITH),$(MODELITH),go run github.com/stacklok/modelith/cmd/modelith@latest)
+MODELITH_YAML := docs/domain-model/tell-me-go.modelith.yaml
+
+modelith-lint:
+	$(MODELITH_CMD) lint $(MODELITH_YAML)
+
+modelith-render:
+	$(MODELITH_CMD) render $(MODELITH_YAML)
+
+modelith-check:
+	$(MODELITH_CMD) render --check $(MODELITH_YAML)
 # running any tests. This gates PRs by ensuring fuzz tests stay buildable.
 # Uses -run=NONEXISTENT to skip all tests while still verifying compilation.
 fuzz-smoke:
@@ -485,6 +501,8 @@ check: fmt tidy build
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
 	@$(MAKE) verify-adr-index
+	@echo "=== modelith-check ==="
+	@$(MAKE) modelith-check
 	@echo "=== fuzz-smoke ==="
 	@$(MAKE) fuzz-smoke
 	@echo "=== vulncheck ==="
@@ -513,6 +531,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
 	@$(MAKE) verify-adr-index
+	@echo "=== modelith-check ==="
+	@$(MAKE) modelith-check
 	@echo "=== fuzz-smoke ==="
 	@$(MAKE) fuzz-smoke
 	@echo "=== vulncheck ==="

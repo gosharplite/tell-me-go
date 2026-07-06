@@ -1,0 +1,417 @@
+# yaml-language-server: $schema=https://modelith.sh/schema/domain-model/v1.json
+kind: DomainModel
+version: v1
+title: tell-me-go — Multi-Provider Reasoning Agent
+description: >
+  A high-performance CLI assistant that unifies reasoning engines (Gemini,
+  OpenAI, DeepSeek, Claude) under a single interface. Models the core
+  conversation loop, provider abstraction, tool execution, security
+  boundaries, and cost auditing.
+
+glossary:
+  Orchestrator: >
+    The top-level loop that drives a Session: receives a user prompt, delegates
+    to the active Provider, dispatches Tool calls, and manages the Turn
+    lifecycle.
+  Thought: >
+    A provider-agnostic reasoning block emitted by an LLM — may be a text
+    response, a tool-call request, or (for reasoning models) a chain-of-thought
+    segment. Normalised from provider-specific wire formats.
+  Turn: >
+    One request–response cycle: a user message plus the assistant's full
+    response (which may include multiple Thoughts and tool round-trips).
+
+enums:
+  ProviderType:
+    description: The API family backing an LLM Provider.
+    values:
+      - name: gemini
+        definition: Google Vertex AI (Gemini 3.0 / 3.1).
+      - name: openai
+        definition: OpenAI API (GPT-5.4 / 5.5).
+      - name: deepseek
+        definition: DeepSeek API (V3.2 / V4) or Vertex AI Model-as-a-Service.
+      - name: anthropic
+        definition: Anthropic API or Vertex AI hosted Claude (Opus 4.7).
+
+  Severity:
+    description: Log / finding severity levels used across the system.
+    values:
+      - name: debug
+      - name: info
+      - name: warn
+      - name: error
+
+entities:
+  Session:
+    definition: >
+      A long-running conversation context identified by a unique ID. Owns a
+      sequence of Turns, a History for persistence, and the active Config.
+      Managed by the Orchestrator.
+    relationships:
+      - entity: Turn
+        cardinality: "1:n"
+        ownership: owned
+      - entity: Config
+        cardinality: "n:1"
+        ownership: referenced
+        note: The Config active when the Session was created.
+      - entity: Provider
+        cardinality: "n:1"
+        ownership: referenced
+        note: The selected Provider for this Session (from Config.PROVIDERS).
+    attributes:
+      - name: id
+        type: string
+        description: UUID assigned at creation.
+      - name: createdAt
+        type: timestamp
+      - name: turnCount
+        type: integer
+        derived: true
+        derivation: Number of Turns in this Session.
+      - name: totalCost
+        type: decimal
+        derived: true
+        derivation: Sum of all Turn costs in USD.
+    actions:
+      - name: start
+        actor: Orchestrator
+        description: Create a new Session with the resolved Config and Provider.
+      - name: archive
+        actor: Orchestrator
+        description: Archive the Session's History and start a fresh one.
+      - name: undo
+        actor: Orchestrator
+        description: Remove the last N Turns and persist the change.
+    invariants:
+      - id: session-max-turns
+        statement: Turn count must not exceed Config.MAX_TURNS.
+
+  Turn:
+    definition: >
+      One atomic exchange: a user prompt, zero or more assistant Thoughts
+      (possibly interleaved with Tool executions), and a final response.
+      Every Turn belongs to exactly one Session.
+    relationships:
+      - entity: Session
+        cardinality: "n:1"
+        ownership: referenced
+      - entity: ToolCall
+        cardinality: "1:n"
+        ownership: owned
+        note: Tool invocations requested during this Turn.
+    attributes:
+      - name: prompt
+        type: string
+        description: The user's input text.
+      - name: thoughts
+        type: "[]Thought"
+        description: The sequence of provider-agnostic reasoning blocks.
+      - name: tokenCount
+        type: integer
+        derived: true
+        derivation: Total tokens consumed (input + output + thinking).
+      - name: cost
+        type: decimal
+        derived: true
+        derivation: USD cost computed from token counts and Provider pricing.
+      - name: responseHash
+        type: string
+        description: SHA-256 of the final response — used for hallucination loop detection.
+    invariants:
+      - id: turn-belongs-to-one-session
+        statement: A Turn belongs to exactly one Session.
+
+  ToolCall:
+    definition: >
+      A single invocation of a Tool requested by the LLM during a Turn. Carries
+      the tool name, arguments, result, and timing. ToolCalls may execute
+      concurrently (up to MAX_CONCURRENT_TOOLS).
+    relationships:
+      - entity: Turn
+        cardinality: "n:1"
+        ownership: referenced
+    attributes:
+      - name: toolName
+        type: string
+      - name: arguments
+        type: object
+      - name: result
+        type: string
+      - name: duration
+        type: duration
+      - name: status
+        type: string
+        description: success, error, or timeout.
+    invariants:
+      - id: tool-timeout
+        statement: Execution duration must not exceed Config.TOOL_TIMEOUT seconds.
+
+  Provider:
+    definition: >
+      An LLM backend reachable via a specific API. Encapsulates the type
+      (gemini/openai/deepseek/anthropic), model name, endpoint URL,
+      authentication, and provider-specific settings like thinking budget.
+    attributes:
+      - name: name
+        type: string
+        description: The registry key (e.g. "vertex-flash", "deepseek-pro").
+      - name: type
+        type: ProviderType
+      - name: model
+        type: string
+        description: The model identifier sent on the wire.
+      - name: url
+        type: string
+        description: Base API endpoint.
+      - name: maxTokens
+        type: integer
+      - name: thinkingBudget
+        type: integer
+        description: Max thinking tokens for reasoning models (0 = disabled).
+      - name: thinkingLevel
+        type: string
+        description: Provider-specific reasoning effort (e.g. "HIGH").
+    invariants:
+      - id: provider-unique-name
+        statement: Each Provider in the registry has a unique name.
+
+  Config:
+    definition: >
+      The YAML configuration loaded at startup. Defines the active Provider,
+      the full Provider registry, tool enablement flags, safety limits, and
+      per-model pricing overrides.
+    attributes:
+      - name: selectedProvider
+        type: string
+        description: Key of the active Provider in the registry.
+      - name: maxTurns
+        type: integer
+      - name: maxHistoryTokens
+        type: integer
+      - name: maxConcurrentTools
+        type: integer
+      - name: toolTimeout
+        type: integer
+      - name: httpTimeout
+        type: integer
+      - name: showThoughts
+        type: boolean
+      - name: showTools
+        type: boolean
+    invariants:
+      - id: config-valid-provider
+        statement: selectedProvider must reference a key in the PROVIDERS registry.
+
+  Tool:
+    definition: >
+      A capability exposed to the LLM for agentic execution. Tools are
+      registered at startup and carry a JSON Schema describing their
+      parameters. Categories include workspace (files, git), analysis
+      (AST, architecture), integrations (Jira, ADO, Teams), and system
+      (shell, testing).
+    attributes:
+      - name: name
+        type: string
+        description: Unique tool identifier (e.g. "execute_command").
+      - name: description
+        type: string
+        description: Human-readable purpose; injected into the system prompt.
+      - name: category
+        type: string
+        description: Logical group (workspace, analysis, integrations, system).
+      - name: schema
+        type: object
+        description: JSON Schema for the tool's parameters.
+      - name: requiresSafePath
+        type: boolean
+        description: Whether this tool must validate paths against the SafePath registry.
+    invariants:
+      - id: tool-unique-name
+        statement: Each Tool has a unique name.
+
+  Skill:
+    definition: >
+      A block of idiomatic guidance injected into the system prompt when the
+      task is relevant. Examples: golang-patterns (Go best practices) and
+      golang-testing (TDD patterns). Skills are activated by keyword matching
+      against the user prompt.
+    attributes:
+      - name: name
+        type: string
+      - name: content
+        type: string
+        description: The Markdown text injected into the context.
+      - name: triggers
+        type: "[]string"
+        description: Keywords that cause this Skill to be activated.
+    invariants:
+      - id: skill-unique-name
+        statement: Each Skill has a unique name.
+
+  SafePath:
+    definition: >
+      A directory or file boundary authorized for tool operations. Before a
+      Tool reads or writes outside allowed boundaries, the SecurityManager
+      prompts the user via the UserInteractor for confirmation. Once
+      authorized, the path persists across Sessions.
+    attributes:
+      - name: path
+        type: string
+        description: The absolute or relative path.
+      - name: mode
+        type: string
+        description: 'Either "read" (read-only) or "readwrite" (full access).'
+      - name: authorizedAt
+        type: timestamp
+    invariants:
+      - id: safepath-absolute
+        statement: Paths are stored in canonical absolute form.
+
+  History:
+    definition: >
+      The persisted record of a Session's Turns, stored in SQLite. Supports
+      auto-repair on corruption, full-text search, and O(1) archive
+      navigation. Separate from the in-memory Session state.
+    relationships:
+      - entity: Session
+        cardinality: "n:1"
+        ownership: referenced
+    attributes:
+      - name: turns
+        type: "[]Turn"
+        description: Ordered list of persisted Turns.
+      - name: pinnedTurns
+        type: "[]int"
+        description: Indices of Turns protected from summarization/pruning.
+    actions:
+      - name: save
+        description: Persist the current Turn to storage.
+      - name: autoRepair
+        description: Detect and recover from corrupted history files.
+      - name: search
+        description: Full-text search across all stored Turns.
+      - name: summarize
+        description: Compress older Turns to stay within token limits.
+    invariants:
+      - id: history-persisted-after-turn
+        statement: Every completed Turn is persisted before the next Turn begins.
+
+  UserInteractor:
+    definition: >
+      The interface through which the SecurityManager prompts the user for
+      confirmation (e.g. before a tool accesses an unauthorized path, or
+      before executing a dangerous command). Implementations include the
+      interactive TUI capturer and a no-op variant for automated workflows.
+    attributes:
+      - name: bypassConfirmation
+        type: boolean
+        description: When true, all prompts are skipped (used in CI/automation).
+
+scenarios:
+  - name: Basic question-answer turn
+    description: >
+      A user asks a question that requires no tools. The Orchestrator sends
+      the prompt to the selected Provider, receives a Thought (text), and
+      renders the response.
+    actors: [Orchestrator, Provider, Session]
+    steps:
+      - User submits a prompt via CLI.
+      - Orchestrator creates a Turn in the current Session.
+      - Orchestrator sends the prompt + context to the Provider.
+      - Provider returns a text Thought.
+      - Orchestrator renders the response and persists the Turn to History.
+      - Cost and token metrics are updated on the Session.
+    invariants_touched: [session-max-turns, history-persisted-after-turn]
+
+  - name: Tool-augmented turn
+    description: >
+      The LLM requests a tool call. The Orchestrator dispatches it, feeds the
+      result back to the Provider, and continues until the LLM emits a final
+      text response.
+    actors: [Orchestrator, Provider, Tool, Session]
+    steps:
+      - Provider returns a Thought requesting a Tool execution.
+      - Orchestrator validates the Tool name and arguments.
+      - If the Tool requires a SafePath, SecurityManager checks authorization.
+      - Orchestrator executes the Tool (possibly concurrently with others).
+      - The Tool result is fed back to the Provider.
+      - The cycle repeats until Provider emits a final text Thought.
+      - The Turn (with all ToolCalls) is persisted to History.
+    invariants_touched: [tool-timeout, tool-unique-name]
+
+  - name: Hallucination loop detection
+    description: >
+      The Orchestrator detects when the LLM is stuck in a loop by hashing
+      consecutive responses and comparing against a repetition threshold.
+    actors: [Orchestrator, Session, Turn]
+    steps:
+      - Orchestrator computes SHA-256 of the final response for a Turn.
+      - On the next Turn, the new response hash is compared to recent hashes.
+      - If N consecutive hashes match, the Orchestrator interrupts the loop
+        with a warning and asks the LLM to take a different approach.
+    invariants_touched: [session-max-turns]
+
+  - name: Context overflow protection
+    description: >
+      When the accumulated History approaches the token budget, the
+      Orchestrator summarises older Turns and pins critical context to
+      prevent loss of intent.
+    actors: [Orchestrator, History, Session]
+    steps:
+      - Orchestrator checks token count against Config.maxHistoryTokens.
+      - If approaching the limit, older (non-pinned) Turns are summarised.
+      - Pinned Turns are preserved verbatim.
+      - The summarised context replaces the original Turns in the prompt.
+    invariants_touched: [history-persisted-after-turn]
+
+  - name: Provider failover
+    description: >
+      When the selected Provider returns an unrecoverable error, the
+      Orchestrator can fall back to an alternative Provider from the
+      registry.
+    actors: [Orchestrator, Provider, Config]
+    steps:
+      - Provider returns a 5xx error or a descriptive API error.
+      - Orchestrator logs the error with provider attribution.
+      - If Config defines a fallback, the Orchestrator retries with the
+        alternate Provider.
+      - The user is informed of the failover.
+    invariants_touched: [config-valid-provider]
+
+  - name: Session undo and retry
+    description: >
+      The user undoes the last N Turns (rollback) and optionally retries the
+      last user message with a fresh LLM call.
+    actors: [Orchestrator, Session, History]
+    steps:
+      - User invokes undo (via CLI flag or command).
+      - Orchestrator removes the last N Turns from the Session.
+      - History is updated to reflect the rollback.
+      - If retry is requested, the last user prompt is re-sent to the Provider.
+    invariants_touched: [history-persisted-after-turn]
+
+  - name: Path authorization
+    description: >
+      A Tool attempts to access a path outside the project boundary. The
+      SecurityManager prompts the user for confirmation before allowing
+      access.
+    actors: [SecurityManager, UserInteractor, SafePath, Tool]
+    steps:
+      - Tool requests access to a path.
+      - SecurityManager checks if the path is within any registered SafePath.
+      - If not, and bypassConfirmation is false, the UserInteractor prompts
+        the user.
+      - If the user approves, the path is registered as a SafePath and the
+        Tool proceeds.
+      - If the user denies, the Tool returns an error.
+      - If bypassConfirmation is true, the check is silently skipped.
+    invariants_touched: [safepath-absolute]
+
+invariants:
+  - id: deterministic-cost-audit
+    statement: >
+      Every Turn's cost is computed from token counts and the Provider's
+      pricing model before the next Turn begins, and accumulated on the
+      Session.
