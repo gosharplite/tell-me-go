@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -45,6 +45,7 @@ help:
 	@echo "  make modelith-lint   - Validate the domain model YAML (docs/domain-model/)"
 	@echo "  make modelith-render - Regenerate the domain model Markdown from YAML"
 	@echo "  make modelith-check  - CI gate: fail if the committed .md is stale"
+	@echo "  make modelith-drift  - Check diff for new exports missing from domain model"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
 build:
@@ -481,6 +482,12 @@ modelith-render:
 
 modelith-check:
 	$(MODELITH_CMD) render --check $(MODELITH_YAML)
+
+# modelith-drift scans the current diff for new exported Go identifiers
+# that look like domain concepts but have no entry in the domain model.
+# Advisory only — never fails the build. Run manually or in CI as a PR nudge.
+modelith-drift:
+	@scripts/modelith-drift.sh $(MODELITH_YAML) origin/main
 # running any tests. This gates PRs by ensuring fuzz tests stay buildable.
 # Uses -run=NONEXISTENT to skip all tests while still verifying compilation.
 fuzz-smoke:
