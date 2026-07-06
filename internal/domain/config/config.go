@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -119,17 +120,48 @@ func (c *Config) GetActiveProvider() LLMProvider {
 	}
 }
 
+// ValidateSelectedProvider ensures SelectedProvider (when set) references
+// a key that exists in the Providers registry. An empty SelectedProvider
+// is valid — it means "use legacy flat config."
+func (c *Config) ValidateSelectedProvider() error {
+	if c.SelectedProvider == "" {
+		return nil
+	}
+	if _, ok := c.Providers[c.SelectedProvider]; !ok {
+		return fmt.Errorf("SELECTED_PROVIDER %q is not a key in PROVIDERS (available: %s)",
+			c.SelectedProvider, strings.Join(c.providerKeys(), ", "))
+	}
+	return nil
+}
+
+// providerKeys returns a sorted list of provider names for error messages.
+func (c *Config) providerKeys() []string {
+	keys := make([]string, 0, len(c.Providers))
+	for k := range c.Providers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // ValidateProviders runs validation against every provider entry in
 // Providers and returns the first error encountered. Warnings are
 // emitted via the supplied logger (non-fatal). The logger must be
 // non-nil; callers without a configured logger should pass a logger
 // backed by a discard handler.
 //
-// The order of iteration is undefined (Go map iteration); operators
-// should treat the first-error semantics as "any one of multiple
-// invalid providers will be reported" rather than depending on which
-// one surfaces first.
+// SelectedProvider is validated first — before per-provider checks —
+// so the operator sees the config-level misconfiguration before any
+// individual provider errors.
+//
+// The order of per-provider iteration is undefined (Go map iteration);
+// operators should treat the first-error semantics as "any one of
+// multiple invalid providers will be reported" rather than depending
+// on which one surfaces first.
 func (c *Config) ValidateProviders(logger *slog.Logger) error {
+	if err := c.ValidateSelectedProvider(); err != nil {
+		return err
+	}
 	for name, p := range c.Providers {
 		provider := p // copy to avoid taking the address of the range variable
 		if err := provider.validate(name, logger); err != nil {

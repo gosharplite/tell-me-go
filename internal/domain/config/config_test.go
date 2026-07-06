@@ -460,8 +460,113 @@ func TestLLMProvider_Validate_EdgeCases(t *testing.T) {
 // short-circuits on the first invalid field found. Viper's WeaklyTypedInput can
 // silently produce negative values from integer overflow, so this guard is
 // critical for startup-time diagnosis.
-func TestConfig_ValidateBounds(t *testing.T) {
+func TestConfig_ValidateSelectedProvider(t *testing.T) {
 	t.Parallel()
+
+	tests := []struct {
+		name             string
+		selectedProvider string
+		providers        map[string]LLMProvider
+		expectError      bool
+		errorContains    string
+	}{
+		{
+			name:             "empty string is valid (legacy mode)",
+			selectedProvider: "",
+			providers:        map[string]LLMProvider{"gemini": {Type: "gemini"}},
+			expectError:      false,
+		},
+		{
+			name:             "valid key",
+			selectedProvider: "gemini",
+			providers:        map[string]LLMProvider{"gemini": {Type: "gemini"}},
+			expectError:      false,
+		},
+		{
+			name:             "missing key",
+			selectedProvider: "nonexistent",
+			providers:        map[string]LLMProvider{"gemini": {Type: "gemini"}},
+			expectError:      true,
+			errorContains:    "nonexistent",
+		},
+		{
+			name:             "missing key with empty providers",
+			selectedProvider: "any",
+			providers:        map[string]LLMProvider{},
+			expectError:      true,
+			errorContains:    "any",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := &Config{
+				SelectedProvider: tt.selectedProvider,
+				Providers:        tt.providers,
+			}
+			err := cfg.ValidateSelectedProvider()
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.Contains(t, err.Error(), "SELECTED_PROVIDER")
+				assert.Contains(t, err.Error(), "PROVIDERS")
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestConfig_providerKeys(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Providers: map[string]LLMProvider{
+			"zzz": {Type: "gemini"},
+			"aaa": {Type: "openai"},
+			"mmm": {Type: "anthropic"},
+		},
+	}
+	keys := cfg.providerKeys()
+	assert.Equal(t, []string{"aaa", "mmm", "zzz"}, keys, "providerKeys must return sorted keys")
+}
+
+func TestConfig_providerKeys_Empty(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{}
+	keys := cfg.providerKeys()
+	assert.Empty(t, keys)
+}
+
+// TestConfig_ValidateProviders_SelectedProviderFirst verifies that
+// ValidateSelectedProvider runs before per-provider checks — the operator
+// sees the config-level error before individual provider errors.
+func TestConfig_ValidateProviders_SelectedProviderFirst(t *testing.T) {
+	t.Parallel()
+	logger, _ := newWarnBuffer()
+	cfg := &Config{
+		SelectedProvider: "nonexistent",
+		Providers: map[string]LLMProvider{
+			"gemini": {Type: "gemini", MaxTokens: -99}, // would also fail per-provider check
+		},
+	}
+	err := cfg.ValidateProviders(logger)
+	require.Error(t, err)
+	// Must contain the SelectedProvider error, NOT the per-provider MaxTokens error
+	assert.Contains(t, err.Error(), "SELECTED_PROVIDER")
+	assert.Contains(t, err.Error(), "nonexistent")
+	assert.NotContains(t, err.Error(), "MAX_TOKENS",
+		"SelectedProvider error must surface before per-provider MaxTokens error")
+}
+
+// TestConfig_ValidateBounds pins the contract for Config.ValidateBounds(): every
+// non-negative int field is validated, zero is always accepted, and the function
+// short-circuits on the first invalid field found. Viper's WeaklyTypedInput can
+// silently produce negative values from integer overflow, so this guard is
+// critical for startup-time diagnosis.
+func TestConfig_ValidateBounds(t *testing.T) {
 
 	tests := []struct {
 		name          string
