@@ -591,3 +591,32 @@ func TestNewInternalTools_NilLogger(t *testing.T) {
 	_, ok := it.logger.(*ports.NoOpLogger)
 	require.True(t, ok, "nil logger should fall back to *ports.NoOpLogger")
 }
+
+func TestResolveTurnID_GetWindowError(t *testing.T) {
+	// Gap #3: history.GetWindow returns an I/O error — verify it propagates
+	// through the "resolve turn id: %w" wrapper.
+	sentinel := errors.New("disk full")
+	hm := &agenttest.MockHistoryManager{}
+	hm.SetGetWindowErr(sentinel)
+
+	id, err := resolveTurnID(context.Background(), hm, 0)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "resolve turn id")
+	require.True(t, errors.Is(err, sentinel),
+		"errors.Is must unwrap to the underlying GetWindow error")
+	require.Empty(t, id)
+}
+
+func TestResolveTurnID_EmptyID(t *testing.T) {
+	// Gap #4: user message has an empty ID — verify the defensive guard fires.
+	hm := &agenttest.MockHistoryManager{}
+	hm.SetInternalContents([]*llm.Content{
+		{Role: "user", ID: "", Parts: []*llm.Part{{Text: "hello"}}},
+		{Role: "model", ID: "m1", Parts: []*llm.Part{{Text: "hi"}}},
+	})
+
+	id, err := resolveTurnID(context.Background(), hm, 0)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no stable ID")
+	require.Empty(t, id)
+}

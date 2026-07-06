@@ -144,6 +144,30 @@ Any AI agent recommending these should consult the rationale below.
   method exists solely to satisfy the `FileSystem` interface in test contexts.
 - **See**: `internal/infrastructure/persistence/persistencetest/plain_os_fs.go:130-132`
 
+### context/manager.go — groupTurns error in capBestBlock
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `groupTurns` only fails on nil content, nil parts, or empty roles.
+  The sub-slice `contents[best.startMsg:best.endMsg]` passed to `groupTurns` inside
+  `capBestBlock` comes from a history window that was already loaded and validated
+  by `loadHistory()` via `validateHistoryBoundaries`. No mutation occurs on the
+  slice between validation and this call site. Structurally unreachable — same
+  acceptance class as `json.Marshal` on all-string structs in
+  `global_prompt_tracker.go`.
+- **See**: `internal/agent/session/context/manager.go`
+  (architect-acceptance comment at the `groupTurns` call site in `capBestBlock`)
+
+### context/manager.go — capBestBlock error propagation in checkWindowSize
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `capBestBlock` error path in `checkWindowSize` propagates the
+  error from `groupTurns` inside `capBestBlock`. Since `groupTurns` on an
+  already-validated sub-slice is structurally unreachable (see previous entry),
+  this error-handling branch is equally unreachable. Both gaps share the same root
+  cause and acceptance rationale.
+- **See**: `internal/agent/session/context/manager.go`
+  (architect-acceptance comment at the `capBestBlock` call site in `checkWindowSize`)
+
 ---
 
 ## Structural Concerns (ACCEPTED)
@@ -288,4 +312,4 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-07*
+*Last Updated: 2026-07 (gaps #1-#2 triage)*

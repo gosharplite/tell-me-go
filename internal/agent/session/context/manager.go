@@ -564,6 +564,12 @@ func capBestBlock(
 	// at (best.count - 1) turns when more than one turn exists.
 	cappedCount := best.count - 1
 	if cappedCount > 0 {
+		// Coverage: architect-accepted (2026-07). groupTurns only fails on nil or
+		// invalid content. The sub-slice contents[best.startMsg:best.endMsg] comes
+		// from a history window that was already validated by loadHistory() via
+		// validateHistoryBoundaries. Structurally unreachable — same acceptance
+		// class as json.Marshal on all-string structs in global_prompt_tracker.go.
+		// See: docs/architect/INTENTIONAL_NON_FIXES.md
 		subTurns, err := groupTurns(ctx, contents[best.startMsg:best.endMsg])
 		if err != nil {
 			return nil, 0, 0, err
@@ -597,6 +603,10 @@ func (cm *Manager) checkWindowSize(ctx context.Context, windowSize int, numTurns
 
 	// Phase 2: If at end of history, try capping the best block
 	if windowSize >= totalEntries {
+		// Coverage: architect-accepted (2026-07). capBestBlock only returns an
+		// error from groupTurns on a sub-slice of already-validated history (see
+		// acceptance comment in capBestBlock above). Structurally unreachable.
+		// See: docs/architect/INTENTIONAL_NON_FIXES.md
 		subset, startIdx, endIdx, err := capBestBlock(ctx, contents, best, minViable)
 		if err != nil {
 			return false, nil, 0, 0, err
