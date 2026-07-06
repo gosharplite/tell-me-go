@@ -90,7 +90,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
 
-	err := engine.Run(context.Background(), time.Now())
+	err := engine.Run(context.Background(), time.Now(), "")
 
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
@@ -136,7 +136,7 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
 
-	err := engine.Run(context.Background(), time.Now())
+	err := engine.Run(context.Background(), time.Now(), "")
 
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
@@ -184,7 +184,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
 
-	err := engine.Run(context.Background(), time.Now())
+	err := engine.Run(context.Background(), time.Now(), "")
 
 	if err == nil {
 		t.Fatal("Expected error, got nil")
@@ -245,7 +245,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
 
-	err := engine.Run(context.Background(), time.Now())
+	err := engine.Run(context.Background(), time.Now(), "")
 
 	if err == nil {
 		t.Fatal("Expected error, got nil")
@@ -283,7 +283,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
 
-	err := engine.Run(context.Background(), time.Now())
+	err := engine.Run(context.Background(), time.Now(), "")
 
 	if err == nil {
 		t.Fatal("Expected error, got nil")

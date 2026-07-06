@@ -60,6 +60,21 @@ type ToolResult struct {
 	Metadata map[string]interface{}
 }
 
+// ToolCall represents a single tool invocation during a Turn.
+// It captures the full lifecycle: the call, its result, duration, and status.
+type ToolCall struct {
+	// ToolName is the name of the invoked tool (e.g., "execute_command").
+	ToolName string
+	// Arguments are the parameters passed to the tool invocation.
+	Arguments map[string]interface{}
+	// Result is the outcome produced by the tool execution.
+	Result ToolResult
+	// Duration is the wall-clock time spent executing the tool.
+	Duration time.Duration
+	// Status indicates the execution outcome: "success", "error", or "timeout".
+	Status string
+}
+
 // BinaryData represents multi-modal content produced by a tool.
 type BinaryData struct {
 	// MIMEType is the IANA media type (e.g., "image/png", "application/pdf").

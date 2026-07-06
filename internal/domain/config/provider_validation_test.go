@@ -181,3 +181,20 @@ func TestConfig_ValidateProviders_AllValidReturnsNil(t *testing.T) {
 		t.Errorf("all-valid config must validate cleanly; got %v", err)
 	}
 }
+
+// TestConfig_ValidateProviders_SelectedProviderAndPerProviderValid is the
+// integrated happy path: a valid SelectedProvider referencing a valid
+// provider entry must pass both levels of validation.
+func TestConfig_ValidateProviders_SelectedProviderAndPerProviderValid(t *testing.T) {
+	t.Parallel()
+	logger, _ := newWarnBuffer()
+	cfg := &Config{
+		SelectedProvider: "claude",
+		Providers: map[string]LLMProvider{
+			"claude": {Type: "anthropic", MaxTokens: 16384},
+		},
+	}
+	if err := cfg.ValidateProviders(logger); err != nil {
+		t.Errorf("valid SelectedProvider + valid per-provider config must pass; got %v", err)
+	}
+}

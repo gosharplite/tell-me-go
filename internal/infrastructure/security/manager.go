@@ -6,6 +6,7 @@ package security
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -141,9 +142,19 @@ func (sm *SecurityManager) ReadLine(ctx context.Context) (string, error) {
 	return sm.interaction.ReadLine(ctx)
 }
 
-// RegisterSafePath registers a safe path.
+// RegisterSafePath registers a safe path. The path is normalized to
+// canonical absolute form before storage, enforcing the safepath-absolute
+// invariant: paths are always stored in resolved, absolute form.
 func (sm *SecurityManager) RegisterSafePath(path string) {
-	sm.policy.RegisterPath(path, true)
+	if path == "" {
+		return
+	}
+	cleaned := filepath.Clean(path)
+	abs, err := filepath.Abs(cleaned)
+	if err != nil {
+		return
+	}
+	sm.policy.RegisterPath(abs, true)
 }
 
 // removeSafePath removes a safe path.
@@ -156,9 +167,19 @@ func (sm *SecurityManager) SetCommandsLogFile(path string) {
 	sm.auditor.SetLogFile(path)
 }
 
-// RegisterReadOnlyPath registers a read-only path.
+// RegisterReadOnlyPath registers a read-only path. The path is normalized to
+// canonical absolute form before storage, enforcing the safepath-absolute
+// invariant: paths are always stored in resolved, absolute form.
 func (sm *SecurityManager) RegisterReadOnlyPath(path string) {
-	sm.policy.RegisterPath(path, false)
+	if path == "" {
+		return
+	}
+	cleaned := filepath.Clean(path)
+	abs, err := filepath.Abs(cleaned)
+	if err != nil {
+		return
+	}
+	sm.policy.RegisterPath(abs, false)
 }
 
 // GetSafePaths returns safe paths.

@@ -111,7 +111,11 @@ func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir strin
 	data, err := defaultLoader.load(ctx, pricingPath)
 	if err != nil {
 		slog.Debug("falling back to hardcoded default pricing")
-		return config.DefaultPricing()
+		data = config.DefaultPricing()
+	}
+
+	if err := data.ValidateUniqueModels(); err != nil {
+		slog.Warn("pricing uniqueness validation failed", "error", err)
 	}
 	return data
 }

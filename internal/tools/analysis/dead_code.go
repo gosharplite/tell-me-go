@@ -166,6 +166,7 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 	a.propagateConstructorUsagesToReturnTypes(state, hb)
 	a.propagateInitUsages(state, hb)
 	a.propagateTransitiveExternalUsage(state, hb)
+	a.propagateTypedConstantUsages(state, hb)
 
 	return state, nil
 }

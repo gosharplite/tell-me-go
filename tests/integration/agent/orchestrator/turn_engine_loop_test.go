@@ -74,7 +74,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
 
-	err := engine.Run(ctx, time.Now())
+	err := engine.Run(ctx, time.Now(), "")
 	assert.NoError(t, err)
 
 	// Check history for the injected warning
@@ -142,7 +142,7 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
 
-	err := engine.Run(ctx, time.Now())
+	err := engine.Run(ctx, time.Now(), "")
 	assert.NoError(t, err)
 
 	// Check history for the injected warning

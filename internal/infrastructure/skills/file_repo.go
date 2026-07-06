@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,23 +32,14 @@ func isSkillFile(info os.FileInfo) bool {
 	return !info.IsDir() && filepath.Ext(info.Name()) == ".md" && info.Name() != "NOTICE.md"
 }
 
-// loadSkillFile reads and parses a single skill file, appending the result to cache.
-func loadSkillFile(path string, cache *[]domain.Skill) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read skill file %s: %w", path, err)
+// hasSkillName returns true if cache already contains a skill with the given name.
+func hasSkillName(cache []domain.Skill, name string) bool {
+	for _, s := range cache {
+		if s.Name == name {
+			return true
+		}
 	}
-
-	skill, err := parseSkill(data)
-	if err != nil {
-		return fmt.Errorf("parse skill file %s: %w", path, err)
-	}
-
-	if skill != nil {
-		*cache = append(*cache, *skill)
-	}
-
-	return nil
+	return false
 }
 
 // NewFileSkillRepository creates a new fileSkillRepository and immediately
@@ -70,7 +62,26 @@ func NewFileSkillRepository(docsDir string) (domain.SkillRepository, error) {
 			return nil
 		}
 
-		return loadSkillFile(path, &cache)
+		// Parse the skill first so we can check its name before appending.
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf("read skill file %s: %w", path, readErr)
+		}
+		skill, parseErr := parseSkill(data)
+		if parseErr != nil {
+			return fmt.Errorf("parse skill file %s: %w", path, parseErr)
+		}
+		if skill == nil {
+			return nil // skip non-skill files silently
+		}
+		if hasSkillName(cache, skill.Name) {
+			slog.Warn("duplicate skill name detected, skipping",
+				"name", skill.Name,
+				"path", path)
+			return nil
+		}
+		cache = append(cache, *skill)
+		return nil
 	})
 
 	if err != nil {

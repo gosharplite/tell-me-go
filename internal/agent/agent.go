@@ -343,7 +343,7 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 	go func() {
 		defer wg.Done()
 		defer cancel() // Stop telemetry when Run finishes
-		runErr = a.engine.Run(gCtx, s.StartTime)
+		runErr = a.engine.Run(gCtx, s.StartTime, s.ID)
 	}()
 
 	wg.Add(1)

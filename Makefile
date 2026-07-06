@@ -24,7 +24,7 @@ else
     IS_POSIX := true
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -42,7 +42,12 @@ help:
 	@echo "  make bench       - Run all benchmarks with memory allocation metrics"
 	@echo "  make fuzz       - Run all fuzz targets for 40s each (developer-invoked)"
 	@echo "  make fuzz-smoke - Compile-check fuzz tests are buildable (included in make check)"
-	@echo "  make check-full - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-race test-coverage"
+	@echo "  make modelith-lint   - Validate the domain model YAML (docs/domain-model/)"
+	@echo "  make modelith-render - Regenerate the domain model Markdown from YAML"
+	@echo "  make modelith-check  - CI gate: fail if the committed .md is stale"
+	@echo "  make modelith-drift  - Check diff for new exports missing from domain model"
+	@echo "  make modelith-layers - Verify domain entities are defined in internal/domain/"
+	@echo "  make modelith-vocab  - Detect non-canonical terminology in docs"
 	@echo "  make vulncheck  - Run govulncheck for known CVEs in dependencies"
 
 build:
@@ -387,8 +392,12 @@ endif
 verify-architecture:
 ifeq ($(IS_POSIX),true)
 	@ARCH_FAIL_ON_VIOLATION=1 go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
+	@echo "=== modelith-layers ==="
+	@$(MAKE) modelith-layers
 else
 	@set ARCH_FAIL_ON_VIOLATION=1 && go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
+	@echo "=== modelith-layers ==="
+	@$(MAKE) modelith-layers
 endif
 
 # AI-SAFE RACE TEST: 
@@ -464,7 +473,54 @@ else
 	)
 endif
 
-# fuzz-smoke compiles all test files (including fuzz harnesses) without
+# Domain model validation (modelith).
+# Requires modelith: go install github.com/stacklok/modelith/cmd/modelith@latest
+# Falls back to 'go run' if the binary is not on PATH.
+MODELITH := $(shell command -v modelith 2>/dev/null)
+MODELITH_CMD := $(if $(MODELITH),$(MODELITH),go run github.com/stacklok/modelith/cmd/modelith@latest)
+MODELITH_YAML := docs/domain-model/tell-me-go.modelith.yaml
+
+modelith-lint:
+	$(MODELITH_CMD) lint $(MODELITH_YAML)
+
+modelith-render:
+	$(MODELITH_CMD) render $(MODELITH_YAML)
+
+modelith-check:
+	$(MODELITH_CMD) render --check $(MODELITH_YAML)
+
+# modelith-drift scans the current diff for new exported Go identifiers
+# that look like domain concepts but have no entry in the domain model.
+# Advisory only — never fails the build. Run manually or in CI as a PR nudge.
+# POSIX-only; skipped on Windows (requires grep/sed/git).
+modelith-drift:
+ifeq ($(IS_POSIX),true)
+	@scripts/modelith-drift.sh $(MODELITH_YAML) origin/main
+else
+	@echo "  modelith-drift: skipped (POSIX required — run in WSL or macOS/Linux CI)"
+endif
+
+# modelith-layers checks that modeled domain entities have their primary
+# type definition in internal/domain/. Flags entities whose canonical
+# definition is in application, infrastructure, or tools — indicating
+# the model and code disagree about what belongs in the domain layer.
+# Advisory only; POSIX-only.
+modelith-layers:
+ifeq ($(IS_POSIX),true)
+	@scripts/modelith-layers.sh $(MODELITH_YAML)
+else
+	@echo "  modelith-layers: skipped (POSIX required — run in WSL or macOS/Linux CI)"
+endif
+
+# modelith-vocab scans docs/ and README.md for non-canonical synonyms of
+# domain model terms (e.g., "authorized paths" instead of SafePath).
+# Advisory only; POSIX-only.
+modelith-vocab:
+ifeq ($(IS_POSIX),true)
+	@scripts/modelith-vocab.sh $(MODELITH_YAML)
+else
+	@echo "  modelith-vocab: skipped (POSIX required — run in WSL or macOS/Linux CI)"
+endif
 # running any tests. This gates PRs by ensuring fuzz tests stay buildable.
 # Uses -run=NONEXISTENT to skip all tests while still verifying compilation.
 fuzz-smoke:
@@ -485,6 +541,8 @@ check: fmt tidy build
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
 	@$(MAKE) verify-adr-index
+	@echo "=== modelith-check ==="
+	@$(MAKE) modelith-check
 	@echo "=== fuzz-smoke ==="
 	@$(MAKE) fuzz-smoke
 	@echo "=== vulncheck ==="
@@ -513,6 +571,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
 	@$(MAKE) verify-adr-index
+	@echo "=== modelith-check ==="
+	@$(MAKE) modelith-check
 	@echo "=== fuzz-smoke ==="
 	@$(MAKE) fuzz-smoke
 	@echo "=== vulncheck ==="

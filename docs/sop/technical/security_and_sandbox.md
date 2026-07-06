@@ -20,15 +20,15 @@ To define the mandatory security protocols for the `tell-me-go` agent, ensuring 
 All tools interacting with the local filesystem must verify that the requested paths are within authorized boundaries.
 
 *   **Mandatory Helpers**:
-    - `tools.IsPathSafe(path)`: Checks if a path is allowed for **reading**. Includes CWD, Temp, Safe Paths, and Read-Only Paths.
-    - `tools.IsPathWritable(path)`: Checks if a path is allowed for **writing**. Includes CWD, Temp, and Safe Paths (excludes Read-Only Paths).
+    - `tools.IsPathSafe(path)`: Checks if a path is allowed for **reading**. Includes CWD, Temp, `SafePath`, and Read-Only Paths.
+    - `tools.IsPathWritable(path)`: Checks if a path is allowed for **writing**. Includes CWD, Temp, and `SafePath` (excludes Read-Only Paths).
 *   **Sanitization Steps**:
     1.  **Clean**: Always apply `filepath.Clean(path)` to resolve `..` and `.` segments.
     2.  **Symlink Resolution**: Call `filepath.EvalSymlinks(absPath)` if the file exists. This prevents "Symlink Attacks" where a model tries to escape a directory via a malicious link.
 *   **Authorized Roots**:
     - Current Working Directory (CWD).
     - System Temporary Directory (`os.TempDir()`).
-    - Explicitly registered "Safe Paths" (Read/Write).
+    - Explicitly registered `SafePath` (Read/Write).
     - Explicitly registered "Read-Only Paths" (Read-Only).
 
 ---

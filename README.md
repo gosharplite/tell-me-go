@@ -32,7 +32,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Resilience**: Real-time USD cost auditing, deterministic budgets, and descriptive API error handling.
 *   **Persistence & Recovery**: 
     *   **Durability**: Automatic history saving with built-in **Auto-Repair** for crash resilience and session continuity.
-    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and authorized paths).
+    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and `SafePath`).
 
 ## 📋 Prerequisites
 *   **Go**: 1.26.4 or higher.
@@ -357,6 +357,11 @@ brew install gh
 sudo apt install gh
 ```
 
+To work with the domain model, install **modelith**:
+```bash
+go install github.com/stacklok/modelith/cmd/modelith@latest
+```
+
 Then run the standard Go workflow:
 
 ```bash
@@ -373,6 +378,27 @@ make fmt
 See [ADR-036: Test Determinism Standards](docs/adr/2026-05-test-determinism-standards.md) for project-wide testing conventions (no `time.Sleep`, race-safe mocks, deterministic time).
 
 See the [Makefile](Makefile) for additional targets.
+
+## 🗺️ Domain Model
+
+tell-me-go maintains a canonical **[domain model](docs/domain-model/)** — a
+plain-language description of what the system *is*: its entities
+(`Session`, `Turn`, `Provider`, `Tool`, …), their relationships, the invariants
+that govern them, and scenario narratives that stress-test the whole.
+
+The model is authored as a `*.modelith.yaml` file and rendered to Markdown with
+embedded Mermaid ER diagrams using [modelith](https://github.com/stacklok/modelith),
+a domain-model-as-code toolchain by [Stacklok](https://stacklok.com). The
+Markdown is regenerated and checked for drift in CI (`make modelith-check`).
+
+```sh
+make modelith-lint     # validate the YAML
+make modelith-render   # regenerate the Markdown
+make modelith-check    # CI gate: fail if the committed .md is stale
+```
+
+See [docs/domain-model/README.md](docs/domain-model/README.md) for conventions,
+the 3-pass build order, and design rationale.
 
 ## Design Decisions
 Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).

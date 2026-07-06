@@ -169,6 +169,7 @@ func (e ToolExecutionStartedEvent) SpinnerInfo() (SpinnerInfo, bool) {
 type ToolResultEvent struct {
 	Name   string
 	Result tools.ToolResult
+	Call   tools.ToolCall // Full lifecycle captured as a domain value object
 }
 
 func (e ToolResultEvent) Type() string { return "ToolResultEvent" }

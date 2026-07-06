@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -119,17 +120,69 @@ func (c *Config) GetActiveProvider() LLMProvider {
 	}
 }
 
+// validateSelectedProvider ensures SelectedProvider (when set) references
+// a key that exists in the Providers registry. An empty SelectedProvider
+// is valid — it means "use legacy flat config."
+func (c *Config) validateSelectedProvider() error {
+	if c.SelectedProvider == "" {
+		return nil
+	}
+	if _, ok := c.Providers[c.SelectedProvider]; !ok {
+		return fmt.Errorf("SELECTED_PROVIDER %q is not a key in PROVIDERS (available: %s)",
+			c.SelectedProvider, strings.Join(c.providerKeys(), ", "))
+	}
+	return nil
+}
+
+// providerKeys returns a sorted list of provider names for error messages.
+func (c *Config) providerKeys() []string {
+	keys := make([]string, 0, len(c.Providers))
+	for k := range c.Providers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// validateProviderUniqueness is a named validation anchor for the
+// provider-unique-name invariant: each Provider in the registry has
+// a unique name.
+//
+// The invariant is structurally enforced by Go's map semantics — a
+// map[string]LLMProvider cannot contain duplicate keys. This method
+// exists so that future code which assembles the provider registry
+// from multiple sources (e.g., merging config files) has an obvious
+// place to add explicit duplicate detection.
+//
+// In the current single-file architecture, this always returns nil.
+func (c *Config) validateProviderUniqueness() error {
+	// Structurally enforced by map[string]LLMProvider.
+	// If providers are ever assembled from multiple files, add a
+	// duplicate-key check here before the merge.
+	return nil
+}
+
 // ValidateProviders runs validation against every provider entry in
 // Providers and returns the first error encountered. Warnings are
 // emitted via the supplied logger (non-fatal). The logger must be
 // non-nil; callers without a configured logger should pass a logger
 // backed by a discard handler.
 //
-// The order of iteration is undefined (Go map iteration); operators
-// should treat the first-error semantics as "any one of multiple
-// invalid providers will be reported" rather than depending on which
-// one surfaces first.
+// SelectedProvider is validated first, then provider uniqueness —
+// before per-provider checks — so the operator sees config-level
+// misconfiguration before any individual provider errors.
+//
+// The order of per-provider iteration is undefined (Go map iteration);
+// operators should treat the first-error semantics as "any one of
+// multiple invalid providers will be reported" rather than depending
+// on which one surfaces first.
 func (c *Config) ValidateProviders(logger *slog.Logger) error {
+	if err := c.validateSelectedProvider(); err != nil {
+		return err
+	}
+	if err := c.validateProviderUniqueness(); err != nil {
+		return err
+	}
 	for name, p := range c.Providers {
 		provider := p // copy to avoid taking the address of the range variable
 		if err := provider.validate(name, logger); err != nil {
@@ -223,6 +276,27 @@ func (c *Config) ResolveContextWindow() int {
 	return maxTokens
 }
 
+// resolveContextWindowFromPricing returns the context window for the active
+// model, checking Config.Models first, then falling back to the PricingData
+// table. If neither specifies a context window, returns MaxHistoryTokens.
+func (c *Config) resolveContextWindowFromPricing(pd pricing.PricingData) int {
+	// 1. Config.Models override (highest priority)
+	if mCfg, ok := findBestMatch(c.Models, c.Model, func(m ModelConfig) bool {
+		return m.ContextWindow > 0
+	}); ok {
+		return mCfg.ContextWindow
+	}
+
+	// 2. Pricing data (new unified source)
+	mp := pd.GetModelPricing(c.Model)
+	if mp.ContextWindow > 0 {
+		return mp.ContextWindow
+	}
+
+	// 3. Fallback to config-level limit
+	return c.MaxHistoryTokens
+}
+
 // updateBestMatch checks whether candidate key k is a valid match for target
 // and, if so, replaces bestV/maxLen with it when it's longer than the current best.
 func updateBestMatch[T any](k, target string, v T, isValid func(T) bool, bestV *T, found *bool, maxLen *int) {
@@ -292,14 +366,16 @@ func DefaultPricing() pricing.PricingData {
 				Miss:           0.50,
 				Comp:           3.00,
 				ThinkingBudget: 32768,
-				SearchQuery:    0.014, // Updated from 0.035
+				SearchQuery:    0.014,   // Updated from 0.035
+				ContextWindow:  1048576, // 1M token context window
 			},
 			"gemini-3-pro-preview": {
 				Hit:            0.20,  // Updated from 0.3125
 				Miss:           2.00,  // Updated from 1.25
 				Comp:           12.00, // Updated from 5.00
 				ThinkingBudget: 65536,
-				SearchQuery:    0.014, // Updated from 0.035
+				SearchQuery:    0.014,   // Updated from 0.035
+				ContextWindow:  2097152, // 2M token context window
 			},
 		},
 	}

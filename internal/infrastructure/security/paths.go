@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/filepathutil"
@@ -17,10 +18,8 @@ import (
 
 // pathPolicy manages allowed boundaries and validates paths.
 type pathPolicy struct {
-	safePaths       map[string]struct{}
-	safePathsMu     sync.RWMutex
-	readOnlyPaths   map[string]struct{}
-	readOnlyPathsMu sync.RWMutex
+	paths           map[string]domain_security.SafePath
+	pathsMu         sync.RWMutex
 	resolvedTempDir string
 	customRules     []pathRule // custom path validation rules (ADR #830 safety net)
 }
@@ -28,13 +27,17 @@ type pathPolicy struct {
 // newPathPolicy creates a new pathPolicy.
 func newPathPolicy(safePaths []string) *pathPolicy {
 	policy := &pathPolicy{
-		safePaths:     make(map[string]struct{}),
-		readOnlyPaths: make(map[string]struct{}),
+		paths: make(map[string]domain_security.SafePath),
 	}
 
+	now := time.Now()
 	for _, p := range safePaths {
 		if abs, err := filepath.Abs(p); err == nil {
-			policy.safePaths[abs] = struct{}{}
+			policy.paths[abs] = domain_security.SafePath{
+				Path:         abs,
+				Mode:         domain_security.SafePathReadWrite,
+				AuthorizedAt: now,
+			}
 		}
 	}
 
@@ -81,15 +84,18 @@ func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error
 	return false, nil
 }
 
-// checkSafePaths checks against the safePaths map.
+// checkSafePaths checks against the safe (read-write) paths.
 func (p *pathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
-	p.safePathsMu.RLock()
-	defer p.safePathsMu.RUnlock()
+	p.pathsMu.RLock()
+	defer p.pathsMu.RUnlock()
 
-	for sp := range p.safePaths {
-		ok, err := p.checkBoundary(absPath, sp)
+	for path, sp := range p.paths {
+		if sp.Mode != domain_security.SafePathReadWrite {
+			continue
+		}
+		ok, err := p.checkBoundary(absPath, path)
 		if err != nil {
-			log.Printf("security: boundary check error for safe path %s against %s: %v", sp, absPath, err)
+			log.Printf("security: boundary check error for safe path %s against %s: %v", path, absPath, err)
 		}
 		if ok {
 			return true, nil
@@ -98,19 +104,22 @@ func (p *pathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
 	return false, nil
 }
 
-// checkReadOnlyPaths if writable is false, checks against the readOnlyPaths map.
+// checkReadOnlyPaths if writable is false, checks against the read-only paths.
 func (p *pathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, error) {
 	if writable {
 		return false, nil
 	}
 
-	p.readOnlyPathsMu.RLock()
-	defer p.readOnlyPathsMu.RUnlock()
+	p.pathsMu.RLock()
+	defer p.pathsMu.RUnlock()
 
-	for rop := range p.readOnlyPaths {
-		ok, err := p.checkBoundary(absPath, rop)
+	for path, sp := range p.paths {
+		if sp.Mode != domain_security.SafePathRead {
+			continue
+		}
+		ok, err := p.checkBoundary(absPath, path)
 		if err != nil {
-			log.Printf("security: boundary check error for read-only path %s against %s: %v", rop, absPath, err)
+			log.Printf("security: boundary check error for read-only path %s against %s: %v", path, absPath, err)
 		}
 		if ok {
 			return true, nil
@@ -253,14 +262,17 @@ func (p *pathPolicy) RegisterPath(path string, writable bool) {
 		return
 	}
 
+	mode := domain_security.SafePathRead
 	if writable {
-		p.safePathsMu.Lock()
-		defer p.safePathsMu.Unlock()
-		p.safePaths[abs] = struct{}{}
-	} else {
-		p.readOnlyPathsMu.Lock()
-		defer p.readOnlyPathsMu.Unlock()
-		p.readOnlyPaths[abs] = struct{}{}
+		mode = domain_security.SafePathReadWrite
+	}
+
+	p.pathsMu.Lock()
+	defer p.pathsMu.Unlock()
+	p.paths[abs] = domain_security.SafePath{
+		Path:         abs,
+		Mode:         mode,
+		AuthorizedAt: time.Now(),
 	}
 }
 
@@ -272,47 +284,42 @@ func (p *pathPolicy) RemovePath(path string, writable bool) error {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
-	var mu *sync.RWMutex
-	var paths map[string]struct{}
-	var mode string
-
+	expectedMode := domain_security.SafePathRead
+	expectedLabel := "read-only"
 	if writable {
-		mu = &p.safePathsMu
-		paths = p.safePaths
-		mode = "safe"
-	} else {
-		mu = &p.readOnlyPathsMu
-		paths = p.readOnlyPaths
-		mode = "read-only"
+		expectedMode = domain_security.SafePathReadWrite
+		expectedLabel = "safe"
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
+	p.pathsMu.Lock()
+	defer p.pathsMu.Unlock()
 
-	if _, ok := paths[abs]; !ok {
-		return fmt.Errorf("path '%s' not found in %s authorized list", abs, mode)
+	sp, ok := p.paths[abs]
+	if !ok {
+		return fmt.Errorf("path '%s' not found in %s authorized list", abs, expectedLabel)
 	}
-	delete(paths, abs)
+	if sp.Mode != expectedMode {
+		return fmt.Errorf("path '%s' exists but mode mismatch", abs)
+	}
+	delete(p.paths, abs)
 	return nil
 }
 
-// GetPaths returns a copy of the registered paths.
+// GetPaths returns a copy of the registered paths filtered by mode.
 func (p *pathPolicy) GetPaths(writable bool) []string {
-	var paths map[string]struct{}
-
+	targetMode := domain_security.SafePathRead
 	if writable {
-		p.safePathsMu.RLock()
-		paths = p.safePaths
-		defer p.safePathsMu.RUnlock()
-	} else {
-		p.readOnlyPathsMu.RLock()
-		paths = p.readOnlyPaths
-		defer p.readOnlyPathsMu.RUnlock()
+		targetMode = domain_security.SafePathReadWrite
 	}
 
-	res := make([]string, 0, len(paths))
-	for path := range paths {
-		res = append(res, path)
+	p.pathsMu.RLock()
+	defer p.pathsMu.RUnlock()
+
+	res := make([]string, 0, len(p.paths))
+	for path, sp := range p.paths {
+		if sp.Mode == targetMode {
+			res = append(res, path)
+		}
 	}
 	return res
 }
