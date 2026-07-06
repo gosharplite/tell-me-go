@@ -69,6 +69,7 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 | `httpTimeout` | integer |  |
 | `showThoughts` | boolean |  |
 | `showTools` | boolean |  |
+| `bypassConfirmation` | boolean | When true, all security prompts are skipped (used in CI/automation). |
 
 **Invariants**
 
@@ -281,17 +282,11 @@ One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly 
 
 ### `UserInteractor`
 
-The interface through which the `SecurityManager` prompts the user for confirmation (e.g. before a `Tool` accesses an unauthorized path, or before executing a dangerous command). Implementations include the interactive TUI capturer and a no-op variant for automated workflows.
-
-**Attributes**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `bypassConfirmation` | boolean | When true, all prompts are skipped (used in CI/automation). |
+The interface through which the `SecurityManager` prompts the user for confirmation (e.g. before a `Tool` accesses an unauthorized path, or before executing a dangerous command). Implementations include the interactive TUI capturer and a no-op variant for automated workflows. Prompt suppression is controlled by `Config.bypassConfirmation`.
 
 **Invariants**
 
-- **bypass-suppresses-prompts** — When `bypassConfirmation` is true, no interactive prompt is shown to the user — every authorization check is silently approved.
+- **bypass-suppresses-prompts** — When `Config.bypassConfirmation` is true, Confirm is never called — every authorization check is silently approved.
 
 
 ## Relationships

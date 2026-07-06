@@ -272,6 +272,9 @@ entities:
         type: boolean
       - name: showTools
         type: boolean
+      - name: bypassConfirmation
+        type: boolean
+        description: When true, all security prompts are skipped (used in CI/automation).
     invariants:
       - id: config-valid-provider
         statement: "`selectedProvider` must reference a key in the PROVIDERS registry."
@@ -398,15 +401,12 @@ entities:
       confirmation (e.g. before a `Tool` accesses an unauthorized path, or
       before executing a dangerous command). Implementations include the
       interactive TUI capturer and a no-op variant for automated workflows.
-    attributes:
-      - name: bypassConfirmation
-        type: boolean
-        description: When true, all prompts are skipped (used in CI/automation).
+      Prompt suppression is controlled by `Config.bypassConfirmation`.
     invariants:
       - id: bypass-suppresses-prompts
         statement: >
-          When `bypassConfirmation` is true, no interactive prompt is shown to
-          the user — every authorization check is silently approved.
+          When `Config.bypassConfirmation` is true, Confirm is never called —
+          every authorization check is silently approved.
 
 scenarios:
   - name: Basic question-answer turn

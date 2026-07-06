@@ -119,6 +119,10 @@ Glossary roles (not entities — they have no persisted state):
   They are behavioral roles with no persisted state of their own — making them
   entities would require inventing attributes and invariants that don't exist
   in the code.
+- **`bypassConfirmation` lives on `Config`, not `UserInteractor`.** The code
+  places the bypass flag on `PolicyEvaluator`, which reads from configuration.
+  `UserInteractor` is a pure interface (`Confirm`, `Warn`, `Prompt`, `ReadLine`)
+  and does not carry state.
 - **`Pricing` is an entity, not just Config attributes.** Each model variant has
   a structured cost profile (context window + three rate tiers). The cost-audit
   scenario demonstrates the lookup: Turn token counts → Pricing rates → USD
