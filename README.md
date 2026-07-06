@@ -32,7 +32,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Resilience**: Real-time USD cost auditing, deterministic budgets, and descriptive API error handling.
 *   **Persistence & Recovery**: 
     *   **Durability**: Automatic history saving with built-in **Auto-Repair** for crash resilience and session continuity.
-    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and authorized paths).
+    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and `SafePath`).
 
 ## 📋 Prerequisites
 *   **Go**: 1.26.4 or higher.

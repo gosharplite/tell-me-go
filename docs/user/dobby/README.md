@@ -4,7 +4,7 @@ Dobby is a Bash environment manager that creates isolated `tell-me-go` environme
 
 ## Overview
 
-Dobby is built for two complementary workflows: the **SOP multi-role pipeline** (where each role gets its own persona and config) and **mid-session provider switching** (comparing models, or escalating a tough problem from a flash to a pro model). Because the provider is selected at source time rather than encoded in the directory name, you keep the same `ait-<tag>` environment — with all its session history, authorized paths, and task state — and simply hot-swap the underlying LLM.
+Dobby is built for two complementary workflows: the **SOP multi-role pipeline** (where each role gets its own persona and config) and **mid-session provider switching** (comparing models, or escalating a tough problem from a flash to a pro model). Because the provider is selected at source time rather than encoded in the directory name, you keep the same `ait-<tag>` environment — with all its session history, `SafePath`, and task state — and simply hot-swap the underlying LLM.
 
 ---
 

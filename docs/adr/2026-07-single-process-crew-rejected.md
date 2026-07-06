@@ -83,12 +83,12 @@ This proposal follows the same pattern: the temp-file approach is not broken, an
 ### Negative
 
 - **Handoff latency:** Temp-file + process spawn adds ~200-500ms per handoff. Not material in Tekton pipelines where LLM inference dominates, but would matter in interactive use. Mitigation: not a current use case.
-- **No shared CrewState:** Agents cannot share task lists, authorized paths, or artifacts without the Orchestrator explicitly forwarding them. Partially mitigated by the Orchestrator's session memory, which accumulates this state naturally during SOP execution.
+- **No shared CrewState:** Agents cannot share task lists, `SafePath`, or artifacts without the Orchestrator explicitly forwarding them. Partially mitigated by the Orchestrator's session memory, which accumulates this state naturally during SOP execution.
 
 ### Recommended Incremental Improvements (Not Blocked by This Rejection)
 
 1. **Handoff validation**: A lightweight tool or script that validates `TASK:`/`REVISION:`/`DONE.` prefix formatting before the Orchestrator forwards to the target agent. Reduces silent failures from malformed model output.
-2. **Shared state file**: A JSON or SQLite artifact that persists between Tekton steps, holding the task board, authorized paths, and analysis summaries. The Orchestrator reads/writes it; sub-agents don't need to know it exists. This achieves most of the `CrewState` value without process collapse.
+2. **Shared state file**: A JSON or SQLite artifact that persists between Tekton steps, holding the task board, `SafePath`, and analysis summaries. The Orchestrator reads/writes it; sub-agents don't need to know it exists. This achieves most of the `CrewState` value without process collapse.
 3. **Token monitoring automation**: The Orchestrator SOP already specifies manual `-t | tail -5` checks. A helper that auto-checks after N cycles and warns the Orchestrator would reduce cognitive load without changing the architecture.
 
 ## References
