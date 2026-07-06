@@ -70,6 +70,7 @@ new_exports=$(printf '%s\n%s' "$new_exports" "$new_consts" | sort -u | grep -v '
 # ── 3. Cross-reference ─────────────────────────────────────────────────────
 
 warnings=0
+warned_names=""
 for name in $new_exports; do
   # Skip common non-domain names (infrastructure, stdlib-like)
   case "$name" in
@@ -93,11 +94,12 @@ for name in $new_exports; do
   fi
 
   echo "  ⚠ new export '$name' has no corresponding model entry"
+  warned_names="$warned_names $name"
   warnings=$((warnings + 1))
 done
 
 if [ "$warnings" -gt 0 ]; then
-  echo "  → consider updating $MODEL if '$name' is a domain concept"
+  echo "  → consider updating $MODEL if any listed exports are domain concepts"
   echo ""
   echo "$warnings warning(s) — model may be out of date"
 fi

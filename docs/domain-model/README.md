@@ -120,8 +120,9 @@ six structural gaps — all now resolved:
 | 4 | `SafePath` — no dedicated type; handled procedurally | Medium | **RESOLVED** (2026-07) | `security.SafePath` struct at `security/safepath.go:21` with `Path`, `Mode` (`SafePathMode`), and `AuthorizedAt` fields. |
 | 5 | `ToolCall` — only an event, not a domain value object | Low | **RESOLVED** (2026-07) | `tools.ToolCall` struct at `tools/types.go:65` with `ToolName`, `Arguments`, `Result`, `Duration`, and `Status` fields. |
 | 6 | `bypassConfirmation` on wrong entity — fixed in model | — | **RESOLVED** (2026-07) | Corrected in model YAML: `bypassConfirmation` now lives on `Config`, matching the code (`Config.BypassConfirmation`). |
+| 7 | `Turn` incorrectly placed in Glossary | — | **RESOLVED** (2026-07) | Removed `Turn` from glossary since it's defined as an entity; replaced with `Chatter` to document the interface boundary. |
 
-**All 6 original gaps are closed.** Re-run `make modelith-drift` and `make modelith-layers` periodically to catch new drift.
+**All 7 original gaps are closed.** Re-run `make modelith-drift` and `make modelith-layers` periodically to catch new drift.
 
 Run this audit periodically: `grep` each entity name in `internal/domain/` and
 verify a matching type exists.
@@ -151,11 +152,15 @@ existing or missing coverage:
 
 | Scenario | Maps to | Test exists? |
 |---|---|---|
-| Basic question-answer turn | Engine happy path | ? |
-| Context overflow and summarisation | `TokenGatekeeper` + `pinningPolicy` | ? |
-| Provider error classification and failover | `RecoveryStep` + `DefaultRetryPolicy` | ? |
-| Hallucination loop detection | `loopDetector` middleware | ? |
-| … 6 more | … | ? |
+| Basic question-answer turn | Engine happy path | `TestTurnEngine_ExecutionStep_NoToolCalls` |
+| Cost auditing per turn | MetricsTracker + CostCalculator | `TestCostCalculator_Calculate` |
+| Skill injection into context | Orchestrator Skill Injection | `TestSkillInjector_Transform` |
+| Tool-augmented turn | Executor dispatch | `TestRunExecutionPlan_HappyPath_SuccessfulBatchesReturnNil` |
+| Hallucination loop detection | `loopDetector` middleware | `TestLoopDetector_Scenarios` |
+| Context overflow and summarisation | `TokenGatekeeper` + `pinningPolicy` | `TestTokenGatekeeper_ValidateHardLimits` |
+| Provider error classification and failover | `RecoveryStep` + `DefaultRetryPolicy` | `TestDefaultRetryPolicy_ShouldRetry` |
+| Session undo and retry | History rollback + re-prompt | `TestSessionManager_Rollback` |
+| Path authorization | SecurityManager `SafePath` validation | `TestCheckBoundary_ErrorPaths` |
 
 ### 4. Invariant audit
 
@@ -225,7 +230,7 @@ Glossary roles (not entities — they have no persisted state):
 | `Orchestrator` | Drives the session loop, dispatches tools, manages turns |
 | `SecurityManager` | Validates tool requests against SafePath, delegates to UserInteractor |
 | `Thought` | Provider-agnostic reasoning block (text, tool-call, chain-of-thought) |
-| `Turn` | One request–response cycle |
+| `Chatter` | Conversation interface between the Orchestrator and Provider gateway |
 
 ## Design decisions
 
