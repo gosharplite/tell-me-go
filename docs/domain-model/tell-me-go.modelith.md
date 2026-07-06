@@ -10,7 +10,6 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
 - **`SecurityManager`** — The component that validates `Tool` requests against the `SafePath` registry and delegates to the `UserInteractor` when user confirmation is required.
 - **`Thought`** — A provider-agnostic reasoning block emitted by an LLM — may be a text response, a tool-call request, or (for reasoning models) a chain-of-thought segment. Normalised from provider-specific wire formats.
-- **`Turn`** — One request–response cycle: a user message plus the assistant's full response (which may include multiple `Thought`s and tool round-trips).
 
 ## Enums
 
@@ -372,6 +371,7 @@ A user asks a question that requires no `Tool`s. The `Orchestrator` assembles th
 - **session-max-turns** — `Turn` count must not exceed `Config.MAX_TURNS`.
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
 - **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **turn-belongs-to-one-session** — A `Turn` belongs to exactly one `Session`.
 
 ### Cost auditing per turn
 
@@ -529,4 +529,6 @@ A `Tool` attempts to access a path outside the project boundary. The `SecurityMa
 **Invariants touched**
 
 - **safepath-absolute** — Paths are stored in canonical absolute form.
+- **bypass-suppresses-prompts** — When `Config.bypassConfirmation` is true, Confirm is never called — every authorization check is silently approved.
+
 

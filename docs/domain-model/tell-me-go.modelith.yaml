@@ -20,9 +20,6 @@ glossary:
     A provider-agnostic reasoning block emitted by an LLM — may be a text
     response, a tool-call request, or (for reasoning models) a chain-of-thought
     segment. Normalised from provider-specific wire formats.
-  Turn: >
-    One request–response cycle: a user message plus the assistant's full
-    response (which may include multiple `Thought`s and tool round-trips).
   Chatter: >
     The conversation interface between the `Orchestrator` and the `Provider`
     gateway. Defines how prompts are sent, responses are streamed, and chat
@@ -487,7 +484,7 @@ scenarios:
       - "`Orchestrator` renders the response and persists the `Turn` to `History`."
       - Cost and token metrics are updated on the `Session`.
       - "Any pending `Task`s are tracked and can be listed by the user."
-    invariants_touched: [session-max-turns, history-persisted-after-turn, context-within-budget]
+    invariants_touched: [session-max-turns, history-persisted-after-turn, context-within-budget, turn-belongs-to-one-session]
 
   - name: Cost auditing per turn
     description: >
@@ -611,7 +608,7 @@ scenarios:
         `Tool` proceeds.
       - "If the user denies, the `Tool` returns an error."
       - "If `bypassConfirmation` is true, the check is silently skipped."
-    invariants_touched: [safepath-absolute]
+    invariants_touched: [safepath-absolute, bypass-suppresses-prompts]
 
 invariants:
   - id: deterministic-cost-audit

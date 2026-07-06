@@ -517,11 +517,12 @@ endif
 # Advisory only; POSIX-only.
 modelith-vocab:
 ifeq ($(IS_POSIX),true)
-	@scripts/modelith-vocab.sh $(MODELITH_YAML)
+	@scripts/modelith-vocab.sh
 else
 	@echo "  modelith-vocab: skipped (POSIX required — run in WSL or macOS/Linux CI)"
 endif
-# running any tests. This gates PRs by ensuring fuzz tests stay buildable.
+# Compile-check fuzz tests without running any tests. This gates PRs by
+# ensuring fuzz tests stay buildable.
 # Uses -run=NONEXISTENT to skip all tests while still verifying compilation.
 fuzz-smoke:
 	go test -run=NONEXISTENT ./...
