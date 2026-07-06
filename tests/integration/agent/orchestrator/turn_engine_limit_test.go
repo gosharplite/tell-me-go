@@ -155,7 +155,7 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	}
 
 	// Turn 2: Should be rejected by checkLimits
-	err := engine.Run(ctx, time.Now())
+	err := engine.Run(ctx, time.Now(), "")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, llm.ErrMaxTurnsReached)
 }

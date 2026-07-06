@@ -94,6 +94,7 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase, execErr er
 	reg := &agenttest.MockToolRegistry{}
 	counter := &agenttest.MockTokenCounter{}
 	turn := &orchestrator.Turn{
+		SessionID: "",
 		State: &orchestrator.TurnState{
 			HasToolCalls: hasTools,
 			RetryCount:   0,

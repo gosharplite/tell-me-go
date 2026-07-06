@@ -77,7 +77,7 @@ func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	})
 
 	// Initial state with a response that needs saving
-	turn := engine.CreateTurn(0, time.Now())
+	turn := engine.CreateTurn(0, time.Now(), "")
 	turn.State.Phase = PhaseExecuting
 	turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Partial response"}}}
 
@@ -615,7 +615,7 @@ func TestEngineHooks_Coverage(t *testing.T) {
 		WithEngineHook(hook2),
 	)
 
-	turn := engine.CreateTurn(0, time.Now())
+	turn := engine.CreateTurn(0, time.Now(), "")
 	err := engine.ExecuteTurn(context.Background(), turn)
 
 	assert.NoError(t, err)
@@ -799,7 +799,7 @@ func TestEngineRun_Error(t *testing.T) {
 		return ProcessResult{}, errors.New("turn execution failed")
 	})
 
-	err := engine.Run(context.Background(), time.Now())
+	err := engine.Run(context.Background(), time.Now(), "")
 	assert.Error(t, err)
 	assert.Equal(t, "turn execution failed", err.Error())
 }

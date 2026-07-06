@@ -670,7 +670,7 @@ func TestEngine_Run(t *testing.T) {
 		return ProcessResult{NextPhase: PhaseComplete}, nil
 	})
 
-	err := e.Run(context.Background(), time.Now())
+	err := e.Run(context.Background(), time.Now(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, 2, turnCount)
 }
@@ -827,7 +827,7 @@ func TestExecuteTurn_TraceEventBusError(t *testing.T) {
 		return ProcessResult{NextPhase: PhaseComplete}, nil
 	})
 
-	turn := e.CreateTurn(0, time.Now())
+	turn := e.CreateTurn(0, time.Now(), "")
 
 	// Should not return error just because event bus failed
 	err := e.ExecuteTurn(context.Background(), turn)

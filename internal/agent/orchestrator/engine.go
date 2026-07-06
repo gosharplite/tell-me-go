@@ -32,6 +32,7 @@ import (
 // Turn carries state and configuration for a single agent Turn.
 type Turn struct {
 	Index        int
+	SessionID    string
 	StartTime    time.Time
 	State        *TurnState
 	CtxManager   *sessctx.Manager
@@ -225,9 +226,9 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *sessctx.Manager, reg tool
 }
 
 // Run executes the multi-Turn orchestration loop.
-func (e *Engine) Run(ctx context.Context, startTime time.Time) error {
+func (e *Engine) Run(ctx context.Context, startTime time.Time, sessionID string) error {
 	sessionToolCallCount := make(map[string]int)
-	Turn := e.CreateTurn(0, startTime)
+	Turn := e.CreateTurn(0, startTime, sessionID)
 	Turn.State.ToolCallCount = sessionToolCallCount
 
 	for Turn.State.Phase != PhaseComplete {
@@ -257,11 +258,12 @@ func (e *Engine) prepareNextTurn(Turn *Turn) {
 	Turn.State.ToolReasons = nil
 }
 
-func (e *Engine) CreateTurn(index int, startTime time.Time) *Turn {
+func (e *Engine) CreateTurn(index int, startTime time.Time, sessionID string) *Turn {
 	cfg := e.config.Load()
 	counter := e.tokenCounter
 
 	Turn := &Turn{
+		SessionID:   sessionID,
 		Index:        index,
 		StartTime:    startTime,
 		State:        &TurnState{CurrentTurns: index, Phase: PhaseGuard, RetryCount: 0},

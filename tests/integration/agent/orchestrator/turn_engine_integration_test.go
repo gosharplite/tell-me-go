@@ -140,7 +140,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		counter.val = 6000
 
 		// Run the turn
-		t0 := engine.CreateTurn(0, time.Now())
+		t0 := engine.CreateTurn(0, time.Now(), "")
 		t0.State.ToolCallCount = make(map[string]int)
 		err := engine.ExecuteTurn(ctx, t0)
 		assert.NoError(t, err, "Engine should not crash on truncation")
@@ -157,7 +157,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		assert.Contains(t, last.Parts[0].FunctionResponse.Response["error"].(string), "The individual tool output is too massive.")
 
 		// 6. Assertions: Check token preservation in next turn
-		turn1 := engine.CreateTurn(1, time.Now())
+		turn1 := engine.CreateTurn(1, time.Now(), "")
 		refiner := &orchestrator.ContextRefiner{}
 		// Clear trigger so refiner uses heuristic for the real (mutated) history
 		counter.trigger = nil
@@ -205,7 +205,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		// Force refiner and other history processing to see 8500 tokens
 		counter.historyVal = 8500
 
-		turn0 := engine.CreateTurn(0, time.Now())
+		turn0 := engine.CreateTurn(0, time.Now(), "")
 		turn0.State.ToolCallCount = make(map[string]int)
 		refiner := &orchestrator.ContextRefiner{}
 		_, err := refiner.Process(ctx, turn0)
@@ -335,7 +335,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	// 3. Execute turn in goroutine
 	errCh := make(chan error, 1)
-	turn0 := engine.CreateTurn(0, time.Now())
+	turn0 := engine.CreateTurn(0, time.Now(), "")
 	turn0.State.ToolCallCount = make(map[string]int)
 
 	go func() {

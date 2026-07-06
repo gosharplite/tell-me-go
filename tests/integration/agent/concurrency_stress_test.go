@@ -308,7 +308,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	for i := 0; i < numConcurrent; i++ {
 		go func() {
 			defer wg.Done()
-			_ = e.Run(context.Background(), time.Now())
+			_ = e.Run(context.Background(), time.Now(), "")
 		}()
 	}
 
