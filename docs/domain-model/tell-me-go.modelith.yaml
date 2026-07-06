@@ -346,7 +346,7 @@ scenarios:
       The LLM requests a tool call. The Orchestrator dispatches it, feeds the
       result back to the Provider, and continues until the LLM emits a final
       text response.
-    actors: [Orchestrator, Provider, Tool, Session]
+    actors: [Orchestrator, Provider, Tool, ToolCall, Session]
     steps:
       - Provider returns a Thought requesting a Tool execution.
       - Orchestrator validates the Tool name and arguments.

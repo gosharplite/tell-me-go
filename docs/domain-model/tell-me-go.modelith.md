@@ -309,7 +309,7 @@ When the user's prompt matches a Skill's trigger keywords, the Orchestrator inje
 
 The LLM requests a tool call. The Orchestrator dispatches it, feeds the result back to the Provider, and continues until the LLM emits a final text response.
 
-**Actors:** Orchestrator, Provider, Tool, Session
+**Actors:** Orchestrator, Provider, Tool, ToolCall, Session
 
 **Steps**
 
