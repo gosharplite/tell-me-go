@@ -77,15 +77,16 @@ typing."* Naming is a commitment. Fuzziness is a signal. Push on invariants.
 ### How our model is doing
 
 We started with 5 completeness warnings and resolved them all (0 errors, 0
-warnings as of commit `eeea9aac`). But we identified **convention deviations**
-that the linter doesn't catch:
+warnings). All modelith-skill conventions are now followed:
 
-| # | Issue | Fix |
-|---|---|---|
-| 1 | Entity names **not backtick-quoted** in most definitions, invariants, and scenario steps | Add `` `EntityName` `` throughout all prose fields |
-| 2 | `SecurityManager` used as an actor/scenario-step reference but has **no entity or glossary entry** | Either add a `SecurityManager` entity or define it in the glossary |
-| 3 | **Redundant bidirectional relationships**: `Turn → Session` exists but `Session → Turn (owned)` already covers it. Same for `ToolCall → Turn` vs. `Turn → ToolCall (owned)` | Remove the child→parent reverse declarations; keep only the parent side |
-| 4 | `Session` has no relationship to `History`, but `History → Session` exists | Add `Session → History (owned)` from the parent side |
+- **Entity names backtick-quoted** in all definitions, invariants, notes, and scenario steps.
+- **`SecurityManager`** added to the glossary as a defined actor.
+- **Redundant child→parent relationships removed** (`Turn→Session`, `ToolCall→Turn`); only the parent side declares the relationship.
+- **`Session→History`** relationship added from the parent side.
+
+One additional lesson: **backtick is a reserved YAML indicator**. A plain scalar
+value starting with `` ` `` will fail YAML parsing. Always double-quote values
+that begin with a backtick: `"`Tool` invocations..."`.
 
 ## Layers already modeled
 
