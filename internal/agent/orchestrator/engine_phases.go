@@ -106,11 +106,16 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 		return ProcessResult{NextPhase: PhaseComplete}, err
 	case llm.LLMErrorContextOverflow:
 		// Context overflow triggers re-assembly with summarisation,
-		// not a blind retry
+		// not a blind retry. Only attempt one refinement per turn
+		// to prevent infinite loops when summarisation doesn't help.
 		Turn.getLogger().Warn("context_overflow_detected",
 			"error", err,
 			"turn", Turn.Index)
-		return ProcessResult{NextPhase: PhaseRefining}, nil
+		if Turn.State.RetryCount == 0 {
+			Turn.State.RetryCount++
+			return ProcessResult{NextPhase: PhaseRefining}, nil
+		}
+		// Subsequent context overflows fall through to retry/failure
 	case llm.LLMErrorTimeout, llm.LLMErrorServerError:
 		// Fall through to retry logic below
 	default:

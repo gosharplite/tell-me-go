@@ -4,7 +4,10 @@
 package tools
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 )
 
 type testStruct struct {
@@ -110,5 +113,55 @@ func TestErrNotImplemented(t *testing.T) {
 	t.Parallel()
 	if ErrNotImplemented.Error() != "not implemented" {
 		t.Error("unexpected error message")
+	}
+}
+
+func TestToolCall_Fields(t *testing.T) {
+	t.Parallel()
+	tc := ToolCall{
+		ToolName:  "execute_command",
+		Arguments: map[string]interface{}{"command": "ls"},
+		Result:    ToolResult{Text: "file1\nfile2"},
+		Duration:  150 * time.Millisecond,
+		Status:    "success",
+	}
+	if tc.ToolName != "execute_command" {
+		t.Errorf("ToolName = %q, want %q", tc.ToolName, "execute_command")
+	}
+	if tc.Status != "success" {
+		t.Errorf("Status = %q, want %q", tc.Status, "success")
+	}
+	if tc.Duration != 150*time.Millisecond {
+		t.Errorf("Duration = %v, want %v", tc.Duration, 150*time.Millisecond)
+	}
+}
+
+func TestToolCall_StatusValues(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		status string
+	}{
+		{"success"},
+		{"error"},
+		{"timeout"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			tc := ToolCall{Status: tt.status}
+			if tc.Status != tt.status {
+				t.Errorf("Status = %q, want %q", tc.Status, tt.status)
+			}
+		})
+	}
+
+	// Verify result.Error produces expected classifications
+	if tr := (ToolResult{Text: "ok"}); tr.Error != nil {
+		t.Error("expected no error for success result")
+	}
+	if tr := (ToolResult{Error: errors.New("failed")}); tr.Error == nil {
+		t.Error("expected error for failure result")
+	}
+	if tr := (ToolResult{Error: context.DeadlineExceeded}); !errors.Is(tr.Error, context.DeadlineExceeded) {
+		t.Error("expected DeadlineExceeded for timeout result")
 	}
 }

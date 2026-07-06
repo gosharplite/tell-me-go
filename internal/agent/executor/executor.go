@@ -417,7 +417,7 @@ func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.Function
 		e.executeBatch(ctx, batch, calls, state.config.MaxConcurrentTools, resultsCh, fanIn)
 
 		// 2. Fan-in Aggregator Loop (lock-free mutation of failures)
-		planErrors = e.handleBatchResults(ctx, resultsCh, results, planErrors)
+		planErrors = e.handleBatchResults(ctx, resultsCh, results, calls, batchStart, planErrors)
 
 		e.logger.Debug("Batch execution completed",
 			"batch_idx", batchIdx,
@@ -576,7 +576,7 @@ func (e *Dispatcher) parallelWorker(ctx context.Context, calls []*llm.FunctionCa
 	}
 }
 
-func (e *Dispatcher) handleBatchResults(ctx context.Context, resultsCh <-chan toolExecResult, results []tools.ToolResult, planErrors []error) []error {
+func (e *Dispatcher) handleBatchResults(ctx context.Context, resultsCh <-chan toolExecResult, results []tools.ToolResult, calls []*llm.FunctionCall, batchStart time.Time, planErrors []error) []error {
 	for res := range resultsCh {
 		if res.index == -1 {
 			// cancellation signal: extract the error for propagation
@@ -586,7 +586,24 @@ func (e *Dispatcher) handleBatchResults(ctx context.Context, resultsCh <-chan to
 			continue
 		}
 		results[res.index] = res.tr
-		evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
+
+		// Capture arguments from the original call when available
+		var args map[string]interface{}
+		if res.index < len(calls) && calls[res.index] != nil {
+			args = calls[res.index].Args
+		}
+
+		evt := events.ToolResultEvent{
+			Name:   res.name,
+			Result: res.tr,
+			Call: tools.ToolCall{
+				ToolName:  res.name,
+				Arguments: args,
+				Result:    res.tr,
+				Duration:  time.Since(batchStart),
+				Status:    toolCallStatus(res.tr),
+			},
+		}
 		e.emitEvent(ctx, e.events, evt)
 
 		// Tool-result errors are delivered to the LLM via AssembleResponse.
@@ -594,6 +611,17 @@ func (e *Dispatcher) handleBatchResults(ctx context.Context, resultsCh <-chan to
 		// the agent loop instead of letting the LLM self-correct.
 	}
 	return planErrors
+}
+
+// toolCallStatus returns the status string for a ToolCall based on its result.
+func toolCallStatus(tr tools.ToolResult) string {
+	if tr.Error != nil {
+		if errors.Is(tr.Error, context.DeadlineExceeded) {
+			return "timeout"
+		}
+		return "error"
+	}
+	return "success"
 }
 
 func (e *Dispatcher) evaluateBatchOutcome(ctx context.Context, batchIdx int, batch taskBatch, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) (bool, error) {

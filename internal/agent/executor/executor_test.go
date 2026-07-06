@@ -369,7 +369,7 @@ func TestDispatcher_Execute_RetryPath_PropagatesWaitErr(t *testing.T) {
 		close(resultsCh)
 
 		results := make([]tools.ToolResult, 1)
-		planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+		planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil, time.Now(), nil)
 
 		require.Len(t, planErrors, 1)
 		assert.ErrorIs(t, planErrors[0], llm.ErrTerminal)
@@ -1385,7 +1385,7 @@ func TestHandleBatchResults_ContextCancellation_Propagates(t *testing.T) {
 	close(resultsCh)
 
 	results := make([]tools.ToolResult, 1)
-	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil, time.Now(), nil)
 
 	require.Len(t, planErrors, 1)
 	assert.ErrorIs(t, planErrors[0], context.Canceled)
@@ -1418,7 +1418,7 @@ func TestHandleBatchResults_ToolError_NotPromoted(t *testing.T) {
 	close(resultsCh)
 
 	results := make([]tools.ToolResult, 1)
-	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil, time.Now(), nil)
 
 	// Core assertion: planErrors MUST be empty.
 	// If someone re-adds "planErrors = append(planErrors, res.tr.Error)"
@@ -1687,7 +1687,7 @@ func TestHandleBatchResults_SentinelWithNilError_NotPromoted(t *testing.T) {
 	close(resultsCh)
 
 	results := make([]tools.ToolResult, 1)
-	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil)
+	planErrors := e.handleBatchResults(context.Background(), resultsCh, results, nil, time.Now(), nil)
 
 	// planErrors must be empty — nil errors from sentinels are silently dropped
 	require.Len(t, planErrors, 0)
