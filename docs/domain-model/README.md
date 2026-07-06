@@ -87,6 +87,84 @@ One additional lesson: **backtick is a reserved YAML indicator**. A plain scalar
 value starting with `` ` `` will fail YAML parsing. Always double-quote values
 that begin with a backtick: `"`Tool` invocations..."`.
 
+## How modelith helps tell-me-go
+
+The domain model is not passive documentation — it is an active tool for
+improving the codebase. Six concrete applications:
+
+### 1. Gap audit — model vs. code
+
+Compare every entity and enum in the model against the codebase. Does `Context`
+have a corresponding struct? Does `LLMError` exist as a type? The first audit
+([issue #1192](https://github.com/gosharplite/tell-me-go/issues/1192)) found
+six structural gaps:
+
+| # | Gap | Severity |
+|---|---|---|
+| 1 | `Context` — no struct; scattered across 7+ types | High |
+| 2 | `Pricing` — types exist but `contextWindow` is separated from rates | Medium |
+| 3 | `LLMError` — no classification type | Medium |
+| 4 | `SafePath` — no dedicated type; handled procedurally | Medium |
+| 5 | `ToolCall` — only an event, not a domain value object | Low |
+| 6 | `bypassConfirmation` on wrong entity — fixed in model | Low |
+
+Run this audit periodically: `grep` each entity name in `internal/domain/` and
+verify a matching type exists.
+
+### 2. Reverse audit — code vs. model
+
+The inverse direction: scan `internal/` for packages and types with no
+corresponding entity in the model. For example, `internal/domain/events/`,
+`internal/domain/telemetry/`, and `internal/ui/` have no model entries. For
+each, ask: *is this an intentional omission (infrastructure/presentation) or a
+genuine gap?*
+
+### 3. Scenario → test coverage mapping
+
+Every scenario is an integration test waiting to be written. Map them to
+existing or missing coverage:
+
+| Scenario | Maps to | Test exists? |
+|---|---|---|
+| Basic question-answer turn | Engine happy path | ? |
+| Context overflow and summarisation | `TokenGatekeeper` + `pinningPolicy` | ? |
+| Provider error classification and failover | `RecoveryStep` + `DefaultRetryPolicy` | ? |
+| Hallucination loop detection | `loopDetector` middleware | ? |
+| … 6 more | … | ? |
+
+### 4. Invariant audit
+
+The model declares 14 invariants. Each should be enforced in code — an
+aspirational invariant is a latent bug. Audit them:
+
+| Invariant | Enforced by | Status |
+|---|---|---|
+| `session-max-turns` | `MAX_TURNS` config | ? |
+| `context-within-budget` | `TokenGatekeeper` | ? |
+| `context-pinned-preserved` | `pinningPolicy` | ? |
+| `tool-timeout` | `TOOL_TIMEOUT` config | ? |
+| `history-persisted-after-turn` | `emergencySave` | ? |
+| … 9 more | … | ? |
+
+Any invariant without a code enforcer is a gap — add it to the issue tracker.
+
+### 5. PR review automation
+
+A CI check could, for each pull request:
+- Scan new/changed exported identifiers against the model's canonical names
+- Flag code that introduces an entity-like concept without a model update
+- Flag code that renames a modeled concept (e.g. `Session` → `Conversation`)
+
+This keeps the model and code from drifting apart silently.
+
+### 6. Onboarding that stays honest
+
+New contributors open `tell-me-go.modelith.md`, see the Mermaid ER diagram,
+read 11 entity definitions, trace 10 scenarios. They understand the system's
+nouns and rules before reading a single line of Go. Because `modelith-check`
+runs in CI, the diagram is regenerated from source on every commit — it
+**cannot rot**, unlike hand-maintained architecture docs.
+
 ## Layers already modeled
 
 | Layer | Entity | Role |
