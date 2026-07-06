@@ -308,6 +308,11 @@ entities:
       - name: bypassConfirmation
         type: boolean
         description: When true, all prompts are skipped (used in CI/automation).
+    invariants:
+      - id: bypass-suppresses-prompts
+        statement: >
+          When bypassConfirmation is true, no interactive prompt is shown to
+          the user — every authorization check is silently approved.
 
 scenarios:
   - name: Basic question-answer turn

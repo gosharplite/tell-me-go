@@ -237,6 +237,11 @@ The interface through which the SecurityManager prompts the user for confirmatio
 | --- | --- | --- |
 | `bypassConfirmation` | boolean | When true, all prompts are skipped (used in CI/automation). |
 
+**Invariants**
+
+- **bypass-suppresses-prompts** — When bypassConfirmation is true, no interactive prompt is shown to the user — every authorization check is silently approved.
+
+
 ## Relationships
 
 ```mermaid
