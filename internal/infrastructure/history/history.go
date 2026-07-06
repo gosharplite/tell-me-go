@@ -224,11 +224,6 @@ func (m *Manager) SetPinned(ctx context.Context, turnID string, pinned bool) err
 		return fmt.Errorf("turn not found: %s", turnID)
 	}
 
-	// System messages are not part of any turn.
-	if m.Contents[i].Role == "system" {
-		return fmt.Errorf("turn not found: %s (system message)", turnID)
-	}
-
 	first, second, err := findTurnPair(m.Contents, i)
 	if err != nil {
 		return err
@@ -248,43 +243,87 @@ func (m *Manager) SetPinned(ctx context.Context, turnID string, pinned bool) err
 	return nil
 }
 
+// turnPairRule describes how to find the partner message for a turn,
+// given the role and an optional content predicate.
+type turnPairRule struct {
+	role        string
+	pred        func(*llm.Content) bool // nil means match any content with this role
+	forward     bool                    // true = partner is at i+1, false = partner is at i-1
+	partnerRole string                  // expected role of the partner
+}
+
+var turnPairRules = []turnPairRule{
+	{role: "model", pred: contentHasFunctionCall, forward: true, partnerRole: "user"},
+	{role: "user", pred: contentHasFunctionResponse, forward: false, partnerRole: "model"},
+	{role: "user", pred: nil, forward: true, partnerRole: "model"},
+	{role: "model", pred: nil, forward: false, partnerRole: "user"},
+}
+
+// validateTurnPair checks that the partner at the expected index exists,
+// has the expected role, and (for tool-call turns) has the correct content type.
+func validateTurnPair(contents []*llm.Content, i int, rule turnPairRule) (first, second int, err error) {
+	total := len(contents)
+
+	var partnerIdx int
+	if rule.forward {
+		if i+1 >= total {
+			return 0, 0, fmt.Errorf("invalid turn pair: %s at index %d has no following message", rule.role, i)
+		}
+		partnerIdx = i + 1
+	} else {
+		if i-1 < 0 {
+			return 0, 0, fmt.Errorf("invalid turn pair: %s at index %d has no preceding message", rule.role, i)
+		}
+		partnerIdx = i - 1
+	}
+
+	partner := contents[partnerIdx]
+	if partner.Role != rule.partnerRole {
+		return 0, 0, fmt.Errorf("invalid turn pair: %s at index %d has unexpected partner role %q", rule.role, i, partner.Role)
+	}
+
+	// For tool-call turns, verify the partner has the complementary content type.
+	if rule.pred != nil {
+		expectedPred := complementPred(rule.role)
+		if !expectedPred(partner) {
+			return 0, 0, fmt.Errorf("invalid turn pair: %s at index %d has mismatched partner content", rule.role, i)
+		}
+	}
+
+	if rule.forward {
+		return i, partnerIdx, nil
+	}
+	return partnerIdx, i, nil
+}
+
+// complementPred returns the predicate that the partner must satisfy
+// for a tool-call turn pair to be valid.
+func complementPred(role string) func(*llm.Content) bool {
+	if role == "model" {
+		return contentHasFunctionResponse
+	}
+	return contentHasFunctionCall
+}
+
 // findTurnPair determines the two indices forming the turn containing
 // the message at index i. It handles normal user→model pairs and
 // tool-call model→user (FunctionCall/FunctionResponse) pairs.
 func findTurnPair(contents []*llm.Content, i int) (first, second int, err error) {
 	role := contents[i].Role
-	total := len(contents)
 
-	if role == "model" && contentHasFunctionCall(contents[i]) {
-		// Tool-call turn: model (FunctionCall) → user (FunctionResponse).
-		if i+1 >= total || contents[i+1].Role != "user" || !contentHasFunctionResponse(contents[i+1]) {
-			return 0, 0, fmt.Errorf("invalid turn pair: tool-call model at index %d has no function response", i)
-		}
-		return i, i + 1, nil
+	// System messages are not part of any turn.
+	if role == "system" {
+		return 0, 0, fmt.Errorf("invalid role for turn pairing: %s", role)
 	}
 
-	if role == "user" && contentHasFunctionResponse(contents[i]) {
-		// Tool-call turn: user (FunctionResponse) → preceded by model (FunctionCall).
-		if i-1 < 0 || contents[i-1].Role != "model" || !contentHasFunctionCall(contents[i-1]) {
-			return 0, 0, fmt.Errorf("invalid turn pair: function response at index %d has no preceding function call", i)
+	for _, rule := range turnPairRules {
+		if rule.role != role {
+			continue
 		}
-		return i - 1, i, nil
-	}
-
-	if role == "user" {
-		// Normal turn: user → model.
-		if i+1 >= total || contents[i+1].Role != "model" {
-			return 0, 0, fmt.Errorf("invalid turn pair: user at index %d has no model response", i)
+		if rule.pred != nil && !rule.pred(contents[i]) {
+			continue
 		}
-		return i, i + 1, nil
-	}
-
-	if role == "model" {
-		// Normal turn: model → preceded by user.
-		if i-1 < 0 || contents[i-1].Role != "user" {
-			return 0, 0, fmt.Errorf("invalid turn pair: model at index %d has no preceding user message", i)
-		}
-		return i - 1, i, nil
+		return validateTurnPair(contents, i, rule)
 	}
 
 	return 0, 0, fmt.Errorf("invalid role for turn pairing: %s", role)

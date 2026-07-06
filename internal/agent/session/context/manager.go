@@ -40,6 +40,13 @@ type Manager struct {
 // contextManagerOption defines a functional option for configuring the Manager.
 type contextManagerOption func(*Manager)
 
+// block tracks a contiguous run of candidate turns during a scan.
+type block struct {
+	startMsg int
+	endMsg   int
+	count    int
+}
+
 // WithLogger sets the logger for the Manager.
 func WithLogger(l ports.Logger) contextManagerOption {
 	return func(cm *Manager) {
@@ -451,6 +458,130 @@ func (cm *Manager) findSummarizationBoundary(ctx context.Context, numTurns int, 
 	}
 }
 
+// blockScanner tracks contiguous candidate-turn blocks during a single
+// scan pass over turns. It manages the "current" in-progress block and
+// the "best" completed block seen so far, and can detect when a block
+// has grown large enough to satisfy the caller's needs.
+type blockScanner struct {
+	current *block
+	best    *block
+	msgIdx  int
+}
+
+// startBlock begins a new candidate block at the current message index.
+// It is idempotent: if a block is already in progress, this is a no-op.
+func (bs *blockScanner) startBlock() {
+	if bs.current == nil {
+		bs.current = &block{startMsg: bs.msgIdx}
+	}
+}
+
+// extendBlock adds turnLen messages to the current block and returns
+// (startMsg, endMsg, true) if the block has reached or exceeded numTurns.
+func (bs *blockScanner) extendBlock(turnLen, numTurns int) (startMsg, endMsg int, ready bool) {
+	bs.current.count++
+	bs.current.endMsg = bs.msgIdx + turnLen
+	ready = bs.current.count >= numTurns
+	return bs.current.startMsg, bs.current.endMsg, ready
+}
+
+// closeBlock finalizes the current block (if any), promoting it to
+// best if it has more candidates than the previous best.
+func (bs *blockScanner) closeBlock() {
+	if bs.current != nil {
+		if bs.best == nil || bs.current.count > bs.best.count {
+			bs.best = bs.current
+		}
+		bs.current = nil
+	}
+}
+
+// advanceMsgIdx adds turnLen to the message index counter.
+func (bs *blockScanner) advanceMsgIdx(turnLen int) {
+	bs.msgIdx += turnLen
+}
+
+// finalize promotes any in-progress block to best (post-loop) and
+// returns the best block found, or nil if none were found.
+func (bs *blockScanner) finalize() *block {
+	if bs.current != nil {
+		if bs.best == nil || bs.current.count > bs.best.count {
+			bs.best = bs.current
+		}
+	}
+	return bs.best
+}
+
+// finalizeResult wraps finalize() into the standard scanCandidateBlocks
+// return shape for the "no viable block found" tail case.
+func (bs *blockScanner) finalizeResult(contents []*llm.Content) (*block, bool, []*llm.Content, int, int) {
+	best := bs.finalize()
+	return best, false, nil, 0, 0
+}
+
+// scanCandidateBlocks performs a single pass over grouped turns, identifying
+// contiguous blocks of candidate (summarizable) turns. It returns:
+//   - best: the largest viable block found (nil if none)
+//   - found: true if a block with >= numTurns candidates was found
+//   - subset, startIdx, endIdx: the slice and bounds when found=true
+func scanCandidateBlocks(
+	contents []*llm.Content,
+	turns [][]*llm.Content,
+	numTurns int,
+	sel candidateSelector,
+) (best *block, found bool, subset []*llm.Content, startIdx int, endIdx int) {
+	var bs blockScanner
+
+	for _, turn := range turns {
+		if sel.IsCandidate(turn) {
+			bs.startBlock()
+			if start, end, ready := bs.extendBlock(len(turn), numTurns); ready {
+				return bs.current, true, contents[start:end], start, end
+			}
+		} else {
+			bs.closeBlock()
+		}
+		bs.advanceMsgIdx(len(turn))
+	}
+
+	return bs.finalizeResult(contents)
+}
+
+// capBestBlock attempts to extract a viable subset from the best candidate block
+// when the full history has been scanned. It caps the block to leave at least
+// one turn unsummarized. Returns nil subset if no viable block exists.
+func capBestBlock(
+	ctx context.Context,
+	contents []*llm.Content,
+	best *block,
+	minViable int,
+) (subset []*llm.Content, startIdx int, endIdx int, err error) {
+	if best == nil || best.count < minViable {
+		return nil, 0, 0, nil
+	}
+
+	// Leave at least one turn unsummarized by capping the block
+	// at (best.count - 1) turns when more than one turn exists.
+	cappedCount := best.count - 1
+	if cappedCount > 0 {
+		// Coverage: architect-accepted (2026-07). groupTurns only fails on nil or
+		// invalid content. The sub-slice contents[best.startMsg:best.endMsg] comes
+		// from a history window that was already validated by loadHistory() via
+		// validateHistoryBoundaries. Structurally unreachable — same acceptance
+		// class as json.Marshal on all-string structs in global_prompt_tracker.go.
+		// See: docs/architect/INTENTIONAL_NON_FIXES.md
+		subTurns, err := groupTurns(ctx, contents[best.startMsg:best.endMsg])
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if len(subTurns) > 1 {
+			cappedEnd := best.endMsg - len(subTurns[len(subTurns)-1])
+			return contents[best.startMsg:cappedEnd], best.startMsg, cappedEnd, nil
+		}
+	}
+	return contents[best.startMsg:best.endMsg], best.startMsg, best.endMsg, nil
+}
+
 func (cm *Manager) checkWindowSize(ctx context.Context, windowSize int, numTurns int, totalEntries int) (found bool, subset []*llm.Content, startIdx int, endIdx int, err error) {
 	contents, err := cm.History.GetWindow(ctx, 0, windowSize)
 	if err != nil {
@@ -464,73 +595,29 @@ func (cm *Manager) checkWindowSize(ctx context.Context, windowSize int, numTurns
 
 	minViable := cm.candidateSelector.MinViableBlock()
 
-	// block tracks a contiguous run of candidate turns during the scan.
-	type block struct {
-		startMsg int
-		endMsg   int
-		count    int
-	}
-	var current *block
-	var best *block
-	msgIdx := 0
-
-	for _, turn := range turns {
-		isCandidate := cm.candidateSelector.IsCandidate(turn)
-
-		if isCandidate {
-			if current == nil {
-				current = &block{startMsg: msgIdx}
-			}
-			current.count++
-			current.endMsg = msgIdx + len(turn)
-
-			if current.count >= numTurns {
-				// Found enough candidate turns in this block.
-				subset = contents[current.startMsg:current.endMsg]
-				return true, subset, current.startMsg, current.endMsg, nil
-			}
-		} else {
-			if current != nil {
-				if best == nil || current.count > best.count {
-					best = current
-				}
-				current = nil
-			}
-		}
-		msgIdx += len(turn)
+	// Phase 1: Scan for candidate blocks
+	best, found, subset, startIdx, endIdx := scanCandidateBlocks(contents, turns, numTurns, cm.candidateSelector)
+	if found {
+		return true, subset, startIdx, endIdx, nil
 	}
 
-	// End of turns: check the final block.
-	if current != nil {
-		if best == nil || current.count > best.count {
-			best = current
-		}
-	}
-
-	// If we've reached the end of history, use the best block if viable.
+	// Phase 2: If at end of history, try capping the best block
 	if windowSize >= totalEntries {
-		if best != nil && best.count >= minViable {
-			// Leave at least one turn unsummarized by capping the block
-			// at (best.count - 1) turns when more than one turn exists.
-			cappedCount := best.count - 1
-			if cappedCount > 0 {
-				subTurns, err := groupTurns(ctx, contents[best.startMsg:best.endMsg])
-				if err != nil {
-					return false, nil, 0, 0, err
-				}
-				if len(subTurns) > 1 {
-					cappedEnd := best.endMsg - len(subTurns[len(subTurns)-1])
-					subset = contents[best.startMsg:cappedEnd]
-					return true, subset, best.startMsg, cappedEnd, nil
-				}
-			}
-			subset = contents[best.startMsg:best.endMsg]
-			return true, subset, best.startMsg, best.endMsg, nil
+		// Coverage: architect-accepted (2026-07). capBestBlock only returns an
+		// error from groupTurns on a sub-slice of already-validated history (see
+		// acceptance comment in capBestBlock above). Structurally unreachable.
+		// See: docs/architect/INTENTIONAL_NON_FIXES.md
+		subset, startIdx, endIdx, err := capBestBlock(ctx, contents, best, minViable)
+		if err != nil {
+			return false, nil, 0, 0, err
+		}
+		if subset != nil {
+			return true, subset, startIdx, endIdx, nil
 		}
 		return true, nil, 0, 0, nil
 	}
 
-	// Not enough candidate turns yet, caller should increase the window.
+	// Not enough candidates yet — caller should expand the window.
 	return false, nil, 0, 0, nil
 }
 

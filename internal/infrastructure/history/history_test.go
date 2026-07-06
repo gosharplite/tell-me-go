@@ -871,39 +871,47 @@ func (m *mockFailingAppendPartsStore) AppendParts(ctx context.Context, index int
 
 func (m *mockFailingAppendPartsStore) Sync(ctx context.Context) error { return nil }
 
-func TestLoad_BackfillsMissingUUIDs(t *testing.T) {
+// setupLegacyHistoryWithNoIDs creates a Manager backed by a persisted history
+// file containing entries that lack UUIDs. It then loads a fresh Manager which
+// triggers the backfill logic, returning the Manager with backfilled IDs.
+func setupLegacyHistoryWithNoIDs(t *testing.T) (*Manager, string, string) {
+	t.Helper()
+
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
 	ctx := context.Background()
 
-	// Step 1: Write legacy content with no IDs to disk via SetContents.
+	// Write legacy content with no IDs
 	m1 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
-
 	legacyContents := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}, Pinned: true},
 		{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}},
 		{Role: "user", Parts: []*llm.Part{{Text: "How are you?"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "I'm fine"}}, Pinned: true},
 	}
-
 	if err := m1.SetContents(ctx, legacyContents); err != nil {
 		t.Fatalf("SetContents (legacy) failed: %v", err)
 	}
 
-	// Step 2: Load via a fresh Manager — backfill should trigger.
+	// Load via fresh Manager to trigger backfill
 	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	if err := m2.Load(ctx); err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 
 	if m2.GetTotalEntries() != 4 {
-		t.Fatalf("expected 4 entries, got %d", m2.GetTotalEntries())
+		t.Fatalf("expected 4 entries after backfill, got %d", m2.GetTotalEntries())
 	}
 
-	// Step 3: Verify all IDs populated and unique.
+	return m2, historyFile, archiveFile
+}
+
+func TestLoad_Backfills_IDsPopulatedAndUnique(t *testing.T) {
+	m, _, _ := setupLegacyHistoryWithNoIDs(t)
+
 	ids := make(map[string]bool)
-	for i, c := range m2.Contents {
+	for i, c := range m.Contents {
 		if c.ID == "" {
 			t.Errorf("Content[%d] has empty ID after backfill", i)
 		}
@@ -912,33 +920,40 @@ func TestLoad_BackfillsMissingUUIDs(t *testing.T) {
 		}
 		ids[c.ID] = true
 	}
+}
 
-	// Step 4: Verify pinned state preserved.
-	if !m2.Contents[0].Pinned {
+func TestLoad_Backfills_PinnedStatePreserved(t *testing.T) {
+	m, _, _ := setupLegacyHistoryWithNoIDs(t)
+
+	if !m.Contents[0].Pinned {
 		t.Error("Content[0] pinned state not preserved: expected true")
 	}
-	if m2.Contents[1].Pinned {
+	if m.Contents[1].Pinned {
 		t.Error("Content[1] should not be pinned")
 	}
-	if m2.Contents[2].Pinned {
+	if m.Contents[2].Pinned {
 		t.Error("Content[2] should not be pinned")
 	}
-	if !m2.Contents[3].Pinned {
+	if !m.Contents[3].Pinned {
 		t.Error("Content[3] pinned state not preserved: expected true")
 	}
+}
 
-	// Step 5: Record IDs and Load again to confirm stability.
-	firstIDs := make([]string, len(m2.Contents))
-	for i, c := range m2.Contents {
+func TestLoad_Backfills_IDsStableAcrossReloads(t *testing.T) {
+	m, historyFile, archiveFile := setupLegacyHistoryWithNoIDs(t)
+
+	firstIDs := make([]string, len(m.Contents))
+	for i, c := range m.Contents {
 		firstIDs[i] = c.ID
 	}
 
-	m3 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
-	if err := m3.Load(ctx); err != nil {
+	// Load a fresh Manager from the same files — IDs must be stable
+	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	if err := m2.Load(context.Background()); err != nil {
 		t.Fatalf("Second Load failed: %v", err)
 	}
 
-	for i, c := range m3.Contents {
+	for i, c := range m2.Contents {
 		if c.ID != firstIDs[i] {
 			t.Errorf("Content[%d] ID changed: was %q, now %q (IDs must be stable)",
 				i, firstIDs[i], c.ID)
