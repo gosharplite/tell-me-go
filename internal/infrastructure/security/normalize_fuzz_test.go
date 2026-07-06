@@ -49,29 +49,37 @@ func FuzzNormalizeSingleQuoted(f *testing.F) {
 // quotes (so \" or \' doesn't break detection).
 func extractSingleQuotedRegions(s string) []string {
 	var regions []string
-	inSingle := false
-	inDouble := false
+	var qt quoteTracker
 	start := -1
+
 	for i := 0; i < len(s); i++ {
-		b := s[i]
-		switch {
-		case b == '\\' && !inSingle:
-			i++ // skip escaped char
-		case b == '\'' && !inDouble:
-			if inSingle {
-				regions = append(regions, s[start:i+1])
-				inSingle = false
-			} else {
-				start = i
-				inSingle = true
-			}
-		case b == '"' && !inSingle:
-			inDouble = !inDouble
+		switch s[i] {
+		case '\\':
+			i += qt.handleBackslash()
+		case '\'':
+			captureSingleQuoteRegion(&qt, s, i, &start, &regions)
+		case '"':
+			qt.toggleQuote(s[i])
 		}
 	}
-	// If input ends inside single quotes, still capture it
-	if inSingle && start >= 0 {
+
+	if qt.inSingle {
 		regions = append(regions, s[start:])
 	}
 	return regions
+}
+
+// captureSingleQuoteRegion processes a single-quote character during
+// region extraction. When outside double quotes, it either opens a new
+// region (recording start) or closes the current region (appending the
+// captured slice). The quoteTracker's inSingle flag is toggled.
+func captureSingleQuoteRegion(qt *quoteTracker, s string, i int, start *int, regions *[]string) {
+	if !qt.inDouble {
+		if qt.inSingle {
+			*regions = append(*regions, s[*start:i+1])
+		} else {
+			*start = i
+		}
+		qt.inSingle = !qt.inSingle
+	}
 }

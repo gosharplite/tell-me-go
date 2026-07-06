@@ -877,73 +877,73 @@ func TestLoad_BackfillsMissingUUIDs(t *testing.T) {
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
 	ctx := context.Background()
 
-	// Step 1: Write legacy content with no IDs to disk via SetContents.
+	// Shared setup: write legacy content with no IDs
 	m1 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
-
 	legacyContents := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}, Pinned: true},
 		{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}},
 		{Role: "user", Parts: []*llm.Part{{Text: "How are you?"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "I'm fine"}}, Pinned: true},
 	}
-
 	if err := m1.SetContents(ctx, legacyContents); err != nil {
 		t.Fatalf("SetContents (legacy) failed: %v", err)
 	}
 
-	// Step 2: Load via a fresh Manager — backfill should trigger.
+	// Load via fresh Manager for all subtests
 	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	if err := m2.Load(ctx); err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-
 	if m2.GetTotalEntries() != 4 {
 		t.Fatalf("expected 4 entries, got %d", m2.GetTotalEntries())
 	}
 
-	// Step 3: Verify all IDs populated and unique.
-	ids := make(map[string]bool)
-	for i, c := range m2.Contents {
-		if c.ID == "" {
-			t.Errorf("Content[%d] has empty ID after backfill", i)
+	t.Run("IDsPopulatedAndUnique", func(t *testing.T) {
+		ids := make(map[string]bool)
+		for i, c := range m2.Contents {
+			if c.ID == "" {
+				t.Errorf("Content[%d] has empty ID after backfill", i)
+			}
+			if ids[c.ID] {
+				t.Errorf("Content[%d] has duplicate ID %q", i, c.ID)
+			}
+			ids[c.ID] = true
 		}
-		if ids[c.ID] {
-			t.Errorf("Content[%d] has duplicate ID %q", i, c.ID)
+	})
+
+	t.Run("PinnedStatePreserved", func(t *testing.T) {
+		if !m2.Contents[0].Pinned {
+			t.Error("Content[0] pinned state not preserved: expected true")
 		}
-		ids[c.ID] = true
-	}
-
-	// Step 4: Verify pinned state preserved.
-	if !m2.Contents[0].Pinned {
-		t.Error("Content[0] pinned state not preserved: expected true")
-	}
-	if m2.Contents[1].Pinned {
-		t.Error("Content[1] should not be pinned")
-	}
-	if m2.Contents[2].Pinned {
-		t.Error("Content[2] should not be pinned")
-	}
-	if !m2.Contents[3].Pinned {
-		t.Error("Content[3] pinned state not preserved: expected true")
-	}
-
-	// Step 5: Record IDs and Load again to confirm stability.
-	firstIDs := make([]string, len(m2.Contents))
-	for i, c := range m2.Contents {
-		firstIDs[i] = c.ID
-	}
-
-	m3 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
-	if err := m3.Load(ctx); err != nil {
-		t.Fatalf("Second Load failed: %v", err)
-	}
-
-	for i, c := range m3.Contents {
-		if c.ID != firstIDs[i] {
-			t.Errorf("Content[%d] ID changed: was %q, now %q (IDs must be stable)",
-				i, firstIDs[i], c.ID)
+		if m2.Contents[1].Pinned {
+			t.Error("Content[1] should not be pinned")
 		}
-	}
+		if m2.Contents[2].Pinned {
+			t.Error("Content[2] should not be pinned")
+		}
+		if !m2.Contents[3].Pinned {
+			t.Error("Content[3] pinned state not preserved: expected true")
+		}
+	})
+
+	t.Run("IDsStableAcrossReloads", func(t *testing.T) {
+		firstIDs := make([]string, len(m2.Contents))
+		for i, c := range m2.Contents {
+			firstIDs[i] = c.ID
+		}
+
+		m3 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+		if err := m3.Load(ctx); err != nil {
+			t.Fatalf("Second Load failed: %v", err)
+		}
+
+		for i, c := range m3.Contents {
+			if c.ID != firstIDs[i] {
+				t.Errorf("Content[%d] ID changed: was %q, now %q (IDs must be stable)",
+					i, firstIDs[i], c.ID)
+			}
+		}
+	})
 }
 
 type mockLoadRealSaveFailing struct {

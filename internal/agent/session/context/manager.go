@@ -458,6 +458,67 @@ func (cm *Manager) findSummarizationBoundary(ctx context.Context, numTurns int, 
 	}
 }
 
+// blockScanner tracks contiguous candidate-turn blocks during a single
+// scan pass over turns. It manages the "current" in-progress block and
+// the "best" completed block seen so far, and can detect when a block
+// has grown large enough to satisfy the caller's needs.
+type blockScanner struct {
+	current *block
+	best    *block
+	msgIdx  int
+}
+
+// startBlock begins a new candidate block at the current message index.
+// It is idempotent: if a block is already in progress, this is a no-op.
+func (bs *blockScanner) startBlock() {
+	if bs.current == nil {
+		bs.current = &block{startMsg: bs.msgIdx}
+	}
+}
+
+// extendBlock adds turnLen messages to the current block and returns
+// (startMsg, endMsg, true) if the block has reached or exceeded numTurns.
+func (bs *blockScanner) extendBlock(turnLen, numTurns int) (startMsg, endMsg int, ready bool) {
+	bs.current.count++
+	bs.current.endMsg = bs.msgIdx + turnLen
+	ready = bs.current.count >= numTurns
+	return bs.current.startMsg, bs.current.endMsg, ready
+}
+
+// closeBlock finalizes the current block (if any), promoting it to
+// best if it has more candidates than the previous best.
+func (bs *blockScanner) closeBlock() {
+	if bs.current != nil {
+		if bs.best == nil || bs.current.count > bs.best.count {
+			bs.best = bs.current
+		}
+		bs.current = nil
+	}
+}
+
+// advanceMsgIdx adds turnLen to the message index counter.
+func (bs *blockScanner) advanceMsgIdx(turnLen int) {
+	bs.msgIdx += turnLen
+}
+
+// finalize promotes any in-progress block to best (post-loop) and
+// returns the best block found, or nil if none were found.
+func (bs *blockScanner) finalize() *block {
+	if bs.current != nil {
+		if bs.best == nil || bs.current.count > bs.best.count {
+			bs.best = bs.current
+		}
+	}
+	return bs.best
+}
+
+// finalizeResult wraps finalize() into the standard scanCandidateBlocks
+// return shape for the "no viable block found" tail case.
+func (bs *blockScanner) finalizeResult(contents []*llm.Content) (*block, bool, []*llm.Content, int, int) {
+	best := bs.finalize()
+	return best, false, nil, 0, 0
+}
+
 // scanCandidateBlocks performs a single pass over grouped turns, identifying
 // contiguous blocks of candidate (summarizable) turns. It returns:
 //   - best: the largest viable block found (nil if none)
@@ -469,43 +530,21 @@ func scanCandidateBlocks(
 	numTurns int,
 	sel candidateSelector,
 ) (best *block, found bool, subset []*llm.Content, startIdx int, endIdx int) {
-	var current *block
-	msgIdx := 0
+	var bs blockScanner
 
 	for _, turn := range turns {
-		isCandidate := sel.IsCandidate(turn)
-
-		if isCandidate {
-			if current == nil {
-				current = &block{startMsg: msgIdx}
-			}
-			current.count++
-			current.endMsg = msgIdx + len(turn)
-
-			if current.count >= numTurns {
-				// Found enough candidate turns in this block.
-				subset = contents[current.startMsg:current.endMsg]
-				return current, true, subset, current.startMsg, current.endMsg
+		if sel.IsCandidate(turn) {
+			bs.startBlock()
+			if start, end, ready := bs.extendBlock(len(turn), numTurns); ready {
+				return bs.current, true, contents[start:end], start, end
 			}
 		} else {
-			if current != nil {
-				if best == nil || current.count > best.count {
-					best = current
-				}
-				current = nil
-			}
+			bs.closeBlock()
 		}
-		msgIdx += len(turn)
+		bs.advanceMsgIdx(len(turn))
 	}
 
-	// End of turns: check the final block.
-	if current != nil {
-		if best == nil || current.count > best.count {
-			best = current
-		}
-	}
-
-	return best, false, nil, 0, 0
+	return bs.finalizeResult(contents)
 }
 
 // capBestBlock attempts to extract a viable subset from the best candidate block

@@ -68,34 +68,59 @@ func normalize(raw string) string {
 	return out.String()
 }
 
-// skipEscapedChar advances the index past a backslash-escaped character.
-// Caller must ensure raw[i] == '\\'.
-func skipEscapedChar(raw string, i int) int {
-	// Skip the escaped character
-	if i+1 < len(raw) {
-		return i + 1
+// quoteTracker tracks whether the current scan position is inside single
+// or double quotes. It handles backslash escape skipping (outside single
+// quotes) and quote-state toggling for ' and " characters.
+type quoteTracker struct {
+	inSingle bool
+	inDouble bool
+}
+
+// handleBackslash processes a backslash character. Outside single quotes,
+// the backslash escapes the next character. Returns 1 to skip the next
+// byte, or 0 if the backslash should be treated literally.
+func (qt *quoteTracker) handleBackslash() (skip int) {
+	if !qt.inSingle {
+		return 1
 	}
-	return i
+	return 0
+}
+
+// toggleQuote toggles quote state for ' and " characters.
+func (qt *quoteTracker) toggleQuote(b byte) {
+	switch b {
+	case '\'':
+		if !qt.inDouble {
+			qt.inSingle = !qt.inSingle
+		}
+	case '"':
+		if !qt.inSingle {
+			qt.inDouble = !qt.inDouble
+		}
+	}
+}
+
+// isQuoted returns true when the scanner is inside single or double quotes.
+func (qt *quoteTracker) isQuoted() bool {
+	return qt.inSingle || qt.inDouble
 }
 
 // hasBareNewline performs a quote-aware scan of an already-normalized string
 // and reports whether it contains an unquoted (bare) newline character.
 // Such newlines can be used for command injection and must be rejected.
 func hasBareNewline(normalized string) bool {
-	inSingle := false
-	inDouble := false
+	var qt quoteTracker
 
 	for i := 0; i < len(normalized); i++ {
-		b := normalized[i]
-
-		if b == '\\' && !inSingle {
-			i = skipEscapedChar(normalized, i)
-		} else if b == '\'' && !inDouble {
-			inSingle = !inSingle
-		} else if b == '"' && !inSingle {
-			inDouble = !inDouble
-		} else if b == '\n' && !inSingle && !inDouble {
-			return true
+		switch normalized[i] {
+		case '\\':
+			i += qt.handleBackslash()
+		case '\'', '"':
+			qt.toggleQuote(normalized[i])
+		case '\n':
+			if !qt.isQuoted() {
+				return true
+			}
 		}
 	}
 
