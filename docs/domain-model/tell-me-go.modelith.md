@@ -195,7 +195,7 @@ A single invocation of a Tool requested by the LLM during a Turn. Carries the to
 
 ### `Turn`
 
-One atomic exchange: a user prompt, zero or more assistant Thoughts (possibly interleaved with Tool executions), and a final response. Every Turn belongs to exactly one Session.
+One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly interleaved with Tool executions), and a final response. Every Turn belongs to exactly one Session.
 
 **Relationships**
 

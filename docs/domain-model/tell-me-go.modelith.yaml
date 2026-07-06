@@ -82,7 +82,7 @@ entities:
 
   Turn:
     definition: >
-      One atomic exchange: a user prompt, zero or more assistant Thoughts
+      One atomic exchange: a user prompt, zero or more assistant `Thought`s
       (possibly interleaved with Tool executions), and a final response.
       Every Turn belongs to exactly one Session.
     relationships:
