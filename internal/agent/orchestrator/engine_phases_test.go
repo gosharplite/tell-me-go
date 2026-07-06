@@ -293,6 +293,63 @@ func TestPersistenceStep_Process(t *testing.T) {
 	})
 }
 
+func TestRecoveryStep_LLMErrorCategories(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantNext TurnPhase
+		wantErr  bool
+	}{
+		{
+			name:     "rate_limited → retry (falls through to retry logic)",
+			err:      llm.ErrRateLimit,
+			wantNext: PhaseRefining,
+		},
+		{
+			name:     "auth_failure → abort",
+			err:      llm.ErrAuth,
+			wantNext: PhaseComplete,
+			wantErr:  true,
+		},
+		{
+			name:     "context_overflow → refine",
+			err:      llm.ErrContextLimitExceeded,
+			wantNext: PhaseRefining,
+		},
+		{
+			name:     "server_error → retry (falls through to retry logic)",
+			err:      llm.ErrTransient,
+			wantNext: PhaseRefining,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := &DefaultRetryPolicy{MaxRetries: 3, Backoff: time.Millisecond}
+			step := &RecoveryStep{Policy: policy}
+
+			turn := &Turn{
+				State: &TurnState{
+					Phase:     PhaseRecovering,
+					LastError: tt.err,
+				},
+				Clock: &agenttest.MockClock{},
+			}
+
+			result, err := step.Process(context.Background(), turn)
+			if tt.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if result.NextPhase != tt.wantNext {
+				t.Errorf("NextPhase = %v, want %v", result.NextPhase, tt.wantNext)
+			}
+		})
+	}
+}
+
 func TestRecoveryStep_Process(t *testing.T) {
 	t.Run("no error — skips to complete", func(t *testing.T) {
 		ctx := context.Background()

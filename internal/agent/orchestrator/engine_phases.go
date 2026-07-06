@@ -96,10 +96,25 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 		return ProcessResult{NextPhase: PhaseComplete}, nil
 	}
 
-	// State mutation is handled by the workflow engine (caller)
-	isRateLimit := errors.Is(err, llm.ErrRateLimit)
-	if isRateLimit {
+	category := llm.ClassifyLLMError(err)
+
+	switch category {
+	case llm.LLMErrorRateLimited:
 		Turn.State.HasSeenRateLimit = true
+	case llm.LLMErrorAuthFailure:
+		// Auth failures are non-retryable — surface immediately
+		return ProcessResult{NextPhase: PhaseComplete}, err
+	case llm.LLMErrorContextOverflow:
+		// Context overflow triggers re-assembly with summarisation,
+		// not a blind retry
+		Turn.getLogger().Warn("context_overflow_detected",
+			"error", err,
+			"turn", Turn.Index)
+		return ProcessResult{NextPhase: PhaseRefining}, nil
+	case llm.LLMErrorTimeout, llm.LLMErrorServerError:
+		// Fall through to retry logic below
+	default:
+		// Unknown category — fall through to retry logic
 	}
 
 	delay, retry := p.Policy.ShouldRetry(Turn.Clock, err, Turn.State.RetryCount, Turn.State.HasSeenRateLimit)
