@@ -35,6 +35,7 @@ type ModelPricing struct {
 	Comp           float64 `json:"comp" yaml:"COMP"`
 	ThinkingBudget int     `json:"thinking_budget,omitempty" yaml:"THINKING_BUDGET,omitempty"`
 	SearchQuery    float64 `json:"search_query,omitempty" yaml:"SEARCH_QUERY,omitempty"`
+	ContextWindow  int     `json:"context_window,omitempty" yaml:"CONTEXT_WINDOW,omitempty"`
 }
 
 // PricingData represents the global pricing information.

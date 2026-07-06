@@ -276,6 +276,27 @@ func (c *Config) ResolveContextWindow() int {
 	return maxTokens
 }
 
+// ResolveContextWindowFromPricing returns the context window for the active
+// model, checking Config.Models first, then falling back to the PricingData
+// table. If neither specifies a context window, returns MaxHistoryTokens.
+func (c *Config) ResolveContextWindowFromPricing(pd pricing.PricingData) int {
+	// 1. Config.Models override (highest priority)
+	if mCfg, ok := findBestMatch(c.Models, c.Model, func(m ModelConfig) bool {
+		return m.ContextWindow > 0
+	}); ok {
+		return mCfg.ContextWindow
+	}
+
+	// 2. Pricing data (new unified source)
+	mp := pd.GetModelPricing(c.Model)
+	if mp.ContextWindow > 0 {
+		return mp.ContextWindow
+	}
+
+	// 3. Fallback to config-level limit
+	return c.MaxHistoryTokens
+}
+
 // updateBestMatch checks whether candidate key k is a valid match for target
 // and, if so, replaces bestV/maxLen with it when it's longer than the current best.
 func updateBestMatch[T any](k, target string, v T, isValid func(T) bool, bestV *T, found *bool, maxLen *int) {
@@ -346,6 +367,7 @@ func DefaultPricing() pricing.PricingData {
 				Comp:           3.00,
 				ThinkingBudget: 32768,
 				SearchQuery:    0.014, // Updated from 0.035
+				ContextWindow:  1048576, // 1M token context window
 			},
 			"gemini-3-pro-preview": {
 				Hit:            0.20,  // Updated from 0.3125
@@ -353,6 +375,7 @@ func DefaultPricing() pricing.PricingData {
 				Comp:           12.00, // Updated from 5.00
 				ThinkingBudget: 65536,
 				SearchQuery:    0.014, // Updated from 0.035
+				ContextWindow:  2097152, // 2M token context window
 			},
 		},
 	}

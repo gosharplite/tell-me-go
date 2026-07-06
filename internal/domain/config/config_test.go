@@ -102,6 +102,70 @@ func TestResolveContextWindow(t *testing.T) {
 	}
 }
 
+func TestResolveContextWindowFromPricing(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Model:            "gemini-3-flash-preview",
+		MaxHistoryTokens: 120000,
+	}
+
+	pd := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
+			"gemini-3-flash-preview": {
+				ContextWindow: 1048576,
+			},
+		},
+	}
+
+	got := cfg.ResolveContextWindowFromPricing(pd)
+	if got != 1048576 {
+		t.Errorf("expected 1048576 from pricing, got %d", got)
+	}
+}
+
+func TestResolveContextWindowFromPricing_ConfigOverride(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Model:            "gemini-3-flash-preview",
+		MaxHistoryTokens: 120000,
+		Models: map[string]ModelConfig{
+			"gemini-3-flash-preview": {ContextWindow: 50000},
+		},
+	}
+
+	pd := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
+			"gemini-3-flash-preview": {
+				ContextWindow: 1048576,
+			},
+		},
+	}
+
+	got := cfg.ResolveContextWindowFromPricing(pd)
+	if got != 50000 {
+		t.Errorf("expected 50000 from Config override, got %d", got)
+	}
+}
+
+func TestResolveContextWindowFromPricing_Fallback(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Model:            "unknown-model",
+		MaxHistoryTokens: 120000,
+	}
+
+	pd := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
+			"default": {ContextWindow: 0},
+		},
+	}
+
+	got := cfg.ResolveContextWindowFromPricing(pd)
+	if got != 120000 {
+		t.Errorf("expected fallback 120000, got %d", got)
+	}
+}
+
 func TestFindBestMatch(t *testing.T) {
 	t.Parallel()
 	m := map[string]string{

@@ -12,6 +12,19 @@ import (
 // benchSinkBreakdown prevents the compiler from optimizing away benchmark calls.
 var benchSinkBreakdown CostBreakdown
 
+func TestModelPricing_ContextWindow(t *testing.T) {
+	t.Parallel()
+	mp := ModelPricing{
+		Hit:           0.05,
+		Miss:          0.50,
+		Comp:          3.00,
+		ContextWindow: 1048576,
+	}
+	if mp.ContextWindow != 1048576 {
+		t.Errorf("ContextWindow = %d, want 1048576", mp.ContextWindow)
+	}
+}
+
 func TestPricingData_ValidateUniqueModels(t *testing.T) {
 	t.Parallel()
 	pd := PricingData{
