@@ -540,6 +540,19 @@ func TestConfig_providerKeys_Empty(t *testing.T) {
 	assert.Empty(t, keys)
 }
 
+func TestConfig_ValidateProviderUniqueness(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Providers: map[string]LLMProvider{
+			"gemini": {Type: "gemini"},
+			"openai": {Type: "openai"},
+		},
+	}
+	if err := cfg.ValidateProviderUniqueness(); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+}
+
 // TestConfig_ValidateProviders_SelectedProviderFirst verifies that
 // ValidateSelectedProvider runs before per-provider checks — the operator
 // sees the config-level error before individual provider errors.

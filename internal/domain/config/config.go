@@ -144,15 +144,33 @@ func (c *Config) providerKeys() []string {
 	return keys
 }
 
+// ValidateProviderUniqueness is a named validation anchor for the
+// provider-unique-name invariant: each Provider in the registry has
+// a unique name.
+//
+// The invariant is structurally enforced by Go's map semantics — a
+// map[string]LLMProvider cannot contain duplicate keys. This method
+// exists so that future code which assembles the provider registry
+// from multiple sources (e.g., merging config files) has an obvious
+// place to add explicit duplicate detection.
+//
+// In the current single-file architecture, this always returns nil.
+func (c *Config) ValidateProviderUniqueness() error {
+	// Structurally enforced by map[string]LLMProvider.
+	// If providers are ever assembled from multiple files, add a
+	// duplicate-key check here before the merge.
+	return nil
+}
+
 // ValidateProviders runs validation against every provider entry in
 // Providers and returns the first error encountered. Warnings are
 // emitted via the supplied logger (non-fatal). The logger must be
 // non-nil; callers without a configured logger should pass a logger
 // backed by a discard handler.
 //
-// SelectedProvider is validated first — before per-provider checks —
-// so the operator sees the config-level misconfiguration before any
-// individual provider errors.
+// SelectedProvider is validated first, then provider uniqueness —
+// before per-provider checks — so the operator sees config-level
+// misconfiguration before any individual provider errors.
 //
 // The order of per-provider iteration is undefined (Go map iteration);
 // operators should treat the first-error semantics as "any one of
@@ -160,6 +178,9 @@ func (c *Config) providerKeys() []string {
 // on which one surfaces first.
 func (c *Config) ValidateProviders(logger *slog.Logger) error {
 	if err := c.ValidateSelectedProvider(); err != nil {
+		return err
+	}
+	if err := c.ValidateProviderUniqueness(); err != nil {
 		return err
 	}
 	for name, p := range c.Providers {
