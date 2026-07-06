@@ -310,6 +310,20 @@ Any AI agent recommending these should consult the rationale below.
   `plainOSFS.Chmod`, and `OSFileSystem.Chmod`.
 - **See**: `internal/domain/services/task_service.go:95-97`
 
+### skills/file_repo.go — soft enforcement of skill-unique-name
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `fileSkillRepository.hasSkillName()` at `file_repo.go:36` uses
+  `slog.Warn` + skip rather than a hard error for duplicate skill names during
+  loading. This is intentional: skill files are user-authored Markdown; a typo
+  that creates a duplicate name should not prevent the agent from starting.
+  The warning is visible in logs and actionable by the operator. The
+  `skill-unique-name` invariant in the domain model is informational rather
+  than a safety constraint — unlike `tool-unique-name` (where duplicate
+  registration would cause nondeterministic dispatch).
+- **See**: `internal/infrastructure/skills/file_repo.go:36` (hasSkillName check),
+  `docs/domain-model/README.md` (invariant audit, row 11)
+
 ---
 
-*Last Updated: 2026-07 (gaps #1-#2 triage)*
+*Last Updated: 2026-07*

@@ -30,33 +30,7 @@ func (a *defaultDeadCodeAnalyzer) propagateTypedConstantUsages(state *scanState,
 			continue
 		}
 
-		// Walk up through aliases to the underlying named type.
-		t := c.Type()
-		t = skipAliases(t)
-
-		named, ok := t.(*types.Named)
-		if !ok {
-			continue
-		}
-
-		typeObj := named.Obj()
-		if typeObj == nil || typeObj.Pkg() == nil {
-			continue
-		}
-
-		typeId := getSymbolIdentity(typeObj)
-		typeMeta, exists := state.declarations[typeId]
-		if !exists {
-			continue
-		}
-		if typeMeta.symType != "Type" {
-			continue
-		}
-
-		if state.externalUses[typeId] == 0 {
-			state.totalUses[typeId]++
-			state.externalUses[typeId]++
-		}
+		a.markTypeExternallyUsed(state, c)
 	}
 }
 
@@ -69,4 +43,35 @@ func skipAliases(t types.Type) types.Type {
 		}
 		t = types.Unalias(alias)
 	}
+}
+
+// markTypeExternallyUsed walks from a typed constant's type through alias
+// chains to the underlying *types.Named, then marks that type as having
+// external usage in the scan state.
+//
+// Returns true if a type was successfully marked; false if the constant's
+// type is not a named type or the type is not in the declaration set.
+func (a *defaultDeadCodeAnalyzer) markTypeExternallyUsed(state *scanState, c *types.Const) bool {
+	t := skipAliases(c.Type())
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+
+	typeObj := named.Obj()
+	if typeObj == nil || typeObj.Pkg() == nil {
+		return false
+	}
+
+	typeId := getSymbolIdentity(typeObj)
+	typeMeta, exists := state.declarations[typeId]
+	if !exists || typeMeta.symType != "Type" {
+		return false
+	}
+
+	if state.externalUses[typeId] == 0 {
+		state.totalUses[typeId]++
+		state.externalUses[typeId]++
+	}
+	return true
 }
