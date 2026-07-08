@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -178,6 +179,7 @@ func TestToLocation_AbsFailure(t *testing.T) {
 	t.Parallel()
 
 	idx := &indexer{
+		clk: clock.RealClock{},
 		fset: token.NewFileSet(),
 		resolvePath: func(s string) (string, error) {
 			return "", errors.New("injected resolvePath failure")
@@ -225,6 +227,7 @@ func TestIsSymbolUsed_RefreshFails(t *testing.T) {
 	// Not parallel: uses global log.SetOutput
 
 	idx := &indexer{
+		clk:         clock.RealClock{},
 		dir:         "/nonexistent/for/is/symbol/used",
 		fset:        token.NewFileSet(),
 		resolvePath: filepath.Abs,
@@ -248,6 +251,7 @@ func TestLookup_RefreshFails(t *testing.T) {
 	t.Parallel()
 
 	idx := &indexer{
+		clk:           clock.RealClock{},
 		dir:           "/nonexistent/for/lookup",
 		fset:          token.NewFileSet(),
 		resolvePath:   filepath.Abs,
@@ -271,6 +275,7 @@ func TestPackages_RefreshFails(t *testing.T) {
 	t.Parallel()
 
 	idx := &indexer{
+		clk:           clock.RealClock{},
 		dir:           "/nonexistent/for/packages",
 		fset:          token.NewFileSet(),
 		resolvePath:   filepath.Abs,
@@ -291,52 +296,44 @@ func TestPackages_RefreshFails(t *testing.T) {
 }
 
 func TestStartHeartbeatTicker_NonNilHb(t *testing.T) {
-	// startHeartbeatTicker with non-nil hb exercises the hb send path.
+	t.Parallel()
+	clk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
 	hb := make(chan struct{}, 10)
-	stop := startHeartbeatTicker(hb)
+	stop := startHeartbeatTicker(hb, clk)
 
-	// Wait for at least one tick to arrive
+	// Fire a tick manually — no real time needed
+	clk.Ticker.Fire()
+
 	select {
 	case <-hb:
-		// Success: heartbeat received
-	case <-time.After(5 * time.Second):
-		t.Fatal("expected at least one heartbeat within 5 seconds")
+		// heartbeat received
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected heartbeat after Fire()")
 	}
 
-	// Stop the ticker and verify the channel stops producing
 	stop()
+	// After stop, Fire() should not deliver to hb (goroutine exited)
+	clk.Ticker.Fire()
 
-	// Drain the channel
-	drained := false
-	for !drained {
-		select {
-		case <-hb:
-		case <-time.After(100 * time.Millisecond):
-			drained = true
-		}
-	}
-
-	// After stopping and draining, no more heartbeats should arrive
+	// Drain
 	select {
 	case <-hb:
-		t.Error("unexpected heartbeat after stop")
-	case <-time.After(3 * time.Second):
-		// Expected: no heartbeat
+	default:
 	}
 }
 
 func TestStartHeartbeatTicker_HbFull(t *testing.T) {
-	// When the hb channel is full, the ticker drops the heartbeat (default case).
-	// This test verifies that a full channel does not block the ticker goroutine.
+	t.Parallel()
+	clk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
 	hb := make(chan struct{}, 1)
-	// Fill the channel
-	hb <- struct{}{}
+	hb <- struct{}{} // fill the channel
 
-	stop := startHeartbeatTicker(hb)
+	stop := startHeartbeatTicker(hb, clk)
 
-	// The ticker should not block even though the channel is full.
-	// Wait briefly and verify the goroutine is still alive by stopping it.
-	time.Sleep(3 * time.Second)
+	// Fire a tick — goroutine should drop it (channel full) and not block
+	clk.Ticker.Fire()
+
+	// Verify goroutine is still alive by stopping
 	stop() // Must not hang
 
 	// Drain

@@ -16,6 +16,7 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -44,6 +45,7 @@ type architectureManager struct {
 	once       sync.Once // for ModulePath detection
 	loaderOnce sync.Once // for Loader initialization
 	Loader     packageProvider
+	clk        clock.Clock
 }
 
 // realpackageProvider implements packageProvider using the 'go list' command.
@@ -218,13 +220,17 @@ func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[s
 }
 
 func (m *architectureManager) runHeartbeat(hb chan<- struct{}, done <-chan struct{}) {
-	ticker := time.NewTicker(2 * time.Second)
+	clk := m.clk
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	ticker := clk.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-done:
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			m.sendHeartbeat(hb)
 		}
 	}

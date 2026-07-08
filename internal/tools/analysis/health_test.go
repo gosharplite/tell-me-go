@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
@@ -790,7 +791,7 @@ func TestHealthStartHeartbeat(t *testing.T) {
 
 	t.Run("nil hb, already-done channel", func(t *testing.T) {
 		t.Parallel()
-		m := &healthManager{}
+		m := &healthManager{clk: &clock.FakeClock{Ticker: clock.NewFakeTicker()}}
 		done := make(chan struct{})
 		close(done)
 		m.startHeartbeat(done, nil) // must return immediately, no panic
@@ -798,7 +799,7 @@ func TestHealthStartHeartbeat(t *testing.T) {
 
 	t.Run("nil hb, open done channel then close", func(t *testing.T) {
 		t.Parallel()
-		m := &healthManager{}
+		m := &healthManager{clk: &clock.FakeClock{Ticker: clock.NewFakeTicker()}}
 		done := make(chan struct{})
 		go func() {
 			m.startHeartbeat(done, nil)
@@ -808,16 +809,20 @@ func TestHealthStartHeartbeat(t *testing.T) {
 
 	t.Run("buffered hb, receives heartbeat", func(t *testing.T) {
 		t.Parallel()
-		m := &healthManager{}
+		fakeClk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+		m := &healthManager{clk: fakeClk}
 		done := make(chan struct{})
 		hb := make(chan struct{}, 2)
 		go func() {
 			m.startHeartbeat(done, hb)
 		}()
+		
+		fakeClk.Ticker.Fire()
+
 		select {
 		case <-hb:
 			// received
-		case <-time.After(3 * time.Second):
+		case <-time.After(100 * time.Millisecond):
 			t.Error("timed out waiting for heartbeat")
 		}
 		close(done)
@@ -825,13 +830,16 @@ func TestHealthStartHeartbeat(t *testing.T) {
 
 	t.Run("hb full, does not block", func(t *testing.T) {
 		t.Parallel()
-		m := &healthManager{}
+		fakeClk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+		m := &healthManager{clk: fakeClk}
 		done := make(chan struct{})
 		hb := make(chan struct{}, 1)
 		hb <- struct{}{} // pre-fill buffer
 		go func() {
 			m.startHeartbeat(done, hb)
 		}()
+		
+		fakeClk.Ticker.Fire()
 		close(done)
 		// test passes if we reach here without deadlock/panic
 	})

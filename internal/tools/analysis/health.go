@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,6 +25,7 @@ type healthManager struct {
 	Runner     AnalysisGoRunner
 	complexity complexityAnalyzer
 	deadCode   deadCodeAnalyzer
+	clk        clock.Clock
 }
 
 type healthResult struct {
@@ -69,13 +71,17 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 }
 
 func (m *healthManager) startHeartbeat(done <-chan struct{}, hb chan<- struct{}) {
-	ticker := time.NewTicker(2 * time.Second)
+	clk := m.clk
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	ticker := clk.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-done:
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			if hb != nil {
 				select {
 				case hb <- struct{}{}:

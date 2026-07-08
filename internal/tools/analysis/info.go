@@ -22,6 +22,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 type infoManager struct {
@@ -31,6 +32,7 @@ type infoManager struct {
 	Events events.EventBus
 	Runner AnalysisGoRunner
 	Policy services.WorkspacePolicy
+	clk    clock.Clock
 }
 
 type projectStats struct {
@@ -226,15 +228,19 @@ func (m *infoManager) publishGoDocEvent(ctx context.Context, symbol string) {
 }
 
 func (m *infoManager) startGoDocHeartbeat(hb chan<- struct{}) chan struct{} {
+	clk := m.clk
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
 	done := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := clk.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
 				return
-			case <-ticker.C:
+			case <-ticker.C():
 				if hb != nil {
 					select {
 					case hb <- struct{}{}:

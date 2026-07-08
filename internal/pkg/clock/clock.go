@@ -64,3 +64,68 @@ func (rt realTicker) C() <-chan time.Time {
 func (RealClock) Since(t time.Time) time.Duration {
 	return time.Since(t)
 }
+
+// FakeClock is a test-only Clock that allows manual control of time.
+// The zero value is ready to use with default behavior.
+type FakeClock struct {
+	// AfterChan is the channel returned by After. Tests send to it to
+	// simulate elapsed time.
+	AfterChan chan time.Time
+	// SleepChan receives the duration passed to Sleep.
+	SleepChan chan time.Duration
+	// Ticker is the FakeTicker that NewTicker returns. Tests call
+	// Ticker.Fire() to simulate a tick.
+	Ticker *FakeTicker
+}
+
+func (f *FakeClock) Now() time.Time {
+	return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+}
+
+func (f *FakeClock) Since(t time.Time) time.Duration {
+	return f.Now().Sub(t)
+}
+
+func (f *FakeClock) Sleep(d time.Duration) {
+	if f.SleepChan != nil {
+		f.SleepChan <- d
+	}
+}
+
+func (f *FakeClock) After(d time.Duration) <-chan time.Time {
+	return f.AfterChan
+}
+
+func (f *FakeClock) NewTicker(d time.Duration) Ticker {
+	if f.Ticker == nil {
+		f.Ticker = NewFakeTicker()
+	}
+	return f.Ticker
+}
+
+func (f *FakeClock) Jitter(base float64) float64 {
+	return base // deterministic: no jitter
+}
+
+// FakeTicker is a test-only Ticker. Tests call Fire() to emit a
+// time value on the tick channel.
+type FakeTicker struct {
+	CChan chan time.Time
+}
+
+func NewFakeTicker() *FakeTicker {
+	return &FakeTicker{CChan: make(chan time.Time, 1)}
+}
+
+func (ft *FakeTicker) C() <-chan time.Time {
+	return ft.CChan
+}
+
+func (ft *FakeTicker) Fire() {
+	select {
+	case ft.CChan <- time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC):
+	default:
+	}
+}
+
+func (ft *FakeTicker) Stop() {}
