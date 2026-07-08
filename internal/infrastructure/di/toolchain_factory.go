@@ -1,7 +1,10 @@
 package di
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	osexec "os/exec"
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -12,13 +15,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	infra_toolchain "github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/skillssh"
 )
 
 type toolchainFactory interface {
@@ -92,7 +98,62 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		return nil, fmt.Errorf("%w: failed to register policy tools: %w", errInfraInit, err)
 	}
 
+	// Register skills.sh ecosystem tools
+	if err := f.registerSkillsShTools(reg); err != nil {
+		return nil, fmt.Errorf("%w: failed to register skills.sh tools: %w", errInfraInit, err)
+	}
+
 	return reg, nil
+}
+
+// registerSkillsShTools builds the skill repositories and registers the
+// four skills.sh ecosystem tools (search_skills, list_skills, install_skill,
+// remove_skill) into the tool registry.
+func (f *defaultToolchainFactory) registerSkillsShTools(r tools.Registry) error {
+	skillsDir := filepath.Join(f.HomeDir, "docs", "skills")
+	skillsShDir := filepath.Join(f.HomeDir, ".skills")
+
+	// Build the same composite repository used by the skill injector
+	fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
+	if err != nil {
+		return fmt.Errorf("file skill repository: %w", err)
+	}
+
+	skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
+	if err != nil {
+		return fmt.Errorf("skills.sh repository: %w", err)
+	}
+
+	// Composite merges both sources; docs/skills/ goes first for tie-breaking
+	repo := &compositeSkillRepository{
+		repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+	}
+
+	// ExecRunner wraps exec.CommandContext for git clone
+	execRunner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return osexec.CommandContext(ctx, name, args...).CombinedOutput()
+	}
+
+	return skillssh.RegisterSkillsShTools(r, skillsShDir, repo, http.DefaultClient, execRunner)
+}
+
+// compositeSkillRepository aggregates multiple SkillRepository instances.
+// Mirrors the implementation in factory/chatter.go; duplicated here to
+// avoid a circular dependency between the di and factory packages.
+type compositeSkillRepository struct {
+	repos []domain_skills.SkillRepository
+}
+
+func (c *compositeSkillRepository) GetAll(ctx context.Context) ([]domain_skills.Skill, error) {
+	var all []domain_skills.Skill
+	for _, r := range c.repos {
+		skills, err := r.GetAll(ctx)
+		if err != nil {
+			continue
+		}
+		all = append(all, skills...)
+	}
+	return all, nil
 }
 
 // BuildHealthChecker creates a HealthChecker for the system toolchain binaries.

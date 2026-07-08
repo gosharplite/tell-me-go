@@ -6,6 +6,7 @@ package factory
 import (
 	stdctx "context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -36,6 +37,39 @@ func resolveSkillsDir(paths *persistence.Paths) string {
 	}
 
 	return filepath.Clean(skillsDir)
+}
+
+// resolveSkillsShDir finds the .skills/ directory (skills.sh format) under
+// $TELL_ME_HOME. Unlike resolveSkillsDir, there is no CWD fallback — skills.sh
+// repositories are only expected under the TELL_ME_HOME directory.
+func resolveSkillsShDir(paths *persistence.Paths) string {
+	homeDir := filepath.Dir(filepath.Dir(paths.ModeDir))
+	return filepath.Join(homeDir, ".skills")
+}
+
+// compositeSkillRepository aggregates multiple SkillRepository instances,
+// merging their results in order. If one source returns an error, it is
+// silently skipped so that a single broken source does not block all
+// skill selection.
+type compositeSkillRepository struct {
+	repos []domain_skills.SkillRepository
+}
+
+// GetAll returns all skills from all contained repositories, concatenated
+// in registration order. Errors from individual repositories are logged
+// and skipped.
+func (c *compositeSkillRepository) GetAll(ctx stdctx.Context) ([]domain_skills.Skill, error) {
+	var all []domain_skills.Skill
+	for _, r := range c.repos {
+		skills, err := r.GetAll(ctx)
+		if err != nil {
+			slog.Warn("failed to load skills from repository, skipping",
+				"error", err)
+			continue
+		}
+		all = append(all, skills...)
+	}
+	return all, nil
 }
 
 // registerReadOnlySkillsPath registers the skills directory with the security
@@ -81,10 +115,33 @@ func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.Chatte
 
 	registerReadOnlySkillsPath(deps, skillsDir)
 
-	skillRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
+	fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
 	}
+
+	// .skills/ — skills.sh format (optional; degrades gracefully)
+	skillsShDir := resolveSkillsShDir(deps.GetPaths())
+	registerReadOnlySkillsPath(deps, skillsShDir)
+
+	skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
+	if err != nil {
+		slog.Warn("failed to initialize .skills/ repository, continuing without it",
+			"error", err)
+		skillsShRepo = nil
+	}
+
+	// Composite merges both sources. docs/skills/ goes first so
+	// Dobby-curated skills take priority in tie-breaking.
+	var skillRepo domain_skills.SkillRepository
+	if skillsShRepo != nil {
+		skillRepo = &compositeSkillRepository{
+			repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+		}
+	} else {
+		skillRepo = fileRepo
+	}
+
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
 	// Build config watcher: production always uses file-based watcher.

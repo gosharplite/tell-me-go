@@ -13,7 +13,8 @@ type Skill struct {
 	Name        string
 	Description string
 	Content     string
-	TokenCount  int // Heuristic: len(Content) / 4
+	TokenCount  int    // Heuristic: len(Content) / 4
+	Source      string // "local" for docs/skills/, "skills.sh" for .skills/, empty for backward compat
 }
 
 // SkillRepository defines the interface for retrieving available skills.

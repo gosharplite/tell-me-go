@@ -157,5 +157,6 @@ func parseSkill(data []byte) (*domain.Skill, error) {
 		Description: desc,
 		Content:     content,
 		TokenCount:  len(content) / 4,
+		Source:      "local",
 	}, nil
 }

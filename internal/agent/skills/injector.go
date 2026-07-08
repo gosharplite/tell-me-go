@@ -86,6 +86,8 @@ func (t *skillInjector) buildInjectionBlock(selected []skills.Skill) string {
 		fmt.Fprintf(&sb, "### %s\n%s\n\n---\n\n", s.Name, s.Content)
 	}
 
+	sb.WriteString("**Skills Ecosystem**: You have access to `search_skills` to discover installable skills from skills.sh, `list_skills` to see installed skills, `install_skill` to add new ones (requires user approval), and `remove_skill` to remove them. Installed skills become available on the next message. If a task would benefit from a skill you don't have, search for it.\n")
+
 	return sb.String()
 }
 
