@@ -163,10 +163,10 @@ func withStorageType(t string) SessionStateOption {
 	}
 }
 
-// NewSessionState initializes repositories and services.
-// Use WithStorageType("memory") for in-memory storage in tests instead of
+// newSessionState initializes repositories and services.
+// Use withStorageType("memory") for in-memory storage in tests instead of
 // setting the STORAGE_TYPE environment variable.
-func NewSessionState(ctx context.Context, configDir string, opts ...SessionStateOption) (ports.SessionProvider, error) {
+func newSessionState(ctx context.Context, configDir string, opts ...SessionStateOption) (ports.SessionProvider, error) {
 	state := &sessionState{
 		logger:      slog.Default(),
 		storageType: "sqlite",
@@ -210,7 +210,7 @@ func NewSessionStateFromEnv(ctx context.Context, configDir string, opts ...Sessi
 	if storageType == "" {
 		storageType = "sqlite"
 	}
-	return NewSessionState(ctx, configDir, append([]SessionStateOption{withStorageType(storageType)}, opts...)...)
+	return newSessionState(ctx, configDir, append([]SessionStateOption{withStorageType(storageType)}, opts...)...)
 }
 
 func initRepositories(ctx context.Context, configDir, storageType string) (ports.ListStore[ports.Task], ports.KVStore, *sql.DB, map[string]string, error) {

@@ -22,7 +22,7 @@ invalid json line starting with i
 	}
 
 	// Now try to initialize the state, which should trigger migration
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	if err != nil {
 		t.Fatalf("Failed to initialize session state: %v", err)
 	}
