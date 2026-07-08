@@ -151,7 +151,7 @@ func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.Chatte
 		agent.WithSecurityManager(deps.GetSecurityManager()),
 		agent.WithProviderName(cfg.ProviderName),
 		agent.WithSkillEcosystemIntro(
-			"**Skills Ecosystem**: Call `load_toolkit(names=['skillssh'])` to activate skills.sh tools: `search_skills` to discover installable skills, `list_skills` to see installed skills, `install_skill` to add new ones (requires user approval), and `remove_skill` to remove them. Installed skills become available on the next message.",
+			"**Skills Ecosystem**: Call `load_toolkit(names=['skillssh'])` to activate skills.sh tools: `search_skills` to discover installable skills, `list_skills` to see installed skills, `install_skill` to add new ones (requires user approval), and `remove_skill` to remove them. Installed skills are available immediately.",
 		),
 	}
 

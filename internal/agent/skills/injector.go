@@ -55,6 +55,16 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 		if t.Logger != nil {
 			t.Logger.Warn("skill selection failed; proceeding without injected skills", "error", err)
 		}
+		// Don't return — still inject ecosystem intro if configured
+	}
+
+	// Always inject ecosystem intro if configured, even when no skills matched.
+	// This ensures the LLM knows about available toolkits on every turn.
+	// The ecosystem intro alone does NOT trigger history persistence — only
+	// actual skill injection does.
+	if t.ecosystemIntro != "" && len(selected) == 0 {
+		injection := "\n\n" + t.ecosystemIntro + "\n"
+		t.injectIfNeeded(req, injection, false)
 		return nil
 	}
 
@@ -63,17 +73,24 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 	}
 
 	injection := t.buildInjectionBlock(selected)
+	t.injectIfNeeded(req, injection, true)
+	return nil
+}
 
+// injectIfNeeded adds the injection string to the request history,
+// either by appending to an existing system message or by prepending
+// a new one. It also guards against double-injection. The persist
+// flag controls whether req.PersistHistory is set — it should be
+// true only when skill content is injected, not for ecosystem intro.
+func (t *skillInjector) injectIfNeeded(req *ports.ContextRequest, injection string, persist bool) {
 	if req.History[0].Role == "system" {
 		if t.isAlreadyInjected(req.History[0]) {
-			return nil
+			return
 		}
-		t.injectToExistingSystem(req, req.History[0], injection)
-		return nil
+		t.injectToExistingSystem(req, req.History[0], injection, persist)
+		return
 	}
-
-	t.prependNewSystemMessage(req, injection)
-	return nil
+	t.prependNewSystemMessage(req, injection, persist)
 }
 
 func (t *skillInjector) extractTaskDescription(history []*llm.Content) string {
@@ -117,24 +134,31 @@ func (t *skillInjector) isAlreadyInjected(content *llm.Content) bool {
 		if strings.Contains(p.Text, "## Relevant Go Development Skills") {
 			return true
 		}
+		if t.ecosystemIntro != "" && strings.Contains(p.Text, t.ecosystemIntro) {
+			return true
+		}
 	}
 	return false
 }
 
-func (t *skillInjector) injectToExistingSystem(req *ports.ContextRequest, first *llm.Content, injection string) {
+func (t *skillInjector) injectToExistingSystem(req *ports.ContextRequest, first *llm.Content, injection string, persist bool) {
 	first.Parts = append(first.Parts, &llm.Part{Text: injection})
 	first.Pinned = true
-	req.PersistHistory = true
+	if persist {
+		req.PersistHistory = true
+	}
 }
 
-func (t *skillInjector) prependNewSystemMessage(req *ports.ContextRequest, injection string) {
+func (t *skillInjector) prependNewSystemMessage(req *ports.ContextRequest, injection string, persist bool) {
 	newSystem := &llm.Content{
 		Role:   "system",
 		Pinned: true,
 		Parts:  []*llm.Part{{Text: injection}},
 	}
 	req.History = append([]*llm.Content{newSystem}, req.History...)
-	req.PersistHistory = true
+	if persist {
+		req.PersistHistory = true
+	}
 }
 
 func (t *skillInjector) Priority() int {

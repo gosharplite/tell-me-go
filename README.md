@@ -17,7 +17,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
 *   **Multi-Provider Reasoning**: Native support for Gemini 3.0/3.1, GPT-5.4/5.5, DeepSeek V3.2/V4, and Claude 4.7 — across Google Vertex AI, OpenAI, DeepSeek, and Anthropic APIs.
 *   **Intelligence & Context**:
     *   **Dynamic Skill Injection**: Automatically injects idiomatic Go patterns (`golang-patterns`) and TDD best practices (`golang-testing`) into the context based on task relevance.
-    *   **Skills.sh Ecosystem**: Discover, install, and remove skills on the fly from the open agent skills ecosystem. Skills are installed via `git clone` into `.skills/` and become available on the next message. Requires user approval for installation.
+    *   **Skills.sh Ecosystem**: Discover, install, and remove skills on the fly from the open agent skills ecosystem. Skills are installed via `git clone` into `.skills/` and are available immediately. Requires user approval for installation.
     *   **Unified Domain Model**: Optimized for a provider-agnostic `Thought` architecture, ensuring consistent reasoning across models.
 *   **Agentic Tools**: Natively executes local and cloud tools to solve complex tasks.
     *   **Workspace**: FileSystem (read/write/search/diff/undo), Git (status/diff/log/commit/branch/blame), and AST-powered Go Analysis (usages, definitions, symbols, rename/move refactoring).

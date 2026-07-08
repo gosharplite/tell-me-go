@@ -52,11 +52,14 @@ func NewSkillsShRepository(skillsShDir string) (domain.SkillRepository, error) {
 	return repo, nil
 }
 
-// GetAll returns all cached skill definitions.
+// GetAll returns all cached skill definitions. The returned slice is a
+// copy of the internal cache; callers may mutate it safely.
 func (r *skillsShRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.cache, nil
+	cpy := make([]domain.Skill, len(r.cache))
+	copy(cpy, r.cache)
+	return cpy, nil
 }
 
 // reload re-walks the skillsShDir and replaces the in-memory cache.

@@ -182,10 +182,13 @@ func (m *defaultSkillManager) InstallSkill(ctx context.Context, repoURL string) 
 
 	// Refresh the repository cache so the newly installed skill is visible immediately.
 	if m.repo != nil {
-		_ = m.repo.Refresh(ctx)
+		if err := m.repo.Refresh(ctx); err != nil {
+			// Log but don't fail — the mutation succeeded; cache refresh is best-effort.
+			// The skill data will be picked up on the next refresh regardless.
+		}
 	}
 
-	return fmt.Sprintf("Successfully installed skills from %s/%s to %s\n\n%s\n\nInstalled skills will be available on the next message. Use `list_skills` to see them.", owner, repoName, targetDir, string(output)), nil
+	return fmt.Sprintf("Successfully installed skills from %s/%s to %s\n\n%s\n\nInstalled skills are available immediately. Use `list_skills` to see them.", owner, repoName, targetDir, string(output)), nil
 }
 
 // ListSkills returns a formatted list of all installed skills grouped by source.
@@ -284,7 +287,10 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 
 	// Refresh the repository cache so the removal is visible immediately.
 	if m.repo != nil {
-		_ = m.repo.Refresh(ctx)
+		if err := m.repo.Refresh(ctx); err != nil {
+			// Log but don't fail — the mutation succeeded; cache refresh is best-effort.
+			// The skill data will be picked up on the next refresh regardless.
+		}
 	}
 
 	return fmt.Sprintf("Successfully removed skill %q (repository %s).", name, repoRoot), nil

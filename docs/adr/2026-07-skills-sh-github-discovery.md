@@ -30,7 +30,7 @@ Use the **GitHub code search API** (`/search/code`) with the query pattern `SKIL
 
 - **Rate limits:** Unauthenticated: ~10 req/min. Authenticated (with `GITHUB_TOKEN`): ~30 req/min. Acceptable for an interactive tool where searches are user-initiated, but a burst of rapid searches could hit the limit.
 - **No quality ranking:** GitHub code search relevance does not correlate with skill quality or community adoption. Mitigation: results are presented as a flat list; the skills.sh leaderboard (web) provides the ranking layer.
-- **`main` branch assumption:** `fetchSkillMeta` hardcodes `raw.githubusercontent.com/<owner>/<repo>/main/<path>`. Repositories using `master` or other default branch names silently degrade to "(no description)" in the search results. A future enhancement should use the repository's default branch from the search API response (`item.repository.default_branch`).
+- **Branch detection:** `fetchSkillMeta` uses `default_branch` from the GitHub search response's repository object. Repositories without a `default_branch` field fall back to `"main"`. This covers the vast majority of repositories; repos using non-standard default branch names without the API field may silently degrade to "(no description)".
 
 ## Alternatives Considered
 
