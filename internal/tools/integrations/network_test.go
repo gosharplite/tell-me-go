@@ -121,7 +121,9 @@ func TestHttpRequest(t *testing.T) {
 				},
 			}
 			tool := newnetworkTool(sm, mock)
-			res, err := tool.HttpRequest(context.Background(), tt.args, nil)
+			tool.heartbeatInterval = 10 * time.Millisecond
+			hb := make(chan struct{}, 10)
+			res, err := tool.HttpRequest(context.Background(), tt.args, hb)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("HttpRequest() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -211,7 +213,9 @@ func TestReadExternalDocs(t *testing.T) {
 				},
 			}
 			tool := newnetworkTool(sm, mock)
-			res, err := tool.ReadExternalDocs(context.Background(), tt.args, nil)
+			tool.heartbeatInterval = 10 * time.Millisecond
+			hb := make(chan struct{}, 10)
+			res, err := tool.ReadExternalDocs(context.Background(), tt.args, hb)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadExternalDocs() error = %v, wantErr %v", err, tt.wantErr)
 				return

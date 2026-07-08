@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestInfoManager_RenderProjectSummary(t *testing.T) {
@@ -717,7 +718,7 @@ func TestInfoManager_StartGoDocHeartbeat(t *testing.T) {
 
 	t.Run("nil hb does not panic", func(t *testing.T) {
 		t.Parallel()
-		m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+		m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy(), clk: &clock.FakeClock{Ticker: clock.NewFakeTicker()}}
 		done := m.startGoDocHeartbeat(nil)
 		// Closing done stops the goroutine
 		close(done)
@@ -727,16 +728,19 @@ func TestInfoManager_StartGoDocHeartbeat(t *testing.T) {
 
 	t.Run("non-nil hb receives heartbeat", func(t *testing.T) {
 		t.Parallel()
-		m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy()}
+		fakeClk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+		m := &infoManager{Policy: infra_persistence.NewWorkspacePolicy(), clk: fakeClk}
 		hb := make(chan struct{}, 1)
 		done := m.startGoDocHeartbeat(hb)
+
+		fakeClk.Ticker.Fire()
 
 		// Wait for ticker to fire (2s interval)
 		select {
 		case <-hb:
 			// Received heartbeat
-		case <-time.After(3 * time.Second):
-			t.Error("expected heartbeat within 3s")
+		case <-time.After(100 * time.Millisecond):
+			t.Error("expected heartbeat within 100ms")
 		}
 		close(done) // stop the goroutine
 	})

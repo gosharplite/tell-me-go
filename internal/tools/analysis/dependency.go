@@ -17,6 +17,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 )
@@ -31,6 +32,7 @@ type defaultDependencyAnalyzer struct {
 	modPrefix string
 	modMu     sync.Mutex
 	fs        persistence.FileSystem
+	clk       clock.Clock
 }
 
 func newDependencyAnalyzer(runner AnalysisGoRunner, sp domain_security.PolicyEvaluator, bus events.EventBus, wp services.WorkspacePolicy, fs persistence.FileSystem) *defaultDependencyAnalyzer {
@@ -40,6 +42,7 @@ func newDependencyAnalyzer(runner AnalysisGoRunner, sp domain_security.PolicyEva
 		Events: bus,
 		Policy: wp,
 		fs:     fs,
+		clk:    clock.RealClock{},
 	}
 }
 
@@ -143,13 +146,17 @@ func (a *defaultDependencyAnalyzer) publishToolAction(ctx context.Context, msg s
 }
 
 func (a *defaultDependencyAnalyzer) startHeartbeat(hb chan<- struct{}, done <-chan struct{}) {
-	ticker := time.NewTicker(2 * time.Second)
+	clk := a.clk
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	ticker := clk.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-done:
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			if hb != nil {
 				select {
 				case hb <- struct{}{}:

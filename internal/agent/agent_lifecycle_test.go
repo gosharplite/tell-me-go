@@ -330,6 +330,51 @@ func TestAgent_GetLogger_Default(t *testing.T) {
 	assert.NotNil(t, a.getLogger())
 }
 
+func TestAgent_WithSkillEcosystemIntro(t *testing.T) {
+	t.Parallel()
+
+	t.Run("option sets agent field", func(t *testing.T) {
+		t.Parallel()
+		a := &agent{}
+		opt := WithSkillEcosystemIntro("Available: k8s, ado, atlassian")
+		opt(a)
+		assert.Equal(t, "Available: k8s, ado, atlassian", a.ecosystemIntro)
+	})
+
+	t.Run("empty string when option not provided", func(t *testing.T) {
+		t.Parallel()
+		a := &agent{}
+		assert.Empty(t, a.ecosystemIntro,
+			"ecosystemIntro must default to empty string (zero value)")
+	})
+
+	t.Run("NewAgent with ecosystem intro produces working agent", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		gw := &agenttest.MockGateway{}
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+		reg := agenttest.NewMockToolRegistry()
+		sm := &mockSecurityManager{AllowAll: true}
+
+		chatter, err := NewAgent(gw, bus, reg,
+			WithSecurityManager(sm),
+			WithProviderName("test-provider"),
+			WithPricing("test-model", "test-mode", nil),
+			WithSkillEcosystemIntro("Available: k8s, ado, atlassian"),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, chatter)
+
+		// Verify the field was threaded through to the agent struct.
+		a := asAgent(t, chatter)
+		assert.Equal(t, "Available: k8s, ado, atlassian", a.ecosystemIntro)
+
+		// Verify the agent is functional (no panic on basic operations).
+		err = a.Shutdown(ctx)
+		assert.NoError(t, err)
+	})
+}
+
 func TestAgent_InitComponents_ConfigWatcher(t *testing.T) {
 	ctx := context.Background()
 	gw := &agenttest.MockGateway{}

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -103,6 +104,7 @@ type indexer struct {
 	// resolvePath resolves a filename to an absolute path. Override in tests
 	// to inject path-resolution errors without OS-specific hacks.
 	resolvePath func(string) (string, error)
+	clk         clock.Clock
 }
 
 // implCacheEntry bundles a sync.Once gate with its computed result.
@@ -123,21 +125,25 @@ func newIndexer(dir string) (*indexer, error) {
 		usagesByName:  make(map[string][]location),
 		implsCache:    &implCacheEntry{},
 		resolvePath:   filepath.Abs,
+		clk:           clock.RealClock{},
 	}, nil
 }
 
 // startHeartbeatTicker starts a background goroutine that periodically sends
 // heartbeats on hb. It returns a stop function that must be called to clean up.
-func startHeartbeatTicker(hb chan<- struct{}) (stop func()) {
+func startHeartbeatTicker(hb chan<- struct{}, clk clock.Clock) (stop func()) {
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
 	done := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := clk.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
 				return
-			case <-ticker.C:
+			case <-ticker.C():
 				if hb != nil {
 					select {
 					case hb <- struct{}{}:
@@ -162,7 +168,7 @@ func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 		return nil
 	}
 
-	stop := startHeartbeatTicker(hb)
+	stop := startHeartbeatTicker(hb, idx.clk)
 	defer stop()
 
 	fset := token.NewFileSet()

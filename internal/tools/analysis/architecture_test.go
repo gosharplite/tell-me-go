@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
@@ -308,7 +310,7 @@ func TestRunHeartbeat(t *testing.T) {
 
 	t.Run("stops on done signal", func(t *testing.T) {
 		t.Parallel()
-		m := &architectureManager{}
+		m := &architectureManager{clk: &clock.FakeClock{Ticker: clock.NewFakeTicker()}}
 		hb := make(chan struct{}, 10)
 		done := make(chan struct{})
 		close(done) // already done
@@ -318,16 +320,20 @@ func TestRunHeartbeat(t *testing.T) {
 
 	t.Run("sends heartbeats then stops", func(t *testing.T) {
 		t.Parallel()
-		m := &architectureManager{}
+		fakeClk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+		m := &architectureManager{clk: fakeClk}
 		hb := make(chan struct{}, 10)
 		done := make(chan struct{})
 		go m.runHeartbeat(hb, done)
-		// Wait for at least one tick (2s interval)
+
+		fakeClk.Ticker.Fire()
+
+		// Wait for at least one tick
 		select {
 		case <-hb:
 			// Got heartbeat
-		case <-done:
-			// Done triggered - this is also fine
+		case <-time.After(100 * time.Millisecond):
+			t.Error("expected heartbeat within 100ms")
 		}
 		close(done)
 	})

@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
@@ -77,6 +78,7 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 	t.Run("nil hb, already-done channel", func(t *testing.T) {
 		t.Parallel()
 		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
+		a.clk = &clock.FakeClock{Ticker: clock.NewFakeTicker()}
 		done := make(chan struct{})
 		close(done) // already done
 		// Must not panic, must return immediately
@@ -86,6 +88,7 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 	t.Run("nil hb, open done channel then close", func(t *testing.T) {
 		t.Parallel()
 		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
+		a.clk = &clock.FakeClock{Ticker: clock.NewFakeTicker()}
 		done := make(chan struct{})
 		// Start heartbeat with nil hb — the `if hb != nil` guard at line 140
 		// must prevent send on nil channel. Close done after a tick would fire.
@@ -99,16 +102,19 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 	t.Run("buffered hb, receives heartbeat", func(t *testing.T) {
 		t.Parallel()
 		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
+		fakeClk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+		a.clk = fakeClk
 		done := make(chan struct{})
 		hb := make(chan struct{}, 2)
 		go func() {
 			a.startHeartbeat(hb, done)
 		}()
+		fakeClk.Ticker.Fire()
 		// Wait for at least one heartbeat
 		select {
 		case <-hb:
 			// got heartbeat
-		case <-time.After(3 * time.Second):
+		case <-time.After(100 * time.Millisecond):
 			t.Error("timed out waiting for heartbeat")
 		}
 		close(done)
@@ -117,6 +123,8 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 	t.Run("hb full, does not block", func(t *testing.T) {
 		t.Parallel()
 		a := newDependencyAnalyzer(nil, nil, nil, nil, infra_persistence.NewOSFileSystem())
+		fakeClk := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+		a.clk = fakeClk
 		done := make(chan struct{})
 		hb := make(chan struct{}, 1)
 		// Fill the buffer
@@ -124,6 +132,7 @@ func TestDependencyAnalyzer_StartHeartbeat(t *testing.T) {
 		go func() {
 			a.startHeartbeat(hb, done)
 		}()
+		fakeClk.Ticker.Fire()
 		close(done)
 		// Test passes if we reach here (no goroutine leak, no panic)
 	})

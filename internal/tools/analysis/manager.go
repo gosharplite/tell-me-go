@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // Analyzer interfaces for segregation and testing
@@ -87,9 +88,9 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		deadCode:   dc,
 
 		refactor: newRefactorManager(sp),
-		info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp},
+		info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp, clk: clock.RealClock{}},
 		search:   &searchManager{SP: sp, FS: fs, Policy: wp},
-		arch:     &architectureManager{SP: sp, Runner: runner, idx: idx},
+		arch:     &architectureManager{SP: sp, Runner: runner, idx: idx, clk: clock.RealClock{}},
 	}
 
 	m.health = &healthManager{
@@ -98,6 +99,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		deadCode:   m.deadCode,
 		Exec:       executor,
 		Runner:     runner,
+		clk:        clock.RealClock{},
 	}
 
 	return m
