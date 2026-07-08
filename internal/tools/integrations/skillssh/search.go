@@ -26,7 +26,8 @@ type ghSearchItem struct {
 }
 
 type ghSearchRepo struct {
-	FullName string `json:"full_name"`
+	FullName      string `json:"full_name"`
+	DefaultBranch string `json:"default_branch"`
 }
 
 // makeSearchSkills returns a handler for the search_skills tool.
@@ -65,9 +66,13 @@ func deriveSkillName(path string) string {
 }
 
 // fetchSkillMeta fetches a raw SKILL.md from GitHub and extracts
-// the name and description from YAML frontmatter.
-func fetchSkillMeta(ctx context.Context, client tools.HTTPClient, repoFullName, path string) (name, desc string) {
-	rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/%s", repoFullName, path)
+// the name and description from YAML frontmatter. The branch parameter
+// controls which branch is fetched; if empty, "main" is used as default.
+func fetchSkillMeta(ctx context.Context, client tools.HTTPClient, repoFullName, path, branch string) (name, desc string) {
+	if branch == "" {
+		branch = "main"
+	}
+	rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoFullName, branch, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

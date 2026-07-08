@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	osexec "os/exec"
 	"path/filepath"
 
@@ -117,7 +118,7 @@ func (f *defaultToolchainFactory) registerSkillsShTools(r tools.Registry, skillR
 		return osexec.CommandContext(ctx, name, args...).CombinedOutput()
 	}
 
-	mgr := skillssh.NewSkillManager(skillsShDir, skillRepo, http.DefaultClient, execRunner)
+	mgr := skillssh.NewSkillManager(skillsShDir, skillRepo, http.DefaultClient, execRunner, os.Getenv("GITHUB_TOKEN"))
 	return skillssh.RegisterSkillsShTools(r, mgr)
 }
 

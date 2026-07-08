@@ -65,3 +65,16 @@ func findSkillDir(skillsShDir, skillName string) (found bool, dir string, err er
 
 	return found, dir, err
 }
+
+// findRepoRoot walks up from skillDir until it reaches a directory whose
+// parent is skillsShDir. That directory is the cloned repo root. Removing
+// at repo granularity ensures that reinstalling the repo after removing a
+// single skill works correctly.
+func findRepoRoot(skillsShDir, skillDir string) string {
+	for dir := skillDir; dir != skillsShDir && dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+		if filepath.Dir(dir) == skillsShDir {
+			return dir
+		}
+	}
+	return skillDir // fallback: shouldn't happen, but safe
+}

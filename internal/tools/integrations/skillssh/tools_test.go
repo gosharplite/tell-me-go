@@ -376,18 +376,27 @@ func TestInstallSkill_ValidURLs(t *testing.T) {
 				t.Errorf("expected success message, got: %s", res.Text)
 			}
 
-			if len(capturedArgs) < 3 {
-				t.Fatalf("expected at least 3 args to git clone, got %d: %v", len(capturedArgs), capturedArgs)
+			if len(capturedArgs) < 6 {
+				t.Fatalf("expected at least 6 args to git clone, got %d: %v", len(capturedArgs), capturedArgs)
 			}
 			if capturedArgs[0] != "clone" {
 				t.Errorf("expected 'clone' subcommand, got: %s", capturedArgs[0])
 			}
-			if capturedArgs[1] != tt.url {
-				t.Errorf("expected URL %q, got: %q", tt.url, capturedArgs[1])
+			if capturedArgs[1] != "--depth" {
+				t.Errorf("expected '--depth', got: %s", capturedArgs[1])
+			}
+			if capturedArgs[2] != "1" {
+				t.Errorf("expected '1', got: %s", capturedArgs[2])
+			}
+			if capturedArgs[3] != "--single-branch" {
+				t.Errorf("expected '--single-branch', got: %s", capturedArgs[3])
+			}
+			if capturedArgs[4] != tt.url {
+				t.Errorf("expected URL %q, got: %q", tt.url, capturedArgs[4])
 			}
 			expectedDir := filepath.Join(skillsDir, fmt.Sprintf("%s-%s", tt.wantOwner, tt.wantRepo))
-			if capturedArgs[2] != expectedDir {
-				t.Errorf("expected target dir %q, got: %q", expectedDir, capturedArgs[2])
+			if capturedArgs[5] != expectedDir {
+				t.Errorf("expected target dir %q, got: %q", expectedDir, capturedArgs[5])
 			}
 		})
 	}

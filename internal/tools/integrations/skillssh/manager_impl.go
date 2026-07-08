@@ -24,15 +24,17 @@ type defaultSkillManager struct {
 	repo        skills.SkillRepository
 	client      tools.HTTPClient
 	exec        ExecRunner
+	githubToken string
 }
 
 // NewSkillManager creates a new SkillManager with the given dependencies.
-func NewSkillManager(skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec ExecRunner) SkillManager {
+func NewSkillManager(skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec ExecRunner, githubToken string) SkillManager {
 	return &defaultSkillManager{
 		skillsShDir: skillsShDir,
 		repo:        repo,
 		client:      client,
 		exec:        exec,
+		githubToken: githubToken,
 	}
 }
 
@@ -58,8 +60,8 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 		return fmt.Sprintf("Error: %v", err), err
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if m.githubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+m.githubToken)
 	}
 
 	resp, err := client.Do(req)
@@ -95,7 +97,7 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 		}
 
 		skillName := deriveSkillName(item.Path)
-		name, desc := fetchSkillMeta(ctx, client, item.Repository.FullName, item.Path)
+		name, desc := fetchSkillMeta(ctx, client, item.Repository.FullName, item.Path, item.Repository.DefaultBranch)
 
 		if name == "" {
 			name = skillName
@@ -142,7 +144,7 @@ func (m *defaultSkillManager) InstallSkill(ctx context.Context, repoURL string) 
 		return "Error: command execution is not available.", nil
 	}
 
-	output, err := m.exec(ctx, "git", "clone", repoURL, targetDir)
+	output, err := m.exec(ctx, "git", "clone", "--depth", "1", "--single-branch", repoURL, targetDir)
 	if err != nil {
 		return fmt.Sprintf("Error cloning repository:\n%s\n\nError: %v", string(output), err), err
 	}
@@ -241,8 +243,12 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 		return fmt.Sprintf("Skill %q not found in .skills/. Use `list_skills` to see installed skills.", name), nil
 	}
 
-	if err := os.RemoveAll(skillDir); err != nil {
-		return fmt.Sprintf("Error removing skill directory %s: %v", skillDir, err), err
+	// Find the repo root: walk up from the SKILL.md until we hit a directory
+	// whose parent is skillsShDir. That's the cloned repo directory.
+	repoRoot := findRepoRoot(m.skillsShDir, skillDir)
+
+	if err := os.RemoveAll(repoRoot); err != nil {
+		return fmt.Sprintf("Error removing skill repository %s: %v", repoRoot, err), err
 	}
 
 	// Refresh the repository cache so the removal is visible immediately.
@@ -250,5 +256,5 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 		_ = m.repo.Refresh(ctx)
 	}
 
-	return fmt.Sprintf("Successfully removed skill %q from %s.", name, skillDir), nil
+	return fmt.Sprintf("Successfully removed skill %q (repository %s).", name, repoRoot), nil
 }
