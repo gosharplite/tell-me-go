@@ -52,6 +52,6 @@ func DefaultBootstrapperConfig() BootstrapperConfig {
 		RegisterAllTools: infra_tools.RegisterAll,
 		RegisterMetrics:  telemetry.RegisterMetrics,
 		RotateSession:    infra_persistence.RotateSession,
-		NewSessionState:  infra_persistence.NewSessionState,
+		NewSessionState:  infra_persistence.NewSessionStateFromEnv,
 	}
 }
