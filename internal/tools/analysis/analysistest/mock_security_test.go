@@ -23,7 +23,7 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 	}{
 		{
 			name:    "DenyAll",
-			mock:    &MockSecurityProvider{DenyAll: true},
+			mock:    &MockSecurityProvider{DenyAll: true, AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil }},
 			path:    "/any/path",
 			wantErr: "path not authorized",
 		},
@@ -41,6 +41,7 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			name: "out_of_bounds",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
 			},
 			path:    "/unsafe/other/file.go",
 			wantErr: "path out of bounds",
@@ -49,6 +50,7 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			name: "out_of_bounds_relative",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return "/unsafe/other/file.go", nil },
 			},
 			path:    "../outside",
 			wantErr: "path out of bounds",
@@ -57,13 +59,16 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			name: "safe_inside_tempdir",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
 			},
 			path: "/safe/sub/file.go",
 			want: filepath.Clean("/safe/sub/file.go"),
 		},
 		{
 			name: "zero_value_happy_path",
-			mock: &MockSecurityProvider{},
+			mock: &MockSecurityProvider{
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
+			},
 			path: "/tmp/test.go",
 			want: filepath.Clean("/tmp/test.go"),
 		},
@@ -165,7 +170,7 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 	}{
 		{
 			name:    "DenyAll",
-			mock:    &MockSecurityProvider{DenyAll: true},
+			mock:    &MockSecurityProvider{DenyAll: true, AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil }},
 			path:    "/any",
 			wantErr: "path not authorized",
 		},
@@ -183,6 +188,7 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 			name: "happy_path_inside_tempdir",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
 			},
 			path: "/safe/file.go",
 			want: filepath.Clean("/safe/file.go"),
