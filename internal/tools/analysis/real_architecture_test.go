@@ -5,9 +5,12 @@ package analysis
 
 import (
 	"context"
+	"flag"
 	"strings"
 	"testing"
 )
+
+var strictArch = flag.Bool("strict-arch", true, "fail test on architecture violations")
 
 func TestVerifyRealArchitecture(t *testing.T) {
 	if testing.Short() {
@@ -25,6 +28,10 @@ func TestVerifyRealArchitecture(t *testing.T) {
 	}
 
 	if strings.Contains(res.Text, "FAILED") {
-		t.Logf("Architecture validation FAILED:\n%s", res.Text)
+		if *strictArch {
+			t.Errorf("Architecture validation FAILED:\n%s", res.Text)
+		} else {
+			t.Logf("Architecture validation FAILED:\n%s", res.Text)
+		}
 	}
 }
