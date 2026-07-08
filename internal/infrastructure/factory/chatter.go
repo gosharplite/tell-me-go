@@ -90,31 +90,35 @@ func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.Chatte
 
 	registerReadOnlySkillsPath(deps, skillsDir)
 
-	fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
-	}
-
-	// .skills/ — skills.sh format (optional; degrades gracefully)
-	skillsShDir := resolveSkillsShDir(deps.GetPaths())
-	registerReadOnlySkillsPath(deps, skillsShDir)
-
-	skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
-	if err != nil {
-		slog.Warn("failed to initialize .skills/ repository, continuing without it",
-			"error", err)
-		skillsShRepo = nil
-	}
-
-	// Composite merges both sources. docs/skills/ goes first so
-	// Dobby-curated skills take priority in tie-breaking.
-	var skillRepo domain_skills.SkillRepository
-	if skillsShRepo != nil {
-		skillRepo = &infra_skills.CompositeRepository{
-			Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+	// Use the shared SkillRepository if provided by the composition root.
+	// Otherwise fall back to building one locally (backward compat for tests).
+	skillRepo := deps.GetSkillRepository()
+	if skillRepo == nil {
+		fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
 		}
-	} else {
-		skillRepo = fileRepo
+
+		// .skills/ — skills.sh format (optional; degrades gracefully)
+		skillsShDir := resolveSkillsShDir(deps.GetPaths())
+		registerReadOnlySkillsPath(deps, skillsShDir)
+
+		skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
+		if err != nil {
+			slog.Warn("failed to initialize .skills/ repository, continuing without it",
+				"error", err)
+			skillsShRepo = nil
+		}
+
+		// Composite merges both sources. docs/skills/ goes first so
+		// Dobby-curated skills take priority in tie-breaking.
+		if skillsShRepo != nil {
+			skillRepo = &infra_skills.CompositeRepository{
+				Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+			}
+		} else {
+			skillRepo = fileRepo
+		}
 	}
 
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills

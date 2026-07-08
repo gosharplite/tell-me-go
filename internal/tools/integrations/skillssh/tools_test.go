@@ -30,6 +30,8 @@ func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 // stubSkillRepo implements skills.SkillRepository for testing.
+// It satisfies the concurrency-safe contract by virtue of being used
+// only in single-goroutine tests; no synchronization is needed.
 type stubSkillRepo struct {
 	skills []skills.Skill
 	err    error
@@ -39,6 +41,7 @@ func (s *stubSkillRepo) GetAll(ctx context.Context) ([]skills.Skill, error) {
 	return s.skills, s.err
 }
 
+// Refresh satisfies the SkillRepository concurrency-safe contract.
 func (s *stubSkillRepo) Refresh(ctx context.Context) error {
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -16,9 +17,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
@@ -100,7 +103,15 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	}
 
 	deps.health = b.wireHealth(cfg, sessionProvider, lazyClient)
-	deps.registry = b.wireToolRegistry(paths, sessionProvider, deps.health, lazyClient, bus, cfg, pricingOverrides, capturer)
+
+	// Build shared skill repository — used by both the tool registry
+	// (SkillManager) and the skill injector (via ChatterComposer). A
+	// single instance ensures that Refresh() called by install_skill or
+	// remove_skill is visible to both consumers.
+	sharedSkillRepo := b.buildSharedSkillRepo(cfg)
+	deps.skillRepo = sharedSkillRepo
+
+	deps.registry = b.wireToolRegistry(paths, sessionProvider, deps.health, lazyClient, bus, cfg, pricingOverrides, capturer, sharedSkillRepo)
 
 	return deps, hManager, cleanup, nil
 }
@@ -158,7 +169,7 @@ func (b *Bootstrapper) wireHealth(cfg *config.Config, sessionProvider ports.Sess
 // wireToolRegistry creates a lazily-initialized tool registry. Tool
 // registration (filesystem scanning, binary discovery, security policy
 // evaluation) is deferred until the first call to GetRegistry.
-func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvider ports.SessionProvider, health ports.HealthCheckManager, lazyClient *lazyClient, bus events.EventBus, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, capturer agent.CapturerInteractor) *lazyRegistry {
+func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvider ports.SessionProvider, health ports.HealthCheckManager, lazyClient *lazyClient, bus events.EventBus, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, capturer agent.CapturerInteractor, skillRepo domain_skills.SkillRepository) *lazyRegistry {
 	return newLazyRegistry(func() (tools.Registry, error) {
 		return b.toolchainFactory.BuildRegistry(toolchainParams{
 			Paths:            paths,
@@ -170,8 +181,36 @@ func (b *Bootstrapper) wireToolRegistry(paths *persistence.Paths, sessionProvide
 			Mode:             cfg.Mode,
 			PricingOverrides: pricingOverrides,
 			Capturer:         capturer,
+			SkillRepo:        skillRepo,
 		})
 	}, telemetry.NewSlogLogger(b.cfg.Logger))
+}
+
+// buildSharedSkillRepo constructs the shared skill repository used by
+// both the tool registry and the skill injector. A single instance ensures
+// that Refresh() results from install_skill/remove_skill are seen by both.
+func (b *Bootstrapper) buildSharedSkillRepo(cfg *config.Config) domain_skills.SkillRepository {
+	skillsDir := filepath.Join(b.cfg.HomeDir, "docs", "skills")
+	skillsShDir := filepath.Join(b.cfg.HomeDir, ".skills")
+
+	fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
+	if err != nil {
+		b.cfg.Logger.Warn("file skill repository unavailable, continuing without skills", "error", err)
+		return nil
+	}
+
+	skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
+	if err != nil {
+		b.cfg.Logger.Debug("skills.sh repository unavailable, continuing without it", "error", err)
+		skillsShRepo = nil
+	}
+
+	if skillsShRepo != nil {
+		return &infra_skills.CompositeRepository{
+			Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+		}
+	}
+	return fileRepo
 }
 
 type sessionDeps struct {
@@ -180,6 +219,14 @@ type sessionDeps struct {
 	sessionStateProvider
 	lazyProvider
 	healthProvider
+	skillRepo domain_skills.SkillRepository
+}
+
+// GetSkillRepository returns the shared skill repository, used by both
+// the tool registry and the skill injector so Refresh() results are
+// visible to all consumers.
+func (d *sessionDeps) GetSkillRepository() domain_skills.SkillRepository {
+	return d.skillRepo
 }
 
 // GetAgentFactory returns a factory for creating Chatter instances.

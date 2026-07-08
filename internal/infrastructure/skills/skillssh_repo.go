@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/skills"
 )
@@ -28,6 +29,7 @@ import (
 // parseSkill() and hasSkillName() are shared with fileSkillRepository
 // via the same package.
 type skillsShRepository struct {
+	mu          sync.RWMutex
 	skillsShDir string
 	cache       []domain.Skill
 }
@@ -52,6 +54,8 @@ func NewSkillsShRepository(skillsShDir string) (domain.SkillRepository, error) {
 
 // GetAll returns all cached skill definitions.
 func (r *skillsShRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.cache, nil
 }
 
@@ -62,7 +66,9 @@ func (r *skillsShRepository) reload() error {
 	var cache []domain.Skill
 
 	if _, err := os.Stat(r.skillsShDir); os.IsNotExist(err) {
+		r.mu.Lock()
 		r.cache = cache
+		r.mu.Unlock()
 		return nil
 	}
 
@@ -118,7 +124,9 @@ func (r *skillsShRepository) reload() error {
 		return fmt.Errorf("load skills from %s: %w", r.skillsShDir, err)
 	}
 
+	r.mu.Lock()
 	r.cache = cache
+	r.mu.Unlock()
 	return nil
 }
 

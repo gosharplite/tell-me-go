@@ -20,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	infra_toolchain "github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
@@ -42,6 +41,7 @@ type toolchainParams struct {
 	Mode             string
 	PricingOverrides map[string]pricing.ModelPricing
 	Capturer         agent.CapturerInteractor
+	SkillRepo        domain_skills.SkillRepository
 }
 
 type defaultToolchainFactory struct {
@@ -99,42 +99,25 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 	}
 
 	// Register skills.sh ecosystem tools
-	if err := f.registerSkillsShTools(reg); err != nil {
+	if err := f.registerSkillsShTools(reg, params.SkillRepo); err != nil {
 		return nil, fmt.Errorf("%w: failed to register skills.sh tools: %w", errInfraInit, err)
 	}
 
 	return reg, nil
 }
 
-// registerSkillsShTools builds the skill repositories and registers the
-// four skills.sh ecosystem tools (search_skills, list_skills, install_skill,
-// remove_skill) into the tool registry.
-func (f *defaultToolchainFactory) registerSkillsShTools(r tools.Registry) error {
-	skillsDir := filepath.Join(f.HomeDir, "docs", "skills")
+// registerSkillsShTools registers the four skills.sh ecosystem tools
+// (search_skills, list_skills, install_skill, remove_skill) into the tool
+// registry. It uses the pre-built skillRepo shared with the skill injector
+// so that Refresh() calls from tools are visible to both consumers.
+func (f *defaultToolchainFactory) registerSkillsShTools(r tools.Registry, skillRepo domain_skills.SkillRepository) error {
 	skillsShDir := filepath.Join(f.HomeDir, ".skills")
 
-	// Build the same composite repository used by the skill injector
-	fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
-	if err != nil {
-		return fmt.Errorf("file skill repository: %w", err)
-	}
-
-	skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
-	if err != nil {
-		return fmt.Errorf("skills.sh repository: %w", err)
-	}
-
-	// Composite merges both sources; docs/skills/ goes first for tie-breaking
-	repo := &infra_skills.CompositeRepository{
-		Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
-	}
-
-	// ExecRunner wraps exec.CommandContext for git clone
 	execRunner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return osexec.CommandContext(ctx, name, args...).CombinedOutput()
 	}
 
-	mgr := skillssh.NewSkillManager(skillsShDir, repo, http.DefaultClient, execRunner)
+	mgr := skillssh.NewSkillManager(skillsShDir, skillRepo, http.DefaultClient, execRunner)
 	return skillssh.RegisterSkillsShTools(r, mgr)
 }
 

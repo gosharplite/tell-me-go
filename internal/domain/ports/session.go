@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -145,6 +146,7 @@ type ChatterComposer interface {
 	GetTurnsLogger() TurnsLogger
 	GetSecurityManager() security.Manager
 	GetRegistry() (tools.Registry, error)
+	GetSkillRepository() domain_skills.SkillRepository
 }
 
 // SessionFinalizer defines the dependencies required to finalize a session

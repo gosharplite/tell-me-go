@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/skills"
 )
@@ -23,6 +24,7 @@ var errInvalidFrontmatter = errors.New("invalid skill frontmatter: name required
 // fileSkillRepository implements the domain.SkillRepository interface
 // by loading skill definitions from Markdown files on disk.
 type fileSkillRepository struct {
+	mu      sync.RWMutex
 	docsDir string
 	cache   []domain.Skill
 }
@@ -55,6 +57,8 @@ func NewFileSkillRepository(docsDir string) (domain.SkillRepository, error) {
 
 // GetAll returns all cached skill definitions.
 func (r *fileSkillRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.cache, nil
 }
 
@@ -67,7 +71,9 @@ func (r *fileSkillRepository) reload() error {
 	// Check if directory exists; if not, return empty repository instead of failing.
 	// This is important for test environments and first-time setups.
 	if _, err := os.Stat(r.docsDir); os.IsNotExist(err) {
+		r.mu.Lock()
 		r.cache = cache
+		r.mu.Unlock()
 		return nil
 	}
 
@@ -106,7 +112,9 @@ func (r *fileSkillRepository) reload() error {
 		return fmt.Errorf("load skills from %s: %w", r.docsDir, err)
 	}
 
+	r.mu.Lock()
 	r.cache = cache
+	r.mu.Unlock()
 	return nil
 }
 

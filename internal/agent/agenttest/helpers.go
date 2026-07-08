@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -300,6 +301,7 @@ type StubChatterComposer struct {
 	SecurityManager  security.Manager
 	Registry         tools.Registry
 	RegistryErr      error
+	SkillRepo        domain_skills.SkillRepository
 }
 
 var _ ports.ChatterComposer = (*StubChatterComposer)(nil)
@@ -317,6 +319,9 @@ func (s *StubChatterComposer) GetSessionProvider() ports.SessionProvider { retur
 func (s *StubChatterComposer) GetTurnsLogger() ports.TurnsLogger         { return s.TurnsLogger }
 func (s *StubChatterComposer) GetSecurityManager() security.Manager      { return s.SecurityManager }
 func (s *StubChatterComposer) GetRegistry() (tools.Registry, error)      { return s.Registry, s.RegistryErr }
+func (s *StubChatterComposer) GetSkillRepository() domain_skills.SkillRepository {
+	return s.SkillRepo
+}
 
 // stubSessionFinalizer is a manual stub implementing ports.SessionFinalizer.
 // Use this when a test only needs to finalize a session (record costs).

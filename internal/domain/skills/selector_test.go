@@ -21,6 +21,8 @@ func (m *mockSkillRepository) GetAll(ctx context.Context) ([]Skill, error) {
 	return m.skills, m.err
 }
 
+// Refresh satisfies the SkillRepository concurrency-safe contract.
+// No synchronization is needed because tests are single-goroutine.
 func (m *mockSkillRepository) Refresh(ctx context.Context) error {
 	return nil
 }
