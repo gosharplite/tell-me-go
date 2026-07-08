@@ -30,20 +30,18 @@ func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 // stubSkillRepo implements skills.SkillRepository for testing.
-// It satisfies the concurrency-safe contract by virtue of being used
-// only in single-goroutine tests; no synchronization is needed.
 type stubSkillRepo struct {
-	skills []skills.Skill
-	err    error
+	skills     []skills.Skill
+	err        error
+	refreshErr error
 }
 
 func (s *stubSkillRepo) GetAll(ctx context.Context) ([]skills.Skill, error) {
 	return s.skills, s.err
 }
 
-// Refresh satisfies the SkillRepository concurrency-safe contract.
 func (s *stubSkillRepo) Refresh(ctx context.Context) error {
-	return nil
+	return s.refreshErr
 }
 
 // --- Helpers ---
@@ -297,6 +295,25 @@ func TestListSkills_LocalOnly(t *testing.T) {
 	}
 }
 
+func TestListSkills_NoDescription(t *testing.T) {
+	repo := &stubSkillRepo{
+		skills: []skills.Skill{
+			{Name: "bare-skill", Description: "", Source: "local"},
+			{Name: "bare-ssh", Description: "", Source: "skills.sh"},
+		},
+	}
+	mgr := newTestMgr("", repo, nil, nil)
+	handler := makeListSkills(mgr)
+	res, err := handler(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	count := strings.Count(res.Text, "(no description)")
+	if count != 2 {
+		t.Errorf("expected 2 occurrences of '(no description)', got %d. Output:\n%s", count, res.Text)
+	}
+}
+
 // --- install_skill tests ---
 
 func TestInstallSkill_EmptyURL(t *testing.T) {
@@ -445,6 +462,48 @@ func TestInstallSkill_ExecFails(t *testing.T) {
 	}
 }
 
+func TestInstallSkill_NilExec(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillsDir := filepath.Join(tmpDir, ".skills")
+
+	mgr := newTestMgr(skillsDir, nil, nil, nil)
+	handler := makeInstallSkill(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"repo_url": "https://github.com/anthropics/skills",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "command execution is not available") {
+		t.Errorf("expected 'command execution is not available', got: %s", res.Text)
+	}
+}
+
+func TestInstallSkill_RefreshError(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillsDir := filepath.Join(tmpDir, ".skills")
+
+	mockExec := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("Cloning..."), nil
+	}
+
+	repo := &stubSkillRepo{
+		refreshErr: errors.New("cache refresh failed"),
+	}
+
+	mgr := newTestMgr(skillsDir, repo, nil, mockExec)
+	handler := makeInstallSkill(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"repo_url": "https://github.com/anthropics/skills",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Successfully installed") {
+		t.Errorf("expected 'Successfully installed', got: %s", res.Text)
+	}
+}
+
 // --- remove_skill tests ---
 
 func TestRemoveSkill_EmptyName(t *testing.T) {
@@ -476,6 +535,21 @@ func TestRemoveSkill_LocalSkillRejected(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertContains(t, res.Text, "Cannot remove", "local skill")
+}
+
+func TestRemoveSkill_RepoError(t *testing.T) {
+	repo := &stubSkillRepo{err: errors.New("db error")}
+	mgr := newTestMgr("/tmp/skills", repo, nil, nil)
+	handler := makeRemoveSkill(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"name": "some-skill",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "db error") {
+		t.Errorf("expected 'db error' in output, got: %s", res.Text)
+	}
 }
 
 func TestRemoveSkill_NotFound(t *testing.T) {
@@ -546,6 +620,42 @@ func TestRemoveSkill_SkillsShDirMissing(t *testing.T) {
 	}
 	if !strings.Contains(res.Text, "not found") {
 		t.Errorf("expected 'not found' for missing dir, got: %s", res.Text)
+	}
+}
+
+func TestRemoveSkill_RefreshError(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillsDir := filepath.Join(tmpDir, ".skills")
+
+	skillDir := filepath.Join(skillsDir, "test-org-test-repo", "skills", "test-skill")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: test-skill\n---\nContent"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	repo := &stubSkillRepo{
+		skills: []skills.Skill{
+			{Name: "test-skill", Description: "Test", Source: "skills.sh"},
+		},
+		refreshErr: errors.New("cache refresh failed"),
+	}
+
+	mgr := newTestMgr(skillsDir, repo, nil, nil)
+	handler := makeRemoveSkill(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"name": "test-skill",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "Successfully removed") {
+		t.Errorf("expected 'Successfully removed', got: %s", res.Text)
 	}
 }
 
@@ -661,5 +771,122 @@ func TestParseSkillFrontmatter(t *testing.T) {
 				t.Errorf("desc = %q, want %q", gotDesc, tt.wantDesc)
 			}
 		})
+	}
+}
+
+// --- UnmarshalArgs error path tests ---
+
+func TestSearchSkills_BadArgs(t *testing.T) {
+	mgr := newTestMgr("", nil, nil, nil)
+	handler := makeSearchSkills(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"query": 123, // int, not string
+	}, nil)
+	if err != nil {
+		t.Fatalf("handler must never return error: %v", err)
+	}
+	if res.Error == nil {
+		t.Error("expected res.Error to be non-nil for bad args")
+	}
+	if !strings.Contains(res.Text, "Error:") {
+		t.Errorf("expected 'Error:' in Text, got: %s", res.Text)
+	}
+}
+
+func TestInstallSkill_BadArgs(t *testing.T) {
+	mgr := newTestMgr("/tmp/skills", nil, nil, nil)
+	handler := makeInstallSkill(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"repo_url": 456, // int, not string
+	}, nil)
+	if err != nil {
+		t.Fatalf("handler must never return error: %v", err)
+	}
+	if res.Error == nil {
+		t.Error("expected res.Error to be non-nil for bad args")
+	}
+	if !strings.Contains(res.Text, "Error:") {
+		t.Errorf("expected 'Error:' in Text, got: %s", res.Text)
+	}
+}
+
+func TestRemoveSkill_BadArgs(t *testing.T) {
+	mgr := newTestMgr("/tmp/skills", nil, nil, nil)
+	handler := makeRemoveSkill(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"name": 789, // int, not string
+	}, nil)
+	if err != nil {
+		t.Fatalf("handler must never return error: %v", err)
+	}
+	if res.Error == nil {
+		t.Error("expected res.Error to be non-nil for bad args")
+	}
+	if !strings.Contains(res.Text, "Error:") {
+		t.Errorf("expected 'Error:' in Text, got: %s", res.Text)
+	}
+}
+
+// --- searchGitHubAPI error path tests ---
+
+func TestSearchSkills_HTTPErrorStatus(t *testing.T) {
+	client := &mockHTTPClient{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			return makeStringResponse(403, `{"message":"API rate limit exceeded"}`), nil
+		},
+	}
+
+	mgr := newTestMgr("", nil, client, nil)
+	handler := makeSearchSkills(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"query": "test",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "GitHub API error") && !strings.Contains(res.Text, "searching skills") {
+		t.Errorf("expected API error in output, got: %s", res.Text)
+	}
+}
+
+func TestSearchSkills_BadJSON(t *testing.T) {
+	client := &mockHTTPClient{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			return makeStringResponse(200, `this is not json`), nil
+		},
+	}
+
+	mgr := newTestMgr("", nil, client, nil)
+	handler := makeSearchSkills(mgr)
+	res, err := handler(context.Background(), map[string]interface{}{
+		"query": "test",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Text, "parse response") && !strings.Contains(res.Text, "searching skills") {
+		t.Errorf("expected parse error in output, got: %s", res.Text)
+	}
+}
+
+func TestSearchSkills_WithToken(t *testing.T) {
+	var capturedAuth string
+	client := &mockHTTPClient{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			capturedAuth = req.Header.Get("Authorization")
+			return makeStringResponse(200, `{"total_count":0,"items":[]}`), nil
+		},
+	}
+
+	mgr := NewSkillManager("/tmp/.skills", nil, client, nil, "ghp_testtoken123")
+	handler := makeSearchSkills(mgr)
+	_, err := handler(context.Background(), map[string]interface{}{
+		"query": "test",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedAuth != "Bearer ghp_testtoken123" {
+		t.Errorf("expected Authorization header 'Bearer ghp_testtoken123', got: %q", capturedAuth)
 	}
 }
