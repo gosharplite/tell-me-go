@@ -76,6 +76,33 @@ func newTestMgr(skillsShDir string, repo skills.SkillRepository, client tools.HT
 	}
 }
 
+// assertGitCloneArgs validates that capturedArgs contains the expected
+// git clone arguments for installing a skill from wantURL into wantDir.
+func assertGitCloneArgs(t *testing.T, args []string, wantURL, wantDir string) {
+	t.Helper()
+	if len(args) < 6 {
+		t.Fatalf("expected at least 6 args to git clone, got %d: %v", len(args), args)
+	}
+	if args[0] != "clone" {
+		t.Errorf("expected 'clone' subcommand, got: %s", args[0])
+	}
+	if args[1] != "--depth" {
+		t.Errorf("expected '--depth', got: %s", args[1])
+	}
+	if args[2] != "1" {
+		t.Errorf("expected '1', got: %s", args[2])
+	}
+	if args[3] != "--single-branch" {
+		t.Errorf("expected '--single-branch', got: %s", args[3])
+	}
+	if args[4] != wantURL {
+		t.Errorf("expected URL %q, got: %q", wantURL, args[4])
+	}
+	if args[5] != wantDir {
+		t.Errorf("expected target dir %q, got: %q", wantDir, args[5])
+	}
+}
+
 // --- search_skills tests ---
 
 func TestSearchSkills_EmptyQuery(t *testing.T) {
@@ -393,28 +420,8 @@ func TestInstallSkill_ValidURLs(t *testing.T) {
 				t.Errorf("expected success message, got: %s", res.Text)
 			}
 
-			if len(capturedArgs) < 6 {
-				t.Fatalf("expected at least 6 args to git clone, got %d: %v", len(capturedArgs), capturedArgs)
-			}
-			if capturedArgs[0] != "clone" {
-				t.Errorf("expected 'clone' subcommand, got: %s", capturedArgs[0])
-			}
-			if capturedArgs[1] != "--depth" {
-				t.Errorf("expected '--depth', got: %s", capturedArgs[1])
-			}
-			if capturedArgs[2] != "1" {
-				t.Errorf("expected '1', got: %s", capturedArgs[2])
-			}
-			if capturedArgs[3] != "--single-branch" {
-				t.Errorf("expected '--single-branch', got: %s", capturedArgs[3])
-			}
-			if capturedArgs[4] != tt.url {
-				t.Errorf("expected URL %q, got: %q", tt.url, capturedArgs[4])
-			}
 			expectedDir := filepath.Join(skillsDir, fmt.Sprintf("%s-%s", tt.wantOwner, tt.wantRepo))
-			if capturedArgs[5] != expectedDir {
-				t.Errorf("expected target dir %q, got: %q", expectedDir, capturedArgs[5])
-			}
+			assertGitCloneArgs(t, capturedArgs, tt.url, expectedDir)
 		})
 	}
 }
