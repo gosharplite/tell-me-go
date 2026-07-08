@@ -1,4 +1,4 @@
-# ADR-049: Duplicate Skill Name Resolution Policy
+# ADR-050: Duplicate Skill Name Resolution Policy
 
 ## Status
 Accepted

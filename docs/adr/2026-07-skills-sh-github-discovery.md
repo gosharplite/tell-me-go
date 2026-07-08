@@ -1,4 +1,4 @@
-# ADR-047: GitHub Code Search as skills.sh Discovery Mechanism
+# ADR-048: GitHub Code Search as skills.sh Discovery Mechanism
 
 ## Status
 Accepted

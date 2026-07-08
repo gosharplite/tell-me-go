@@ -1,4 +1,4 @@
-# ADR-048: Third-Party Skill Injection Security Model
+# ADR-049: Third-Party Skill Injection Security Model
 
 ## Status
 Accepted
