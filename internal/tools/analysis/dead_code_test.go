@@ -411,37 +411,57 @@ var (
 	sharedWSModule  string
 	sharedWSIndexer *indexer
 	sharedWSOnce    sync.Once
+	sharedWSMu      sync.Mutex
 )
+
+// createSharedWorkspace builds the shared dead-code workspace at a new temp dir.
+// Must be called while sharedWSMu is held.
+func createSharedWorkspace(tb testing.TB) {
+	var err error
+	sharedWSRoot, err = os.MkdirTemp("", "deadcode-shared-*")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() { _ = os.RemoveAll(sharedWSRoot) })
+
+	sharedWSRoot, err = filepath.EvalSymlinks(sharedWSRoot)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	sharedWSModule = setupSharedWorkspaceAt(sharedWSRoot, sharedWSTests)
+
+	sharedWSIndexer, err = newIndexer(sharedWSRoot)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := sharedWSIndexer.Refresh(context.Background(), nil); err != nil {
+		tb.Fatal(err)
+	}
+}
 
 // getSharedWorkspaceIndexer returns a pre-built workspace and indexer
 // shared across FindOrphanedSymbols and GatherOrphanReports tests.
 // The workspace is created once per test binary run via sync.Once.
+// On -count=N, if a prior iteration's cleanup deleted the workspace,
+// it is recreated under a mutex.
 func getSharedWorkspaceIndexer(tb testing.TB) (string, string, *indexer) {
 	sharedWSOnce.Do(func() {
 		sharedWSTests = getFindOrphanedSymbolsTestCases()
-
-		var err error
-		sharedWSRoot, err = os.MkdirTemp("", "deadcode-shared-*")
-		if err != nil {
-			tb.Fatal(err)
-		}
-		tb.Cleanup(func() { _ = os.RemoveAll(sharedWSRoot) })
-
-		sharedWSRoot, err = filepath.EvalSymlinks(sharedWSRoot)
-		if err != nil {
-			tb.Fatal(err)
-		}
-
-		sharedWSModule = setupSharedWorkspaceAt(sharedWSRoot, sharedWSTests)
-
-		sharedWSIndexer, err = newIndexer(sharedWSRoot)
-		if err != nil {
-			tb.Fatal(err)
-		}
-		if err := sharedWSIndexer.Refresh(context.Background(), nil); err != nil {
-			tb.Fatal(err)
-		}
 	})
+
+	sharedWSMu.Lock()
+	defer sharedWSMu.Unlock()
+
+	// If workspace was deleted (e.g., by -count=2 cleanup), recreate it.
+	if sharedWSRoot != "" {
+		if _, err := os.Stat(sharedWSRoot); os.IsNotExist(err) {
+			createSharedWorkspace(tb)
+		}
+	} else {
+		createSharedWorkspace(tb)
+	}
+
 	return sharedWSRoot, sharedWSModule, sharedWSIndexer
 }
 
@@ -1133,7 +1153,7 @@ func TestTrackExternalUsages_GetUsagesError(t *testing.T) {
 
 	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
 	err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
-		state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+		state.declarations["example.com/test/pkg.Foo"], fileToPkg, t.TempDir(), nil)
 
 	if err == nil {
 		t.Fatal("expected error from trackExternalUsages, got nil")
@@ -1199,7 +1219,7 @@ func TestAnalyzeUsages_ErrorAccumulation(t *testing.T) {
 	}
 
 	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
-	analyzer.analyzeUsages(ctx, state, "/tmp/proj", nil)
+	analyzer.analyzeUsages(ctx, state, t.TempDir(), nil)
 
 	// Both symbols must be processed despite the error on SymbolA
 	if len(callOrder) < 2 {
@@ -1544,7 +1564,7 @@ func TestTrackExternalUsages_SamePackageNoExternal(t *testing.T) {
 
 		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
 		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
-			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, t.TempDir(), nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, 1, state.totalUses["example.com/test/pkg.Foo"])
@@ -1578,7 +1598,7 @@ func TestTrackExternalUsages_SamePackageNoExternal(t *testing.T) {
 
 		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
 		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
-			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, t.TempDir(), nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, 1, state.totalUses["example.com/test/pkg.Foo"])
@@ -1594,20 +1614,26 @@ func TestIsInterfaceMethod_NonFuncGuard(t *testing.T) {
 	assert.False(t, analyzer.isInterfaceMethod(obj))
 }
 
+type emptyPathSecurityProvider struct {
+	domain_security.Manager
+	tempDir string
+}
+
+func (m *emptyPathSecurityProvider) IsPathSafe(path string) (string, error) {
+	if path == "." {
+		return m.tempDir, nil
+	}
+	return "", fmt.Errorf("path out of bounds")
+}
+
 func TestRunAnalysisPipeline_EmptyPathDefaultsToDot(t *testing.T) {
-	// Not parallel: changes working directory so that "."
-	// resolves inside the security provider's allowed tempDir.
+	t.Parallel()
 	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	sp := &deadCodeSecurityProvider{tempDir: tmpDir}
+	sp := &emptyPathSecurityProvider{tempDir: tmpDir}
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module empty.test\n\ngo 1.25"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\nfunc main() {}"), 0644))
-
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(tmpDir))
-	defer func() { require.NoError(t, os.Chdir(origDir)) }()
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
@@ -1645,7 +1671,7 @@ func TestAnalyzeUsages_Heartbeat(t *testing.T) {
 
 	analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
 	hb := make(chan struct{}, 1)
-	analyzer.analyzeUsages(context.Background(), state, "/tmp/proj", hb)
+	analyzer.analyzeUsages(context.Background(), state, t.TempDir(), hb)
 
 	select {
 	case <-hb:
@@ -1702,7 +1728,7 @@ func TestTrackExternalUsages_TestPackageSuffix(t *testing.T) {
 
 		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
 		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
-			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, t.TempDir(), nil)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1754,7 +1780,7 @@ func TestTrackExternalUsages_TestPackageSuffix(t *testing.T) {
 
 		analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
 		err := analyzer.trackExternalUsages(ctx, state, "example.com/test/pkg.Foo",
-			state.declarations["example.com/test/pkg.Foo"], fileToPkg, "/tmp/proj", nil)
+			state.declarations["example.com/test/pkg.Foo"], fileToPkg, t.TempDir(), nil)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

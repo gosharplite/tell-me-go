@@ -33,7 +33,7 @@ func TestNewSessionState_FileStorage(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,8 +55,7 @@ func TestNewSessionState_MemoryStorage(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir, withStorageType("memory"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +73,7 @@ func TestSessionState_Persistence(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Create a session and set info
-	state1, err := NewSessionState(ctx, tempDir)
+	state1, err := newSessionState(ctx, tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +86,7 @@ func TestSessionState_Persistence(t *testing.T) {
 	_ = state1.Close()
 
 	// 2. Reload the session state from disk
-	state2, err := NewSessionState(ctx, tempDir)
+	state2, err := newSessionState(ctx, tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +112,7 @@ func TestSessionState_GetSettings(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir, withStorageType("memory"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +130,7 @@ func TestSessionState_GetHealthChecker_SQLite(t *testing.T) {
 	ctx := context.Background()
 
 	// Default STORAGE_TYPE is "sqlite" — creates a real DB.
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +151,7 @@ func TestSessionState_GetHealthChecker_Memory(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir, withStorageType("memory"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +175,7 @@ func TestNewSessionState_InitRepositoriesFailure(t *testing.T) {
 	badDir := filepath.Join(t.TempDir(), "nonexistent", "subdir")
 	ctx := context.Background()
 
-	_, err := NewSessionState(ctx, badDir)
+	_, err := newSessionState(ctx, badDir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "initializing persistence repositories",
 		"error should be wrapped with initialization context")
@@ -206,7 +203,7 @@ func TestNewSessionState_InitServicesSucceeds(t *testing.T) {
 		}), nil
 	}
 
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	require.NoError(t, err, "NewSessionState should succeed since initServices is a no-op")
 	require.NotNil(t, state)
 	_ = state.Close()
@@ -245,7 +242,7 @@ func TestSessionState_HydrateInfo_CorruptedStateFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	if err != nil {
 		t.Fatalf("NewSessionState should succeed with corrupted state file, got: %v", err)
 	}
@@ -322,7 +319,7 @@ func TestSessionState_SetInfo_PersistError(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()
 
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,8 +358,7 @@ func TestSessionState_SetInfo_IsolationFromCallerMutation(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Use memory storage so no disk I/O interferes
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir, withStorageType("memory"))
 	require.NoError(t, err)
 	defer func() { _ = state.Close() }()
 
@@ -514,7 +510,7 @@ func TestNewSessionState_InitServicesError(t *testing.T) {
 		return nil, injectedErr
 	}
 
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	assert.Nil(t, state, "state should be nil when initServices fails")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, injectedErr, "error should be the injected initServices error")
@@ -530,7 +526,7 @@ func TestSessionState_Close_WALCheckpointError(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()
 
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := newSessionState(ctx, tempDir)
 	require.NoError(t, err)
 
 	ss := state.(*sessionState)

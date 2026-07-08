@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 	}{
 		{
 			name:    "DenyAll",
-			mock:    &MockSecurityProvider{DenyAll: true},
+			mock:    &MockSecurityProvider{DenyAll: true, AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil }},
 			path:    "/any/path",
 			wantErr: "path not authorized",
 		},
@@ -40,6 +41,7 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			name: "out_of_bounds",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
 			},
 			path:    "/unsafe/other/file.go",
 			wantErr: "path out of bounds",
@@ -48,6 +50,7 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			name: "out_of_bounds_relative",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return "/unsafe/other/file.go", nil },
 			},
 			path:    "../outside",
 			wantErr: "path out of bounds",
@@ -56,21 +59,18 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			name: "safe_inside_tempdir",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
 			},
 			path: "/safe/sub/file.go",
-			want: func() string {
-				abs, _ := filepath.Abs("/safe/sub/file.go")
-				return abs
-			}(), // platform-dependent: Unix preserves "/safe/sub/file.go", Windows prepends volume
+			want: filepath.Clean("/safe/sub/file.go"),
 		},
 		{
 			name: "zero_value_happy_path",
-			mock: &MockSecurityProvider{},
+			mock: &MockSecurityProvider{
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
+			},
 			path: "/tmp/test.go",
-			want: func() string {
-				abs, _ := filepath.Abs("/tmp/test.go")
-				return abs
-			}(), // platform-dependent: Unix preserves "/tmp/test.go", Windows prepends volume like "C:\\tmp\\test.go"
+			want: filepath.Clean("/tmp/test.go"),
 		},
 	}
 
@@ -97,11 +97,14 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			// On the zero_value happy path, filepath.Abs may resolve differently
-			// per platform if the path doesn't exist. We check it's non-empty
-			// and, when the want is an exact absolute path, we compare directly.
-			if tt.want != "" && got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
+			if tt.want != "" {
+				if runtime.GOOS == "windows" {
+					if !filepath.IsAbs(got) {
+						t.Errorf("got %q; want absolute path", got)
+					}
+				} else if got != tt.want {
+					t.Errorf("got %q; want %q", got, tt.want)
+				}
 			}
 			if got == "" {
 				t.Error("got empty path; want non-empty absolute path")
@@ -111,23 +114,26 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 }
 
 func TestMockSecurityProvider_IsPathSafe_SuccessIsAbsolute(t *testing.T) {
-	// Verify that IsPathSafe returns the same result as filepath.Abs
-	// when AbsFunc is nil (default behavior) for a relative path.
+	// Verify that IsPathSafe returns the absolute form of a path
+	// when AbsFunc is nil (default behavior).
+	// Use t.TempDir() to avoid os.Getwd() which busts test caching.
 	t.Parallel()
 
+	tmpDir := t.TempDir()
+	subPath := filepath.Join(tmpDir, "relative", "path")
+
 	mock := &MockSecurityProvider{}
-	got, err := mock.IsPathSafe("relative/path")
+	got, err := mock.IsPathSafe(subPath)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected, err := filepath.Abs("relative/path")
-	if err != nil {
-		t.Fatalf("filepath.Abs failed: %v", err)
-	}
+	// subPath is already absolute (built from t.TempDir()), so
+	// filepath.Clean normalizes separators without calling os.Getwd().
+	expected := filepath.Clean(subPath)
 
 	if got != expected {
-		t.Errorf("got %q; want %q (from filepath.Abs)", got, expected)
+		t.Errorf("got %q; want %q (from filepath.Clean)", got, expected)
 	}
 }
 
@@ -164,7 +170,7 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 	}{
 		{
 			name:    "DenyAll",
-			mock:    &MockSecurityProvider{DenyAll: true},
+			mock:    &MockSecurityProvider{DenyAll: true, AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil }},
 			path:    "/any",
 			wantErr: "path not authorized",
 		},
@@ -182,12 +188,10 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 			name: "happy_path_inside_tempdir",
 			mock: &MockSecurityProvider{
 				TempDir: "/safe",
+				AbsFunc: func(s string) (string, error) { return filepath.Clean(s), nil },
 			},
 			path: "/safe/file.go",
-			want: func() string {
-				abs, _ := filepath.Abs("/safe/file.go")
-				return abs
-			}(), // platform-dependent: Unix preserves "/safe/file.go", Windows prepends volume
+			want: filepath.Clean("/safe/file.go"),
 		},
 	}
 
@@ -214,8 +218,17 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
+			if tt.want != "" {
+				if runtime.GOOS == "windows" {
+					if !filepath.IsAbs(got) {
+						t.Errorf("got %q; want absolute path", got)
+					}
+				} else if got != tt.want {
+					t.Errorf("got %q; want %q", got, tt.want)
+				}
+			}
+			if got == "" {
+				t.Error("got empty path; want non-empty absolute path")
 			}
 		})
 	}
