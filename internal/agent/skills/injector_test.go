@@ -6,6 +6,7 @@ package skills
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -278,4 +279,112 @@ func TestNewSkillInjector(t *testing.T) {
 	req := &ports.ContextRequest{History: []*llm.Content{}}
 	err := transformer.Transform(context.Background(), req)
 	require.NoError(t, err)
+}
+
+func TestSkillInjector_EcosystemIntro_OptionAndConstructor(t *testing.T) {
+	t.Parallel()
+
+	t.Run("WithSkillEcosystemIntro sets field", func(t *testing.T) {
+		t.Parallel()
+		si := &skillInjector{}
+		opt := WithSkillEcosystemIntro("skills.sh ecosystem available")
+		opt(si)
+		assert.Equal(t, "skills.sh ecosystem available", si.ecosystemIntro)
+	})
+
+	t.Run("NewSkillInjector applies ecosystem intro option", func(t *testing.T) {
+		t.Parallel()
+		selector := &mockSkillSelector{selected: []skills.Skill{}}
+		logger := &testfixtures.SpyLogger{}
+
+		transformer := NewSkillInjector(selector, logger,
+			WithSkillEcosystemIntro("skills.sh ecosystem available"))
+		require.NotNil(t, transformer)
+
+		// Verify via Transform: ecosystem intro is injected even when no skills match
+		req := &ports.ContextRequest{
+			History: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "some task"}}},
+			},
+		}
+		err := transformer.Transform(context.Background(), req)
+		require.NoError(t, err)
+
+		// Ecosystem intro should be injected as a new system message
+		require.Len(t, req.History, 2, "expected new system message prepended")
+		assert.Equal(t, "system", req.History[0].Role)
+		assert.Contains(t, req.History[0].Parts[0].Text, "skills.sh ecosystem available")
+
+		// CRITICAL: PersistHistory must be false — ecosystem intro does NOT trigger
+		// history persistence (only actual skill content triggers it).
+		assert.False(t, req.PersistHistory,
+			"ecosystem intro alone must not trigger PersistHistory")
+	})
+}
+
+func TestSkillInjector_EcosystemIntro_BuildAndIdempotency(t *testing.T) {
+	t.Parallel()
+
+	t.Run("buildInjectionBlock appends ecosystem intro after skills", func(t *testing.T) {
+		t.Parallel()
+		si := &skillInjector{ecosystemIntro: "Available: k8s, ado, atlassian"}
+
+		selected := []skills.Skill{
+			{Name: "k8s-patterns", Content: "Use kubectl apply."},
+		}
+		block := si.buildInjectionBlock(selected)
+
+		// Verify skill content is present
+		assert.Contains(t, block, "k8s-patterns")
+		assert.Contains(t, block, "Use kubectl apply.")
+
+		// Verify ecosystem intro is appended AFTER skill content
+		assert.Contains(t, block, "Available: k8s, ado, atlassian")
+
+		// Verify ecosystem intro comes AFTER the skill separator and BEFORE end of block.
+		// The intro must not appear inside a skill's content section.
+		skillEnd := "Use kubectl apply."
+		ecosystemStart := "Available: k8s, ado, atlassian"
+		assert.True(t,
+			strings.Index(block, skillEnd) < strings.Index(block, ecosystemStart),
+			"ecosystem intro must appear after skill content, not before or inside it")
+	})
+
+	t.Run("buildInjectionBlock without ecosystem intro omits it", func(t *testing.T) {
+		t.Parallel()
+		si := &skillInjector{} // ecosystemIntro is empty
+
+		selected := []skills.Skill{
+			{Name: "k8s-patterns", Content: "Use kubectl apply."},
+		}
+		block := si.buildInjectionBlock(selected)
+
+		assert.Contains(t, block, "k8s-patterns")
+		assert.NotContains(t, block, "Available:", "empty ecosystem intro must not inject placeholder text")
+	})
+
+	t.Run("isAlreadyInjected detects ecosystem intro text", func(t *testing.T) {
+		t.Parallel()
+		si := &skillInjector{ecosystemIntro: "Available: k8s, ado, atlassian"}
+
+		content := &llm.Content{
+			Role: "system",
+			Parts: []*llm.Part{
+				{Text: "You are a helpful assistant.\n\nAvailable: k8s, ado, atlassian\n"},
+			},
+		}
+		assert.True(t, si.isAlreadyInjected(content),
+			"must detect ecosystem intro as already injected")
+	})
+
+	t.Run("isAlreadyInjected returns false when intro absent", func(t *testing.T) {
+		t.Parallel()
+		si := &skillInjector{ecosystemIntro: "Available: k8s, ado, atlassian"}
+
+		content := &llm.Content{
+			Role:  "system",
+			Parts: []*llm.Part{{Text: "You are a helpful assistant."}},
+		}
+		assert.False(t, si.isAlreadyInjected(content))
+	})
 }
