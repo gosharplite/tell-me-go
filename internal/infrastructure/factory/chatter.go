@@ -6,6 +6,7 @@ package factory
 import (
 	stdctx "context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -36,6 +37,14 @@ func resolveSkillsDir(paths *persistence.Paths) string {
 	}
 
 	return filepath.Clean(skillsDir)
+}
+
+// resolveSkillsShDir finds the .skills/ directory (skills.sh format) under
+// $TELL_ME_HOME. Unlike resolveSkillsDir, there is no CWD fallback — skills.sh
+// repositories are only expected under the TELL_ME_HOME directory.
+func resolveSkillsShDir(paths *persistence.Paths) string {
+	homeDir := filepath.Dir(filepath.Dir(paths.ModeDir))
+	return filepath.Join(homeDir, ".skills")
 }
 
 // registerReadOnlySkillsPath registers the skills directory with the security
@@ -81,10 +90,37 @@ func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.Chatte
 
 	registerReadOnlySkillsPath(deps, skillsDir)
 
-	skillRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
+	// Use the shared SkillRepository if provided by the composition root.
+	// Otherwise fall back to building one locally (backward compat for tests).
+	skillRepo := deps.GetSkillRepository()
+	if skillRepo == nil {
+		fileRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
+		}
+
+		// .skills/ — skills.sh format (optional; degrades gracefully)
+		skillsShDir := resolveSkillsShDir(deps.GetPaths())
+		registerReadOnlySkillsPath(deps, skillsShDir)
+
+		skillsShRepo, err := infra_skills.NewSkillsShRepository(skillsShDir)
+		if err != nil {
+			slog.Warn("failed to initialize .skills/ repository, continuing without it",
+				"error", err)
+			skillsShRepo = nil
+		}
+
+		// Composite merges both sources. docs/skills/ goes first so
+		// Dobby-curated skills take priority in tie-breaking.
+		if skillsShRepo != nil {
+			skillRepo = &infra_skills.CompositeRepository{
+				Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+			}
+		} else {
+			skillRepo = fileRepo
+		}
 	}
+
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
 	// Build config watcher: production always uses file-based watcher.
@@ -114,6 +150,9 @@ func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.Chatte
 		agent.WithHistoryManager(deps.GetHistoryManager()),
 		agent.WithSecurityManager(deps.GetSecurityManager()),
 		agent.WithProviderName(cfg.ProviderName),
+		agent.WithSkillEcosystemIntro(
+			"**Skills Ecosystem**: Call `load_toolkit(names=['skillssh'])` to activate skills.sh tools: `search_skills` to discover installable skills, `list_skills` to see installed skills, `install_skill` to add new ones (requires user approval), and `remove_skill` to remove them. Installed skills are available immediately.",
+		),
 	}
 
 	// 3. Return the new Agent.

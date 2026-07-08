@@ -1,7 +1,11 @@
 package di
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"os"
+	osexec "os/exec"
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -12,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -19,6 +24,7 @@ import (
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	infra_toolchain "github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations/skillssh"
 )
 
 type toolchainFactory interface {
@@ -36,6 +42,7 @@ type toolchainParams struct {
 	Mode             string
 	PricingOverrides map[string]pricing.ModelPricing
 	Capturer         agent.CapturerInteractor
+	SkillRepo        domain_skills.SkillRepository
 }
 
 type defaultToolchainFactory struct {
@@ -92,7 +99,27 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		return nil, fmt.Errorf("%w: failed to register policy tools: %w", errInfraInit, err)
 	}
 
+	// Register skills.sh ecosystem tools
+	if err := f.registerSkillsShTools(reg, params.SkillRepo); err != nil {
+		return nil, fmt.Errorf("%w: failed to register skills.sh tools: %w", errInfraInit, err)
+	}
+
 	return reg, nil
+}
+
+// registerSkillsShTools registers the four skills.sh ecosystem tools
+// (search_skills, list_skills, install_skill, remove_skill) into the tool
+// registry. It uses the pre-built skillRepo shared with the skill injector
+// so that Refresh() calls from tools are visible to both consumers.
+func (f *defaultToolchainFactory) registerSkillsShTools(r tools.Registry, skillRepo domain_skills.SkillRepository) error {
+	skillsShDir := filepath.Join(f.HomeDir, ".skills")
+
+	execRunner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return osexec.CommandContext(ctx, name, args...).CombinedOutput()
+	}
+
+	mgr := skillssh.NewSkillManager(skillsShDir, skillRepo, http.DefaultClient, execRunner, os.Getenv("GITHUB_TOKEN"))
+	return skillssh.RegisterSkillsShTools(r, mgr)
 }
 
 // BuildHealthChecker creates a HealthChecker for the system toolchain binaries.

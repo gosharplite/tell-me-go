@@ -53,6 +53,9 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-045** | Single-Process Crew — Rejected | 2026-07 | Rejected | [2026-07-single-process-crew-rejected.md](2026-07-single-process-crew-rejected.md) |
 | **ADR-046** | Remove `ask_user` Tool — Turn Boundaries Replace Mid-Turn Prompts | 2026-07 | Accepted | [2026-07-remove-ask-user-tool.md](2026-07-remove-ask-user-tool.md) |
 | **ADR-047** | Stable Turn Identifiers via UUID | 2026-07 | Accepted | [2026-07-stable-turn-identifiers.md](2026-07-stable-turn-identifiers.md) |
+| **ADR-048** | GitHub Code Search as skills.sh Discovery Mechanism | 2026-07 | Accepted | [2026-07-skills-sh-github-discovery.md](2026-07-skills-sh-github-discovery.md) |
+| **ADR-049** | Third-Party Skill Injection Security Model | 2026-07 | Accepted | [2026-07-skills-sh-injection-security.md](2026-07-skills-sh-injection-security.md) |
+| **ADR-050** | Duplicate Skill Name Resolution Policy | 2026-07 | Accepted | [2026-07-skills-sh-duplicate-resolution.md](2026-07-skills-sh-duplicate-resolution.md) |
 
 ## How to Create a New ADR
 

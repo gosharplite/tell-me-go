@@ -359,22 +359,36 @@ entities:
 
   Skill:
     definition: >
-      A block of idiomatic guidance injected into the system prompt when the
-      task is relevant. Examples: golang-patterns (Go best practices) and
-      golang-testing (TDD patterns). `Skill`s are activated by keyword matching
-      against the user prompt.
+      A block of guidance injected into the system prompt when the task is
+      relevant. `Skill`s are stored as SKILL.md files (YAML frontmatter +
+      Markdown body) following the skills.sh format. They come from two
+      sources: local `docs/skills/` (curated by the Dobby template, e.g.
+      golang-patterns, golang-testing) and the skills.sh ecosystem
+      `.skills/` (installed on demand via `install_skill`). Injection is
+      triggered by keyword matching against the user prompt via
+      the skill selector, and injected into `Context` by the skill injector.
     attributes:
       - name: name
         type: string
+        description: Unique skill identifier from YAML frontmatter.
+      - name: description
+        type: string
+        description: Human-readable summary from YAML frontmatter; used in `list_skills` output.
       - name: content
         type: string
-        description: The Markdown text injected into the context.
-      - name: triggers
-        type: "[]string"
-        description: Keywords that cause this `Skill` to be activated.
+        description: The Markdown body injected into the context.
+      - name: tokenCount
+        type: integer
+        derived: true
+        derivation: "Heuristic: len(content) / 4."
+      - name: source
+        type: string
+        description: '"local" for docs/skills/, "skills.sh" for .skills/. Used by remove_skill to gate deletion.'
     invariants:
       - id: skill-unique-name
         statement: "Each `Skill` has a unique name."
+      - id: skill-remove-source-gate
+        statement: "Only `Skill`s with `source: skills.sh` can be removed by `remove_skill`; local skills are protected."
 
   Task:
     definition: >
@@ -503,18 +517,20 @@ scenarios:
 
   - name: Skill injection into context
     description: >
-      When the user's prompt matches a `Skill`'s trigger keywords, the
+      When the user's prompt matches a `Skill`'s keywords, the
       `Orchestrator` injects that `Skill`'s guidance into the `Context` system
-      prompt before sending it to the `Provider` — so the model responds with
-      domain-appropriate conventions without the user needing to ask.
+      prompt. `Skill`s are loaded from two sources: local `docs/skills/`
+      (always available) and `.skills/` (installed on demand from skills.sh).
+      Both are merged by a composite repository before keyword matching.
     actors: [Orchestrator, Skill, Context, Provider, Session]
     steps:
-      - "User submits a prompt containing keywords that match a `Skill`'s triggers."
-      - "`Orchestrator` scans registered `Skill`s and finds matching trigger keywords."
+      - "User submits a prompt containing keywords that match a `Skill`."
+      - "`Orchestrator` scans all registered `Skill`s from both local and skills.sh sources."
       - "The matched `Skill`'s content is injected into the `Context` system prompt."
       - "`Provider` receives the augmented `Context` and responds accordingly."
       - "The `Turn` is persisted as normal."
-    invariants_touched: [skill-unique-name, context-within-budget]
+      - "If a skill from the skills.sh ecosystem was installed mid-session, it becomes available on the next `Turn`."
+    invariants_touched: [skill-unique-name, context-within-budget, skill-remove-source-gate]
 
   - name: Tool-augmented turn
     description: >

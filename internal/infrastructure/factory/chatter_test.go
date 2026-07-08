@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
@@ -59,6 +60,7 @@ func (d *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger                    
 func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return d.sessionProvider }
 func (d *mockSessionDeps) GetHealthManager() ports.HealthCheckManager           { return nil }
 func (d *mockSessionDeps) GetClient() llm.LLMClient                             { return nil }
+func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository    { return nil }
 
 type mockGateway struct {
 	llm.LLMGateway
