@@ -42,7 +42,7 @@ func makeSearchSkills(mgr SkillManager) tools.ToolFunc {
 
 		output, err := mgr.SearchSkills(ctx, params.Query)
 		if err != nil {
-			return tools.ToolResult{Error: err, Text: output}, nil
+			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 		}
 		return tools.ToolResult{Text: output}, nil
 	}
@@ -95,34 +95,4 @@ func fetchSkillMeta(ctx context.Context, client tools.HTTPClient, repoFullName, 
 	}
 
 	return parseSkillFrontmatter(body)
-}
-
-// parseSkillFrontmatter extracts name and description from YAML frontmatter.
-// Mirrors the parseSkill logic in internal/infrastructure/skills but is
-// intentionally simpler — it only needs name and description for display.
-func parseSkillFrontmatter(data []byte) (name, desc string) {
-	content := string(data)
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-
-	if !strings.HasPrefix(content, "---\n") {
-		return "", ""
-	}
-
-	parts := strings.SplitN(content, "---\n", 3)
-	if len(parts) < 3 {
-		return "", ""
-	}
-
-	fm := parts[1]
-	lines := strings.Split(fm, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "name:") {
-			name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
-		} else if strings.HasPrefix(line, "description:") {
-			desc = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
-		}
-	}
-
-	return name, desc
 }

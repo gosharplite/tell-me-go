@@ -5,6 +5,7 @@ package skillssh
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -14,7 +15,7 @@ func makeListSkills(mgr SkillManager) tools.ToolFunc {
 	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		output, err := mgr.ListSkills(ctx)
 		if err != nil {
-			return tools.ToolResult{Error: err, Text: output}, nil
+			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 		}
 		return tools.ToolResult{Text: output}, nil
 	}

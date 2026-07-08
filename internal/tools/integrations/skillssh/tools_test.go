@@ -440,8 +440,8 @@ func TestInstallSkill_ExecFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(res.Text, "Error cloning") {
-		t.Errorf("expected 'Error cloning', got: %s", res.Text)
+	if !strings.Contains(res.Text, "cloning repository") {
+		t.Errorf("expected 'cloning repository', got: %s", res.Text)
 	}
 }
 

@@ -12,11 +12,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"golang.org/x/sync/errgroup"
 )
+
+// ghRepoURL matches GitHub repository URLs: https://github.com/<owner>/<repo>
+// Optional trailing slash and .git suffix are stripped during normalization.
+var ghRepoURL = regexp.MustCompile(`^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$`)
 
 // defaultSkillManager is the concrete implementation of SkillManager.
 type defaultSkillManager struct {
@@ -57,7 +63,7 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
 	if err != nil {
-		return fmt.Sprintf("Error: %v", err), err
+		return "", fmt.Errorf("searching skills: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	if m.githubToken != "" {
@@ -66,13 +72,13 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Sprintf("Error searching skills: %v", err), err
+		return "", fmt.Errorf("searching skills: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
 	if err != nil {
-		return fmt.Sprintf("Error reading response: %v", err), err
+		return "", fmt.Errorf("reading response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -81,23 +87,48 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 
 	var searchResult ghSearchResponse
 	if err := json.Unmarshal(body, &searchResult); err != nil {
-		return fmt.Sprintf("Error parsing response: %v", err), err
+		return "", fmt.Errorf("parsing response: %w", err)
 	}
 
 	if len(searchResult.Items) == 0 {
 		return fmt.Sprintf("No skills found matching %q.", query), nil
 	}
 
+	// Fetch skill metadata concurrently (max 4 parallel HTTP requests).
+	type skillMeta struct {
+		name string
+		desc string
+	}
+
+	limit := len(searchResult.Items)
+	if limit > 10 {
+		limit = 10
+	}
+
+	metas := make([]skillMeta, limit)
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(4)
+
+	for i := 0; i < limit; i++ {
+		i := i
+		item := searchResult.Items[i]
+		g.Go(func() error {
+			name, desc := fetchSkillMeta(gCtx, client, item.Repository.FullName, item.Path, item.Repository.DefaultBranch)
+			metas[i] = skillMeta{name: name, desc: desc}
+			return nil
+		})
+	}
+
+	// Best-effort: don't fail the whole search if one fetch times out.
+	_ = g.Wait()
+
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Found %d skills matching %q:\n\n", len(searchResult.Items), query))
 
-	for i, item := range searchResult.Items {
-		if i >= 10 {
-			break
-		}
-
+	for i, item := range searchResult.Items[:limit] {
+		meta := metas[i]
 		skillName := deriveSkillName(item.Path)
-		name, desc := fetchSkillMeta(ctx, client, item.Repository.FullName, item.Path, item.Repository.DefaultBranch)
+		name, desc := meta.name, meta.desc
 
 		if name == "" {
 			name = skillName
@@ -137,7 +168,7 @@ func (m *defaultSkillManager) InstallSkill(ctx context.Context, repoURL string) 
 	}
 
 	if err := os.MkdirAll(m.skillsShDir, 0755); err != nil {
-		return fmt.Sprintf("Error creating .skills/ directory: %v", err), err
+		return "", fmt.Errorf("creating .skills/ directory: %w", err)
 	}
 
 	if m.exec == nil {
@@ -146,7 +177,7 @@ func (m *defaultSkillManager) InstallSkill(ctx context.Context, repoURL string) 
 
 	output, err := m.exec(ctx, "git", "clone", "--depth", "1", "--single-branch", repoURL, targetDir)
 	if err != nil {
-		return fmt.Sprintf("Error cloning repository:\n%s\n\nError: %v", string(output), err), err
+		return "", fmt.Errorf("cloning repository: %w\n%s", err, string(output))
 	}
 
 	// Refresh the repository cache so the newly installed skill is visible immediately.
@@ -165,7 +196,7 @@ func (m *defaultSkillManager) ListSkills(ctx context.Context) (string, error) {
 
 	all, err := m.repo.GetAll(ctx)
 	if err != nil {
-		return fmt.Sprintf("Error listing skills: %v", err), err
+		return "", fmt.Errorf("listing skills: %w", err)
 	}
 
 	if len(all) == 0 {
@@ -236,7 +267,7 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 
 	found, skillDir, err := findSkillDir(m.skillsShDir, name)
 	if err != nil {
-		return fmt.Sprintf("Error searching for skill: %v", err), err
+		return "", fmt.Errorf("searching for skill: %w", err)
 	}
 
 	if !found {
@@ -248,7 +279,7 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 	repoRoot := findRepoRoot(m.skillsShDir, skillDir)
 
 	if err := os.RemoveAll(repoRoot); err != nil {
-		return fmt.Sprintf("Error removing skill repository %s: %v", repoRoot, err), err
+		return "", fmt.Errorf("removing skill repository %s: %w", repoRoot, err)
 	}
 
 	// Refresh the repository cache so the removal is visible immediately.
@@ -257,4 +288,53 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 	}
 
 	return fmt.Sprintf("Successfully removed skill %q (repository %s).", name, repoRoot), nil
+}
+
+// findSkillDir walks skillsShDir looking for a SKILL.md whose frontmatter
+// name matches the given skill name. Returns the parent directory of the
+// matching SKILL.md.
+func findSkillDir(skillsShDir, skillName string) (found bool, dir string, err error) {
+	if _, statErr := os.Stat(skillsShDir); os.IsNotExist(statErr) {
+		return false, "", nil
+	}
+
+	err = filepath.Walk(skillsShDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if info.Name() != "SKILL.md" {
+			return nil
+		}
+
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil // skip unreadable files
+		}
+
+		name, _ := parseSkillFrontmatter(data)
+		if name == skillName {
+			found = true
+			dir = filepath.Dir(path)
+			return filepath.SkipAll // stop walking
+		}
+		return nil
+	})
+
+	return found, dir, err
+}
+
+// findRepoRoot walks up from skillDir until it reaches a directory whose
+// parent is skillsShDir. That directory is the cloned repo root. Removing
+// at repo granularity ensures that reinstalling the repo after removing a
+// single skill works correctly.
+func findRepoRoot(skillsShDir, skillDir string) string {
+	for dir := skillDir; dir != skillsShDir && dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+		if filepath.Dir(dir) == skillsShDir {
+			return dir
+		}
+	}
+	return skillDir // fallback: shouldn't happen, but safe
 }
