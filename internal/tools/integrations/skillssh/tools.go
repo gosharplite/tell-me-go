@@ -10,9 +10,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// ExecRunner executes a command and returns its combined output.
+// execRunner executes a command and returns its combined output.
 // Implementations should use exec.CommandContext or equivalent.
-type ExecRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
+type execRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
 // RegisterSkillsShTools registers all skills.sh tools into the provided registry.
 //

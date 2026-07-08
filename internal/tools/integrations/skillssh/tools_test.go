@@ -69,7 +69,7 @@ func assertContains(t *testing.T, text string, substrs ...string) {
 
 // newTestMgr creates a defaultSkillManager for testing.
 // Fields left at zero value are acceptable for tests that don't exercise them.
-func newTestMgr(skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec ExecRunner) *defaultSkillManager {
+func newTestMgr(skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec execRunner) *defaultSkillManager {
 	return &defaultSkillManager{
 		skillsShDir: skillsShDir,
 		repo:        repo,

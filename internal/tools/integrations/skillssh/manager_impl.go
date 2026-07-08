@@ -29,12 +29,12 @@ type defaultSkillManager struct {
 	skillsShDir string
 	repo        skills.SkillRepository
 	client      tools.HTTPClient
-	exec        ExecRunner
+	exec        execRunner
 	githubToken string
 }
 
 // NewSkillManager creates a new SkillManager with the given dependencies.
-func NewSkillManager(skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec ExecRunner, githubToken string) SkillManager {
+func NewSkillManager(skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec execRunner, githubToken string) SkillManager {
 	return &defaultSkillManager{
 		skillsShDir: skillsShDir,
 		repo:        repo,
