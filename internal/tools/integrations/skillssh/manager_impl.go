@@ -44,13 +44,8 @@ func NewSkillManager(skillsShDir string, repo skills.SkillRepository, client too
 	}
 }
 
-// SearchSkills queries the GitHub code search API for skills matching the query.
-func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (string, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return "Error: query is required and must not be empty.", nil
-	}
-
+// searchGitHubAPI queries the GitHub code search API and returns parsed results.
+func (m *defaultSkillManager) searchGitHubAPI(ctx context.Context, query string) (*ghSearchResponse, error) {
 	client := m.client
 	if client == nil {
 		client = http.DefaultClient
@@ -63,7 +58,7 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("searching skills: %w", err)
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	if m.githubToken != "" {
@@ -72,35 +67,38 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("searching skills: %w", err)
+		return nil, fmt.Errorf("execute request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
 	if err != nil {
-		return "", fmt.Errorf("reading response: %w", err)
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Sprintf("GitHub API error (status %d): %s", resp.StatusCode, string(body)), nil
+		return nil, fmt.Errorf("GitHub API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	var searchResult ghSearchResponse
 	if err := json.Unmarshal(body, &searchResult); err != nil {
-		return "", fmt.Errorf("parsing response: %w", err)
+		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	if len(searchResult.Items) == 0 {
-		return fmt.Sprintf("No skills found matching %q.", query), nil
-	}
+	return &searchResult, nil
+}
 
-	// Fetch skill metadata concurrently (max 4 parallel HTTP requests).
-	type skillMeta struct {
-		name string
-		desc string
-	}
+// skillMeta holds the name and description extracted from a SKILL.md frontmatter.
+type skillMeta struct {
+	name string
+	desc string
+}
 
-	limit := len(searchResult.Items)
+// fetchSkillMetadataBatch fetches skill name and description concurrently
+// from GitHub raw content URLs. It limits concurrency to 4 requests.
+// Best-effort: errors from individual fetches are silently ignored.
+func fetchSkillMetadataBatch(ctx context.Context, client tools.HTTPClient, items []ghSearchItem) []skillMeta {
+	limit := len(items)
 	if limit > 10 {
 		limit = 10
 	}
@@ -111,7 +109,7 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 
 	for i := 0; i < limit; i++ {
 		i := i
-		item := searchResult.Items[i]
+		item := items[i]
 		g.Go(func() error {
 			name, desc := fetchSkillMeta(gCtx, client, item.Repository.FullName, item.Path, item.Repository.DefaultBranch)
 			metas[i] = skillMeta{name: name, desc: desc}
@@ -122,10 +120,20 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 	// Best-effort: don't fail the whole search if one fetch times out.
 	_ = g.Wait()
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d skills matching %q:\n\n", len(searchResult.Items), query))
+	return metas
+}
 
-	for i, item := range searchResult.Items[:limit] {
+// formatSearchResults builds the human-readable search results string.
+func formatSearchResults(items []ghSearchItem, metas []skillMeta, query string) string {
+	limit := len(items)
+	if limit > 10 {
+		limit = 10
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Found %d skills matching %q:\n\n", len(items), query))
+
+	for i, item := range items[:limit] {
 		meta := metas[i]
 		skillName := deriveSkillName(item.Path)
 		name, desc := meta.name, meta.desc
@@ -143,7 +151,35 @@ func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (s
 		sb.WriteString(fmt.Sprintf("   Install: `install_skill https://github.com/%s`\n\n", item.Repository.FullName))
 	}
 
-	return sb.String(), nil
+	return sb.String()
+}
+
+// SearchSkills queries the GitHub code search API for skills matching the query.
+func (m *defaultSkillManager) SearchSkills(ctx context.Context, query string) (string, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "Error: query is required and must not be empty.", nil
+	}
+
+	searchResult, err := m.searchGitHubAPI(ctx, query)
+	if err != nil {
+		return "", fmt.Errorf("searching skills: %w", err)
+	}
+
+	if len(searchResult.Items) == 0 {
+		return fmt.Sprintf("No skills found matching %q.", query), nil
+	}
+
+	metas := fetchSkillMetadataBatch(ctx, m.client, searchResult.Items)
+	return formatSearchResults(searchResult.Items, metas, query), nil
+}
+
+// refreshRepoCache refreshes the skill repository cache if available.
+// Best-effort: errors are silently ignored — the mutation already succeeded.
+func (m *defaultSkillManager) refreshRepoCache(ctx context.Context) {
+	if m.repo != nil {
+		_ = m.repo.Refresh(ctx)
+	}
 }
 
 // InstallSkill clones a GitHub skills repository into .skills/.
@@ -180,33 +216,14 @@ func (m *defaultSkillManager) InstallSkill(ctx context.Context, repoURL string) 
 		return "", fmt.Errorf("cloning repository: %w\n%s", err, string(output))
 	}
 
-	// Refresh the repository cache so the newly installed skill is visible immediately.
-	if m.repo != nil {
-		if err := m.repo.Refresh(ctx); err != nil {
-			// Log but don't fail — the mutation succeeded; cache refresh is best-effort.
-			// The skill data will be picked up on the next refresh regardless.
-		}
-	}
+	m.refreshRepoCache(ctx)
 
 	return fmt.Sprintf("Successfully installed skills from %s/%s to %s\n\n%s\n\nInstalled skills are available immediately. Use `list_skills` to see them.", owner, repoName, targetDir, string(output)), nil
 }
 
-// ListSkills returns a formatted list of all installed skills grouped by source.
-func (m *defaultSkillManager) ListSkills(ctx context.Context) (string, error) {
-	if m.repo == nil {
-		return "No skills repository available.", nil
-	}
-
-	all, err := m.repo.GetAll(ctx)
-	if err != nil {
-		return "", fmt.Errorf("listing skills: %w", err)
-	}
-
-	if len(all) == 0 {
-		return "No skills installed.\n\nUse `search_skills <query>` to find installable skills from skills.sh, then `install_skill <repo_url>` to install them.", nil
-	}
-
-	var local, ssh []skills.Skill
+// groupSkillsBySource partitions skills into local (docs/skills/) and
+// skills.sh (.skills/) groups based on the Source field.
+func groupSkillsBySource(all []skills.Skill) (local, ssh []skills.Skill) {
 	for _, s := range all {
 		switch s.Source {
 		case "skills.sh":
@@ -215,7 +232,11 @@ func (m *defaultSkillManager) ListSkills(ctx context.Context) (string, error) {
 			local = append(local, s)
 		}
 	}
+	return local, ssh
+}
 
+// formatSkillGroups builds the human-readable installed skills list string.
+func formatSkillGroups(local, ssh []skills.Skill) string {
 	var sb strings.Builder
 	sb.WriteString("Installed skills:\n")
 
@@ -243,7 +264,52 @@ func (m *defaultSkillManager) ListSkills(ctx context.Context) (string, error) {
 
 	sb.WriteString("\nUse `search_skills <query>` to discover more installable skills.")
 
-	return sb.String(), nil
+	return sb.String()
+}
+
+// ListSkills returns a formatted list of all installed skills grouped by source.
+func (m *defaultSkillManager) ListSkills(ctx context.Context) (string, error) {
+	if m.repo == nil {
+		return "No skills repository available.", nil
+	}
+
+	all, err := m.repo.GetAll(ctx)
+	if err != nil {
+		return "", fmt.Errorf("listing skills: %w", err)
+	}
+
+	if len(all) == 0 {
+		return "No skills installed.\n\nUse `search_skills <query>` to find installable skills from skills.sh, then `install_skill <repo_url>` to install them.", nil
+	}
+
+	local, ssh := groupSkillsBySource(all)
+	return formatSkillGroups(local, ssh), nil
+}
+
+// validateSkillRemovable checks whether a skill can be removed.
+// Returns (blockingMessage, nil) if removal is blocked (local skill or not found).
+// Returns ("", nil) if removal is allowed.
+// Returns ("", error) on repository errors.
+func (m *defaultSkillManager) validateSkillRemovable(ctx context.Context, name string) (string, error) {
+	if m.repo == nil {
+		return "", nil
+	}
+
+	all, err := m.repo.GetAll(ctx)
+	if err != nil {
+		return "", fmt.Errorf("listing skills: %w", err)
+	}
+
+	for _, s := range all {
+		if s.Name == name {
+			if s.Source != "skills.sh" {
+				return fmt.Sprintf("Cannot remove %q: it is a local skill (source: %s). Only skills installed from skills.sh (.skills/) can be removed with this tool.", name, s.Source), nil
+			}
+			return "", nil
+		}
+	}
+
+	return "", nil
 }
 
 // RemoveSkill removes a skills.sh skill from .skills/.
@@ -254,18 +320,10 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 	}
 
 	// Check source — only skills.sh skills can be removed
-	if m.repo != nil {
-		all, err := m.repo.GetAll(ctx)
-		if err == nil {
-			for _, s := range all {
-				if s.Name == name {
-					if s.Source != "skills.sh" {
-						return fmt.Sprintf("Cannot remove %q: it is a local skill (source: %s). Only skills installed from skills.sh (.skills/) can be removed with this tool.", name, s.Source), nil
-					}
-					break
-				}
-			}
-		}
+	if blockMsg, err := m.validateSkillRemovable(ctx, name); err != nil {
+		return "", err
+	} else if blockMsg != "" {
+		return blockMsg, nil
 	}
 
 	found, skillDir, err := findSkillDir(m.skillsShDir, name)
@@ -285,13 +343,7 @@ func (m *defaultSkillManager) RemoveSkill(ctx context.Context, name string) (str
 		return "", fmt.Errorf("removing skill repository %s: %w", repoRoot, err)
 	}
 
-	// Refresh the repository cache so the removal is visible immediately.
-	if m.repo != nil {
-		if err := m.repo.Refresh(ctx); err != nil {
-			// Log but don't fail — the mutation succeeded; cache refresh is best-effort.
-			// The skill data will be picked up on the next refresh regardless.
-		}
-	}
+	m.refreshRepoCache(ctx)
 
 	return fmt.Sprintf("Successfully removed skill %q (repository %s).", name, repoRoot), nil
 }

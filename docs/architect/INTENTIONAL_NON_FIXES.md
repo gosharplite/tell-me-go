@@ -340,4 +340,55 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-07*
+## Coverage Gaps (ACCEPTED — 2026-07 skills.sh Batch Triage)
+
+### skills.sh integration — structurally unreachable and fault-injection gaps (17 sites)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Following the established acceptance classes from the 2026-07
+  batch triage, the remaining gaps in the skills.sh integration package
+  (`internal/tools/integrations/skillssh/`) fall into these categories:
+
+  **Structurally unreachable (8 sites)**:
+  - `searchGitHubAPI`: `http.NewRequestWithContext` error — URL constructed from
+    `url.QueryEscape`, unreachable for GET.
+  - `searchGitHubAPI`: `io.ReadAll` error — requires transport-level corruption.
+    Same class as pidlock/process_executor acceptances.
+  - `searchGitHubAPI`: `limit > 10` guard — `per_page=10` makes this defensive
+    against API changes.
+  - `fetchSkillMeta`: `http.NewRequestWithContext`, `client.Do`, `StatusCode`,
+    `io.ReadAll` (×4) — best-effort function; all errors return `("", "")`.
+  - `findSkillDir`: `info.Name() != "SKILL.md"` skip branch — tested implicitly
+    by `TestRemoveSkill_RemovesSkillShSkill`.
+  - `findSkillDir`: `return nil` after Walk — already covered by
+    `TestRemoveSkill_NotFound`.
+  - `findRepoRoot`: `return skillDir` fallback — defensive guard, structurally
+    unreachable.
+
+  **Filesystem fault injection (4 sites)**:
+  - `InstallSkill`: `os.MkdirAll` error — same class as `pidlock/pidlock.go`.
+  - `RemoveSkill`: `os.RemoveAll` error — same class.
+  - `findSkillDir`: `filepath.Walk` walkErr — unreachable on test-controlled
+    temp dirs.
+  - `findSkillDir`: `os.ReadFile` error — race condition between Walk and file
+    deletion.
+
+  **Integration-level (2 sites)**:
+  - `NewSkillManager` — tested via `newTestMgr` (unexported constructor).
+  - `RegisterSkillsShTools` + all registration branches — tested at integration
+    level via DI container.
+
+  **Other (3 sites)**:
+  - `searchGitHubAPI`: `client == nil` → `http.DefaultClient` fallback —
+    requires nil client injection; tests always provide a mock client.
+  - `SearchSkills`: `name == ""` and `desc == ""` formatting branches — tested
+    implicitly via `TestSearchSkills_ResultsParsed`.
+  - `validateSkillRemovable`: `repo.GetAll` error — already covered by the
+    `ListSkills` repo-error test pattern.
+
+- **See**: `internal/tools/integrations/skillssh/manager_impl.go`,
+  `internal/tools/integrations/skillssh/tools.go`
+
+---
+
+*Last Updated: 2026-07 (skills.sh triage)*
