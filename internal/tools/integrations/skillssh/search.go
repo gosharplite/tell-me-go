@@ -73,7 +73,7 @@ func makeSearchSkills(client tools.HTTPClient) tools.ToolFunc {
 		if err != nil {
 			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error searching skills: %v", err)}, nil
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
 		if err != nil {
@@ -159,7 +159,7 @@ func fetchSkillMeta(ctx context.Context, client tools.HTTPClient, repoFullName, 
 	if err != nil {
 		return "", ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", ""
