@@ -411,37 +411,57 @@ var (
 	sharedWSModule  string
 	sharedWSIndexer *indexer
 	sharedWSOnce    sync.Once
+	sharedWSMu      sync.Mutex
 )
+
+// createSharedWorkspace builds the shared dead-code workspace at a new temp dir.
+// Must be called while sharedWSMu is held.
+func createSharedWorkspace(tb testing.TB) {
+	var err error
+	sharedWSRoot, err = os.MkdirTemp("", "deadcode-shared-*")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() { _ = os.RemoveAll(sharedWSRoot) })
+
+	sharedWSRoot, err = filepath.EvalSymlinks(sharedWSRoot)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	sharedWSModule = setupSharedWorkspaceAt(sharedWSRoot, sharedWSTests)
+
+	sharedWSIndexer, err = newIndexer(sharedWSRoot)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := sharedWSIndexer.Refresh(context.Background(), nil); err != nil {
+		tb.Fatal(err)
+	}
+}
 
 // getSharedWorkspaceIndexer returns a pre-built workspace and indexer
 // shared across FindOrphanedSymbols and GatherOrphanReports tests.
 // The workspace is created once per test binary run via sync.Once.
+// On -count=N, if a prior iteration's cleanup deleted the workspace,
+// it is recreated under a mutex.
 func getSharedWorkspaceIndexer(tb testing.TB) (string, string, *indexer) {
 	sharedWSOnce.Do(func() {
 		sharedWSTests = getFindOrphanedSymbolsTestCases()
-
-		var err error
-		sharedWSRoot, err = os.MkdirTemp("", "deadcode-shared-*")
-		if err != nil {
-			tb.Fatal(err)
-		}
-		tb.Cleanup(func() { _ = os.RemoveAll(sharedWSRoot) })
-
-		sharedWSRoot, err = filepath.EvalSymlinks(sharedWSRoot)
-		if err != nil {
-			tb.Fatal(err)
-		}
-
-		sharedWSModule = setupSharedWorkspaceAt(sharedWSRoot, sharedWSTests)
-
-		sharedWSIndexer, err = newIndexer(sharedWSRoot)
-		if err != nil {
-			tb.Fatal(err)
-		}
-		if err := sharedWSIndexer.Refresh(context.Background(), nil); err != nil {
-			tb.Fatal(err)
-		}
 	})
+
+	sharedWSMu.Lock()
+	defer sharedWSMu.Unlock()
+
+	// If workspace was deleted (e.g., by -count=2 cleanup), recreate it.
+	if sharedWSRoot != "" {
+		if _, err := os.Stat(sharedWSRoot); os.IsNotExist(err) {
+			createSharedWorkspace(tb)
+		}
+	} else {
+		createSharedWorkspace(tb)
+	}
+
 	return sharedWSRoot, sharedWSModule, sharedWSIndexer
 }
 

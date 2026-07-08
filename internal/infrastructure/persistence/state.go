@@ -20,14 +20,15 @@ import (
 
 // sessionState manages all persistent services and session metadata.
 type sessionState struct {
-	Tasks     ports.TaskStore
-	Settings  ports.KVStore
-	Info      ports.SessionInfo
-	db        *sql.DB
-	statePath string
-	fs        domain_persistence.FileSystem
-	mu        sync.RWMutex
-	logger    *slog.Logger
+	Tasks       ports.TaskStore
+	Settings    ports.KVStore
+	Info        ports.SessionInfo
+	db          *sql.DB
+	statePath   string
+	fs          domain_persistence.FileSystem
+	mu          sync.RWMutex
+	logger      *slog.Logger
+	storageType string // "sqlite" (default) or "memory"
 }
 
 func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
@@ -154,14 +155,30 @@ var initServicesFn = initServices
 // SessionStateOption is a functional option for NewSessionState.
 type SessionStateOption func(*sessionState)
 
+// WithStorageType overrides the default storage backend ("sqlite").
+// Use "memory" for in-memory storage (tests), "sqlite" for persistent storage.
+func WithStorageType(t string) SessionStateOption {
+	return func(s *sessionState) {
+		s.storageType = t
+	}
+}
+
 // NewSessionState initializes repositories and services.
+// Use WithStorageType("memory") for in-memory storage in tests instead of
+// setting the STORAGE_TYPE environment variable.
 func NewSessionState(ctx context.Context, configDir string, opts ...SessionStateOption) (ports.SessionProvider, error) {
-	storageType := os.Getenv("STORAGE_TYPE")
-	if storageType == "" {
-		storageType = "sqlite" // Set sqlite as default storage
+	state := &sessionState{
+		logger:      slog.Default(),
+		storageType: "sqlite",
+	}
+	for _, opt := range opts {
+		opt(state)
+	}
+	if state.storageType == "" {
+		state.storageType = "sqlite"
 	}
 
-	taskStore, kvStore, db, paths, err := initRepositories(ctx, configDir, storageType)
+	taskStore, kvStore, db, paths, err := initRepositories(ctx, configDir, state.storageType)
 	if err != nil {
 		return nil, fmt.Errorf("initializing persistence repositories: %w", err)
 	}
@@ -174,25 +191,26 @@ func NewSessionState(ctx context.Context, configDir string, opts ...SessionState
 		return nil, err
 	}
 
-	fs := NewOSFileSystem()
-	statePath := filepath.Join(configDir, "state.json")
+	state.Tasks = tasks
+	state.Settings = kvStore
+	state.db = db
+	state.statePath = filepath.Join(configDir, "state.json")
+	state.fs = NewOSFileSystem()
 
-	state := &sessionState{
-		Tasks:     tasks,
-		Settings:  kvStore,
-		db:        db,
-		statePath: statePath,
-		fs:        fs,
-		logger:    slog.Default(),
-	}
-
-	for _, opt := range opts {
-		opt(state)
-	}
-
-	state.hydrateInfo(ctx, storageType, paths)
+	state.hydrateInfo(ctx, state.storageType, paths)
 
 	return state, nil
+}
+
+// NewSessionStateFromEnv creates a session state, reading STORAGE_TYPE from
+// the environment. This is the production entry point; tests should use
+// NewSessionState directly with WithStorageType to avoid cache-busting.
+func NewSessionStateFromEnv(ctx context.Context, configDir string, opts ...SessionStateOption) (ports.SessionProvider, error) {
+	storageType := os.Getenv("STORAGE_TYPE")
+	if storageType == "" {
+		storageType = "sqlite"
+	}
+	return NewSessionState(ctx, configDir, append([]SessionStateOption{WithStorageType(storageType)}, opts...)...)
 }
 
 func initRepositories(ctx context.Context, configDir, storageType string) (ports.ListStore[ports.Task], ports.KVStore, *sql.DB, map[string]string, error) {

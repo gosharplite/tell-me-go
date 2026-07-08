@@ -1020,10 +1020,9 @@ func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
 	mock := &mockExecutor{}
 	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
-	// Set TMPDIR to a non-existent directory to force os.CreateTemp to fail
-	oldTmp := os.Getenv("TMPDIR")
-	_ = os.Setenv("TMPDIR", "/non-existent-directory-12345")
-	defer func() { _ = os.Setenv("TMPDIR", oldTmp) }()
+	// Set TMPDIR to a non-existent directory to force os.CreateTemp to fail.
+	// t.Setenv is cache-safe; it backs up the old value and restores on test cleanup.
+	t.Setenv("TMPDIR", "/non-existent-directory-12345")
 
 	_, err := hea.getDetailedCoverage(ctx, ".", nil)
 	if err == nil {

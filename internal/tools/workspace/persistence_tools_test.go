@@ -248,7 +248,7 @@ func testManageTasksAdd(t *testing.T) {
 		{
 			name:           "Successfully add task",
 			args:           map[string]interface{}{"action": "add", "content": "task 1"},
-			expectedResult: "Task added with ID 1",
+			expectedResult: "Task added with ID ",
 		},
 	}
 

@@ -55,8 +55,7 @@ func TestNewSessionState_MemoryStorage(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := NewSessionState(ctx, tempDir, WithStorageType("memory"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +112,7 @@ func TestSessionState_GetSettings(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := NewSessionState(ctx, tempDir, WithStorageType("memory"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +151,7 @@ func TestSessionState_GetHealthChecker_Memory(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := NewSessionState(ctx, tempDir, WithStorageType("memory"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,8 +358,7 @@ func TestSessionState_SetInfo_IsolationFromCallerMutation(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Use memory storage so no disk I/O interferes
-	t.Setenv("STORAGE_TYPE", "memory")
-	state, err := NewSessionState(ctx, tempDir)
+	state, err := NewSessionState(ctx, tempDir, WithStorageType("memory"))
 	require.NoError(t, err)
 	defer func() { _ = state.Close() }()
 
