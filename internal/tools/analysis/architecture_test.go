@@ -327,7 +327,7 @@ func TestRunHeartbeat(t *testing.T) {
 		go m.runHeartbeat(hb, done)
 
 		fakeClk.Ticker.Fire()
-		
+
 		// Wait for at least one tick
 		select {
 		case <-hb:

@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
@@ -816,7 +816,7 @@ func TestHealthStartHeartbeat(t *testing.T) {
 		go func() {
 			m.startHeartbeat(done, hb)
 		}()
-		
+
 		fakeClk.Ticker.Fire()
 
 		select {
@@ -838,7 +838,7 @@ func TestHealthStartHeartbeat(t *testing.T) {
 		go func() {
 			m.startHeartbeat(done, hb)
 		}()
-		
+
 		fakeClk.Ticker.Fire()
 		close(done)
 		// test passes if we reach here without deadlock/panic

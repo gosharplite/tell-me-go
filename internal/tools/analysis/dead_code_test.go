@@ -389,9 +389,13 @@ func setupSharedWorkspaceAt(rootDir string, tests []struct {
 			content = strings.ReplaceAll(content, "example.com/test", sharedModule+"/"+safeName)
 			fullPath := filepath.Join(caseDir, path)
 			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-			if err != nil { panic(err) }
+			if err != nil {
+				panic(err)
+			}
 			err = os.WriteFile(fullPath, []byte(content), 0644)
-			if err != nil { panic(err) }
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 	return sharedModule

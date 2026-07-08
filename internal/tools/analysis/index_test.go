@@ -179,7 +179,7 @@ func TestToLocation_AbsFailure(t *testing.T) {
 	t.Parallel()
 
 	idx := &indexer{
-		clk: clock.RealClock{},
+		clk:  clock.RealClock{},
 		fset: token.NewFileSet(),
 		resolvePath: func(s string) (string, error) {
 			return "", errors.New("injected resolvePath failure")
