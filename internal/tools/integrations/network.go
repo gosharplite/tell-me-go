@@ -217,9 +217,12 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 
-	resp, _, err := t.executeRequest(ctx, params.Method, params.URL, params.Body, params.Headers, hb)
+	resp, stopHB, err := t.executeRequest(ctx, params.Method, params.URL, params.Body, params.Headers, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
+	}
+	if stopHB != nil {
+		defer stopHB()
 	}
 	defer func() { _ = drainAndClose(resp.Body) }()
 
