@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -664,6 +665,8 @@ func (m *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger {
 	return &ports.NoOpTurnsLogger{}
 }
 func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider { return m.sessionProvider }
+
+func (m *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository { return nil }
 
 type mockTracker struct {
 	pricing.CostTracker
@@ -1732,7 +1735,7 @@ func TestWireToolRegistry(t *testing.T) {
 	hm := b.wireHealth(&config.Config{Mode: "assistant"}, mockSP, lc)
 
 	cfg := &config.Config{Model: "test-model", Mode: "assistant"}
-	lr := b.wireToolRegistry(paths, mockSP, hm, lc, bus, cfg, nil, nil)
+	lr := b.wireToolRegistry(paths, mockSP, hm, lc, bus, cfg, nil, nil, nil)
 
 	assert.NotNil(t, lr)
 	// Verify lazy init works

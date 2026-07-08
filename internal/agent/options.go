@@ -116,3 +116,12 @@ func WithProviderName(name string) AgentOption {
 		a.providerName = name
 	}
 }
+
+// WithSkillEcosystemIntro sets the ecosystem introduction text that is
+// injected alongside skill content. The text is provided by the
+// infrastructure layer and is opaque to the agent.
+func WithSkillEcosystemIntro(intro string) AgentOption {
+	return func(a *agent) {
+		a.ecosystemIntro = intro
+	}
+}

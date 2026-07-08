@@ -63,6 +63,7 @@ type agent struct {
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	registerInternal bool
 	initCtx          context.Context
+	ecosystemIntro   string
 
 	config atomic.Pointer[runtimeConfig]
 }
@@ -129,13 +130,18 @@ func (a *agent) initComponents() error {
 		},
 	})
 
+	var injectorOpts []agentskills.SkillInjectorOption
+	if a.ecosystemIntro != "" {
+		injectorOpts = append(injectorOpts, agentskills.WithSkillEcosystemIntro(a.ecosystemIntro))
+	}
+
 	factory := &sessctx.Factory{
 		Registry:   a.registry,
 		History:    a.hManager,
 		Summarizer: a.summarizer,
 		Estimator:  strategy,
 		Events:     a.events,
-		Extras:     []ports.ContextTransformer{agentskills.NewSkillInjector(a.skillSelector, a.logger)},
+		Extras:     []ports.ContextTransformer{agentskills.NewSkillInjector(a.skillSelector, a.logger, injectorOpts...)},
 	}
 
 	a.ctxManager = sessctx.NewManager(strategy, a.hManager, a.events, factory,

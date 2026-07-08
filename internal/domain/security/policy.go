@@ -172,6 +172,12 @@ func DefaultPolicy() *Policy {
 			"update_session_setting":   true,
 			"list_session_settings":    true,
 
+			// Skills.sh Ecosystem Tools
+			"search_skills": true,
+			"list_skills":   true,
+			"install_skill": true,
+			"remove_skill":  true,
+
 			// Media Tools
 			"create_image": true,
 			"read_image":   true,
@@ -187,6 +193,8 @@ func DefaultPolicy() *Policy {
 			"ado_create_pipeline": true, "ado_run_pipeline": true,
 			"run_benchmark":       true,
 			"check_system_health": true,
+			"search_skills":       true,
+			"list_skills":         true,
 		},
 		ForbiddenPatterns: []string{
 			"&&", "||", ";", "|", ">", ">>", "<", "&", "2>", "&>", "|&", "1>", "1>>", "2>>",

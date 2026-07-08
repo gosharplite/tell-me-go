@@ -209,19 +209,22 @@ A long-running conversation context identified by a unique ID. Owns a sequence o
 
 ### `Skill`
 
-A block of idiomatic guidance injected into the system prompt when the task is relevant. Examples: golang-patterns (Go best practices) and golang-testing (TDD patterns). `Skill`s are activated by keyword matching against the user prompt.
+A block of guidance injected into the system prompt when the task is relevant. `Skill`s are stored as SKILL.md files (YAML frontmatter + Markdown body) following the skills.sh format. They come from two sources: local `docs/skills/` (curated by the Dobby template, e.g. golang-patterns, golang-testing) and the skills.sh ecosystem `.skills/` (installed on demand via `install_skill`). Injection is triggered by keyword matching against the user prompt via the skill selector, and injected into `Context` by the skill injector.
 
 **Attributes**
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | string |  |
-| `content` | string | The Markdown text injected into the context. |
-| `triggers` | []string | Keywords that cause this `Skill` to be activated. |
+| `name` | string | Unique skill identifier from YAML frontmatter. |
+| `description` | string | Human-readable summary from YAML frontmatter; used in `list_skills` output. |
+| `content` | string | The Markdown body injected into the context. |
+| `tokenCount` | integer | _Derived:_ Heuristic: len(content) / 4. |
+| `source` | string | "local" for docs/skills/, "skills.sh" for .skills/. Used by remove_skill to gate deletion. |
 
 **Invariants**
 
 - **skill-unique-name** — Each `Skill` has a unique name.
+- **skill-remove-source-gate** — Only `Skill`s with `source: skills.sh` can be removed by `remove_skill`; local skills are protected.
 
 ### `Task`
 
@@ -395,22 +398,24 @@ After every `Turn` completes, the `Orchestrator` computes its USD cost using the
 
 ### Skill injection into context
 
-When the user's prompt matches a `Skill`'s trigger keywords, the `Orchestrator` injects that `Skill`'s guidance into the `Context` system prompt before sending it to the `Provider` — so the model responds with domain-appropriate conventions without the user needing to ask.
+When the user's prompt matches a `Skill`'s keywords, the `Orchestrator` injects that `Skill`'s guidance into the `Context` system prompt. `Skill`s are loaded from two sources: local `docs/skills/` (always available) and `.skills/` (installed on demand from skills.sh). Both are merged by a composite repository before keyword matching.
 
 **Actors:** Orchestrator, Skill, Context, Provider, Session
 
 **Steps**
 
-1. User submits a prompt containing keywords that match a `Skill`'s triggers.
-2. `Orchestrator` scans registered `Skill`s and finds matching trigger keywords.
+1. User submits a prompt containing keywords that match a `Skill`.
+2. `Orchestrator` scans all registered `Skill`s from both local and skills.sh sources.
 3. The matched `Skill`'s content is injected into the `Context` system prompt.
 4. `Provider` receives the augmented `Context` and responds accordingly.
 5. The `Turn` is persisted as normal.
+6. If a skill from the skills.sh ecosystem was installed mid-session, it becomes available on the next `Turn`.
 
 **Invariants touched**
 
 - **skill-unique-name** — Each `Skill` has a unique name.
 - **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **skill-remove-source-gate** — Only `Skill`s with `source: skills.sh` can be removed by `remove_skill`; local skills are protected.
 
 ### Tool-augmented turn
 
