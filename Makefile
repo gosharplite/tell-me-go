@@ -39,6 +39,7 @@ help:
 	@echo "  make lint       - Run golangci-lint static analysis"
 	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
 	@echo "  make check      - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-coverage"
+	@echo "  make check-full - Run full quality pipeline including race detection (use before push/merge)"
 	@echo "  make bench       - Run all benchmarks with memory allocation metrics"
 	@echo "  make fuzz       - Run all fuzz targets for 40s each (developer-invoked)"
 	@echo "  make fuzz-smoke - Compile-check fuzz tests are buildable (included in make check)"

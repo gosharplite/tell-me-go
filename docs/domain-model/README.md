@@ -220,7 +220,6 @@ runs in CI, the diagram is regenerated from source on every commit — it
 | Agent capabilities | `Tool` | Registered capability exposed to the LLM |
 | | `Skill` | Injected guidance (golang-patterns, golang-testing) |
 | Safety | `SafePath` | Authorized directory boundary |
-| | `UserInteractor` | Security confirmation interface |
 | Persistence | `History` | Persisted session storage (SQLite) |
 
 Glossary roles (not entities — they have no persisted state):
@@ -231,6 +230,7 @@ Glossary roles (not entities — they have no persisted state):
 | `SecurityManager` | Validates tool requests against SafePath, delegates to UserInteractor |
 | `Thought` | Provider-agnostic reasoning block (text, tool-call, chain-of-thought) |
 | `Chatter` | Conversation interface between the Orchestrator and Provider gateway |
+| `UserInteractor` | Security confirmation interface between SecurityManager and the user |
 
 ## Design decisions
 
