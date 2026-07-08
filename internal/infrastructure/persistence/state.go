@@ -157,7 +157,7 @@ type SessionStateOption func(*sessionState)
 
 // WithStorageType overrides the default storage backend ("sqlite").
 // Use "memory" for in-memory storage (tests), "sqlite" for persistent storage.
-func WithStorageType(t string) SessionStateOption {
+func withStorageType(t string) SessionStateOption {
 	return func(s *sessionState) {
 		s.storageType = t
 	}
@@ -210,7 +210,7 @@ func NewSessionStateFromEnv(ctx context.Context, configDir string, opts ...Sessi
 	if storageType == "" {
 		storageType = "sqlite"
 	}
-	return NewSessionState(ctx, configDir, append([]SessionStateOption{WithStorageType(storageType)}, opts...)...)
+	return NewSessionState(ctx, configDir, append([]SessionStateOption{withStorageType(storageType)}, opts...)...)
 }
 
 func initRepositories(ctx context.Context, configDir, storageType string) (ports.ListStore[ports.Task], ports.KVStore, *sql.DB, map[string]string, error) {
