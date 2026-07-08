@@ -396,7 +396,7 @@ ifeq ($(IS_POSIX),true)
 	@echo "=== modelith-layers ==="
 	@$(MAKE) modelith-layers
 else
-	@set ARCH_FAIL_ON_VIOLATION=1 && go test -run TestVerifyRealArchitecture ./internal/tools/analysis/...
+	@go test -run TestVerifyRealArchitecture ./internal/tools/analysis/... -strict-arch=true
 	@echo "=== modelith-layers ==="
 	@$(MAKE) modelith-layers
 endif
