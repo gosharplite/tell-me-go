@@ -125,8 +125,8 @@ func (f *defaultToolchainFactory) registerSkillsShTools(r tools.Registry) error 
 	}
 
 	// Composite merges both sources; docs/skills/ goes first for tie-breaking
-	repo := &compositeSkillRepository{
-		repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+	repo := &infra_skills.CompositeRepository{
+		Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
 	}
 
 	// ExecRunner wraps exec.CommandContext for git clone
@@ -134,26 +134,8 @@ func (f *defaultToolchainFactory) registerSkillsShTools(r tools.Registry) error 
 		return osexec.CommandContext(ctx, name, args...).CombinedOutput()
 	}
 
-	return skillssh.RegisterSkillsShTools(r, skillsShDir, repo, http.DefaultClient, execRunner)
-}
-
-// compositeSkillRepository aggregates multiple SkillRepository instances.
-// Mirrors the implementation in factory/chatter.go; duplicated here to
-// avoid a circular dependency between the di and factory packages.
-type compositeSkillRepository struct {
-	repos []domain_skills.SkillRepository
-}
-
-func (c *compositeSkillRepository) GetAll(ctx context.Context) ([]domain_skills.Skill, error) {
-	var all []domain_skills.Skill
-	for _, r := range c.repos {
-		skills, err := r.GetAll(ctx)
-		if err != nil {
-			continue
-		}
-		all = append(all, skills...)
-	}
-	return all, nil
+	mgr := skillssh.NewSkillManager(skillsShDir, repo, http.DefaultClient, execRunner)
+	return skillssh.RegisterSkillsShTools(r, mgr)
 }
 
 // BuildHealthChecker creates a HealthChecker for the system toolchain binaries.

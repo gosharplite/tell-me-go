@@ -47,31 +47,6 @@ func resolveSkillsShDir(paths *persistence.Paths) string {
 	return filepath.Join(homeDir, ".skills")
 }
 
-// compositeSkillRepository aggregates multiple SkillRepository instances,
-// merging their results in order. If one source returns an error, it is
-// silently skipped so that a single broken source does not block all
-// skill selection.
-type compositeSkillRepository struct {
-	repos []domain_skills.SkillRepository
-}
-
-// GetAll returns all skills from all contained repositories, concatenated
-// in registration order. Errors from individual repositories are logged
-// and skipped.
-func (c *compositeSkillRepository) GetAll(ctx stdctx.Context) ([]domain_skills.Skill, error) {
-	var all []domain_skills.Skill
-	for _, r := range c.repos {
-		skills, err := r.GetAll(ctx)
-		if err != nil {
-			slog.Warn("failed to load skills from repository, skipping",
-				"error", err)
-			continue
-		}
-		all = append(all, skills...)
-	}
-	return all, nil
-}
-
 // registerReadOnlySkillsPath registers the skills directory with the security
 // manager if it supports the RegisterReadOnlyPath method.
 func registerReadOnlySkillsPath(deps ports.ChatterComposer, dir string) {
@@ -135,8 +110,8 @@ func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.Chatte
 	// Dobby-curated skills take priority in tie-breaking.
 	var skillRepo domain_skills.SkillRepository
 	if skillsShRepo != nil {
-		skillRepo = &compositeSkillRepository{
-			repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
+		skillRepo = &infra_skills.CompositeRepository{
+			Repos: []domain_skills.SkillRepository{fileRepo, skillsShRepo},
 		}
 	} else {
 		skillRepo = fileRepo
@@ -171,6 +146,9 @@ func NewChatter(ctx stdctx.Context, deps ports.ChatterComposer, cfg ports.Chatte
 		agent.WithHistoryManager(deps.GetHistoryManager()),
 		agent.WithSecurityManager(deps.GetSecurityManager()),
 		agent.WithProviderName(cfg.ProviderName),
+		agent.WithSkillEcosystemIntro(
+			"**Skills Ecosystem**: Call `load_toolkit(names=['skillssh'])` to activate skills.sh tools: `search_skills` to discover installable skills, `list_skills` to see installed skills, `install_skill` to add new ones (requires user approval), and `remove_skill` to remove them. Installed skills become available on the next message.",
+		),
 	}
 
 	// 3. Return the new Agent.

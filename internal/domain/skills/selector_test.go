@@ -21,6 +21,10 @@ func (m *mockSkillRepository) GetAll(ctx context.Context) ([]Skill, error) {
 	return m.skills, m.err
 }
 
+func (m *mockSkillRepository) Refresh(ctx context.Context) error {
+	return nil
+}
+
 func setupMockRepo() *mockSkillRepository {
 	testSkills := []Skill{
 		{

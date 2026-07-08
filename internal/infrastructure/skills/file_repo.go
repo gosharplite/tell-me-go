@@ -23,7 +23,8 @@ var errInvalidFrontmatter = errors.New("invalid skill frontmatter: name required
 // fileSkillRepository implements the domain.SkillRepository interface
 // by loading skill definitions from Markdown files on disk.
 type fileSkillRepository struct {
-	cache []domain.Skill
+	docsDir string
+	cache   []domain.Skill
 }
 
 // isSkillFile returns true if the file entry is a skill Markdown file
@@ -45,15 +46,32 @@ func hasSkillName(cache []domain.Skill, name string) bool {
 // NewFileSkillRepository creates a new fileSkillRepository and immediately
 // populates its cache by walking the provided directory.
 func NewFileSkillRepository(docsDir string) (domain.SkillRepository, error) {
+	repo := &fileSkillRepository{docsDir: docsDir}
+	if err := repo.reload(); err != nil {
+		return nil, err
+	}
+	return repo, nil
+}
+
+// GetAll returns all cached skill definitions.
+func (r *fileSkillRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
+	return r.cache, nil
+}
+
+// reload re-walks the docsDir and replaces the in-memory cache.
+// If the directory does not exist, the cache is cleared (empty repository).
+// Individual file read/parse errors cause the reload to fail entirely.
+func (r *fileSkillRepository) reload() error {
 	var cache []domain.Skill
 
 	// Check if directory exists; if not, return empty repository instead of failing.
 	// This is important for test environments and first-time setups.
-	if _, err := os.Stat(docsDir); os.IsNotExist(err) {
-		return &fileSkillRepository{cache: cache}, nil
+	if _, err := os.Stat(r.docsDir); os.IsNotExist(err) {
+		r.cache = cache
+		return nil
 	}
 
-	err := filepath.Walk(docsDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(r.docsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -85,15 +103,16 @@ func NewFileSkillRepository(docsDir string) (domain.SkillRepository, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("load skills from %s: %w", docsDir, err)
+		return fmt.Errorf("load skills from %s: %w", r.docsDir, err)
 	}
 
-	return &fileSkillRepository{cache: cache}, nil
+	r.cache = cache
+	return nil
 }
 
-// GetAll returns all cached skill definitions.
-func (r *fileSkillRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
-	return r.cache, nil
+// Refresh re-walks the underlying directory and replaces the cache.
+func (r *fileSkillRepository) Refresh(ctx context.Context) error {
+	return r.reload()
 }
 
 // validateSkill checks parsed skill fields and reports whether the file

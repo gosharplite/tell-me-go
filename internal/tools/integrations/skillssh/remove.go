@@ -9,12 +9,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // makeRemoveSkill returns a handler for the remove_skill tool.
-func makeRemoveSkill(skillsShDir string, repo skills.SkillRepository) tools.ToolFunc {
+func makeRemoveSkill(mgr SkillManager) tools.ToolFunc {
 	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		var params struct {
 			Name string `json:"name"`
@@ -23,45 +22,11 @@ func makeRemoveSkill(skillsShDir string, repo skills.SkillRepository) tools.Tool
 			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 		}
 
-		name := params.Name
-		if name == "" {
-			return tools.ToolResult{Text: "Error: name is required."}, nil
-		}
-
-		// First, check if the skill exists and its source
-		if repo != nil {
-			all, err := repo.GetAll(ctx)
-			if err == nil {
-				for _, s := range all {
-					if s.Name == name {
-						if s.Source != "skills.sh" {
-							return tools.ToolResult{
-								Text: fmt.Sprintf("Cannot remove %q: it is a local skill (source: %s). Only skills installed from skills.sh (.skills/) can be removed with this tool.", name, s.Source),
-							}, nil
-						}
-						break
-					}
-				}
-			}
-		}
-
-		// Walk .skills/ to find the SKILL.md with matching name and remove its parent directory
-		found, skillDir, err := findSkillDir(skillsShDir, name)
+		output, err := mgr.RemoveSkill(ctx, params.Name)
 		if err != nil {
-			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error searching for skill: %v", err)}, nil
+			return tools.ToolResult{Error: err, Text: output}, nil
 		}
-
-		if !found {
-			return tools.ToolResult{Text: fmt.Sprintf("Skill %q not found in .skills/. Use `list_skills` to see installed skills.", name)}, nil
-		}
-
-		if err := os.RemoveAll(skillDir); err != nil {
-			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error removing skill directory %s: %v", skillDir, err)}, nil
-		}
-
-		return tools.ToolResult{
-			Text: fmt.Sprintf("Successfully removed skill %q from %s.", name, skillDir),
-		}, nil
+		return tools.ToolResult{Text: output}, nil
 	}
 }
 

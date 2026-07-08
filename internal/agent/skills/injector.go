@@ -15,16 +15,32 @@ import (
 
 // skillInjector dynamically selects and injects Go development skills into the context.
 type skillInjector struct {
-	Selector skills.SkillSelector
-	Logger   ports.Logger
+	Selector       skills.SkillSelector
+	Logger         ports.Logger
+	ecosystemIntro string
+}
+
+// SkillInjectorOption configures a skillInjector.
+type SkillInjectorOption func(*skillInjector)
+
+// WithSkillEcosystemIntro sets an optional ecosystem introduction that is
+// appended to the skill injection block. This allows the infrastructure
+// layer to advertise available toolkits (e.g., skills.sh) without the
+// agent package knowing about specific implementations.
+func WithSkillEcosystemIntro(intro string) SkillInjectorOption {
+	return func(si *skillInjector) { si.ecosystemIntro = intro }
 }
 
 // NewSkillInjector creates a ports.ContextTransformer that injects skills
 // into the context. It exists as a constructor so the session/ package can
 // inject skill selection into the session/context pipeline without the
 // context/ sub-package importing domain/skills.
-func NewSkillInjector(selector skills.SkillSelector, logger ports.Logger) ports.ContextTransformer {
-	return &skillInjector{Selector: selector, Logger: logger}
+func NewSkillInjector(selector skills.SkillSelector, logger ports.Logger, opts ...SkillInjectorOption) ports.ContextTransformer {
+	si := &skillInjector{Selector: selector, Logger: logger}
+	for _, opt := range opts {
+		opt(si)
+	}
+	return si
 }
 
 func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -86,7 +102,12 @@ func (t *skillInjector) buildInjectionBlock(selected []skills.Skill) string {
 		fmt.Fprintf(&sb, "### %s\n%s\n\n---\n\n", s.Name, s.Content)
 	}
 
-	sb.WriteString("**Skills Ecosystem**: Call `load_toolkit(names=['skillssh'])` to activate skills.sh tools: `search_skills` to discover installable skills, `list_skills` to see installed skills, `install_skill` to add new ones (requires user approval), and `remove_skill` to remove them. Installed skills become available on the next message.\n")
+	sb.WriteString("\n")
+
+	if t.ecosystemIntro != "" {
+		sb.WriteString(t.ecosystemIntro)
+		sb.WriteString("\n")
+	}
 
 	return sb.String()
 }

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -19,11 +18,8 @@ type ExecRunner func(ctx context.Context, name string, args ...string) ([]byte, 
 //
 // Parameters:
 //   - r: the tool registry to register with
-//   - skillsShDir: path to .skills/ directory (for install/remove operations)
-//   - repo: the skill repository (for list_skills)
-//   - client: HTTP client for search_skills GitHub API calls
-//   - exec: function to run shell commands (for git clone)
-func RegisterSkillsShTools(r tools.Registry, skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec ExecRunner) error {
+//   - mgr: the skill manager that encapsulates all business logic
+func RegisterSkillsShTools(r tools.Registry, mgr SkillManager) error {
 	if r == nil {
 		return fmt.Errorf("registry is required")
 	}
@@ -49,7 +45,7 @@ func RegisterSkillsShTools(r tools.Registry, skillsShDir string, repo skills.Ski
 			},
 			Required: []string{"query"},
 		},
-	}, makeSearchSkills(client)); err != nil {
+	}, makeSearchSkills(mgr)); err != nil {
 		return err
 	}
 
@@ -61,7 +57,7 @@ func RegisterSkillsShTools(r tools.Registry, skillsShDir string, repo skills.Ski
 			Type:       "OBJECT",
 			Properties: map[string]*tools.Schema{},
 		},
-	}, makeListSkills(repo)); err != nil {
+	}, makeListSkills(mgr)); err != nil {
 		return err
 	}
 
@@ -80,7 +76,7 @@ func RegisterSkillsShTools(r tools.Registry, skillsShDir string, repo skills.Ski
 			},
 			Required: []string{"repo_url"},
 		},
-	}, makeInstallSkill(skillsShDir, exec)); err != nil {
+	}, makeInstallSkill(mgr)); err != nil {
 		return err
 	}
 
@@ -99,7 +95,7 @@ func RegisterSkillsShTools(r tools.Registry, skillsShDir string, repo skills.Ski
 			},
 			Required: []string{"name"},
 		},
-	}, makeRemoveSkill(skillsShDir, repo)); err != nil {
+	}, makeRemoveSkill(mgr)); err != nil {
 		return err
 	}
 

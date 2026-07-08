@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // --- Mock types ---
@@ -38,6 +39,10 @@ func (s *stubSkillRepo) GetAll(ctx context.Context) ([]skills.Skill, error) {
 	return s.skills, s.err
 }
 
+func (s *stubSkillRepo) Refresh(ctx context.Context) error {
+	return nil
+}
+
 // --- Helpers ---
 
 // makeStringResponse creates an HTTP response with the given status and body.
@@ -59,10 +64,22 @@ func assertContains(t *testing.T, text string, substrs ...string) {
 	}
 }
 
+// newTestMgr creates a defaultSkillManager for testing.
+// Fields left at zero value are acceptable for tests that don't exercise them.
+func newTestMgr(skillsShDir string, repo skills.SkillRepository, client tools.HTTPClient, exec ExecRunner) *defaultSkillManager {
+	return &defaultSkillManager{
+		skillsShDir: skillsShDir,
+		repo:        repo,
+		client:      client,
+		exec:        exec,
+	}
+}
+
 // --- search_skills tests ---
 
 func TestSearchSkills_EmptyQuery(t *testing.T) {
-	handler := makeSearchSkills(nil)
+	mgr := newTestMgr("", nil, nil, nil)
+	handler := makeSearchSkills(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"query": "",
 	}, nil)
@@ -75,7 +92,8 @@ func TestSearchSkills_EmptyQuery(t *testing.T) {
 }
 
 func TestSearchSkills_MissingQuery(t *testing.T) {
-	handler := makeSearchSkills(nil)
+	mgr := newTestMgr("", nil, nil, nil)
+	handler := makeSearchSkills(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -94,7 +112,8 @@ func TestSearchSkills_URLConstruction(t *testing.T) {
 		},
 	}
 
-	handler := makeSearchSkills(client)
+	mgr := newTestMgr("", nil, client, nil)
+	handler := makeSearchSkills(mgr)
 	_, err := handler(context.Background(), map[string]interface{}{
 		"query": "kubernetes",
 	}, nil)
@@ -123,7 +142,8 @@ func TestSearchSkills_NoResults(t *testing.T) {
 		},
 	}
 
-	handler := makeSearchSkills(client)
+	mgr := newTestMgr("", nil, client, nil)
+	handler := makeSearchSkills(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"query": "nonexistent",
 	}, nil)
@@ -142,7 +162,8 @@ func TestSearchSkills_HTTPError(t *testing.T) {
 		},
 	}
 
-	handler := makeSearchSkills(client)
+	mgr := newTestMgr("", nil, client, nil)
+	handler := makeSearchSkills(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"query": "test",
 	}, nil)
@@ -157,7 +178,6 @@ func TestSearchSkills_HTTPError(t *testing.T) {
 func TestSearchSkills_ResultsParsed(t *testing.T) {
 	client := &mockHTTPClient{
 		doFunc: func(req *http.Request) (*http.Response, error) {
-			// The first request is the search, the second is fetching SKILL.md
 			if strings.Contains(req.URL.String(), "raw.githubusercontent.com") {
 				return &http.Response{
 					StatusCode: 200,
@@ -175,7 +195,8 @@ func TestSearchSkills_ResultsParsed(t *testing.T) {
 		},
 	}
 
-	handler := makeSearchSkills(client)
+	mgr := newTestMgr("", nil, client, nil)
+	handler := makeSearchSkills(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"query": "mcp",
 	}, nil)
@@ -188,7 +209,8 @@ func TestSearchSkills_ResultsParsed(t *testing.T) {
 // --- list_skills tests ---
 
 func TestListSkills_NilRepo(t *testing.T) {
-	handler := makeListSkills(nil)
+	mgr := newTestMgr("", nil, nil, nil)
+	handler := makeListSkills(mgr)
 	res, err := handler(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -200,7 +222,8 @@ func TestListSkills_NilRepo(t *testing.T) {
 
 func TestListSkills_Empty(t *testing.T) {
 	repo := &stubSkillRepo{skills: []skills.Skill{}}
-	handler := makeListSkills(repo)
+	mgr := newTestMgr("", repo, nil, nil)
+	handler := makeListSkills(mgr)
 	res, err := handler(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -215,7 +238,8 @@ func TestListSkills_Empty(t *testing.T) {
 
 func TestListSkills_RepoError(t *testing.T) {
 	repo := &stubSkillRepo{err: errors.New("db error")}
-	handler := makeListSkills(repo)
+	mgr := newTestMgr("", repo, nil, nil)
+	handler := makeListSkills(mgr)
 	res, err := handler(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -234,7 +258,8 @@ func TestListSkills_BothSources(t *testing.T) {
 			{Name: "k8s-tools", Description: "K8s tools", Source: "skills.sh"},
 		},
 	}
-	handler := makeListSkills(repo)
+	mgr := newTestMgr("", repo, nil, nil)
+	handler := makeListSkills(mgr)
 	res, err := handler(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -257,7 +282,8 @@ func TestListSkills_LocalOnly(t *testing.T) {
 			{Name: "go-patterns", Description: "Go patterns", Source: "local"},
 		},
 	}
-	handler := makeListSkills(repo)
+	mgr := newTestMgr("", repo, nil, nil)
+	handler := makeListSkills(mgr)
 	res, err := handler(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -271,7 +297,8 @@ func TestListSkills_LocalOnly(t *testing.T) {
 // --- install_skill tests ---
 
 func TestInstallSkill_EmptyURL(t *testing.T) {
-	handler := makeInstallSkill("/tmp/skills", nil)
+	mgr := newTestMgr("/tmp/skills", nil, nil, nil)
+	handler := makeInstallSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"repo_url": "",
 	}, nil)
@@ -296,7 +323,8 @@ func TestInstallSkill_InvalidURLs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("reject_%s", tt.url), func(t *testing.T) {
-			handler := makeInstallSkill("/tmp/skills", nil)
+			mgr := newTestMgr("/tmp/skills", nil, nil, nil)
+			handler := makeInstallSkill(mgr)
 			res, err := handler(context.Background(), map[string]interface{}{
 				"repo_url": tt.url,
 			}, nil)
@@ -312,9 +340,9 @@ func TestInstallSkill_InvalidURLs(t *testing.T) {
 
 func TestInstallSkill_ValidURLs(t *testing.T) {
 	tests := []struct {
-		url          string
-		wantOwner    string
-		wantRepo     string
+		url       string
+		wantOwner string
+		wantRepo  string
 	}{
 		{"https://github.com/anthropics/skills", "anthropics", "skills"},
 		{"https://github.com/anthropics/skills.git", "anthropics", "skills"},
@@ -332,7 +360,8 @@ func TestInstallSkill_ValidURLs(t *testing.T) {
 				return []byte("Cloning..."), nil
 			}
 
-			handler := makeInstallSkill(skillsDir, mockExec)
+			mgr := newTestMgr(skillsDir, nil, nil, mockExec)
+			handler := makeInstallSkill(mgr)
 			res, err := handler(context.Background(), map[string]interface{}{
 				"repo_url": tt.url,
 			}, nil)
@@ -344,7 +373,6 @@ func TestInstallSkill_ValidURLs(t *testing.T) {
 				t.Errorf("expected success message, got: %s", res.Text)
 			}
 
-			// Verify git clone was called with correct args
 			if len(capturedArgs) < 3 {
 				t.Fatalf("expected at least 3 args to git clone, got %d: %v", len(capturedArgs), capturedArgs)
 			}
@@ -367,12 +395,12 @@ func TestInstallSkill_AlreadyInstalled(t *testing.T) {
 	skillsDir := filepath.Join(tmpDir, ".skills")
 	targetDir := filepath.Join(skillsDir, "anthropics-skills")
 
-	// Pre-create the target directory
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		t.Fatalf("failed to create dir: %v", err)
 	}
 
-	handler := makeInstallSkill(skillsDir, nil)
+	mgr := newTestMgr(skillsDir, nil, nil, nil)
+	handler := makeInstallSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"repo_url": "https://github.com/anthropics/skills",
 	}, nil)
@@ -392,7 +420,8 @@ func TestInstallSkill_ExecFails(t *testing.T) {
 		return []byte("fatal: repository not found"), errors.New("exit status 128")
 	}
 
-	handler := makeInstallSkill(skillsDir, mockExec)
+	mgr := newTestMgr(skillsDir, nil, nil, mockExec)
+	handler := makeInstallSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"repo_url": "https://github.com/nonexistent/repo",
 	}, nil)
@@ -407,7 +436,8 @@ func TestInstallSkill_ExecFails(t *testing.T) {
 // --- remove_skill tests ---
 
 func TestRemoveSkill_EmptyName(t *testing.T) {
-	handler := makeRemoveSkill("/tmp/skills", nil)
+	mgr := newTestMgr("/tmp/skills", nil, nil, nil)
+	handler := makeRemoveSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"name": "",
 	}, nil)
@@ -425,7 +455,8 @@ func TestRemoveSkill_LocalSkillRejected(t *testing.T) {
 			{Name: "go-patterns", Description: "Go patterns", Source: "local"},
 		},
 	}
-	handler := makeRemoveSkill("/tmp/skills", repo)
+	mgr := newTestMgr("/tmp/skills", repo, nil, nil)
+	handler := makeRemoveSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"name": "go-patterns",
 	}, nil)
@@ -438,12 +469,12 @@ func TestRemoveSkill_LocalSkillRejected(t *testing.T) {
 func TestRemoveSkill_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillsDir := filepath.Join(tmpDir, ".skills")
-	// Create empty .skills/ dir
 	if err := os.MkdirAll(skillsDir, 0755); err != nil {
 		t.Fatalf("failed to create dir: %v", err)
 	}
 
-	handler := makeRemoveSkill(skillsDir, nil)
+	mgr := newTestMgr(skillsDir, nil, nil, nil)
+	handler := makeRemoveSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"name": "nonexistent-skill",
 	}, nil)
@@ -459,7 +490,6 @@ func TestRemoveSkill_RemovesSkillShSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillsDir := filepath.Join(tmpDir, ".skills")
 
-	// Create a nested skill directory structure
 	skillDir := filepath.Join(skillsDir, "anthropics-skills", "skills", "mcp-builder")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("failed to create dir: %v", err)
@@ -478,7 +508,8 @@ func TestRemoveSkill_RemovesSkillShSkill(t *testing.T) {
 		},
 	}
 
-	handler := makeRemoveSkill(skillsDir, repo)
+	mgr := newTestMgr(skillsDir, repo, nil, nil)
+	handler := makeRemoveSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"name": "mcp-builder",
 	}, nil)
@@ -487,14 +518,14 @@ func TestRemoveSkill_RemovesSkillShSkill(t *testing.T) {
 	}
 	assertContains(t, res.Text, "Successfully removed", "mcp-builder")
 
-	// Verify the directory was actually removed
 	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
 		t.Error("expected skill directory to be removed")
 	}
 }
 
 func TestRemoveSkill_SkillsShDirMissing(t *testing.T) {
-	handler := makeRemoveSkill("/nonexistent/path/to/skills", nil)
+	mgr := newTestMgr("/nonexistent/path/to/skills", nil, nil, nil)
+	handler := makeRemoveSkill(mgr)
 	res, err := handler(context.Background(), map[string]interface{}{
 		"name": "some-skill",
 	}, nil)
@@ -516,7 +547,7 @@ func TestDeriveSkillName(t *testing.T) {
 		{"skills/mcp-builder/SKILL.md", "mcp-builder"},
 		{"owner-repo/skills/go-patterns/SKILL.md", "go-patterns"},
 		{"deep/nested/skills/k8s/SKILL.md", "k8s"},
-		{"SKILL.md", "SKILL.md"}, // fallback
+		{"SKILL.md", "SKILL.md"},
 		{"no-skills-dir/SKILL.md", "no-skills-dir"},
 	}
 

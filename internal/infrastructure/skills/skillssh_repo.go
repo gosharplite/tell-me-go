@@ -28,7 +28,8 @@ import (
 // parseSkill() and hasSkillName() are shared with fileSkillRepository
 // via the same package.
 type skillsShRepository struct {
-	cache []domain.Skill
+	skillsShDir string
+	cache       []domain.Skill
 }
 
 // NewSkillsShRepository creates a new skillsShRepository and immediately
@@ -42,13 +43,30 @@ type skillsShRepository struct {
 // (graceful degradation). Only directory traversal errors cause a
 // non-nil error return.
 func NewSkillsShRepository(skillsShDir string) (domain.SkillRepository, error) {
+	repo := &skillsShRepository{skillsShDir: skillsShDir}
+	if err := repo.reload(); err != nil {
+		return nil, err
+	}
+	return repo, nil
+}
+
+// GetAll returns all cached skill definitions.
+func (r *skillsShRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
+	return r.cache, nil
+}
+
+// reload re-walks the skillsShDir and replaces the in-memory cache.
+// If the directory does not exist, the cache is cleared (empty repository).
+// Individual file read/parse errors are logged as warnings and skipped.
+func (r *skillsShRepository) reload() error {
 	var cache []domain.Skill
 
-	if _, err := os.Stat(skillsShDir); os.IsNotExist(err) {
-		return &skillsShRepository{cache: cache}, nil
+	if _, err := os.Stat(r.skillsShDir); os.IsNotExist(err) {
+		r.cache = cache
+		return nil
 	}
 
-	err := filepath.Walk(skillsShDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(r.skillsShDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -97,13 +115,14 @@ func NewSkillsShRepository(skillsShDir string) (domain.SkillRepository, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("load skills from %s: %w", skillsShDir, err)
+		return fmt.Errorf("load skills from %s: %w", r.skillsShDir, err)
 	}
 
-	return &skillsShRepository{cache: cache}, nil
+	r.cache = cache
+	return nil
 }
 
-// GetAll returns all cached skill definitions.
-func (r *skillsShRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
-	return r.cache, nil
+// Refresh re-walks the underlying directory and replaces the cache.
+func (r *skillsShRepository) Refresh(ctx context.Context) error {
+	return r.reload()
 }

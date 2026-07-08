@@ -21,6 +21,10 @@ type Skill struct {
 type SkillRepository interface {
 	// GetAll returns all registered skills from the underlying storage.
 	GetAll(ctx context.Context) ([]Skill, error)
+
+	// Refresh reloads the skill cache from the underlying storage.
+	// Implementations should be safe for concurrent use.
+	Refresh(ctx context.Context) error
 }
 
 // SkillSelector defines the interface for dynamically selecting relevant
