@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -58,13 +59,13 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 				TempDir: "/safe",
 			},
 			path: "/safe/sub/file.go",
-			want: "", // skip exact match: filepath.Abs in mock may prepend drive on Windows
+			want: filepath.Clean("/safe/sub/file.go"),
 		},
 		{
 			name: "zero_value_happy_path",
 			mock: &MockSecurityProvider{},
 			path: "/tmp/test.go",
-			want: "", // skip exact match: filepath.Abs in mock may prepend drive on Windows
+			want: filepath.Clean("/tmp/test.go"),
 		},
 	}
 
@@ -91,11 +92,14 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			// On the zero_value happy path, the mock internally calls filepath.Abs
-			// which may resolve differently per platform. We check it's non-empty
-			// and, when the want is an exact absolute path, we compare directly.
-			if tt.want != "" && got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
+			if tt.want != "" {
+				if runtime.GOOS == "windows" {
+					if !filepath.IsAbs(got) {
+						t.Errorf("got %q; want absolute path", got)
+					}
+				} else if got != tt.want {
+					t.Errorf("got %q; want %q", got, tt.want)
+				}
 			}
 			if got == "" {
 				t.Error("got empty path; want non-empty absolute path")
@@ -181,7 +185,7 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 				TempDir: "/safe",
 			},
 			path: "/safe/file.go",
-			want: "", // skip exact match: filepath.Abs in mock may prepend drive on Windows
+			want: filepath.Clean("/safe/file.go"),
 		},
 	}
 
@@ -208,8 +212,14 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if tt.want != "" && got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
+			if tt.want != "" {
+				if runtime.GOOS == "windows" {
+					if !filepath.IsAbs(got) {
+						t.Errorf("got %q; want absolute path", got)
+					}
+				} else if got != tt.want {
+					t.Errorf("got %q; want %q", got, tt.want)
+				}
 			}
 			if got == "" {
 				t.Error("got empty path; want non-empty absolute path")

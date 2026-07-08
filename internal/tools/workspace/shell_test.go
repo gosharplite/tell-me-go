@@ -1155,7 +1155,7 @@ func TestWindowsShellWrapper_Wrap_PwshFound(t *testing.T) {
 	if err := os.WriteFile(pwshPath, []byte("@echo off\r\nexit /b 0\r\n"), 0755); err != nil {
 		t.Fatalf("failed to create fake pwsh: %v", err)
 	}
-	// Prepend tmpDir to PATH so exec.LookPath("pwsh") finds our fake pwsh.exe.
+	// Set tmpDir as PATH so exec.LookPath("pwsh") finds our fake pwsh.exe.
 	// Use t.Setenv alone (no os.Getenv on RHS) to avoid busting test cache.
 	t.Setenv("PATH", tmpDir)
 
