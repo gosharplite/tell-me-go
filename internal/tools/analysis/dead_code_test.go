@@ -397,17 +397,6 @@ func setupSharedWorkspaceAt(rootDir string, tests []struct {
 	return sharedModule
 }
 
-func setupSharedWorkspace(t *testing.T, tests []struct {
-	name     string
-	files    map[string]string
-	expected []OrphanReport
-}) (string, string) {
-	rootTmpDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	sharedModule := setupSharedWorkspaceAt(rootTmpDir, tests)
-	return rootTmpDir, sharedModule
-}
-
 var (
 	sharedWSTests []struct {
 		name     string
@@ -432,7 +421,7 @@ func getSharedWorkspaceIndexer(tb testing.TB) (string, string, *indexer) {
 		if err != nil {
 			tb.Fatal(err)
 		}
-		tb.Cleanup(func() { os.RemoveAll(sharedWSRoot) })
+		tb.Cleanup(func() { _ = os.RemoveAll(sharedWSRoot) })
 
 		sharedWSRoot, err = filepath.EvalSymlinks(sharedWSRoot)
 		if err != nil {
