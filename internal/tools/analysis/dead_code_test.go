@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -366,6 +367,36 @@ func getSafeName(name string) string {
 	}, name)
 }
 
+// setupSharedWorkspaceAt creates the test workspace at the given root directory.
+// Unlike setupSharedWorkspace, it does NOT create the root directory itself —
+// the caller is responsible for providing an existing directory.
+func setupSharedWorkspaceAt(rootDir string, tests []struct {
+	name     string
+	files    map[string]string
+	expected []OrphanReport
+}) string {
+	const sharedModule = "shared.test"
+	err := os.WriteFile(filepath.Join(rootDir, "go.mod"), []byte("module "+sharedModule+"\n\ngo 1.25"), 0644)
+	if err != nil {
+		panic(err) // only called from test helpers
+	}
+
+	for _, tt := range tests {
+		safeName := getSafeName(tt.name)
+		caseDir := filepath.Join(rootDir, safeName)
+
+		for path, content := range tt.files {
+			content = strings.ReplaceAll(content, "example.com/test", sharedModule+"/"+safeName)
+			fullPath := filepath.Join(caseDir, path)
+			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
+			if err != nil { panic(err) }
+			err = os.WriteFile(fullPath, []byte(content), 0644)
+			if err != nil { panic(err) }
+		}
+	}
+	return sharedModule
+}
+
 func setupSharedWorkspace(t *testing.T, tests []struct {
 	name     string
 	files    map[string]string
@@ -373,40 +404,59 @@ func setupSharedWorkspace(t *testing.T, tests []struct {
 }) (string, string) {
 	rootTmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-
-	const sharedModule = "shared.test"
-	err = os.WriteFile(filepath.Join(rootTmpDir, "go.mod"), []byte("module "+sharedModule+"\n\ngo 1.25"), 0644)
-	require.NoError(t, err)
-
-	for _, tt := range tests {
-		safeName := getSafeName(tt.name)
-		caseDir := filepath.Join(rootTmpDir, safeName)
-
-		for path, content := range tt.files {
-			// Update imports: replace "example.com/test" with "shared.test/SAFE_NAME"
-			content = strings.ReplaceAll(content, "example.com/test", sharedModule+"/"+safeName)
-
-			fullPath := filepath.Join(caseDir, path)
-			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-			require.NoError(t, err)
-			err = os.WriteFile(fullPath, []byte(content), 0644)
-			require.NoError(t, err)
-		}
-	}
+	sharedModule := setupSharedWorkspaceAt(rootTmpDir, tests)
 	return rootTmpDir, sharedModule
+}
+
+var (
+	sharedWSTests []struct {
+		name     string
+		files    map[string]string
+		expected []OrphanReport
+	}
+	sharedWSRoot    string
+	sharedWSModule  string
+	sharedWSIndexer *indexer
+	sharedWSOnce    sync.Once
+)
+
+// getSharedWorkspaceIndexer returns a pre-built workspace and indexer
+// shared across FindOrphanedSymbols and GatherOrphanReports tests.
+// The workspace is created once per test binary run via sync.Once.
+func getSharedWorkspaceIndexer(tb testing.TB) (string, string, *indexer) {
+	sharedWSOnce.Do(func() {
+		sharedWSTests = getFindOrphanedSymbolsTestCases()
+
+		var err error
+		sharedWSRoot, err = os.MkdirTemp("", "deadcode-shared-*")
+		if err != nil {
+			tb.Fatal(err)
+		}
+		tb.Cleanup(func() { os.RemoveAll(sharedWSRoot) })
+
+		sharedWSRoot, err = filepath.EvalSymlinks(sharedWSRoot)
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		sharedWSModule = setupSharedWorkspaceAt(sharedWSRoot, sharedWSTests)
+
+		sharedWSIndexer, err = newIndexer(sharedWSRoot)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if err := sharedWSIndexer.Refresh(context.Background(), nil); err != nil {
+			tb.Fatal(err)
+		}
+	})
+	return sharedWSRoot, sharedWSModule, sharedWSIndexer
 }
 
 func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 	t.Parallel()
-	tests := getFindOrphanedSymbolsTestCases()
-
-	rootTmpDir, sharedModule := setupSharedWorkspace(t, tests)
-
-	idx, err := newIndexer(rootTmpDir)
-	require.NoError(t, err)
+	rootTmpDir, sharedModule, idx := getSharedWorkspaceIndexer(t)
+	tests := sharedWSTests
 	ctx := context.Background()
-	err = idx.Refresh(ctx, nil)
-	require.NoError(t, err)
 
 	for _, tt := range tests {
 		tt := tt
@@ -895,14 +945,9 @@ func TestNewDeadCodeAnalyzerForCLI(t *testing.T) {
 
 func TestGatherOrphanReports(t *testing.T) {
 	t.Parallel()
-	tests := getFindOrphanedSymbolsTestCases()
-	rootTmpDir, sharedModule := setupSharedWorkspace(t, tests)
-
-	idx, err := newIndexer(rootTmpDir)
-	require.NoError(t, err)
+	rootTmpDir, sharedModule, idx := getSharedWorkspaceIndexer(t)
+	tests := sharedWSTests
 	ctx := context.Background()
-	err = idx.Refresh(ctx, nil)
-	require.NoError(t, err)
 
 	for _, tt := range tests {
 		tt := tt
