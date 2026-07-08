@@ -173,10 +173,10 @@ func DefaultPolicy() *Policy {
 			"list_session_settings":    true,
 
 			// Skills.sh Ecosystem Tools
-			"search_skills":  true,
-			"list_skills":    true,
-			"install_skill":  true,
-			"remove_skill":   true,
+			"search_skills": true,
+			"list_skills":   true,
+			"install_skill": true,
+			"remove_skill":  true,
 
 			// Media Tools
 			"create_image": true,

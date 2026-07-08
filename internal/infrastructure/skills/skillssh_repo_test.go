@@ -88,21 +88,21 @@ func TestNewSkillsShRepository(t *testing.T) {
 		{
 			name: "ignored non-SKILL.md files",
 			files: map[string]string{
-				"owner-repo/skills/skill-a/NOTICE.md":  "---\nname: Ignore Me\ndescription: Ignore\n---\nIgnore",
-				"owner-repo/skills/skill-b/README.md":  "not a skill",
-				"owner-repo/skills/skill-c/skill.md":   "wrong case",
-				"owner-repo/other/file.txt":            "not markdown",
-				"owner-repo/skills/skill-d/SKILL.md":   "missing frontmatter",
+				"owner-repo/skills/skill-a/NOTICE.md": "---\nname: Ignore Me\ndescription: Ignore\n---\nIgnore",
+				"owner-repo/skills/skill-b/README.md": "not a skill",
+				"owner-repo/skills/skill-c/skill.md":  "wrong case",
+				"owner-repo/other/file.txt":           "not markdown",
+				"owner-repo/skills/skill-d/SKILL.md":  "missing frontmatter",
 			},
 			wantSkills: nil,
 		},
 		{
 			name: "malformed skills skipped gracefully",
 			files: map[string]string{
-				"owner-repo/skills/no-sep/SKILL.md":   "name: No Separator\ndescription: No Separator\nContent",
-				"owner-repo/skills/no-desc/SKILL.md":  "---\nname: No Desc\n---\nContent",
-				"owner-repo/skills/partial/SKILL.md":  "---\nname: Partial\n",
-				"owner-repo/skills/no-name/SKILL.md":  "---\ndescription: Has desc but no name\n---\nContent here",
+				"owner-repo/skills/no-sep/SKILL.md":  "name: No Separator\ndescription: No Separator\nContent",
+				"owner-repo/skills/no-desc/SKILL.md": "---\nname: No Desc\n---\nContent",
+				"owner-repo/skills/partial/SKILL.md": "---\nname: Partial\n",
+				"owner-repo/skills/no-name/SKILL.md": "---\ndescription: Has desc but no name\n---\nContent here",
 			},
 			wantSkills: nil, // all skipped gracefully
 		},

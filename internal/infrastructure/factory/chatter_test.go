@@ -60,7 +60,7 @@ func (d *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger                    
 func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return d.sessionProvider }
 func (d *mockSessionDeps) GetHealthManager() ports.HealthCheckManager           { return nil }
 func (d *mockSessionDeps) GetClient() llm.LLMClient                             { return nil }
-func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository     { return nil }
+func (d *mockSessionDeps) GetSkillRepository() domain_skills.SkillRepository    { return nil }
 
 type mockGateway struct {
 	llm.LLMGateway
