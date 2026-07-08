@@ -25,6 +25,12 @@ glossary:
     gateway. Defines how prompts are sent, responses are streamed, and chat
     sessions are configured. Not an entity — it is a behavioral role with no
     persisted state, analogous to `Orchestrator` and `SecurityManager`.
+  UserInteractor: >
+    The interface through which the `SecurityManager` prompts the user for
+    confirmation (e.g. before a `Tool` accesses an unauthorized path, or before
+    executing a dangerous command). Implementations include the interactive TUI
+    capturer and a no-op variant for automated workflows. Prompt suppression is
+    controlled by `Config.bypassConfirmation`.
 
 enums:
   ProviderType:
@@ -303,6 +309,10 @@ entities:
     invariants:
       - id: config-valid-provider
         statement: "`selectedProvider` must reference a key in the PROVIDERS registry."
+      - id: bypass-suppresses-prompts
+        statement: >
+          When `Config.bypassConfirmation` is true, Confirm is never called —
+          every authorization check is silently approved.
 
   Pricing:
     definition: >
@@ -468,19 +478,6 @@ entities:
     invariants:
       - id: history-persisted-after-turn
         statement: "Every completed `Turn` is persisted before the next `Turn` begins."
-
-  UserInteractor:
-    definition: >
-      The interface through which the `SecurityManager` prompts the user for
-      confirmation (e.g. before a `Tool` accesses an unauthorized path, or
-      before executing a dangerous command). Implementations include the
-      interactive TUI capturer and a no-op variant for automated workflows.
-      Prompt suppression is controlled by `Config.bypassConfirmation`.
-    invariants:
-      - id: bypass-suppresses-prompts
-        statement: >
-          When `Config.bypassConfirmation` is true, Confirm is never called —
-          every authorization check is silently approved.
 
 scenarios:
   - name: Basic question-answer turn

@@ -10,6 +10,7 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
 - **`SecurityManager`** — The component that validates `Tool` requests against the `SafePath` registry and delegates to the `UserInteractor` when user confirmation is required.
 - **`Thought`** — A provider-agnostic reasoning block emitted by an LLM — may be a text response, a tool-call request, or (for reasoning models) a chain-of-thought segment. Normalised from provider-specific wire formats.
+- **`UserInteractor`** — The interface through which the `SecurityManager` prompts the user for confirmation (e.g. before a `Tool` accesses an unauthorized path, or before executing a dangerous command). Implementations include the interactive TUI capturer and a no-op variant for automated workflows. Prompt suppression is controlled by `Config.bypassConfirmation`.
 
 ## Enums
 
@@ -74,6 +75,8 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 **Invariants**
 
 - **config-valid-provider** — `selectedProvider` must reference a key in the PROVIDERS registry.
+- **bypass-suppresses-prompts** — When `Config.bypassConfirmation` is true, Confirm is never called — every authorization check is silently approved.
+
 
 ### `Context`
 
@@ -309,15 +312,6 @@ One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly 
 
 - **turn-belongs-to-one-session** — A `Turn` belongs to exactly one `Session`.
 
-### `UserInteractor`
-
-The interface through which the `SecurityManager` prompts the user for confirmation (e.g. before a `Tool` accesses an unauthorized path, or before executing a dangerous command). Implementations include the interactive TUI capturer and a no-op variant for automated workflows. Prompt suppression is controlled by `Config.bypassConfirmation`.
-
-**Invariants**
-
-- **bypass-suppresses-prompts** — When `Config.bypassConfirmation` is true, Confirm is never called — every authorization check is silently approved.
-
-
 ## Relationships
 
 ```mermaid
@@ -334,7 +328,6 @@ erDiagram
     Tool {}
     ToolCall {}
     Turn {}
-    UserInteractor {}
     Config ||--o{ Pricing : "owned"
     Session ||--o{ Turn : "owned"
     Session }o--|| Config : "referenced"
