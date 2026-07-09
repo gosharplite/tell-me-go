@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 
@@ -13,30 +12,114 @@ import (
 )
 
 var (
-	sharedIdx     *indexer
-	sharedIdxOnce sync.Once
+	sharedIdx        *indexer
+	sharedFixtureDir string
+	sharedIdxOnce    sync.Once
+	sharedIdxMu      sync.Mutex
 )
 
-// getFixturePath returns the absolute path to the testdata analysis fixture module.
+const fixtureMod = "example.com/analysis-fixture"
+
+var fixtureFiles = map[string]string{
+	"go.mod": "module " + fixtureMod + "\n\ngo 1.25\n",
+	"lib/interface.go": `package lib
+
+import "errors"
+
+var ErrAlwaysFails = errors.New("always fails")
+
+type Runner interface {
+	Run() error
+}
+
+type SimpleRunner struct{}
+
+func (s SimpleRunner) Run() error { return nil }
+
+type FailingRunner struct{}
+
+func (f FailingRunner) Run() error { return ErrAlwaysFails }
+`,
+	"lib/util.go": `package lib
+
+func Helper(x int) int { return x * 2 }
+
+func internalHelper(s string) string { return "processed: " + s }
+
+type Data struct{ Value string }
+
+func (d Data) Process() string { return "result: " + d.Value }
+
+type unusedType struct{ X int }
+
+func (u unusedType) DoNothing() {}
+`,
+	"cmd/tool/main.go": `package main
+
+import (
+	"fmt"
+	"example.com/analysis-fixture/lib"
+)
+
+func main() {
+	fmt.Println(lib.Helper(5))
+	var _ lib.Runner = lib.SimpleRunner{}
+}
+`,
+}
+
 func getFixturePath(tb testing.TB) string {
 	tb.Helper()
-	_, filename, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(filename), "testdata", "analysis_fixture")
+	dir := filepath.Join(tb.TempDir(), "analysis_fixture")
+	for relPath, content := range fixtureFiles {
+		fullPath := filepath.Join(dir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			tb.Fatalf("create fixture dir: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			tb.Fatalf("write fixture file: %v", err)
+		}
+	}
+	return dir
 }
 
 func getSharedIndexer(tb testing.TB) *indexer {
 	sharedIdxOnce.Do(func() {
-		dir := getFixturePath(tb)
+		sharedFixtureDir = getFixturePath(tb)
+	})
+
+	sharedIdxMu.Lock()
+	defer sharedIdxMu.Unlock()
+
+	// If fixture was deleted (e.g., by -count=2 cleanup), recreate it.
+	if sharedFixtureDir != "" {
+		if _, err := os.Stat(sharedFixtureDir); os.IsNotExist(err) {
+			sharedFixtureDir = getFixturePath(tb)
+			sharedIdx = nil
+		}
+	}
+
+	if sharedIdx == nil {
 		var err error
-		sharedIdx, err = newIndexer(dir)
+		sharedIdx, err = newIndexer(sharedFixtureDir)
 		if err != nil {
 			tb.Fatalf("failed to create shared indexer: %v", err)
 		}
 		if err := sharedIdx.Refresh(context.Background(), nil); err != nil {
 			tb.Fatalf("failed to refresh shared indexer: %v", err)
 		}
-	})
+	}
 	return sharedIdx
+}
+
+// getSharedFixtureDir returns the path to the shared analysis fixture directory.
+// The directory is created lazily via sync.Once (same as getSharedIndexer).
+func getSharedFixtureDir(tb testing.TB) string {
+	tb.Helper()
+	sharedIdxOnce.Do(func() {
+		sharedFixtureDir = getFixturePath(tb)
+	})
+	return sharedFixtureDir
 }
 
 // getRealArchitectureIndexer and findModuleRoot have been moved to
