@@ -26,92 +26,68 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// sharedWorkspace holds a lazily-initialized temp directory and indexer
+// shared across tests. The mutex guards initialization and re-creation
+// when -count=N cleanup deletes the directory.
+type sharedWorkspace struct {
+	mu  sync.Mutex
+	dir string
+	idx *indexer
+}
+
+// init lazily creates the workspace directory and indexer. Safe for
+// concurrent use; the first caller initializes, subsequent callers
+// reuse. On -count=N, if a prior cleanup deleted the directory, it
+// is recreated.
+func (ws *sharedWorkspace) init(t *testing.T, modulePath string, fixture func() map[string]string, namePrefix string) {
+	t.Helper()
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+
+	if ws.dir != "" {
+		if _, err := os.Stat(ws.dir); os.IsNotExist(err) {
+			ws.dir = ""
+			ws.idx = nil
+		}
+	}
+
+	if ws.idx == nil {
+		var err error
+		ws.dir, err = os.MkdirTemp("", namePrefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFixture(t, ws.dir, fixture())
+		ws.idx, err = newIndexer(ws.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ws.idx.knownModulePath = modulePath
+		if err := ws.idx.Refresh(context.Background(), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
-// Shared workspace for deepIdentFixture tests
+// Shared workspaces
 // ---------------------------------------------------------------------------
 
 var (
-	sharedDeepIdentDir string
-	sharedDeepIdentIdx *indexer
-	sharedDeepIdentMu  sync.Mutex
+	sharedDeepIdentWS sharedWorkspace
+	sharedDeepLimWS   sharedWorkspace
 )
 
 func getSharedDeepIdentIndexer(t *testing.T) (string, *indexer) {
 	t.Helper()
-
-	sharedDeepIdentMu.Lock()
-	defer sharedDeepIdentMu.Unlock()
-
-	if sharedDeepIdentDir != "" {
-		if _, err := os.Stat(sharedDeepIdentDir); os.IsNotExist(err) {
-			sharedDeepIdentDir = ""
-			sharedDeepIdentIdx = nil
-		}
-	}
-
-	if sharedDeepIdentIdx == nil {
-		var err error
-		sharedDeepIdentDir, err = os.MkdirTemp("", "deep-ident-shared-*")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		writeFixture(t, sharedDeepIdentDir, deepIdentFixture())
-
-		sharedDeepIdentIdx, err = newIndexer(sharedDeepIdentDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sharedDeepIdentIdx.knownModulePath = "example.com/deepident"
-		if err := sharedDeepIdentIdx.Refresh(context.Background(), nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return sharedDeepIdentDir, sharedDeepIdentIdx
+	sharedDeepIdentWS.init(t, "example.com/deepident", deepIdentFixture, "deep-ident-shared-*")
+	return sharedDeepIdentWS.dir, sharedDeepIdentWS.idx
 }
-
-// ---------------------------------------------------------------------------
-// Shared workspace for sharedMethodFixture tests
-// ---------------------------------------------------------------------------
-
-var (
-	sharedDeepLimDir string
-	sharedDeepLimIdx *indexer
-	sharedDeepLimMu  sync.Mutex
-)
 
 func getSharedDeepLimIndexer(t *testing.T) (string, *indexer) {
 	t.Helper()
-
-	sharedDeepLimMu.Lock()
-	defer sharedDeepLimMu.Unlock()
-
-	if sharedDeepLimDir != "" {
-		if _, err := os.Stat(sharedDeepLimDir); os.IsNotExist(err) {
-			sharedDeepLimDir = ""
-			sharedDeepLimIdx = nil
-		}
-	}
-
-	if sharedDeepLimIdx == nil {
-		var err error
-		sharedDeepLimDir, err = os.MkdirTemp("", "deep-lim-shared-*")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		writeFixture(t, sharedDeepLimDir, sharedMethodFixture())
-
-		sharedDeepLimIdx, err = newIndexer(sharedDeepLimDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sharedDeepLimIdx.knownModulePath = "example.com/deeplim"
-		if err := sharedDeepLimIdx.Refresh(context.Background(), nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return sharedDeepLimDir, sharedDeepLimIdx
+	sharedDeepLimWS.init(t, "example.com/deeplim", sharedMethodFixture, "deep-lim-shared-*")
+	return sharedDeepLimWS.dir, sharedDeepLimWS.idx
 }
 
 // ---------------------------------------------------------------------------
