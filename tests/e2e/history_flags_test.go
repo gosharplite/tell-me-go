@@ -57,7 +57,7 @@ func newHistoryNavEnv(t *testing.T) *historyNavEnv {
 			t.Fatalf("Failed to send prompt %q: %v", p, err)
 		}
 		forceReconcileHistory(t, histPath)
-		time.Sleep(1000 * time.Millisecond)
+		waitForHistoryStable(t, histPath, 2*time.Second)
 	}
 
 	return &historyNavEnv{
@@ -65,6 +65,27 @@ func newHistoryNavEnv(t *testing.T) *historyNavEnv {
 		configPath: configPath,
 		histPath:   histPath,
 	}
+}
+
+// waitForHistoryStable polls the history file until its size stabilizes
+// (two consecutive reads return the same size), or until timeout.
+func waitForHistoryStable(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var lastSize int64 = -1
+	for time.Now().Before(deadline) {
+		fi, err := os.Stat(path)
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if fi.Size() == lastSize {
+			return // stable (size 0 is terminal — the binary may have failed)
+		}
+		lastSize = fi.Size()
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Logf("history file %s did not stabilize within %v (final size: %d)", path, timeout, lastSize)
 }
 
 // forceReconcileHistory ensures the history file is fully flushed and visible on Windows.
@@ -119,7 +140,7 @@ func TestHistoryNavigationFlags_GoBack(t *testing.T) {
 		t.Fatalf("CLI -b 1 failed: %v\nStderr: %s", err, stderr)
 	}
 	forceReconcileHistory(t, env.histPath)
-	time.Sleep(1000 * time.Millisecond)
+	waitForHistoryStable(t, env.histPath, 2*time.Second)
 
 	stdout, stderr, err := runCommandWithEnv(env.env, "", "-c="+env.configPath, "-l", "4")
 	if err != nil {
@@ -153,7 +174,7 @@ func TestHistoryNavigationFlags_Retry(t *testing.T) {
 		t.Fatalf("CLI -b 1 (prerequisite for retry) failed: %v\nStderr: %s", err, stderr)
 	}
 	forceReconcileHistory(t, env.histPath)
-	time.Sleep(1000 * time.Millisecond)
+	waitForHistoryStable(t, env.histPath, 2*time.Second)
 
 	// Test --retry
 	stdout, stderr, err := runCommandWithEnv(env.env, "", "-c="+env.configPath, "--retry")
@@ -161,7 +182,7 @@ func TestHistoryNavigationFlags_Retry(t *testing.T) {
 		t.Fatalf("CLI --retry failed: %v\nStderr: %s", err, stderr)
 	}
 	forceReconcileHistory(t, env.histPath)
-	time.Sleep(1000 * time.Millisecond)
+	waitForHistoryStable(t, env.histPath, 2*time.Second)
 
 	out := stripANSI(stdout)
 	if !strings.Contains(out, "Response to your prompt") {
@@ -204,7 +225,7 @@ func TestHistoryOnlyExit(t *testing.T) {
 
 	_, _, _ = runCommandWithEnv(env, "", "-c="+configPath, "initial message")
 	forceReconcileHistory(t, histPath)
-	time.Sleep(500 * time.Millisecond)
+	waitForHistoryStable(t, histPath, 2*time.Second)
 
 	t.Run("ShowHistoryAndExit", func(t *testing.T) {
 		stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-l")
@@ -223,7 +244,7 @@ func TestHistoryOnlyExit(t *testing.T) {
 			t.Fatalf("CLI -b 1 failed: %v\nStderr: %s", err, stderr)
 		}
 		forceReconcileHistory(t, histPath)
-		time.Sleep(500 * time.Millisecond)
+		waitForHistoryStable(t, histPath, 2*time.Second)
 
 		if !strings.Contains(stdout, "Rolled back 1 turns") {
 			t.Error("Expected stdout to contain rollback confirmation")

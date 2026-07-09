@@ -65,12 +65,26 @@ func TestMain(m *testing.M) {
 	projectRoot = filepath.Dir(filepath.Dir(wd))
 	mainPath := filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go")
 
-	fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
-	build := exec.Command("go", "build", "-o", binPath, mainPath)
-	if out, err := build.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
-		_ = os.RemoveAll(tempDir)
-		os.Exit(1)
+	// Skip rebuild if the binary is already up-to-date (faster incremental runs).
+	needsBuild := true
+	if binInfo, err := os.Stat(binPath); err == nil {
+		if srcInfo, err := os.Stat(mainPath); err == nil {
+			if binInfo.ModTime().After(srcInfo.ModTime()) {
+				needsBuild = false
+			}
+		}
+	}
+
+	if needsBuild {
+		fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
+		build := exec.Command("go", "build", "-o", binPath, mainPath)
+		if out, err := build.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
+			_ = os.RemoveAll(tempDir)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Printf("Using cached binary: %s\n", binPath)
 	}
 
 	code := m.Run()
@@ -357,12 +371,22 @@ func TestStdinPiping(t *testing.T) {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
+	// Setup a minimal mock server so the binary does not attempt a real
+	// network connection. The test only needs to verify stdin piping logs.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
 	homeDir := t.TempDir()
-	env := []string{"TELL_ME_HOME=" + homeDir}
+	configPath := createTempConfig(t, "google", server.URL)
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL,
+	}
 
 	stdinContent := "This is from stdin"
-	// We check if the stderr shows "Input captured" which is a log in main.go
-	_, stderr, _ := runCommandWithEnv(env, stdinContent, "Prompt from arg")
+	_, stderr, _ := runCommandWithEnvInDir(homeDir, env, stdinContent, "-c", configPath, "Prompt from arg")
 
 	out := stripANSI(stderr)
 	if !strings.Contains(out, "Input captured") {
