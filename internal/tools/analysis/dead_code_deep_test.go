@@ -32,6 +32,7 @@ func runAnalyzerDeep(t *testing.T, tmpDir string) string {
 	t.Helper()
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = readModulePath(tmpDir)
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
 
@@ -193,6 +194,7 @@ func TestResolveCrossPackageMethodUsages_IdentityResolution(t *testing.T) {
 	// Build indexer and refresh so Packages() returns type-checked data.
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/deepident"
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
 
@@ -246,6 +248,7 @@ func TestResolveInPackage_IdentityResolution(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/deepident"
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
 
@@ -296,6 +299,7 @@ func TestFindMethodUsageInFile(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/deepident"
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
 

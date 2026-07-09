@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -117,9 +118,29 @@ func setupPrecisionWorkspace(t *testing.T, files map[string]string) (string, *in
 		require.NoError(t, os.WriteFile(fullPath, []byte(content), 0644))
 	}
 
+	// Extract module path from the go.mod content in files.
+	modulePath := extractModuleFromFiles(files)
+
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	if modulePath != "" {
+		idx.knownModulePath = modulePath
+	}
 	require.NoError(t, idx.Refresh(context.Background(), nil))
 
 	return tmpDir, idx
+}
+
+// extractModuleFromFiles parses a "module <path>" line from a go.mod entry
+// in the files map. Returns "" if not found.
+func extractModuleFromFiles(files map[string]string) string {
+	if modContent, ok := files["go.mod"]; ok {
+		for _, line := range strings.Split(modContent, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "module ") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			}
+		}
+	}
+	return ""
 }

@@ -466,6 +466,7 @@ func setupRealWorkspaceAnalyzer(t *testing.T, srcCode string) (*defaultSequenceA
 	if err != nil {
 		t.Fatal(err)
 	}
+	idx.knownModulePath = "example.com/test"
 
 	ctx := context.Background()
 	if err := idx.Refresh(ctx, nil); err != nil {

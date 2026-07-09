@@ -28,6 +28,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +49,22 @@ func writeFixture(t *testing.T, tmpDir string, files map[string]string) {
 	}
 }
 
+// readModulePath reads the module path from a go.mod file in tmpDir.
+// Returns "" if go.mod is missing or unreadable.
+func readModulePath(tmpDir string) string {
+	data, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
+}
+
 // runAnalyzer is the common harness: build an indexer over tmpDir, run
 // FindOrphanedSymbols, return the resulting report text. Each test then
 // asserts presence/absence of specific symbols in that text.
@@ -55,6 +72,7 @@ func runAnalyzer(t *testing.T, tmpDir string) string {
 	t.Helper()
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = readModulePath(tmpDir)
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
 

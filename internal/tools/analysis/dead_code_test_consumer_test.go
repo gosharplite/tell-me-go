@@ -82,6 +82,7 @@ func TestIndexerLoadsTestPackages(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/loadtest"
 
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
@@ -157,6 +158,7 @@ func TestDeadCodeAnalyzer_ExternalTestConsumesMethod(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/methodtest"
 
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))

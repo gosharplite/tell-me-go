@@ -434,6 +434,7 @@ func createSharedWorkspace(tb testing.TB) {
 	if err != nil {
 		tb.Fatal(err)
 	}
+	sharedWSIndexer.knownModulePath = sharedWSModule
 	if err := sharedWSIndexer.Refresh(context.Background(), nil); err != nil {
 		tb.Fatal(err)
 	}
@@ -523,6 +524,7 @@ func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/test"
 	ctx := context.Background()
 	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)
@@ -561,6 +563,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/test"
 	ctx := context.Background()
 	_ = idx.Refresh(ctx, nil) // Might fail due to syntax error, but that's fine
 
@@ -1067,6 +1070,7 @@ func TestFindOrphanedSymbols_NoPackages(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "empty.test"
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
 
@@ -1094,6 +1098,7 @@ func TestFindOrphanedSymbols_NoOrphans(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "noorphan.test"
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
 
@@ -1636,6 +1641,7 @@ func TestRunAnalysisPipeline_EmptyPathDefaultsToDot(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "empty.test"
 	require.NoError(t, idx.Refresh(context.Background(), nil))
 
 	analyzer := newDeadCodeAnalyzer(sp, idx)

@@ -104,7 +104,8 @@ type indexer struct {
 	// resolvePath resolves a filename to an absolute path. Override in tests
 	// to inject path-resolution errors without OS-specific hacks.
 	resolvePath func(string) (string, error)
-	clk         clock.Clock
+	clk             clock.Clock
+	knownModulePath string // if set, skip discoverModulePath; zero-value safe
 }
 
 // implCacheEntry bundles a sync.Once gate with its computed result.
@@ -237,7 +238,12 @@ func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 	// restricted to the test's package scope when running inside go test,
 	// which prevents architecture verification from seeing cross-package
 	// imports in other parts of the module.
-	modulePath := idx.discoverModulePath(ctx, fset)
+	var modulePath string
+	if idx.knownModulePath != "" {
+		modulePath = idx.knownModulePath
+	} else {
+		modulePath = idx.discoverModulePath(ctx, fset)
+	}
 
 	pattern := "./..."
 	if modulePath != "" {

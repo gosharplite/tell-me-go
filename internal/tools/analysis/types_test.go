@@ -96,6 +96,7 @@ type I2 interface {
 			}
 
 			idx, _ := newIndexer(tmpDir)
+			idx.knownModulePath = "example.com/test"
 			cache := newASTCache(".")
 			sp := &mockSecurityProvider{}
 			m := newTypeManager(idx, cache, sp, infra_persistence.NewOSFileSystem())
@@ -131,6 +132,7 @@ func (s S) M() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": "I"}, nil)
@@ -159,6 +161,7 @@ const C = 1
 	}
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
@@ -188,6 +191,7 @@ func F() {
 	}
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.FindUsages(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
 	if err != nil {
@@ -213,6 +217,7 @@ func MyFunc() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "MyFunc"}, nil)
 	if err != nil {
@@ -265,6 +270,7 @@ func unexported() {}
 	}
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir, "exported_only": true}, nil)
 	if err != nil {
