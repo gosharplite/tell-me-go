@@ -19,7 +19,7 @@ func TestVerifyRealArchitecture(t *testing.T) {
 
 	m := &architectureManager{
 		SP:  &mockSecurityProvider{},
-		idx: getSharedIndexer(t),
+		idx: getRealArchitectureIndexer(t),
 	}
 
 	res, err := m.VerifyArchitecture(context.Background(), nil, nil)

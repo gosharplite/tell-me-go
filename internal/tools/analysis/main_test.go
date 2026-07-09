@@ -12,6 +12,8 @@ type testMainTB struct {
 	testing.TB
 }
 
+func (testMainTB) Helper() {}
+
 func (testMainTB) Fatalf(format string, args ...any) {
 	fmt.Printf("FATAL: "+format+"\n", args...)
 	os.Exit(1)
