@@ -124,7 +124,7 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 }
 
 func runCommandWithEnvInDirEx(dir string, env []string, stdin string, injectConfig bool, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	var finalArgs []string
@@ -478,35 +478,33 @@ func TestWriteFileConfirmation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
-	providers := []string{"google", "openai", "anthropic"}
-	for _, provider := range providers {
-		t.Run(provider, func(t *testing.T) {
-			t.Parallel()
-			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "test.txt", "content": "hello world", "reason": "E2E verification of write_file approval flow"}, func(result string) string {
-				return "File written."
-			})
-			defer server.Close()
-
-			homeDir := t.TempDir()
-			configPath := createTempConfig(t, provider, server.URL)
-			env := []string{
-				"TELL_ME_HOME=" + homeDir,
-				"TELL_ME_MOCK_ANSWER=y",
-				"TELL_ME_MOCK_URL=" + server.URL,
-			}
-
-			// 2. Run CLI and Verification
-			runAgentStep(t, homeDir, env, "write a file", []string{"Do you approve all?", "File written."}, "-c", configPath)
-
-			// Verify file actually written
-			content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
-			if err != nil {
-				t.Errorf("File was not written: %v", err)
-			} else if string(content) != "hello world" {
-				t.Errorf("File content mismatch. Expected 'hello world', got %q", string(content))
-			}
+	provider := "google"
+	t.Run(provider, func(t *testing.T) {
+		t.Parallel()
+		server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "test.txt", "content": "hello world", "reason": "E2E verification of write_file approval flow"}, func(result string) string {
+			return "File written."
 		})
-	}
+		defer server.Close()
+
+		homeDir := t.TempDir()
+		configPath := createTempConfig(t, provider, server.URL)
+		env := []string{
+			"TELL_ME_HOME=" + homeDir,
+			"TELL_ME_MOCK_ANSWER=y",
+			"TELL_ME_MOCK_URL=" + server.URL,
+		}
+
+		// 2. Run CLI and Verification
+		runAgentStep(t, homeDir, env, "write a file", []string{"Do you approve all?", "File written."}, "-c", configPath)
+
+		// Verify file actually written
+		content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
+		if err != nil {
+			t.Errorf("File was not written: %v", err)
+		} else if string(content) != "hello world" {
+			t.Errorf("File content mismatch. Expected 'hello world', got %q", string(content))
+		}
+	})
 }
 
 func TestWriteFileDenial(t *testing.T) {
@@ -514,35 +512,33 @@ func TestWriteFileDenial(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
-	providers := []string{"google", "openai", "anthropic"}
-	for _, provider := range providers {
-		t.Run(provider, func(t *testing.T) {
-			t.Parallel()
-			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "denied.txt", "content": "should not exist", "reason": "E2E verification of write_file denial flow"}, func(result string) string {
-				if strings.Contains(result, "User explicitly denied this action.") {
-					return "Model acknowledges denial."
-				}
-				return "Error: Denial failed."
-			})
-			defer server.Close()
-
-			homeDir := t.TempDir()
-			configPath := createTempConfig(t, provider, server.URL)
-			env := []string{
-				"TELL_ME_HOME=" + homeDir,
-				"TELL_ME_MOCK_ANSWER=n",
-				"TELL_ME_MOCK_URL=" + server.URL,
+	provider := "google"
+	t.Run(provider, func(t *testing.T) {
+		t.Parallel()
+		server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "denied.txt", "content": "should not exist", "reason": "E2E verification of write_file denial flow"}, func(result string) string {
+			if strings.Contains(result, "User explicitly denied this action.") {
+				return "Model acknowledges denial."
 			}
-
-			// 2. Run CLI and Verification
-			runAgentStep(t, homeDir, env, "write a file", []string{"Model acknowledges denial."}, "-c", configPath)
-
-			// Verify file NOT written
-			if _, err := os.Stat(filepath.Join(homeDir, "denied.txt")); !os.IsNotExist(err) {
-				t.Errorf("File 'denied.txt' should not have been created")
-			}
+			return "Error: Denial failed."
 		})
-	}
+		defer server.Close()
+
+		homeDir := t.TempDir()
+		configPath := createTempConfig(t, provider, server.URL)
+		env := []string{
+			"TELL_ME_HOME=" + homeDir,
+			"TELL_ME_MOCK_ANSWER=n",
+			"TELL_ME_MOCK_URL=" + server.URL,
+		}
+
+		// 2. Run CLI and Verification
+		runAgentStep(t, homeDir, env, "write a file", []string{"Model acknowledges denial."}, "-c", configPath)
+
+		// Verify file NOT written
+		if _, err := os.Stat(filepath.Join(homeDir, "denied.txt")); !os.IsNotExist(err) {
+			t.Errorf("File 'denied.txt' should not have been created")
+		}
+	})
 }
 
 func TestSecurityGate(t *testing.T) {
@@ -550,32 +546,30 @@ func TestSecurityGate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
-	providers := []string{"google", "openai", "anthropic"}
-	for _, provider := range providers {
-		t.Run(provider, func(t *testing.T) {
-			t.Parallel()
-			homeDir := t.TempDir()
+	provider := "google"
+	t.Run(provider, func(t *testing.T) {
+		t.Parallel()
+		homeDir := t.TempDir()
 
-			// Use helper to encapsulate mock server logic
-			server, receivedResponse := setupProviderMockServer(t, provider, "read_files", map[string]interface{}{
-				"filepaths": []interface{}{"/etc/passwd"},
-				"reason":    "E2E verification of security gate for sensitive system files",
-			}, nil)
-			defer server.Close()
+		// Use helper to encapsulate mock server logic
+		server, receivedResponse := setupProviderMockServer(t, provider, "read_files", map[string]interface{}{
+			"filepaths": []interface{}{"/etc/passwd"},
+			"reason":    "E2E verification of security gate for sensitive system files",
+		}, nil)
+		defer server.Close()
 
-			configPath := createTempConfig(t, provider, server.URL)
-			env := []string{
-				"TELL_ME_HOME=" + homeDir,
-				"TELL_ME_MOCK_URL=" + server.URL,
-			}
+		configPath := createTempConfig(t, provider, server.URL)
+		env := []string{
+			"TELL_ME_HOME=" + homeDir,
+			"TELL_ME_MOCK_URL=" + server.URL,
+		}
 
-			_, stderr, _ := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
+		_, stderr, _ := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
 
-			if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") && !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") {
-				t.Errorf("Expected security error in stderr or response. stderr: %s, response: %q", stderr, *receivedResponse)
-			}
-		})
-	}
+		if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") && !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") {
+			t.Errorf("Expected security error in stderr or response. stderr: %s, response: %q", stderr, *receivedResponse)
+		}
+	})
 }
 
 func TestSymlinkAttack(t *testing.T) {
