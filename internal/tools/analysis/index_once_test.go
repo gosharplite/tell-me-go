@@ -33,6 +33,7 @@ func TestComputeImplementationsLazy_ErrorPath(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/test"
 
 	ctx := context.Background()
 	require.NoError(t, idx.Refresh(ctx, nil))
@@ -107,6 +108,7 @@ func TestRefresh_HarvestErrorPreservesState(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/test"
 
 	// First Refresh: populate the indexer state.
 	ctx := context.Background()

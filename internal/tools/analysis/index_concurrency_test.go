@@ -68,6 +68,7 @@ func F2() {}
 	if err != nil {
 		t.Fatal(err)
 	}
+	idx.knownModulePath = "example.com/test"
 
 	ctx := context.Background()
 

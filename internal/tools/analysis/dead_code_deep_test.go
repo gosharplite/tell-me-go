@@ -16,8 +16,9 @@ package analysis
 
 import (
 	"context"
-	"path/filepath"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,24 +26,73 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// runAnalyzerDeep is a small variant of runAnalyzer that passes deep:true.
-// It shares the same structure: build an indexer, refresh, then call
-// FindOrphanedSymbols with the deep flag enabled.
-func runAnalyzerDeep(t *testing.T, tmpDir string) string {
-	t.Helper()
-	idx, err := newIndexer(tmpDir)
-	require.NoError(t, err)
-	ctx := context.Background()
-	require.NoError(t, idx.Refresh(ctx, nil))
-
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
-	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{
-		"path": tmpDir,
-		"deep": true,
-	}, nil)
-	require.NoError(t, err)
-	return result.Text
+// sharedWorkspace holds a lazily-initialized temp directory and indexer
+// shared across tests. The mutex guards initialization and re-creation
+// when -count=N cleanup deletes the directory.
+type sharedWorkspace struct {
+	mu  sync.Mutex
+	dir string
+	idx *indexer
 }
+
+// init lazily creates the workspace directory and indexer. Safe for
+// concurrent use; the first caller initializes, subsequent callers
+// reuse. On -count=N, if a prior cleanup deleted the directory, it
+// is recreated.
+func (ws *sharedWorkspace) init(t *testing.T, modulePath string, fixture func() map[string]string, namePrefix string) {
+	t.Helper()
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+
+	if ws.dir != "" {
+		if _, err := os.Stat(ws.dir); os.IsNotExist(err) {
+			ws.dir = ""
+			ws.idx = nil
+		}
+	}
+
+	if ws.idx == nil {
+		var err error
+		ws.dir, err = os.MkdirTemp("", namePrefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFixture(t, ws.dir, fixture())
+		ws.idx, err = newIndexer(ws.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ws.idx.knownModulePath = modulePath
+		if err := ws.idx.Refresh(context.Background(), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Shared workspaces
+// ---------------------------------------------------------------------------
+
+var (
+	sharedDeepIdentWS sharedWorkspace
+	sharedDeepLimWS   sharedWorkspace
+)
+
+func getSharedDeepIdentIndexer(t *testing.T) (string, *indexer) {
+	t.Helper()
+	sharedDeepIdentWS.init(t, "example.com/deepident", deepIdentFixture, "deep-ident-shared-*")
+	return sharedDeepIdentWS.dir, sharedDeepIdentWS.idx
+}
+
+func getSharedDeepLimIndexer(t *testing.T) (string, *indexer) {
+	t.Helper()
+	sharedDeepLimWS.init(t, "example.com/deeplim", sharedMethodFixture, "deep-lim-shared-*")
+	return sharedDeepLimWS.dir, sharedDeepLimWS.idx
+}
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
 
 // sharedMethodFixture returns a map of files for a module where two different
 // types in different packages each have a same-named method "Shared".
@@ -67,6 +117,29 @@ func sharedMethodFixture() map[string]string {
 	}
 }
 
+// deepIdentFixture returns a map of files for a module where pkgB.Use()
+// calls pkgA.TypeA.Foo(). This fixture is used by the identity-resolution
+// unit test to verify that resolveCrossPackageMethodUsages correctly
+// distinguishes between same-named methods on different types.
+func deepIdentFixture() map[string]string {
+	return map[string]string{
+		"go.mod": "module example.com/deepident\n\ngo 1.25\n",
+		"pkgA/pkgA.go": "package pkgA\n\n" +
+			"type TypeA struct{}\n\n" +
+			"func (TypeA) Foo() {}\n",
+		"pkgB/pkgB.go": "package pkgB\n\n" +
+			"import \"example.com/deepident/pkgA\"\n\n" +
+			"func Use() { var a pkgA.TypeA; a.Foo() }\n",
+		"main.go": "package main\n\n" +
+			"import \"example.com/deepident/pkgB\"\n\n" +
+			"func main() { pkgB.Use() }\n",
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests: deep:true / deep:false (sharedMethodFixture)
+// ---------------------------------------------------------------------------
+
 // TestDeadCodeDeep_EliminatesFalsePositiveWarning verifies that deep:true
 // eliminates the misleading text-search warning and correctly confirms
 // that TypeA.Shared is dead, while TypeB.Shared is correctly excluded
@@ -84,11 +157,15 @@ func sharedMethodFixture() map[string]string {
 //     a live method as dead.
 func TestDeadCodeDeep_EliminatesFalsePositiveWarning(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
+	tmpDir, idx := getSharedDeepLimIndexer(t)
 
-	writeFixture(t, tmpDir, sharedMethodFixture())
-	report := runAnalyzerDeep(t, tmpDir)
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
+	result, err := analyzer.FindOrphanedSymbols(context.Background(), map[string]interface{}{
+		"path": tmpDir,
+		"deep": true,
+	}, nil)
+	require.NoError(t, err)
+	report := result.Text
 
 	// 1. TypeA.Shared must appear as DEAD.
 	assert.Contains(t, report, "(TypeA).Shared",
@@ -128,11 +205,14 @@ func TestDeadCodeDeep_EliminatesFalsePositiveWarning(t *testing.T) {
 //     into the default path (must be opt-in only).
 func TestDeadCodeDeep_PreservesWarningWhenDeepFalse(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
+	tmpDir, idx := getSharedDeepLimIndexer(t)
 
-	writeFixture(t, tmpDir, sharedMethodFixture())
-	report := runAnalyzer(t, tmpDir)
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
+	result, err := analyzer.FindOrphanedSymbols(context.Background(), map[string]interface{}{
+		"path": tmpDir,
+	}, nil)
+	require.NoError(t, err)
+	report := result.Text
 
 	// 1. TypeA.Shared must appear as DEAD.
 	assert.Contains(t, report, "(TypeA).Shared",
@@ -152,24 +232,9 @@ func TestDeadCodeDeep_PreservesWarningWhenDeepFalse(t *testing.T) {
 			"Report was:\n%s", report)
 }
 
-// deepIdentFixture returns a map of files for a module where pkgB.Use()
-// calls pkgA.TypeA.Foo(). This fixture is used by the identity-resolution
-// unit test to verify that resolveCrossPackageMethodUsages correctly
-// distinguishes between same-named methods on different types.
-func deepIdentFixture() map[string]string {
-	return map[string]string{
-		"go.mod": "module example.com/deepident\n\ngo 1.25\n",
-		"pkgA/pkgA.go": "package pkgA\n\n" +
-			"type TypeA struct{}\n\n" +
-			"func (TypeA) Foo() {}\n",
-		"pkgB/pkgB.go": "package pkgB\n\n" +
-			"import \"example.com/deepident/pkgA\"\n\n" +
-			"func Use() { var a pkgA.TypeA; a.Foo() }\n",
-		"main.go": "package main\n\n" +
-			"import \"example.com/deepident/pkgB\"\n\n" +
-			"func main() { pkgB.Use() }\n",
-	}
-}
+// ---------------------------------------------------------------------------
+// Tests: identity resolution (deepIdentFixture)
+// ---------------------------------------------------------------------------
 
 // TestResolveCrossPackageMethodUsages_IdentityResolution is a unit test of
 // resolveCrossPackageMethodUsages. It verifies that the type-aware AST walk
@@ -179,25 +244,12 @@ func deepIdentFixture() map[string]string {
 //  1. Correct identity — the call to TypeA.Foo in pkgB is found.
 //  2. Wrong type, same method name — no match (different types).
 //  3. Wrong method name — no match (no such caller).
-//
-// This is the core logic that eliminates the false-positive warning in
-// deep mode: without it, any method named "Shared" on any type would
-// trigger a warning.
 func TestResolveCrossPackageMethodUsages_IdentityResolution(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-
-	writeFixture(t, tmpDir, deepIdentFixture())
-
-	// Build indexer and refresh so Packages() returns type-checked data.
-	idx, err := newIndexer(tmpDir)
-	require.NoError(t, err)
-	ctx := context.Background()
-	require.NoError(t, idx.Refresh(ctx, nil))
+	tmpDir, idx := getSharedDeepIdentIndexer(t)
 
 	// Get type-checked packages from the indexer.
-	pkgs, err := idx.Packages(ctx, nil)
+	pkgs, err := idx.Packages(context.Background(), nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, pkgs, "indexer must return at least one package")
 
@@ -230,26 +282,11 @@ func TestResolveCrossPackageMethodUsages_IdentityResolution(t *testing.T) {
 // resolveInPackage method. It verifies that the type-aware AST walk
 // correctly resolves identifiers to their full identity within a single
 // *packages.Package.
-//
-// The test extracts the pkgB package from deepIdentFixture (which contains
-// the cross-package call `a.Foo()` where `a` is pkgA.TypeA) and calls
-// resolveInPackage directly with varying targetId values.
-//
-// This satisfies the acceptance criterion: resolveInPackage is
-// independently unit-testable with synthetic *packages.Package fixtures.
 func TestResolveInPackage_IdentityResolution(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
+	tmpDir, idx := getSharedDeepIdentIndexer(t)
 
-	writeFixture(t, tmpDir, deepIdentFixture())
-
-	idx, err := newIndexer(tmpDir)
-	require.NoError(t, err)
-	ctx := context.Background()
-	require.NoError(t, idx.Refresh(ctx, nil))
-
-	pkgs, err := idx.Packages(ctx, nil)
+	pkgs, err := idx.Packages(context.Background(), nil)
 	require.NoError(t, err)
 
 	// Find pkgB — it contains the cross-package call `a.Foo()` where
@@ -289,17 +326,9 @@ func TestResolveInPackage_IdentityResolution(t *testing.T) {
 // resolves identifiers within a single file.
 func TestFindMethodUsageInFile(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
+	tmpDir, idx := getSharedDeepIdentIndexer(t)
 
-	writeFixture(t, tmpDir, deepIdentFixture())
-
-	idx, err := newIndexer(tmpDir)
-	require.NoError(t, err)
-	ctx := context.Background()
-	require.NoError(t, idx.Refresh(ctx, nil))
-
-	pkgs, err := idx.Packages(ctx, nil)
+	pkgs, err := idx.Packages(context.Background(), nil)
 	require.NoError(t, err)
 
 	// Find pkgB — it contains the cross-package call `a.Foo()` where

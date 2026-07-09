@@ -22,6 +22,7 @@ func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
 	}
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "test"
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 

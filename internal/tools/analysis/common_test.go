@@ -105,6 +105,7 @@ func getSharedIndexer(tb testing.TB) *indexer {
 		if err != nil {
 			tb.Fatalf("failed to create shared indexer: %v", err)
 		}
+		sharedIdx.knownModulePath = fixtureMod
 		if err := sharedIdx.Refresh(context.Background(), nil); err != nil {
 			tb.Fatalf("failed to refresh shared indexer: %v", err)
 		}

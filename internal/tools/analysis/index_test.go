@@ -79,6 +79,7 @@ func setupIndexerWorkspace(t *testing.T, code string) (string, *indexer) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/test"
 
 	require.NoError(t, idx.Refresh(context.Background(), nil))
 
@@ -97,6 +98,7 @@ func (s S) M() {}
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	ctx := context.Background()
 	_ = idx.Refresh(ctx, nil)
 
@@ -127,6 +129,7 @@ type T struct{}
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	ctx := context.Background()
 	_ = idx.Refresh(ctx, nil)
 
@@ -151,6 +154,7 @@ func TestIndexer_ErrorPersistence(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte("package test\nfunc F() {}"), 0644)
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 	ctx := context.Background()
 	_ = idx.Refresh(ctx, nil)
 
@@ -368,6 +372,7 @@ func TestRefresh_HarvestPackagesError(t *testing.T) {
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = "example.com/test"
 
 	// Replace resolvePath with one that always fails
 	idx.resolvePath = func(s string) (string, error) {
