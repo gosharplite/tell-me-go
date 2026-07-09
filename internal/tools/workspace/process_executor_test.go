@@ -71,10 +71,10 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 		{
 			name: "context timeout",
 			pipedParts: [][]string{
-				{helperPath, "sleep", "2"},
+				{helperPath, "sleep", "0.2"},
 				{helperPath, "cat"},
 			},
-			timeout:          500 * time.Millisecond,
+			timeout:          100 * time.Millisecond,
 			wantErr:          true,
 			expectedExitCode: -1, // non-zero
 		},

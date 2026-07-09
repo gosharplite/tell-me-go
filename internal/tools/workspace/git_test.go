@@ -413,6 +413,7 @@ func TestRunGitCommand_HeartbeatTickerFires(t *testing.T) {
 	unblock := make(chan struct{})
 
 	m := &gitManager{
+		heartbeatInterval: 1 * time.Millisecond,
 		Exec: &mockGitExecutor{
 			handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				select {
@@ -445,7 +446,7 @@ func TestRunGitCommand_HeartbeatTickerFires(t *testing.T) {
 		close(unblock)
 	case <-done:
 		t.Fatal("runGitCommand returned before ticker fired")
-	case <-time.After(5 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for heartbeat ticker to fire")
 	}
 
