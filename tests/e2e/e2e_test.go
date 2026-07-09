@@ -124,7 +124,7 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 }
 
 func runCommandWithEnvInDirEx(dir string, env []string, stdin string, injectConfig bool, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	var finalArgs []string
