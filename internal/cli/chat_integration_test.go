@@ -44,6 +44,7 @@ func (m *integrationMockChatter) Shutdown(ctx stdctx.Context) error             
 func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	t.Setenv("TELL_ME_MODE", "")              // neutralize ambient env pollution
 	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+	t.Setenv("STORAGE_TYPE", "memory")        // avoid SQLite WAL/SHM files that prevent TempDir cleanup
 	tmpDir, cfgPath, historyPath, _ := setupChatIntegrationEnv(t)
 
 	var stdout strings.Builder
