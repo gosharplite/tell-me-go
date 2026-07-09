@@ -418,11 +418,10 @@ var (
 // Must be called while sharedWSMu is held.
 func createSharedWorkspace(tb testing.TB) {
 	var err error
-	sharedWSRoot, err = os.MkdirTemp("", "deadcode-shared-*")
-	if err != nil {
+	sharedWSRoot = filepath.Join(tb.TempDir(), "deadcode-shared-workspace")
+	if err := os.MkdirAll(sharedWSRoot, 0755); err != nil {
 		tb.Fatal(err)
 	}
-	tb.Cleanup(func() { _ = os.RemoveAll(sharedWSRoot) })
 
 	sharedWSRoot, err = filepath.EvalSymlinks(sharedWSRoot)
 	if err != nil {
