@@ -82,7 +82,7 @@ func TestTransaction_Commit(t *testing.T) {
 func TestTransaction_Rollback(t *testing.T) {
 	t.Parallel()
 	tx := newTransaction()
-	path := "test_rollback.txt"
+	path := filepath.Join(t.TempDir(), "test_rollback.txt")
 	_ = os.WriteFile(path+".tmp", []byte("temp"), 0644)
 	defer func() { _ = os.Remove(path + ".tmp") }()
 

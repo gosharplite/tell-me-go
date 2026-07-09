@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -40,12 +41,17 @@ func findModuleRoot() (string, error) {
 	}
 }
 
+// getFixturePath returns the absolute path to the testdata analysis fixture module.
+func getFixturePath(tb testing.TB) string {
+	tb.Helper()
+	_, filename, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(filename), "testdata", "analysis_fixture")
+}
+
 func getSharedIndexer(tb testing.TB) *indexer {
 	sharedIdxOnce.Do(func() {
-		dir, err := findModuleRoot()
-		if err != nil {
-			tb.Fatalf("failed to find module root for shared indexer: %v", err)
-		}
+		dir := getFixturePath(tb)
+		var err error
 		sharedIdx, err = newIndexer(dir)
 		if err != nil {
 			tb.Fatalf("failed to create shared indexer: %v", err)
@@ -55,6 +61,25 @@ func getSharedIndexer(tb testing.TB) *indexer {
 		}
 	})
 	return sharedIdx
+}
+
+// getRealArchitectureIndexer creates an indexer against the live project
+// module root. It is used only by TestVerifyRealArchitecture, which
+// explicitly validates the real project's architecture.
+func getRealArchitectureIndexer(tb testing.TB) *indexer {
+	tb.Helper()
+	dir, err := findModuleRoot()
+	if err != nil {
+		tb.Fatalf("failed to find module root for architecture indexer: %v", err)
+	}
+	idx, err := newIndexer(dir)
+	if err != nil {
+		tb.Fatalf("failed to create architecture indexer: %v", err)
+	}
+	if err := idx.Refresh(context.Background(), nil); err != nil {
+		tb.Fatalf("failed to refresh architecture indexer: %v", err)
+	}
+	return idx
 }
 
 type mockSecurityProvider struct{}
