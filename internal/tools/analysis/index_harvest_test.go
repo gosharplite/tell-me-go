@@ -359,15 +359,17 @@ func TestProcessPackage_ContextCancelled(t *testing.T) {
 	}
 
 	fset := token.NewFileSet()
-	loadMu.Lock()
-	pkgs, err := packages.Load(&packages.Config{
-		Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
-		Dir:  tmpDir,
-		Fset: fset,
-	}, ".")
-	loadMu.Unlock()
-	if err != nil {
-		t.Fatalf("packages.Load: %v", err)
+	var pkgs []*packages.Package
+	var loadErr error
+	withDirLock(tmpDir, func() {
+		pkgs, loadErr = packages.Load(&packages.Config{
+			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
+			Dir:  tmpDir,
+			Fset: fset,
+		}, ".")
+	})
+	if loadErr != nil {
+		t.Fatalf("packages.Load: %v", loadErr)
 	}
 	if len(pkgs) == 0 {
 		t.Fatal("expected at least one package")
@@ -377,8 +379,8 @@ func TestProcessPackage_ContextCancelled(t *testing.T) {
 	cancel()
 
 	idx := &indexer{resolvePath: filepath.Abs}
-	_, err = idx.processPackage(ctx, fset, pkgs[0])
-	assert.ErrorIs(t, err, context.Canceled)
+	_, processErr := idx.processPackage(ctx, fset, pkgs[0])
+	assert.ErrorIs(t, processErr, context.Canceled)
 }
 
 // EC3: processFile error propagation
@@ -419,15 +421,17 @@ func TestProcessPackage_MultipleFiles(t *testing.T) {
 	}
 
 	fset := token.NewFileSet()
-	loadMu.Lock()
-	pkgs, err := packages.Load(&packages.Config{
-		Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
-		Dir:  tmpDir,
-		Fset: fset,
-	}, ".")
-	loadMu.Unlock()
-	if err != nil {
-		t.Fatalf("packages.Load: %v", err)
+	var pkgs []*packages.Package
+	var loadErr error
+	withDirLock(tmpDir, func() {
+		pkgs, loadErr = packages.Load(&packages.Config{
+			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
+			Dir:  tmpDir,
+			Fset: fset,
+		}, ".")
+	})
+	if loadErr != nil {
+		t.Fatalf("packages.Load: %v", loadErr)
 	}
 	if len(pkgs) == 0 {
 		t.Fatal("expected at least one package")
@@ -458,15 +462,17 @@ func TestHarvestPackages(t *testing.T) {
 		}
 
 		fset := token.NewFileSet()
-		loadMu.Lock()
-		pkgs, err := packages.Load(&packages.Config{
-			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
-			Dir:  tmpDir,
-			Fset: fset,
-		}, ".")
-		loadMu.Unlock()
-		if err != nil {
-			t.Fatalf("packages.Load: %v", err)
+		var pkgs []*packages.Package
+		var loadErr error
+		withDirLock(tmpDir, func() {
+			pkgs, loadErr = packages.Load(&packages.Config{
+				Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
+				Dir:  tmpDir,
+				Fset: fset,
+			}, ".")
+		})
+		if loadErr != nil {
+			t.Fatalf("packages.Load: %v", loadErr)
 		}
 		if len(pkgs) == 0 {
 			t.Fatal("expected at least one package")
@@ -519,15 +525,17 @@ func TestHarvestPackages(t *testing.T) {
 		}
 
 		fset := token.NewFileSet()
-		loadMu.Lock()
-		pkgs, err := packages.Load(&packages.Config{
-			Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
-			Dir:  tmpDir,
-			Fset: fset,
-		}, ".")
-		loadMu.Unlock()
-		if err != nil {
-			t.Fatalf("packages.Load: %v", err)
+		var pkgs []*packages.Package
+		var loadErr error
+		withDirLock(tmpDir, func() {
+			pkgs, loadErr = packages.Load(&packages.Config{
+				Mode: packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedName,
+				Dir:  tmpDir,
+				Fset: fset,
+			}, ".")
+		})
+		if loadErr != nil {
+			t.Fatalf("packages.Load: %v", loadErr)
 		}
 		if len(pkgs) == 0 {
 			t.Fatal("expected at least one package")

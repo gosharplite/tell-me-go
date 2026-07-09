@@ -16,9 +16,25 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// loadMu serializes all packages.Load calls to prevent deadlocks on Windows
-// where concurrent go subprocess invocations contend for the build cache lock.
-var loadMu sync.Mutex
+// dirLocks provides per-directory mutual exclusion for packages.Load calls.
+// Each unique directory gets its own sync.Mutex, allowing parallel loads on
+// different directories (which have separate build caches) while serializing
+// loads on the same directory (preventing deadlocks on Windows where concurrent
+// go subprocess invocations contend for the build cache lock).
+var dirLocks sync.Map // map[string]*sync.Mutex
+
+// withDirLock executes fn while holding the mutex associated with dir.
+// The dir is normalized to an absolute path for a consistent lock key.
+func withDirLock(dir string, fn func()) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = dir // fallback: still provides the safety property
+	}
+	mu, _ := dirLocks.LoadOrStore(abs, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+	fn()
+}
 
 // location represents a position in a source file.
 type location struct {
@@ -119,8 +135,12 @@ type implCacheEntry struct {
 const refreshTTL = 5 * time.Second
 
 func newIndexer(dir string) (*indexer, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		absDir = dir // fallback
+	}
 	return &indexer{
-		dir:           dir,
+		dir:           absDir,
 		fset:          token.NewFileSet(),
 		symbolsByPath: make(map[string][]symbolLocation),
 		usagesByName:  make(map[string][]location),
@@ -267,10 +287,12 @@ func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 		// every dead_code_graph consumer.
 		Tests: true,
 	}
-	loadMu.Lock()
-	pkgs, err := packages.Load(cfg, pattern)
-	loadMu.Unlock()
-	return pkgs, err
+	var pkgs []*packages.Package
+	var loadErr error
+	withDirLock(idx.dir, func() {
+		pkgs, loadErr = packages.Load(cfg, pattern)
+	})
+	return pkgs, loadErr
 }
 
 // discoverModulePath performs a lightweight package load to discover the
@@ -282,11 +304,13 @@ func (idx *indexer) discoverModulePath(ctx context.Context, fset *token.FileSet)
 		Fset:    fset,
 		Context: ctx,
 	}
-	loadMu.Lock()
-	pkgs, err := packages.Load(cfg, ".")
-	loadMu.Unlock()
-	if err != nil || len(pkgs) == 0 {
-		log.Printf("analysis: discoverModulePath failed (dir=%s, err=%v, pkgs=%d), falling back to ./... pattern", idx.dir, err, len(pkgs))
+	var pkgs []*packages.Package
+	var loadErr error
+	withDirLock(idx.dir, func() {
+		pkgs, loadErr = packages.Load(cfg, ".")
+	})
+	if loadErr != nil || len(pkgs) == 0 {
+		log.Printf("analysis: discoverModulePath failed (dir=%s, err=%v, pkgs=%d), falling back to ./... pattern", idx.dir, loadErr, len(pkgs))
 		return ""
 	}
 	for _, pkg := range pkgs {
