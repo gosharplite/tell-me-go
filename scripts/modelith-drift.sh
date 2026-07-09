@@ -65,7 +65,7 @@ new_consts=$(git diff "$BASE" -- $changed \
   | sed 's/^+[[:space:]]*//;s/ =.*//' \
   | sort -u || true)
 
-new_exports=$(printf '%s\n%s' "$new_exports" "$new_consts" | sort -u | grep -v '^$')
+new_exports=$(printf '%s\n%s' "$new_exports" "$new_consts" | sort -u | grep -v '^$' || true)
 
 # ── 3. Cross-reference ─────────────────────────────────────────────────────
 
