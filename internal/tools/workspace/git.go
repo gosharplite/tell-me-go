@@ -14,8 +14,9 @@ import (
 )
 
 type gitManager struct {
-	sm   gitSecurity
-	Exec tools.CommandExecutor
+	sm                gitSecurity
+	Exec              tools.CommandExecutor
+	heartbeatInterval time.Duration // zero means default (2s)
 }
 
 func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -159,7 +160,11 @@ func (m *gitManager) runGitCommand(ctx context.Context, hb chan<- struct{}, args
 	// Heartbeat while git is running
 	done := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		interval := m.heartbeatInterval
+		if interval <= 0 {
+			interval = 2 * time.Second
+		}
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {

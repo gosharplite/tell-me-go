@@ -27,23 +27,22 @@ import (
 var binPath string
 var projectRoot string
 
-func TestMain(m *testing.M) {
-	// testing.Short() panics in TestMain if flag.Parse() hasn't run yet.
-	// Check os.Args directly to decide whether to skip the binary build.
-	shortMode := false
+// isShortMode checks os.Args directly for -test.short because
+// testing.Short() panics in TestMain before flag.Parse() has run.
+func isShortMode() bool {
 	for _, a := range os.Args {
 		if a == "-test.short" || a == "-test.short=true" {
-			shortMode = true
-			break
+			return true
 		}
 	}
-	if shortMode {
-		// In-process tests don't need the compiled binary.
-		code := m.Run()
-		os.Exit(code)
-	}
+	return false
+}
 
-	// Build the binary once for all E2E tests
+// buildE2EBinary compiles cmd/tell-me-go into tempDir. It skips the build
+// if the existing binary is newer than main.go (incremental-run optimization).
+// On success it sets the package-level binPath and projectRoot variables.
+// On failure it prints to stderr and calls os.Exit(1).
+func buildE2EBinary() {
 	tempDir, err := os.MkdirTemp("", "tell-me-go-e2e")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
@@ -55,7 +54,6 @@ func TestMain(m *testing.M) {
 		binPath += ".exe"
 	}
 
-	// Get absolute path to project root
 	wd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
@@ -65,16 +63,38 @@ func TestMain(m *testing.M) {
 	projectRoot = filepath.Dir(filepath.Dir(wd))
 	mainPath := filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go")
 
-	fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
-	build := exec.Command("go", "build", "-o", binPath, mainPath)
-	if out, err := build.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
-		_ = os.RemoveAll(tempDir)
-		os.Exit(1)
+	needsBuild := true
+	if binInfo, err := os.Stat(binPath); err == nil {
+		if srcInfo, err := os.Stat(mainPath); err == nil {
+			if binInfo.ModTime().After(srcInfo.ModTime()) {
+				needsBuild = false
+			}
+		}
 	}
 
+	if needsBuild {
+		fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
+		build := exec.Command("go", "build", "-o", binPath, mainPath)
+		if out, err := build.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
+			_ = os.RemoveAll(tempDir)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Printf("Using cached binary: %s\n", binPath)
+	}
+}
+
+func TestMain(m *testing.M) {
+	if isShortMode() {
+		code := m.Run()
+		os.Exit(code)
+	}
+
+	buildE2EBinary()
+
 	code := m.Run()
-	_ = os.RemoveAll(tempDir)
+	_ = os.RemoveAll(filepath.Dir(binPath))
 	os.Exit(code)
 }
 
@@ -357,12 +377,22 @@ func TestStdinPiping(t *testing.T) {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
+	// Setup a minimal mock server so the binary does not attempt a real
+	// network connection. The test only needs to verify stdin piping logs.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
 	homeDir := t.TempDir()
-	env := []string{"TELL_ME_HOME=" + homeDir}
+	configPath := createTempConfig(t, "google", server.URL)
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL,
+	}
 
 	stdinContent := "This is from stdin"
-	// We check if the stderr shows "Input captured" which is a log in main.go
-	_, stderr, _ := runCommandWithEnv(env, stdinContent, "Prompt from arg")
+	_, stderr, _ := runCommandWithEnvInDir(homeDir, env, stdinContent, "-c", configPath, "Prompt from arg")
 
 	out := stripANSI(stderr)
 	if !strings.Contains(out, "Input captured") {

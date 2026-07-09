@@ -115,6 +115,7 @@ func TestNolintDeadcode_SingleLineComment(t *testing.T) {
 
 	idx, err := newIndexer(rootTmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = sharedModule
 	ctx := context.Background()
 	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)
@@ -140,6 +141,7 @@ func TestNolintDeadcode_BlockComment(t *testing.T) {
 
 	idx, err := newIndexer(rootTmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = sharedModule
 	ctx := context.Background()
 	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)
@@ -165,6 +167,7 @@ func TestNolintDeadcode_NoComment(t *testing.T) {
 
 	idx, err := newIndexer(rootTmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = sharedModule
 	ctx := context.Background()
 	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)
@@ -191,6 +194,7 @@ func TestNolintDeadcode_WrongComment(t *testing.T) {
 
 	idx, err := newIndexer(rootTmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = sharedModule
 	ctx := context.Background()
 	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)
@@ -217,6 +221,7 @@ func TestNolintDeadcode_Method(t *testing.T) {
 
 	idx, err := newIndexer(rootTmpDir)
 	require.NoError(t, err)
+	idx.knownModulePath = sharedModule
 	ctx := context.Background()
 	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)

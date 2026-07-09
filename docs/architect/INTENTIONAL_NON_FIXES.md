@@ -182,6 +182,24 @@ Any AI agent recommending these should consult the rationale below.
   as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
 - **See**: `internal/domain/config/config.go:183-185`
 
+### agent/agenttest/helpers.go — 0% coverage on interface-satisfying stubs (15 methods)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The following methods on test doubles in `agenttest/helpers.go`
+  are no-op stubs that exist solely to satisfy interface contracts for tests.
+  They are intentionally empty (or return zero values) and are never called
+  with real logic paths — only as compile-time interface satisfaction:
+  `RenderResponse`, `LogTurnStatus`, `LogSystemMessage`, `LogUsage`,
+  `LogToolCall`, `LogToolResult`, `RenderHealthReport`, `SetUseColor`,
+  `SetForceSpinner`, `Render`, `GetSkillRepository`, `Subscribe`,
+  `WaitStarted`, `Warn`, `Prompt`.
+  Testing a mock's no-op method would test the mock itself, not production
+  behavior — same acceptance class as `mockFileSystem.Chmod` and
+  `domainFS.Chmod` already documented below.
+  The `agenttest/` package is already excluded from coverage metrics by the
+  Makefile `test-coverage` target.
+- **See**: `internal/agent/agenttest/helpers.go`
+
 ---
 
 ## Structural Concerns (ACCEPTED)
@@ -391,4 +409,4 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-07 (skills.sh triage)*
+*Last Updated: 2026-07 (skills.sh triage + agenttest stubs)*

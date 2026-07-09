@@ -21,6 +21,7 @@ func TestIndexer_Refresh_ContextCancel(t *testing.T) {
 	}
 
 	idx, _ := newIndexer(tmpDir)
+	idx.knownModulePath = "example.com/test"
 
 	// Use a context that cancels very quickly
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
