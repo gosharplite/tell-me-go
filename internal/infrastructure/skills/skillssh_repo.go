@@ -75,54 +75,7 @@ func (r *skillsShRepository) reload() error {
 		return nil
 	}
 
-	err := filepath.Walk(r.skillsShDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		// Only process files named exactly SKILL.md (skills.sh format).
-		// This implicitly skips NOTICE.md and any other files.
-		if info.Name() != "SKILL.md" {
-			return nil
-		}
-
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			slog.Warn("failed to read skill file, skipping",
-				"path", path,
-				"error", readErr)
-			return nil // degrade gracefully
-		}
-
-		skill, parseErr := parseSkill(data)
-		if parseErr != nil {
-			slog.Warn("failed to parse skill file, skipping",
-				"path", path,
-				"error", parseErr)
-			return nil // degrade gracefully
-		}
-		if skill == nil {
-			return nil // skip non-skill files silently
-		}
-
-		// Tag as skills.sh source before caching
-		skill.Source = "skills.sh"
-
-		if hasSkillName(cache, skill.Name) {
-			slog.Warn("duplicate skill name detected, skipping",
-				"name", skill.Name,
-				"path", path)
-			return nil
-		}
-
-		cache = append(cache, *skill)
-		return nil
-	})
-
+	err := filepath.Walk(r.skillsShDir, r.collectSkillFile(&cache))
 	if err != nil {
 		return fmt.Errorf("load skills from %s: %w", r.skillsShDir, err)
 	}
@@ -131,6 +84,61 @@ func (r *skillsShRepository) reload() error {
 	r.cache = cache
 	r.mu.Unlock()
 	return nil
+}
+
+// collectSkillFile returns a filepath.WalkFunc that loads a SKILL.md file
+// into the provided cache slice. Read/parse errors are logged at Warn level
+// and skipped (graceful degradation). Non-SKILL.md files and directories
+// are silently ignored.
+func (r *skillsShRepository) collectSkillFile(cache *[]domain.Skill) filepath.WalkFunc {
+	return func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || info.Name() != "SKILL.md" {
+			return nil
+		}
+
+		skill, ok := r.tryLoadSkill(path)
+		if !ok {
+			return nil
+		}
+
+		skill.Source = "skills.sh"
+
+		if hasSkillName(*cache, skill.Name) {
+			slog.Warn("duplicate skill name detected, skipping",
+				"name", skill.Name,
+				"path", path)
+			return nil
+		}
+
+		*cache = append(*cache, *skill)
+		return nil
+	}
+}
+
+// tryLoadSkill reads and parses a SKILL.md file at path. It returns
+// (nil, false) on any error; the error is logged at Warn level.
+// Returns (nil, false) when parseSkill returns nil (non-skill file).
+func (r *skillsShRepository) tryLoadSkill(path string) (*domain.Skill, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		slog.Warn("failed to read skill file, skipping",
+			"path", path,
+			"error", err)
+		return nil, false
+	}
+
+	skill, err := parseSkill(data)
+	if err != nil {
+		slog.Warn("failed to parse skill file, skipping",
+			"path", path,
+			"error", err)
+		return nil, false
+	}
+
+	return skill, skill != nil
 }
 
 // Refresh re-walks the underlying directory and replaces the cache.

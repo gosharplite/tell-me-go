@@ -54,8 +54,20 @@ func ClassifyLLMError(err error) LLMError {
 	if err == nil {
 		return -1
 	}
+	if cat := classifySentinel(err); cat != -1 {
+		return cat
+	}
+	if isTimeoutError(err) {
+		return LLMErrorTimeout
+	}
+	return LLMErrorServerError
+}
 
-	// Specific sentinels first
+// classifySentinel checks the error chain against the known sentinel values
+// (rate limit, authentication failure, context overflow). Returns -1 if
+// no sentinel matches, signalling that ClassifyLLMError should fall through
+// to broader categories.
+func classifySentinel(err error) LLMError {
 	if errors.Is(err, ErrRateLimit) {
 		return LLMErrorRateLimited
 	}
@@ -65,21 +77,15 @@ func ClassifyLLMError(err error) LLMError {
 	if errors.Is(err, ErrContextLimitExceeded) || errors.Is(err, errBudgetExceeded) {
 		return LLMErrorContextOverflow
 	}
+	return -1
+}
 
-	// Timeout: context deadline or net.Error timeout
+// isTimeoutError reports whether err is a context deadline exceeded error
+// or a net.Error whose Timeout() method returns true.
+func isTimeoutError(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return LLMErrorTimeout
+		return true
 	}
 	var timeout interface{ Timeout() bool }
-	if errors.As(err, &timeout) && timeout.Timeout() {
-		return LLMErrorTimeout
-	}
-
-	// Transient (server errors, 5xx, gRPC Unavailable, etc.)
-	if errors.Is(err, ErrTransient) {
-		return LLMErrorServerError
-	}
-
-	// Default: classify as server error (retryable by default)
-	return LLMErrorServerError
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
