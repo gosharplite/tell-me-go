@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,29 +16,6 @@ var (
 	sharedIdx     *indexer
 	sharedIdxOnce sync.Once
 )
-
-// findModuleRoot walks up from the current working directory until it finds
-// a go.mod file, returning the absolute path to the module root.
-func findModuleRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("go.mod not found in any parent directory")
-		}
-		dir = parent
-	}
-}
 
 // getFixturePath returns the absolute path to the testdata analysis fixture module.
 func getFixturePath(tb testing.TB) string {
@@ -63,24 +39,8 @@ func getSharedIndexer(tb testing.TB) *indexer {
 	return sharedIdx
 }
 
-// getRealArchitectureIndexer creates an indexer against the live project
-// module root. It is used only by TestVerifyRealArchitecture, which
-// explicitly validates the real project's architecture.
-func getRealArchitectureIndexer(tb testing.TB) *indexer {
-	tb.Helper()
-	dir, err := findModuleRoot()
-	if err != nil {
-		tb.Fatalf("failed to find module root for architecture indexer: %v", err)
-	}
-	idx, err := newIndexer(dir)
-	if err != nil {
-		tb.Fatalf("failed to create architecture indexer: %v", err)
-	}
-	if err := idx.Refresh(context.Background(), nil); err != nil {
-		tb.Fatalf("failed to refresh architecture indexer: %v", err)
-	}
-	return idx
-}
+// getRealArchitectureIndexer and findModuleRoot have been moved to
+// real_architecture_test.go, which is behind //go:build arch.
 
 type mockSecurityProvider struct{}
 
