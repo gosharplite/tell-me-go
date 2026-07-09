@@ -27,23 +27,22 @@ import (
 var binPath string
 var projectRoot string
 
-func TestMain(m *testing.M) {
-	// testing.Short() panics in TestMain if flag.Parse() hasn't run yet.
-	// Check os.Args directly to decide whether to skip the binary build.
-	shortMode := false
+// isShortMode checks os.Args directly for -test.short because
+// testing.Short() panics in TestMain before flag.Parse() has run.
+func isShortMode() bool {
 	for _, a := range os.Args {
 		if a == "-test.short" || a == "-test.short=true" {
-			shortMode = true
-			break
+			return true
 		}
 	}
-	if shortMode {
-		// In-process tests don't need the compiled binary.
-		code := m.Run()
-		os.Exit(code)
-	}
+	return false
+}
 
-	// Build the binary once for all E2E tests
+// buildE2EBinary compiles cmd/tell-me-go into tempDir. It skips the build
+// if the existing binary is newer than main.go (incremental-run optimization).
+// On success it sets the package-level binPath and projectRoot variables.
+// On failure it prints to stderr and calls os.Exit(1).
+func buildE2EBinary() {
 	tempDir, err := os.MkdirTemp("", "tell-me-go-e2e")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
@@ -55,7 +54,6 @@ func TestMain(m *testing.M) {
 		binPath += ".exe"
 	}
 
-	// Get absolute path to project root
 	wd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
@@ -65,7 +63,6 @@ func TestMain(m *testing.M) {
 	projectRoot = filepath.Dir(filepath.Dir(wd))
 	mainPath := filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go")
 
-	// Skip rebuild if the binary is already up-to-date (faster incremental runs).
 	needsBuild := true
 	if binInfo, err := os.Stat(binPath); err == nil {
 		if srcInfo, err := os.Stat(mainPath); err == nil {
@@ -86,9 +83,18 @@ func TestMain(m *testing.M) {
 	} else {
 		fmt.Printf("Using cached binary: %s\n", binPath)
 	}
+}
+
+func TestMain(m *testing.M) {
+	if isShortMode() {
+		code := m.Run()
+		os.Exit(code)
+	}
+
+	buildE2EBinary()
 
 	code := m.Run()
-	_ = os.RemoveAll(tempDir)
+	_ = os.RemoveAll(filepath.Dir(binPath))
 	os.Exit(code)
 }
 
