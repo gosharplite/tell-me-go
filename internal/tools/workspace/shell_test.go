@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -633,14 +634,15 @@ func TestShellTool_StartHeartbeat_TickFires(t *testing.T) {
 	sm.SetBypassActive(true)
 	validator := &toolstest.MockCommandValidator{}
 	tool := newTestShellTool(sm, validator)
+	tool.heartbeatInterval = 1 * time.Millisecond
 	ctx := context.Background()
 
 	hb := make(chan struct{}, 1)
 	helperSlash := filepath.ToSlash(helperPath)
 
-	// Sleep long enough for the 2-second heartbeat ticker to fire at least once
+	// Sleep just long enough for the 1ms heartbeat ticker to fire at least once
 	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
-		"command": fmt.Sprintf("%s sleep 3", helperSlash),
+		"command": fmt.Sprintf("%s sleep 0.05", helperSlash),
 		"reason":  "test heartbeat tick fires",
 		"timeout": 10,
 	}, hb)
@@ -869,9 +871,9 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 	helperSlash := filepath.ToSlash(helperPath)
 
 	t.Run("ExecuteCommand timeout enforcement", func(t *testing.T) {
-		// Sleep for 2 seconds with a 1 second timeout
+		// Sleep for 1.1 seconds with a 1 second timeout
 		args := map[string]interface{}{
-			"command": fmt.Sprintf("%s sleep 2", helperSlash),
+			"command": fmt.Sprintf("%s sleep 1.1", helperSlash),
 			"reason":  "testing timeout enforcement",
 			"timeout": 1,
 		}
@@ -885,9 +887,9 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 	})
 
 	t.Run("PipeCommands timeout enforcement", func(t *testing.T) {
-		// Sleep for 2 seconds with a 1 second timeout
+		// Sleep for 1.1 seconds with a 1 second timeout
 		args := map[string]interface{}{
-			"commands": []interface{}{fmt.Sprintf("%s sleep 2", helperSlash), fmt.Sprintf("%s echo done", helperSlash)},
+			"commands": []interface{}{fmt.Sprintf("%s sleep 1.1", helperSlash), fmt.Sprintf("%s echo done", helperSlash)},
 			"reason":   "testing pipe timeout enforcement",
 			"timeout":  1,
 		}

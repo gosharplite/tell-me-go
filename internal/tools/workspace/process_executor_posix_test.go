@@ -13,12 +13,12 @@ import (
 
 func TestTimeoutKillsProcessTree(t *testing.T) {
 	e := newprocessExecutor()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
-	_, _ = e.RunCommand(ctx, []string{"sh", "-c", "echo started; sleep 6 & wait"}, executionConfig{})
-	if elapsed := time.Since(start); elapsed > 3*time.Second {
-		t.Errorf("RunCommand blocked %v past the 1s deadline (orphaned grandchild held the pipe)", elapsed)
+	_, _ = e.RunCommand(ctx, []string{"sh", "-c", "echo started; sleep 2 & wait"}, executionConfig{})
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("RunCommand blocked %v past the 100ms deadline (orphaned grandchild held the pipe)", elapsed)
 	}
 }

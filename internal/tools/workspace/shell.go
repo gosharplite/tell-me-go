@@ -191,12 +191,13 @@ func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []stri
 }
 
 type shellTool struct {
-	sm         shellSecurity
-	validator  domain_security.CommandValidator
-	executor   *processExecutor
-	translator commandTranslator
-	wrapper    shellWrapper
-	maxOutput  int
+	sm                shellSecurity
+	validator         domain_security.CommandValidator
+	executor          *processExecutor
+	translator        commandTranslator
+	wrapper           shellWrapper
+	maxOutput         int
+	heartbeatInterval time.Duration // zero means default (2s)
 }
 
 func newshellTool(sm shellSecurity, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper) *shellTool {
@@ -557,7 +558,11 @@ func (t *shellTool) prepareCommand(command string) ([]string, error) {
 func (t *shellTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 	done := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		interval := t.heartbeatInterval
+		if interval <= 0 {
+			interval = 2 * time.Second
+		}
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
