@@ -122,7 +122,7 @@ type indexer struct {
 	testComputeImplementationsHook func()     // Test hook: nil in production (ADR-032)
 	// resolvePath resolves a filename to an absolute path. Override in tests
 	// to inject path-resolution errors without OS-specific hacks.
-	resolvePath func(string) (string, error)
+	resolvePath     func(string) (string, error)
 	clk             clock.Clock
 	knownModulePath string // if set, skip discoverModulePath; zero-value safe
 }
