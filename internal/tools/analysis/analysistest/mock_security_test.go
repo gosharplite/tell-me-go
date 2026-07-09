@@ -82,33 +82,10 @@ func TestMockSecurityProvider_IsPathSafe(t *testing.T) {
 			got, err := tt.mock.IsPathSafe(tt.path)
 
 			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
-				}
-				if err.Error() != tt.wantErr {
-					t.Errorf("got error %q; want %q", err.Error(), tt.wantErr)
-				}
-				if got != "" {
-					t.Errorf("got path %q; want empty string on error", got)
-				}
+				assertIsPathSafeError(t, got, err, tt.wantErr)
 				return
 			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.want != "" {
-				if runtime.GOOS == "windows" {
-					if !filepath.IsAbs(got) {
-						t.Errorf("got %q; want absolute path", got)
-					}
-				} else if got != tt.want {
-					t.Errorf("got %q; want %q", got, tt.want)
-				}
-			}
-			if got == "" {
-				t.Error("got empty path; want non-empty absolute path")
-			}
+			assertIsPathSafeSuccess(t, got, err, tt.want)
 		})
 	}
 }
@@ -203,33 +180,10 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 			got, err := tt.mock.IsPathWritable(tt.path)
 
 			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
-				}
-				if err.Error() != tt.wantErr {
-					t.Errorf("got error %q; want %q", err.Error(), tt.wantErr)
-				}
-				if got != "" {
-					t.Errorf("got path %q; want empty string on error", got)
-				}
+				assertIsPathSafeError(t, got, err, tt.wantErr)
 				return
 			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.want != "" {
-				if runtime.GOOS == "windows" {
-					if !filepath.IsAbs(got) {
-						t.Errorf("got %q; want absolute path", got)
-					}
-				} else if got != tt.want {
-					t.Errorf("got %q; want %q", got, tt.want)
-				}
-			}
-			if got == "" {
-				t.Error("got empty path; want non-empty absolute path")
-			}
+			assertIsPathSafeSuccess(t, got, err, tt.want)
 		})
 	}
 }
@@ -325,4 +279,42 @@ func TestMockSecurityProvider_Noops(t *testing.T) {
 		t.Parallel()
 		mock.LogAudit("test", "arg1", "arg2") // must not panic
 	})
+}
+
+// assertIsPathSafeError validates that IsPathSafe / IsPathWritable returned
+// the expected error. It checks that err is non-nil with the exact message,
+// and that the returned path is empty.
+func assertIsPathSafeError(t *testing.T, got string, err error, wantErr string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected error containing %q, got nil", wantErr)
+	}
+	if err.Error() != wantErr {
+		t.Errorf("got error %q; want %q", err.Error(), wantErr)
+	}
+	if got != "" {
+		t.Errorf("got path %q; want empty string on error", got)
+	}
+}
+
+// assertIsPathSafeSuccess validates that IsPathSafe / IsPathWritable returned
+// a non-empty absolute path with no error. On non-Windows platforms it also
+// checks that the path matches want exactly.
+func assertIsPathSafeSuccess(t *testing.T, got string, err error, want string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want != "" {
+		if runtime.GOOS == "windows" {
+			if !filepath.IsAbs(got) {
+				t.Errorf("got %q; want absolute path", got)
+			}
+		} else if got != want {
+			t.Errorf("got %q; want %q", got, want)
+		}
+	}
+	if got == "" {
+		t.Error("got empty path; want non-empty absolute path")
+	}
 }

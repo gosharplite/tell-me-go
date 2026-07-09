@@ -304,17 +304,39 @@ func (v *commandValidator) isSafeGoTestPipe(command string) bool {
 	if err != nil {
 		return false
 	}
+	if !allPipesInRunOrBenchFlags(parts) {
+		return false
+	}
+	return !hasDoublePipe(command) && rawPipesAllQuoted(command)
+}
+
+// allPipesInRunOrBenchFlags reports whether every '|' token in parts
+// appears inside a -run= or -bench= flag value. A bare '|' outside
+// those flag positions is a shell pipe operator and must be rejected.
+func allPipesInRunOrBenchFlags(parts []string) bool {
 	for i, part := range parts {
 		if !strings.Contains(part, "|") {
 			continue
 		}
-		isRunOrBenchFlag := strings.HasPrefix(part, "-run=") || strings.HasPrefix(part, "-bench=")
-		isFollowingFlag := i > 0 && (parts[i-1] == "-run" || parts[i-1] == "-bench")
-		if !isRunOrBenchFlag && !isFollowingFlag {
+		if !isRunOrBenchFlag(part, i, parts) {
 			return false
 		}
 	}
-	return !strings.Contains(command, "||") && rawPipesAllQuoted(command)
+	return true
+}
+
+// isRunOrBenchFlag reports whether the token at parts[i] is a -run=, -bench=,
+// or follows a separate -run / -bench flag.
+func isRunOrBenchFlag(part string, i int, parts []string) bool {
+	if strings.HasPrefix(part, "-run=") || strings.HasPrefix(part, "-bench=") {
+		return true
+	}
+	return i > 0 && (parts[i-1] == "-run" || parts[i-1] == "-bench")
+}
+
+// hasDoublePipe reports whether command contains "||" (shell OR operator).
+func hasDoublePipe(command string) bool {
+	return strings.Contains(command, "||")
 }
 
 func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {

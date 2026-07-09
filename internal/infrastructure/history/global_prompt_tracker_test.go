@@ -407,10 +407,10 @@ func TestCopyFile(t *testing.T) {
 		t.Error("expected error for non-existent source, got nil")
 	}
 
-	// Test invalid destination (empty path)
-	err = copyFile(ctx, fs, src, "")
+	// Test invalid destination (directory instead of file)
+	err = copyFile(ctx, fs, src, tmpDir)
 	if err == nil {
-		t.Error("expected error for invalid destination, got nil")
+		t.Error("expected error for directory destination, got nil")
 	}
 }
 

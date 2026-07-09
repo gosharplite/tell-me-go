@@ -582,19 +582,22 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 			setAtlassianEnv: true,
 		},
 		{
-			name:          "media wraps error",
-			failAfter:     25,
-			wantSubstring: "media",
+			name:            "media wraps error",
+			failAfter:       25,
+			wantSubstring:   "media",
+			setAtlassianEnv: true,
 		},
 		{
-			name:          "network wraps error",
-			failAfter:     27,
-			wantSubstring: "network",
+			name:            "network wraps error",
+			failAfter:       27,
+			wantSubstring:   "network",
+			setAtlassianEnv: true,
 		},
 		{
-			name:          "teams wraps error",
-			failAfter:     29,
-			wantSubstring: "teams",
+			name:            "teams wraps error",
+			failAfter:       29,
+			wantSubstring:   "teams",
+			setAtlassianEnv: true,
 		},
 	}
 

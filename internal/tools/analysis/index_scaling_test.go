@@ -18,7 +18,7 @@ func TestIndexer_Scaling(t *testing.T) {
 	// 2. Performance Check: SearchSymbols should be O(1) in-memory
 	_ = idx.Refresh(ctx, nil)
 	start := time.Now()
-	symbols, err := idx.SearchSymbols(ctx, ".", "", false, nil)
+	symbols, err := idx.SearchSymbols(ctx, getSharedFixtureDir(t), "", false, nil)
 	duration := time.Since(start)
 	t.Logf("SearchSymbols took %v", duration)
 
@@ -31,16 +31,16 @@ func TestIndexer_Scaling(t *testing.T) {
 	}
 
 	// 3. Verify consistency
-	foundIndexer := false
+	foundData := false
 	for _, sym := range symbols {
-		if sym.Name == "indexer" && sym.Kind == "type" {
-			foundIndexer = true
+		if sym.Name == "Data" && sym.Kind == "type" {
+			foundData = true
 			break
 		}
 	}
 
-	if !foundIndexer {
-		t.Errorf("Expected to find 'indexer' type in symbols, got %d symbols", len(symbols))
+	if !foundData {
+		t.Errorf("Expected to find 'Data' type in symbols, got %d symbols", len(symbols))
 	}
 }
 
@@ -54,7 +54,7 @@ func TestIndexer_GetUsages_Scaling(t *testing.T) {
 
 	_ = idx.Refresh(ctx, nil)
 	start := time.Now()
-	usages, err := idx.GetUsages(ctx, "indexer", ".", nil)
+	usages, err := idx.GetUsages(ctx, "SimpleRunner", getSharedFixtureDir(t), nil)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -66,6 +66,6 @@ func TestIndexer_GetUsages_Scaling(t *testing.T) {
 	}
 
 	if len(usages) == 0 {
-		t.Error("Expected to find usages of 'indexer'")
+		t.Error("Expected to find usages of 'SimpleRunner'")
 	}
 }

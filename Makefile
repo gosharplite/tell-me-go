@@ -392,11 +392,11 @@ endif
 
 verify-architecture:
 ifeq ($(IS_POSIX),true)
-	@go test -run TestVerifyRealArchitecture ./internal/tools/analysis -strict-arch=true
+	@go test -tags=arch -run TestVerifyRealArchitecture ./internal/tools/analysis -args -strict-arch=true
 	@echo "=== modelith-layers ==="
 	@$(MAKE) modelith-layers
 else
-	@go test -run TestVerifyRealArchitecture ./internal/tools/analysis -strict-arch=true
+	@go test -tags=arch -run TestVerifyRealArchitecture ./internal/tools/analysis -args -strict-arch=true
 	@echo "=== modelith-layers ==="
 	@$(MAKE) modelith-layers
 endif
