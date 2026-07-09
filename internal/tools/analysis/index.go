@@ -30,9 +30,12 @@ func withDirLock(dir string, fn func()) {
 	if err != nil {
 		abs = dir // fallback: still provides the safety property
 	}
-	mu, _ := dirLocks.LoadOrStore(abs, &sync.Mutex{})
-	mu.(*sync.Mutex).Lock()
-	defer mu.(*sync.Mutex).Unlock()
+	v, ok := dirLocks.Load(abs)
+	if !ok {
+		v, _ = dirLocks.LoadOrStore(abs, &sync.Mutex{})
+	}
+	v.(*sync.Mutex).Lock()
+	defer v.(*sync.Mutex).Unlock()
 	fn()
 }
 
