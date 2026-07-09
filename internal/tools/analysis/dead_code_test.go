@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/stretchr/testify/assert"
@@ -1065,14 +1066,20 @@ func TestFindOrphanedSymbols_NoPackages(t *testing.T) {
 	tmpDir := t.TempDir()
 	sp := &deadCodeSecurityProvider{tempDir: tmpDir}
 
-	// Create go.mod but NO .go files → indexer will return empty packages
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module empty.test\n\ngo 1.25"), 0644))
-
-	idx, err := newIndexer(tmpDir)
-	require.NoError(t, err)
-	idx.knownModulePath = "empty.test"
+	// Pre-build indexer with empty package set — no need for a real
+	// workspace or packages.Load. The "No packages found" path is
+	// triggered when Packages() returns an empty slice.
+	idx := &indexer{
+		dir:           tmpDir,
+		fset:          token.NewFileSet(),
+		pkgs:          []*packages.Package{},
+		lastRefresh:   time.Now().Add(1 * time.Hour), // skip Refresh
+		resolvePath:   filepath.Abs,
+		implsCache:    &implCacheEntry{},
+		symbolsByPath: make(map[string][]symbolLocation),
+		usagesByName:  make(map[string][]location),
+	}
 	ctx := context.Background()
-	require.NoError(t, idx.Refresh(ctx, nil))
 
 	analyzer := newDeadCodeAnalyzer(sp, idx)
 	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": tmpDir}, nil)
