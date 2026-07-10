@@ -84,9 +84,15 @@ func (d *eventDispatcher) dispatch(ctx context.Context, e events.Event) {
 
 func (d *eventDispatcher) handleTurnStatus(ctx context.Context, e events.Event) {
 	ev := e.(events.TurnStatusEvent)
-	d.spinner.activePhase = nil // Clear phase on new turn/header
+	d.spinner.activePhase = nil
+	// IsFinal signals the Ready footer — the turn is done. Always stop.
+	if ev.Status.IsFinal {
+		d.spinner.stopActiveSpinner()
+		d.renderer.LogTurnStatus(ctx, ev.Status)
+		return
+	}
 	// When tracking turn time, don't transition to idle — it would
-	// stop the spinner and break the elapsed-time counter.
+	// stop the spinner mid-turn and break the elapsed-time counter.
 	if !d.spinner.turnStartTime.IsZero() {
 		d.renderer.LogTurnStatus(ctx, ev.Status)
 		return
@@ -108,7 +114,14 @@ func (d *eventDispatcher) handleSpinnerEvent(ctx context.Context, e events.Event
 
 func (d *eventDispatcher) handleResponse(ctx context.Context, e events.Event) {
 	ev := e.(events.ResponseEvent)
-	d.spinner.activePhase = nil // Clear phase on response
+	d.spinner.activePhase = nil
+	// When tracking turn time, don't transition to rendering — the
+	// ResponseEvent may arrive alongside tool calls. The spinner will
+	// be stopped by handleTurnStatus on the final IsFinal event.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.RenderResponse(ctx, ev.Content, d.showThoughts, d.rawOutput)
+		return
+	}
 	d.stateMachine.transition(stateRendering)
 	d.renderer.RenderResponse(ctx, ev.Content, d.showThoughts, d.rawOutput)
 }
