@@ -85,9 +85,12 @@ func (d *eventDispatcher) dispatch(ctx context.Context, e events.Event) {
 func (d *eventDispatcher) handleTurnStatus(ctx context.Context, e events.Event) {
 	ev := e.(events.TurnStatusEvent)
 	d.spinner.activePhase = nil
-	// IsFinal signals the Ready footer — the turn is done. Always stop.
+	// IsFinal signals the Ready footer — the turn is done.
+	// Don't stop the spinner here: the bridge's own shutdown (or the next
+	// TurnStarted) will handle it. Stopping now would clear the line but
+	// leave the cursor there, causing the Ready footer to overlap with
+	// any residual characters.
 	if ev.Status.IsFinal {
-		d.spinner.stopActiveSpinner()
 		d.renderer.LogTurnStatus(ctx, ev.Status)
 		return
 	}
