@@ -63,6 +63,7 @@ func newEventDispatcher(
 	d.register(events.TurnStarted{}, d.handleTurnStarted)
 	d.register(events.SystemMessageEvent{}, d.handleSystemMessage)
 	d.register(events.StatusUpdate{}, d.handleSystemMessage)
+	d.register(events.ToolOutputStreamEvent{}, d.handleSystemMessage)
 	return d
 }
 
@@ -156,6 +157,8 @@ func (d *eventDispatcher) handleSystemMessage(ctx context.Context, e events.Even
 	case events.SystemMessageEvent:
 		msg, lvl = ev.Message, ev.Level
 	case events.StatusUpdate:
+		msg, lvl = ev.Message, ev.Level
+	case events.ToolOutputStreamEvent:
 		msg, lvl = ev.Message, ev.Level
 	default:
 		return
