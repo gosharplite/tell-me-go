@@ -1005,6 +1005,7 @@ func assertLoopWarningInjected(t *testing.T, hm *agenttest.MockHistoryManager) {
 
 	foundWarning := false
 	for _, msg := range contents {
+		// Text-only loops: user-role text message
 		if msg.Role == "user" {
 			for _, part := range msg.Parts {
 				if part.Text == orchestrator.LoopWarning {
@@ -1012,9 +1013,20 @@ func assertLoopWarningInjected(t *testing.T, hm *agenttest.MockHistoryManager) {
 					break
 				}
 			}
-			if foundWarning {
-				break
+		}
+		// Tool-call loops: synthetic tool-role FunctionResponse
+		if msg.Role == "tool" {
+			for _, part := range msg.Parts {
+				if part.FunctionResponse != nil {
+					if errStr, ok := part.FunctionResponse.Response["error"].(string); ok && errStr == orchestrator.LoopWarning {
+						foundWarning = true
+						break
+					}
+				}
 			}
+		}
+		if foundWarning {
+			break
 		}
 	}
 	assert.True(t, foundWarning, "Should have injected loop warning")
