@@ -87,7 +87,7 @@ func TestAdoManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 func TestAdoManager_ConfirmationErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
-	t.Run("createPipeline - confirmation error", func(t *testing.T) {
+	t.Run("createPipeline - auto-decline without bypass", func(t *testing.T) {
 		t.Parallel()
 		// Server returns pipelines list (so checkPipelineExists succeeds with no match)
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,12 +106,12 @@ func TestAdoManager_ConfirmationErrors(t *testing.T) {
 		args := map[string]interface{}{
 			"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
 		}
-		_, err := m.createPipeline(context.Background(), args)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "confirmation error")
+		result, err := m.createPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.True(t, result.Cancelled, "expected auto-decline (bypass not active)")
 	})
 
-	t.Run("runPipeline - confirmation error", func(t *testing.T) {
+	t.Run("runPipeline - auto-decline without bypass", func(t *testing.T) {
 		t.Parallel()
 		sm := &toolstest.MockSecurityManager{
 			ConfirmFunc: func(ctx context.Context, msg string) (bool, error) {
@@ -123,12 +123,12 @@ func TestAdoManager_ConfirmationErrors(t *testing.T) {
 		args := map[string]interface{}{
 			"organization": "o", "project": "p", "pipeline_id": 1,
 		}
-		_, err := m.runPipeline(context.Background(), args)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "confirmation error")
+		result, err := m.runPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.True(t, result.Cancelled, "expected auto-decline (bypass not active)")
 	})
 
-	t.Run("UpdateBuildDefinitionVariables - confirmation error", func(t *testing.T) {
+	t.Run("UpdateBuildDefinitionVariables - auto-decline without bypass", func(t *testing.T) {
 		t.Parallel()
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// GET returns valid definition
@@ -152,9 +152,9 @@ func TestAdoManager_ConfirmationErrors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "confirmation error")
+		result, err := m.UpdateBuildDefinitionVariables(context.Background(), args)
+		assert.NoError(t, err)
+		assert.True(t, result.Cancelled, "expected auto-decline (bypass not active)")
 	})
 }
 
@@ -639,7 +639,7 @@ func TestAdoManager_GetPipelineDefinition_Errors(t *testing.T) {
 }
 
 func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true, BypassActive: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := NewADOManager(sm)

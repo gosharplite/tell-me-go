@@ -21,6 +21,7 @@ import (
 
 type securityConfirmer interface {
 	Confirm(ctx context.Context, message string) (bool, error)
+	IsBypassActive() bool
 }
 
 type AdoManager struct {

@@ -19,7 +19,7 @@ import (
 
 func TestAdoTools_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true, BypassActive: true}
 
 	commonArgs := map[string]interface{}{
 		"organization": "myorg",

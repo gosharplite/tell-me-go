@@ -386,16 +386,8 @@ func (t *policyTool) confirmAction(ctx context.Context, action actionType, path,
 	t.writeConfirmReason(&sb, reason, path)
 
 	sb.WriteString(t.getPrompt(action))
-	confirmed, err := t.sm.interaction.interactorProvider().Confirm(ctx, sb.String())
-	if err != nil || !confirmed {
-		return false, err
-	}
-
-	if doubleConfirm {
-		return t.confirmDouble(ctx, action)
-	}
-
-	return true, nil
+	// Auto-decline when bypass is not active (RequiresConsent handled by authorizer).
+	return false, nil
 }
 
 // writeConfirmReason appends the reason line to the confirmation message builder.
@@ -408,16 +400,6 @@ func (t *policyTool) writeConfirmReason(sb *strings.Builder, reason, path string
 	} else {
 		fmt.Fprintf(sb, "Reason: %s\n", reason)
 	}
-}
-
-// confirmDouble performs the second ("double") confirmation step.
-func (t *policyTool) confirmDouble(ctx context.Context, action actionType) (bool, error) {
-	confirmed, err := t.sm.interaction.interactorProvider().Confirm(ctx,
-		fmt.Sprintf("[DOUBLE CONFIRM] %s (y/N) ", t.getDoubleMsg(action)))
-	if err != nil || !confirmed {
-		return false, err
-	}
-	return true, nil
 }
 
 func (t *policyTool) getBypassMsg(action actionType) string {
@@ -443,15 +425,6 @@ func (t *policyTool) getPrompt(action actionType) string {
 		return "Enable bypass mode for this run? (y/N) "
 	default:
 		return "Authorize this path? (y/N) "
-	}
-}
-
-func (t *policyTool) getDoubleMsg(action actionType) string {
-	switch action {
-	case actionPathRead, actionPathRemoveRead:
-		return "Are you absolutely sure? This allows the AI to read files in this location in future sessions."
-	default:
-		return "Are you absolutely sure? This allows the AI to read/write files in this location in future sessions."
 	}
 }
 
@@ -487,8 +460,9 @@ func getPolicyToolEntries(p *policyTool) []toolEntry {
 	return []toolEntry{
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "register_safepath",
-				Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
+				Name:            "register_safepath",
+				Description:     "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -516,8 +490,9 @@ func getPolicyToolEntries(p *policyTool) []toolEntry {
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "remove_safepath",
-				Description: "Removes a directory or file from the authorized boundaries.",
+				Name:            "remove_safepath",
+				Description:     "Removes a directory or file from the authorized boundaries.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -534,8 +509,9 @@ func getPolicyToolEntries(p *policyTool) []toolEntry {
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "register_readpath",
-				Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
+				Name:            "register_readpath",
+				Description:     "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -563,8 +539,9 @@ func getPolicyToolEntries(p *policyTool) []toolEntry {
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "remove_readpath",
-				Description: "Removes a directory or file from the read-only authorized boundaries.",
+				Name:            "remove_readpath",
+				Description:     "Removes a directory or file from the read-only authorized boundaries.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -581,8 +558,9 @@ func getPolicyToolEntries(p *policyTool) []toolEntry {
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "bypass_confirmation",
-				Description: "Disables all interactive security prompts for the current mode. This setting is **persistent across sessions** and remains active until manually revoked.",
+				Name:            "bypass_confirmation",
+				Description:     "Disables all interactive security prompts for the current mode. This setting is **persistent across sessions** and remains active until manually revoked.",
+				RequiresConsent: true,
 			},
 			handler: p.BypassConfirmation,
 			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
@@ -597,8 +575,9 @@ func getPolicyToolEntries(p *policyTool) []toolEntry {
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "update_session_setting",
-				Description: "Updates a persistent session configuration setting. These settings persist across session rotations and system restarts.",
+				Name:            "update_session_setting",
+				Description:     "Updates a persistent session configuration setting. These settings persist across session rotations and system restarts.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{

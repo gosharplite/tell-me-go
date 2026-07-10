@@ -828,11 +828,16 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 }
 
 type mockConfirmer struct {
-	approved bool
+	approved     bool
+	bypassActive bool
 }
 
 func (m *mockConfirmer) Confirm(ctx context.Context, message string) (bool, error) {
 	return m.approved, nil
+}
+
+func (m *mockConfirmer) IsBypassActive() bool {
+	return m.bypassActive
 }
 
 func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
@@ -1013,7 +1018,7 @@ func TestExecuteCreatePipeline_MarshalEdgeCases(t *testing.T) {
 func setupADOManager(t *testing.T, baseURL string, approved bool) (*AdoManager, context.Context) {
 	t.Helper()
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mc := &mockConfirmer{approved: approved}
+	mc := &mockConfirmer{approved: approved, bypassActive: approved}
 	m := NewADOManager(mc, WithBaseURL(baseURL), WithToken("test-pat"))
 	return m, context.Background()
 }
@@ -1220,7 +1225,7 @@ func TestBuildVariablesUpdatePayload(t *testing.T) {
 
 func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mc := &mockConfirmer{approved: true}
+	mc := &mockConfirmer{approved: true, bypassActive: true}
 
 	var getCalled, putCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

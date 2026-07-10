@@ -33,10 +33,11 @@ func setupADOServer(t *testing.T, handler http.HandlerFunc, confirmFunc func(con
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true, BypassActive: true}
 	if confirmFunc != nil {
 		sm.ConfirmFunc = confirmFunc
 		sm.AllowAll = false
+		sm.BypassActive = false
 	}
 	return NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 }

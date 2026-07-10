@@ -78,7 +78,9 @@ func setupPolicyTestWithAnswer(t *testing.T, answer string) (*SecurityManager, *
 }
 
 func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
-	return setupPolicyTestWithAnswer(t, "y")
+	sm, p, ctx := setupPolicyTestWithAnswer(t, "y")
+	sm.SetBypassActive(true)
+	return sm, p, ctx
 }
 
 // setupPolicyWithKVError creates a SecurityManager, policyTool, and context where
@@ -90,6 +92,7 @@ func setupPolicyWithKVError(t *testing.T, err error) (*SecurityManager, *policyT
 		SetFunc: func(ctx context.Context, key, val string) error { return err },
 	}
 	sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+	sm.SetBypassActive(true)
 	p, pErr := newPolicyTool(sm, mockKV)
 	if pErr != nil {
 		t.Fatalf("failed to create policyTool: %v", pErr)
@@ -98,12 +101,12 @@ func setupPolicyWithKVError(t *testing.T, err error) (*SecurityManager, *policyT
 }
 
 // setupPolicyWithInteractorError creates a SecurityManager, policyTool, and context
-// where the UserInteractor returns the given error on Confirm().
-// The KVStore uses .Maybe() since the confirm error prevents reaching persistence.
+// where the UserInteractor would return the given error on Confirm().
+// Confirm is no longer called (auto-decline without bypass); callers should
+// expect "Access denied by user." instead of an error.
 func setupPolicyWithInteractorError(t *testing.T, err error) (*SecurityManager, *policyTool, context.Context) {
 	t.Helper()
 	mockKV := new(mockKVStore)
-	// SetFunc is nil → returns nil error
 	mi := &mockInteractor{Answer: "y", Err: err}
 	sm := NewSecurityManager(func() domain.UserInteractor { return mi })
 	p, pErr := newPolicyTool(sm, mockKV)
@@ -132,6 +135,7 @@ func setupPolicyWithKVRemoveError(t *testing.T, err error) (*SecurityManager, *p
 		}(),
 	}
 	sm := NewSecurityManager(func() domain.UserInteractor { return &mockInteractor{Answer: "y"} })
+	sm.SetBypassActive(true)
 	p, pErr := newPolicyTool(sm, mockKV)
 	if pErr != nil {
 		t.Fatalf("failed to create policyTool: %v", pErr)
@@ -183,9 +187,12 @@ func TestPolicyTool_SafePathManagement_Register(t *testing.T) {
 	t.Run("Register Safe Path confirm error", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyWithInteractorError(t, fmt.Errorf("confirm failed"))
-		_, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "safe-confirm-err"), "reason": "test"}, nil)
-		if err == nil {
-			t.Error("expected error from confirm failure")
+		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "safe-confirm-err"), "reason": "test"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "denied") {
+			t.Errorf("Expected denied message, got %q", res.Text)
 		}
 	})
 }
@@ -328,28 +335,33 @@ func TestPolicyTool_ReadPathManagement_ListEmpty(t *testing.T) {
 
 func TestPolicyTool_BypassManagement(t *testing.T) {
 	t.Parallel()
-	sm, p, ctx := setupPolicyTest(t)
+	_, p, ctx := setupPolicyTest(t)
 
-	if sm.IsBypassActive() {
-		t.Error("expected bypass to be inactive initially")
-	}
-
-	_, err := p.BypassConfirmation(ctx, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	// setupPolicyTest sets bypass active by default. Verify it's active.
+	sm := p.sm
 	if !sm.IsBypassActive() {
-		t.Error("expected bypass to be active after call")
+		t.Error("expected bypass to be active initially (setupPolicyTest default)")
 	}
 
-	_, err = p.RevokeBypass(ctx, nil, nil)
+	// Revoke bypass
+	_, err := p.RevokeBypass(ctx, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if sm.IsBypassActive() {
 		t.Error("expected bypass to be inactive after revoke")
+	}
+
+	// BypassConfirmation now auto-declines when bypass is not active.
+	// Simulate re-enabling bypass directly (the LLM would use the
+	// bypass_confirmation tool with bypass already active from config).
+	res, err := p.BypassConfirmation(ctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "denied") {
+		t.Errorf("expected auto-decline denial, got %q", res.Text)
 	}
 }
 
@@ -408,12 +420,15 @@ func TestPolicyTool_SessionSettings_Update(t *testing.T) {
 	t.Run("Update Session Setting confirm error", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyWithInteractorError(t, fmt.Errorf("confirm failed"))
-		_, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
+		res, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
 			"key":   "some_key",
 			"value": "some_val",
 		}, nil)
-		if err == nil {
-			t.Error("expected error from confirm failure")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "denied") {
+			t.Errorf("Expected denied message, got %q", res.Text)
 		}
 	})
 
@@ -518,9 +533,12 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 	t.Run("RegisterReadPath confirm error", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyWithInteractorError(t, fmt.Errorf("confirm failed"))
-		_, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "ro-confirm-err"), "reason": "test"}, nil)
-		if err == nil {
-			t.Error("expected error from confirm failure")
+		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": filepath.Join(t.TempDir(), "ro-confirm-err"), "reason": "test"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "denied") {
+			t.Errorf("Expected denied message, got %q", res.Text)
 		}
 	})
 
@@ -576,12 +594,7 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 	})
 
 	t.Run("BypassConfirmation Set error", func(t *testing.T) {
-		t.Parallel()
-		_, p, ctx := setupPolicyWithKVError(t, fmt.Errorf("persist failed"))
-		_, err := p.BypassConfirmation(ctx, nil, nil)
-		if err == nil {
-			t.Error("expected error from Set failure in BypassConfirmation")
-		}
+		t.Skip("[UNREACHABLE] BypassConfirmation kv.Set path unreachable — confirmAction auto-declines without bypass, bypass-active short-circuits")
 	})
 
 	t.Run("RevokeBypass Set error", func(t *testing.T) {
