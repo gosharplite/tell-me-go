@@ -62,7 +62,7 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil }
 	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr.String(), "[WARN] Entropy source failure, degrading to time-based session ID: os entropy exhaustion")

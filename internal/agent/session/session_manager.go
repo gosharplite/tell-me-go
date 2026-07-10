@@ -11,12 +11,14 @@ import (
 	"fmt"
 	"io"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
 )
 
 // sessionManager manages the session lifecycle and agent execution.
@@ -31,6 +33,7 @@ type sessionManager struct {
 	UIRenderer      ports.UIRenderer
 	Clock           clock.Clock
 	EntropySource   io.Reader
+	tuiCleanup      func() // nil unless TUI is active
 }
 
 // sessionConfig contains configuration for a single session execution.
@@ -99,7 +102,7 @@ func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdo
 }
 
 // Run executes the session orchestration.
-func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer, ic ports.Capturer) (err error) {
+func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer, ic ports.Capturer, tuiOutput bool) (err error) {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -116,7 +119,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		return fmt.Errorf("failed to initialize agent: %w", err)
 	}
 
-	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
+	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic, tuiOutput)
 	listenStarted := false
 	// Single defer to guarantee deterministic teardown order:
 	// Stop Producers first, then Consumers.
@@ -129,6 +132,11 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", se)
 			// Aggregate with the named return error 'err'
 			err = errors.Join(err, fmt.Errorf("agent shutdown failed: %w", se))
+		}
+
+		// Signal TUI to exit after agent has flushed all events
+		if o.tuiCleanup != nil {
+			o.tuiCleanup()
 		}
 
 		// 2. Clean up Consumer (UI) second
@@ -202,7 +210,7 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 	})
 }
 
-func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer) (*ui.Bridge, error) {
+func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	logger := sd.GetLogger()
@@ -214,14 +222,33 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 		})
 	}
 
-	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
+	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), tuiOutput, paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return bridge, err
 	}
 	return bridge, nil
 }
 
-func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *ui.Bridge {
+func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, tuiOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *ui.Bridge {
+	if tuiOutput {
+		ch := make(chan events.Event, 64)
+		o.tuiCleanup = func() { close(ch) }
+		chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
+			select {
+			case ch <- e:
+			default:
+				// drop if full — TUI can't keep up
+			}
+		})
+		m := progress.NewModel(context.Background(), ch)
+		p := tea.NewProgram(m, tea.WithInput(nil))
+		go func() {
+			if _, err := p.Run(); err != nil {
+				logger.Warn("Progress TUI exited with error", "error", err)
+			}
+		}()
+		return nil
+	}
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := ui.NewBridge(o.UIRenderer,
@@ -261,6 +288,7 @@ type RunParams struct {
 	LastN           int
 	BackN           int
 	RawOutput       bool
+	TUIOutput       bool
 	Prompt          string
 	Config          *config.Config
 	Deps            ports.ChatterComposer
@@ -308,7 +336,7 @@ func Run(ctx context.Context, params RunParams) error {
 	// Phase 3: Main Orchestration Loop (Chat)
 	// Execute chat only if a prompt is provided. This removes CLI-specific early exits.
 	if sCfg.GetPrompt() != "" {
-		return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
+		return orch.Run(ctx, sCfg, params.Deps, params.Capturer, params.TUIOutput)
 	}
 
 	return nil

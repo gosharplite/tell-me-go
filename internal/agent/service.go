@@ -181,6 +181,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 		LastN:           cmd.LastN,
 		BackN:           cmd.BackN,
 		RawOutput:       cmd.RawOutput,
+		TUIOutput:       cmd.TUIOutput,
 		Prompt:          cmd.Prompt,
 		Config:          cfg,
 		Deps:            deps,
