@@ -63,7 +63,7 @@ func newEventDispatcher(
 	d.register(events.TurnStarted{}, d.handleTurnStarted)
 	d.register(events.SystemMessageEvent{}, d.handleSystemMessage)
 	d.register(events.StatusUpdate{}, d.handleSystemMessage)
-	d.register(events.ToolOutputStreamEvent{}, d.handleSystemMessage)
+	d.register(events.ToolOutputStreamEvent{}, d.handleToolOutputStream)
 	return d
 }
 
@@ -168,6 +168,11 @@ func (d *eventDispatcher) handleSystemMessage(ctx context.Context, e events.Even
 	if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
 		d.stateMachine.setState(stateThinking)
 	}
+}
+
+func (d *eventDispatcher) handleToolOutputStream(ctx context.Context, e events.Event) {
+	ev := e.(events.ToolOutputStreamEvent)
+	d.renderer.LogSystemMessage(ctx, ev.Message, ev.Level)
 }
 
 // --- helpers ------------------------------------------------------------------
