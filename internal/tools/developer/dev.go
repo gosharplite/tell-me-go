@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
@@ -39,6 +40,7 @@ type goRunner interface {
 
 type devManager struct {
 	sm                devSecurity
+	eventBus          events.EventBus
 	validator         domain_security.CommandValidator
 	executor          executor
 	runner            goRunner
@@ -352,10 +354,11 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 	return res, nil
 }
 
-func (m *devManager) logToolAction(format string, a ...any) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
+func (m *devManager) logToolAction(ctx context.Context, format string, a ...any) {
+	_ = m.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: fmt.Sprintf("[Tool Action] "+format, a...),
+		Level:   "info",
+	})
 }
 
 func formatExecutionResult(displayName string, out []byte, execErr error, truncateLimit int, emptySuccessMsg string) tools.ToolResult {
@@ -397,7 +400,7 @@ func (m *devManager) runWithHeartbeat(
 	}
 
 	// 2. Logging
-	m.logToolAction("Running %s: %s", strings.ToLower(actionName), fullCmd)
+	m.logToolAction(ctx, "Running %s: %s", strings.ToLower(actionName), fullCmd)
 
 	// 3. Telemetry/Heartbeat (Safe concurrency)
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
@@ -421,9 +424,10 @@ func (m *devManager) executeWithHeartbeat(
 	return out, err
 }
 
-func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner goRunner, opts ...devOption) *devManager {
+func newDevManager(sm devSecurity, eventBus events.EventBus, validator domain_security.CommandValidator, runner goRunner, opts ...devOption) *devManager {
 	m := &devManager{
 		sm:                sm,
+		eventBus:          eventBus,
 		validator:         validator,
 		executor:          &realExecutor{},
 		runner:            runner,
@@ -439,5 +443,4 @@ func newDevManager(sm devSecurity, validator domain_security.CommandValidator, r
 type devSecurity interface {
 	domain_security.ActionConfirmer
 	domain_security.Auditor
-	domain_security.TerminalController
 }

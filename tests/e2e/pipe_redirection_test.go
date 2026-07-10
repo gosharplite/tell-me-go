@@ -75,8 +75,8 @@ func TestPipeCommandsTool(t *testing.T) {
 
 	// 3. Verification
 	errOut := stripANSI(stderr)
-	if !strings.Contains(errOut, "Executing Pipeline...") {
-		t.Errorf("Expected pipeline execution log in stderr, got: %q", errOut)
+	if !strings.Contains(errOut, "Pipeline result") {
+		t.Errorf("Expected pipeline result in stderr, got: %q", errOut)
 	}
 	if !strings.Contains(errOut, "hello") {
 		t.Errorf("Expected 'hello' in pipeline output in stderr, got: %q", errOut)

@@ -57,3 +57,14 @@ func (s *funcSubscriber) Handle(ctx context.Context, e Event) error {
 	s.f(ctx, e)
 	return nil
 }
+
+// NoOpEventBus is an EventBus implementation that silently discards all events.
+// Use it as a safe default when no real EventBus is needed (e.g., in tests).
+type NoOpEventBus struct{}
+
+func (NoOpEventBus) Publish(ctx context.Context, e Event) error { return nil }
+func (NoOpEventBus) Subscribe(sub func(context.Context, Event)) {}
+func (NoOpEventBus) Shutdown(ctx context.Context) error         { return nil }
+func (NoOpEventBus) Flush(ctx context.Context) error            { return nil }
+func (NoOpEventBus) Listen(ctx context.Context) error           { <-ctx.Done(); return ctx.Err() }
+func (NoOpEventBus) WaitStarted()                               {}

@@ -62,7 +62,7 @@ func RegisterAll(params ToolRegistrationParams) error {
 	if err := validateRegistrationParams(params); err != nil {
 		return err
 	}
-	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager); err != nil {
+	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, params.HealthManager, params.EventBus); err != nil {
 		return fmt.Errorf("workspace.Register: %w", err)
 	}
 	if params.SessionProvider != nil {
@@ -74,7 +74,7 @@ func RegisterAll(params ToolRegistrationParams) error {
 	if err != nil {
 		return fmt.Errorf("analysis.Register: %w", err)
 	}
-	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, archVerify); err != nil {
+	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.WorkspacePolicy, archVerify, params.EventBus); err != nil {
 		return fmt.Errorf("developer.Register: %w", err)
 	}
 	if err := integrations.RegisterAll(params.Registry, params.FileSystem, params.SecurityManager, params.Client, params.AssetsDir); err != nil {

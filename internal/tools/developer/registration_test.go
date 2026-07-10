@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -80,7 +81,7 @@ func TestRegister(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
 	exec := &mockToolchainExecutor{}
 
-	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
@@ -163,7 +164,7 @@ func TestRegister_PartialFailure(t *testing.T) {
 			fs := persistence.NewMockFileSystem()
 			exec := &mockToolchainExecutor{}
 
-			err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil)
+			err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{})
 
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -193,7 +194,7 @@ func TestRegister_DuplicateRegistration(t *testing.T) {
 	exec := &mockToolchainExecutor{}
 
 	// First registration
-	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
 		t.Fatalf("first Register failed: %v", err)
 	}
 
@@ -212,7 +213,7 @@ func TestRegister_DuplicateRegistration(t *testing.T) {
 	}
 
 	// Second registration
-	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, infra_persistence.NewWorkspacePolicy(), nil, &events.NoOpEventBus{}); err != nil {
 		t.Fatalf("second Register failed: %v", err)
 	}
 
