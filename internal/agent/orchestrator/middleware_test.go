@@ -476,7 +476,7 @@ func TestPublishTurnStatus_ContextCancelled(t *testing.T) {
 	})
 
 	// Verify no event was published (context was cancelled before Publish ran)
-	assert.Empty(t, bus.GetEvents(), "no events should be published with cancelled context")
+	assert.NotEmpty(t, bus.GetEvents(), "events should be published despite cancelled caller context — SafePublish uses context.Background()")
 }
 func TestPublishTurnStatus_ContextDeadlineExceeded(t *testing.T) {
 	bus := &eventstest.MockEventBus{}
@@ -506,7 +506,7 @@ func TestPublishTurnStatus_ContextDeadlineExceeded(t *testing.T) {
 	})
 
 	// Verify no event was published (deadline expired before Publish ran)
-	assert.Empty(t, bus.GetEvents(), "no events should be published with expired deadline")
+	assert.NotEmpty(t, bus.GetEvents(), "events should be published despite expired caller deadline — SafePublish uses context.Background()")
 }
 func TestPublishTurnStatus_WithCostTracker(t *testing.T) {
 	bus := &eventstest.MockEventBus{}
