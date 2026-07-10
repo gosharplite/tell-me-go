@@ -263,7 +263,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return t.executor.RunCommand(tCtx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
-			Feedback:   &warnWriter{eventBus: t.eventBus, ctx: tCtx},
+			Feedback:   &warnWriter{eventBus: t.eventBus, ctx: context.WithoutCancel(tCtx)},
 			MaxCapture: t.maxOutput,
 			Env:        params.Env,
 		})
@@ -365,7 +365,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		feedback := &warnWriter{eventBus: t.eventBus, ctx: tCtx}
+		feedback := &warnWriter{eventBus: t.eventBus, ctx: context.WithoutCancel(tCtx)}
 		return t.executor.RunPipeline(tCtx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,

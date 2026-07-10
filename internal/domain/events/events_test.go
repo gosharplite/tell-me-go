@@ -168,16 +168,14 @@ func TestSafePublish_Timeout(t *testing.T) {
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	eventstest.CleanupBus(t, bus)
 
+	// SafePublish anchors its own timeout to context.Background(),
+	// so a cancelled caller context must NOT prevent publishing.
 	ctx2, cancel := context.WithCancel(context.Background())
 	cancel() // Already canceled
 
 	err := events.SafePublish(ctx2, bus, testEvent{typeName: "test_timeout"})
-	if err == nil {
-		t.Fatal("expected error for canceled context, got nil")
-	}
-
-	if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
-		t.Errorf("expected context canceled error, got %v", err)
+	if err != nil {
+		t.Fatalf("expected success despite cancelled caller context, got %v", err)
 	}
 }
 
