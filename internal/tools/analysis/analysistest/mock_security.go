@@ -59,9 +59,6 @@ func (m *MockSecurityProvider) IsCommandAllowed(command string) bool {
 }
 func (m *MockSecurityProvider) Prompt(message string) {}
 func (m *MockSecurityProvider) Warn(message string)   {}
-func (m *MockSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
-	return true, nil
-}
 func (m *MockSecurityProvider) LogAudit(action string, args ...any) {
 }
 func (m *MockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {

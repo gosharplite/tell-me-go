@@ -338,7 +338,7 @@ func TestCreatePipeline(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			sm := &toolstest.MockSecurityManager{AllowAll: tt.approved, BypassActive: tt.approved, ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return tt.approved, nil }}
+			sm := &toolstest.MockSecurityManager{AllowAll: tt.approved, BypassActive: tt.approved}
 			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 			// Pre-populate cache to test invalidation
@@ -361,7 +361,6 @@ func TestCreatePipeline(t *testing.T) {
 			assert.Equal(t, tt.wantName, result.Name)
 			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
 			// With BypassActive wired, Confirm is not called — IsBypassActive is checked instead.
-			// Success expects ConfirmCallCount == 0 (bypass path), Cancellation expects 0 (auto-decline).
 
 			if tt.name == "Success" {
 				_, exists := m.pipelineCache.Load(cacheKey)
@@ -430,12 +429,11 @@ func TestAdoRunPipeline(t *testing.T) {
 		assert.False(t, result.Cancelled)
 		assert.Equal(t, 101, result.RunID)
 		assert.Equal(t, "https://dev.azure.com/myorg/myproj/_build/results?buildId=101", result.WebURL)
-		// With bypass active, Confirm is not called.
-		assert.Equal(t, 0, sm.ConfirmCallCount, "Confirm should not be called when bypass is active")
+		// With bypass active, runPipeline auto-approves via IsBypassActive.
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
-		sm := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }}
+		sm := &toolstest.MockSecurityManager{}
 		m := NewADOManager(sm)
 
 		args := map[string]interface{}{
@@ -502,7 +500,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }}
+		sm := &toolstest.MockSecurityManager{}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
@@ -516,8 +514,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		result, err := m.runPipeline(context.Background(), args)
 		assert.NoError(t, err)
 		assert.True(t, result.Cancelled)
-		// Confirm is not called — IsBypassActive returns false, auto-decline.
-		assert.Equal(t, 0, sm.ConfirmCallCount, "Confirm should not be called (auto-decline)")
+		// IsBypassActive returns false, auto-decline.
 	})
 
 	// NOTE: The json.Marshal error branch in executeRunPipeline (pipeline_runs.go:154-156)

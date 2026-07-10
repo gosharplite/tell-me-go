@@ -96,11 +96,7 @@ func TestAdoManager_ConfirmationErrors(t *testing.T) {
 		}))
 		t.Cleanup(ts.Close)
 
-		sm := &toolstest.MockSecurityManager{
-			ConfirmFunc: func(ctx context.Context, msg string) (bool, error) {
-				return false, fmt.Errorf("confirm I/O failure")
-			},
-		}
+		sm := &toolstest.MockSecurityManager{}
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 
 		args := map[string]interface{}{
@@ -113,11 +109,7 @@ func TestAdoManager_ConfirmationErrors(t *testing.T) {
 
 	t.Run("runPipeline - auto-decline without bypass", func(t *testing.T) {
 		t.Parallel()
-		sm := &toolstest.MockSecurityManager{
-			ConfirmFunc: func(ctx context.Context, msg string) (bool, error) {
-				return false, fmt.Errorf("confirm I/O failure")
-			},
-		}
+		sm := &toolstest.MockSecurityManager{}
 		m := NewADOManager(sm, WithToken("test-pat"))
 
 		args := map[string]interface{}{
@@ -137,11 +129,7 @@ func TestAdoManager_ConfirmationErrors(t *testing.T) {
 		}))
 		t.Cleanup(ts.Close)
 
-		sm := &toolstest.MockSecurityManager{
-			ConfirmFunc: func(ctx context.Context, msg string) (bool, error) {
-				return false, fmt.Errorf("confirm I/O failure")
-			},
-		}
+		sm := &toolstest.MockSecurityManager{}
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 
 		args := map[string]interface{}{
@@ -721,7 +709,7 @@ func TestAdoManager_UpdateBuildDefinitionVariables_Errors(t *testing.T) {
 		}))
 		t.Cleanup(ts.Close)
 
-		deniedSM := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }}
+		deniedSM := &toolstest.MockSecurityManager{}
 		m := NewADOManager(deniedSM, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{
 			"organization":  "o",

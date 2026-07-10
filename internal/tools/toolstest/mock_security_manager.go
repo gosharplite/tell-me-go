@@ -13,19 +13,15 @@ import (
 // When AllowAll or BypassActive is true it short-circuits all path,
 // command, and Authorize checks to allow-with-no-prompt. Test authors
 // can override individual decisions via AuthorizeFunc, IsSafeFunc, and
-// IsWritableFunc, and can plug in a UserInteractor to drive Confirm /
-// ReadLine flows.
+// IsWritableFunc, and can plug in a UserInteractor to drive ReadLine flows.
 type MockSecurityManager struct {
-	AllowAll         bool
-	AllowedCommands  map[string]bool
-	BypassActive     bool
-	AuthorizeFunc    func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
-	IsSafeFunc       func(path string) (string, error)
-	IsWritableFunc   func(path string) (string, error)
-	ConfirmFunc      func(ctx context.Context, message string) (bool, error)
-	ConfirmCallCount int
-	LastConfirmText  string
-	Interactor       security.UserInteractor
+	AllowAll        bool
+	AllowedCommands map[string]bool
+	BypassActive    bool
+	AuthorizeFunc   func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
+	IsSafeFunc      func(path string) (string, error)
+	IsWritableFunc  func(path string) (string, error)
+	Interactor      security.UserInteractor
 }
 
 var _ security.Manager = (*MockSecurityManager)(nil)
@@ -63,18 +59,6 @@ func (m *MockSecurityManager) TerminalLock()                       {}
 func (m *MockSecurityManager) TerminalUnlock()                     {}
 func (m *MockSecurityManager) Prompt(message string)               {}
 func (m *MockSecurityManager) Warn(message string)                 {}
-
-func (m *MockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	m.ConfirmCallCount++
-	m.LastConfirmText = message
-	if m.ConfirmFunc != nil {
-		return m.ConfirmFunc(ctx, message)
-	}
-	if m.Interactor != nil {
-		return m.Interactor.Confirm(ctx, message)
-	}
-	return true, nil
-}
 
 func (m *MockSecurityManager) ReadLine(ctx context.Context) (string, error) {
 	if m.Interactor != nil {

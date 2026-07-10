@@ -899,28 +899,6 @@ func TestMockServiceSecurityManager_Warn(t *testing.T) {
 	}
 }
 
-func TestMockServiceSecurityManager_Confirm(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	m := &MockServiceSecurityManager{
-		ConfirmFunc: func(_ context.Context, _ string) (bool, error) {
-			return true, nil
-		},
-	}
-	got, err := m.Confirm(ctx, "proceed?")
-	if !got {
-		t.Error("Confirm should return true")
-	}
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	snap := m.snapshot()
-	if snap["Confirm"] != 1 {
-		t.Errorf("expected 1 Confirm call, got %d", snap["Confirm"])
-	}
-}
-
 func TestMockServiceSecurityManager_ReadLine(t *testing.T) {
 	t.Parallel()
 
@@ -1079,13 +1057,6 @@ func TestMockServiceSecurityManager_NilFuncs(t *testing.T) {
 			name: "Authorize_nil_func",
 			call: func(m *MockServiceSecurityManager) {
 				got, err := m.Authorize(context.Background(), "l", "d", "r", true)
-				assertNilFuncBoolErr(t, got, err)
-			},
-		},
-		{
-			name: "Confirm_nil_func",
-			call: func(m *MockServiceSecurityManager) {
-				got, err := m.Confirm(context.Background(), "msg")
 				assertNilFuncBoolErr(t, got, err)
 			},
 		},

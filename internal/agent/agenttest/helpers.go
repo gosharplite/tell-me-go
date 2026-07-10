@@ -79,7 +79,6 @@ type mockServiceSecurityManager struct {
 	TerminalUnlockFunc   func()
 	PromptFunc           func(message string)
 	WarnFunc             func(message string)
-	ConfirmFunc          func(ctx context.Context, message string) (bool, error)
 	ReadLineFunc         func(ctx context.Context) (string, error)
 	IsCommandAllowedFunc func(command string) bool
 	IsBypassActiveFunc   func() bool
@@ -94,7 +93,6 @@ type mockServiceSecurityManager struct {
 	calledTerminalUnlock   int
 	calledPrompt           int
 	calledWarn             int
-	calledConfirm          int
 	calledReadLine         int
 	calledIsCommandAllowed int
 	calledIsBypassActive   int
@@ -108,8 +106,6 @@ type mockServiceSecurityManager struct {
 	lastLogAudit        string
 	lastPrompt          string
 	lastWarn            string
-	lastConfirmCtx      context.Context
-	lastConfirmMessage  string
 	lastCommand         string
 }
 
@@ -126,7 +122,6 @@ func (m *mockServiceSecurityManager) snapshot() map[string]int {
 		"TerminalUnlock":   m.calledTerminalUnlock,
 		"Prompt":           m.calledPrompt,
 		"Warn":             m.calledWarn,
-		"Confirm":          m.calledConfirm,
 		"ReadLine":         m.calledReadLine,
 		"IsCommandAllowed": m.calledIsCommandAllowed,
 		"IsBypassActive":   m.calledIsBypassActive,
@@ -222,19 +217,6 @@ func (m *mockServiceSecurityManager) Warn(message string) {
 	if fn != nil {
 		fn(message)
 	}
-}
-
-func (m *mockServiceSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	m.mu.Lock()
-	m.calledConfirm++
-	m.lastConfirmCtx = ctx
-	m.lastConfirmMessage = message
-	fn := m.ConfirmFunc
-	m.mu.Unlock()
-	if fn != nil {
-		return fn(ctx, message)
-	}
-	return false, nil
 }
 
 func (m *mockServiceSecurityManager) ReadLine(ctx context.Context) (string, error) {

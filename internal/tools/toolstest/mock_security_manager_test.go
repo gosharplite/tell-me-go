@@ -264,60 +264,6 @@ func TestMockSecurityManager_BypassActive(t *testing.T) {
 	})
 }
 
-// --- Confirm (3 subtests: default, interactor, func override) ---
-
-func TestMockSecurityManager_Confirm(t *testing.T) {
-	t.Parallel()
-
-	t.Run("default", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityManager{}
-		ok, err := mock.Confirm(context.Background(), "msg")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !ok {
-			t.Error("expected true from default fallthrough")
-		}
-	})
-
-	t.Run("with_interactor", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityManager{
-			Interactor: &MockInteractor{Answer: "y"},
-		}
-		ok, err := mock.Confirm(context.Background(), "msg")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !ok {
-			t.Error("expected true from interactor with Answer='y'")
-		}
-		if mock.ConfirmCallCount == 0 {
-			t.Error("expected ConfirmCallCount > 0")
-		}
-		if mock.LastConfirmText != "msg" {
-			t.Errorf("got LastConfirmText %q; want 'msg'", mock.LastConfirmText)
-		}
-	})
-
-	t.Run("with_func", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityManager{
-			ConfirmFunc: func(ctx context.Context, message string) (bool, error) {
-				return false, errors.New("confirm error")
-			},
-		}
-		ok, err := mock.Confirm(context.Background(), "msg")
-		if err == nil || err.Error() != "confirm error" {
-			t.Errorf("got error %v; want 'confirm error'", err)
-		}
-		if ok {
-			t.Error("expected false from custom ConfirmFunc")
-		}
-	})
-}
-
 // --- No-ops (LogAudit, Close, TerminalLock, TerminalUnlock, Prompt, Warn, RegisterSafePath) ---
 
 func TestMockSecurityManager_Noops(t *testing.T) {
