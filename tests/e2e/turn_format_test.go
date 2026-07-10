@@ -113,7 +113,7 @@ func assertHeaderFormat(t *testing.T, errOut string, mode string) {
 		{name: "estimated_payload", regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: ~\d+/\d+ tokens - ` + mode + `( - [\w.-]+)?$`)},
 		{name: "actual_payload", regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: \d+/\d+ tokens - ` + mode + `( - [\w.-]+)?$`)},
 		{name: "metrics_line", regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+( Th: \d+)?.*\[.*\]$`)},
-		{name: "ready_line", match: "╰─⠿ Ready"},
+		{name: "ready_line", regex: regexp.MustCompile(`^\r?╰─⠿ Ready`)},
 	}
 
 	indices := findHeaderPatternIndices(t, lines, patterns)
