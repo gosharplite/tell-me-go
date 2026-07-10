@@ -409,8 +409,9 @@ func registerPolicy(r tools.Registry, m *AdoManager, _ PipelineFormatter) error 
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "ado_update_build_definition_variables",
-				Description: "Modifies variables for an existing pipeline (build) definition using a Read-Modify-Write cycle. Useful for locking down variable overrides.",
+				Name:            "ado_update_build_definition_variables",
+				Description:     "Modifies variables for an existing pipeline (build) definition using a Read-Modify-Write cycle. Useful for locking down variable overrides.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{

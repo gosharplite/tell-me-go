@@ -6,7 +6,6 @@ package toolstest
 import (
 	"context"
 	"errors"
-	"io"
 	"testing"
 )
 
@@ -56,58 +55,6 @@ func TestMockInteractor_Confirm(t *testing.T) {
 			}
 			if ok != tt.wantOk {
 				t.Errorf("got %v; want %v", ok, tt.wantOk)
-			}
-		})
-	}
-}
-
-// --- ReadLine (3 subtests) ---
-
-func TestMockInteractor_ReadLine(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		mock    *MockInteractor
-		want    string
-		wantErr error
-	}{
-		{
-			name: "with_answer",
-			mock: &MockInteractor{Answer: "input"},
-			want: "input",
-		},
-		{
-			name:    "empty_returns_EOF",
-			mock:    &MockInteractor{Answer: ""},
-			want:    "",
-			wantErr: io.EOF,
-		},
-		{
-			name:    "with_error",
-			mock:    &MockInteractor{Err: errors.New("fail")},
-			want:    "",
-			wantErr: errors.New("fail"),
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			line, err := tt.mock.ReadLine(context.Background())
-
-			if tt.wantErr != nil {
-				if err == nil || err.Error() != tt.wantErr.Error() {
-					t.Errorf("got error %v; want %v", err, tt.wantErr)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-			}
-			if line != tt.want {
-				t.Errorf("got %q; want %q", line, tt.want)
 			}
 		})
 	}

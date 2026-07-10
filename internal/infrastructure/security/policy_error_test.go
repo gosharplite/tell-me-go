@@ -59,26 +59,6 @@ func (m *funcMockKVStore) GetAll(ctx context.Context) (map[string]string, error)
 // compile-time interface satisfaction check
 var _ ports.KVStore = (*funcMockKVStore)(nil)
 
-// stagedInteractor implements UserInteractor with staged answers and captured warnings.
-type stagedInteractor struct {
-	answers []bool
-	idx     int
-	warns   []string
-}
-
-func (s *stagedInteractor) Confirm(ctx context.Context, message string) (bool, error) {
-	if s.idx >= len(s.answers) {
-		return false, nil
-	}
-	ans := s.answers[s.idx]
-	s.idx++
-	return ans, nil
-}
-func (s *stagedInteractor) Warn(message string)                               { s.warns = append(s.warns, message) }
-func (s *stagedInteractor) Prompt(message string)                             { s.warns = append(s.warns, message) }
-func (s *stagedInteractor) ReadSingleKey(ctx context.Context) (string, error) { return "", nil }
-func (s *stagedInteractor) ReadLine(ctx context.Context) (string, error)      { return "", nil }
-
 func TestPolicyTool_ErrorPaths(t *testing.T) {
 	t.Parallel()
 
@@ -218,25 +198,12 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		assert.True(t, confirmed)
 	})
 
-	// 7. confirmAction double-confirm denied
+	// 7. confirmAction double-confirm — UNREACHABLE after consent-removal.
+	// confirmAction no longer calls Confirm, so the double-confirm path
+	// cannot be reached. The confirmAction method itself is tested via the
+	// bypass path in test 6 above.
 	t.Run("confirmAction double-confirm denied", func(t *testing.T) {
-		t.Parallel()
-
-		kv := &funcMockKVStore{}
-		si := &stagedInteractor{answers: []bool{true, false}}
-		sm := NewSecurityManager(func() domain.UserInteractor { return si })
-		pt := &policyTool{sm: sm, kv: kv}
-
-		confirmed, err := pt.confirmAction(
-			context.Background(),
-			actionPathWrite,
-			"/some/test/path",
-			"testing double confirm denied",
-			true, // doubleConfirm = true
-		)
-
-		require.NoError(t, err)
-		assert.False(t, confirmed)
+		t.Skip("[UNREACHABLE] confirmAction no longer calls Confirm — double-confirm path unreachable")
 	})
 
 	// 8. UpdateSessionSetting kv.Set error
@@ -371,25 +338,11 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		assert.Equal(t, "Access denied by user.", res.Text)
 	})
 
-	// 14. BypassConfirmation kv.Set error
+	// 14. BypassConfirmation kv.Set error — UNREACHABLE after consent-removal.
+	// Without bypass, confirmAction auto-declines. With bypass active,
+	// BypassConfirmation returns "already enabled" before reaching kv.Set.
 	t.Run("BypassConfirmation kv.Set error", func(t *testing.T) {
-		t.Parallel()
-
-		kv := &funcMockKVStore{
-			setFunc: func(ctx context.Context, key, value string) error {
-				return fmt.Errorf("persist failed")
-			},
-		}
-		sm := NewSecurityManager(func() domain.UserInteractor {
-			return &mockInteractor{Answer: "y"}
-		})
-		pt := &policyTool{sm: sm, kv: kv}
-		ctx := context.Background()
-
-		_, err := pt.BypassConfirmation(ctx, nil, nil)
-
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to persist bypass status")
+		t.Skip("[UNREACHABLE] BypassConfirmation kv.Set path unreachable — confirmAction auto-declines without bypass, bypass-active short-circuits")
 	})
 
 	// 15. UpdateSessionSetting confirmation denied
@@ -412,8 +365,8 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		assert.Equal(t, "Update denied by user.", res.Text)
 	})
 
-	// 16. RemoveSafePath confirmAction error
-	t.Run("RemoveSafePath confirmAction error", func(t *testing.T) {
+	// 16. RemoveSafePath confirmAction auto-decline (was: confirm error)
+	t.Run("RemoveSafePath confirmAction auto-decline", func(t *testing.T) {
 		t.Parallel()
 
 		kv := &funcMockKVStore{}
@@ -424,16 +377,16 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		ctx := context.Background()
 
 		path := filepath.Join(t.TempDir(), "remove-confirm-err")
-		_, err := pt.RemoveSafePath(ctx, map[string]interface{}{
+		res, err := pt.RemoveSafePath(ctx, map[string]interface{}{
 			"path": path,
 		}, nil)
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "user aborted")
+		require.NoError(t, err)
+		assert.Equal(t, "Removal denied by user.", res.Text)
 	})
 
-	// 17. UpdateSessionSetting confirmAction error
-	t.Run("UpdateSessionSetting confirmAction error", func(t *testing.T) {
+	// 17. UpdateSessionSetting confirmAction auto-decline (was: confirm error)
+	t.Run("UpdateSessionSetting confirmAction auto-decline", func(t *testing.T) {
 		t.Parallel()
 
 		kv := &funcMockKVStore{}
@@ -443,17 +396,17 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		pt := &policyTool{sm: sm, kv: kv}
 		ctx := context.Background()
 
-		_, err := pt.UpdateSessionSetting(ctx, map[string]interface{}{
+		res, err := pt.UpdateSessionSetting(ctx, map[string]interface{}{
 			"key":   "backup_retention_days",
 			"value": "30",
 		}, nil)
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "user aborted")
+		require.NoError(t, err)
+		assert.Equal(t, "Update denied by user.", res.Text)
 	})
 
-	// 18. BypassConfirmation confirmAction error
-	t.Run("BypassConfirmation confirmAction error", func(t *testing.T) {
+	// 18. BypassConfirmation confirmAction auto-decline (was: confirm error)
+	t.Run("BypassConfirmation confirmAction auto-decline", func(t *testing.T) {
 		t.Parallel()
 
 		kv := &funcMockKVStore{}
@@ -463,14 +416,14 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		pt := &policyTool{sm: sm, kv: kv}
 		ctx := context.Background()
 
-		_, err := pt.BypassConfirmation(ctx, nil, nil)
+		res, err := pt.BypassConfirmation(ctx, nil, nil)
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "user aborted")
+		require.NoError(t, err)
+		assert.Equal(t, "Bypass mode denied by user.", res.Text)
 	})
 
-	// 19. RegisterSafePath confirmAction error
-	t.Run("RegisterSafePath confirmAction error", func(t *testing.T) {
+	// 19. RegisterSafePath confirmAction auto-decline (was: confirm error)
+	t.Run("RegisterSafePath confirmAction auto-decline", func(t *testing.T) {
 		t.Parallel()
 
 		kv := &funcMockKVStore{}
@@ -481,17 +434,17 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		ctx := context.Background()
 
 		path := filepath.Join(t.TempDir(), "register-confirm-err")
-		_, err := pt.RegisterSafePath(ctx, map[string]interface{}{
+		res, err := pt.RegisterSafePath(ctx, map[string]interface{}{
 			"path":   path,
 			"reason": "testing confirmAction error",
 		}, nil)
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "user aborted")
+		require.NoError(t, err)
+		assert.Equal(t, "Access denied by user.", res.Text)
 	})
 
-	// 20. RemoveReadPath confirmAction error
-	t.Run("RemoveReadPath confirmAction error", func(t *testing.T) {
+	// 20. RemoveReadPath confirmAction auto-decline (was: confirm error)
+	t.Run("RemoveReadPath confirmAction auto-decline", func(t *testing.T) {
 		t.Parallel()
 
 		kv := &funcMockKVStore{}
@@ -502,12 +455,12 @@ func TestPolicyTool_ErrorPaths(t *testing.T) {
 		ctx := context.Background()
 
 		path := filepath.Join(t.TempDir(), "ro-remove-confirm-err")
-		_, err := pt.RemoveReadPath(ctx, map[string]interface{}{
+		res, err := pt.RemoveReadPath(ctx, map[string]interface{}{
 			"path": path,
 		}, nil)
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "user aborted")
+		require.NoError(t, err)
+		assert.Equal(t, "Removal denied by user.", res.Text)
 	})
 
 	// 21. RemoveSafePath user denial

@@ -319,25 +319,6 @@ func TestDispatcher_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
 	assert.False(t, mockLogger.errorCalled, "Expected Error NOT to be called on logger for ErrBusNotInitialized")
 }
 
-type mockAuthorizer struct {
-	RequestBatchConsentFunc func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
-}
-
-func (m *mockAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
-	return nil
-}
-
-func (m *mockAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
-	return nil, nil
-}
-
-func (m *mockAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
-	if m.RequestBatchConsentFunc != nil {
-		return m.RequestBatchConsentFunc(ctx, calls)
-	}
-	return ctx, nil
-}
-
 // TestDispatcher_Execute_RetryPath_PropagatesWaitErr covers the decision boundary at
 // executor.go:309-314 (retry-vs-abort). The abort path (line 309, ctx.Err() != nil)
 // is already tested by TestDispatcher_ContextCancellation. The retry path (line 314,
@@ -451,73 +432,6 @@ func TestDispatcher_Execute_WaitErr_NonContext_AssemblesResponse(t *testing.T) {
 	require.Contains(t, execErr.Error(), "fan-in panic",
 		"error must contain 'fan-in panic'")
 	require.NoError(t, ctx.Err(), "context must not be cancelled")
-}
-
-func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{}
-	bus := &mockEventBus{}
-
-	// Block RequestBatchConsent until we cancel the context
-	consentStarted := make(chan struct{})
-	canFinishConsent := make(chan struct{})
-
-	auth := &mockAuthorizer{
-		RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
-			close(consentStarted)
-			select {
-			case <-canFinishConsent:
-				return ctx, nil
-			case <-ctx.Done():
-				return ctx, nil
-			}
-		},
-	}
-
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	exec.pipeline.(*defaultToolPipeline).authorizer = auth
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	respContent := &llm.Content{
-		Parts: []*llm.Part{
-			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
-		},
-	}
-
-	// Run Execute in a goroutine
-	done := make(chan struct{})
-	go func() {
-		_, _ = exec.Execute(ctx, respContent, 0, 10)
-		close(done)
-	}()
-
-	// Wait for consent to start
-	<-consentStarted
-
-	// Cancel the context - this should stop auth.RequestBatchConsent
-	cancel()
-
-	// Wait for Execute to return
-	select {
-	case <-done:
-	case <-time.After(1 * time.Second):
-		t.Fatal("Execute did not return after context cancellation")
-	}
-
-	// Verify events
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
-
-	var hasFinished bool
-	for _, e := range bus.Published {
-		if e.Type() == "ConsentFinishedEvent" {
-			hasFinished = true
-		}
-	}
-
-	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
 }
 
 func Test_newDispatcher_DefaultConfig(t *testing.T) {

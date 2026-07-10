@@ -56,8 +56,6 @@ func newEventDispatcher(
 	d.register(events.SummarizationStartedEvent{}, d.handleSpinnerEvent)
 	d.register(events.ToolExecutionStartedEvent{}, d.handleSpinnerEvent)
 	d.register(events.RetryWaitingEvent{}, d.handleSpinnerEvent)
-	d.register(events.ConsentStartedEvent{}, d.handleConsentStarted)
-	d.register(events.ConsentFinishedEvent{}, d.handleConsentFinished)
 	d.register(events.ResponseEvent{}, d.handleResponse)
 	d.register(events.UsageMetricsEvent{}, d.handleUsageMetrics)
 	d.register(events.ToolCallEvent{}, d.handleToolEvents)
@@ -96,17 +94,6 @@ func (d *eventDispatcher) handleSpinnerEvent(ctx context.Context, e events.Event
 		return d.stateMachine.current()
 	})
 	if started {
-		d.stateMachine.setState(stateThinking)
-	}
-}
-
-func (d *eventDispatcher) handleConsentStarted(_ context.Context, _ events.Event) {
-	d.stateMachine.transition(stateAwaitingConsent)
-}
-
-func (d *eventDispatcher) handleConsentFinished(ctx context.Context, _ events.Event) {
-	d.stateMachine.transition(stateIdle)
-	if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
 		d.stateMachine.setState(stateThinking)
 	}
 }

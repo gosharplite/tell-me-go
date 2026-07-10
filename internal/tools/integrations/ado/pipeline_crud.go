@@ -128,12 +128,8 @@ func (m *AdoManager) createPipeline(ctx context.Context, args map[string]interfa
 		}, nil
 	}
 
-	// 2. Confirm.
-	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Create pipeline '%s' in %s/%s?", params.Name, params.Organization, params.Project))
-	if err != nil {
-		return createPipelineResult{}, fmt.Errorf("confirmation error: %w", err)
-	}
-	if !approved {
+	// 2. Confirm: auto-decline if bypass not active (RequiresConsent handled by authorizer).
+	if !m.sc.IsBypassActive() {
 		return createPipelineResult{Cancelled: true, Name: params.Name}, nil
 	}
 
@@ -313,12 +309,8 @@ func (m *AdoManager) UpdateBuildDefinitionVariables(ctx context.Context, args ma
 		return UpdateVariablesResult{}, fmt.Errorf("failed to build updated payload: %w", err)
 	}
 
-	// 3. Confirm.
-	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Update variables for build definition %d in %s/%s?", params.DefinitionId, params.Organization, params.Project))
-	if err != nil {
-		return UpdateVariablesResult{}, fmt.Errorf("confirmation error: %w", err)
-	}
-	if !approved {
+	// 3. Confirm: auto-decline if bypass not active (RequiresConsent handled by authorizer).
+	if !m.sc.IsBypassActive() {
 		return UpdateVariablesResult{Cancelled: true, DefinitionID: params.DefinitionId}, nil
 	}
 

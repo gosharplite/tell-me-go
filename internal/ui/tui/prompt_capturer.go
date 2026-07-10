@@ -147,9 +147,6 @@ func (c *promptCapturer) Prompt(message string) {
 }
 
 // ReadLine delegates to the base capturer.
-func (c *promptCapturer) ReadLine(ctx context.Context) (string, error) {
-	return c.base.ReadLine(ctx)
-}
 
 // ReadSingleKey delegates to the base capturer.
 func (c *promptCapturer) ReadSingleKey(ctx context.Context) (string, error) {

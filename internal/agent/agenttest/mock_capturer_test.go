@@ -143,28 +143,6 @@ func TestMockCapturer_ReadSingleKey(t *testing.T) {
 	}
 }
 
-func TestMockCapturer_ReadLine(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	var called bool
-	m := &MockCapturer{
-		ReadLineFn: func(ctx context.Context) (string, error) {
-			called = true
-			return "line", nil
-		},
-	}
-	got, err := m.ReadLine(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "line" {
-		t.Errorf("got %q; want %q", got, "line")
-	}
-	if !called {
-		t.Error("ReadLineFn was not called")
-	}
-}
-
 func TestMockCapturer_RaceDetection(t *testing.T) {
 	m := &MockCapturer{}
 	ctx := context.Background()
@@ -177,7 +155,6 @@ func TestMockCapturer_RaceDetection(t *testing.T) {
 		warnCalls          atomic.Int32
 		promptCalls        atomic.Int32
 		readSingleKeyCalls atomic.Int32
-		readLineCalls      atomic.Int32
 	)
 
 	m.IsTTYFn = func(v any) bool { isTTYCalls.Add(1); return false }
@@ -199,10 +176,6 @@ func TestMockCapturer_RaceDetection(t *testing.T) {
 		readSingleKeyCalls.Add(1)
 		return "", nil
 	}
-	m.ReadLineFn = func(ctx context.Context) (string, error) {
-		readLineCalls.Add(1)
-		return "", nil
-	}
 
 	var wg sync.WaitGroup
 	const goroutines = 5
@@ -220,7 +193,6 @@ func TestMockCapturer_RaceDetection(t *testing.T) {
 				m.Warn("w")
 				m.Prompt("p")
 				_, _ = m.ReadSingleKey(ctx)
-				_, _ = m.ReadLine(ctx)
 			}
 		}()
 	}
@@ -233,14 +205,13 @@ func TestMockCapturer_RaceDetection(t *testing.T) {
 	wc := int(warnCalls.Load())
 	pc := int(promptCalls.Load())
 	rsk := int(readSingleKeyCalls.Load())
-	rl := int(readLineCalls.Load())
 
 	want := goroutines * iterations
-	total := it + cp + cf + cl + wc + pc + rsk + rl
-	wantTotal := want * 8
+	total := it + cp + cf + cl + wc + pc + rsk
+	wantTotal := want * 7
 	if total != wantTotal {
-		t.Errorf("got total %d (counts [%d,%d,%d,%d,%d,%d,%d,%d]); want %d",
-			total, it, cp, cf, cl, wc, pc, rsk, rl, wantTotal)
+		t.Errorf("got total %d (counts [%d,%d,%d,%d,%d,%d,%d]); want %d",
+			total, it, cp, cf, cl, wc, pc, rsk, wantTotal)
 	}
 }
 
@@ -307,20 +278,6 @@ func assertReadSingleKeyNilReturnsEmpty(t *testing.T, m *MockCapturer) {
 	}
 }
 
-// assertReadLineNilReturnsEmpty asserts that a zero-value MockCapturer
-// returns ("", nil) from ReadLine (the nil-func default).
-func assertReadLineNilReturnsEmpty(t *testing.T, m *MockCapturer) {
-	t.Helper()
-	ctx := context.Background()
-	got, err := m.ReadLine(ctx)
-	if got != "" {
-		t.Errorf("nil ReadLineFn: got %q; want empty", got)
-	}
-	if err != nil {
-		t.Errorf("nil ReadLineFn: unexpected error: %v", err)
-	}
-}
-
 func TestMockCapturer_NilFuncs(t *testing.T) {
 	t.Parallel()
 
@@ -356,12 +313,6 @@ func TestMockCapturer_NilFuncs(t *testing.T) {
 			name: "ReadSingleKey_nil_func",
 			call: func(m *MockCapturer) {
 				assertReadSingleKeyNilReturnsEmpty(t, m)
-			},
-		},
-		{
-			name: "ReadLine_nil_func",
-			call: func(m *MockCapturer) {
-				assertReadLineNilReturnsEmpty(t, m)
 			},
 		},
 	}

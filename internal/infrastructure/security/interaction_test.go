@@ -6,7 +6,6 @@ package security
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
@@ -204,14 +203,6 @@ func TestInteractionHandler_ReadMethods(t *testing.T) {
 	if key != "h" {
 		t.Errorf("ReadSingleKey returned %q, expect 'h'", key)
 	}
-
-	line, err := handler.ReadLine(ctx)
-	if err != nil {
-		t.Errorf("ReadLine error: %v", err)
-	}
-	if line != "hello" {
-		t.Errorf("ReadLine returned %q, expect 'hello'", line)
-	}
 }
 
 func TestNoOpInteractor(t *testing.T) {
@@ -231,11 +222,6 @@ func TestNoOpInteractor(t *testing.T) {
 	if err != nil || key != "" {
 		t.Errorf("noOpInteractor.ReadSingleKey failed: %v, %v", err, key)
 	}
-
-	line, err := ni.ReadLine(ctx)
-	if err != nil || line != "" {
-		t.Errorf("noOpInteractor.ReadLine failed: %v, %v", err, line)
-	}
 }
 
 func TestMockInteractor_EdgeCases(t *testing.T) {
@@ -254,20 +240,10 @@ func TestMockInteractor_EdgeCases(t *testing.T) {
 		t.Error("Expected error on canceled context in ReadSingleKey")
 	}
 
-	_, err = m.ReadLine(ctx)
-	if err == nil {
-		t.Error("Expected error on canceled context in ReadLine")
-	}
-
 	m = &mockInteractor{Answer: ""}
 	key, err := m.ReadSingleKey(context.Background())
 	if err != nil || key != "" {
 		t.Errorf("Expected empty key on empty answer in ReadSingleKey, got %v, %v", err, key)
-	}
-
-	_, err = m.ReadLine(context.Background())
-	if err != io.EOF {
-		t.Errorf("Expected EOF on empty answer in ReadLine, got %v", err)
 	}
 }
 
@@ -287,11 +263,6 @@ func TestMockInteractor_Errors(t *testing.T) {
 	_, err := m.ReadSingleKey(ctx)
 	if err == nil {
 		t.Error("Expected error in ReadSingleKey")
-	}
-
-	_, err = m.ReadLine(ctx)
-	if err == nil {
-		t.Error("Expected error in ReadLine")
 	}
 }
 

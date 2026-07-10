@@ -121,11 +121,8 @@ func (m *AdoManager) runPipeline(ctx context.Context, args map[string]interface{
 		return runPipelineResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
 	}
 
-	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Trigger run for pipeline %d (branch: %s) in %s/%s?", params.PipelineId, params.Branch, params.Organization, params.Project))
-	if err != nil {
-		return runPipelineResult{}, fmt.Errorf("confirmation error: %w", err)
-	}
-	if !approved {
+	// Auto-decline if bypass not active (RequiresConsent handled by authorizer).
+	if !m.sc.IsBypassActive() {
 		return runPipelineResult{Cancelled: true}, nil
 	}
 

@@ -27,8 +27,8 @@ glossary:
     persisted state, analogous to `Orchestrator` and `SecurityManager`.
   UserInteractor: >
     The interface through which the `SecurityManager` prompts the user for
-    confirmation (e.g. before a `Tool` accesses an unauthorized path, or before
-    executing a dangerous command). Implementations include the interactive TUI
+    confirmation (e.g. before a `Tool` accesses an unauthorized path).
+    Implementations include the interactive TUI
     capturer and a no-op variant for automated workflows. Prompt suppression is
     controlled by `Config.bypassConfirmation`.
 

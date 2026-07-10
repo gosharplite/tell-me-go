@@ -20,8 +20,6 @@ func TestIsCriticalEvent(t *testing.T) {
 	}{
 		{"ResponseEvent", events.ResponseEvent{}, true},
 		{"SystemMessageEvent", events.SystemMessageEvent{}, true},
-		{"ConsentStartedEvent", events.ConsentStartedEvent{}, true},
-		{"ConsentFinishedEvent", events.ConsentFinishedEvent{}, true},
 		{"TurnStarted", events.TurnStarted{}, true},
 		{"TurnStatusEvent", events.TurnStatusEvent{}, true},
 		{"ToolCallEvent", events.ToolCallEvent{}, true},
