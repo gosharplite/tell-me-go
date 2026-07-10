@@ -46,7 +46,7 @@ func (sc *spinnerCoord) stopActiveSpinner() {
 	sc.stopFn = nil
 
 	if stop != nil {
-		sc.logger.Warn("spinner stopped", "phase", fmt.Sprintf("%T", sc.activePhase))
+		sc.logger.Debug("spinner stopped", "phase", fmt.Sprintf("%T", sc.activePhase))
 		// Protect the boundary against double-panics from external UI dependencies
 		func() {
 			defer func() {
@@ -91,11 +91,11 @@ func (sc *spinnerCoord) startSpinnerForPhase(ctx context.Context, e events.Event
 	// If turn time tracking is active and a spinner is already running,
 	// update its status without resetting the timer.
 	if !sc.turnStartTime.IsZero() && sc.stopFn != nil {
-		sc.logger.Warn("spinner update in-place", "phase", fmt.Sprintf("%T", e), "status", info.Status)
+		sc.logger.Debug("spinner update in-place", "phase", fmt.Sprintf("%T", e), "status", info.Status)
 		sc.renderer.UpdateSpinnerStatus(ctx, info.Status, info.WithMetrics)
 		return true
 	}
-	sc.logger.Warn("spinner transition", "phase", fmt.Sprintf("%T", e), "turnStartZero", sc.turnStartTime.IsZero(), "stopFnNil", sc.stopFn == nil)
+	sc.logger.Debug("spinner transition", "phase", fmt.Sprintf("%T", e), "turnStartZero", sc.turnStartTime.IsZero(), "stopFnNil", sc.stopFn == nil)
 
 	// If the event requires a rendering reset and we are currently rendering,
 	// invoke the callback to transition to idle before starting the spinner.
