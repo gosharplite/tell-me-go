@@ -996,6 +996,35 @@ func setupSimpleToolExecutor(ex *agenttest.MockAgentExecutor, toolName string) {
 	}
 }
 
+// assertLoopWarningInHistory searches history for the LoopWarning across
+// both user-role text messages (text-only loops) and tool-role
+// FunctionResponse messages (tool-call loops).
+func assertLoopWarningInHistory(t *testing.T, contents []*llm.Content) {
+	t.Helper()
+
+	for _, msg := range contents {
+		// Text-only loops: user-role text message
+		if msg.Role == "user" {
+			for _, part := range msg.Parts {
+				if part.Text == orchestrator.LoopWarning {
+					return
+				}
+			}
+		}
+		// Tool-call loops: synthetic tool-role FunctionResponse
+		if msg.Role == "tool" {
+			for _, part := range msg.Parts {
+				if part.FunctionResponse != nil {
+					if errStr, ok := part.FunctionResponse.Response["error"].(string); ok && errStr == orchestrator.LoopWarning {
+						return
+					}
+				}
+			}
+		}
+	}
+	t.Error("LoopWarning not found in history")
+}
+
 func assertLoopWarningInjected(t *testing.T, hm *agenttest.MockHistoryManager) {
 	t.Helper()
 	hm.Mu.Lock()
@@ -1003,14 +1032,7 @@ func assertLoopWarningInjected(t *testing.T, hm *agenttest.MockHistoryManager) {
 	copy(contents, hm.Contents)
 	hm.Mu.Unlock()
 
-	foundWarning := false
-	for _, msg := range contents {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
-			foundWarning = true
-			break
-		}
-	}
-	assert.True(t, foundWarning, "Should have injected loop warning")
+	assertLoopWarningInHistory(t, contents)
 }
 
 func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {

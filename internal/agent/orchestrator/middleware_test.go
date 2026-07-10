@@ -545,3 +545,159 @@ func TestPublishTurnStatus_WithCostTracker(t *testing.T) {
 	}
 	assert.True(t, found, "TurnStatusEvent should be published")
 }
+
+func TestHandleLoopBreak_SyntheticToolResults(t *testing.T) {
+	// Case 1: Response WITH tool calls → response persisted + synthetic tool results injected
+	t.Run("tool-call response gets synthetic tool results", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+
+		hMock := &agenttest.MockHistoryManager{}
+		hMock.SetInternalContents([]*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "initial"}}},
+		})
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+		turn := &Turn{
+			State: &TurnState{
+				HasToolCalls: true,
+				Response: &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{{
+						FunctionCall: &llm.FunctionCall{
+							Name: "replace_text",
+							Args: map[string]interface{}{"old": "x", "new": "y"},
+						},
+					}},
+				},
+			},
+			CtxManager: cm,
+			Events:     bus,
+		}
+
+		result, err := handleLoopBreak(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.Equal(t, PhaseComplete, result.NextPhase)
+
+		// Existing behavior preserved
+		assert.True(t, turn.State.HasToolCalls, "HasToolCalls should be true after loop break")
+		assert.Nil(t, turn.State.Response, "Response should be cleared after loop break")
+
+		// Response IS persisted (unlike before)
+		contents := hMock.GetContents()
+		assert.Len(t, contents, 3, "history: seed + model response + synthetic tool result")
+
+		// Model response with FunctionCall was persisted
+		assert.Equal(t, "model", contents[1].Role)
+		assert.NotNil(t, contents[1].Parts[0].FunctionCall)
+		assert.Equal(t, "replace_text", contents[1].Parts[0].FunctionCall.Name)
+
+		// Synthetic tool result injected
+		assert.Equal(t, "tool", contents[2].Role)
+		assert.NotNil(t, contents[2].Parts[0].FunctionResponse)
+		assert.Equal(t, "replace_text", contents[2].Parts[0].FunctionResponse.Name)
+		assert.Equal(t, LoopWarning, contents[2].Parts[0].FunctionResponse.Response["error"])
+
+		// No user-role warning
+		for _, c := range contents {
+			if c.Role == "user" {
+				for _, p := range c.Parts {
+					assert.NotEqual(t, LoopWarning, p.Text, "user warning should not be present")
+				}
+			}
+		}
+
+		// The system warning event was published
+		found := false
+		for _, e := range bus.GetEvents() {
+			if evt, ok := e.(events.SystemMessageEvent); ok {
+				if evt.Level == "warn" {
+					found = true
+				}
+			}
+		}
+		assert.True(t, found, "loop-break warning event should be published")
+	})
+
+	// Case 2: Response WITHOUT tool calls → persisted + user warning (existing behavior preserved)
+	t.Run("text-only response persisted", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+
+		hMock := &agenttest.MockHistoryManager{}
+		hMock.SetInternalContents([]*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "initial"}}},
+		})
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+		turn := &Turn{
+			State: &TurnState{
+				HasToolCalls: false,
+				Response:     &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "I'm stuck"}}},
+			},
+			CtxManager: cm,
+			Events:     bus,
+		}
+
+		result, err := handleLoopBreak(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.Equal(t, PhaseComplete, result.NextPhase)
+
+		// Existing behavior preserved
+		assert.True(t, turn.State.HasToolCalls, "HasToolCalls should be true after loop break")
+		assert.Nil(t, turn.State.Response, "Response should be cleared after loop break")
+
+		// History assertions: seed + model text response + warning = 3
+		contents := hMock.GetContents()
+		assert.Len(t, contents, 3, "history should contain seed + model response + warning")
+
+		assert.Equal(t, "model", contents[1].Role, "second entry should be the model text response")
+		assert.Equal(t, "I'm stuck", contents[1].Parts[0].Text)
+
+		assert.Equal(t, "user", contents[2].Role, "third entry should be the user warning")
+		assert.Equal(t, LoopWarning, contents[2].Parts[0].Text)
+	})
+
+	// Case 3: Error from synthetic tool AddContent propagates
+	t.Run("error from synthetic tool AddContent propagates", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+
+		addContentCalls := 0
+		hMock := &agenttest.MockHistoryManager{}
+		hMock.SetInternalContents([]*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "initial"}}},
+		})
+		hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
+			addContentCalls++
+			if content.Role == "tool" {
+				return assert.AnError // fail on synthetic tool result injection
+			}
+			// Default append for other roles
+			hMock.Mu.Lock()
+			hMock.Contents = append(hMock.Contents, llm.CloneContent(content))
+			hMock.Mu.Unlock()
+			return nil
+		}
+
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+		turn := &Turn{
+			State: &TurnState{
+				HasToolCalls: true,
+				Response: &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{{
+						FunctionCall: &llm.FunctionCall{
+							Name: "replace_text",
+							Args: map[string]interface{}{"old": "x", "new": "y"},
+						},
+					}},
+				},
+			},
+			CtxManager: cm,
+			Events:     bus,
+		}
+
+		_, err := handleLoopBreak(context.Background(), turn)
+		assert.Error(t, err, "error from synthetic AddContent should propagate")
+		assert.Equal(t, 2, addContentCalls, "should attempt: response + synthetic tool")
+	})
+}
