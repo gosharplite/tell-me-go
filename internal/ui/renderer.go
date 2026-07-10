@@ -64,6 +64,13 @@ type stdUIRenderer struct {
 	lastMemPercent  float64
 	markdownErrOnce sync.Once
 
+	// Spinner in-place update fields: UpdateSpinnerStatus writes to these
+	// and the spinner goroutine reads them on each tick, allowing the status
+	// text to change without restarting the spinner (preserving startTime).
+	spinnerStatusMu    sync.RWMutex
+	spinnerStatus      string
+	spinnerShowMetrics bool
+
 	// stderrIsTerminalFn checks whether an fd is a terminal. Defaults to
 	// term.IsTerminal. Overridable in tests to exercise the true-branch
 	// of IsTerminalContext without a real TTY.

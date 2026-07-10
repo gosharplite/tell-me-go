@@ -66,6 +66,7 @@ func (s *spyRenderer) RenderHealthReport(_ context.Context, _ *ports.HealthRepor
 func (s *spyRenderer) SetUseColor(_ bool)                                          {}
 func (s *spyRenderer) SetForceSpinner(_ bool)                                      {}
 func (s *spyRenderer) IsTerminalContext() bool                                     { return false }
+func (s *spyRenderer) UpdateSpinnerStatus(_ context.Context, _ string, _ bool)     {}
 
 // --- helper ---
 

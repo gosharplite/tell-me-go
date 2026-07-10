@@ -39,6 +39,7 @@ func (b *benchRenderer) LogToolResult(_ context.Context, _ string, _ tools.ToolR
 func (b *benchRenderer) SetUseColor(_ bool)                                                    {}
 func (b *benchRenderer) SetForceSpinner(_ bool)                                                {}
 func (b *benchRenderer) IsTerminalContext() bool                                               { return false }
+func (b *benchRenderer) UpdateSpinnerStatus(_ context.Context, _ string, _ bool)               {}
 
 // --- helper -------------------------------------------------------------------
 

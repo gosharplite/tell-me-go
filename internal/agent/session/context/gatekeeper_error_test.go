@@ -177,6 +177,8 @@ func (m *mockFailingUIRenderer) IsTerminalContext() bool {
 }
 func (m *mockFailingUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {
 }
+func (m *mockFailingUIRenderer) UpdateSpinnerStatus(ctx context.Context, status string, showMetrics bool) {
+}
 
 func TestSessionManager_ConfigError(t *testing.T) {
 	agentFactory := func(ctx context.Context, deps ports.ChatterComposer, cfg ports.ChatterConfig) (ports.Chatter, error) {

@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -15,10 +16,11 @@ import (
 //
 // All methods are confined to the actor goroutine; no mutexes are needed.
 type spinnerCoord struct {
-	renderer    ports.UIRenderer
-	logger      ports.Logger
-	activePhase events.Event
-	stopFn      func()
+	renderer      ports.UIRenderer
+	logger        ports.Logger
+	activePhase   events.Event
+	stopFn        func()
+	turnStartTime time.Time
 }
 
 // newSpinnerCoord creates a new spinnerCoord with the given dependencies.
@@ -27,6 +29,13 @@ func newSpinnerCoord(renderer ports.UIRenderer, logger ports.Logger) *spinnerCoo
 		renderer: renderer,
 		logger:   logger,
 	}
+}
+
+// SetTurnStartTime records the time at which the current turn began.
+// When set, subsequent phase transitions update the spinner status in-place
+// instead of restarting the spinner, preserving the elapsed-time counter.
+func (sc *spinnerCoord) SetTurnStartTime(t time.Time) {
+	sc.turnStartTime = t
 }
 
 // stopActiveSpinner stops the currently running spinner, if any.
@@ -75,6 +84,13 @@ func (sc *spinnerCoord) startSpinnerForPhase(ctx context.Context, e events.Event
 	info, ok := getSpinnerInfo(e)
 	if !ok {
 		return false
+	}
+
+	// If turn time tracking is active and a spinner is already running,
+	// update its status without resetting the timer.
+	if !sc.turnStartTime.IsZero() && sc.stopFn != nil {
+		sc.renderer.UpdateSpinnerStatus(ctx, info.Status, info.WithMetrics)
+		return true
 	}
 
 	// If the event requires a rendering reset and we are currently rendering,

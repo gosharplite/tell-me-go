@@ -6,6 +6,7 @@ package ui
 import (
 	"context"
 	"reflect"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -148,6 +149,7 @@ func (d *eventDispatcher) handleToolEvents(ctx context.Context, e events.Event) 
 func (d *eventDispatcher) handleTurnStarted(_ context.Context, _ events.Event) {
 	d.spinner.activePhase = nil
 	d.stateMachine.transition(stateIdle)
+	d.spinner.SetTurnStartTime(time.Now())
 }
 
 func (d *eventDispatcher) handleSystemMessage(ctx context.Context, e events.Event) {
