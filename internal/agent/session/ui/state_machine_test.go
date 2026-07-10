@@ -58,7 +58,6 @@ func TestTransition_ToThinking_StopsSpinner(t *testing.T) {
 	}{
 		{"IdleToThinking", stateIdle},
 		{"RenderingToThinking", stateRendering},
-		{"AwaitingConsentToThinking", stateAwaitingConsent},
 	}
 
 	for _, tt := range tests {

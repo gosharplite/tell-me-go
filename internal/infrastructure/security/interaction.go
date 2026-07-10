@@ -109,12 +109,6 @@ func (h *interactionHandler) ReadSingleKey(ctx context.Context) (string, error) 
 	return ui.ReadSingleKey(ctx)
 }
 
-// ReadLine reads a line of input.
-func (h *interactionHandler) ReadLine(ctx context.Context) (string, error) {
-	ui := h.interactorProvider()
-	return ui.ReadLine(ctx)
-}
-
 // noOpInteractor is a dummy interactor that does nothing and denies all confirmations.
 type noOpInteractor struct{}
 
@@ -144,10 +138,5 @@ func (i *noOpInteractor) Prompt(message string) { _ = message }
 
 // ReadSingleKey returns an empty string.
 func (i *noOpInteractor) ReadSingleKey(ctx context.Context) (string, error) {
-	return "", nil
-}
-
-// ReadLine returns an empty string.
-func (i *noOpInteractor) ReadLine(ctx context.Context) (string, error) {
 	return "", nil
 }

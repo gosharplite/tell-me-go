@@ -5,7 +5,6 @@ package toolstest
 
 import (
 	"context"
-	"io"
 )
 
 // MockInteractor is a test double for security.UserInteractor used by
@@ -45,14 +44,4 @@ func (m *MockInteractor) Prompt(message string) {
 
 func (m *MockInteractor) ReadSingleKey(ctx context.Context) (string, error) {
 	return m.Answer, m.Err
-}
-
-func (m *MockInteractor) ReadLine(ctx context.Context) (string, error) {
-	if m.Err != nil {
-		return "", m.Err
-	}
-	if m.Answer == "" {
-		return "", io.EOF
-	}
-	return m.Answer, nil
 }

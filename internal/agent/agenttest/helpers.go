@@ -79,8 +79,6 @@ type mockServiceSecurityManager struct {
 	TerminalUnlockFunc   func()
 	PromptFunc           func(message string)
 	WarnFunc             func(message string)
-	ConfirmFunc          func(ctx context.Context, message string) (bool, error)
-	ReadLineFunc         func(ctx context.Context) (string, error)
 	IsCommandAllowedFunc func(command string) bool
 	IsBypassActiveFunc   func() bool
 	CloseFunc            func() error
@@ -94,8 +92,6 @@ type mockServiceSecurityManager struct {
 	calledTerminalUnlock   int
 	calledPrompt           int
 	calledWarn             int
-	calledConfirm          int
-	calledReadLine         int
 	calledIsCommandAllowed int
 	calledIsBypassActive   int
 	calledClose            int
@@ -108,8 +104,6 @@ type mockServiceSecurityManager struct {
 	lastLogAudit        string
 	lastPrompt          string
 	lastWarn            string
-	lastConfirmCtx      context.Context
-	lastConfirmMessage  string
 	lastCommand         string
 }
 
@@ -126,8 +120,6 @@ func (m *mockServiceSecurityManager) snapshot() map[string]int {
 		"TerminalUnlock":   m.calledTerminalUnlock,
 		"Prompt":           m.calledPrompt,
 		"Warn":             m.calledWarn,
-		"Confirm":          m.calledConfirm,
-		"ReadLine":         m.calledReadLine,
 		"IsCommandAllowed": m.calledIsCommandAllowed,
 		"IsBypassActive":   m.calledIsBypassActive,
 		"Close":            m.calledClose,
@@ -222,30 +214,6 @@ func (m *mockServiceSecurityManager) Warn(message string) {
 	if fn != nil {
 		fn(message)
 	}
-}
-
-func (m *mockServiceSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	m.mu.Lock()
-	m.calledConfirm++
-	m.lastConfirmCtx = ctx
-	m.lastConfirmMessage = message
-	fn := m.ConfirmFunc
-	m.mu.Unlock()
-	if fn != nil {
-		return fn(ctx, message)
-	}
-	return false, nil
-}
-
-func (m *mockServiceSecurityManager) ReadLine(ctx context.Context) (string, error) {
-	m.mu.Lock()
-	m.calledReadLine++
-	fn := m.ReadLineFunc
-	m.mu.Unlock()
-	if fn != nil {
-		return fn(ctx)
-	}
-	return "", nil
 }
 
 func (m *mockServiceSecurityManager) IsCommandAllowed(command string) bool {
@@ -386,7 +354,6 @@ func (s *StubCapturer) Close(ctx context.Context) error { return s.CloseErr }
 func (s *StubCapturer) Warn(msg string)                                   {}
 func (s *StubCapturer) Prompt(msg string)                                 {}
 func (s *StubCapturer) ReadSingleKey(ctx context.Context) (string, error) { return "", nil }
-func (s *StubCapturer) ReadLine(ctx context.Context) (string, error)      { return "", nil }
 
 // mockServiceAgent is a mock of Chatter.
 type mockServiceAgent struct {

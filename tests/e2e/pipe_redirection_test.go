@@ -60,10 +60,11 @@ func TestPipeCommandsTool(t *testing.T) {
 
 	homeDir := t.TempDir()
 	configPath := createTempConfig(t, "google", server.URL)
+	// Append bypass to the config so execute_command/pipe_commands run without consent
+	appendToConfig(t, configPath, "BYPASS_CONFIRMATION: true\n")
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_MOCK_ANSWER=y",
 	}
 
 	// 2. Run CLI
@@ -127,10 +128,11 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 
 	homeDir := t.TempDir()
 	configPath := createTempConfig(t, "google", server.URL)
+	// Append bypass to the config so execute_command runs without consent
+	appendToConfig(t, configPath, "BYPASS_CONFIRMATION: true\n")
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_MOCK_ANSWER=y",
 	}
 
 	// 2. Run CLI
@@ -206,10 +208,11 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	defer server.Close()
 
 	configPath := createTempConfig(t, "google", server.URL)
+	// Append bypass to the config so pipe_commands runs without consent
+	appendToConfig(t, configPath, "BYPASS_CONFIRMATION: true\n")
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_MOCK_ANSWER=y",
 	}
 
 	// 2. Run CLI
@@ -235,5 +238,18 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	expected := "initial\npiped\n"
 	if got != expected {
 		t.Errorf("Expected %q in piped_out.txt, got %q", expected, got)
+	}
+}
+
+// appendToConfig appends a line to an existing YAML config file.
+func appendToConfig(t *testing.T, configPath, line string) {
+	t.Helper()
+	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("Failed to open config for append: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(line); err != nil {
+		t.Fatalf("Failed to append to config: %v", err)
 	}
 }

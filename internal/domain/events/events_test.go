@@ -399,8 +399,6 @@ func TestEventTypes(t *testing.T) {
 		events.TraceEvent{},
 		events.SummarizationStartedEvent{},
 		events.RetryWaitingEvent{},
-		events.ConsentStartedEvent{},
-		events.ConsentFinishedEvent{},
 		events.ConfigUpdated{},
 		events.TurnStatusEvent{},
 		events.ToolExecutionStartedEvent{},

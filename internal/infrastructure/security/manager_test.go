@@ -142,12 +142,6 @@ func TestSecurityManager_Misc(t *testing.T) {
 	// IsPathWritable
 	_, _ = sm.IsPathWritable(filepath.Join(t.TempDir(), "test"))
 
-	// confirmDestructiveAction
-	ok, err := sm.confirmDestructiveAction(context.Background(), "delete", "file", "detail")
-	if err != nil || !ok {
-		t.Errorf("confirmDestructiveAction failed: %v, %v", err, ok)
-	}
-
 	// LogAudit / SetCommandsLogFile
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "commands.log")
@@ -179,42 +173,6 @@ func TestSecurityManager_Misc(t *testing.T) {
 	sm.TerminalUnlock()
 
 	_, _ = sm.readSingleKey(context.Background())
-	_, _ = sm.ReadLine(context.Background())
-}
-
-func TestSecurityManager_Confirm_Bypass(t *testing.T) {
-	t.Parallel()
-	// Default behavior (no bypass) - user says No
-	interactor := &mockInteractor{Answer: "n"}
-	sm := NewSecurityManager(func() domain.UserInteractor { return interactor })
-	defer func() {
-		_ = sm.Close()
-	}()
-	ok, err := sm.Confirm(context.Background(), "Should I?")
-	if err != nil || ok {
-		t.Errorf("Confirm(user=n, bypass=false) = %v, %v; want false, nil", ok, err)
-	}
-
-	// Bypass active - should be auto-approved even if interactor would say No
-	sm.SetBypassActive(true)
-	ok, err = sm.Confirm(context.Background(), "Should I?")
-	if err != nil || !ok {
-		t.Errorf("Confirm(user=n, bypass=true) = %v, %v; want true, nil", ok, err)
-	}
-
-	// Verify that a warning was captured
-	if len(interactor.Warns) == 0 || !strings.Contains(interactor.Warns[0], "[Auto-Approved]") {
-		t.Errorf("Expected auto-approval warning, got: %v", interactor.Warns)
-	}
-
-	// Context approved - should be auto-approved even if bypass is inactive and interactor would say No
-	sm.SetBypassActive(false)
-	ctxApproved := domain.WithApprovedTools(context.Background(), []string{"test_tool"})
-	ctxApproved = domain.WithCurrentTool(ctxApproved, "test_tool")
-	ok, err = sm.Confirm(ctxApproved, "Should I?")
-	if err != nil || !ok {
-		t.Errorf("Confirm(user=n, ctx_approved=true) = %v, %v; want true, nil", ok, err)
-	}
 }
 
 func TestSecurityManager_Prompt(t *testing.T) {

@@ -17,55 +17,50 @@ func TestSecurity_CWDWriteAuthorization(t *testing.T) {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
-	// 1. Setup workspace
 	workspace := t.TempDir()
 	homeDir := t.TempDir()
 
-	// Ensure we are testing in a subdirectory to avoid any root-level weirdness
 	projectDir := filepath.Join(workspace, "my-project")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
-	// 2. Setup mock server
-	// The agent will try to create a directory 'test_dir' in the CWD
 	provider := "google"
 	server, receivedResponse := setupProviderMockServer(t, provider, "create_directory", map[string]interface{}{
 		"path":   "test_dir",
-		"reason": "E2E verification of CWD safety",
-	}, nil)
+		"reason": "E2E verification of CWD safety — auto-declined without bypass",
+	}, func(result string) string {
+		if strings.Contains(result, "User explicitly denied this action.") {
+			return "Model acknowledges the auto-decline."
+		}
+		return "Error: unexpected result."
+	})
 	defer server.Close()
 
 	configPath := createTempConfig(t, provider, server.URL)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_ANSWER=y", // Auto-approve
 		"TELL_ME_MOCK_URL=" + server.URL,
 	}
 
-	// 3. Run command with CWD set to projectDir
 	stdout, stderr, err := runCommandWithEnvInDir(projectDir, env, "", "-c", configPath, "create a directory named test_dir")
-
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s\nStdout: %s", err, stderr, stdout)
 	}
 
-	// 4. Verify results
 	combined := stripANSI(stdout + stderr)
 
-	// Check if the tool execution was blocked
 	if strings.Contains(combined, "Action blocked by the system sandbox security policy") {
-		t.Errorf("Security regression: CWD write was blocked.\nOutput: %s", combined)
+		t.Errorf("Security regression: CWD write was blocked by sandbox.\nOutput: %s", combined)
 	}
 
-	// Verify the response from the agent contains success
-	if !strings.Contains(*receivedResponse, "Directory created successfully") {
-		t.Errorf("Expected tool success message in agent response, got: %q", *receivedResponse)
+	if !strings.Contains(*receivedResponse, "User explicitly denied this action.") {
+		t.Errorf("Expected auto-decline message in agent response, got: %q", *receivedResponse)
 	}
 
-	// Verify directory actually exists on disk in the projectDir
-	if _, err := os.Stat(filepath.Join(projectDir, "test_dir")); os.IsNotExist(err) {
-		t.Errorf("Directory 'test_dir' was not created in the CWD")
+	// Verify directory was NOT created
+	if _, err := os.Stat(filepath.Join(projectDir, "test_dir")); !os.IsNotExist(err) {
+		t.Errorf("Directory 'test_dir' should not have been created (auto-declined)")
 	}
 }
 

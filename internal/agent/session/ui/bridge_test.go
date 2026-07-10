@@ -238,50 +238,6 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
-			name:  "ConsentStartedEvent (Stops Spinner)",
-			event: events.ConsentStartedEvent{},
-			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
-				done := make(chan struct{})
-				var once sync.Once
-				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
-					once.Do(func() { close(done) })
-					return func() {}
-				}
-				return done
-			},
-			preSetup: func(b *Bridge, m *agenttest.MockUIRenderer) {
-				// Start a spinner first
-				_ = b.HandleEvent(context.Background(), events.InferenceStartedEvent{})
-				// No need for explicit waitMock here as preSetup's effects will be checked at end
-			},
-			verify: func(t *testing.T, b *Bridge) {
-				// Final wait ensures all events in sequence were processed
-			},
-		},
-		{
-			name:  "ConsentFinishedEvent (Resumes Active Phase)",
-			event: events.ConsentFinishedEvent{},
-			preSetup: func(b *Bridge, m *agenttest.MockUIRenderer) {
-				// Set active phase via event
-				_ = b.HandleEvent(context.Background(), events.InferenceStartedEvent{Model: "gpt-4o"})
-				// Enter consent
-				_ = b.HandleEvent(context.Background(), events.ConsentStartedEvent{})
-			},
-			setup: func(m *agenttest.MockUIRenderer) <-chan struct{} {
-				done := make(chan struct{})
-				var count int32
-				m.StartSpinnerWithStatusFn = func(ctx context.Context, status string) func() {
-					if status == " Thinking [gpt-4o]..." {
-						if atomic.AddInt32(&count, 1) == 2 {
-							close(done)
-						}
-					}
-					return func() {}
-				}
-				return done
-			},
-		},
-		{
 			name: "ResponseEvent",
 			event: events.ResponseEvent{
 				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},

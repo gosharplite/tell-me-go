@@ -291,7 +291,6 @@ type spinnerFormattable interface {
 func isCriticalEvent(e events.Event) bool {
 	switch e.(type) {
 	case events.ResponseEvent, events.SystemMessageEvent, events.StatusUpdate,
-		events.ConsentStartedEvent, events.ConsentFinishedEvent,
 		events.TurnStarted, events.TurnStatusEvent,
 		events.ToolCallEvent, events.ToolResultEvent,
 		events.UsageMetricsEvent:

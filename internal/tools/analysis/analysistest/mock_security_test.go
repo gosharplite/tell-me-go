@@ -191,18 +191,6 @@ func TestMockSecurityProvider_IsPathWritable(t *testing.T) {
 func TestMockSecurityProvider_ErrorReturningMethods(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Confirm_zero_value", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityProvider{}
-		ok, err := mock.Confirm(context.Background(), "msg")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !ok {
-			t.Error("expected true from zero-value Confirm")
-		}
-	})
-
 	t.Run("Authorize_zero_value", func(t *testing.T) {
 		t.Parallel()
 		mock := &MockSecurityProvider{}
@@ -212,18 +200,6 @@ func TestMockSecurityProvider_ErrorReturningMethods(t *testing.T) {
 		}
 		if !ok {
 			t.Error("expected true from zero-value Authorize")
-		}
-	})
-
-	t.Run("ReadLine_zero_value", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityProvider{}
-		line, err := mock.ReadLine(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if line != "" {
-			t.Errorf("got %q; want empty string", line)
 		}
 	})
 

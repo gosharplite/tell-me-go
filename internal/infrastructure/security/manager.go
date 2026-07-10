@@ -5,7 +5,6 @@ package security
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"sync"
 
@@ -61,11 +60,6 @@ func (sm *SecurityManager) IsPathWritable(path string) (string, error) {
 	return sm.policy.ValidatePath(path, true)
 }
 
-// confirmDestructiveAction prompts the user for confirmation.
-func (sm *SecurityManager) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	return sm.interaction.ConfirmAction(ctx, action, target, detail, sm.IsBypassActive())
-}
-
 // Authorize prompts the user for authorization of a specific command or action.
 func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	if domain.IsCurrentToolApproved(ctx) || sm.IsBypassActive() {
@@ -90,17 +84,6 @@ func (sm *SecurityManager) Warn(message string) {
 // Prompt prints an inline prompt.
 func (sm *SecurityManager) Prompt(message string) {
 	sm.interaction.interactorProvider().Prompt(message)
-}
-
-// Confirm prompts the user for confirmation.
-func (sm *SecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	if domain.IsCurrentToolApproved(ctx) || sm.IsBypassActive() {
-		sm.interaction.TerminalLock()
-		defer sm.interaction.TerminalUnlock()
-		sm.interaction.interactorProvider().Warn(fmt.Sprintf("[Auto-Approved] %s", message))
-		return true, nil
-	}
-	return sm.interaction.interactorProvider().Confirm(ctx, message)
 }
 
 // IsBypassActive returns the current state of bypass_confirmation.
@@ -135,11 +118,6 @@ func (sm *SecurityManager) TerminalUnlock() {
 // readSingleKey reads a single key.
 func (sm *SecurityManager) readSingleKey(ctx context.Context) (string, error) {
 	return sm.interaction.ReadSingleKey(ctx)
-}
-
-// ReadLine reads a line.
-func (sm *SecurityManager) ReadLine(ctx context.Context) (string, error) {
-	return sm.interaction.ReadLine(ctx)
 }
 
 // RegisterSafePath registers a safe path. The path is normalized to

@@ -414,8 +414,9 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "ado_create_pipeline",
-				Description: "Creates a new Azure DevOps YAML build pipeline. Idempotent: returns existing ID if the name already exists. Triggers security confirmation.",
+				Name:            "ado_create_pipeline",
+				Description:     "Creates a new Azure DevOps YAML build pipeline. Idempotent: returns existing ID if the name already exists. Triggers security confirmation.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -434,8 +435,9 @@ func registerPipelines(r tools.Registry, m *AdoManager, f PipelineFormatter) err
 		},
 		{
 			decl: &tools.ToolDeclaration{
-				Name:        "ado_run_pipeline",
-				Description: "Triggers a manual run of an existing Azure DevOps YAML pipeline. Returns the Run ID for tracking. Triggers security confirmation.",
+				Name:            "ado_run_pipeline",
+				Description:     "Triggers a manual run of an existing Azure DevOps YAML pipeline. Returns the Run ID for tracking. Triggers security confirmation.",
+				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{

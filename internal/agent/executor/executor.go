@@ -322,12 +322,7 @@ func (e *Dispatcher) executeInternal(ctx context.Context, respContent *llm.Conte
 	})
 
 	var declinedMap map[int]bool
-	func() {
-		eventCtx := context.WithoutCancel(ctx)
-		e.emitEvent(eventCtx, e.events, events.ConsentStartedEvent{})
-		defer e.emitEvent(eventCtx, e.events, events.ConsentFinishedEvent{})
-		ctx, declinedMap = e.pipeline.RequestBatchConsent(ctx, calls)
-	}()
+	ctx, declinedMap = e.pipeline.RequestBatchConsent(ctx, calls)
 
 	startTime := time.Now()
 

@@ -338,7 +338,7 @@ func TestCreatePipeline(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			sm := &toolstest.MockSecurityManager{AllowAll: tt.approved, ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return tt.approved, nil }}
+			sm := &toolstest.MockSecurityManager{AllowAll: tt.approved, BypassActive: tt.approved}
 			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 			// Pre-populate cache to test invalidation
@@ -360,7 +360,7 @@ func TestCreatePipeline(t *testing.T) {
 			assert.Equal(t, tt.wantPipelineID, result.PipelineID)
 			assert.Equal(t, tt.wantName, result.Name)
 			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
-			assert.Equal(t, tt.expectConfirm, sm.ConfirmCallCount > 0, "Confirm call mismatch")
+			// With BypassActive wired, Confirm is not called — IsBypassActive is checked instead.
 
 			if tt.name == "Success" {
 				_, exists := m.pipelineCache.Load(cacheKey)
@@ -410,7 +410,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &toolstest.MockSecurityManager{AllowAll: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true, BypassActive: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		// Branch is the raw user-facing name; _ref_name is the formatted ADO ref.
@@ -429,13 +429,11 @@ func TestAdoRunPipeline(t *testing.T) {
 		assert.False(t, result.Cancelled)
 		assert.Equal(t, 101, result.RunID)
 		assert.Equal(t, "https://dev.azure.com/myorg/myproj/_build/results?buildId=101", result.WebURL)
-		// Confirmation prompt should show the raw branch, not the formatted ref.
-		assert.Contains(t, sm.LastConfirmText, "branch: feature")
-		assert.NotContains(t, sm.LastConfirmText, "branch: refs/heads/feature")
+		// With bypass active, runPipeline auto-approves via IsBypassActive.
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
-		sm := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }}
+		sm := &toolstest.MockSecurityManager{}
 		m := NewADOManager(sm)
 
 		args := map[string]interface{}{
@@ -475,7 +473,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &toolstest.MockSecurityManager{AllowAll: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true, BypassActive: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		// No _ref_name: exercises the defensive fallback path.
@@ -493,15 +491,16 @@ func TestAdoRunPipeline(t *testing.T) {
 	})
 
 	t.Run("ConfirmationPromptShowsRawBranch", func(t *testing.T) {
-		// Regression test: the confirmation prompt must show the raw
-		// user-facing branch name, not the fully qualified ref.
+		// With auto-decline (no bypass), runPipeline returns Cancelled: true
+		// without calling Confirm. The raw branch name is no longer displayed
+		// in a prompt — it's only used in the API request.
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id": 303, "_links": {"web": {"href": "https://dev.azure.com/x"}}}`))
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &toolstest.MockSecurityManager{ConfirmFunc: func(ctx context.Context, msg string) (bool, error) { return false, nil }} // decline so no HTTP body assertion needed
+		sm := &toolstest.MockSecurityManager{}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
@@ -515,11 +514,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		result, err := m.runPipeline(context.Background(), args)
 		assert.NoError(t, err)
 		assert.True(t, result.Cancelled)
-
-		assert.Contains(t, sm.LastConfirmText, "branch: main",
-			"confirmation prompt should display the raw branch name")
-		assert.NotContains(t, sm.LastConfirmText, "branch: refs/heads/main",
-			"confirmation prompt must not display the fully qualified ref")
+		// IsBypassActive returns false, auto-decline.
 	})
 
 	// NOTE: The json.Marshal error branch in executeRunPipeline (pipeline_runs.go:154-156)
@@ -551,7 +546,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		sm := &toolstest.MockSecurityManager{AllowAll: true}
+		sm := &toolstest.MockSecurityManager{AllowAll: true, BypassActive: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{

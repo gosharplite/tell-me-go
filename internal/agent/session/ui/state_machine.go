@@ -13,8 +13,6 @@ const (
 	stateThinking
 	// stateRendering indicates the UI is rendering a streaming response.
 	stateRendering
-	// stateAwaitingConsent indicates the UI is waiting for user consent.
-	stateAwaitingConsent
 )
 
 // uiStateMachine manages UI state transitions and queries.
@@ -42,7 +40,7 @@ func (sm *uiStateMachine) transition(next uiState) {
 
 	// Side effects for entering the new state
 	switch next {
-	case stateIdle, stateRendering, stateAwaitingConsent:
+	case stateIdle, stateRendering:
 		sm.spinner.stopActiveSpinner()
 	case stateThinking:
 		// stateThinking side effects are typically handled via transitionSpinner
