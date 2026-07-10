@@ -154,7 +154,16 @@ func withLoopDetector() turnMiddleware {
 
 func detectLoop(state *TurnState) bool {
 	// 1. Multi-step loop detection (Text & Tool Calls)
-	rawJSON, _ := json.Marshal(state.Response)
+	// Exclude mutable fields (ID) from the hash to ensure consistent
+	// comparison across turns. AddContent mutates content.ID in-place,
+	// so hashing the raw response would produce different hashes for
+	// structurally identical responses on different turns.
+	sanitized := *state.Response
+	sanitized.ID = ""
+	rawJSON, err := json.Marshal(&sanitized)
+	if err != nil {
+		return false // skip loop detection if response can't be serialized
+	}
 	h := sha256.Sum256(rawJSON)
 	currentHash := hex.EncodeToString(h[:])
 
@@ -190,27 +199,64 @@ func handleLoopBreak(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 		Level:   "warn",
 	})
 
-	// SCALABLE: Persist the repeating response so the model sees its own mistake in history.
+	// Persist the repeating response so the model sees its own mistake in history.
 	if err := Turn.CtxManager.AddContent(ctx, Turn.State.Response); err != nil {
 		return ProcessResult{}, err
 	}
 
-	// INTERCEPTABLE: Append the synthetic warning to history.
-	// We use 'user' role as it's the most common way to provide feedback to the LLM.
+	if err := injectSyntheticLoopFeedback(ctx, Turn); err != nil {
+		return ProcessResult{}, err
+	}
+
+	// RECOVERY: End the current Turn gracefully and signal the Run() loop
+	// to continue to a new generation Turn.
+	Turn.State.Response = nil
+	Turn.State.ToolResponse = nil
+	Turn.State.HasToolCalls = true
+
+	return ProcessResult{NextPhase: PhaseComplete}, nil
+}
+
+// injectSyntheticLoopFeedback appends corrective feedback to history
+// that satisfies the LLM API contract after a loop is detected.
+//
+// For tool-call loops: synthetic "tool"-role FunctionResponse entries
+// are paired with each FunctionCall, satisfying the tool_calls→tool_results
+// adjacency requirement while preserving the model's chain-of-thought text.
+//
+// For text-only loops: a "user"-role warning is appended as before.
+func injectSyntheticLoopFeedback(ctx context.Context, Turn *Turn) error {
+	if Turn.State.HasToolCalls && Turn.State.Response != nil {
+		// Collect all synthetic FunctionResponse parts first,
+		// then inject as a single "tool"-role message. This
+		// satisfies strict LLM role alternation rules and avoids
+		// relying on AddContent's same-role merge side-effect.
+		var syntheticParts []*llm.Part
+		for _, part := range Turn.State.Response.Parts {
+			if part.FunctionCall != nil {
+				syntheticParts = append(syntheticParts, &llm.Part{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:       part.FunctionCall.ID,
+						Name:     part.FunctionCall.Name,
+						Response: map[string]interface{}{"error": LoopWarning},
+					},
+				})
+			}
+		}
+		if len(syntheticParts) > 0 {
+			return Turn.CtxManager.AddContent(ctx, &llm.Content{
+				Role:  "tool",
+				Parts: syntheticParts,
+			})
+		}
+		return nil
+	}
+
 	warning := &llm.Content{
 		Role:  "user",
 		Parts: []*llm.Part{{Text: LoopWarning}},
 	}
-	if err := Turn.CtxManager.AddContent(ctx, warning); err != nil {
-		return ProcessResult{}, err
-	}
-
-	// RECOVERY: End the current Turn gracefully and signal the Run() loop to continue to a new generation Turn.
-	Turn.State.Response = nil
-	Turn.State.ToolResponse = nil
-	Turn.State.HasToolCalls = true // Trick shouldStopRunning into starting a new Turn
-
-	return ProcessResult{NextPhase: PhaseComplete}, nil
+	return Turn.CtxManager.AddContent(ctx, warning)
 }
 
 func isDuplicateResponse(currentHash string, recentHashes []string) bool {

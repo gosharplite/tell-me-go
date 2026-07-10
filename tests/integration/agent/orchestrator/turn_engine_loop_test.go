@@ -30,10 +30,14 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	counter := &sessctx.HeuristicTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
 
+	// Use shared IDs so the toolResponseCleaner doesn't strip FunctionCall parts
+	// (which are considered invalid when ID is empty).
+	toolID := llm.NewID()
+
 	// Sequence of responses: A -> B -> A
-	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
+	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{ID: toolID, Name: "test"}}}}
+	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{ID: toolID, Name: "test"}}}}
+	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{ID: toolID, Name: "test"}}}}
 	resp3 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}
 
 	gw := &limitMockLLMGateway{
@@ -79,14 +83,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 	// Check history for the injected warning
 	window, _ := h.GetWindow(ctx, 0, -1)
-	foundWarning := false
-	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
-			foundWarning = true
-			break
-		}
-	}
-	assert.True(t, foundWarning, "Should have injected loop warning")
+	assertLoopWarningInHistory(t, window)
 }
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
@@ -98,10 +95,14 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	counter := &sessctx.HeuristicTokenCounter{}
 	strategy := sessctx.NewStrategy(counter)
 
+	// Use shared IDs so the toolResponseCleaner doesn't strip FunctionCall parts.
+	toolAID := llm.NewID()
+	toolBID := llm.NewID()
+
 	// Sequence of tool-only responses: Tool A -> Tool B -> Tool A
-	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
-	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}
-	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
+	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{ID: toolAID, Name: "tool_a"}}}}
+	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{ID: toolBID, Name: "tool_b"}}}}
+	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{ID: toolAID, Name: "tool_a"}}}}
 	resp3 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}
 
 	gw := &limitMockLLMGateway{
@@ -147,12 +148,5 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 
 	// Check history for the injected warning
 	window, _ := h.GetWindow(ctx, 0, -1)
-	foundWarning := false
-	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
-			foundWarning = true
-			break
-		}
-	}
-	assert.True(t, foundWarning, "Should have injected loop warning")
+	assertLoopWarningInHistory(t, window)
 }
