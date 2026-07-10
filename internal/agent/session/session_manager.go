@@ -17,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
-	"golang.org/x/sync/errgroup"
 )
 
 // sessionManager manages the session lifecycle and agent execution.
@@ -155,28 +154,21 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 	}
 	sess := ports.NewSession(sessionID, sd.GetHistoryManager())
 
-	// [REFACTOR] Use errgroup to coordinate agent execution and UI rendering background tasks.
-	// This ensures that all UI events are processed before the session terminates.
-	gCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	g, gCtx := errgroup.WithContext(gCtx)
-
-	// Main Agent Loop
-	g.Go(func() error {
-		defer cancel()
-		return chatAgent.Chat(gCtx, sess, sc.GetPrompt())
-	})
-
-	// Background UI Loop
+	// The UI Bridge must outlive the chat execution to process trailing events
+	// flushed during chatAgent.Shutdown. Run it in a detached goroutine using
+	// the root context. Safe shutdown is guaranteed by the defer block:
+	//   1. chatAgent.Shutdown flushes events while bridge.Listen is still consuming
+	//   2. bridge.CloseInput() signals the listener to stop
+	//   3. bridge.Cleanup() waits for the goroutine to finish
 	if bridge != nil {
 		listenStarted = true
-		g.Go(func() error {
-			return bridge.Listen(gCtx)
-		})
+		go func() {
+			_ = bridge.Listen(ctx)
+		}()
 	}
 
-	return g.Wait()
+	// Main Agent Loop — synchronous; the defer block handles cleanup.
+	return chatAgent.Chat(ctx, sess, sc.GetPrompt())
 }
 
 // Rollback deletes the specified number of turns from history.

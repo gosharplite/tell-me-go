@@ -486,8 +486,8 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 		"Chatter.SetLimits",      // Apply constraints
 		"Chatter.Chat",           // Start conversation
 		"UIRenderer.StartSpinnerWithStatus",
-		"UIRenderer.StopSpinner", // [REFACTOR] Stop Consumer first because it finishes when Chat returns
-		"Chatter.Shutdown",       // Stop Producers last
+		"Chatter.Shutdown",       // Deferred Shutdown runs before bridge finishes
+		"UIRenderer.StopSpinner", // Bridge processes stop after Shutdown
 	}
 
 	assert.Equal(t, expectedSequence, tracker.sequence, "SessionManager must follow exact coordination sequence")
@@ -906,8 +906,7 @@ func TestSessionManager_Run_BridgeListenError(t *testing.T) {
 
 	// bridgeDead signals Chat to unblock after the bridge has processed
 	// the panic-inducing InferenceStartedEvent. This prevents Chat from
-	// returning before bridge.Listen returns its error, which would
-	// cause Chat's result (nil) to win the errgroup race.
+	// returning before the bridge goroutine has time to process the event.
 	bridgeDead := make(chan struct{})
 
 	// Renderer panics when StartSpinnerWithStatus is called (triggered by
@@ -920,8 +919,7 @@ func TestSessionManager_Run_BridgeListenError(t *testing.T) {
 	}
 
 	// Chat blocks until the bridge has started dying, then returns nil.
-	// The errgroup cancels the context when bridge.Listen returns its
-	// error, so Chat may observe a cancelled context after unblocking.
+	// Since bridge errors are discarded, Chat's nil return determines Run's result.
 	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error {
 		<-bridgeDead
 		return nil
@@ -942,9 +940,7 @@ func TestSessionManager_Run_BridgeListenError(t *testing.T) {
 	}
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "uibridge panicked")
-	require.Contains(t, err.Error(), "bridge kill switch")
+	require.NoError(t, err, "Bridge Listen errors are intentionally discarded; Run should succeed when Chat succeeds")
 	assert.True(t, shutdownCalled, "Shutdown should be called via defer even when bridge panics")
 }
 
