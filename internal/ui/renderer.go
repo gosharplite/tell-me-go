@@ -439,6 +439,10 @@ func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Con
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
+	// Clear the spinner line so response text doesn't overlap it.
+	// Add a newline so subsequent stderr output starts on a fresh line.
+	writeBestEffort(ui.stderr, "\r%s\n", ui.c(termClearLine))
+
 	for _, part := range respContent.Parts {
 		r.renderThoughtLocked(ui, part, showThoughts)
 		r.renderTextLocked(ui, part, rawOutput)
