@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -528,14 +529,21 @@ type shellSecurity interface {
 type warnWriter struct {
 	eventBus events.EventBus
 	ctx      context.Context
+	buf      bytes.Buffer
 }
 
 func (w *warnWriter) Write(p []byte) (n int, err error) {
-	msg := strings.TrimSuffix(string(p), "\n")
-	_ = w.eventBus.Publish(w.ctx, events.ToolOutputStreamEvent{
-		Message: msg,
-		Level:   "info",
-	})
+	w.buf.Write(p)
+	for {
+		line, err := w.buf.ReadBytes('\n')
+		if err != nil {
+			break // partial line remains in buf for next Write
+		}
+		_ = w.eventBus.Publish(w.ctx, events.ToolOutputStreamEvent{
+			Message: strings.TrimSuffix(string(line), "\n"),
+			Level:   "info",
+		})
+	}
 	return len(p), nil
 }
 
