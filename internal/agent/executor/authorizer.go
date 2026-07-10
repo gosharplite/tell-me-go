@@ -6,7 +6,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -81,35 +80,14 @@ func (a *securityAuthorizer) RequestBatchConsent(ctx context.Context, calls []*l
 		return ctx, declinedMap
 	}
 
-	var sb strings.Builder
-	sb.WriteString("The agent requested the following actions requiring approval:\n")
-	for idx, i := range consentIndices {
-		c := calls[i]
-		fmt.Fprintf(&sb, "%d. %s: %v\n", idx+1, c.Name, c.Args)
-	}
-	sb.WriteString("\nDo you approve all?")
-
 	a.mu.RLock()
 	sm := a.sm
 	a.mu.RUnlock()
 
 	if sm != nil {
 		if !sm.IsBypassActive() {
-			sm.TerminalLock()
-			approved, _ := sm.Confirm(ctx, sb.String())
-			sm.TerminalUnlock()
-
-			if !approved {
-				for _, i := range consentIndices {
-					declinedMap[i] = true
-				}
-			} else {
-				// BATCH APPROVED: Inject the tool names into the context
-				var approvedToolNames []string
-				for _, i := range consentIndices {
-					approvedToolNames = append(approvedToolNames, calls[i].Name)
-				}
-				ctx = domain_security.WithApprovedTools(ctx, approvedToolNames)
+			for _, i := range consentIndices {
+				declinedMap[i] = true
 			}
 		}
 	}

@@ -55,7 +55,7 @@ func newBenchDispatcher() *eventDispatcher {
 
 // --- benchmarks ----------------------------------------------------------------
 
-// BenchmarkEventDispatch measures the cost of dispatching each of the 14
+// BenchmarkEventDispatch measures the cost of dispatching each of the 12
 // registered event types through the single dispatch chokepoint.
 func BenchmarkEventDispatch(b *testing.B) {
 	benchmarks := []struct {
@@ -67,8 +67,6 @@ func BenchmarkEventDispatch(b *testing.B) {
 		{"SummarizationStartedEvent", events.SummarizationStartedEvent{}},
 		{"ToolExecutionStartedEvent", events.ToolExecutionStartedEvent{}},
 		{"RetryWaitingEvent", events.RetryWaitingEvent{}},
-		{"ConsentStartedEvent", events.ConsentStartedEvent{}},
-		{"ConsentFinishedEvent", events.ConsentFinishedEvent{}},
 		{"ResponseEvent", events.ResponseEvent{}},
 		{"UsageMetricsEvent", events.UsageMetricsEvent{Context: context.Background()}},
 		{"ToolCallEvent", events.ToolCallEvent{Calls: []*llm.FunctionCall{{}}}},
@@ -93,7 +91,7 @@ func BenchmarkEventDispatch(b *testing.B) {
 	}
 }
 
-// BenchmarkEventDispatchAll dispatches all 14 event types in sequence inside
+// BenchmarkEventDispatchAll dispatches all 12 event types in sequence inside
 // the timing loop. State accumulates across events (spinner phase, stopFn
 // closure, stateMachine transitions), measuring real dispatch throughput for
 // a complete turn lifecycle.
@@ -108,8 +106,6 @@ func BenchmarkEventDispatchAll(b *testing.B) {
 		events.ToolExecutionStartedEvent{},
 		events.ToolCallEvent{Calls: []*llm.FunctionCall{{}}},
 		events.ToolResultEvent{Name: "bench"},
-		events.ConsentStartedEvent{},
-		events.ConsentFinishedEvent{},
 		events.SummarizationStartedEvent{},
 		events.RetryWaitingEvent{},
 		events.UsageMetricsEvent{Context: context.Background()},

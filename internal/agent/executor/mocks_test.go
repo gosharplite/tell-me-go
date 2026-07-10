@@ -110,9 +110,10 @@ func (m *mockSecurityManager) Close() error { return nil }
 type mockConsentSecurityManager struct {
 	domain_security.Manager
 	ConfirmResult bool
+	BypassActive  bool
 }
 
-func (m *mockConsentSecurityManager) IsBypassActive() bool { return false }
+func (m *mockConsentSecurityManager) IsBypassActive() bool { return m.BypassActive }
 func (m *mockConsentSecurityManager) TerminalLock()        {}
 func (m *mockConsentSecurityManager) TerminalUnlock()      {}
 func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {

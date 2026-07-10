@@ -239,13 +239,3 @@ type SpinnerInfo struct {
 	WithMetrics    bool   // If true, use StartSpinnerWithMetrics instead of StartSpinnerWithStatus
 	ResetRendering bool   // If true, the spinner transition resets the rendering state
 }
-
-// ConsentStartedEvent signals that the user is being prompted for tool consent.
-type ConsentStartedEvent struct{}
-
-func (e ConsentStartedEvent) Type() string { return "ConsentStartedEvent" }
-
-// ConsentFinishedEvent signals that the user consent prompt has finished.
-type ConsentFinishedEvent struct{}
-
-func (e ConsentFinishedEvent) Type() string { return "ConsentFinishedEvent" }

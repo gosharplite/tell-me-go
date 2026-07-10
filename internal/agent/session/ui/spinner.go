@@ -93,10 +93,10 @@ func (sc *spinnerCoord) startSpinnerForPhase(ctx context.Context, e events.Event
 
 // transitionSpinner stops any active spinner and starts a new one using
 // startFn. It returns false if the current state prohibits spinner changes
-// (stateRendering or stateAwaitingConsent). The caller is responsible for
+// (stateRendering). The caller is responsible for
 // updating the UI state to stateThinking on true.
 func (sc *spinnerCoord) transitionSpinner(state uiState, startFn func() func()) bool {
-	if state == stateRendering || state == stateAwaitingConsent {
+	if state == stateRendering {
 		return false
 	}
 
