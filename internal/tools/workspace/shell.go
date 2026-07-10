@@ -257,7 +257,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 
 	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
 		// Enforce timeout via context
-		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(timeout)*time.Second)
 		defer cancel()
 
 		return t.executor.RunCommand(tCtx, parts, executionConfig{
@@ -362,7 +362,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
 		// Enforce timeout via context
-		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(timeout)*time.Second)
 		defer cancel()
 
 		feedback := &warnWriter{eventBus: t.eventBus, ctx: context.WithoutCancel(tCtx)}
