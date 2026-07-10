@@ -386,6 +386,9 @@ func (r *stdUIRenderer) LogSystemMessage(ctx context.Context, msg string, level 
 	case "warn":
 		color = colorYellow
 		prefix = "Warning"
+	case "output":
+		color = colorYellow
+		prefix = "Tool Output"
 	case "info":
 		color = colorCyan
 		prefix = "Info"
