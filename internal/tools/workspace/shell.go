@@ -465,11 +465,11 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
 	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
 		Message: fmt.Sprintf("%s... (Output shown below)", msg),
-		Level:   "info",
+		Level:   "warn",
 	})
 	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
 		Message: "------------------------------------------------------------",
-		Level:   "info",
+		Level:   "warn",
 	})
 
 	// Execute command — no terminal lock needed; EventBus handles rendering.
@@ -477,7 +477,7 @@ func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 
 	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
 		Message: "------------------------------------------------------------",
-		Level:   "info",
+		Level:   "warn",
 	})
 
 	return res, err
@@ -541,7 +541,7 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 		}
 		_ = w.eventBus.Publish(w.ctx, events.ToolOutputStreamEvent{
 			Message: strings.TrimSuffix(string(line), "\n"),
-			Level:   "info",
+			Level:   "warn",
 		})
 	}
 	return len(p), nil
