@@ -1005,9 +1005,16 @@ func assertLoopWarningInjected(t *testing.T, hm *agenttest.MockHistoryManager) {
 
 	foundWarning := false
 	for _, msg := range contents {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
-			foundWarning = true
-			break
+		if msg.Role == "user" {
+			for _, part := range msg.Parts {
+				if part.Text == orchestrator.LoopWarning {
+					foundWarning = true
+					break
+				}
+			}
+			if foundWarning {
+				break
+			}
 		}
 	}
 	assert.True(t, foundWarning, "Should have injected loop warning")

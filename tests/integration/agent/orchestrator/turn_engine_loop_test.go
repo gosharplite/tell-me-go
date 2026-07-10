@@ -81,9 +81,16 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	window, _ := h.GetWindow(ctx, 0, -1)
 	foundWarning := false
 	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
-			foundWarning = true
-			break
+		if msg.Role == "user" {
+			for _, part := range msg.Parts {
+				if part.Text == orchestrator.LoopWarning {
+					foundWarning = true
+					break
+				}
+			}
+			if foundWarning {
+				break
+			}
 		}
 	}
 	assert.True(t, foundWarning, "Should have injected loop warning")
@@ -149,9 +156,16 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	window, _ := h.GetWindow(ctx, 0, -1)
 	foundWarning := false
 	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
-			foundWarning = true
-			break
+		if msg.Role == "user" {
+			for _, part := range msg.Parts {
+				if part.Text == orchestrator.LoopWarning {
+					foundWarning = true
+					break
+				}
+			}
+			if foundWarning {
+				break
+			}
 		}
 	}
 	assert.True(t, foundWarning, "Should have injected loop warning")

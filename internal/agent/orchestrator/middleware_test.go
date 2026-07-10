@@ -545,3 +545,101 @@ func TestPublishTurnStatus_WithCostTracker(t *testing.T) {
 	}
 	assert.True(t, found, "TurnStatusEvent should be published")
 }
+
+func TestHandleLoopBreak_ToolCallResponseNotPersisted(t *testing.T) {
+	// Case 1: Response WITH tool calls → NOT persisted in history
+	t.Run("tool-call response not persisted", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+
+		hMock := &agenttest.MockHistoryManager{}
+		hMock.SetInternalContents([]*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "initial"}}},
+		})
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+		turn := &Turn{
+			State: &TurnState{
+				Response: &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{{
+						FunctionCall: &llm.FunctionCall{
+							Name: "replace_text",
+							Args: map[string]interface{}{"old": "x", "new": "y"},
+						},
+					}},
+				},
+			},
+			CtxManager: cm,
+			Events:     bus,
+		}
+
+		result, err := handleLoopBreak(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.Equal(t, PhaseComplete, result.NextPhase)
+
+		// Existing behavior preserved
+		assert.True(t, turn.State.HasToolCalls, "HasToolCalls should be true after loop break")
+		assert.Nil(t, turn.State.Response, "Response should be cleared after loop break")
+
+		// History assertions: only the warning was merged into the seed (same "user" role),
+		// NOT the tool-call response. No new entry is created because Manager.AddContent
+		// fast-paths same-role adjacent messages via AppendParts.
+		contents := hMock.GetContents()
+		// Seed + merged warning = 1; no model tool-call response
+		assert.Len(t, contents, 1, "history should contain seed with merged warning only")
+
+		assert.Equal(t, "user", contents[0].Role)
+		// Parts should include both the seed text and the LoopWarning
+		assert.Len(t, contents[0].Parts, 2, "seed should have original text + LoopWarning merged")
+		assert.Equal(t, "initial", contents[0].Parts[0].Text)
+		assert.Equal(t, LoopWarning, contents[0].Parts[1].Text)
+
+		// The system warning event was published
+		found := false
+		for _, e := range bus.GetEvents() {
+			if evt, ok := e.(events.SystemMessageEvent); ok {
+				if evt.Level == "warn" {
+					found = true
+				}
+			}
+		}
+		assert.True(t, found, "loop-break warning event should be published")
+	})
+
+	// Case 2: Response WITHOUT tool calls → persisted (existing behavior preserved)
+	t.Run("text-only response persisted", func(t *testing.T) {
+		bus := &eventstest.MockEventBus{}
+
+		hMock := &agenttest.MockHistoryManager{}
+		hMock.SetInternalContents([]*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "initial"}}},
+		})
+		cm := sessctx.NewManager(sessctx.NewStrategy(&agenttest.MockTokenCounter{}), hMock, bus, nil)
+
+		turn := &Turn{
+			State: &TurnState{
+				Response: &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "I'm stuck"}}},
+			},
+			CtxManager: cm,
+			Events:     bus,
+		}
+
+		result, err := handleLoopBreak(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.Equal(t, PhaseComplete, result.NextPhase)
+
+		// Existing behavior preserved
+		assert.True(t, turn.State.HasToolCalls, "HasToolCalls should be true after loop break")
+		assert.Nil(t, turn.State.Response, "Response should be cleared after loop break")
+
+		// History assertions: seed + model text response + warning = 3
+		contents := hMock.GetContents()
+		assert.Len(t, contents, 3, "history should contain seed + model response + warning")
+
+		assert.Equal(t, "model", contents[1].Role, "second entry should be the model text response")
+		assert.Equal(t, "I'm stuck", contents[1].Parts[0].Text)
+
+		assert.Equal(t, "user", contents[2].Role, "third entry should be the user warning")
+		assert.Equal(t, LoopWarning, contents[2].Parts[0].Text)
+	})
+}

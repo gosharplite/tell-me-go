@@ -190,9 +190,16 @@ func handleLoopBreak(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 		Level:   "warn",
 	})
 
-	// SCALABLE: Persist the repeating response so the model sees its own mistake in history.
-	if err := Turn.CtxManager.AddContent(ctx, Turn.State.Response); err != nil {
-		return ProcessResult{}, err
+	// Only persist the repeating response if it does NOT contain tool calls.
+	// Persisting tool_calls without corresponding tool results violates the
+	// LLM API contract (every assistant tool_calls message must be immediately
+	// followed by matching tool-result messages). Tools are never executed on
+	// the loop-break path, so we skip persistence when tool calls are present.
+	hasToolCalls := (&InferenceStep{}).HasToolCalls(Turn.State.Response)
+	if Turn.State.Response != nil && !hasToolCalls {
+		if err := Turn.CtxManager.AddContent(ctx, Turn.State.Response); err != nil {
+			return ProcessResult{}, err
+		}
 	}
 
 	// INTERCEPTABLE: Append the synthetic warning to history.
