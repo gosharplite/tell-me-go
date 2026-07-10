@@ -22,6 +22,11 @@ type AtlassianProvider struct {
 	BaseDelay time.Duration
 }
 
+// defaultBaseDelay is the initial retry delay for 429 (Too Many Requests)
+// responses. Tests may set this to zero to eliminate sleep.
+// Must be set before any AtlassianProvider is constructed.
+var defaultBaseDelay = 1 * time.Second
+
 func NewAtlassianProvider() (*AtlassianProvider, error) {
 	baseURL := os.Getenv("ATLASSIAN_BASE_URL")
 	if baseURL == "" {
@@ -32,7 +37,7 @@ func NewAtlassianProvider() (*AtlassianProvider, error) {
 		baseURL:   baseURL,
 		Email:     os.Getenv("ATLASSIAN_EMAIL"),
 		Token:     os.Getenv("ATLASSIAN_TOKEN"),
-		BaseDelay: 1 * time.Second,
+		BaseDelay: defaultBaseDelay,
 	}, nil
 }
 
@@ -104,9 +109,6 @@ func (p *AtlassianProvider) waitForRetry(ctx context.Context, resp *http.Respons
 
 func (p *AtlassianProvider) GetWaitTime(resp *http.Response, retryCount int) time.Duration {
 	BaseDelay := p.BaseDelay
-	if BaseDelay == 0 {
-		BaseDelay = 1 * time.Second
-	}
 
 	wait := BaseDelay * (1 << uint(retryCount))
 	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {

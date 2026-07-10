@@ -697,7 +697,7 @@ func TestAtlassianProvider_WaitTime(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	p, err := atlassian.NewAtlassianProvider()
 	require.NoError(t, err)
-	p.BaseDelay = 0 // Test baseDelay == 0 case
+	// p.BaseDelay is DefaultBaseDelay (1s) from the constructor.
 
 	t.Run("Default baseDelay", func(t *testing.T) {
 		resp := &http.Response{Header: make(http.Header)}
