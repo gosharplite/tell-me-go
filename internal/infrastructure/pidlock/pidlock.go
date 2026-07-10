@@ -113,19 +113,28 @@ func cleanupLockFile(f *os.File, lockPath, reason string) {
 	}
 }
 
+// DefaultAcquireBackoff is the retry backoff sequence for Acquire.
+// Tests may set this to zero-duration slices to eliminate sleep.
+// Must be set before any Acquire call (not safe for concurrent mutation).
+var DefaultAcquireBackoff = []time.Duration{
+	50 * time.Millisecond,
+	100 * time.Millisecond,
+	200 * time.Millisecond,
+	400 * time.Millisecond,
+	800 * time.Millisecond,
+}
+
 // Acquire attempts to create an exclusive lock file with stale-lock recovery
 // and exponential backoff retry. On success, it writes the current PID into the
 // lock file so that other processes can determine liveness.
 //
-// The function retries up to 5 times with exponential backoff (50ms base) when
-// the lock is held by a live process. For stale locks (dead PID or old
-// timestamp), it removes the lock and continues to the next iteration, where
-// the atomic O_EXCL open prevents TOCTOU races.
+// The function retries up to len(DefaultAcquireBackoff) times, sleeping for
+// each element in DefaultAcquireBackoff when the lock is held by a live
+// process. For stale locks (dead PID or old timestamp), it removes the lock
+// and continues to the next iteration, where the atomic O_EXCL open prevents
+// TOCTOU races.
 func Acquire(lockPath string) (*os.File, error) {
-	const maxRetries = 5
-	delay := 50 * time.Millisecond
-
-	for i := 0; i < maxRetries; i++ {
+	for _, delay := range DefaultAcquireBackoff {
 		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 		if err == nil {
 			// Write PID to the lock file for liveness detection.
@@ -167,10 +176,9 @@ func Acquire(lockPath string) (*os.File, error) {
 
 		// Lock exists and is held by a live process. Back off and retry.
 		time.Sleep(delay)
-		delay *= 2
 	}
 
-	return nil, fmt.Errorf("failed to acquire lock after %d retries: file exists", maxRetries)
+	return nil, fmt.Errorf("failed to acquire lock after %d retries: file exists", len(DefaultAcquireBackoff))
 }
 
 // Release closes the lock file handle and removes the lock file from disk.
