@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
@@ -39,6 +40,7 @@ type goRunner interface {
 
 type devManager struct {
 	sm                devSecurity
+	eventBus          events.EventBus
 	validator         domain_security.CommandValidator
 	executor          executor
 	runner            goRunner
@@ -353,9 +355,12 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 }
 
 func (m *devManager) logToolAction(format string, a ...any) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
+	if m.eventBus != nil {
+		_ = m.eventBus.Publish(context.Background(), events.ToolOutputStreamEvent{
+			Message: fmt.Sprintf("[Tool Action] "+format, a...),
+			Level:   "info",
+		})
+	}
 }
 
 func formatExecutionResult(displayName string, out []byte, execErr error, truncateLimit int, emptySuccessMsg string) tools.ToolResult {
@@ -421,9 +426,10 @@ func (m *devManager) executeWithHeartbeat(
 	return out, err
 }
 
-func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner goRunner, opts ...devOption) *devManager {
+func newDevManager(sm devSecurity, eventBus events.EventBus, validator domain_security.CommandValidator, runner goRunner, opts ...devOption) *devManager {
 	m := &devManager{
 		sm:                sm,
+		eventBus:          eventBus,
 		validator:         validator,
 		executor:          &realExecutor{},
 		runner:            runner,
@@ -439,5 +445,4 @@ func newDevManager(sm devSecurity, validator domain_security.CommandValidator, r
 type devSecurity interface {
 	domain_security.ActionConfirmer
 	domain_security.Auditor
-	domain_security.TerminalController
 }

@@ -239,3 +239,18 @@ type SpinnerInfo struct {
 	WithMetrics    bool   // If true, use StartSpinnerWithMetrics instead of StartSpinnerWithStatus
 	ResetRendering bool   // If true, the spinner transition resets the rendering state
 }
+
+// ToolOutputStreamEvent carries tool-generated output that should be rendered
+// by the UI Bridge instead of being written directly to the terminal.
+// This decouples tools from TerminalController, enabling clean TUI rendering
+// for progress modes and future multi-output scenarios.
+type ToolOutputStreamEvent struct {
+	// Message is the text to render (e.g., "Executing... (Output shown below)").
+	Message string
+	// Level indicates the severity: "info" or "warn". Default is "info".
+	Level string
+	// ToolName is the optional name of the tool producing this output (e.g., "execute_command").
+	ToolName string
+}
+
+func (e ToolOutputStreamEvent) Type() string { return "ToolOutputStreamEvent" }

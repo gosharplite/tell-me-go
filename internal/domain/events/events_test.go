@@ -402,6 +402,7 @@ func TestEventTypes(t *testing.T) {
 		events.ConfigUpdated{},
 		events.TurnStatusEvent{},
 		events.ToolExecutionStartedEvent{},
+		events.ToolOutputStreamEvent{Message: "hello", Level: "warn", ToolName: "test_tool"},
 	}
 
 	for _, e := range events_list {

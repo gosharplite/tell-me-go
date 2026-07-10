@@ -15,7 +15,7 @@ import (
 func TestShellTool_ExecuteCommand_Structured(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, nil, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	t.Run("Structured args (no shell)", func(t *testing.T) {

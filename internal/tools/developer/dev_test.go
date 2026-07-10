@@ -680,7 +680,7 @@ func TestNewDevManager(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	validator := &toolstest.MockCommandValidator{}
 	runner := &mockGoRunner{}
-	m := newDevManager(sm, validator, runner)
+	m := newDevManager(sm, nil, validator, runner)
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.executor)
 }
@@ -963,7 +963,7 @@ func TestSecurityRemediation(t *testing.T) {
 func TestDevManager_Options(t *testing.T) {
 	t.Parallel()
 	customInterval := 42 * time.Second
-	m := newDevManager(nil, nil, nil, withHeartbeatInterval(customInterval))
+	m := newDevManager(nil, nil, nil, nil, withHeartbeatInterval(customInterval))
 
 	if m.heartbeatInterval != customInterval {
 		t.Errorf("expected interval %v, got %v", customInterval, m.heartbeatInterval)
@@ -1243,4 +1243,14 @@ func TestRealExecutor_Execute(t *testing.T) {
 	out, err := e.Execute(context.Background(), name, args...)
 	require.NoError(t, err)
 	assert.Contains(t, string(out), "hello")
+}
+
+func TestLogToolAction_NilEventBus(t *testing.T) {
+	t.Parallel()
+	m := &devManager{
+		sm:       &toolstest.MockSecurityManager{AllowAll: true},
+		eventBus: nil,
+	}
+	// Must not panic when eventBus is nil
+	m.logToolAction("Running %s: %s", "test_action", "echo hello")
 }

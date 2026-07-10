@@ -87,7 +87,7 @@ func newTestShellTool(sm shellSecurity, validator domain_security.CommandValidat
 		translator = &windowsTranslator{}
 		wrapper = &windowsShellWrapper{validator: validator}
 	}
-	return newshellTool(sm, validator, translator, wrapper)
+	return newshellTool(sm, nil, validator, translator, wrapper)
 }
 
 func setupTruncationTest(t *testing.T) (*shellTool, context.Context, map[string]interface{}) {
@@ -736,7 +736,7 @@ func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
 	sm.SetBypassActive(true)
 	validator := &toolstest.MockCommandValidator{}
 	wrapper := &windowsShellWrapper{}
-	_ = newshellTool(sm, validator, &posixTranslator{}, wrapper)
+	_ = newshellTool(sm, nil, validator, &posixTranslator{}, wrapper)
 
 	t.Run("PowerShell indicators", func(t *testing.T) {
 		tests := []struct {
@@ -1442,7 +1442,7 @@ func TestShellTool_PrepareCommand_SplitError(t *testing.T) {
 			return nil, fmt.Errorf("split: mock failure")
 		},
 	}
-	tool := newshellTool(sm, validator, &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, nil, validator, &posixTranslator{}, &posixShellWrapper{})
 
 	parts, err := tool.prepareCommand("any command")
 
@@ -1473,7 +1473,7 @@ func TestShellTool_PrepareCommand_ValidateStructureError(t *testing.T) {
 			return fmt.Errorf("validate: structure rejected")
 		},
 	}
-	tool := newshellTool(sm, validator, &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, nil, validator, &posixTranslator{}, &posixShellWrapper{})
 
 	parts, err := tool.prepareCommand("echo hello")
 
