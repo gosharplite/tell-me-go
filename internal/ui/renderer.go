@@ -425,7 +425,7 @@ func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) st
 func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus) {
 	stderr := ui.stderr
 	costStr := r.formatFinalCost(status, ui)
-	writeBestEffort(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
+	writeBestEffort(stderr, "\r%s%s╰─⠿ %sReady%s\n", ui.c(termClearLine), ui.c(colorGray), ui.c(colorReset), costStr)
 }
 
 func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Content, showThoughts, rawOutput bool) {

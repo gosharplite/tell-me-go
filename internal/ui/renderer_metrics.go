@@ -196,7 +196,7 @@ func (r *stdUIRenderer) renderThoughtLocked(ui uiState, part *llm.Part, showThou
 		}
 
 		sanitized := sanitizeForTerminal(part.Text)
-		writeBestEffort(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
+		writeBestEffort(stderr, "\r%s%s[%s] [Thinking]\n%s%s\n", ui.c(termClearLine), ui.c(colorGray), ts, sanitized, ui.c(colorReset))
 	}
 }
 
