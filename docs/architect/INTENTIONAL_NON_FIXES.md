@@ -409,4 +409,23 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-07 (skills.sh triage + agenttest stubs)*
+## Test Complexity (ACCEPTED)
+
+### tests/e2e/history_flags_test.go — TestHistoryNavigation_CompleteWorkflow (complexity 15)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Sequential E2E workflow where steps 2 ("go back") and 3 ("retry")
+  mutate shared history state and depend on prior steps. Splitting into subtests
+  would force duplicating the expensive `newHistoryNavEnv` setup (mock server +
+  3 sequential CLI invocations + history reconciliation per subtest). The
+  function's own doc-comment explicitly documents this design decision: "These
+  are not independent subtests because steps 2 and 3 mutate shared state and
+  step 3 depends on step 2's rollback." The 15 cyclomatic complexity points are
+  test boilerplate assertions, not branching business logic. Same acceptance
+  class as the existing structural concerns — test infrastructure where the cost
+  of refactoring outweighs the maintainability benefit.
+- **See**: `tests/e2e/history_flags_test.go:142`
+
+---
+
+*Last Updated: 2026-07 (skills.sh triage + agenttest stubs + test complexity)*
