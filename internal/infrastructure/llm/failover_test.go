@@ -109,7 +109,7 @@ func TestFailoverGateway_Generate_PrimarySucceeds(t *testing.T) {
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -146,7 +146,7 @@ func TestFailoverGateway_Generate_PrimaryTransientSecondarySucceeds(t *testing.T
 		},
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -180,7 +180,7 @@ func TestFailoverGateway_Generate_PrimaryAuthFailsImmediately(t *testing.T) {
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -211,7 +211,7 @@ func TestFailoverGateway_Generate_PrimaryTerminalFailsImmediately(t *testing.T) 
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -244,7 +244,7 @@ func TestFailoverGateway_Generate_AllTransientReturnsLastAsTerminal(t *testing.T
 		},
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -270,7 +270,7 @@ func TestFailoverGateway_Generate_AllTransientReturnsLastAsTerminal(t *testing.T
 
 func TestFailoverGateway_NewFailoverGateway_PanicsOnEmpty(t *testing.T) {
 	assertPanic(t, func() {
-		NewFailoverGateway(nil)
+		newFailoverGateway(nil)
 	}, "must not be empty")
 }
 
@@ -288,7 +288,7 @@ func TestFailoverGateway_Generate_PrimaryRateLimitSecondarySucceeds(t *testing.T
 		},
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -322,7 +322,7 @@ func TestFailoverGateway_SendChat_DelegatesToPrimary(t *testing.T) {
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -355,7 +355,7 @@ func TestFailoverGateway_GenerateImages_DelegatesToPrimary(t *testing.T) {
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -384,7 +384,7 @@ func TestFailoverGateway_RefreshAuth_DelegatesToPrimary(t *testing.T) {
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -414,7 +414,7 @@ func TestFailoverGateway_Generate_PrimaryUnrecognizedErrorFailsImmediately(t *te
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -451,7 +451,7 @@ func TestFailoverGateway_Generate_ContextCancelledBeforeAttempt(t *testing.T) {
 		},
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -489,7 +489,7 @@ func TestFailoverGateway_Generate_ContextCancelledMidFailover(t *testing.T) {
 		},
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
@@ -521,7 +521,7 @@ func TestFailoverGateway_SendChat_ContextCancelled(t *testing.T) {
 		},
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 	})
 
@@ -632,7 +632,7 @@ func TestFailoverGateway_Generate_Routing(t *testing.T) {
 				},
 			}
 
-			fg := NewFailoverGateway([]NamedClient{
+			fg := newFailoverGateway([]namedClient{
 				{Name: primary.name, Client: primary},
 				{Name: secondary.name, Client: secondary},
 			})
@@ -660,7 +660,7 @@ func TestFailoverGateway_WithResilientClient_ClassifiesAndRoutes(t *testing.T) {
 		},
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: "primary", Client: primaryResilient},
 		{Name: "secondary", Client: secondary},
 	})
@@ -691,7 +691,7 @@ func TestFailoverGateway_Generate_NilMetricsPassthrough(t *testing.T) {
 		name: "secondary",
 	}
 
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: primary.name, Client: primary},
 		{Name: secondary.name, Client: secondary},
 	})
