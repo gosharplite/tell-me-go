@@ -27,7 +27,7 @@ type TerminalController interface {
 	TerminalUnlock()
 	Prompt(message string)
 	Warn(message string)
-	Confirm(ctx context.Context, message string) (bool, error)
+	// Confirm removed — no tools call it mid-turn; all consent is declarative via RequiresConsent
 	// ReadLine reads a line of input from the terminal. This method is part of the public interface
 	// used across package boundaries (e.g., by workspace tools) and is not dead code.
 	ReadLine(ctx context.Context) (string, error)
