@@ -473,7 +473,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 	}
 }
 
-func TestWriteFileConfirmation(t *testing.T) {
+func TestWriteFileAutoDecline(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
@@ -481,8 +481,15 @@ func TestWriteFileConfirmation(t *testing.T) {
 	provider := "google"
 	t.Run(provider, func(t *testing.T) {
 		t.Parallel()
-		server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "test.txt", "content": "hello world", "reason": "E2E verification of write_file approval flow"}, func(result string) string {
-			return "File written."
+		server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{
+			"filepath": "test.txt",
+			"content":  "hello world",
+			"reason":   "E2E verification of write_file auto-decline (RequiresConsent without bypass)",
+		}, func(result string) string {
+			if strings.Contains(result, "User explicitly denied this action.") {
+				return "Model acknowledges the denial."
+			}
+			return "Error: unexpected result."
 		})
 		defer server.Close()
 
@@ -490,19 +497,14 @@ func TestWriteFileConfirmation(t *testing.T) {
 		configPath := createTempConfig(t, provider, server.URL)
 		env := []string{
 			"TELL_ME_HOME=" + homeDir,
-			"TELL_ME_MOCK_ANSWER=y",
 			"TELL_ME_MOCK_URL=" + server.URL,
 		}
 
-		// 2. Run CLI and Verification
-		runAgentStep(t, homeDir, env, "write a file", []string{"Do you approve all?", "File written."}, "-c", configPath)
+		runAgentStep(t, homeDir, env, "write a file", []string{"Model acknowledges the denial."}, "-c", configPath)
 
-		// Verify file actually written
-		content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
-		if err != nil {
-			t.Errorf("File was not written: %v", err)
-		} else if string(content) != "hello world" {
-			t.Errorf("File content mismatch. Expected 'hello world', got %q", string(content))
+		// Verify file was NOT written
+		if _, err := os.Stat(filepath.Join(homeDir, "test.txt")); !os.IsNotExist(err) {
+			t.Errorf("File 'test.txt' should not have been created (auto-declined)")
 		}
 	})
 }
