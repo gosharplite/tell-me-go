@@ -319,25 +319,6 @@ func TestDispatcher_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
 	assert.False(t, mockLogger.errorCalled, "Expected Error NOT to be called on logger for ErrBusNotInitialized")
 }
 
-type mockAuthorizer struct {
-	RequestBatchConsentFunc func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
-}
-
-func (m *mockAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
-	return nil
-}
-
-func (m *mockAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
-	return nil, nil
-}
-
-func (m *mockAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
-	if m.RequestBatchConsentFunc != nil {
-		return m.RequestBatchConsentFunc(ctx, calls)
-	}
-	return ctx, nil
-}
-
 // TestDispatcher_Execute_RetryPath_PropagatesWaitErr covers the decision boundary at
 // executor.go:309-314 (retry-vs-abort). The abort path (line 309, ctx.Err() != nil)
 // is already tested by TestDispatcher_ContextCancellation. The retry path (line 314,
