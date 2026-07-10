@@ -92,6 +92,11 @@ type UIRenderer interface {
 	UsageLogger
 	ToolLogger
 	RendererConfigurator
+
+	// UpdateSpinnerStatus updates the status text and metrics display of
+	// a running spinner without resetting its elapsed-time counter.
+	// This is used for in-phase transitions within a single turn.
+	UpdateSpinnerStatus(ctx context.Context, status string, showMetrics bool)
 }
 
 // HistoryRenderer defines the interface for rendering chat history.

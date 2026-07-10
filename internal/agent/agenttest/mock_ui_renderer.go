@@ -36,6 +36,7 @@ type MockUIRenderer struct {
 	calledSetUseColor             int
 	calledSetForceSpinner         int
 	calledIsTerminalContext       int
+	calledUpdateSpinnerStatus     int
 	calledMethods                 []string
 
 	// Function fields — set before test to script behaviour.
@@ -52,6 +53,7 @@ type MockUIRenderer struct {
 	SetUseColorFn             func(use bool)
 	SetForceSpinnerFn         func(force bool)
 	IsTerminalContextFn       func() bool
+	UpdateSpinnerStatusFn     func(ctx context.Context, status string, showMetrics bool)
 }
 
 // UIRendererSnapshot holds a race-safe copy of mock call counts and method names.
@@ -60,7 +62,7 @@ type UIRendererSnapshot struct {
 	RenderResponse, LogTurnStatus, LogUsage                       int
 	LogToolCall, LogToolResult, LogSystemMessage                  int
 	RenderHealthReport, SetUseColor, SetForceSpinner              int
-	IsTerminalContext                                             int
+	IsTerminalContext, UpdateSpinnerStatus                        int
 	Methods                                                       []string
 }
 
@@ -84,6 +86,7 @@ func (m *MockUIRenderer) Snapshot() UIRendererSnapshot {
 		SetUseColor:             m.calledSetUseColor,
 		SetForceSpinner:         m.calledSetForceSpinner,
 		IsTerminalContext:       m.calledIsTerminalContext,
+		UpdateSpinnerStatus:     m.calledUpdateSpinnerStatus,
 		Methods:                 methods,
 	}
 }
@@ -266,4 +269,16 @@ func (m *MockUIRenderer) IsTerminalContext() bool {
 		return fn()
 	}
 	return false
+}
+
+func (m *MockUIRenderer) UpdateSpinnerStatus(ctx context.Context, status string, showMetrics bool) {
+	m.mu.Lock()
+	m.calledUpdateSpinnerStatus++
+	m.calledMethods = append(m.calledMethods, "UpdateSpinnerStatus")
+	fn := m.UpdateSpinnerStatusFn
+	m.mu.Unlock()
+
+	if fn != nil {
+		fn(ctx, status, showMetrics)
+	}
 }

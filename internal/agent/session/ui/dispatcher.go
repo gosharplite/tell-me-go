@@ -6,6 +6,7 @@ package ui
 import (
 	"context"
 	"reflect"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -63,7 +64,7 @@ func newEventDispatcher(
 	d.register(events.TurnStarted{}, d.handleTurnStarted)
 	d.register(events.SystemMessageEvent{}, d.handleSystemMessage)
 	d.register(events.StatusUpdate{}, d.handleSystemMessage)
-	d.register(events.ToolOutputStreamEvent{}, d.handleSystemMessage)
+	d.register(events.ToolOutputStreamEvent{}, d.handleToolOutputStream)
 	return d
 }
 
@@ -83,7 +84,22 @@ func (d *eventDispatcher) dispatch(ctx context.Context, e events.Event) {
 
 func (d *eventDispatcher) handleTurnStatus(ctx context.Context, e events.Event) {
 	ev := e.(events.TurnStatusEvent)
-	d.spinner.activePhase = nil // Clear phase on new turn/header
+	d.spinner.activePhase = nil
+	// IsFinal signals the Ready footer — the turn is done.
+	// Don't stop the spinner here: the bridge's own shutdown (or the next
+	// TurnStarted) will handle it. Stopping now would clear the line but
+	// leave the cursor there, causing the Ready footer to overlap with
+	// any residual characters.
+	if ev.Status.IsFinal {
+		d.renderer.LogTurnStatus(ctx, ev.Status)
+		return
+	}
+	// When tracking turn time, don't transition to idle — it would
+	// stop the spinner mid-turn and break the elapsed-time counter.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.LogTurnStatus(ctx, ev.Status)
+		return
+	}
 	d.stateMachine.transition(stateIdle)
 	d.renderer.LogTurnStatus(ctx, ev.Status)
 }
@@ -101,7 +117,14 @@ func (d *eventDispatcher) handleSpinnerEvent(ctx context.Context, e events.Event
 
 func (d *eventDispatcher) handleResponse(ctx context.Context, e events.Event) {
 	ev := e.(events.ResponseEvent)
-	d.spinner.activePhase = nil // Clear phase on response
+	d.spinner.activePhase = nil
+	// When tracking turn time, don't transition to rendering — the
+	// ResponseEvent may arrive alongside tool calls. The spinner will
+	// be stopped by handleTurnStatus on the final IsFinal event.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.RenderResponse(ctx, ev.Content, d.showThoughts, d.rawOutput)
+		return
+	}
 	d.stateMachine.transition(stateRendering)
 	d.renderer.RenderResponse(ctx, ev.Content, d.showThoughts, d.rawOutput)
 }
@@ -109,6 +132,11 @@ func (d *eventDispatcher) handleResponse(ctx context.Context, e events.Event) {
 func (d *eventDispatcher) handleUsageMetrics(_ context.Context, e events.Event) {
 	ev := e.(events.UsageMetricsEvent)
 	ctx := d.ensureContext(ev.Context, "UsageMetricsEvent")
+	// When turn-time tracking is active, log without stopping the spinner.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.LogUsage(ctx, ev.Metrics, d.logFile, ev.StartTime)
+		return
+	}
 	d.spinner.stopActiveSpinner()
 	d.renderer.LogUsage(ctx, ev.Metrics, d.logFile, ev.StartTime)
 	if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
@@ -125,6 +153,13 @@ func (d *eventDispatcher) handleToolEvents(ctx context.Context, e events.Event) 
 			d.logger.Debug("handleToolEvents: ToolCallEvent missing Calls")
 			return
 		}
+		// When turn-time tracking is active, ToolExecutionStartedEvent follows
+		// immediately and handles the spinner transition in-place. Skip stop/resume
+		// to preserve the elapsed-time counter.
+		if !d.spinner.turnStartTime.IsZero() {
+			d.renderer.LogToolCall(ctx, ev.Calls, ev.Turn, ev.MaxTurns, d.showTools)
+			return
+		}
 		d.spinner.stopActiveSpinner()
 		d.renderer.LogToolCall(ctx, ev.Calls, ev.Turn, ev.MaxTurns, d.showTools)
 		if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
@@ -133,6 +168,13 @@ func (d *eventDispatcher) handleToolEvents(ctx context.Context, e events.Event) 
 	case events.ToolResultEvent:
 		if ev.Name == "" {
 			d.logger.Debug("handleToolEvents: ToolResultEvent missing Name")
+			return
+		}
+		// When turn-time tracking is active, avoid stopping the spinner so the
+		// elapsed-time counter continues. The next phase transition will update
+		// the status in-place.
+		if !d.spinner.turnStartTime.IsZero() {
+			d.renderer.LogToolResult(ctx, ev.Name, ev.Result, d.showTools)
 			return
 		}
 		d.spinner.stopActiveSpinner()
@@ -148,6 +190,7 @@ func (d *eventDispatcher) handleToolEvents(ctx context.Context, e events.Event) 
 func (d *eventDispatcher) handleTurnStarted(_ context.Context, _ events.Event) {
 	d.spinner.activePhase = nil
 	d.stateMachine.transition(stateIdle)
+	d.spinner.SetTurnStartTime(time.Now())
 }
 
 func (d *eventDispatcher) handleSystemMessage(ctx context.Context, e events.Event) {
@@ -163,11 +206,21 @@ func (d *eventDispatcher) handleSystemMessage(ctx context.Context, e events.Even
 	default:
 		return
 	}
+	// When turn-time tracking is active, log without stopping the spinner.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.LogSystemMessage(ctx, msg, lvl)
+		return
+	}
 	d.spinner.stopActiveSpinner()
 	d.renderer.LogSystemMessage(ctx, msg, lvl)
 	if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
 		d.stateMachine.setState(stateThinking)
 	}
+}
+
+func (d *eventDispatcher) handleToolOutputStream(ctx context.Context, e events.Event) {
+	ev := e.(events.ToolOutputStreamEvent)
+	d.renderer.LogSystemMessage(ctx, ev.Message, ev.Level)
 }
 
 // --- helpers ------------------------------------------------------------------

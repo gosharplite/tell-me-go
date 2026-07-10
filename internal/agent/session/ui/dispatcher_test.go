@@ -66,6 +66,7 @@ func (s *spyRenderer) RenderHealthReport(_ context.Context, _ *ports.HealthRepor
 func (s *spyRenderer) SetUseColor(_ bool)                                          {}
 func (s *spyRenderer) SetForceSpinner(_ bool)                                      {}
 func (s *spyRenderer) IsTerminalContext() bool                                     { return false }
+func (s *spyRenderer) UpdateSpinnerStatus(_ context.Context, _ string, _ bool)     {}
 
 // --- helper ---
 
@@ -336,6 +337,53 @@ func TestHandleSystemMessage_DefaultCase(t *testing.T) {
 	assert.Empty(t, renderer.logToolResultCalls)
 	assert.Equal(t, 0, renderer.startSpinnerWithMetricsCalls)
 	assert.Equal(t, 0, renderer.startSpinnerWithStatusCalls)
+}
+
+func TestHandleToolOutputStream_PrintsWithoutSpinnerChange(t *testing.T) {
+	t.Parallel()
+
+	d, renderer, _ := newTestDispatcher(t)
+
+	// Set an active phase — the spinner should NOT be stopped/resumed.
+	d.spinner.activePhase = events.InferenceStartedEvent{Model: "gpt-4"}
+
+	d.dispatch(context.Background(), events.ToolOutputStreamEvent{
+		Message: "line 1 of tool output",
+		Level:   "info",
+	})
+
+	// State must remain idle (unlike handleSystemMessage which sets stateThinking).
+	assert.Equal(t, stateIdle, d.stateMachine.current(),
+		"handleToolOutputStream must not change state")
+
+	// The activePhase must remain untouched.
+	assert.NotNil(t, d.spinner.activePhase,
+		"handleToolOutputStream must not clear activePhase")
+
+	// Verify no tool-related renderer calls (just LogSystemMessage).
+	assert.Empty(t, renderer.logToolCallCalls)
+	assert.Empty(t, renderer.logToolResultCalls)
+}
+
+func TestHandleToolOutputStream_MultipleLines(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newTestDispatcher(t)
+
+	d.spinner.activePhase = events.ToolExecutionStartedEvent{ToolNames: []string{"bash"}}
+
+	// Simulate three stream output lines.
+	for i := 0; i < 3; i++ {
+		d.dispatch(context.Background(), events.ToolOutputStreamEvent{
+			Message: "output line",
+			Level:   "info",
+		})
+	}
+
+	// State must still be idle after all three.
+	assert.Equal(t, stateIdle, d.stateMachine.current())
+	// activePhase must still be set.
+	assert.NotNil(t, d.spinner.activePhase)
 }
 
 func TestStartSpinnerForPhase_UnknownEvent(t *testing.T) {

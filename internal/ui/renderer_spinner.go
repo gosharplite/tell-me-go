@@ -23,6 +23,16 @@ func (r *stdUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status stri
 	return r.startSpinnerInternal(ctx, status, true)
 }
 
+// UpdateSpinnerStatus updates the status text and metrics display of a
+// running spinner without resetting its elapsed-time counter.
+// Safe to call from any goroutine.
+func (r *stdUIRenderer) UpdateSpinnerStatus(_ context.Context, status string, showMetrics bool) {
+	r.spinnerStatusMu.Lock()
+	r.spinnerStatus = status
+	r.spinnerShowMetrics = showMetrics
+	r.spinnerStatusMu.Unlock()
+}
+
 // initCPUTracking initializes CPU and memory tracking at spinner start.
 func (r *stdUIRenderer) initCPUTracking(showMetrics bool, startTime time.Time) {
 	if !showMetrics {
@@ -64,6 +74,13 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	done := make(chan struct{})
 	waitDone := make(chan struct{})
 
+	// Initialize shared spinner status fields so UpdateSpinnerStatus
+	// and the tick loop agree on the initial values.
+	r.spinnerStatusMu.Lock()
+	r.spinnerStatus = status
+	r.spinnerShowMetrics = showMetrics
+	r.spinnerStatusMu.Unlock()
+
 	// Initialize CPU tracking on start
 	r.initCPUTracking(showMetrics, startTime)
 
@@ -96,7 +113,13 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 			case <-done:
 				return
 			case <-ticker.C():
-				r.handleSpinnerTick(ui, frames, &idx, startTime, status, showMetrics, &stopped)
+				// Read the latest status from shared fields so that
+				// UpdateSpinnerStatus can change them without restarting.
+				r.spinnerStatusMu.RLock()
+				s := r.spinnerStatus
+				sm := r.spinnerShowMetrics
+				r.spinnerStatusMu.RUnlock()
+				r.handleSpinnerTick(ui, frames, &idx, startTime, s, sm, &stopped)
 			}
 		}
 	}()

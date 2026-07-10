@@ -64,6 +64,13 @@ type stdUIRenderer struct {
 	lastMemPercent  float64
 	markdownErrOnce sync.Once
 
+	// Spinner in-place update fields: UpdateSpinnerStatus writes to these
+	// and the spinner goroutine reads them on each tick, allowing the status
+	// text to change without restarting the spinner (preserving startTime).
+	spinnerStatusMu    sync.RWMutex
+	spinnerStatus      string
+	spinnerShowMetrics bool
+
 	// stderrIsTerminalFn checks whether an fd is a terminal. Defaults to
 	// term.IsTerminal. Overridable in tests to exercise the true-branch
 	// of IsTerminalContext without a real TTY.
@@ -418,7 +425,7 @@ func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) st
 func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus) {
 	stderr := ui.stderr
 	costStr := r.formatFinalCost(status, ui)
-	writeBestEffort(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
+	writeBestEffort(stderr, "\r%s%s╰─⠿ %sReady%s\n", ui.c(termClearLine), ui.c(colorGray), ui.c(colorReset), costStr)
 }
 
 func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Content, showThoughts, rawOutput bool) {
@@ -431,6 +438,10 @@ func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Con
 
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
+
+	// Clear the spinner line so response text doesn't overlap it.
+	// Add a newline so subsequent stderr output starts on a fresh line.
+	writeBestEffort(ui.stderr, "\r%s\n", ui.c(termClearLine))
 
 	for _, part := range respContent.Parts {
 		r.renderThoughtLocked(ui, part, showThoughts)

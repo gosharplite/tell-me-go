@@ -258,6 +258,7 @@ type behaviorMockUIRenderer struct {
 	SetUseColorFn             func(use bool)
 	SetForceSpinnerFn         func(force bool)
 	IsTerminalContextFn       func() bool
+	UpdateSpinnerStatusFn     func(ctx context.Context, status string, showMetrics bool)
 	tracker                   *behaviorTracker
 }
 
@@ -366,6 +367,13 @@ func (m *behaviorMockUIRenderer) IsTerminalContext() bool {
 		return m.IsTerminalContextFn()
 	}
 	return false
+}
+
+func (m *behaviorMockUIRenderer) UpdateSpinnerStatus(ctx context.Context, status string, showMetrics bool) {
+	m.tracker.record("UIRenderer.UpdateSpinnerStatus")
+	if m.UpdateSpinnerStatusFn != nil {
+		m.UpdateSpinnerStatusFn(ctx, status, showMetrics)
+	}
 }
 
 type behaviorMockCapturer struct {
