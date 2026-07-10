@@ -110,6 +110,11 @@ func (d *eventDispatcher) handleResponse(ctx context.Context, e events.Event) {
 func (d *eventDispatcher) handleUsageMetrics(_ context.Context, e events.Event) {
 	ev := e.(events.UsageMetricsEvent)
 	ctx := d.ensureContext(ev.Context, "UsageMetricsEvent")
+	// When turn-time tracking is active, log without stopping the spinner.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.LogUsage(ctx, ev.Metrics, d.logFile, ev.StartTime)
+		return
+	}
 	d.spinner.stopActiveSpinner()
 	d.renderer.LogUsage(ctx, ev.Metrics, d.logFile, ev.StartTime)
 	if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
@@ -177,6 +182,11 @@ func (d *eventDispatcher) handleSystemMessage(ctx context.Context, e events.Even
 	case events.ToolOutputStreamEvent:
 		msg, lvl = ev.Message, ev.Level
 	default:
+		return
+	}
+	// When turn-time tracking is active, log without stopping the spinner.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.LogSystemMessage(ctx, msg, lvl)
 		return
 	}
 	d.spinner.stopActiveSpinner()
