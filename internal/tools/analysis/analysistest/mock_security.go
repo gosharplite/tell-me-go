@@ -64,7 +64,4 @@ func (m *MockSecurityProvider) LogAudit(action string, args ...any) {
 func (m *MockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
-func (m *MockSecurityProvider) ReadLine(ctx context.Context) (string, error) {
-	return "", nil
-}
 func (m *MockSecurityProvider) Close() error { return nil }

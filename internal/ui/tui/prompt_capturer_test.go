@@ -31,7 +31,6 @@ func (m *mockBaseCapturer) Warn(message string) {}
 func (m *mockBaseCapturer) Prompt(message string) {
 	m.promptMsgs = append(m.promptMsgs, message)
 }
-func (m *mockBaseCapturer) ReadLine(ctx context.Context) (string, error)      { return "", nil }
 func (m *mockBaseCapturer) ReadSingleKey(ctx context.Context) (string, error) { return "", nil }
 func (m *mockBaseCapturer) Close(ctx context.Context) error                   { return nil }
 
@@ -134,7 +133,6 @@ func TestPromptCapturer_UserInteractorDelegation(t *testing.T) {
 	_, _ = capturer.Confirm(ctx, "test")
 	capturer.Warn("test")
 	capturer.Prompt("test")
-	_, _ = capturer.ReadLine(ctx)
 	_, _ = capturer.ReadSingleKey(ctx)
 
 	if len(base.promptMsgs) != 1 || base.promptMsgs[0] != "test" {

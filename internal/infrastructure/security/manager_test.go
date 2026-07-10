@@ -173,7 +173,6 @@ func TestSecurityManager_Misc(t *testing.T) {
 	sm.TerminalUnlock()
 
 	_, _ = sm.readSingleKey(context.Background())
-	_, _ = sm.ReadLine(context.Background())
 }
 
 func TestSecurityManager_Prompt(t *testing.T) {

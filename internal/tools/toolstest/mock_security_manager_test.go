@@ -309,35 +309,3 @@ func TestMockSecurityManager_Noops(t *testing.T) {
 		mock.RegisterSafePath("/tmp")
 	})
 }
-
-// --- ReadLine (2 subtests: default + with interactor) ---
-
-func TestMockSecurityManager_ReadLine(t *testing.T) {
-	t.Parallel()
-
-	t.Run("default", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityManager{}
-		line, err := mock.ReadLine(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if line != "" {
-			t.Errorf("got %q; want empty string", line)
-		}
-	})
-
-	t.Run("with_interactor", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityManager{
-			Interactor: &MockInteractor{Answer: "user input"},
-		}
-		line, err := mock.ReadLine(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if line != "user input" {
-			t.Errorf("got %q; want 'user input'", line)
-		}
-	})
-}

@@ -28,9 +28,7 @@ type TerminalController interface {
 	Prompt(message string)
 	Warn(message string)
 	// Confirm removed — no tools call it mid-turn; all consent is declarative via RequiresConsent
-	// ReadLine reads a line of input from the terminal. This method is part of the public interface
-	// used across package boundaries (e.g., by workspace tools) and is not dead code.
-	ReadLine(ctx context.Context) (string, error)
+	// ReadLine removed — no callers
 }
 
 type PolicyEvaluator interface {
@@ -52,9 +50,7 @@ type UserInteractor interface {
 	Warn(message string)
 	Prompt(message string)
 	ReadSingleKey(ctx context.Context) (string, error)
-	// ReadLine reads a line of input from the terminal. This method is part of the public interface
-	// used across package boundaries (e.g., by workspace tools) and is not dead code.
-	ReadLine(ctx context.Context) (string, error)
+	// ReadLine removed — no callers
 }
 
 // CommandValidator defines the interface for command validation.

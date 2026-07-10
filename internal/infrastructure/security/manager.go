@@ -120,11 +120,6 @@ func (sm *SecurityManager) readSingleKey(ctx context.Context) (string, error) {
 	return sm.interaction.ReadSingleKey(ctx)
 }
 
-// ReadLine reads a line.
-func (sm *SecurityManager) ReadLine(ctx context.Context) (string, error) {
-	return sm.interaction.ReadLine(ctx)
-}
-
 // RegisterSafePath registers a safe path. The path is normalized to
 // canonical absolute form before storage, enforcing the safepath-absolute
 // invariant: paths are always stored in resolved, absolute form.

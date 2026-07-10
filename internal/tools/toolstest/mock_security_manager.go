@@ -60,13 +60,6 @@ func (m *MockSecurityManager) TerminalUnlock()                     {}
 func (m *MockSecurityManager) Prompt(message string)               {}
 func (m *MockSecurityManager) Warn(message string)                 {}
 
-func (m *MockSecurityManager) ReadLine(ctx context.Context) (string, error) {
-	if m.Interactor != nil {
-		return m.Interactor.ReadLine(ctx)
-	}
-	return "", nil
-}
-
 func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
 	if m.AllowAll || m.BypassActive {
 		return true

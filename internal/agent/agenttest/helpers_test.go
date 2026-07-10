@@ -695,18 +695,6 @@ func TestStubCapturer_NoOpMethods(t *testing.T) {
 			t.Errorf("ReadSingleKey unexpected error: %v", err)
 		}
 	})
-
-	t.Run("ReadLine", func(t *testing.T) {
-		t.Parallel()
-		c := &StubCapturer{}
-		got, err := c.ReadLine(context.Background())
-		if got != "" {
-			t.Errorf("ReadLine should return empty, got %q", got)
-		}
-		if err != nil {
-			t.Errorf("ReadLine unexpected error: %v", err)
-		}
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -899,28 +887,6 @@ func TestMockServiceSecurityManager_Warn(t *testing.T) {
 	}
 }
 
-func TestMockServiceSecurityManager_ReadLine(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	m := &MockServiceSecurityManager{
-		ReadLineFunc: func(_ context.Context) (string, error) {
-			return "input", nil
-		},
-	}
-	got, err := m.ReadLine(ctx)
-	if got != "input" {
-		t.Errorf("ReadLine = %q, want %q", got, "input")
-	}
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	snap := m.snapshot()
-	if snap["ReadLine"] != 1 {
-		t.Errorf("expected 1 ReadLine call, got %d", snap["ReadLine"])
-	}
-}
-
 func TestMockServiceSecurityManager_IsCommandAllowed(t *testing.T) {
 	t.Parallel()
 
@@ -1058,13 +1024,6 @@ func TestMockServiceSecurityManager_NilFuncs(t *testing.T) {
 			call: func(m *MockServiceSecurityManager) {
 				got, err := m.Authorize(context.Background(), "l", "d", "r", true)
 				assertNilFuncBoolErr(t, got, err)
-			},
-		},
-		{
-			name: "ReadLine_nil_func",
-			call: func(m *MockServiceSecurityManager) {
-				got, err := m.ReadLine(context.Background())
-				assertNilFuncStrErr(t, got, err)
 			},
 		},
 		{

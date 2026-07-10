@@ -21,7 +21,6 @@ type MockCapturer struct {
 	WarnFn          func(msg string)
 	PromptFn        func(msg string)
 	ReadSingleKeyFn func(ctx context.Context) (string, error)
-	ReadLineFn      func(ctx context.Context) (string, error)
 }
 
 // Compile-time interface assertions
@@ -73,13 +72,6 @@ func (m *MockCapturer) Prompt(msg string) {
 func (m *MockCapturer) ReadSingleKey(ctx context.Context) (string, error) {
 	if m.ReadSingleKeyFn != nil {
 		return m.ReadSingleKeyFn(ctx)
-	}
-	return "", nil
-}
-
-func (m *MockCapturer) ReadLine(ctx context.Context) (string, error) {
-	if m.ReadLineFn != nil {
-		return m.ReadLineFn(ctx)
 	}
 	return "", nil
 }

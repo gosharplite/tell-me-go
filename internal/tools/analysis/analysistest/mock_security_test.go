@@ -203,18 +203,6 @@ func TestMockSecurityProvider_ErrorReturningMethods(t *testing.T) {
 		}
 	})
 
-	t.Run("ReadLine_zero_value", func(t *testing.T) {
-		t.Parallel()
-		mock := &MockSecurityProvider{}
-		line, err := mock.ReadLine(context.Background())
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if line != "" {
-			t.Errorf("got %q; want empty string", line)
-		}
-	})
-
 	t.Run("Close_zero_value", func(t *testing.T) {
 		t.Parallel()
 		mock := &MockSecurityProvider{}
