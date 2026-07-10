@@ -85,6 +85,12 @@ func (d *eventDispatcher) dispatch(ctx context.Context, e events.Event) {
 func (d *eventDispatcher) handleTurnStatus(ctx context.Context, e events.Event) {
 	ev := e.(events.TurnStatusEvent)
 	d.spinner.activePhase = nil // Clear phase on new turn/header
+	// When tracking turn time, don't transition to idle — it would
+	// stop the spinner and break the elapsed-time counter.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.LogTurnStatus(ctx, ev.Status)
+		return
+	}
 	d.stateMachine.transition(stateIdle)
 	d.renderer.LogTurnStatus(ctx, ev.Status)
 }
@@ -103,6 +109,12 @@ func (d *eventDispatcher) handleSpinnerEvent(ctx context.Context, e events.Event
 func (d *eventDispatcher) handleResponse(ctx context.Context, e events.Event) {
 	ev := e.(events.ResponseEvent)
 	d.spinner.activePhase = nil // Clear phase on response
+	// When tracking turn time, don't transition to rendering — it would
+	// stop the spinner and break the elapsed-time counter.
+	if !d.spinner.turnStartTime.IsZero() {
+		d.renderer.RenderResponse(ctx, ev.Content, d.showThoughts, d.rawOutput)
+		return
+	}
 	d.stateMachine.transition(stateRendering)
 	d.renderer.RenderResponse(ctx, ev.Content, d.showThoughts, d.rawOutput)
 }
