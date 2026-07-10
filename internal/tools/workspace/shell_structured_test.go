@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
@@ -15,7 +16,7 @@ import (
 func TestShellTool_ExecuteCommand_Structured(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, nil, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &events.NoOpEventBus{}, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	t.Run("Structured args (no shell)", func(t *testing.T) {

@@ -354,13 +354,11 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 	return res, nil
 }
 
-func (m *devManager) logToolAction(format string, a ...any) {
-	if m.eventBus != nil {
-		_ = m.eventBus.Publish(context.Background(), events.ToolOutputStreamEvent{
-			Message: fmt.Sprintf("[Tool Action] "+format, a...),
-			Level:   "info",
-		})
-	}
+func (m *devManager) logToolAction(ctx context.Context, format string, a ...any) {
+	_ = m.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: fmt.Sprintf("[Tool Action] "+format, a...),
+		Level:   "info",
+	})
 }
 
 func formatExecutionResult(displayName string, out []byte, execErr error, truncateLimit int, emptySuccessMsg string) tools.ToolResult {
@@ -402,7 +400,7 @@ func (m *devManager) runWithHeartbeat(
 	}
 
 	// 2. Logging
-	m.logToolAction("Running %s: %s", strings.ToLower(actionName), fullCmd)
+	m.logToolAction(ctx, "Running %s: %s", strings.ToLower(actionName), fullCmd)
 
 	// 3. Telemetry/Heartbeat (Safe concurrency)
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()

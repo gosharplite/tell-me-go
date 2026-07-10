@@ -262,7 +262,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return t.executor.RunCommand(tCtx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
-			Feedback:   &warnWriter{eventBus: t.eventBus},
+			Feedback:   &warnWriter{eventBus: t.eventBus, ctx: tCtx},
 			MaxCapture: t.maxOutput,
 			Env:        params.Env,
 		})
@@ -364,7 +364,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		feedback := &warnWriter{eventBus: t.eventBus}
+		feedback := &warnWriter{eventBus: t.eventBus, ctx: tCtx}
 		return t.executor.RunPipeline(tCtx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
@@ -462,26 +462,22 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 }
 
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
-	if t.eventBus != nil {
-		_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
-			Message: fmt.Sprintf("%s... (Output shown below)", msg),
-			Level:   "info",
-		})
-		_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
-			Message: "------------------------------------------------------------",
-			Level:   "info",
-		})
-	}
+	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: fmt.Sprintf("%s... (Output shown below)", msg),
+		Level:   "info",
+	})
+	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: "------------------------------------------------------------",
+		Level:   "info",
+	})
 
 	// Execute command — no terminal lock needed; EventBus handles rendering.
 	res, err := runFn()
 
-	if t.eventBus != nil {
-		_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
-			Message: "------------------------------------------------------------",
-			Level:   "info",
-		})
-	}
+	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: "------------------------------------------------------------",
+		Level:   "info",
+	})
 
 	return res, err
 }
@@ -531,16 +527,15 @@ type shellSecurity interface {
 
 type warnWriter struct {
 	eventBus events.EventBus
+	ctx      context.Context
 }
 
 func (w *warnWriter) Write(p []byte) (n int, err error) {
 	msg := strings.TrimSuffix(string(p), "\n")
-	if w.eventBus != nil {
-		_ = w.eventBus.Publish(context.Background(), events.ToolOutputStreamEvent{
-			Message: msg,
-			Level:   "info",
-		})
-	}
+	_ = w.eventBus.Publish(w.ctx, events.ToolOutputStreamEvent{
+		Message: msg,
+		Level:   "info",
+	})
 	return len(p), nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
@@ -14,7 +15,7 @@ import (
 func TestShellTool_ExecuteCommand_Validation_POSIX(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, nil, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &events.NoOpEventBus{}, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	tests := []struct {
