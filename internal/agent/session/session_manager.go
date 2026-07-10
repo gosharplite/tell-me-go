@@ -163,7 +163,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 	if bridge != nil {
 		listenStarted = true
 		go func() {
-			_ = bridge.Listen(ctx)
+			_ = bridge.Listen(context.Background())
 		}()
 	}
 
