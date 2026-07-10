@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
@@ -116,6 +117,7 @@ func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *toolstest.Mo
 	runner := &mockGoRunner{}
 	m := &devManager{
 		sm:             sm,
+		eventBus:       &events.NoOpEventBus{},
 		validator:      &toolstest.MockCommandValidator{},
 		executor:       executor,
 		runner:         runner,
@@ -680,7 +682,7 @@ func TestNewDevManager(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	validator := &toolstest.MockCommandValidator{}
 	runner := &mockGoRunner{}
-	m := newDevManager(sm, validator, runner)
+	m := newDevManager(sm, &events.NoOpEventBus{}, validator, runner)
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.executor)
 }
@@ -963,7 +965,7 @@ func TestSecurityRemediation(t *testing.T) {
 func TestDevManager_Options(t *testing.T) {
 	t.Parallel()
 	customInterval := 42 * time.Second
-	m := newDevManager(nil, nil, nil, withHeartbeatInterval(customInterval))
+	m := newDevManager(nil, &events.NoOpEventBus{}, nil, nil, withHeartbeatInterval(customInterval))
 
 	if m.heartbeatInterval != customInterval {
 		t.Errorf("expected interval %v, got %v", customInterval, m.heartbeatInterval)
@@ -1243,4 +1245,14 @@ func TestRealExecutor_Execute(t *testing.T) {
 	out, err := e.Execute(context.Background(), name, args...)
 	require.NoError(t, err)
 	assert.Contains(t, string(out), "hello")
+}
+
+func TestLogToolAction_NoOpEventBus(t *testing.T) {
+	t.Parallel()
+	m := &devManager{
+		sm:       &toolstest.MockSecurityManager{AllowAll: true},
+		eventBus: &events.NoOpEventBus{},
+	}
+	// Must not panic when eventBus is a no-op
+	m.logToolAction(context.Background(), "Running %s: %s", "test_action", "echo hello")
 }

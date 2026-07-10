@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -192,6 +194,7 @@ func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []stri
 
 type shellTool struct {
 	sm                shellSecurity
+	eventBus          events.EventBus
 	validator         domain_security.CommandValidator
 	executor          *processExecutor
 	translator        commandTranslator
@@ -200,9 +203,10 @@ type shellTool struct {
 	heartbeatInterval time.Duration // zero means default (2s)
 }
 
-func newshellTool(sm shellSecurity, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper) *shellTool {
+func newshellTool(sm shellSecurity, eventBus events.EventBus, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper) *shellTool {
 	return &shellTool{
 		sm:         sm,
+		eventBus:   eventBus,
 		validator:  validator,
 		executor:   newprocessExecutor(),
 		translator: translator,
@@ -259,7 +263,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return t.executor.RunCommand(tCtx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
-			Feedback:   &warnWriter{sm: t.sm},
+			Feedback:   &warnWriter{eventBus: t.eventBus, ctx: tCtx},
 			MaxCapture: t.maxOutput,
 			Env:        params.Env,
 		})
@@ -361,7 +365,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		feedback := &warnWriter{sm: t.sm}
+		feedback := &warnWriter{eventBus: t.eventBus, ctx: tCtx}
 		return t.executor.RunPipeline(tCtx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
@@ -459,19 +463,22 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 }
 
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
-	// 1. Lock to print the header
-	t.sm.TerminalLock()
-	t.sm.Warn(fmt.Sprintf("%s... (Output shown below)", msg))
-	t.sm.Warn("------------------------------------------------------------")
-	t.sm.TerminalUnlock()
+	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: fmt.Sprintf("%s... (Output shown below)", msg),
+		Level:   "info",
+	})
+	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: "------------------------------------------------------------",
+		Level:   "info",
+	})
 
-	// 2. Execute command WITHOUT holding the lock to allow spinner to run
+	// Execute command — no terminal lock needed; EventBus handles rendering.
 	res, err := runFn()
 
-	// 3. Lock to print the footer
-	t.sm.TerminalLock()
-	t.sm.Warn("------------------------------------------------------------")
-	t.sm.TerminalUnlock()
+	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
+		Message: "------------------------------------------------------------",
+		Level:   "info",
+	})
 
 	return res, err
 }
@@ -514,25 +521,29 @@ func (t *shellTool) deniedResult(label string) tools.ToolResult {
 }
 
 type shellSecurity interface {
-	domain_security.TerminalController
 	domain_security.Auditor
 	domain_security.PathValidator
 	domain_security.ActionConfirmer
 }
 
 type warnWriter struct {
-	sm shellSecurity
+	eventBus events.EventBus
+	ctx      context.Context
+	buf      bytes.Buffer
 }
 
 func (w *warnWriter) Write(p []byte) (n int, err error) {
-	w.sm.TerminalLock()
-	defer w.sm.TerminalUnlock()
-
-	// The process executor includes newlines in the feedback messages.
-	// Since Warn() also typically adds a newline, we trim one from the end
-	// to prevent double-spacing in the terminal.
-	msg := string(p)
-	w.sm.Warn(strings.TrimSuffix(msg, "\n"))
+	w.buf.Write(p)
+	for {
+		line, err := w.buf.ReadBytes('\n')
+		if err != nil {
+			break // partial line remains in buf for next Write
+		}
+		_ = w.eventBus.Publish(w.ctx, events.ToolOutputStreamEvent{
+			Message: strings.TrimSuffix(string(line), "\n"),
+			Level:   "info",
+		})
+	}
 	return len(p), nil
 }
 
