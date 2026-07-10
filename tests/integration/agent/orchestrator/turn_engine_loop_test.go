@@ -83,33 +83,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 	// Check history for the injected warning
 	window, _ := h.GetWindow(ctx, 0, -1)
-	foundWarning := false
-	for _, msg := range window {
-		// Text-only loops: user-role text message
-		if msg.Role == "user" {
-			for _, part := range msg.Parts {
-				if part.Text == orchestrator.LoopWarning {
-					foundWarning = true
-					break
-				}
-			}
-		}
-		// Tool-call loops: synthetic tool-role FunctionResponse
-		if msg.Role == "tool" {
-			for _, part := range msg.Parts {
-				if part.FunctionResponse != nil {
-					if errStr, ok := part.FunctionResponse.Response["error"].(string); ok && errStr == orchestrator.LoopWarning {
-						foundWarning = true
-						break
-					}
-				}
-			}
-		}
-		if foundWarning {
-			break
-		}
-	}
-	assert.True(t, foundWarning, "Should have injected loop warning")
+	assertLoopWarningInHistory(t, window)
 }
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
@@ -174,31 +148,5 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 
 	// Check history for the injected warning
 	window, _ := h.GetWindow(ctx, 0, -1)
-	foundWarning := false
-	for _, msg := range window {
-		// Text-only loops: user-role text message
-		if msg.Role == "user" {
-			for _, part := range msg.Parts {
-				if part.Text == orchestrator.LoopWarning {
-					foundWarning = true
-					break
-				}
-			}
-		}
-		// Tool-call loops: synthetic tool-role FunctionResponse
-		if msg.Role == "tool" {
-			for _, part := range msg.Parts {
-				if part.FunctionResponse != nil {
-					if errStr, ok := part.FunctionResponse.Response["error"].(string); ok && errStr == orchestrator.LoopWarning {
-						foundWarning = true
-						break
-					}
-				}
-			}
-		}
-		if foundWarning {
-			break
-		}
-	}
-	assert.True(t, foundWarning, "Should have injected loop warning")
+	assertLoopWarningInHistory(t, window)
 }
