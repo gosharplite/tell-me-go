@@ -12,7 +12,7 @@ import (
 )
 
 // NamedClient pairs an ExtendedClient with a human-readable name for observability.
-type NamedClient struct {
+type namedClient struct {
 	Name   string
 	Client llm.ExtendedClient
 }
@@ -33,20 +33,20 @@ type NamedClient struct {
 //	solely on the domain sentinels returned by ResilientClient. It does NOT
 //	repeat error classification; it only checks IsTransient() to decide whether
 //	to try the next provider or abort the chain.
-type FailoverGateway struct {
-	clients []NamedClient // clients[0] is primary
+type failoverGateway struct {
+	clients []namedClient // clients[0] is primary
 }
 
 // compile-time interface compliance check
-var _ llm.ExtendedClient = (*FailoverGateway)(nil)
+var _ llm.ExtendedClient = (*failoverGateway)(nil)
 
 // NewFailoverGateway creates a FailoverGateway backed by the given clients.
 // Panics if clients is empty — this is a programmer error that must be caught at startup.
-func NewFailoverGateway(clients []NamedClient) *FailoverGateway {
+func newFailoverGateway(clients []namedClient) *failoverGateway {
 	if len(clients) == 0 {
 		panic("FailoverGateway: clients must not be empty")
 	}
-	return &FailoverGateway{
+	return &failoverGateway{
 		clients: clients,
 	}
 }
@@ -62,7 +62,7 @@ func NewFailoverGateway(clients []NamedClient) *FailoverGateway {
 //   - On any non-transient error (auth, terminal, unrecognized): aborts
 //     immediately — no further providers are tried.
 //   - If all providers are exhausted: returns the last error wrapped as terminal.
-func (fg *FailoverGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (fg *failoverGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	var lastErr error
 	for _, nc := range fg.clients {
 		if err := ctx.Err(); err != nil {
@@ -96,7 +96,7 @@ func (fg *FailoverGateway) Generate(ctx context.Context, input []*llm.Content, t
 }
 
 // SendChat delegates to the primary client.
-func (fg *FailoverGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (fg *failoverGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, fmt.Errorf("failover: context cancelled: %w", err)
 	}
@@ -105,11 +105,11 @@ func (fg *FailoverGateway) SendChat(ctx context.Context, history []*llm.Content,
 }
 
 // GenerateImages delegates to the primary client.
-func (fg *FailoverGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (fg *failoverGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return fg.clients[0].Client.GenerateImages(ctx, model, prompt, mimeType)
 }
 
 // RefreshAuth delegates to the primary client.
-func (fg *FailoverGateway) RefreshAuth() error {
+func (fg *failoverGateway) RefreshAuth() error {
 	return fg.clients[0].Client.RefreshAuth()
 }

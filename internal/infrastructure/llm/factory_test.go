@@ -705,7 +705,7 @@ func TestDefaultClientFactory(t *testing.T) {
 
 // assertNewFailoverChainEmpty validates the empty failover order result:
 // gw must be nil, err must be nil.
-func assertNewFailoverChainEmpty(t *testing.T, gw *FailoverGateway, err error) {
+func assertNewFailoverChainEmpty(t *testing.T, gw *failoverGateway, err error) {
 	t.Helper()
 	if gw != nil {
 		t.Errorf("expected nil gateway for empty failover order, got %v", gw)
@@ -717,7 +717,7 @@ func assertNewFailoverChainEmpty(t *testing.T, gw *FailoverGateway, err error) {
 
 // assertNewFailoverChainAuthError validates the auth error result:
 // gw must be nil, err must contain the expected wrapped message.
-func assertNewFailoverChainAuthError(t *testing.T, gw *FailoverGateway, err error) {
+func assertNewFailoverChainAuthError(t *testing.T, gw *failoverGateway, err error) {
 	t.Helper()
 	if err == nil {
 		t.Fatal("expected error for provider with missing API key")
@@ -733,7 +733,7 @@ func assertNewFailoverChainAuthError(t *testing.T, gw *FailoverGateway, err erro
 // assertNewFailoverChainGeminiResult validates the Gemini SDK init result.
 // When ADC is available the SDK init succeeds (gw non-nil, err nil);
 // when ADC is unavailable it fails with a wrapped error.
-func assertNewFailoverChainGeminiResult(t *testing.T, gw *FailoverGateway, err error) {
+func assertNewFailoverChainGeminiResult(t *testing.T, gw *failoverGateway, err error) {
 	t.Helper()
 	if err != nil {
 		if !strings.Contains(err.Error(), `failover chain: provider "gemini"`) {

@@ -63,7 +63,7 @@ func TestFailover_PrimaryTransient_SecondarySucceeds(t *testing.T) {
 	secondary := &secondaryMockClient{callCount: &secondaryCalls}
 
 	// Step 2 — Create FailoverGateway with ordered client list
-	fg := NewFailoverGateway([]NamedClient{
+	fg := newFailoverGateway([]namedClient{
 		{Name: "primary", Client: primary},
 		{Name: "secondary", Client: secondary},
 	})

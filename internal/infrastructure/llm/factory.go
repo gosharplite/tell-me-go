@@ -139,7 +139,7 @@ func newClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 // Each client in the chain is independently constructed via the same
 // per-provider logic as newClient (authenticator, timeout, thinking budget,
 // headers), but wrapped in a resilientClient instead of returned directly.
-func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (*FailoverGateway, error) {
+func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (*failoverGateway, error) {
 	providers := cfg.GetFailoverProviders()
 	if len(providers) == 0 {
 		return nil, nil
@@ -150,7 +150,7 @@ func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.
 	}
 
 	timeout := resolveTimeout(cfg)
-	clients := make([]NamedClient, 0, len(providers))
+	clients := make([]namedClient, 0, len(providers))
 
 	for _, provider := range providers {
 		p := provider // capture range variable
@@ -167,13 +167,13 @@ func newFailoverChain(cfg *config.Config, pData pricing.PricingData, bus events.
 			return nil, fmt.Errorf("failover chain: provider %q: %w", p.Type, err)
 		}
 
-		clients = append(clients, NamedClient{
+		clients = append(clients, namedClient{
 			Name:   p.Type,
 			Client: NewResilientClient(baseClient),
 		})
 	}
 
-	return NewFailoverGateway(clients), nil
+	return newFailoverGateway(clients), nil
 }
 
 func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
