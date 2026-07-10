@@ -126,6 +126,13 @@ func (d *eventDispatcher) handleToolEvents(ctx context.Context, e events.Event) 
 			d.logger.Debug("handleToolEvents: ToolCallEvent missing Calls")
 			return
 		}
+		// When turn-time tracking is active, ToolExecutionStartedEvent follows
+		// immediately and handles the spinner transition in-place. Skip stop/resume
+		// to preserve the elapsed-time counter.
+		if !d.spinner.turnStartTime.IsZero() {
+			d.renderer.LogToolCall(ctx, ev.Calls, ev.Turn, ev.MaxTurns, d.showTools)
+			return
+		}
 		d.spinner.stopActiveSpinner()
 		d.renderer.LogToolCall(ctx, ev.Calls, ev.Turn, ev.MaxTurns, d.showTools)
 		if d.spinner.resumeActiveSpinner(ctx, d.stateMachine.current(), nil) {
@@ -134,6 +141,13 @@ func (d *eventDispatcher) handleToolEvents(ctx context.Context, e events.Event) 
 	case events.ToolResultEvent:
 		if ev.Name == "" {
 			d.logger.Debug("handleToolEvents: ToolResultEvent missing Name")
+			return
+		}
+		// When turn-time tracking is active, avoid stopping the spinner so the
+		// elapsed-time counter continues. The next phase transition will update
+		// the status in-place.
+		if !d.spinner.turnStartTime.IsZero() {
+			d.renderer.LogToolResult(ctx, ev.Name, ev.Result, d.showTools)
 			return
 		}
 		d.spinner.stopActiveSpinner()
