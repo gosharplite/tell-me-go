@@ -160,7 +160,10 @@ func detectLoop(state *TurnState) bool {
 	// structurally identical responses on different turns.
 	sanitized := *state.Response
 	sanitized.ID = ""
-	rawJSON, _ := json.Marshal(&sanitized)
+	rawJSON, err := json.Marshal(&sanitized)
+	if err != nil {
+		return false // skip loop detection if response can't be serialized
+	}
 	h := sha256.Sum256(rawJSON)
 	currentHash := hex.EncodeToString(h[:])
 
@@ -224,22 +227,27 @@ func handleLoopBreak(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 // For text-only loops: a "user"-role warning is appended as before.
 func injectSyntheticLoopFeedback(ctx context.Context, Turn *Turn) error {
 	if Turn.State.HasToolCalls && Turn.State.Response != nil {
+		// Collect all synthetic FunctionResponse parts first,
+		// then inject as a single "tool"-role message. This
+		// satisfies strict LLM role alternation rules and avoids
+		// relying on AddContent's same-role merge side-effect.
+		var syntheticParts []*llm.Part
 		for _, part := range Turn.State.Response.Parts {
 			if part.FunctionCall != nil {
-				synthetic := &llm.Content{
-					Role: "tool",
-					Parts: []*llm.Part{{
-						FunctionResponse: &llm.FunctionResponse{
-							ID:       part.FunctionCall.ID,
-							Name:     part.FunctionCall.Name,
-							Response: map[string]interface{}{"error": LoopWarning},
-						},
-					}},
-				}
-				if err := Turn.CtxManager.AddContent(ctx, synthetic); err != nil {
-					return err
-				}
+				syntheticParts = append(syntheticParts, &llm.Part{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:       part.FunctionCall.ID,
+						Name:     part.FunctionCall.Name,
+						Response: map[string]interface{}{"error": LoopWarning},
+					},
+				})
 			}
+		}
+		if len(syntheticParts) > 0 {
+			return Turn.CtxManager.AddContent(ctx, &llm.Content{
+				Role:  "tool",
+				Parts: syntheticParts,
+			})
 		}
 		return nil
 	}
