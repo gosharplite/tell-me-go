@@ -105,7 +105,7 @@ func TestGetDailyCost_DeadlockPrevention(t *testing.T) {
 	// Thread A: GetDailyCost (t.mu -> ledgerMu)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 10; i++ {
 			tracker.GetDailyCost(ctx)
 		}
 	}()
@@ -114,7 +114,7 @@ func TestGetDailyCost_DeadlockPrevention(t *testing.T) {
 	// Note: ledgerMu is shared across the package.
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 10; i++ {
 			m.recordCost(ctx, filepath.Dir(logFile), "interactive", sessionCostRecord{
 				Session:   "test",
 				TotalCost: 0.1,

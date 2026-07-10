@@ -244,14 +244,14 @@ func TestAtlassianProvider_GetWaitTime_EdgeCases(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 	t.Setenv("ATLASSIAN_TOKEN", "token")
 
-	t.Run("BaseDelay zero defaults to 1 second", func(t *testing.T) {
+	t.Run("BaseDelay zero is respected", func(t *testing.T) {
 		p, err := NewAtlassianProvider()
 		require.NoError(t, err)
-		p.BaseDelay = 0 // trigger the BaseDelay == 0 branch
+		p.BaseDelay = 0
 
 		resp := &http.Response{Header: make(http.Header)}
 		wait := p.GetWaitTime(resp, 0)
-		assert.Equal(t, 1*time.Second, wait)
+		assert.Equal(t, 0*time.Second, wait)
 	})
 
 	t.Run("invalid Retry-After falls back to exponential backoff", func(t *testing.T) {

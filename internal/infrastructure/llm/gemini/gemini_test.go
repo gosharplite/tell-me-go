@@ -800,11 +800,16 @@ func (l *captureErrorLogger) Error(msg string, args ...any) {
 	}
 }
 
-// runApplyThinkingBudgetWithCanceledCtx creates a Client with thinkingBudget=3000,
-// maxThinkingBudget=1024, and a captureErrorLogger. It calls applyThinkingBudget
-// with a canceled context and returns the captured log message, KV args, and the
-// config (so callers can inspect the capped budget).
-func runApplyThinkingBudgetWithCanceledCtx(t *testing.T) (capturedMsg string, capturedKV []any, config *genai.ThinkingConfig) {
+// runApplyThinkingBudgetWithPublishError creates a Client with thinkingBudget=3000,
+// maxThinkingBudget=1024, a captureErrorLogger, and a TestEventBus that returns
+// a non-ErrBusNotInitialized error from Publish. It calls applyThinkingBudget
+// with a valid (non-cancelled) context and returns the captured log message,
+// KV args, and the config (so callers can inspect the capped budget).
+//
+// Before the SafePublish fix (which switched to context.Background()), this
+// used a cancelled context to trigger the publish error path. Now we use
+// SetPublishErr to inject the error directly, which matches the new contract.
+func runApplyThinkingBudgetWithPublishError(t *testing.T) (capturedMsg string, capturedKV []any, config *genai.ThinkingConfig) {
 	t.Helper()
 
 	captureLogger := &captureErrorLogger{
@@ -814,8 +819,8 @@ func runApplyThinkingBudgetWithCanceledCtx(t *testing.T) (capturedMsg string, ca
 		},
 	}
 
-	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	eventstest.CleanupBus(t, bus)
+	bus := &eventstest.TestEventBus{}
+	bus.SetPublishErr(errors.New("mock publish failure"))
 
 	c := &Client{
 		eventBus:          bus,
@@ -825,11 +830,8 @@ func runApplyThinkingBudgetWithCanceledCtx(t *testing.T) (capturedMsg string, ca
 		model:             "test-model",
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
 	config = &genai.ThinkingConfig{}
-	c.applyThinkingBudget(ctx, config, 3000, 1024, "test-model")
+	c.applyThinkingBudget(context.Background(), config, 3000, 1024, "test-model")
 
 	return capturedMsg, capturedKV, config
 }
@@ -937,21 +939,21 @@ func TestApplyThinkingBudget_PublishError(t *testing.T) {
 	t.Run("logs error when SafePublish returns non-ErrBusNotInitialized error", func(t *testing.T) {
 
 		t.Run("caps_budget_at_max", func(t *testing.T) {
-			_, _, config := runApplyThinkingBudgetWithCanceledCtx(t)
+			_, _, config := runApplyThinkingBudgetWithPublishError(t)
 			if config.ThinkingBudget == nil || *config.ThinkingBudget != 1024 {
 				t.Errorf("expected budget capped at 1024, got %v", config.ThinkingBudget)
 			}
 		})
 
 		t.Run("logs_event_publish_failed", func(t *testing.T) {
-			capturedMsg, _, _ := runApplyThinkingBudgetWithCanceledCtx(t)
+			capturedMsg, _, _ := runApplyThinkingBudgetWithPublishError(t)
 			if capturedMsg != "event_publish_failed" {
 				t.Errorf("expected Error log 'event_publish_failed', got %q", capturedMsg)
 			}
 		})
 
 		t.Run("log_args_contain_event_type_and_error", func(t *testing.T) {
-			_, capturedKV, _ := runApplyThinkingBudgetWithCanceledCtx(t)
+			_, capturedKV, _ := runApplyThinkingBudgetWithPublishError(t)
 			assertLogArgsContainEventTypeAndError(t, capturedKV)
 		})
 	})

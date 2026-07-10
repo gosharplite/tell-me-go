@@ -304,7 +304,7 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 
 	// Now bus.Publish is asynchronous and non-blocking (up to queue size).
 	// We still apply a strict 2s limit to prevent the publisher from hanging if the queue is full.
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	err := bus.Publish(ctx, event)

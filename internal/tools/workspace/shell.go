@@ -257,13 +257,13 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 
 	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
 		// Enforce timeout via context
-		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(timeout)*time.Second)
 		defer cancel()
 
 		return t.executor.RunCommand(tCtx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
-			Feedback:   &warnWriter{eventBus: t.eventBus, ctx: tCtx},
+			Feedback:   &warnWriter{eventBus: t.eventBus, ctx: context.WithoutCancel(tCtx)},
 			MaxCapture: t.maxOutput,
 			Env:        params.Env,
 		})
@@ -362,10 +362,10 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
 		// Enforce timeout via context
-		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		feedback := &warnWriter{eventBus: t.eventBus, ctx: tCtx}
+		feedback := &warnWriter{eventBus: t.eventBus, ctx: context.WithoutCancel(tCtx)}
 		return t.executor.RunPipeline(tCtx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
@@ -465,11 +465,11 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
 	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
 		Message: fmt.Sprintf("%s... (Output shown below)", msg),
-		Level:   "info",
+		Level:   "warn",
 	})
 	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
 		Message: "------------------------------------------------------------",
-		Level:   "info",
+		Level:   "warn",
 	})
 
 	// Execute command — no terminal lock needed; EventBus handles rendering.
@@ -477,7 +477,7 @@ func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 
 	_ = t.eventBus.Publish(ctx, events.ToolOutputStreamEvent{
 		Message: "------------------------------------------------------------",
-		Level:   "info",
+		Level:   "warn",
 	})
 
 	return res, err
@@ -541,7 +541,7 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 		}
 		_ = w.eventBus.Publish(w.ctx, events.ToolOutputStreamEvent{
 			Message: strings.TrimSuffix(string(line), "\n"),
-			Level:   "info",
+			Level:   "warn",
 		})
 	}
 	return len(p), nil
