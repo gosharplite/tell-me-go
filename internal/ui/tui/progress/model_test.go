@@ -1011,7 +1011,7 @@ func TestModel_ToolLogs(t *testing.T) {
 		assert.Contains(t, updated.toolLogs[0], "[Warning] deprecated flag used")
 	})
 
-	t.Run("ToolOutputStreamEvent output level", func(t *testing.T) {
+	t.Run("ToolOutputStreamEvent output level is skipped", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
@@ -1022,8 +1022,7 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Tool Output] Executing...")
+		assert.Nil(t, updated.toolLogs) // level "output" is suppressed in TUI mode
 	})
 
 	t.Run("ToolOutputStreamEvent unknown level defaults to System", func(t *testing.T) {

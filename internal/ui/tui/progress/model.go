@@ -281,6 +281,9 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForEvent()
 	case events.ToolOutputStreamEvent:
+		if e.Level == "output" {
+			return m, m.waitForEvent()
+		}
 		m.appendLevelEventLog(e.Level, e.Message)
 		return m, m.waitForEvent()
 	case events.SystemMessageEvent:
