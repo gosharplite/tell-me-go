@@ -238,17 +238,17 @@ func TestModel_Update(t *testing.T) {
 
 		msg := events.TurnStatusEvent{
 			Status: events.TurnStatus{
-				Tokens:       1500,
-				Timestamp:    time.Now(),
-				Mode:         "test",
-				Model:        "deepseek-v4-pro",
-				IsFinal:      true,
-				SessionCost:  0.1505,
-				TaskCost:     0.0012,
-				TotalM:       116386,
-				TotalH:       15172096,
-				TotalO:       51607,
-				Metrics:      &llm.Metrics{Cost: 0.0010},
+				Tokens:      1500,
+				Timestamp:   time.Now(),
+				Mode:        "test",
+				Model:       "deepseek-v4-pro",
+				IsFinal:     true,
+				SessionCost: 0.1505,
+				TaskCost:    0.0012,
+				TotalM:      116386,
+				TotalH:      15172096,
+				TotalO:      51607,
+				Metrics:     &llm.Metrics{Cost: 0.0010},
 			},
 		}
 
@@ -392,6 +392,7 @@ func TestModel_Integration(t *testing.T) {
 		m = newModel.(*model)
 		assert.Equal(t, stateThinking, m.currentState)
 		assert.Equal(t, 1, m.turn) // SessionTurns 0 + 1
+		assert.NotNil(t, cmd)
 
 		// 3. InferenceStartedEvent → model name set
 		newModel, cmd = m.Update(domainEventMsg(events.InferenceStartedEvent{Model: "gpt-5"}))
@@ -484,6 +485,7 @@ func TestModel_Integration(t *testing.T) {
 		m = newModel.(*model)
 		assert.Equal(t, stateThinking, m.currentState)
 		assert.Equal(t, 2, m.turn) // SessionTurns 1 + 1
+		assert.NotNil(t, cmd)
 
 		// TurnStatus for Turn 2 — SessionTurns increments
 		newModel, cmd = m.Update(domainEventMsg(events.TurnStatusEvent{

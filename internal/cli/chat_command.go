@@ -206,16 +206,16 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		return err
 	}
 	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatCommand{
-		ConfigPath:   opts.configPath,
-		NewSession:   opts.newSession,
-		LastN:        opts.lastN,
-		BackN:        opts.backN,
-		RawOutput:    opts.rawOutput,
-		UseTUIPrompt: opts.tuiPrompt,
-		TUIOutput:    opts.tuiOutput,
+		ConfigPath:       opts.configPath,
+		NewSession:       opts.newSession,
+		LastN:            opts.lastN,
+		BackN:            opts.backN,
+		RawOutput:        opts.rawOutput,
+		UseTUIPrompt:     opts.tuiPrompt,
+		TUIOutput:        opts.tuiOutput,
 		ProgressRenderer: progress.NewRenderer(),
-		Retry:        opts.retry,
-		Prompt:       prompt,
+		Retry:            opts.retry,
+		Prompt:           prompt,
 	}, capturer)
 }
 func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerInteractor, opts *cliOptions, args []string) (string, error) {

@@ -30,20 +30,20 @@ const (
 type model struct {
 	eventCh <-chan events.Event
 
-	currentState state
-	width        int // terminal width, updated via WindowSizeMsg
-	turn         int
-	modelName    string // display name, e.g. "deepseek-v4-pro"
-	sessionName  string // e.g. "architect-johndoe"
-	tokens       int
-	maxTokens    int
-	timestamp    time.Time
-	err          error
-	responseText    string                // accumulated AI response text
-	rawResponseText string                // raw text before markdown rendering, for re-rendering on resize
+	currentState    state
+	width           int // terminal width, updated via WindowSizeMsg
+	turn            int
+	modelName       string // display name, e.g. "deepseek-v4-pro"
+	sessionName     string // e.g. "architect-johndoe"
+	tokens          int
+	maxTokens       int
+	timestamp       time.Time
+	err             error
+	responseText    string                   // accumulated AI response text
+	rawResponseText string                   // raw text before markdown rendering, for re-rendering on resize
 	mdRender        func(string, int) string // optional markdown renderer (text, width)
-	postCallStatus  *events.TurnStatus    // set when IsPostCall, has full status including Metrics and StartTime
-	finalCostLine   string                // rendered "Ready (...)" line from IsFinal
+	postCallStatus  *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
+	finalCostLine   string                   // rendered "Ready (...)" line from IsFinal
 }
 
 // NewModel creates a new progress model that consumes events from the given

@@ -21,18 +21,18 @@ import (
 
 // sessionManager manages the session lifecycle and agent execution.
 type sessionManager struct {
-	HomeDir         string
-	Version         string
-	SM              domain_security.Manager
-	Stdout          io.Writer
-	Stderr          io.Writer
-	AgentFactory    ports.ChatterFactory
-	HistoryRenderer ports.HistoryRenderer
-	UIRenderer      ports.UIRenderer
-	Clock           clock.Clock
-	EntropySource     io.Reader
-	progressRenderer  ports.ProgressRenderer // nil unless TUI is active
-	tuiCleanup        func()
+	HomeDir          string
+	Version          string
+	SM               domain_security.Manager
+	Stdout           io.Writer
+	Stderr           io.Writer
+	AgentFactory     ports.ChatterFactory
+	HistoryRenderer  ports.HistoryRenderer
+	UIRenderer       ports.UIRenderer
+	Clock            clock.Clock
+	EntropySource    io.Reader
+	progressRenderer ports.ProgressRenderer // nil unless TUI is active
+	tuiCleanup       func()
 }
 
 // sessionConfig contains configuration for a single session execution.
@@ -264,25 +264,25 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 }
 
 type RunParams struct {
-	HomeDir         string
-	Version         string
-	SM              domain_security.Manager
-	Stdout          io.Writer
-	Stderr          io.Writer
-	AgentFactory    ports.ChatterFactory
-	HistoryRenderer ports.HistoryRenderer
-	UIRenderer      ports.UIRenderer
-	ConfigPath      string
-	NewSession      bool
-	LastN           int
-	BackN           int
-	RawOutput       bool
-	TUIOutput         bool
-	ProgressRenderer  ports.ProgressRenderer
-	Prompt            string
-	Config          *config.Config
-	Deps            ports.ChatterComposer
-	Capturer        ports.Capturer
+	HomeDir          string
+	Version          string
+	SM               domain_security.Manager
+	Stdout           io.Writer
+	Stderr           io.Writer
+	AgentFactory     ports.ChatterFactory
+	HistoryRenderer  ports.HistoryRenderer
+	UIRenderer       ports.UIRenderer
+	ConfigPath       string
+	NewSession       bool
+	LastN            int
+	BackN            int
+	RawOutput        bool
+	TUIOutput        bool
+	ProgressRenderer ports.ProgressRenderer
+	Prompt           string
+	Config           *config.Config
+	Deps             ports.ChatterComposer
+	Capturer         ports.Capturer
 }
 
 // Run is the high-level entry point for running a chat session.
