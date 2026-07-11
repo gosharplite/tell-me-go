@@ -28,7 +28,7 @@ func TestModel_Update(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.Equal(t, stateThinking, updated.currentState)
-		assert.Equal(t, 21, updated.turn)
+		assert.Equal(t, 0, updated.turn) // turn no longer set by TurnStarted
 		assert.NotNil(t, cmd)
 	})
 
@@ -58,11 +58,14 @@ func TestModel_Update(t *testing.T) {
 				Timestamp:        ts,
 				Mode:             "architect-johndoe",
 				Model:            "deepseek-v4-pro",
+				SessionTurns:     4,
 			},
 		}
 
 		newModel, cmd := m.Update(domainEventMsg(msg))
 		updated := newModel.(*model)
+
+		assert.Equal(t, 5, updated.turn, "should be SessionTurns + 1")
 
 		assert.Equal(t, 1500, updated.tokens)
 		assert.Equal(t, 32000, updated.maxTokens)
@@ -388,7 +391,6 @@ func TestModel_Integration(t *testing.T) {
 		newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 0}))
 		m = newModel.(*model)
 		assert.Equal(t, stateThinking, m.currentState)
-		assert.Equal(t, 1, m.turn) // Turn.Index 0 + 1
 		assert.NotNil(t, cmd)
 
 		// 3. InferenceStartedEvent → model name set
@@ -406,10 +408,12 @@ func TestModel_Integration(t *testing.T) {
 				Timestamp:        ts,
 				Mode:             "architect-johndoe",
 				Model:            "deepseek-v4-pro",
+				SessionTurns:     0,
 			},
 		}))
 		m = newModel.(*model)
 		assert.Equal(t, stateRendering, m.currentState)
+		assert.Equal(t, 1, m.turn) // SessionTurns 0 + 1
 		assert.Equal(t, 1500, m.tokens)
 		assert.Equal(t, "deepseek-v4-pro", m.modelName)
 		assert.NotNil(t, cmd)
@@ -466,17 +470,30 @@ func TestModel_Integration(t *testing.T) {
 			Status: events.TurnStatus{
 				Tokens: 2000, MaxHistoryTokens: 64000,
 				Timestamp: ts, Mode: "test", Model: "gpt-5",
+				SessionTurns: 0,
 			},
 		}))
 		m = newModel.(*model)
 		assert.Equal(t, stateRendering, m.currentState)
+		assert.Equal(t, 1, m.turn) // SessionTurns 0 + 1
 		assert.NotNil(t, cmd)
 
 		// Turn 2: cycle restarts
 		newModel, cmd = m.Update(domainEventMsg(events.TurnStarted{Turn: 1}))
 		m = newModel.(*model)
 		assert.Equal(t, stateThinking, m.currentState)
-		assert.Equal(t, 2, m.turn) // Turn.Index 1 + 1
+
+		// TurnStatus for Turn 2 — SessionTurns increments
+		newModel, cmd = m.Update(domainEventMsg(events.TurnStatusEvent{
+			Status: events.TurnStatus{
+				Tokens: 2000, MaxHistoryTokens: 64000,
+				Timestamp: time.Now(), Mode: "test", Model: "gpt-5",
+				SessionTurns: 1,
+			},
+		}))
+		m = newModel.(*model)
+		assert.Equal(t, stateRendering, m.currentState)
+		assert.Equal(t, 2, m.turn) // SessionTurns 1 + 1
 		assert.NotNil(t, cmd)
 	})
 }
