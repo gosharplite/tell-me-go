@@ -16,12 +16,12 @@ import (
 // fixtureIndexer — symbolIndex implementation for test fixtures
 // ---------------------------------------------------------------------------
 
-// fixtureIndexer implements symbolIndex from a pre-built IndexSnapshot.
+// fixtureIndexer implements symbolIndex from a pre-built indexSnapshot.
 // It bypasses packages.Load entirely — all data is served from the snapshot.
 // Used in tests to avoid the expensive go/packages type-checking step.
 type fixtureIndexer struct {
 	mu       sync.RWMutex
-	snapshot *IndexSnapshot
+	snapshot *indexSnapshot
 
 	// Pre-computed lookup maps for O(1) access.
 	declsByID map[string]*symMeta
@@ -31,9 +31,9 @@ type fixtureIndexer struct {
 // Compile-time interface check.
 var _ SymbolIndex = (*fixtureIndexer)(nil)
 
-// newFixtureIndexer creates a fixtureIndexer from an IndexSnapshot.
+// newFixtureIndexer creates a fixtureIndexer from an indexSnapshot.
 // It pre-computes lookup maps for O(1) access during analysis.
-func newFixtureIndexer(s *IndexSnapshot) *fixtureIndexer {
+func newFixtureIndexer(s *indexSnapshot) *fixtureIndexer {
 	fi := &fixtureIndexer{
 		snapshot:  s,
 		declsByID: make(map[string]*symMeta, len(s.Declarations)),
@@ -154,7 +154,7 @@ func (fi *fixtureIndexer) HarvestDeclarations(ctx context.Context, fn func(meta 
 func TestFixtureIndexer_ConstructAndHarvest(t *testing.T) {
 	t.Parallel()
 
-	snap := &IndexSnapshot{
+	snap := &indexSnapshot{
 		ModulePath: "example.com/test",
 		Declarations: []*symMeta{
 			{id: "example.com/test/pkg.Foo", pkgPath: "example.com/test/pkg", name: "Foo", symType: "Function"},
@@ -218,7 +218,7 @@ func TestFixtureIndexer_ConstructAndHarvest(t *testing.T) {
 func TestIndexSnapshot_JSONRoundtrip(t *testing.T) {
 	t.Parallel()
 
-	snap := &IndexSnapshot{
+	snap := &indexSnapshot{
 		ModulePath: "example.com/test",
 		Declarations: []*symMeta{
 			{id: "example.com/test/pkg.Foo", pkgPath: "example.com/test/pkg", name: "Foo", symType: "Function"},
@@ -230,14 +230,14 @@ func TestIndexSnapshot_JSONRoundtrip(t *testing.T) {
 
 	// Save to temp file.
 	tmpPath := filepath.Join(t.TempDir(), "snap.json")
-	if err := snap.SaveSnapshot(tmpPath); err != nil {
-		t.Fatalf("SaveSnapshot: %v", err)
+	if err := snap.saveSnapshot(tmpPath); err != nil {
+		t.Fatalf("saveSnapshot: %v", err)
 	}
 
 	// Load back.
-	loaded, err := LoadSnapshot(tmpPath)
+	loaded, err := loadSnapshot(tmpPath)
 	if err != nil {
-		t.Fatalf("LoadSnapshot: %v", err)
+		t.Fatalf("loadSnapshot: %v", err)
 	}
 
 	if len(loaded.Declarations) != 1 {

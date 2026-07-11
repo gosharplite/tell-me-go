@@ -49,7 +49,7 @@ func (j *jsonSymMeta) toSymMeta() *symMeta {
 	}
 }
 
-// indexSnapshotJSON is the pure JSON form of IndexSnapshot.
+// indexSnapshotJSON is the pure JSON form of indexSnapshot.
 // Used only for marshaling/unmarshaling to avoid complexity with
 // unexported symMeta fields.
 type indexSnapshotJSON struct {
@@ -61,10 +61,10 @@ type indexSnapshotJSON struct {
 	ImplsCache    map[string][]string         `json:"impls_cache"`
 }
 
-// IndexSnapshot is a JSON-serializable capture of an indexer's complete
+// indexSnapshot is a JSON-serializable capture of an indexer's complete
 // internal state. It is used to persist and restore index data for test
 // fixtures, bypassing the expensive packages.Load call.
-type IndexSnapshot struct {
+type indexSnapshot struct {
 	ModulePath    string
 	Declarations  []*symMeta
 	FileToPkg     map[string]string
@@ -73,7 +73,7 @@ type IndexSnapshot struct {
 	ImplsCache    map[string][]string
 }
 
-func (s *IndexSnapshot) toJSON() *indexSnapshotJSON {
+func (s *indexSnapshot) toJSON() *indexSnapshotJSON {
 	j := &indexSnapshotJSON{
 		ModulePath:    s.ModulePath,
 		FileToPkg:     s.FileToPkg,
@@ -88,8 +88,8 @@ func (s *IndexSnapshot) toJSON() *indexSnapshotJSON {
 	return j
 }
 
-func fromJSON(j *indexSnapshotJSON) *IndexSnapshot {
-	s := &IndexSnapshot{
+func fromJSON(j *indexSnapshotJSON) *indexSnapshot {
+	s := &indexSnapshot{
 		ModulePath:    j.ModulePath,
 		FileToPkg:     j.FileToPkg,
 		SymbolsByPath: j.SymbolsByPath,
@@ -103,8 +103,8 @@ func fromJSON(j *indexSnapshotJSON) *IndexSnapshot {
 	return s
 }
 
-// Snapshot captures the indexer's current state as an IndexSnapshot.
-func (idx *indexer) Snapshot() *IndexSnapshot {
+// snapshot captures the indexer's current state as an indexSnapshot.
+func (idx *indexer) snapshot() *indexSnapshot {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -150,7 +150,7 @@ func (idx *indexer) Snapshot() *IndexSnapshot {
 		usagesCopy[k] = v
 	}
 
-	return &IndexSnapshot{
+	return &indexSnapshot{
 		ModulePath:    modulePath,
 		Declarations:  decls,
 		FileToPkg:     fileToPkg,
@@ -160,8 +160,8 @@ func (idx *indexer) Snapshot() *IndexSnapshot {
 	}
 }
 
-// SaveSnapshot writes the index snapshot to a JSON file.
-func (s *IndexSnapshot) SaveSnapshot(path string) (err error) {
+// saveSnapshot writes the index snapshot to a JSON file.
+func (s *indexSnapshot) saveSnapshot(path string) (err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -176,8 +176,8 @@ func (s *IndexSnapshot) SaveSnapshot(path string) (err error) {
 	return enc.Encode(s.toJSON())
 }
 
-// LoadSnapshot reads an index snapshot from a JSON file.
-func LoadSnapshot(path string) (s *IndexSnapshot, err error) {
+// loadSnapshot reads an index snapshot from a JSON file.
+func loadSnapshot(path string) (s *indexSnapshot, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

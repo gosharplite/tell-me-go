@@ -459,7 +459,7 @@ func getSharedWorkspaceIndexer(tb testing.TB) (string, string, symbolIndex) {
 
 	// Fast path: try loading the committed fixture.
 	fixturePath := filepath.Join("testdata", "dead_code_fixture.json")
-	if snap, err := LoadSnapshot(fixturePath); err == nil {
+	if snap, err := loadSnapshot(fixturePath); err == nil {
 		// The committed workspace directory contains the actual Go source
 		// files used during fixture generation. Use it directly so that
 		// isInTargetScope and hasTextMatchOutsidePackage see real files.

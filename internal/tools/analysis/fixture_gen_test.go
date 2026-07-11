@@ -13,7 +13,7 @@ import (
 var generateFixture = flag.Bool("generate-fixture", false, "generate testdata/dead_code_fixture.json from test cases")
 
 // TestGenerateDeadCodeFixture builds the real indexer from the shared
-// test workspace and writes an IndexSnapshot to testdata/.
+// test workspace and writes an indexSnapshot to testdata/.
 //
 // Usage:
 //
@@ -55,10 +55,10 @@ func TestGenerateDeadCodeFixture(t *testing.T) {
 	}
 
 	// Snapshot and write.
-	snap := sharedWSIndexer.Snapshot()
+	snap := sharedWSIndexer.snapshot()
 
 	outPath := filepath.Join("testdata", "dead_code_fixture.json")
-	if err := snap.SaveSnapshot(outPath); err != nil {
+	if err := snap.saveSnapshot(outPath); err != nil {
 		t.Fatal(err)
 	}
 

@@ -155,7 +155,7 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 			declarations: make(map[string]*symMeta),
 		}
 
-		snap := &IndexSnapshot{
+		snap := &indexSnapshot{
 			ModulePath: "example.com/mod",
 			Declarations: []*symMeta{
 				{id: "example.com/mod/pkg.ExportedType", pkgPath: "example.com/mod/pkg", name: "ExportedType", symType: "Type"},
