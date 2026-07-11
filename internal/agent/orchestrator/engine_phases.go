@@ -26,9 +26,13 @@ func (p *GuardStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, err
 		return ProcessResult{}, NewAgentError(llm.ErrTerminal, fmt.Sprintf("turn %d exceeds limit %d", Turn.Index, maxTurns), llm.ErrMaxTurnsReached)
 	}
 
+	// Freeze session turn count before persistence mutates history.
+	// This value is used by TurnStatusEvent throughout the turn lifecycle.
+	Turn.SessionTurnsAtStart = Turn.CtxManager.History.GetTotalEntries() / 2
+
 	evt := events.TurnStarted{
 		Turn:         Turn.Index,
-		SessionTurns: Turn.CtxManager.History.GetTotalEntries() / 2,
+		SessionTurns: Turn.SessionTurnsAtStart,
 		MaxTurns:     maxTurns,
 	}
 	if err := events.SafePublish(ctx, Turn.Events, evt); err != nil {
