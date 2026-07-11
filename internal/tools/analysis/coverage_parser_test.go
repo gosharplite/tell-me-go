@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestUncoveredBlock_Classify(t *testing.T) {
@@ -1336,15 +1337,22 @@ func TestRunCoverageTest_NilHeartbeat(t *testing.T) {
 		t.Errorf("runCoverageTest with nil hb failed: %v", err)
 	}
 
-	// Pass non-nil hb — run in goroutine with mock blocked so the 2s ticker fires
+	// Pass non-nil hb — use FakeClock so the ticker fires instantly
+	// instead of waiting the default 2s interval.
+	fakeClock := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+	hea.clk = fakeClock
+
 	mockBlocker = make(chan struct{})
 	hb := make(chan struct{}, 1)
 	errCh := make(chan error, 1)
 	go func() { errCh <- hea.runCoverageTest(ctx, ".", tempPath, hb) }()
 
+	// Fire the fake ticker to send the heartbeat immediately
+	fakeClock.Ticker.Fire()
+
 	select {
 	case <-hb:
-	case <-time.After(3 * time.Second):
+	case <-time.After(200 * time.Millisecond):
 		t.Error("timed out waiting for heartbeat")
 	}
 	close(mockBlocker)

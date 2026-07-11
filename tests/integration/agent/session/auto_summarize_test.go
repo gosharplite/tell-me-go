@@ -114,7 +114,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *sessctx.Manage
 	}))
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := gemini.NewClient(apiURL, "test", &auth.BearerAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
+	client, _ := gemini.NewClient(apiURL, "test", &auth.BearerAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(1*time.Second))
 
 	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
@@ -176,7 +176,7 @@ func verifyAutoSummarizeLog(t *testing.T, logCh <-chan string) {
 		if !strings.Contains(msg, "turns") || !strings.Contains(msg, "tokens") {
 			t.Errorf("Log message format incorrect, got: %s", msg)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(1 * time.Second):
 		t.Fatal("Timeout: Auto-summarization log event was never emitted")
 	}
 }
@@ -204,7 +204,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	// Set initial system instructions
-	client, _ := gemini.NewClient(apiURL, "test", &auth.BearerAuth{Token: "t"}, gemini.WithSystemInstruction("Initial System Instruction"), gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
+	client, _ := gemini.NewClient(apiURL, "test", &auth.BearerAuth{Token: "t"}, gemini.WithSystemInstruction("Initial System Instruction"), gemini.WithEventBus(bus), gemini.WithTimeout(1*time.Second))
 
 	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
@@ -291,7 +291,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := gemini.NewClient(apiURL, "test", &auth.BearerAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
+	client, _ := gemini.NewClient(apiURL, "test", &auth.BearerAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(1*time.Second))
 
 	strategy := sessctx.NewStrategy(sessctx.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)

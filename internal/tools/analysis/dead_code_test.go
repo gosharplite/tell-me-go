@@ -961,6 +961,9 @@ func TestNewDeadCodeAnalyzerForCLI(t *testing.T) {
 
 func TestGatherOrphanReports(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping full-module AST scan in short mode")
+	}
 	rootTmpDir, sharedModule, idx := getSharedWorkspaceIndexer(t)
 	tests := sharedWSTests
 	ctx := context.Background()

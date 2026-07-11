@@ -444,8 +444,9 @@ func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
 	logger := &mockLogger{}
 	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, logger)
 
-	// 2. Install the test-only panic hook.
+	// 2. Install the test-only panic hook and fake clock for instant tick.
 	it.hooks = panicHook{}
+	it.clk = &clock.FakeClock{Ticker: clock.NewFakeTicker()}
 
 	// 3. Start emitHeartbeats in a background goroutine.
 	done := make(chan struct{})
@@ -457,19 +458,22 @@ func TestEmitHeartbeats_PanicRecovery(t *testing.T) {
 		close(returned)
 	}()
 
-	// 4. Wait for the goroutine to exit. The panic fires on the first tick
-	//    (2s interval), recover catches it, and the method returns cleanly.
+	// 4. Fire the fake ticker to trigger the panic immediately.
+	it.clk.(*clock.FakeClock).Ticker.Fire()
+
+	// 5. Wait for the goroutine to exit. The panic fires on the tick,
+	//    recover catches it, and the method returns cleanly.
 	select {
 	case <-returned:
 		// goroutine exited as expected
-	case <-time.After(5 * time.Second):
-		t.Fatal("emitHeartbeats did not return within 5s — possible goroutine leak")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("emitHeartbeats did not return within 200ms — possible goroutine leak")
 	}
 
 	// Cleanup: close done channel (no-op since goroutine already exited).
 	close(done)
 
-	// 5. Verify the logger captured the panic message.
+	// 6. Verify the logger captured the panic message.
 	require.NotEmpty(t, logger.errors)
 	require.Contains(t, logger.errors[0],
 		"panic in summarize history background drainer: injected test panic")

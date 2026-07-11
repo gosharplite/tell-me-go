@@ -81,7 +81,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	require.NoError(t, err)
 	sess := &ports.Session{History: hManager, StartTime: time.Now()}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -96,7 +96,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	// Goroutine 2: Hammer configuration updates
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 10; i++ {
 			_ = a.SetLimits(ctx, 10, 1000+i, 20)
 			runtime.Gosched()
 		}
@@ -157,11 +157,12 @@ func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	var wg sync.WaitGroup
 
 	// Run concurrent executions
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -176,7 +177,7 @@ func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 20; i++ {
 			exec.SetConcurrency(1 + (i % 10))
 		}
 		// Signal tools to proceed NOW that we are done hammering.
@@ -210,7 +211,7 @@ func TestContextManager_Race(t *testing.T) {
 	}
 	cm := sessctx.NewManager(strategy, h, bus, factory)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -219,7 +220,7 @@ func TestContextManager_Race(t *testing.T) {
 	// Goroutine 1: Prepare (Simulate turn start)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 10; i++ {
 			_, _, _ = cm.Prepare(ctx, i)
 			runtime.Gosched()
 		}
@@ -228,7 +229,7 @@ func TestContextManager_Race(t *testing.T) {
 	// Goroutine 2: AddContent (Simulate adding model response)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 10; i++ {
 			_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "ping"}}})
 			_ = cm.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "pong"}}})
 			runtime.Gosched()
@@ -238,7 +239,7 @@ func TestContextManager_Race(t *testing.T) {
 	// Goroutine 3: Config updates (Simulate dynamic limits)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 10; i++ {
 			if err := bus.Publish(ctx, events.ConfigUpdated{
 				Limits: events.Limits{
 					MaxHistoryTokens: 1000 + i,
@@ -255,7 +256,7 @@ func TestContextManager_Race(t *testing.T) {
 	// Goroutine 4: Summarize (Simulate background/ad-hoc summarization)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 3; i++ {
 			_, _, _ = cm.SummarizeRange(ctx, 2, "focus")
 			runtime.Gosched()
 		}

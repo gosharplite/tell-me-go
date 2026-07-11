@@ -352,7 +352,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	select {
 	case <-done:
 		cancel()
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("Tools never started")
 	}
 
