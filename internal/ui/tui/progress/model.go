@@ -35,7 +35,7 @@ type model struct {
 	err          error
 	responseText    string             // accumulated AI response text
 	mdRender        func(string) string // optional markdown renderer
-	postCallMetrics *llm.Metrics       // non-nil when TurnStatusEvent has IsPostCall
+	postCallStatus *events.TurnStatus // set when IsPostCall, has full status including Metrics and StartTime
 	finalCostLine   string             // rendered "Ready (...)" line from IsFinal
 }
 
@@ -93,10 +93,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentState = stateRendering
 
 		if msg.Status.IsPostCall && msg.Status.Metrics != nil {
-			m.postCallMetrics = msg.Status.Metrics
+			s := msg.Status // copy
+			m.postCallStatus = &s
 		}
 		if msg.Status.IsFinal {
-			m.finalCostLine = formatFinalLine(msg.Status)
+			turnCost := 0.0
+			if msg.Status.Metrics != nil {
+				turnCost = msg.Status.Metrics.Cost
+			}
+			m.finalCostLine = formatFinalLine(msg.Status, turnCost)
 		}
 		return m, m.waitForEvent()
 
@@ -132,7 +137,7 @@ func extractResponseText(content *llm.Content) string {
 }
 
 // formatMetricsLine renders a single-line post-call metrics summary.
-func formatMetricsLine(m *llm.Metrics) string {
+func formatMetricsLine(m *llm.Metrics, startTime time.Time) string {
 	if m == nil {
 		return ""
 	}
@@ -158,24 +163,24 @@ func formatMetricsLine(m *llm.Metrics) string {
 	}
 
 	totalLatency := m.Duration + m.ToolDuration
-	parts = append(parts, fmt.Sprintf("[%.2fs (∑T: %.2fs)]", totalLatency, m.CumulativeToolDuration))
+	timing := fmt.Sprintf("[%.2fs (∑T: %.2fs)]", totalLatency, m.CumulativeToolDuration)
+	if !startTime.IsZero() {
+		sessionDur := time.Since(startTime).Seconds()
+		timing = fmt.Sprintf("%s / %.2fs", timing, sessionDur)
+	}
+	parts = append(parts, timing)
 
 	return strings.Join(parts, " ")
 }
 
 // formatFinalLine renders the "Ready" summary line when IsFinal is true.
-func formatFinalLine(status events.TurnStatus) string {
+func formatFinalLine(status events.TurnStatus, turnCost float64) string {
 	var parts []string
 	parts = append(parts, "Ready")
 
-	if status.TaskCost > 0 {
-		parts = append(parts, fmt.Sprintf("($%.4f)", status.TaskCost))
-	}
-	if status.SessionCost > 0 {
-		parts = append(parts, fmt.Sprintf("$%.4f", status.SessionCost))
-	}
-	if status.DailyCost > 0 {
-		parts = append(parts, fmt.Sprintf("$%.4f", status.DailyCost))
+	if turnCost > 0 || status.TaskCost > 0 || status.SessionCost > 0 || status.DailyCost > 0 {
+		parts = append(parts, fmt.Sprintf("($%.4f $%.4f $%.4f $%.4f)",
+			turnCost, status.TaskCost, status.SessionCost, status.DailyCost))
 	}
 
 	hitRate := 0.0
@@ -185,7 +190,7 @@ func formatFinalLine(status events.TurnStatus) string {
 	parts = append(parts, fmt.Sprintf("M: %d H: %d %.1f%% O: %d",
 		status.TotalM, status.TotalH, hitRate, status.TotalO))
 
-	return "╰─ " + strings.Join(parts, " ")
+	return "╰─⠿ " + strings.Join(parts, " ")
 }
 
 // View renders the progress model as a two-line display with optional response text.
@@ -198,8 +203,13 @@ func (m *model) View() string {
 	if m.responseText != "" {
 		out += "\n" + m.responseText
 	}
-	if m.postCallMetrics != nil {
-		out += "\n" + formatMetricsLine(m.postCallMetrics)
+	if m.postCallStatus != nil {
+		// Exact token count for post-call (no tilde)
+		out += "\n" + fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
+			m.timestamp.Format("15:04:05"),
+			m.postCallStatus.Metrics.PromptTokens,
+			m.maxTokens, m.sessionName, m.modelName)
+		out += "\n" + formatMetricsLine(m.postCallStatus.Metrics, m.postCallStatus.StartTime)
 	}
 	if m.finalCostLine != "" {
 		out += "\n" + m.finalCostLine
