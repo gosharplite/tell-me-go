@@ -554,7 +554,6 @@ func (m *model) View() string {
 	sb.WriteString(m.renderHeader())
 	sb.WriteString(m.renderBody(availableBody))
 	sb.WriteString(m.renderFooter())
-	sb.WriteString("\n")
 	return sb.String()
 }
 
@@ -567,7 +566,6 @@ func (m *model) renderMinimal() string {
 		elapsed := int(time.Since(m.spinner.startTime).Seconds())
 		sb.WriteString(fmt.Sprintf(" %s %s (%ds)", frame, m.spinner.status, elapsed))
 	}
-	sb.WriteString("\n")
 	return sb.String()
 }
 

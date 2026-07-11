@@ -298,7 +298,7 @@ func TestModel_View(t *testing.T) {
 
 		out := m.View()
 
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 		assert.Len(t, lines, 80, "total lines must equal terminal height (80)")
 		assert.Contains(t, lines[0], "╭─ Turn 0 - ")
 		assert.Contains(t, lines[1], "Payload: ~0/0 tokens")
@@ -350,7 +350,7 @@ func TestModel_View(t *testing.T) {
 		m.responseText = ""
 
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 		// Fixed-zone layout: exactly height lines regardless of content.
 		assert.Len(t, lines, 80)
 	})
@@ -383,7 +383,7 @@ func TestModel_View(t *testing.T) {
 		)
 
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 		// Footer line 1 (index 77): metrics line
 		assert.Contains(t, lines[77], "[14:30:00]")
 		assert.Contains(t, lines[77], "[deepseek-pro]")
@@ -418,7 +418,7 @@ func TestModel_View(t *testing.T) {
 		m.responseText = "final response line"
 
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 
 		// 10 lines total: 2 header + 5 body + 3 footer
 		assert.Len(t, lines, 10, "total lines must equal terminal height")
@@ -442,7 +442,7 @@ func TestModel_View(t *testing.T) {
 		m.appendToolLog("Test", "only one log")
 
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 20, "total lines must equal terminal height")
 		// Lines 2 through 15 should be blank (top-padding for 14 blank + log at line 16)
@@ -461,7 +461,7 @@ func TestModel_View(t *testing.T) {
 
 		// No metrics, no final cost, no spinner — footer should still be 3 lines
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 10)
 		// Footer lines 7, 8, 9 (0-indexed) exist and are empty
@@ -480,7 +480,7 @@ func TestModel_View(t *testing.T) {
 		m.sessionName = "test"
 
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 1)
 		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
@@ -499,7 +499,7 @@ func TestModel_View(t *testing.T) {
 		m.currentState = stateThinking
 
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 1)
 		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
@@ -515,7 +515,7 @@ func TestModel_View(t *testing.T) {
 		// No tool logs, no response — body zone is 0 lines.
 		// Must not panic and must produce exactly 5 lines.
 		out := m.View()
-		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 5, "height=5 must produce exactly 5 lines")
 		assert.Contains(t, lines[0], "╭─ Turn")
@@ -534,14 +534,14 @@ func TestModel_View(t *testing.T) {
 
 		// Before spinner
 		before := m.View()
-		beforeLines := strings.Split(strings.TrimSuffix(before, "\n"), "\n")
+		beforeLines := strings.Split(before, "\n")
 
 		// Start spinner
 		m.spinner.start("Generating...")
 		m.currentState = stateThinking
 
 		after := m.View()
-		afterLines := strings.Split(strings.TrimSuffix(after, "\n"), "\n")
+		afterLines := strings.Split(after, "\n")
 
 		assert.Len(t, beforeLines, 10)
 		assert.Len(t, afterLines, 10, "spinner must not change total line count")
@@ -1016,8 +1016,8 @@ func TestModel_View_SpinnerLine(t *testing.T) {
 
 		out := m.View()
 		lines := strings.Split(out, "\n")
-		// Second-to-last line should be the spinner (last line is empty from trailing \n)
-		assert.Contains(t, lines[len(lines)-2], "⠋  Thinking...")
+		// Last line (no trailing empty — View() returns exactly height lines).
+		assert.Contains(t, lines[len(lines)-1], "⠋  Thinking...")
 	})
 }
 
