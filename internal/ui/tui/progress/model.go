@@ -6,6 +6,7 @@ package progress
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -122,6 +123,8 @@ type model struct {
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
 	spinner             spinnerState
+
+	toolLogs []string // accumulated tool call/result/output lines, cleared each turn
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -144,6 +147,52 @@ func (m *model) waitForEvent() tea.Cmd {
 		}
 		return domainEventMsg(e)
 	}
+}
+
+// appendToolLog appends a timestamped log line for tool events.
+func (m *model) appendToolLog(tag, message string) {
+	ts := time.Now().Format("15:04:05")
+	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, message))
+}
+
+// appendLevelEventLog appends a timestamped log line with a level-mapped
+// prefix. Used by ToolOutputStreamEvent, SystemMessageEvent, and StatusUpdate.
+func (m *model) appendLevelEventLog(level, message string) {
+	prefix := "System"
+	switch level {
+	case "error":
+		prefix = "Error"
+	case "warn":
+		prefix = "Warning"
+	case "output":
+		prefix = "Tool Output"
+	case "info":
+		prefix = "Info"
+	}
+	m.appendToolLog(prefix, message)
+}
+
+// safeTruncate truncates s to at most maxLen bytes, ensuring the cut
+// never lands in the middle of a multi-byte UTF-8 character.
+// If s is already shorter than maxLen, it is returned unchanged.
+func safeTruncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// Walk runes to find the byte index of the (maxLen)th rune.
+	var count, byteIdx int
+	for i := range s {
+		if count == maxLen {
+			byteIdx = i
+			break
+		}
+		count++
+	}
+	if byteIdx > 0 {
+		return s[:byteIdx]
+	}
+	// maxLen is 0 or s starts with a multi-byte rune exceeding maxLen.
+	return ""
 }
 
 // Init returns the initial command to start listening for events.
@@ -190,6 +239,56 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 // handleDomainEvent dispatches a domain event to the appropriate handler.
 func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	switch e := events.Event(msg).(type) {
+	case events.ToolCallEvent:
+		if len(e.Calls) == 0 {
+			return m, m.waitForEvent()
+		}
+		m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
+		for _, fc := range e.Calls {
+			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
+				m.appendToolLog("Tool Reason", reason)
+			}
+			var keys []string
+			for k := range fc.Args {
+				if k != "reason" {
+					keys = append(keys, k)
+				}
+			}
+			sort.Strings(keys)
+
+			var parts []string
+			for _, k := range keys {
+				valStr := fmt.Sprintf("%v", fc.Args[k])
+				if len(valStr) > 189 {
+					valStr = safeTruncate(valStr, 186) + "..."
+				}
+				parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
+			}
+			m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
+		}
+		return m, m.waitForEvent()
+	case events.ToolResultEvent:
+		if e.Name == "" {
+			return m, m.waitForEvent()
+		}
+		if e.Result.Text != "" {
+			snippet := e.Result.Text
+			if len(snippet) > 200 {
+				snippet = safeTruncate(snippet, 197) + "..."
+			}
+			snippet = strings.ReplaceAll(snippet, "\n", " ")
+			m.appendToolLog("Tool Result", fmt.Sprintf("%s: %s", e.Name, snippet))
+		}
+		return m, m.waitForEvent()
+	case events.ToolOutputStreamEvent:
+		m.appendLevelEventLog(e.Level, e.Message)
+		return m, m.waitForEvent()
+	case events.SystemMessageEvent:
+		m.appendLevelEventLog(e.Level, e.Message)
+		return m, m.waitForEvent()
+	case events.StatusUpdate:
+		m.appendLevelEventLog(e.Level, e.Message)
+		return m, m.waitForEvent()
 	case events.TurnStarted:
 		return m, m.handleTurnStarted(e)
 	case events.InferenceStartedEvent:
@@ -216,6 +315,7 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.turn = e.SessionTurns + 1
 	m.currentState = stateThinking
 	m.spinner.clear()
+	m.toolLogs = nil
 	return m.waitForEvent()
 }
 
@@ -344,6 +444,13 @@ func (m *model) View() string {
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s\n", m.turn, m.sessionName))
 	sb.WriteString(fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
 		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName))
+
+	if len(m.toolLogs) > 0 {
+		for _, log := range m.toolLogs {
+			sb.WriteString("\n")
+			sb.WriteString(log)
+		}
+	}
 
 	if m.responseText != "" {
 		sb.WriteString("\n")
