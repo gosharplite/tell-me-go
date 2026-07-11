@@ -184,6 +184,119 @@ func (idx *indexer) HarvestDeclarations(ctx context.Context, fn func(meta *symMe
 	return nil
 }
 
+// shouldSkipDecl returns true if the given object should be excluded from
+// declaration collection. Filters out nil, unexported, init, test/benchmark/
+// example/fuzz functions, and export_test.go declarations.
+func (idx *indexer) shouldSkipDecl(obj types.Object) bool {
+	if obj == nil {
+		return true
+	}
+	if !obj.Exported() {
+		return true
+	}
+	if obj.Name() == "init" {
+		return true
+	}
+	if strings.HasPrefix(obj.Name(), "Test") ||
+		strings.HasPrefix(obj.Name(), "Benchmark") ||
+		strings.HasPrefix(obj.Name(), "Example") ||
+		strings.HasPrefix(obj.Name(), "Fuzz") {
+		return true
+	}
+	if isExportTestFile(idx.fset, obj.Pos()) {
+		return true
+	}
+	return false
+}
+
+// buildDeclMeta constructs a symMeta for the given object without adjusting
+// isMethod. The caller is responsible for setting isMethod based on context.
+func (idx *indexer) buildDeclMeta(obj types.Object) *symMeta {
+	meta := &symMeta{
+		id:                  getSymbolIdentity(obj),
+		pkgPath:             getBasePkgPath(obj.Pkg().Path()),
+		name:                obj.Name(),
+		symType:             getSymbolType(obj),
+		isInterfaceType:     isInterfaceTypeObj(obj),
+		isInterfaceMethod:   isInterfaceMethodObj(obj),
+		isWellKnownContract: isWellKnownContractObj(obj),
+		obj:                 obj,
+	}
+	if meta.symType == "Method" {
+		meta.isMethod = true
+	}
+	return meta
+}
+
+// collectTypeMethods harvests methods from the named type underlying tn.
+// It handles both concrete struct methods and interface methods.
+// Returns false if the callback requests early termination.
+func (idx *indexer) collectTypeMethods(tn *types.TypeName, fn func(meta *symMeta) bool) bool {
+	t := tn.Type()
+	if alias, ok := t.(*types.Alias); ok {
+		t = types.Unalias(alias)
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return true
+	}
+
+	// Harvest struct methods.
+	for i := 0; i < named.NumMethods(); i++ {
+		m := named.Method(i)
+		if m == nil || m.Pkg() == nil || !m.Exported() {
+			continue
+		}
+		if isExportTestFile(idx.fset, m.Pos()) {
+			continue
+		}
+		mMeta := &symMeta{
+			id:                  getSymbolIdentity(m),
+			pkgPath:             getBasePkgPath(m.Pkg().Path()),
+			name:                m.Name(),
+			symType:             "Method",
+			isMethod:            true,
+			isInterfaceType:     false,
+			isInterfaceMethod:   isInterfaceMethodObj(m),
+			isWellKnownContract: isWellKnownContractObj(m),
+			obj:                 m,
+		}
+		if !fn(mMeta) {
+			return false
+		}
+	}
+
+	// If the named type's underlying type is an interface,
+	// also harvest its interface methods.
+	if iface, ok := named.Underlying().(*types.Interface); ok {
+		for i := 0; i < iface.NumMethods(); i++ {
+			m := iface.Method(i)
+			if m == nil || m.Pkg() == nil || !m.Exported() {
+				continue
+			}
+			if isExportTestFile(idx.fset, m.Pos()) {
+				continue
+			}
+			mMeta := &symMeta{
+				id:                  getSymbolIdentity(m),
+				pkgPath:             getBasePkgPath(m.Pkg().Path()),
+				name:                m.Name(),
+				symType:             "Method",
+				isMethod:            true,
+				isInterfaceType:     false,
+				isInterfaceMethod:   true,
+				isWellKnownContract: isWellKnownContractObj(m),
+				obj:                 m,
+			}
+			if !fn(mMeta) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 // collectDeclarations walks all packages and invokes fn for each exported,
 // non-test, non-init symbol, including methods from named types and
 // interfaces. The caller must hold idx.mu.RLock().
@@ -192,103 +305,18 @@ func (idx *indexer) collectDeclarations(fn func(meta *symMeta) bool) {
 		if pkg.Types == nil || pkg.Types.Scope() == nil {
 			continue
 		}
-		scope := pkg.Types.Scope()
-		for _, name := range scope.Names() {
-			obj := scope.Lookup(name)
-			if obj == nil || !obj.Exported() || obj.Name() == "init" {
+		for _, name := range pkg.Types.Scope().Names() {
+			obj := pkg.Types.Scope().Lookup(name)
+			if idx.shouldSkipDecl(obj) {
 				continue
 			}
-			// Skip test functions
-			if strings.HasPrefix(obj.Name(), "Test") ||
-				strings.HasPrefix(obj.Name(), "Benchmark") ||
-				strings.HasPrefix(obj.Name(), "Example") ||
-				strings.HasPrefix(obj.Name(), "Fuzz") {
-				continue
-			}
-			// Skip export_test.go declarations
-			if isExportTestFile(idx.fset, obj.Pos()) {
-				continue
-			}
-
-			meta := &symMeta{
-				id:                  getSymbolIdentity(obj),
-				pkgPath:             getBasePkgPath(obj.Pkg().Path()),
-				name:                obj.Name(),
-				symType:             getSymbolType(obj),
-				isInterfaceType:     isInterfaceTypeObj(obj),
-				isInterfaceMethod:   isInterfaceMethodObj(obj),
-				isWellKnownContract: isWellKnownContractObj(obj),
-				obj:                 obj,
-			}
-
-			// Set isMethod based on symType
-			if meta.symType == "Method" {
-				meta.isMethod = true
-			}
-
+			meta := idx.buildDeclMeta(obj)
 			if !fn(meta) {
 				return
 			}
-
-			// Harvest methods from named types (struct types with methods).
 			if tn, ok := obj.(*types.TypeName); ok {
-				t := tn.Type()
-				if alias, ok := t.(*types.Alias); ok {
-					t = types.Unalias(alias)
-				}
-				if named, ok := t.(*types.Named); ok {
-					// Harvest struct methods.
-					for i := 0; i < named.NumMethods(); i++ {
-						m := named.Method(i)
-						if m == nil || m.Pkg() == nil || !m.Exported() {
-							continue
-						}
-						if isExportTestFile(idx.fset, m.Pos()) {
-							continue
-						}
-						mMeta := &symMeta{
-							id:                  getSymbolIdentity(m),
-							pkgPath:             getBasePkgPath(m.Pkg().Path()),
-							name:                m.Name(),
-							symType:             "Method",
-							isMethod:            true,
-							isInterfaceType:     false,
-							isInterfaceMethod:   isInterfaceMethodObj(m),
-							isWellKnownContract: isWellKnownContractObj(m),
-							obj:                 m,
-						}
-						if !fn(mMeta) {
-							return
-						}
-					}
-
-					// If the named type's underlying type is an interface,
-					// also harvest its interface methods.
-					if iface, ok := named.Underlying().(*types.Interface); ok {
-						for i := 0; i < iface.NumMethods(); i++ {
-							m := iface.Method(i)
-							if m == nil || m.Pkg() == nil || !m.Exported() {
-								continue
-							}
-							if isExportTestFile(idx.fset, m.Pos()) {
-								continue
-							}
-							mMeta := &symMeta{
-								id:                  getSymbolIdentity(m),
-								pkgPath:             getBasePkgPath(m.Pkg().Path()),
-								name:                m.Name(),
-								symType:             "Method",
-								isMethod:            true,
-								isInterfaceType:     false,
-								isInterfaceMethod:   true,
-								isWellKnownContract: isWellKnownContractObj(m),
-								obj:                 m,
-							}
-							if !fn(mMeta) {
-								return
-							}
-						}
-					}
+				if !idx.collectTypeMethods(tn, fn) {
+					return
 				}
 			}
 		}

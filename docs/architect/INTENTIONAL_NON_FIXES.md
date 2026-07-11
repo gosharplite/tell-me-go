@@ -360,6 +360,17 @@ Any AI agent recommending these should consult the rationale below.
 
 ## Coverage Gaps (ACCEPTED — 2026-07 skills.sh Batch Triage)
 
+### orchestrator/middleware.go — json.Marshal error in detectLoop
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `json.Marshal(&sanitized)` on `*llm.Content` cannot fail — all fields
+  are simple types (string, `[]*Part`, etc.). The `sanitized` value is a shallow
+  copy of `state.Response` with `ID` set to `""`. No field implements
+  `json.Marshaler` with error-return semantics. Structurally unreachable — same
+  acceptance class as `json.Marshal` on all-string structs in
+  `global_prompt_tracker.go`.
+- **See**: `internal/agent/orchestrator/middleware.go:164-166`
+
 ### skills.sh integration — structurally unreachable and fault-injection gaps (17 sites)
 
 - **Status**: ACCEPTED (2026-07)
@@ -428,4 +439,4 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-07 (skills.sh triage + agenttest stubs + test complexity)*
+*Last Updated: 2026-07 (skills.sh triage + agenttest stubs + test complexity + middleware loop-detection gap)*

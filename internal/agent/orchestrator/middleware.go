@@ -162,7 +162,10 @@ func detectLoop(state *TurnState) bool {
 	sanitized.ID = ""
 	rawJSON, err := json.Marshal(&sanitized)
 	if err != nil {
-		return false // skip loop detection if response can't be serialized
+		// Architect-acceptance (2026-07): json.Marshal on *llm.Content cannot fail —
+		// all fields are simple types (string, []*Part, etc.). Same acceptance class
+		// as json.Marshal on all-string structs in global_prompt_tracker.go.
+		return false
 	}
 	h := sha256.Sum256(rawJSON)
 	currentHash := hex.EncodeToString(h[:])
