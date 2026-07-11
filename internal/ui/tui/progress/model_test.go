@@ -1515,22 +1515,25 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 	// All stale display fields must be cleared.
 	assert.Empty(t, updated.responseText, "responseText should be cleared on TurnStarted")
 	assert.Empty(t, updated.rawResponseText, "rawResponseText should be cleared on TurnStarted")
-	assert.Nil(t, updated.postCallStatus, "postCallStatus should be nil on TurnStarted")
-	assert.Empty(t, updated.postCallMetricsLine, "postCallMetricsLine should be cleared on TurnStarted")
-	assert.Empty(t, updated.finalCostLine, "finalCostLine should be cleared on TurnStarted")
+
+	// Footer status lines must PERSIST across TurnStarted (sticky).
+	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist across TurnStarted")
+	assert.NotEmpty(t, updated.postCallMetricsLine, "postCallMetricsLine should persist across TurnStarted")
+	assert.NotEmpty(t, updated.finalCostLine, "finalCostLine should persist across TurnStarted")
 
 	// Non-display fields should also be cleared.
 	assert.Nil(t, updated.toolLogs, "toolLogs should be nil on TurnStarted")
 	assert.Len(t, updated.seenCallIDs, 0, "seenCallIDs should be empty on TurnStarted")
 
-	// View() after TurnStarted must NOT contain stale content.
+	// View() after TurnStarted must NOT contain stale response text,
+	// but footer status lines should still be visible.
 	updatedOut := updated.View()
 	assert.NotContains(t, updatedOut, "Here is the AI response for turn 5.",
 		"View after TurnStarted must not contain stale response text")
-	assert.NotContains(t, updatedOut, "M: 200 H: 800 C: 50",
-		"View after TurnStarted must not contain stale metrics line")
-	assert.NotContains(t, updatedOut, "╰─⠿ Ready",
-		"View after TurnStarted must not contain stale final cost line")
+	assert.Contains(t, updatedOut, "M: 200 H: 800 C: 50",
+		"View after TurnStarted should still contain sticky metrics line")
+	assert.Contains(t, updatedOut, "╰─⠿ Ready",
+		"View after TurnStarted should still contain sticky final cost line")
 	assert.Contains(t, updatedOut, "╭─ Turn 6 - test",
 		"View after TurnStarted should show new turn header")
 	assert.Contains(t, updatedOut, "Payload: ~0/0 tokens",
@@ -1561,6 +1564,33 @@ func TestModel_TurnStarted_ClearsSeenCallIDs(t *testing.T) {
 
 	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
 	assert.Len(t, m.seenCallIDs, 1, "seenCallIDs should accept same call ID in new turn")
+}
+
+func TestModel_FooterStatusLinesPersistAcrossTurns(t *testing.T) {
+	ctx := context.Background()
+	ch := make(chan events.Event, 2)
+	m := newTestModel(ctx, ch)
+
+	// Set up a completed turn with footer data.
+	m.turn = 1
+	m.currentState = stateRendering
+	m.postCallMetricsLine = "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)"
+	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)"
+	m.postCallStatus = &events.TurnStatus{}
+
+	// Fire TurnStarted — footer should NOT be cleared.
+	newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 1, SessionTurns: 1}))
+	updated := newModel.(*model)
+
+	assert.Equal(t, 2, updated.turn, "turn should increment")
+	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist")
+	assert.Equal(t, "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)", updated.postCallMetricsLine)
+	assert.Equal(t, "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)", updated.finalCostLine)
+	assert.NotNil(t, cmd)
+
+	// But responseText and toolLogs should still be cleared (turn-specific).
+	assert.Empty(t, updated.responseText)
+	assert.Nil(t, updated.toolLogs)
 }
 
 func TestModel_ResponseEvent_NoToolCalls_NoSpuriousLogs(t *testing.T) {
