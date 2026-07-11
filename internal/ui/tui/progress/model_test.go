@@ -141,6 +141,25 @@ func TestModel_Update(t *testing.T) {
 			"should concatenate non-thought text parts, skipping thoughts")
 		assert.NotNil(t, cmd)
 	})
+
+	t.Run("ResponseEvent with markdown renderer", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.mdRender = func(text string) string {
+			return "**" + text + "**"
+		}
+
+		content := &llm.Content{
+			Parts: []*llm.Part{{Text: "Hello"}},
+		}
+		newModel, cmd := m.Update(events.ResponseEvent{Content: content})
+		updated := newModel.(*model)
+
+		assert.Equal(t, "**Hello**", updated.responseText,
+			"should render through mdRender when set")
+		assert.NotNil(t, cmd)
+	})
 }
 
 // newTestModel creates a model for testing.

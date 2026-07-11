@@ -34,14 +34,16 @@ type model struct {
 	timestamp    time.Time
 	err          error
 	responseText string // accumulated AI response text
+	mdRender     func(string) string // optional markdown renderer
 }
 
 // NewModel creates a new progress model that consumes events from the given
-// channel.
-func NewModel(_ context.Context, ch <-chan events.Event) tea.Model {
+// channel and optionally renders response text through mdRender.
+func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string) string) tea.Model {
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
+		mdRender:     mdRender,
 	}
 }
 
@@ -90,7 +92,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForEvent()
 
 	case events.ResponseEvent:
-		m.responseText = extractResponseText(msg.Content)
+		text := extractResponseText(msg.Content)
+		if m.mdRender != nil {
+			text = strings.TrimRight(m.mdRender(text), "\n")
+		}
+		m.responseText = text
 		return m, m.waitForEvent()
 
 	case error:

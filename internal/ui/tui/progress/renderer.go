@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -37,7 +38,18 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 		}
 	})
 
-	m := NewModel(ctx, ch)
+	tr, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
+	mdRender := func(text string) string {
+		if err != nil || tr == nil {
+			return text
+		}
+		out, renderErr := tr.Render(text)
+		if renderErr != nil {
+			return text
+		}
+		return out
+	}
+	m := NewModel(ctx, ch, mdRender)
 	p := tea.NewProgram(m, tea.WithInput(nil))
 	go func() {
 		_, _ = p.Run()
