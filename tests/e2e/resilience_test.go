@@ -16,6 +16,7 @@ func TestResilience_504Retry(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
+	t.Parallel()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +87,7 @@ func TestResilience_429Retry(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
+	t.Parallel()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
