@@ -19,6 +19,11 @@ import (
 // channel reads.
 type domainEventMsg events.Event
 
+// spinnerTickMsg is an internal message type for spinner frame ticks.
+type spinnerTickMsg struct {
+	generation int
+}
+
 type state int
 
 const (
@@ -27,23 +32,96 @@ const (
 	stateRendering
 )
 
+var brailleFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+const spinnerTickInterval = 200 * time.Millisecond
+
+// spinnerState encapsulates the animated braille spinner state and lifecycle.
+// It is embedded in the model to keep spinner concerns separate from domain state.
+type spinnerState struct {
+	status     string
+	frame      int
+	tickActive bool
+	startTime  time.Time
+	generation int
+}
+
+// start initializes the spinner for a new phase. Returns a tick command
+// (or nil if a tick is already active from a previous phase).
+func (s *spinnerState) start(status string) tea.Cmd {
+	s.status = status
+	s.frame = 0
+	s.startTime = time.Now()
+	s.generation++
+	if !s.tickActive {
+		return s.tick()
+	}
+	return nil
+}
+
+// tick schedules the next spinner frame tick, or returns nil if the
+// spinner has been cleared.
+func (s *spinnerState) tick() tea.Cmd {
+	if s.status == "" {
+		s.tickActive = false
+		return nil
+	}
+	s.tickActive = true
+	gen := s.generation
+	return tea.Tick(spinnerTickInterval, func(t time.Time) tea.Msg {
+		return spinnerTickMsg{generation: gen}
+	})
+}
+
+// handleTick processes a tick message. Returns the next tick command,
+// or nil if the tick is stale (wrong generation) or spinner is inactive.
+func (s *spinnerState) handleTick(msg spinnerTickMsg) tea.Cmd {
+	if msg.generation != s.generation {
+		return nil // stale tick from a previous turn
+	}
+	s.frame = (s.frame + 1) % len(brailleFrames)
+	s.tickActive = false
+	return s.tick()
+}
+
+// clear stops the spinner and resets all state.
+func (s *spinnerState) clear() {
+	s.status = ""
+	s.tickActive = false
+}
+
+// render returns the spinner line for display, including the current
+// braille frame, status text, and elapsed seconds.
+func (s *spinnerState) render() string {
+	frame := brailleFrames[s.frame%len(brailleFrames)]
+	elapsed := int(time.Since(s.startTime).Seconds())
+	return fmt.Sprintf("\n%s %s (%ds)", frame, s.status, elapsed)
+}
+
+// active reports whether the spinner is currently running.
+func (s *spinnerState) active() bool {
+	return s.status != ""
+}
+
 type model struct {
 	eventCh <-chan events.Event
 
-	currentState    state
-	width           int // terminal width, updated via WindowSizeMsg
-	turn            int
-	modelName       string // display name, e.g. "deepseek-v4-pro"
-	sessionName     string // e.g. "architect-johndoe"
-	tokens          int
-	maxTokens       int
-	timestamp       time.Time
-	err             error
-	responseText    string                   // accumulated AI response text
-	rawResponseText string                   // raw text before markdown rendering, for re-rendering on resize
-	mdRender        func(string, int) string // optional markdown renderer (text, width)
-	postCallStatus  *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
-	finalCostLine   string                   // rendered "Ready (...)" line from IsFinal
+	currentState        state
+	width               int // terminal width, updated via WindowSizeMsg
+	turn                int
+	modelName           string // display name, e.g. "deepseek-v4-pro"
+	sessionName         string // e.g. "architect-johndoe"
+	tokens              int
+	maxTokens           int
+	timestamp           time.Time
+	err                 error
+	responseText        string                   // accumulated AI response text
+	rawResponseText     string                   // raw text before markdown rendering, for re-rendering on resize
+	mdRender            func(string, int) string // optional markdown renderer (text, width)
+	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
+	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
+	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
+	spinner             spinnerState
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -80,6 +158,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyMsg(msg)
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
+	case spinnerTickMsg:
+		return m, m.spinner.handleTick(msg)
 	case error:
 		m.err = msg
 		return m, nil
@@ -118,6 +198,15 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		return m, m.handleTurnStatus(e)
 	case events.ResponseEvent:
 		return m, m.handleResponseEvent(e)
+	case events.SummarizationStartedEvent:
+		info, _ := e.SpinnerInfo()
+		return m, tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
+	case events.ToolExecutionStartedEvent:
+		info, _ := e.SpinnerInfo()
+		return m, tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
+	case events.RetryWaitingEvent:
+		info, _ := e.SpinnerInfo()
+		return m, tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
 	}
 	return m, m.waitForEvent()
 }
@@ -126,13 +215,15 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.turn = e.SessionTurns + 1
 	m.currentState = stateThinking
+	m.spinner.clear()
 	return m.waitForEvent()
 }
 
 // handleInferenceStarted processes an InferenceStartedEvent.
 func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
 	m.modelName = e.Model
-	return m.waitForEvent()
+	info, _ := e.SpinnerInfo()
+	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
 }
 
 // handleTurnStatus processes a TurnStatusEvent.
@@ -148,6 +239,9 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 	if e.Status.IsPostCall && e.Status.Metrics != nil {
 		s := e.Status
 		m.postCallStatus = &s
+		m.postCallMetricsLine = formatMetricsLine(
+			s.Metrics, s.StartTime, s.Timestamp, s.CurrentTurns+1,
+		)
 	}
 	if e.Status.IsFinal {
 		turnCost := 0.0
@@ -156,11 +250,13 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 		}
 		m.finalCostLine = formatFinalLine(e.Status, turnCost)
 	}
+	m.spinner.clear()
 	return m.waitForEvent()
 }
 
 // handleResponseEvent processes a ResponseEvent.
 func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
+	m.spinner.clear()
 	m.rawResponseText = extractResponseText(e.Content)
 	if m.mdRender != nil {
 		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
@@ -261,13 +357,16 @@ func (m *model) View() string {
 			m.postCallStatus.Metrics.PromptTokens,
 			m.maxTokens, m.sessionName, m.modelName))
 		sb.WriteString("\n")
-		sb.WriteString(formatMetricsLine(m.postCallStatus.Metrics,
-			m.postCallStatus.StartTime, m.timestamp, m.postCallStatus.CurrentTurns+1))
+		sb.WriteString(m.postCallMetricsLine)
 	}
 
 	if m.finalCostLine != "" {
 		sb.WriteString("\n")
 		sb.WriteString(m.finalCostLine)
+	}
+
+	if m.spinner.active() && m.currentState != stateIdle {
+		sb.WriteString(m.spinner.render())
 	}
 
 	sb.WriteString("\n")
