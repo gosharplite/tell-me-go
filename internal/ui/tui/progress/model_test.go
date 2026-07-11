@@ -501,3 +501,338 @@ func TestModel_Integration(t *testing.T) {
 		assert.NotNil(t, cmd)
 	})
 }
+
+func TestModel_SpinnerEvents(t *testing.T) {
+	t.Run("InferenceStartedEvent without model", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.InferenceStartedEvent{}))
+		updated := newModel.(*model)
+
+		assert.Equal(t, " Thinking...", updated.spinnerStatus)
+		assert.False(t, updated.spinnerShowMetrics)
+		assert.Equal(t, 0, updated.spinnerFrame)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("InferenceStartedEvent with model", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.InferenceStartedEvent{Model: "gpt-5"}))
+		updated := newModel.(*model)
+
+		assert.Equal(t, " Thinking [gpt-5]...", updated.spinnerStatus)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("SummarizationStartedEvent", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.SummarizationStartedEvent{}))
+		updated := newModel.(*model)
+
+		assert.Equal(t, " Compressing context...", updated.spinnerStatus)
+		assert.False(t, updated.spinnerShowMetrics)
+		assert.Equal(t, 0, updated.spinnerFrame)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("ToolExecutionStartedEvent no tools", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.ToolExecutionStartedEvent{}))
+		updated := newModel.(*model)
+
+		assert.Equal(t, " Executing tools...", updated.spinnerStatus)
+		assert.True(t, updated.spinnerShowMetrics)
+		assert.Equal(t, 0, updated.spinnerFrame)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("ToolExecutionStartedEvent one tool", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.ToolExecutionStartedEvent{
+			ToolNames: []string{"bash"},
+		}))
+		updated := newModel.(*model)
+
+		assert.Equal(t, " Executing [bash]...", updated.spinnerStatus)
+		assert.True(t, updated.spinnerShowMetrics)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("ToolExecutionStartedEvent multiple tools", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.ToolExecutionStartedEvent{
+			ToolNames: []string{"read", "write"},
+		}))
+		updated := newModel.(*model)
+
+		assert.Equal(t, " Executing tools [read, write]...", updated.spinnerStatus)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("RetryWaitingEvent", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.RetryWaitingEvent{
+			Duration: 5 * time.Second,
+		}))
+		updated := newModel.(*model)
+
+		assert.Equal(t, " Retrying in 5s...", updated.spinnerStatus)
+		assert.False(t, updated.spinnerShowMetrics)
+		assert.Equal(t, 0, updated.spinnerFrame)
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestModel_SpinnerTickAnimation(t *testing.T) {
+	t.Run("tick advances frame", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = " Thinking..."
+		m.currentState = stateThinking
+		m.spinnerFrame = 3
+
+		newModel, cmd := m.Update(spinnerTickMsg(time.Now()))
+		updated := newModel.(*model)
+
+		assert.Equal(t, 4, updated.spinnerFrame)
+		assert.True(t, updated.spinnerTickActive) // re-set by spinnerTick() on re-schedule
+		assert.NotNil(t, cmd)                     // re-schedules via spinnerTick()
+	})
+
+	t.Run("tick wraps frame at boundary", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = " Thinking..."
+		m.currentState = stateThinking
+		m.spinnerFrame = 9 // last frame
+
+		newModel, _ := m.Update(spinnerTickMsg(time.Now()))
+		updated := newModel.(*model)
+
+		assert.Equal(t, 0, updated.spinnerFrame) // wraps to 0
+	})
+
+	t.Run("tick does not re-schedule when spinner cleared", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = "" // cleared
+		m.currentState = stateThinking
+		m.spinnerTickActive = true
+
+		newModel, cmd := m.Update(spinnerTickMsg(time.Now()))
+		updated := newModel.(*model)
+
+		assert.False(t, updated.spinnerTickActive)
+		assert.Nil(t, cmd) // spinnerTick() returns nil because status is empty
+	})
+
+	t.Run("tick does not re-schedule when state is idle", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = " Thinking..."
+		m.currentState = stateIdle // idle
+		m.spinnerTickActive = true
+
+		newModel, cmd := m.Update(spinnerTickMsg(time.Now()))
+		updated := newModel.(*model)
+
+		assert.False(t, updated.spinnerTickActive)
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("spinnerTick returns nil when no status", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = ""
+		m.currentState = stateThinking
+
+		cmd := m.spinnerTick()
+		assert.Nil(t, cmd)
+		assert.False(t, m.spinnerTickActive)
+	})
+
+	t.Run("spinnerTick returns nil when idle", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = " Thinking..."
+		m.currentState = stateIdle
+
+		cmd := m.spinnerTick()
+		assert.Nil(t, cmd)
+		assert.False(t, m.spinnerTickActive)
+	})
+
+	t.Run("spinnerTick returns command when active", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = " Thinking..."
+		m.currentState = stateThinking
+
+		cmd := m.spinnerTick()
+		assert.NotNil(t, cmd)
+		assert.True(t, m.spinnerTickActive)
+	})
+}
+
+func TestModel_SpinnerClearance(t *testing.T) {
+	t.Run("TurnStarted clears spinner", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = " Executing [bash]..."
+		m.spinnerShowMetrics = true
+		m.spinnerTickActive = true
+		m.currentState = stateRendering
+
+		newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 5, SessionTurns: 5}))
+		updated := newModel.(*model)
+
+		assert.Empty(t, updated.spinnerStatus)
+		assert.False(t, updated.spinnerShowMetrics)
+		assert.False(t, updated.spinnerTickActive)
+		assert.Equal(t, stateThinking, updated.currentState)
+		assert.Equal(t, 6, updated.turn) // SessionTurns + 1
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("ResponseEvent clears spinner", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinnerStatus = " Thinking [gpt-5]..."
+		m.spinnerTickActive = true
+		m.currentState = stateThinking
+
+		content := &llm.Content{
+			Parts: []*llm.Part{{Text: "Hello"}},
+		}
+		newModel, cmd := m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+		updated := newModel.(*model)
+
+		assert.Empty(t, updated.spinnerStatus)
+		assert.False(t, updated.spinnerTickActive)
+		assert.Equal(t, "Hello", updated.responseText)
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestModel_View_SpinnerLine(t *testing.T) {
+	t.Run("renders spinner line with current frame", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateThinking
+		m.spinnerStatus = " Executing [bash]..."
+		m.spinnerFrame = 2 // ⠹
+
+		out := m.View()
+		assert.Contains(t, out, "⠹  Executing [bash]...")
+	})
+
+	t.Run("renders first frame", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateThinking
+		m.spinnerStatus = " Thinking..."
+		m.spinnerFrame = 0 // ⠋
+
+		out := m.View()
+		assert.Contains(t, out, "⠋  Thinking...")
+	})
+
+	t.Run("renders last frame", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateThinking
+		m.spinnerStatus = " Compressing context..."
+		m.spinnerFrame = 9 // ⠏
+
+		out := m.View()
+		assert.Contains(t, out, "⠏  Compressing context...")
+	})
+
+	t.Run("no spinner line in idle state", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateIdle
+		m.spinnerStatus = " Thinking..." // stale
+		m.spinnerFrame = 0
+
+		out := m.View()
+		assert.NotContains(t, out, "⠋")
+		assert.NotContains(t, out, "Thinking")
+	})
+
+	t.Run("no spinner line when status empty", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateThinking
+		m.spinnerStatus = "" // empty
+
+		out := m.View()
+		assert.NotContains(t, out, "⠋")
+	})
+
+	t.Run("spinner line at end of output", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateThinking
+		m.turn = 1
+		m.sessionName = "test"
+		m.spinnerStatus = " Thinking..."
+		m.spinnerFrame = 0
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+		// Second-to-last line should be the spinner (last line is empty from trailing \n)
+		assert.Contains(t, lines[len(lines)-2], "⠋  Thinking...")
+	})
+}
+
+func TestModel_SpinnerViewAllFrames(t *testing.T) {
+	for i, expectedFrame := range brailleFrames {
+		t.Run(fmt.Sprintf("frame_%d_%s", i, expectedFrame), func(t *testing.T) {
+			ctx := context.Background()
+			ch := make(chan events.Event, 1)
+			m := newTestModel(ctx, ch)
+			m.currentState = stateThinking
+			m.spinnerStatus = " Thinking..."
+			m.spinnerFrame = i
+
+			out := m.View()
+			assert.Contains(t, out, fmt.Sprintf("%s  Thinking...", expectedFrame))
+		})
+	}
+}

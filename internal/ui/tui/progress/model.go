@@ -19,6 +19,9 @@ import (
 // channel reads.
 type domainEventMsg events.Event
 
+// spinnerTickMsg is an internal message type for spinner frame ticks.
+type spinnerTickMsg time.Time
+
 type state int
 
 const (
@@ -27,23 +30,31 @@ const (
 	stateRendering
 )
 
+var brailleFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+const spinnerTickInterval = 200 * time.Millisecond
+
 type model struct {
 	eventCh <-chan events.Event
 
-	currentState    state
-	width           int // terminal width, updated via WindowSizeMsg
-	turn            int
-	modelName       string // display name, e.g. "deepseek-v4-pro"
-	sessionName     string // e.g. "architect-johndoe"
-	tokens          int
-	maxTokens       int
-	timestamp       time.Time
-	err             error
-	responseText    string                   // accumulated AI response text
-	rawResponseText string                   // raw text before markdown rendering, for re-rendering on resize
-	mdRender        func(string, int) string // optional markdown renderer (text, width)
-	postCallStatus  *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
-	finalCostLine   string                   // rendered "Ready (...)" line from IsFinal
+	currentState       state
+	width              int // terminal width, updated via WindowSizeMsg
+	turn               int
+	modelName          string // display name, e.g. "deepseek-v4-pro"
+	sessionName        string // e.g. "architect-johndoe"
+	tokens             int
+	maxTokens          int
+	timestamp          time.Time
+	err                error
+	responseText       string                   // accumulated AI response text
+	rawResponseText    string                   // raw text before markdown rendering, for re-rendering on resize
+	mdRender           func(string, int) string // optional markdown renderer (text, width)
+	postCallStatus     *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
+	finalCostLine      string                   // rendered "Ready (...)" line from IsFinal
+	spinnerStatus      string                   // current spinner text, e.g. " Executing [bash]..."
+	spinnerShowMetrics bool                     // if true, metrics (CPU/MEM) should be shown alongside spinner
+	spinnerFrame       int                      // index into brailleFrames, incremented each tick
+	spinnerTickActive  bool                     // true when a tick command is pending
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -68,6 +79,19 @@ func (m *model) waitForEvent() tea.Cmd {
 	}
 }
 
+// spinnerTick returns a command that fires a tick and advances the spinner frame,
+// or nil if no spinner is active.
+func (m *model) spinnerTick() tea.Cmd {
+	if m.spinnerStatus == "" || m.currentState == stateIdle {
+		m.spinnerTickActive = false
+		return nil
+	}
+	m.spinnerTickActive = true
+	return tea.Tick(spinnerTickInterval, func(t time.Time) tea.Msg {
+		return spinnerTickMsg(t)
+	})
+}
+
 // Init returns the initial command to start listening for events.
 func (m *model) Init() tea.Cmd {
 	return m.waitForEvent()
@@ -80,6 +104,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyMsg(msg)
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
+	case spinnerTickMsg:
+		m.spinnerFrame = (m.spinnerFrame + 1) % len(brailleFrames)
+		m.spinnerTickActive = false
+		return m, m.spinnerTick()
 	case error:
 		m.err = msg
 		return m, nil
@@ -118,6 +146,33 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		return m, m.handleTurnStatus(e)
 	case events.ResponseEvent:
 		return m, m.handleResponseEvent(e)
+	case events.SummarizationStartedEvent:
+		info, _ := e.SpinnerInfo()
+		m.spinnerStatus = info.Status
+		m.spinnerShowMetrics = info.WithMetrics
+		m.spinnerFrame = 0
+		if !m.spinnerTickActive {
+			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
+		}
+		return m, m.waitForEvent()
+	case events.ToolExecutionStartedEvent:
+		info, _ := e.SpinnerInfo()
+		m.spinnerStatus = info.Status
+		m.spinnerShowMetrics = info.WithMetrics
+		m.spinnerFrame = 0
+		if !m.spinnerTickActive {
+			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
+		}
+		return m, m.waitForEvent()
+	case events.RetryWaitingEvent:
+		info, _ := e.SpinnerInfo()
+		m.spinnerStatus = info.Status
+		m.spinnerShowMetrics = info.WithMetrics
+		m.spinnerFrame = 0
+		if !m.spinnerTickActive {
+			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
+		}
+		return m, m.waitForEvent()
 	}
 	return m, m.waitForEvent()
 }
@@ -126,12 +181,22 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.turn = e.SessionTurns + 1
 	m.currentState = stateThinking
+	m.spinnerStatus = ""
+	m.spinnerShowMetrics = false
+	m.spinnerTickActive = false
 	return m.waitForEvent()
 }
 
 // handleInferenceStarted processes an InferenceStartedEvent.
 func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
 	m.modelName = e.Model
+	info, _ := e.SpinnerInfo()
+	m.spinnerStatus = info.Status
+	m.spinnerShowMetrics = info.WithMetrics
+	m.spinnerFrame = 0
+	if !m.spinnerTickActive {
+		return tea.Batch(m.waitForEvent(), m.spinnerTick())
+	}
 	return m.waitForEvent()
 }
 
@@ -161,6 +226,8 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 
 // handleResponseEvent processes a ResponseEvent.
 func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
+	m.spinnerStatus = ""
+	m.spinnerTickActive = false
 	m.rawResponseText = extractResponseText(e.Content)
 	if m.mdRender != nil {
 		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
@@ -268,6 +335,11 @@ func (m *model) View() string {
 	if m.finalCostLine != "" {
 		sb.WriteString("\n")
 		sb.WriteString(m.finalCostLine)
+	}
+
+	if m.spinnerStatus != "" && m.currentState != stateIdle {
+		frame := brailleFrames[m.spinnerFrame%len(brailleFrames)]
+		sb.WriteString(fmt.Sprintf("\n%s %s", frame, m.spinnerStatus))
 	}
 
 	sb.WriteString("\n")
