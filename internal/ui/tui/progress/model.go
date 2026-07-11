@@ -109,6 +109,7 @@ type model struct {
 
 	currentState        state
 	width               int // terminal width, updated via WindowSizeMsg
+	height              int // terminal height, updated via WindowSizeMsg
 	turn                int
 	modelName           string // display name, e.g. "deepseek-v4-pro"
 	sessionName         string // e.g. "architect-johndoe"
@@ -232,6 +233,7 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleWindowSizeMsg processes terminal resize events.
 func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
+	m.height = msg.Height
 	if m.rawResponseText != "" && m.mdRender != nil {
 		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
 	}
@@ -537,46 +539,106 @@ func formatFinalLine(status events.TurnStatus, turnCost float64) string {
 		status.TotalM, status.TotalH, hitRate, status.TotalO)
 }
 
-// View renders the progress model as a two-line display with optional response text.
+// View renders the progress model as a three-zone fixed layout:
+// header (2 lines), scrollable body, footer (3 lines).
+// Falls back to renderMinimal when the terminal is too small (height < 5).
 func (m *model) View() string {
-	var sb strings.Builder
+	if m.height < 5 {
+		return m.renderMinimal()
+	}
 
+	// Body gets everything between header (2 lines) and footer (3 lines).
+	availableBody := m.height - 5
+
+	var sb strings.Builder
+	sb.WriteString(m.renderHeader())
+	sb.WriteString(m.renderBody(availableBody))
+	sb.WriteString(m.renderFooter())
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+// renderMinimal returns a single-line fallback for tiny terminals.
+func (m *model) renderMinimal() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
+	if m.spinner.active() && m.currentState != stateIdle {
+		frame := brailleFrames[m.spinner.frame%len(brailleFrames)]
+		elapsed := int(time.Since(m.spinner.startTime).Seconds())
+		sb.WriteString(fmt.Sprintf(" %s %s (%ds)", frame, m.spinner.status, elapsed))
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+// renderHeader returns the turn header and payload line (2 lines, always present).
+func (m *model) renderHeader() string {
 	ts := m.timestamp.Format("15:04:05")
+	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s\n", m.turn, m.sessionName))
 	sb.WriteString(fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
 		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName))
+	return sb.String()
+}
 
-	if len(m.toolLogs) > 0 {
-		for _, log := range m.toolLogs {
-			sb.WriteString("\n")
-			sb.WriteString(log)
+// renderBody returns exactly availableLines of content (tool logs + response),
+// bottom-aligned and height-constrained. When content is sparser than the
+// available zone, blank lines are prepended to keep the footer pinned.
+func (m *model) renderBody(availableLines int) string {
+	var contentLines []string
+
+	for _, log := range m.toolLogs {
+		contentLines = append(contentLines, log)
+	}
+	if m.responseText != "" {
+		for _, line := range strings.Split(m.responseText, "\n") {
+			contentLines = append(contentLines, line)
 		}
 	}
 
-	if m.responseText != "" {
-		sb.WriteString("\n")
-		sb.WriteString(m.responseText)
+	bodyLines := make([]string, 0, availableLines)
+	if len(contentLines) > availableLines {
+		// Keep only the tail (bottom-aligned: newest content at bottom).
+		bodyLines = contentLines[len(contentLines)-availableLines:]
+	} else {
+		// Top-pad with blank lines so footer stays fixed at the bottom.
+		padding := availableLines - len(contentLines)
+		for i := 0; i < padding; i++ {
+			bodyLines = append(bodyLines, "")
+		}
+		bodyLines = append(bodyLines, contentLines...)
 	}
 
-	if m.postCallStatus != nil {
-		sb.WriteString("\n\n")
-		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
-			m.timestamp.Format("15:04:05"),
-			m.postCallStatus.Metrics.PromptTokens,
-			m.maxTokens, m.sessionName, m.modelName))
-		sb.WriteString("\n")
+	if len(bodyLines) == 0 {
+		return ""
+	}
+	return "\n" + strings.Join(bodyLines, "\n")
+}
+
+// renderFooter returns exactly 3 lines: metrics placeholder, final cost
+// placeholder, and spinner. Each line is either its real content or blank.
+func (m *model) renderFooter() string {
+	var sb strings.Builder
+
+	// Line 1: post-call metrics (payload line is dropped — redundant with header).
+	sb.WriteString("\n")
+	if m.postCallMetricsLine != "" {
 		sb.WriteString(m.postCallMetricsLine)
 	}
 
+	// Line 2: final cost summary.
+	sb.WriteString("\n")
 	if m.finalCostLine != "" {
-		sb.WriteString("\n")
 		sb.WriteString(m.finalCostLine)
 	}
 
+	// Line 3: spinner.
+	sb.WriteString("\n")
 	if m.spinner.active() && m.currentState != stateIdle {
-		sb.WriteString(m.spinner.render())
+		frame := brailleFrames[m.spinner.frame%len(brailleFrames)]
+		elapsed := int(time.Since(m.spinner.startTime).Seconds())
+		sb.WriteString(fmt.Sprintf("%s %s (%ds)", frame, m.spinner.status, elapsed))
 	}
 
-	sb.WriteString("\n")
 	return sb.String()
 }

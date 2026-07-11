@@ -110,6 +110,8 @@ func TestModel_Update(t *testing.T) {
 		assert.Equal(t, stateIdle, updated.currentState, "state should be unchanged")
 		assert.Equal(t, 0, updated.turn, "turn should be zero value")
 		assert.Empty(t, updated.modelName, "modelName should be empty")
+		assert.Equal(t, 100, updated.width)
+		assert.Equal(t, 50, updated.height)
 		assert.Nil(t, cmd, "unknown messages must return nil to avoid duplicate channel readers")
 	})
 
@@ -127,9 +129,22 @@ func TestModel_Update(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.Equal(t, 120, updated.width)
+		assert.Equal(t, 40, updated.height)
 		assert.Equal(t, "[w=120]hello", updated.responseText,
 			"response should be re-rendered with new width")
 		assert.Nil(t, cmd)
+	})
+
+	t.Run("captures height from WindowSizeMsg", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		updated := newModel.(*model)
+
+		assert.Equal(t, 120, updated.width)
+		assert.Equal(t, 40, updated.height)
 	})
 
 	t.Run("default message returns nil cmd", func(t *testing.T) {
@@ -262,11 +277,12 @@ func TestModel_Update(t *testing.T) {
 	})
 }
 
-// newTestModel creates a model for testing.
+// newTestModel creates a model for testing with a sensible default terminal height.
 func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
+		height:       80, // sensible default; tests that need a specific height set it explicitly
 		seenCallIDs:  make(map[string]bool),
 	}
 }
@@ -277,10 +293,13 @@ func TestModel_View(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
+		assert.Equal(t, 0, m.width, "fresh model width should be 0")
+		assert.Equal(t, 80, m.height, "fresh model height should be newTestModel default")
+
 		out := m.View()
 
-		lines := strings.Split(out, "\n")
-		assert.True(t, len(lines) >= 2, "expected at least 2 lines, got %d: %q", len(lines), out)
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		assert.Len(t, lines, 80, "total lines must equal terminal height (80)")
 		assert.Contains(t, lines[0], "╭─ Turn 0 - ")
 		assert.Contains(t, lines[1], "Payload: ~0/0 tokens")
 	})
@@ -331,9 +350,9 @@ func TestModel_View(t *testing.T) {
 		m.responseText = ""
 
 		out := m.View()
-		lines := strings.Split(out, "\n")
-		// header, info, empty trailing — no response line
-		assert.Len(t, lines, 3)
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		// Fixed-zone layout: exactly height lines regardless of content.
+		assert.Len(t, lines, 80)
 	})
 
 	t.Run("with post-call metrics", func(t *testing.T) {
@@ -364,11 +383,11 @@ func TestModel_View(t *testing.T) {
 		)
 
 		out := m.View()
-		lines := strings.Split(out, "\n")
-		// line 0: header, line 1: info, line 2: empty, line 3: token line, line 4: metrics line
-		assert.Contains(t, lines[4], "[14:30:00]")
-		assert.Contains(t, lines[4], "[deepseek-pro]")
-		assert.Contains(t, lines[4], "M: 200 H: 800 C: 50")
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		// Footer line 1 (index 77): metrics line
+		assert.Contains(t, lines[77], "[14:30:00]")
+		assert.Contains(t, lines[77], "[deepseek-pro]")
+		assert.Contains(t, lines[77], "M: 200 H: 800 C: 50")
 	})
 
 	t.Run("with final summary", func(t *testing.T) {
@@ -382,6 +401,152 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, out, "╰─⠿ Ready")
 		assert.Contains(t, out, "M: 116386")
 		assert.Contains(t, out, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
+	})
+
+	t.Run("body_clips_to_available_lines_bottom_aligned", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		// Simulate terminal: 10 lines total → 5 body lines
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+		// Fill tool logs with 20 entries (way more than available body lines)
+		for i := 0; i < 20; i++ {
+			m.appendToolLog("Test", fmt.Sprintf("log line %d", i))
+		}
+		m.responseText = "final response line"
+
+		out := m.View()
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+
+		// 10 lines total: 2 header + 5 body + 3 footer
+		assert.Len(t, lines, 10, "total lines must equal terminal height")
+
+		// Header intact
+		assert.Contains(t, lines[0], "╭─ Turn")
+		assert.Contains(t, lines[1], "Payload:")
+
+		// Body shows only the TAIL (log line 16-19 + response = 5 lines)
+		assert.NotContains(t, lines[2], "log line 0", "oldest log should be clipped")
+		assert.Contains(t, lines[6], "final response line", "response should be at bottom of body zone")
+	})
+
+	t.Run("body_top_pads_when_content_is_sparse", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+		// Only 1 tool log — way under the 15 available body lines
+		m.appendToolLog("Test", "only one log")
+
+		out := m.View()
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+
+		assert.Len(t, lines, 20, "total lines must equal terminal height")
+		// Lines 2 through 15 should be blank (top-padding for 14 blank + log at line 16)
+		for i := 2; i < 16; i++ {
+			assert.Empty(t, lines[i], "line %d should be blank padding", i)
+		}
+		// The single log line appears at the bottom of the body zone (line 16, 0-indexed)
+		assert.Contains(t, lines[16], "only one log")
+	})
+
+	t.Run("footer_always_occupies_3_lines_with_placeholders", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+		// No metrics, no final cost, no spinner — footer should still be 3 lines
+		out := m.View()
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+
+		assert.Len(t, lines, 10)
+		// Footer lines 7, 8, 9 (0-indexed) exist and are empty
+		assert.Equal(t, "", lines[7])
+		assert.Equal(t, "", lines[8])
+		assert.Equal(t, "", lines[9])
+	})
+
+	t.Run("renderMinimal_when_height_below_5", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
+
+		m.turn = 3
+		m.sessionName = "test"
+
+		out := m.View()
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+
+		assert.Len(t, lines, 1)
+		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
+		assert.NotContains(t, out, "Payload:") // no room for payload line
+	})
+
+	t.Run("renderMinimal_shows_spinner_when_active", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
+
+		m.turn = 3
+		m.sessionName = "test"
+		m.spinner.status = " Thinking..."
+		m.currentState = stateThinking
+
+		out := m.View()
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+
+		assert.Len(t, lines, 1)
+		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
+		assert.Contains(t, lines[0], "⠋  Thinking...")
+	})
+
+	t.Run("height_5_zero_body_lines", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 5})
+
+		// No tool logs, no response — body zone is 0 lines.
+		// Must not panic and must produce exactly 5 lines.
+		out := m.View()
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+
+		assert.Len(t, lines, 5, "height=5 must produce exactly 5 lines")
+		assert.Contains(t, lines[0], "╭─ Turn")
+		assert.Contains(t, lines[1], "Payload:")
+		// Lines 2-4: footer zone (3 blank lines)
+		assert.Equal(t, "", lines[2])
+		assert.Equal(t, "", lines[3])
+		assert.Equal(t, "", lines[4])
+	})
+
+	t.Run("spinner_start_stop_does_not_change_line_count", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+		// Before spinner
+		before := m.View()
+		beforeLines := strings.Split(strings.TrimSuffix(before, "\n"), "\n")
+
+		// Start spinner
+		m.spinner.start("Generating...")
+		m.currentState = stateThinking
+
+		after := m.View()
+		afterLines := strings.Split(strings.TrimSuffix(after, "\n"), "\n")
+
+		assert.Len(t, beforeLines, 10)
+		assert.Len(t, afterLines, 10, "spinner must not change total line count")
+		// Last line should now contain spinner frame
+		assert.Contains(t, afterLines[9], "Generating...")
 	})
 }
 
@@ -1176,10 +1341,11 @@ func TestModel_ToolLogs(t *testing.T) {
 		out := m.View()
 		lines := strings.Split(out, "\n")
 
-		// Header (line 0), token line (line 1), then tool logs
+		// Header (line 0), token line (line 1), then body zone (bottom-aligned).
 		assert.Contains(t, lines[0], "╭─ Turn 1 - test")
-		assert.Contains(t, lines[2], "[Tool Engine] Step 1/3")
-		assert.Contains(t, lines[3], "[Tool Reason] read the file")
+		// 3 body content lines: 2 tool logs + 1 response, bottom-aligned at 74,75,76
+		assert.Contains(t, lines[74], "[Tool Engine] Step 1/3")
+		assert.Contains(t, lines[75], "[Tool Reason] read the file")
 		// Response text after tool logs
 		assert.Contains(t, out, "I'll read that file for you.")
 	})
