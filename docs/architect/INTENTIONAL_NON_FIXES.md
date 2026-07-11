@@ -168,6 +168,41 @@ Any AI agent recommending these should consult the rationale below.
 - **See**: `internal/agent/session/context/manager.go`
   (architect-acceptance comment at the `capBestBlock` call site in `checkWindowSize`)
 
+### agent/session/context/manager.go — capBestBlock non-capped return
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The final return in `capBestBlock` (`manager.go:582`) is reached
+  when `best.count >= minViable` but `groupTurns` returns ≤1 turn for the
+  sub-slice. With the default `contiguousUnpinnedSelector` (MinViableBlock=2),
+  `best.count >= 2` and the sub-slice spans ≥2 turns, so `groupTurns` always
+  returns ≥2 turns. This return is a defensive fallthrough for degenerate
+  message sequences. Same acceptance class as defensive nil/empty guards on
+  internal pipeline state (2026-07 Batch Triage).
+- **See**: `internal/agent/session/context/manager.go:582`
+
+### agent/session/session_manager.go — tuiCleanup and setupUIRendering TUI branches
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Both the `tuiCleanup` deferred call in `Run()` and the
+  `tuiOutput` branch in `setupUIRendering` require a ProgressRenderer and full
+  TUI integration to exercise. The branches themselves are simple nil-checks
+  with no branching business logic (call a cleanup function; return nil for
+  the bridge). Testing them requires TUI integration infrastructure
+  disproportionate to the value. Same acceptance class as the integration-level
+  branches in the 2026-07 skills.sh Batch Triage.
+- **See**: `internal/agent/session/session_manager.go:142-144,237-240`
+
+### agent/session/ui/dispatcher.go — ToolOutputStreamEvent case in handleSystemMessage
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `ToolOutputStreamEvent` case in `handleSystemMessage`'s type
+  switch is structurally unreachable via normal dispatch — `ToolOutputStreamEvent`
+  is registered to `handleToolOutputStream`, not `handleSystemMessage`. The case
+  exists as a defensive fallthrough for a same-handler dispatch pattern.
+  Same acceptance class as defensive guards on internal pipeline state
+  (2026-07 Batch Triage).
+- **See**: `internal/agent/session/ui/dispatcher.go:204-205`
+
 ### domain/config/config.go — validateProviderUniqueness always returns nil
 
 - **Status**: ACCEPTED (2026-07)
@@ -181,6 +216,46 @@ Any AI agent recommending these should consult the rationale below.
   single-file architecture. Structurally unreachable — same acceptance class
   as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
 - **See**: `internal/domain/config/config.go:183-185`
+
+### domain/llm/types.go — NewID delegation wrapper
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `NewID()` is a pure delegation to `uuid.New().String()`. Testing it
+  would test the third-party uuid library, not project code. Same acceptance
+  class as `RealClock` delegation wrappers in `pkg/clock/clock.go` and
+  `mockFileSystem.Chmod`.
+- **See**: `internal/domain/llm/types.go:222-224`
+
+### domain/ports/repository.go — Task struct field accessors (GetID, GetStatus, GetCreatedAt)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `Task.GetID()`, `Task.GetStatus()`, and `Task.GetCreatedAt()` are
+  struct field accessors that exist solely to satisfy the `FilterableItem`
+  interface constraint. They contain no branches and no business logic.
+  Testing them would test Go struct field access. Same acceptance class as
+  the interface-satisfying stubs in `agenttest/helpers.go`.
+- **See**: `internal/domain/ports/repository.go:105,108,111`
+
+### agent/orchestrator/engine_phases.go — default case in RecoveryStep switch
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `ClassifyLLMError` returns exactly one of five known categories
+  (RateLimited, ContextOverflow, AuthFailure, ServerError, Timeout) — the switch
+  in `RecoveryStep.Process` covers all five explicitly. The `default:` case is
+  a defensive guard that is structurally unreachable. Same acceptance class as
+  `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
+- **See**: `internal/agent/orchestrator/engine_phases.go:129`
+
+### agent/orchestrator/middleware.go — return nil in injectSyntheticLoopFeedback
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `return nil` path in `injectSyntheticLoopFeedback` is reached
+  only when `HasToolCalls` is true but `Response` has no `FunctionCall` parts —
+  inconsistent internal state that does not occur in normal operation
+  (`HasToolCalls` is derived from the presence of `FunctionCall` parts).
+  Defensive guard — same acceptance class as defensive nil/empty guards on
+  internal pipeline state (2026-07 Batch Triage).
+- **See**: `internal/agent/orchestrator/middleware.go:255`
 
 ### agent/agenttest/helpers.go — 0% coverage on interface-satisfying stubs (15 methods)
 
@@ -199,6 +274,25 @@ Any AI agent recommending these should consult the rationale below.
   The `agenttest/` package is already excluded from coverage metrics by the
   Makefile `test-coverage` target.
 - **See**: `internal/agent/agenttest/helpers.go`
+
+### pkg/clock/clock.go — 36.8% coverage on interfaces + fakes + delegation wrappers
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `internal/pkg/clock` contains only:
+  - Two interfaces (`Clock`, `Ticker`) — no executable code.
+  - `RealClock` — thin delegation wrappers around `time.Now()`, `time.Sleep()`,
+    `time.After()`, `time.Since()`, `time.NewTicker()`. Testing these would
+    test the Go standard library, not project code. Same acceptance class as
+    `domainFS.Chmod`, `mockFileSystem.Chmod`, and `plainOSFS.Chmod`.
+  - `FakeClock` and `FakeTicker` — test-only fakes with deterministic behavior
+    for use by other packages' tests. Testing a test double is circular and
+    provides no value. Same acceptance class as `mockFileSystem.Chmod`.
+  - `realTicker` — unexported adapter struct wrapping `*time.Ticker` for
+    interface satisfaction. No business logic.
+  The package exists to enable deterministic time control in tests across the
+  project. Every line of code is either an interface definition, a stdlib
+  delegation, or a test fake. There is no business logic to cover.
+- **See**: `internal/pkg/clock/clock.go`
 
 ---
 
@@ -360,6 +454,17 @@ Any AI agent recommending these should consult the rationale below.
 
 ## Coverage Gaps (ACCEPTED — 2026-07 skills.sh Batch Triage)
 
+### orchestrator/middleware.go — json.Marshal error in detectLoop
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `json.Marshal(&sanitized)` on `*llm.Content` cannot fail — all fields
+  are simple types (string, `[]*Part`, etc.). The `sanitized` value is a shallow
+  copy of `state.Response` with `ID` set to `""`. No field implements
+  `json.Marshaler` with error-return semantics. Structurally unreachable — same
+  acceptance class as `json.Marshal` on all-string structs in
+  `global_prompt_tracker.go`.
+- **See**: `internal/agent/orchestrator/middleware.go:164-166`
+
 ### skills.sh integration — structurally unreachable and fault-injection gaps (17 sites)
 
 - **Status**: ACCEPTED (2026-07)
@@ -426,6 +531,28 @@ Any AI agent recommending these should consult the rationale below.
   of refactoring outweighs the maintainability benefit.
 - **See**: `tests/e2e/history_flags_test.go:142`
 
+### cmd/tell-me-go/main.go — buildApp os.Getwd error path (non-Linux)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `wd = "."` fallback when `os.Getwd()` fails is only
+  reachable on Linux via the chdir-into-deleted-directory technique used by
+  `TestBuildApp_GetwdError`. On macOS and Windows, the kernel caches the
+  working directory path, making the error structurally unreachable.
+  Same acceptance class as the platform-specific branches in
+  `pidlock/pidlock.go`.
+- **See**: `cmd/tell-me-go/main.go` (`buildApp`, `os.Getwd` error branch),
+  `cmd/tell-me-go/main_test.go` (`TestBuildApp_GetwdError`)
+
+### agent/agent.go — configRefreshHook.BeforeTurn/AfterTurn no-op stubs
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `configRefreshHook` implements `orchestrator.TurnHook` to
+  inject config hot-reload at phase transitions. `BeforeTurn` and `AfterTurn`
+  are empty because the hook only needs `OnPhaseTransition`. The empty methods
+  exist solely to satisfy the interface contract. Same acceptance class as
+  the `agenttest/helpers.go` interface-satisfying stubs.
+- **See**: `internal/agent/agent.go:382-383`
+
 ---
 
-*Last Updated: 2026-07 (skills.sh triage + agenttest stubs + test complexity)*
+*Last Updated: 2026-07 (Task 5: pkg/clock coverage gap documentation + BUSINESS_LOGIC triage)*

@@ -71,7 +71,7 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 		Status: events.TurnStatus{
 			Timestamp:        Turn.Clock.Now(),
 			CurrentTurns:     Turn.Index,
-			SessionTurns:     Turn.CtxManager.History.GetTotalEntries() / 2,
+			SessionTurns:     Turn.SessionTurnsAtStart,
 			MaxHistoryTurns:  maxHistTurns,
 			Tokens:           Turn.State.Tokens,
 			MaxHistoryTokens: maxTokens,
@@ -162,7 +162,10 @@ func detectLoop(state *TurnState) bool {
 	sanitized.ID = ""
 	rawJSON, err := json.Marshal(&sanitized)
 	if err != nil {
-		return false // skip loop detection if response can't be serialized
+		// Architect-acceptance (2026-07): json.Marshal on *llm.Content cannot fail —
+		// all fields are simple types (string, []*Part, etc.). Same acceptance class
+		// as json.Marshal on all-string structs in global_prompt_tracker.go.
+		return false
 	}
 	h := sha256.Sum256(rawJSON)
 	currentHash := hex.EncodeToString(h[:])
@@ -249,6 +252,12 @@ func injectSyntheticLoopFeedback(ctx context.Context, Turn *Turn) error {
 				Parts: syntheticParts,
 			})
 		}
+		// Architect-acceptance (2026-07): reached only when HasToolCalls is true
+		// but Response has no FunctionCall parts — inconsistent internal state that
+		// does not occur in normal operation (HasToolCalls is derived from the
+		// presence of FunctionCall parts). Defensive guard — same acceptance class
+		// as defensive nil/empty guards on internal pipeline state (2026-07 Batch
+		// Triage). See: docs/architect/INTENTIONAL_NON_FIXES.md.
 		return nil
 	}
 

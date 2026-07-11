@@ -139,6 +139,11 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		}
 
 		// Signal TUI to exit after agent has flushed all events
+		// Architect-acceptance (2026-07): tuiCleanup is only non-nil when TUI
+		// mode is active. Testing this branch requires full TUI integration
+		// (progress renderer lifecycle). Same acceptance class as the
+		// integration-level branches in the 2026-07 skills.sh Batch Triage.
+		// See: docs/architect/INTENTIONAL_NON_FIXES.md.
 		if o.tuiCleanup != nil {
 			o.tuiCleanup()
 		}
@@ -234,6 +239,10 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 }
 
 func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, tuiOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *ui.Bridge {
+	// Architect-acceptance (2026-07): the tuiOutput branch requires a
+	// ProgressRenderer (set via withProgressRenderer) and full TUI
+	// integration testing. Same acceptance class as the tuiCleanup
+	// branch in Run(). See: docs/architect/INTENTIONAL_NON_FIXES.md.
 	if tuiOutput {
 		o.tuiCleanup = o.progressRenderer.Run(ctx, chatAgent)
 		return nil

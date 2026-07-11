@@ -124,7 +124,8 @@ type model struct {
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
 	spinner             spinnerState
 
-	toolLogs []string // accumulated tool call/result/output lines, cleared each turn
+	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
+	seenCallIDs map[string]bool // dedup tool logs from ResponseEvent vs ToolCallEvent
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -134,6 +135,7 @@ func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, i
 		eventCh:      ch,
 		currentState: stateIdle,
 		mdRender:     mdRender,
+		seenCallIDs:  make(map[string]bool),
 	}
 }
 
@@ -236,62 +238,26 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
+// spinnerInfoProvider is a local interface capturing events that can drive
+// a spinner. It unifies SummarizationStartedEvent, ToolExecutionStartedEvent,
+// and RetryWaitingEvent, which all have the identical SpinnerInfo() pattern.
+type spinnerInfoProvider interface {
+	SpinnerInfo() (events.SpinnerInfo, bool)
+}
+
 // handleDomainEvent dispatches a domain event to the appropriate handler.
 func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	switch e := events.Event(msg).(type) {
 	case events.ToolCallEvent:
-		if len(e.Calls) == 0 {
-			return m, m.waitForEvent()
-		}
-		m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
-		for _, fc := range e.Calls {
-			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
-				m.appendToolLog("Tool Reason", reason)
-			}
-			var keys []string
-			for k := range fc.Args {
-				if k != "reason" {
-					keys = append(keys, k)
-				}
-			}
-			sort.Strings(keys)
-
-			var parts []string
-			for _, k := range keys {
-				valStr := fmt.Sprintf("%v", fc.Args[k])
-				if len(valStr) > 189 {
-					valStr = safeTruncate(valStr, 186) + "..."
-				}
-				parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
-			}
-			m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
-		}
-		return m, m.waitForEvent()
+		return m, m.handleToolCallEvent(e)
 	case events.ToolResultEvent:
-		if e.Name == "" {
-			return m, m.waitForEvent()
-		}
-		if e.Result.Text != "" {
-			snippet := e.Result.Text
-			if len(snippet) > 200 {
-				snippet = safeTruncate(snippet, 197) + "..."
-			}
-			snippet = strings.ReplaceAll(snippet, "\n", " ")
-			m.appendToolLog("Tool Result", fmt.Sprintf("%s: %s", e.Name, snippet))
-		}
-		return m, m.waitForEvent()
+		return m, m.handleToolResultEvent(e)
 	case events.ToolOutputStreamEvent:
-		if e.Level == "output" {
-			return m, m.waitForEvent()
-		}
-		m.appendLevelEventLog(e.Level, e.Message)
-		return m, m.waitForEvent()
+		return m, m.handleToolOutputStreamEvent(e)
 	case events.SystemMessageEvent:
-		m.appendLevelEventLog(e.Level, e.Message)
-		return m, m.waitForEvent()
+		return m, m.handleLeveledMessage(e.Level, e.Message)
 	case events.StatusUpdate:
-		m.appendLevelEventLog(e.Level, e.Message)
-		return m, m.waitForEvent()
+		return m, m.handleLeveledMessage(e.Level, e.Message)
 	case events.TurnStarted:
 		return m, m.handleTurnStarted(e)
 	case events.InferenceStartedEvent:
@@ -300,17 +266,20 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		return m, m.handleTurnStatus(e)
 	case events.ResponseEvent:
 		return m, m.handleResponseEvent(e)
-	case events.SummarizationStartedEvent:
-		info, _ := e.SpinnerInfo()
-		return m, tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
-	case events.ToolExecutionStartedEvent:
-		info, _ := e.SpinnerInfo()
-		return m, tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
-	case events.RetryWaitingEvent:
-		info, _ := e.SpinnerInfo()
-		return m, tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
+	case events.SummarizationStartedEvent,
+		events.ToolExecutionStartedEvent,
+		events.RetryWaitingEvent:
+		return m, m.handleSpinnerEvent(e.(spinnerInfoProvider))
 	}
 	return m, m.waitForEvent()
+}
+
+// handleLeveledMessage logs a leveled system message and returns a
+// waitForEvent command. It is used by both SystemMessageEvent and
+// StatusUpdate handlers.
+func (m *model) handleLeveledMessage(level, message string) tea.Cmd {
+	m.appendLevelEventLog(level, message)
+	return m.waitForEvent()
 }
 
 // handleTurnStarted processes a TurnStarted event.
@@ -319,6 +288,7 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.currentState = stateThinking
 	m.spinner.clear()
 	m.toolLogs = nil
+	m.seenCallIDs = make(map[string]bool)
 	return m.waitForEvent()
 }
 
@@ -331,7 +301,6 @@ func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
 
 // handleTurnStatus processes a TurnStatusEvent.
 func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
-	m.turn = e.Status.SessionTurns + 1
 	m.tokens = e.Status.Tokens
 	m.maxTokens = e.Status.MaxHistoryTokens
 	m.timestamp = e.Status.Timestamp
@@ -366,7 +335,110 @@ func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 	} else {
 		m.responseText = m.rawResponseText
 	}
+
+	// Extract tool call info from ResponseEvent so [Tool Reason]
+	// and [Tool Action] appear immediately — before ToolCallEvent
+	// arrives from the Dispatcher.
+	if e.Content != nil {
+		m.extractToolCallsFromResponse(e.Content)
+	}
+
 	return m.waitForEvent()
+}
+
+// handleToolCallEvent processes a ToolCallEvent, deduplicating calls already
+// seen via ResponseEvent and logging tool reasons and actions.
+func (m *model) handleToolCallEvent(e events.ToolCallEvent) tea.Cmd {
+	if len(e.Calls) == 0 {
+		return m.waitForEvent()
+	}
+	newCalls := make([]*llm.FunctionCall, 0, len(e.Calls))
+	for _, fc := range e.Calls {
+		id := fc.ID
+		if id == "" {
+			id = fc.Name
+		}
+		if !m.seenCallIDs[id] {
+			newCalls = append(newCalls, fc)
+		}
+	}
+	if len(newCalls) > 0 {
+		m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
+	}
+	for _, fc := range newCalls {
+		m.logToolCall(fc)
+	}
+	return m.waitForEvent()
+}
+
+// logToolCall logs a single function call's reason and action to the
+// tool log, deduplicating by call ID. Calls already logged (tracked in
+// seenCallIDs) are silently skipped.
+func (m *model) logToolCall(fc *llm.FunctionCall) {
+	id := fc.ID
+	if id == "" {
+		id = fc.Name
+	}
+	if m.seenCallIDs[id] {
+		return
+	}
+	m.seenCallIDs[id] = true
+
+	if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
+		m.appendToolLog("Tool Reason", reason)
+	}
+
+	var keys []string
+	for k := range fc.Args {
+		if k != "reason" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var parts []string
+	for _, k := range keys {
+		valStr := fmt.Sprintf("%v", fc.Args[k])
+		if len(valStr) > 189 {
+			valStr = safeTruncate(valStr, 186) + "..."
+		}
+		parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
+	}
+	m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
+}
+
+// handleToolResultEvent logs a truncated result snippet for a completed tool call.
+func (m *model) handleToolResultEvent(e events.ToolResultEvent) tea.Cmd {
+	if e.Name == "" {
+		return m.waitForEvent()
+	}
+	if e.Result.Text != "" {
+		snippet := e.Result.Text
+		if len(snippet) > 200 {
+			snippet = safeTruncate(snippet, 197) + "..."
+		}
+		snippet = strings.ReplaceAll(snippet, "\n", " ")
+		m.appendToolLog("Tool Result", fmt.Sprintf("%s: %s", e.Name, snippet))
+	}
+	return m.waitForEvent()
+}
+
+// handleToolOutputStreamEvent logs tool output stream messages, suppressing
+// plain "output" level messages that are handled elsewhere.
+func (m *model) handleToolOutputStreamEvent(e events.ToolOutputStreamEvent) tea.Cmd {
+	if e.Level == "output" {
+		return m.waitForEvent()
+	}
+	m.appendLevelEventLog(e.Level, e.Message)
+	return m.waitForEvent()
+}
+
+// handleSpinnerEvent starts the spinner with the status text from a
+// spinner-bearing event (SummarizationStartedEvent, ToolExecutionStartedEvent,
+// RetryWaitingEvent).
+func (m *model) handleSpinnerEvent(e spinnerInfoProvider) tea.Cmd {
+	info, _ := e.SpinnerInfo()
+	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
 }
 
 // extractResponseText concatenates non-thought text parts from an LLM response.
@@ -381,6 +453,25 @@ func extractResponseText(content *llm.Content) string {
 		}
 	}
 	return sb.String()
+}
+
+// extractToolCallsFromResponse populates toolLogs from FunctionCall parts
+// in the ResponseEvent content. This bridges the visibility gap between
+// ResponseEvent and ToolCallEvent. seenCallIDs prevents duplicates when
+// the real ToolCallEvent arrives later from the Dispatcher.
+func (m *model) extractToolCallsFromResponse(content *llm.Content) {
+	var toolCalls []*llm.FunctionCall
+	for _, part := range content.Parts {
+		if part.FunctionCall != nil {
+			toolCalls = append(toolCalls, part.FunctionCall)
+		}
+	}
+	if len(toolCalls) == 0 {
+		return
+	}
+	for _, fc := range toolCalls {
+		m.logToolCall(fc)
+	}
 }
 
 // formatMetricsLine renders a single-line post-call metrics summary.

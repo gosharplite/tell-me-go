@@ -436,6 +436,25 @@ func TestBuildApp_CLINewError(t *testing.T) {
 	cleanup()
 }
 
+func TestBuildApp_DebugMode(t *testing.T) {
+	// Exercise the TELL_ME_DEBUG=1 branch: enables debug-level logging
+	// vs. the default info-level logging exercised by TestBuildApp_Smoke.
+	t.Setenv("TELL_ME_DEBUG", "1")
+	t.Setenv("TELL_ME_HOME", t.TempDir())
+
+	app, cleanup, err := buildApp("test-version", strings.NewReader(""), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("buildApp failed in debug mode: %v", err)
+	}
+	if app == nil {
+		t.Fatal("buildApp returned nil app in debug mode")
+	}
+	if cleanup == nil {
+		t.Fatal("buildApp returned nil cleanup function in debug mode")
+	}
+	cleanup()
+}
+
 func TestInitTracer_ResourceError(t *testing.T) {
 	// 1. Save and defer restoration of the resource constructor
 	origResource := newResourceFn

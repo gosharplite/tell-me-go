@@ -219,6 +219,9 @@ func (fr *FunctionResponse) clone() *FunctionResponse {
 }
 
 // NewID returns a new unique identifier string (UUID v4).
+// Architect-acceptance (2026-07): delegation to uuid.New().String() — same
+// acceptance class as delegation wrappers like mockFileSystem.Chmod and
+// domainFS.Chmod. See: docs/architect/INTENTIONAL_NON_FIXES.md.
 func NewID() string {
 	return uuid.New().String()
 }

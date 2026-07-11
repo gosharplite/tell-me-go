@@ -49,6 +49,11 @@ type Turn struct {
 	Mode         string
 	Logger       ports.Logger
 
+	// SessionTurnsAtStart is the frozen snapshot of session turns at the moment
+	// this turn began. Captured once by GuardStep before any persistence mutates
+	// history, ensuring all status events within this turn report a stable value.
+	SessionTurnsAtStart int
+
 	// Results/Outputs
 	Stop bool
 }

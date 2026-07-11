@@ -84,14 +84,6 @@ func isExportTestFile(fset *token.FileSet, pos token.Pos) bool {
 	return filepath.Base(f.Name()) == "export_test.go"
 }
 
-// harvestExportedSymbols collects all exported symbols from the loaded packages
-// into the scanState for later usage analysis.
-func (a *defaultDeadCodeAnalyzer) harvestExportedSymbols(state *scanState) {
-	for _, pkg := range state.pkgs {
-		a.harvestPackageSymbols(pkg, state)
-	}
-}
-
 // isInTargetScope reports whether pkg belongs to the target module,
 // resides within the target path (when specified), and is not excluded
 // by user-provided exclusion patterns.
@@ -117,19 +109,6 @@ func (a *defaultDeadCodeAnalyzer) isInTargetScope(pkg *packages.Package, state *
 	return !a.shouldExclude(pkg.PkgPath, state.excludedPackages)
 }
 
-// harvestPackageSymbols collects exported symbols from a single package
-// that belongs to the target module and is within the target path.
-func (a *defaultDeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *scanState) {
-	if !a.isInTargetScope(pkg, state) {
-		return
-	}
-
-	scope := pkg.Types.Scope()
-	for _, name := range scope.Names() {
-		a.harvestObjectSymbols(scope.Lookup(name), pkg.Fset, state)
-	}
-}
-
 // isEligibleForHarvest reports whether obj qualifies as a harvestable
 // declaration. It excludes nil objects, unexported symbols, the init
 // function, Go test functions, and declarations residing in
@@ -148,46 +127,6 @@ func (a *defaultDeadCodeAnalyzer) isEligibleForHarvest(obj types.Object, fset *t
 		return false
 	}
 	return true
-}
-
-// harvestObjectSymbols inspects a single types.Object and registers it (and its
-// exported methods) in the scanState if it qualifies as an exported, non-test,
-// non-export_test symbol.
-func (a *defaultDeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, fset *token.FileSet, state *scanState) {
-	if !a.isEligibleForHarvest(obj, fset) {
-		return
-	}
-
-	a.registerDeclaration(obj, state)
-
-	// Capture exported methods
-	if tn, ok := obj.(*types.TypeName); ok {
-		t := tn.Type()
-		if alias, ok := t.(*types.Alias); ok {
-			t = types.Unalias(alias)
-		}
-		if named, ok := t.(*types.Named); ok {
-			a.harvestNamedMethods(named, fset, state)
-			if itf, ok := named.Underlying().(*types.Interface); ok {
-				a.harvestInterfaceMethods(itf, fset, state)
-			}
-		}
-	}
-}
-
-// registerDeclaration records a single types.Object in the scanState's
-// declarations map if it has not been registered before.
-func (a *defaultDeadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanState) {
-	id := getSymbolIdentity(obj)
-	if _, exists := state.declarations[id]; !exists {
-		state.declarations[id] = &symMeta{
-			id:      id,
-			pkgPath: getBasePkgPath(obj.Pkg().Path()),
-			name:    obj.Name(),
-			symType: getSymbolType(obj),
-			obj:     obj,
-		}
-	}
 }
 
 // harvestNamedMethods collects exported methods from a named (struct) type.
@@ -215,12 +154,15 @@ func (a *defaultDeadCodeAnalyzer) harvestNamedMethods(named *types.Named, fset *
 			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
-					id:       mId,
-					pkgPath:  getBasePkgPath(m.Pkg().Path()),
-					name:     m.Name(),
-					symType:  "Method",
-					isMethod: true,
-					obj:      m,
+					id:                  mId,
+					pkgPath:             getBasePkgPath(m.Pkg().Path()),
+					name:                m.Name(),
+					symType:             "Method",
+					isMethod:            true,
+					isInterfaceType:     false,
+					isInterfaceMethod:   a.isInterfaceMethod(m),
+					isWellKnownContract: a.isWellKnownContract(m),
+					obj:                 m,
 				}
 			}
 		}
@@ -242,12 +184,15 @@ func (a *defaultDeadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, 
 			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
-					id:       mId,
-					pkgPath:  getBasePkgPath(m.Pkg().Path()),
-					name:     m.Name(),
-					symType:  "Method",
-					isMethod: true,
-					obj:      m,
+					id:                  mId,
+					pkgPath:             getBasePkgPath(m.Pkg().Path()),
+					name:                m.Name(),
+					symType:             "Method",
+					isMethod:            true,
+					isInterfaceType:     false,
+					isInterfaceMethod:   true,
+					isWellKnownContract: a.isWellKnownContract(m),
+					obj:                 m,
 				}
 			}
 		}

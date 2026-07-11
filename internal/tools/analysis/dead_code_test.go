@@ -446,7 +446,10 @@ func createSharedWorkspace(tb testing.TB) {
 // The workspace is created once per test binary run via sync.Once.
 // On -count=N, if a prior iteration's cleanup deleted the workspace,
 // it is recreated under a mutex.
-func getSharedWorkspaceIndexer(tb testing.TB) (string, string, *indexer) {
+//
+// Fast path: if testdata/dead_code_fixture.json exists, it is loaded
+// and served via a FixtureIndexer, skipping packages.Load entirely.
+func getSharedWorkspaceIndexer(tb testing.TB) (string, string, symbolIndex) {
 	sharedWSOnce.Do(func() {
 		sharedWSTests = getFindOrphanedSymbolsTestCases()
 	})
@@ -454,7 +457,21 @@ func getSharedWorkspaceIndexer(tb testing.TB) (string, string, *indexer) {
 	sharedWSMu.Lock()
 	defer sharedWSMu.Unlock()
 
-	// If workspace was deleted (e.g., by -count=2 cleanup), recreate it.
+	// Fast path: try loading the committed fixture.
+	fixturePath := filepath.Join("testdata", "dead_code_fixture.json")
+	if snap, err := loadSnapshot(fixturePath); err == nil {
+		// The committed workspace directory contains the actual Go source
+		// files used during fixture generation. Use it directly so that
+		// isInTargetScope and hasTextMatchOutsidePackage see real files.
+		root := filepath.Join("testdata", "deadcode-fixture-workspace")
+		absRoot, err := filepath.Abs(root)
+		if err != nil {
+			absRoot = root // fallback
+		}
+		return absRoot, snap.ModulePath, newFixtureIndexer(snap)
+	}
+
+	// Slow path: build the real indexer (fallback when fixture is missing).
 	if sharedWSRoot != "" {
 		if _, err := os.Stat(sharedWSRoot); os.IsNotExist(err) {
 			createSharedWorkspace(tb)
@@ -467,6 +484,9 @@ func getSharedWorkspaceIndexer(tb testing.TB) (string, string, *indexer) {
 }
 
 func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping full-module AST scan in short mode")
+	}
 	t.Parallel()
 	rootTmpDir, sharedModule, idx := getSharedWorkspaceIndexer(t)
 	tests := sharedWSTests
@@ -643,6 +663,9 @@ func (m *mockSymbolIndex) Packages(ctx context.Context, hb chan<- struct{}) ([]*
 func (m *mockSymbolIndex) Refresh(ctx context.Context, hb chan<- struct{}) error { return nil }
 
 func (m *mockSymbolIndex) WarmImplementations(ctx context.Context) {}
+func (m *mockSymbolIndex) HarvestDeclarations(ctx context.Context, fn func(meta *symMeta) bool, hb chan<- struct{}) error {
+	return nil
+}
 
 func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 	tests := []struct {
@@ -1851,11 +1874,11 @@ func TestResolveCrossPackage_NilTypesInfo(t *testing.T) {
 }
 
 // =============================================================================
-// Gap: harvestPackageSymbols filepath.Abs error fallback (L104-106).
+// Gap: isInTargetScope filepath.Abs error fallback.
 // Covered by injecting a resolvePath function that returns an error,
 // which causes the fallback to filepath.Dir("relative.go") = ".".
 // =============================================================================
-func TestHarvestPackageSymbols_AbsError(t *testing.T) {
+func TestIsInTargetScope_AbsError(t *testing.T) {
 	t.Parallel()
 
 	analyzer := &defaultDeadCodeAnalyzer{
@@ -1867,7 +1890,6 @@ func TestHarvestPackageSymbols_AbsError(t *testing.T) {
 	state := &scanState{
 		targetModule: "example.com/mod",
 		targetPath:   "/some/valid/path",
-		pkgs:         []*packages.Package{},
 	}
 
 	pkg := &packages.Package{
@@ -1876,13 +1898,13 @@ func TestHarvestPackageSymbols_AbsError(t *testing.T) {
 			Path: "example.com/mod",
 		},
 		GoFiles: []string{"relative.go"},
-		Fset:    token.NewFileSet(),
-		Types:   types.NewPackage("example.com/mod/pkg", "pkg"),
 	}
 
 	// Must not panic; resolvePath returns an error,
 	// falling back to filepath.Dir("relative.go") = "."
-	analyzer.harvestPackageSymbols(pkg, state)
+	// The targetPath check will fail (not a prefix), so returns false.
+	got := analyzer.isInTargetScope(pkg, state)
+	assert.False(t, got, "isInTargetScope should return false when Abs fails and targetPath mismatch")
 }
 
 // TestIsInTargetScope verifies the extracted isInTargetScope predicate

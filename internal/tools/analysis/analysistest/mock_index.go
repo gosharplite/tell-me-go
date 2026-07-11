@@ -55,3 +55,8 @@ func (m *MockSymbolIndex) Packages(ctx context.Context, hb chan<- struct{}) ([]*
 func (m *MockSymbolIndex) Refresh(ctx context.Context, hb chan<- struct{}) error { return nil }
 
 func (m *MockSymbolIndex) WarmImplementations(ctx context.Context) {}
+
+// HarvestDeclarations satisfies analysis.SymbolIndex.
+func (m *MockSymbolIndex) HarvestDeclarations(ctx context.Context, fn func(meta *analysis.SymMeta) bool, hb chan<- struct{}) error {
+	return nil
+}

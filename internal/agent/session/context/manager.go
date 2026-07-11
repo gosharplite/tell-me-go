@@ -579,6 +579,14 @@ func capBestBlock(
 			return contents[best.startMsg:cappedEnd], best.startMsg, cappedEnd, nil
 		}
 	}
+	// Architect-acceptance (2026-07): reached when best.count >= minViable
+	// but groupTurns returns ≤1 turn for the sub-slice. With the default
+	// contiguousUnpinnedSelector (MinViableBlock=2), best.count >= 2 and
+	// the sub-slice spans ≥2 turns of user/model messages, so groupTurns
+	// always returns ≥2 turns. This return is a defensive fallthrough for
+	// degenerate message sequences. Same acceptance class as defensive
+	// nil/empty guards on internal pipeline state (2026-07 Batch Triage).
+	// See: docs/architect/INTENTIONAL_NON_FIXES.md.
 	return contents[best.startMsg:best.endMsg], best.startMsg, best.endMsg, nil
 }
 

@@ -400,3 +400,164 @@ func TestStartSpinnerForPhase_UnknownEvent(t *testing.T) {
 	assert.Equal(t, 0, renderer.startSpinnerWithMetricsCalls)
 	assert.Equal(t, 0, renderer.startSpinnerWithStatusCalls)
 }
+
+// TestHandleTurnStatus_IsFinal_BypassesStateTransition covers the BUSINESS_LOGIC
+// branch at dispatcher.go:93-96 where IsFinal=true causes an early return
+// without state transition or spinner stop. This is the "Ready footer" path.
+func TestHandleTurnStatus_IsFinal_BypassesStateTransition(t *testing.T) {
+	t.Parallel()
+
+	d, renderer, _ := newTestDispatcher(t)
+
+	// Set an initial state and spinner to verify they are NOT changed.
+	d.stateMachine.transition(stateThinking)
+	d.spinner.activePhase = events.InferenceStartedEvent{Model: "gpt-4"}
+
+	d.dispatch(context.Background(), events.TurnStatusEvent{
+		Status: events.TurnStatus{
+			IsFinal: true,
+			Model:   "gpt-4",
+		},
+	})
+
+	// State must remain thinking — IsFinal bypasses the state transition to idle.
+	assert.Equal(t, stateThinking, d.stateMachine.current(),
+		"handleTurnStatus with IsFinal=true must not change state")
+
+	// activePhase IS cleared (line 89 runs before the IsFinal check) — this is correct:
+	// the turn status footer is the final output, so the spinner should be marked done.
+	assert.Nil(t, d.spinner.activePhase,
+		"handleTurnStatus always clears activePhase (line 89), even for IsFinal")
+
+	// Verify no tool-related spillover.
+	assert.Empty(t, renderer.logToolCallCalls)
+	assert.Empty(t, renderer.logToolResultCalls)
+}
+
+// TestHandleToolEvents_ToolResult_TurnTimeTracking covers the BUSINESS_LOGIC
+// branch at dispatcher.go:176-179 where a non-zero turnStartTime causes an
+// early return after LogToolResult without stopping/resuming the spinner.
+func TestHandleToolEvents_ToolResult_TurnTimeTracking(t *testing.T) {
+	t.Parallel()
+
+	d, renderer, _ := newTestDispatcher(t)
+
+	// Simulate turn-time tracking mode by setting a non-zero start time.
+	d.spinner.turnStartTime = time.Now()
+
+	result := tools.ToolResult{Text: "tool output"}
+	d.dispatch(context.Background(), events.ToolResultEvent{
+		Name:   "search",
+		Result: result,
+	})
+
+	assert.Len(t, renderer.logToolResultCalls, 1, "LogToolResult must be called")
+	assert.Equal(t, "search", renderer.logToolResultCalls[0].name)
+	assert.Equal(t, result, renderer.logToolResultCalls[0].result)
+	assert.True(t, renderer.logToolResultCalls[0].showTools)
+
+	// State must remain idle — the turn-time path skips spinner stop/resume.
+	assert.Equal(t, stateIdle, d.stateMachine.current(),
+		"handleToolEvents with turnStartTime set must not change state")
+}
+
+// TestHandleSystemMessage_TurnTimeTracking covers the BUSINESS_LOGIC branch
+// at dispatcher.go:210-213 where a non-zero turnStartTime causes an early
+// return after LogSystemMessage without stopping/resuming the spinner.
+func TestHandleSystemMessage_TurnTimeTracking(t *testing.T) {
+	t.Parallel()
+
+	d, renderer, _ := newTestDispatcher(t)
+
+	// Simulate turn-time tracking mode.
+	d.spinner.turnStartTime = time.Now()
+
+	d.dispatch(context.Background(), events.SystemMessageEvent{
+		Message: "system info",
+		Level:   "info",
+	})
+
+	// State must remain idle — the turn-time path skips spinner stop/resume.
+	assert.Equal(t, stateIdle, d.stateMachine.current(),
+		"handleSystemMessage with turnStartTime set must not change state")
+
+	// Verify no tool-related spillover.
+	assert.Empty(t, renderer.logToolCallCalls)
+	assert.Empty(t, renderer.logToolResultCalls)
+}
+
+// TestHandleUsageMetrics_TurnTimeTracking covers the BUSINESS_LOGIC branch
+// at dispatcher.go:136-139 where a non-zero turnStartTime causes an early
+// return after LogUsage without stopping/resuming the spinner.
+func TestHandleUsageMetrics_TurnTimeTracking(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newTestDispatcher(t)
+
+	// Simulate turn-time tracking mode.
+	d.spinner.turnStartTime = time.Now()
+
+	d.dispatch(context.Background(), events.UsageMetricsEvent{
+		Metrics:   &llm.Metrics{PromptTokens: 100, ResponseTokens: 50},
+		StartTime: time.Now(),
+		Context:   context.Background(),
+	})
+
+	// State must remain idle — the turn-time path skips spinner stop/resume.
+	assert.Equal(t, stateIdle, d.stateMachine.current(),
+		"handleUsageMetrics with turnStartTime set must not change state")
+}
+
+// TestHandleToolEvents_ToolCall_TurnTimeTracking covers the BUSINESS_LOGIC
+// branch at dispatcher.go:159-162 where a non-zero turnStartTime causes an
+// early return after LogToolCall without stopping/resuming the spinner.
+func TestHandleToolEvents_ToolCall_TurnTimeTracking(t *testing.T) {
+	t.Parallel()
+
+	d, renderer, _ := newTestDispatcher(t)
+
+	// Simulate turn-time tracking mode.
+	d.spinner.turnStartTime = time.Now()
+
+	calls := []*llm.FunctionCall{
+		{Name: "search", Args: map[string]interface{}{"query": "test"}},
+	}
+	d.dispatch(context.Background(), events.ToolCallEvent{
+		Calls:    calls,
+		Turn:     2,
+		MaxTurns: 5,
+	})
+
+	assert.Len(t, renderer.logToolCallCalls, 1, "LogToolCall must be called")
+	assert.Equal(t, calls, renderer.logToolCallCalls[0].calls)
+
+	// State must remain idle — the turn-time path skips spinner stop/resume.
+	assert.Equal(t, stateIdle, d.stateMachine.current(),
+		"handleToolEvents ToolCallEvent with turnStartTime set must not change state")
+}
+
+// TestStartSpinnerForPhase_TurnTimeInPlaceUpdate covers the BUSINESS_LOGIC
+// branch at spinner.go:93-97 where turn-time tracking with an active spinner
+// updates the status in-place instead of transitioning.
+func TestStartSpinnerForPhase_TurnTimeInPlaceUpdate(t *testing.T) {
+	t.Parallel()
+
+	renderer := &spyRenderer{}
+	logger := &testfixtures.SpyLogger{}
+	sc := newSpinnerCoord(renderer, logger)
+
+	// Set turn-time tracking mode.
+	sc.SetTurnStartTime(time.Now())
+
+	// First, start a spinner to establish a non-nil stopFn.
+	started := sc.startSpinnerForPhase(context.Background(), events.InferenceStartedEvent{Model: "gpt-4"}, stateIdle, nil)
+	assert.True(t, started, "first startSpinnerForPhase should start the spinner")
+	assert.NotNil(t, sc.stopFn, "stopFn should be set after starting spinner")
+
+	// Now call again with turnStartTime still set — should update in-place.
+	started2 := sc.startSpinnerForPhase(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"bash"}}, stateIdle, nil)
+	assert.True(t, started2, "in-place update should return true")
+
+	// The spinner was NOT restarted — the existing stopFn is preserved.
+	assert.NotNil(t, sc.stopFn, "stopFn should still be set after in-place update")
+}
