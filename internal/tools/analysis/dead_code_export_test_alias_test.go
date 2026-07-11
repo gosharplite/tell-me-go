@@ -40,7 +40,9 @@ import (
 // analyzer runs once and sub-tests assert on the shared report.
 //
 // Sub-test names match the original top-level test names so
-//   go test -run 'TestExportTestAlias/BareAliasNotFlagged'
+//
+//	go test -run 'TestExportTestAlias/BareAliasNotFlagged'
+//
 // still works for debugging.
 func TestExportTestAlias(t *testing.T) {
 	t.Parallel()

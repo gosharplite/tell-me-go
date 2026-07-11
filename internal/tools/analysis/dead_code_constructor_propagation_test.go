@@ -89,7 +89,9 @@ func runAnalyzer(t *testing.T, tmpDir string) string {
 // analyzer runs once and sub-tests assert on the shared report.
 //
 // Sub-test names match the original top-level test names so
-//   go test -run 'TestConstructorPropagation/HeadlineCase'
+//
+//	go test -run 'TestConstructorPropagation/HeadlineCase'
+//
 // still works for debugging.
 func TestConstructorPropagation(t *testing.T) {
 	t.Parallel()
@@ -100,7 +102,7 @@ func TestConstructorPropagation(t *testing.T) {
 
 	writeFixture(t, tmpDir, map[string]string{
 		// ── shared module root ──────────────────────────────────────
-		"go.mod": "module " + modulePath + "\n\ngo 1.25\n",
+		"go.mod":  "module " + modulePath + "\n\ngo 1.25\n",
 		"main.go": "package main\n\nfunc main() {}\n",
 
 		// ── headline case ──────────────────────────────────────────
