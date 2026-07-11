@@ -448,7 +448,7 @@ func TestModel_View(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
-		// Simulate terminal: 10 lines total → 3 body lines (line 2 is separator)
+		// Simulate terminal: 10 lines total → 2 body lines (lines 2,5 are separators)
 		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 
 		// Fill tool logs with 20 entries (way more than available body lines)
@@ -460,16 +460,16 @@ func TestModel_View(t *testing.T) {
 		out := m.View()
 		lines := strings.Split(out, "\n")
 
-		// 10 lines total: 2 header + 1 separator + 3 body + 4 footer
+		// 10 lines total: 2 header + 2 separators + 2 body + 4 footer
 		assert.Len(t, lines, 10, "total lines must equal terminal height")
 
 		// Header intact
 		assert.Contains(t, lines[0], "╭─ Turn")
 		assert.Contains(t, lines[1], "Payload:")
 
-		// Body shows only the TAIL (log line 18-19 + response = 3 lines)
+		// Body shows only the TAIL (log line 19 + response = 2 lines)
 		assert.NotContains(t, lines[3], "log line 0", "oldest log should be clipped")
-		assert.Contains(t, lines[5], "final response line", "response should be at bottom of body zone")
+		assert.Contains(t, lines[4], "final response line", "response should be at bottom of body zone")
 	})
 
 	t.Run("body_bottom_pads_when_content_is_sparse", func(t *testing.T) {
@@ -487,8 +487,8 @@ func TestModel_View(t *testing.T) {
 		assert.Len(t, lines, 20, "total lines must equal terminal height")
 		// Log at top of body zone (line 3, after separator), then blank padding below
 		assert.Contains(t, lines[3], "only one log")
-		// Lines 4 through 15 should be blank (bottom-padding for 12 blank after log)
-		for i := 4; i < 16; i++ {
+		// Lines 4 through 14 should be blank (bottom-padding for 11 blank after log)
+		for i := 4; i < 15; i++ {
 			assert.Empty(t, lines[i], "line %d should be blank padding", i)
 		}
 	})
@@ -547,27 +547,29 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[0], "⠋  Thinking...")
 	})
 
-	t.Run("height_7_zero_body_lines", func(t *testing.T) {
+	t.Run("height_8_zero_body_lines", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 7})
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 8})
 
 		// No tool logs, no response — body zone is 0 lines.
-		// Must not panic and must produce exactly 7 lines.
+		// Must not panic and must produce exactly 8 lines.
 		out := m.View()
 		lines := strings.Split(out, "\n")
 
-		assert.Len(t, lines, 7, "height=7 must produce exactly 7 lines")
+		assert.Len(t, lines, 8, "height=8 must produce exactly 8 lines")
 		assert.Contains(t, lines[0], "╭─ Turn")
 		assert.Contains(t, lines[1], "Payload:")
-		// Line 2: separator (blank)
+		// Line 2: header-body separator (blank)
 		assert.Equal(t, "", lines[2])
-		// Lines 3-6: footer zone (4 blank lines)
+		// Line 3: body-footer separator (blank)
 		assert.Equal(t, "", lines[3])
+		// Lines 4-7: footer zone (4 blank lines)
 		assert.Equal(t, "", lines[4])
 		assert.Equal(t, "", lines[5])
 		assert.Equal(t, "", lines[6])
+		assert.Equal(t, "", lines[7])
 	})
 
 	t.Run("spinner_start_stop_does_not_change_line_count", func(t *testing.T) {
