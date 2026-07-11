@@ -745,6 +745,37 @@ func TestModel_SpinnerClearance(t *testing.T) {
 		assert.Equal(t, "Hello", updated.responseText)
 		assert.NotNil(t, cmd)
 	})
+
+	t.Run("TurnStatusEvent does not clear inactive spinner", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinner.status = ""
+		m.spinner.tickActive = false
+		m.spinner.frame = 5
+		m.spinner.generation = 3
+		m.currentState = stateIdle
+
+		msg := events.TurnStatusEvent{
+			Status: events.TurnStatus{
+				Tokens:     500,
+				Timestamp:  time.Now(),
+				Mode:       "test",
+				Model:      "gpt-5",
+				IsPostCall: false,
+			},
+		}
+		newModel, cmd := m.Update(domainEventMsg(msg))
+		updated := newModel.(*model)
+
+		// P1: Spinner should NOT be cleared when inactive — preserves
+		// all spinner state for later InferenceStartedEvent.start().
+		assert.Equal(t, "", updated.spinner.status, "status should remain empty")
+		assert.False(t, updated.spinner.tickActive)
+		assert.Equal(t, 5, updated.spinner.frame, "frame should be preserved")
+		assert.Equal(t, 3, updated.spinner.generation, "generation should be preserved")
+		assert.NotNil(t, cmd)
+	})
 }
 
 func TestModel_View_SpinnerLine(t *testing.T) {

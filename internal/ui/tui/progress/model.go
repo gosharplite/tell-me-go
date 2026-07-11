@@ -327,7 +327,9 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 		}
 		m.finalCostLine = formatFinalLine(e.Status, turnCost)
 	}
-	m.spinner.clear()
+	if m.spinner.active() {
+		m.spinner.clear()
+	}
 	return m.waitForEvent()
 }
 

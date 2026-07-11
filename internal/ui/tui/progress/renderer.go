@@ -28,7 +28,7 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 	mdRender := r.makeMarkdownRenderer()
 
 	m := NewModel(ctx, ch, mdRender)
-	p := tea.NewProgram(m, tea.WithInput(nil))
+	p := tea.NewProgram(m, tea.WithInput(nil), tea.WithAltScreen())
 	go func() {
 		_, _ = p.Run()
 	}()
@@ -50,7 +50,7 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 		default:
 			select {
 			case ch <- e:
-			default:
+			case <-time.After(50 * time.Millisecond):
 			}
 		}
 	}
