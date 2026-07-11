@@ -121,6 +121,26 @@ func TestModel_Update(t *testing.T) {
 		assert.Equal(t, "test error", updated.err.Error())
 		assert.NotNil(t, cmd)
 	})
+
+	t.Run("ResponseEvent", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		content := &llm.Content{
+			Parts: []*llm.Part{
+				{Text: "Hello, world!"},
+				{Text: " How are you?", IsThought: true},
+				{Text: " I am fine."},
+			},
+		}
+		newModel, cmd := m.Update(events.ResponseEvent{Content: content})
+		updated := newModel.(*model)
+
+		assert.Equal(t, "Hello, world! I am fine.", updated.responseText,
+			"should concatenate non-thought text parts, skipping thoughts")
+		assert.NotNil(t, cmd)
+	})
 }
 
 // newTestModel creates a model for testing.
@@ -169,6 +189,7 @@ func TestModel_View(t *testing.T) {
 		m.maxTokens = 64000
 		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
 		m.currentState = stateRendering
+		m.responseText = "Hello, world!"
 
 		out := m.View()
 
@@ -179,6 +200,20 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[1], "~5000/64000")
 		assert.Contains(t, lines[1], "coder-test")
 		assert.Contains(t, lines[1], "gpt-5")
+		assert.Contains(t, out, "Hello, world!")
+	})
+
+	t.Run("stateRendering_empty_response_shows_no_extra_line", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateRendering
+		m.responseText = ""
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+		// header, info, empty trailing — no response line
+		assert.Len(t, lines, 3)
 	})
 }
 
@@ -221,10 +256,21 @@ func TestModel_Integration(t *testing.T) {
 		assert.Equal(t, "deepseek-v4-pro", m.modelName)
 		assert.NotNil(t, cmd)
 
+		// ResponseEvent → store response text
+		newModel, cmd = m.Update(events.ResponseEvent{
+			Content: &llm.Content{
+				Parts: []*llm.Part{{Text: "Sure, I can help with that."}},
+			},
+		})
+		m = newModel.(*model)
+		assert.Equal(t, "Sure, I can help with that.", m.responseText)
+		assert.NotNil(t, cmd)
+
 		// Verify View after full cycle
 		out := m.View()
 		assert.Contains(t, out, "╭─ Turn 1 - architect-johndoe")
 		assert.Contains(t, out, "deepseek-v4-pro")
+		assert.Contains(t, out, "Sure, I can help with that.")
 	})
 
 	t.Run("full turn cycle with tool calls", func(t *testing.T) {

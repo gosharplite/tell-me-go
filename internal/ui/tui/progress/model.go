@@ -6,10 +6,12 @@ package progress
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 type state int
@@ -31,6 +33,7 @@ type model struct {
 	maxTokens    int
 	timestamp    time.Time
 	err          error
+	responseText string // accumulated AI response text
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -86,6 +89,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentState = stateRendering
 		return m, m.waitForEvent()
 
+	case events.ResponseEvent:
+		m.responseText = extractResponseText(msg.Content)
+		return m, m.waitForEvent()
+
 	case error:
 		m.err = msg
 		return m, m.waitForEvent()
@@ -95,11 +102,29 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// View renders the progress model as a two-line display.
+// extractResponseText concatenates non-thought text parts from an LLM response.
+func extractResponseText(content *llm.Content) string {
+	if content == nil {
+		return ""
+	}
+	var sb strings.Builder
+	for _, part := range content.Parts {
+		if part.Text != "" && !part.IsThought {
+			sb.WriteString(part.Text)
+		}
+	}
+	return sb.String()
+}
+
+// View renders the progress model as a two-line display with optional response text.
 func (m *model) View() string {
 	ts := m.timestamp.Format("15:04:05")
 	header := fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName)
 	info := fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
 		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName)
-	return header + "\n" + info + "\n" + "\n"
+	out := header + "\n" + info
+	if m.responseText != "" {
+		out += "\n" + m.responseText
+	}
+	return out + "\n"
 }
