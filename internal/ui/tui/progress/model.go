@@ -211,7 +211,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
 	case spinnerTickMsg:
-		return m, m.spinner.handleTick(msg)
+		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
 	case error:
 		m.err = msg
 		return m, nil
