@@ -56,6 +56,7 @@ type model struct {
 	spinnerShowMetrics bool                     // if true, metrics (CPU/MEM) should be shown alongside spinner
 	spinnerFrame       int                      // index into brailleFrames, incremented each tick
 	spinnerTickActive  bool                     // true when a tick command is pending
+	spinnerStartTime   time.Time                // when the current spinner phase began, for elapsed display
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -152,6 +153,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		m.spinnerStatus = info.Status
 		m.spinnerShowMetrics = info.WithMetrics
 		m.spinnerFrame = 0
+		m.spinnerStartTime = time.Now()
 		if !m.spinnerTickActive {
 			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
 		}
@@ -161,6 +163,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		m.spinnerStatus = info.Status
 		m.spinnerShowMetrics = info.WithMetrics
 		m.spinnerFrame = 0
+		m.spinnerStartTime = time.Now()
 		if !m.spinnerTickActive {
 			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
 		}
@@ -170,6 +173,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		m.spinnerStatus = info.Status
 		m.spinnerShowMetrics = info.WithMetrics
 		m.spinnerFrame = 0
+		m.spinnerStartTime = time.Now()
 		if !m.spinnerTickActive {
 			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
 		}
@@ -195,6 +199,7 @@ func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
 	m.spinnerStatus = info.Status
 	m.spinnerShowMetrics = info.WithMetrics
 	m.spinnerFrame = 0
+	m.spinnerStartTime = time.Now()
 	if !m.spinnerTickActive {
 		return tea.Batch(m.waitForEvent(), m.spinnerTick())
 	}
@@ -344,7 +349,8 @@ func (m *model) View() string {
 
 	if m.spinnerStatus != "" && m.currentState != stateIdle {
 		frame := brailleFrames[m.spinnerFrame%len(brailleFrames)]
-		sb.WriteString(fmt.Sprintf("\n%s %s", frame, m.spinnerStatus))
+		elapsed := int(time.Since(m.spinnerStartTime).Seconds())
+		sb.WriteString(fmt.Sprintf("\n%s %s (%ds)", frame, m.spinnerStatus, elapsed))
 	}
 
 	sb.WriteString("\n")
