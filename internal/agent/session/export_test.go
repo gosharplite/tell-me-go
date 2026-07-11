@@ -17,8 +17,8 @@ type SessionManagerInternal = sessionManager
 type SessionConfigInternal = sessionConfig
 type SessionDependenciesInternal = agenttest.StubChatterComposer
 
-func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer) (*ui.Bridge, error) {
-	return o.applyConfiguration(ctx, chatAgent, sCfg, sd, capturer)
+func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
+	return o.applyConfiguration(ctx, chatAgent, sCfg, sd, capturer, tuiOutput)
 }
 
 func AsSessionManagerInternal(sm SessionManager) *sessionManager {

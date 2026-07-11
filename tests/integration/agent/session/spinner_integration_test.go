@@ -154,7 +154,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	})
 	deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, HistoryManager: mHistory, EventBus: mEventBus, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(testfixtures.MockSessionProvider)}
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	assert.NoError(t, err)
 
 	// 4. Assertions on Stderr
