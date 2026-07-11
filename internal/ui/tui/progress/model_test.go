@@ -96,7 +96,47 @@ func TestModel_Update(t *testing.T) {
 		m := newTestModel(ctx, ch)
 
 		msg := m.waitForEvent()()
-		assert.IsType(t, tea.QuitMsg{}, msg)
+		assert.IsType(t, channelClosedMsg{}, msg)
+	})
+
+	t.Run("channel close sets sessionDone", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(channelClosedMsg{})
+		updated := newModel.(*model)
+
+		assert.True(t, updated.sessionDone)
+		assert.False(t, updated.spinner.active())
+		assert.NotNil(t, cmd) // idle tick keeps loop alive
+	})
+
+	t.Run("sessionDone shows exit prompt in footer", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+		m.sessionDone = true
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		assert.Len(t, lines, 10)
+		assert.Contains(t, lines[9], "Press Ctrl+C to exit")
+	})
+
+	t.Run("sessionDone shows exit prompt in renderMinimal", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
+		m.turn = 3
+		m.sessionName = "test"
+		m.sessionDone = true
+
+		out := m.View()
+		assert.Contains(t, out, "Press Ctrl+C to exit")
 	})
 
 	t.Run("unknown message returns nil cmd", func(t *testing.T) {

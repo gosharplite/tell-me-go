@@ -25,6 +25,9 @@ type spinnerTickMsg struct {
 	generation int
 }
 
+// channelClosedMsg signals that the event channel has been closed (session complete).
+type channelClosedMsg struct{}
+
 type state int
 
 const (
@@ -123,6 +126,7 @@ type model struct {
 	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
+	sessionDone         bool                     // true when event channel closes; TUI waits for Ctrl+C
 	spinner             spinnerState
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
@@ -141,12 +145,12 @@ func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, i
 }
 
 // waitForEvent reads the next event from the channel. If the channel is
-// closed, it signals the Bubbletea runtime to quit.
+// closed, it signals that the session is complete (screen stays open for review).
 func (m *model) waitForEvent() tea.Cmd {
 	return func() tea.Msg {
 		e, ok := <-m.eventCh
 		if !ok {
-			return tea.Quit()
+			return channelClosedMsg{}
 		}
 		return domainEventMsg(e)
 	}
@@ -212,6 +216,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWindowSizeMsg(msg)
 	case spinnerTickMsg:
 		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
+	case channelClosedMsg:
+		m.sessionDone = true
+		m.spinner.clear()
+		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+			return channelClosedMsg{}
+		})
 	case error:
 		m.err = msg
 		return m, nil
@@ -558,7 +568,9 @@ func (m *model) View() string {
 func (m *model) renderMinimal() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
-	if m.spinner.active() && m.currentState != stateIdle {
+	if m.sessionDone {
+		sb.WriteString(" Press Ctrl+C to exit")
+	} else if m.spinner.active() && m.currentState != stateIdle {
 		frame := brailleFrames[m.spinner.frame%len(brailleFrames)]
 		elapsed := int(time.Since(m.spinner.startTime).Seconds())
 		sb.WriteString(fmt.Sprintf(" %s %s (%ds)", frame, m.spinner.status, elapsed))
@@ -637,9 +649,11 @@ func (m *model) renderFooter() string {
 		sb.WriteString(m.finalCostLine)
 	}
 
-	// Line 4: spinner.
+	// Line 4: spinner or exit prompt.
 	sb.WriteString("\n")
-	if m.spinner.active() && m.currentState != stateIdle {
+	if m.sessionDone {
+		sb.WriteString("Press Ctrl+C to exit")
+	} else if m.spinner.active() && m.currentState != stateIdle {
 		frame := brailleFrames[m.spinner.frame%len(brailleFrames)]
 		elapsed := int(time.Since(m.spinner.startTime).Seconds())
 		sb.WriteString(fmt.Sprintf("%s %s (%ds)", frame, m.spinner.status, elapsed))
