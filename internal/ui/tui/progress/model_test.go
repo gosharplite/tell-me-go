@@ -403,7 +403,7 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, out, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
 	})
 
-	t.Run("body_clips_to_available_lines_bottom_aligned", func(t *testing.T) {
+	t.Run("body_clips_to_available_lines_top_aligned", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
@@ -432,7 +432,7 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[5], "final response line", "response should be at bottom of body zone")
 	})
 
-	t.Run("body_top_pads_when_content_is_sparse", func(t *testing.T) {
+	t.Run("body_bottom_pads_when_content_is_sparse", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
@@ -445,12 +445,12 @@ func TestModel_View(t *testing.T) {
 		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 20, "total lines must equal terminal height")
-		// Lines 2 through 14 should be blank (top-padding for 13 blank + log at line 15)
-		for i := 2; i < 15; i++ {
+		// Log at top of body zone (line 2), then blank padding below
+		assert.Contains(t, lines[2], "only one log")
+		// Lines 3 through 15 should be blank (bottom-padding for 13 blank after log)
+		for i := 3; i < 16; i++ {
 			assert.Empty(t, lines[i], "line %d should be blank padding", i)
 		}
-		// The single log line appears at the bottom of the body zone (line 15, 0-indexed)
-		assert.Contains(t, lines[15], "only one log")
 	})
 
 	t.Run("footer_always_occupies_4_lines_with_placeholders", func(t *testing.T) {
@@ -1343,11 +1343,11 @@ func TestModel_ToolLogs(t *testing.T) {
 		out := m.View()
 		lines := strings.Split(out, "\n")
 
-		// Header (line 0), token line (line 1), then body zone (bottom-aligned).
+		// Header (line 0), token line (line 1), then body zone (top-aligned).
 		assert.Contains(t, lines[0], "╭─ Turn 1 - test")
-		// 3 body content lines: 2 tool logs + 1 response, bottom-aligned at 73,74,75
-		assert.Contains(t, lines[73], "[Tool Engine] Step 1/3")
-		assert.Contains(t, lines[74], "[Tool Reason] read the file")
+		// 3 body content lines at top of 74-line body zone: lines 2, 3, 4
+		assert.Contains(t, lines[2], "[Tool Engine] Step 1/3")
+		assert.Contains(t, lines[3], "[Tool Reason] read the file")
 		// Response text after tool logs
 		assert.Contains(t, out, "I'll read that file for you.")
 	})

@@ -577,8 +577,9 @@ func (m *model) renderHeader() string {
 }
 
 // renderBody returns exactly availableLines of content (tool logs + response),
-// bottom-aligned and height-constrained. When content is sparser than the
-// available zone, blank lines are prepended to keep the footer pinned.
+// top-aligned and height-constrained. Content fills from the top downward in
+// arrival order; blank lines pad the bottom. When overflowing, the oldest
+// entry at the top is pushed off.
 func (m *model) renderBody(availableLines int) string {
 	var contentLines []string
 
@@ -593,15 +594,15 @@ func (m *model) renderBody(availableLines int) string {
 
 	bodyLines := make([]string, 0, availableLines)
 	if len(contentLines) > availableLines {
-		// Keep only the tail (bottom-aligned: newest content at bottom).
+		// Keep only the tail (newest content at bottom, oldest pushed off top).
 		bodyLines = contentLines[len(contentLines)-availableLines:]
 	} else {
-		// Top-pad with blank lines so footer stays fixed at the bottom.
+		// Bottom-pad with blank lines so footer stays fixed.
+		bodyLines = append(bodyLines, contentLines...)
 		padding := availableLines - len(contentLines)
 		for i := 0; i < padding; i++ {
 			bodyLines = append(bodyLines, "")
 		}
-		bodyLines = append(bodyLines, contentLines...)
 	}
 
 	if len(bodyLines) == 0 {
