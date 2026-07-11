@@ -24,11 +24,11 @@ func TestModel_Update(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
-		newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 20}))
+		newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 20, SessionTurns: 20}))
 		updated := newModel.(*model)
 
 		assert.Equal(t, stateThinking, updated.currentState)
-		assert.Equal(t, 0, updated.turn) // turn no longer set by TurnStarted
+		assert.Equal(t, 21, updated.turn) // SessionTurns 20 + 1
 		assert.NotNil(t, cmd)
 	})
 
@@ -388,10 +388,10 @@ func TestModel_Integration(t *testing.T) {
 		assert.Equal(t, stateIdle, m.currentState)
 
 		// 2. TurnStarted → thinking
-		newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 0}))
+		newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
 		m = newModel.(*model)
 		assert.Equal(t, stateThinking, m.currentState)
-		assert.NotNil(t, cmd)
+		assert.Equal(t, 1, m.turn) // SessionTurns 0 + 1
 
 		// 3. InferenceStartedEvent → model name set
 		newModel, cmd = m.Update(domainEventMsg(events.InferenceStartedEvent{Model: "gpt-5"}))
@@ -441,9 +441,10 @@ func TestModel_Integration(t *testing.T) {
 		m := newTestModel(ctx, ch)
 
 		// Turn 1: thinking
-		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0}))
+		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
 		m = newModel.(*model)
 		assert.Equal(t, stateThinking, m.currentState)
+		assert.Equal(t, 1, m.turn) // SessionTurns 0 + 1
 
 		// ToolCallEvent — unknown, falls through to default in domainEventMsg switch
 		newModel, cmd := m.Update(domainEventMsg(events.ToolCallEvent{
@@ -479,9 +480,10 @@ func TestModel_Integration(t *testing.T) {
 		assert.NotNil(t, cmd)
 
 		// Turn 2: cycle restarts
-		newModel, cmd = m.Update(domainEventMsg(events.TurnStarted{Turn: 1}))
+		newModel, cmd = m.Update(domainEventMsg(events.TurnStarted{Turn: 1, SessionTurns: 1}))
 		m = newModel.(*model)
 		assert.Equal(t, stateThinking, m.currentState)
+		assert.Equal(t, 2, m.turn) // SessionTurns 1 + 1
 
 		// TurnStatus for Turn 2 — SessionTurns increments
 		newModel, cmd = m.Update(domainEventMsg(events.TurnStatusEvent{

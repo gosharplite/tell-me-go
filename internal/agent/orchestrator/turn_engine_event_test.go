@@ -25,7 +25,8 @@ func TestTurnEngine_EventPublishFailure(t *testing.T) {
 	badBus := &agenttest.MockEventBusFail{PublishErr: errors.New("simulated publish failure")}
 
 	strategy := sessctx.NewStrategy(&agenttest.MockTokenCounter{})
-	cm := sessctx.NewManager(strategy, nil, badBus, nil)
+	mockHistory := &agenttest.MockHistoryManager{}
+	cm := sessctx.NewManager(strategy, mockHistory, badBus, nil)
 
 	Turn := &orchestrator.Turn{
 		Events:     badBus,

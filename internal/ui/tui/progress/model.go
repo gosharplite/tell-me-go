@@ -96,6 +96,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case domainEventMsg:
 		switch e := events.Event(msg).(type) {
 		case events.TurnStarted:
+			m.turn = e.SessionTurns + 1
 			m.currentState = stateThinking
 			return m, m.waitForEvent()
 

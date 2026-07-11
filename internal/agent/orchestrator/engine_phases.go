@@ -26,7 +26,11 @@ func (p *GuardStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, err
 		return ProcessResult{}, NewAgentError(llm.ErrTerminal, fmt.Sprintf("turn %d exceeds limit %d", Turn.Index, maxTurns), llm.ErrMaxTurnsReached)
 	}
 
-	evt := events.TurnStarted{Turn: Turn.Index, MaxTurns: maxTurns}
+	evt := events.TurnStarted{
+		Turn:         Turn.Index,
+		SessionTurns: Turn.CtxManager.History.GetTotalEntries() / 2,
+		MaxTurns:     maxTurns,
+	}
 	if err := events.SafePublish(ctx, Turn.Events, evt); err != nil {
 		if errors.Is(err, events.ErrBusNotInitialized) {
 			return ProcessResult{NextPhase: PhaseRefining}, nil
