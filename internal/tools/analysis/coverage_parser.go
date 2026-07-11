@@ -342,7 +342,9 @@ func parseDetailedCoverage(ctx context.Context, r io.Reader, runner AnalysisGoRu
 func (m *healthManager) runCoverageTest(ctx context.Context, packagePath, tempPath string, hb chan<- struct{}) error {
 	// Heartbeat while running tests
 	done := make(chan struct{})
+	exited := make(chan struct{})
 	go func() {
+		defer close(exited)
 		clk := m.clk
 		if clk == nil {
 			clk = clock.RealClock{}
@@ -363,7 +365,10 @@ func (m *healthManager) runCoverageTest(ctx context.Context, packagePath, tempPa
 			}
 		}
 	}()
-	defer close(done)
+	defer func() {
+		close(done)
+		<-exited
+	}()
 
 	_, err := m.Runner.RunTestsWithCoverage(ctx, packagePath, true, tempPath)
 	return err
