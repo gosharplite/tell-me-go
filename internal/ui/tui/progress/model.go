@@ -96,7 +96,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case domainEventMsg:
 		switch e := events.Event(msg).(type) {
 		case events.TurnStarted:
-			m.turn = e.Turn + 1
+			m.turn = e.SessionTurns + 1
 			m.currentState = stateThinking
 			return m, m.waitForEvent()
 
@@ -105,6 +105,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitForEvent()
 
 		case events.TurnStatusEvent:
+			m.turn = e.Status.SessionTurns + 1
 			m.tokens = e.Status.Tokens
 			m.maxTokens = e.Status.MaxHistoryTokens
 			m.timestamp = e.Status.Timestamp
