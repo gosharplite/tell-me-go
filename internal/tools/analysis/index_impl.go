@@ -162,25 +162,31 @@ func (idx *indexer) HarvestDeclarations(ctx context.Context, fn func(meta *symMe
 		return fmt.Errorf("refreshing index for harvest: %w", err)
 	}
 
+	// Snapshot declarations under the lock, then release before
+	// invoking the user callback to avoid deadlock if the callback
+	// calls other indexer methods or blocks on I/O.
+	var decls []*symMeta
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
 	idx.collectDeclarations(func(meta *symMeta) bool {
-		if ctx.Err() != nil {
-			return false
-		}
-		return fn(meta)
+		decls = append(decls, meta)
+		return true
 	})
-	if ctx.Err() != nil {
-		return ctx.Err()
+	idx.mu.RUnlock()
+
+	for _, meta := range decls {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !fn(meta) {
+			return nil
+		}
 	}
 	return nil
 }
 
 // collectDeclarations walks all packages and invokes fn for each exported,
 // non-test, non-init symbol, including methods from named types and
-// interfaces. The caller must hold idx.mu.RLock(). Context cancellation
-// is the caller's responsibility.
+// interfaces. The caller must hold idx.mu.RLock().
 func (idx *indexer) collectDeclarations(fn func(meta *symMeta) bool) {
 	for _, pkg := range idx.pkgs {
 		if pkg.Types == nil || pkg.Types.Scope() == nil {

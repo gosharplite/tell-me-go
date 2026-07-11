@@ -52,7 +52,7 @@ type symMeta struct {
 	isMethod bool
 
 	// Pre-computed during harvest to avoid types.Object dependency downstream.
-	// Populated by harvestObjectSymbols in harvest.go.
+	// Populated by collectDeclarations in index_impl.go.
 	isInterfaceType     bool
 	isInterfaceMethod   bool
 	isWellKnownContract bool
