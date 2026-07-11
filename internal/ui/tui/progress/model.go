@@ -124,7 +124,8 @@ type model struct {
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
 	spinner             spinnerState
 
-	toolLogs []string // accumulated tool call/result/output lines, cleared each turn
+	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
+	seenCallIDs map[string]bool // dedup tool logs from ResponseEvent vs ToolCallEvent
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -134,6 +135,7 @@ func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, i
 		eventCh:      ch,
 		currentState: stateIdle,
 		mdRender:     mdRender,
+		seenCallIDs:  make(map[string]bool),
 	}
 }
 
@@ -243,8 +245,25 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		if len(e.Calls) == 0 {
 			return m, m.waitForEvent()
 		}
-		m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
+		// Count new calls and track which ones need fresh log lines.
+		// Calls already extracted from ResponseEvent are skipped.
+		newCalls := make([]*llm.FunctionCall, 0, len(e.Calls))
 		for _, fc := range e.Calls {
+			id := fc.ID
+			if id == "" {
+				id = fc.Name
+			}
+			if !m.seenCallIDs[id] {
+				m.seenCallIDs[id] = true
+				newCalls = append(newCalls, fc)
+			}
+		}
+		// Only emit Tool Engine if there are new calls not already seen.
+		if len(newCalls) > 0 {
+			m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
+		}
+		// Only emit reason/action for new calls.
+		for _, fc := range newCalls {
 			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
 				m.appendToolLog("Tool Reason", reason)
 			}
@@ -319,6 +338,7 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.currentState = stateThinking
 	m.spinner.clear()
 	m.toolLogs = nil
+	m.seenCallIDs = make(map[string]bool)
 	return m.waitForEvent()
 }
 
@@ -365,6 +385,14 @@ func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 	} else {
 		m.responseText = m.rawResponseText
 	}
+
+	// Extract tool call info from ResponseEvent so [Tool Reason]
+	// and [Tool Action] appear immediately — before ToolCallEvent
+	// arrives from the Dispatcher.
+	if e.Content != nil {
+		m.extractToolCallsFromResponse(e.Content)
+	}
+
 	return m.waitForEvent()
 }
 
@@ -380,6 +408,55 @@ func extractResponseText(content *llm.Content) string {
 		}
 	}
 	return sb.String()
+}
+
+// extractToolCallsFromResponse populates toolLogs from FunctionCall parts
+// in the ResponseEvent content. This bridges the visibility gap between
+// ResponseEvent and ToolCallEvent. seenCallIDs prevents duplicates when
+// the real ToolCallEvent arrives later from the Dispatcher.
+func (m *model) extractToolCallsFromResponse(content *llm.Content) {
+	var toolCalls []*llm.FunctionCall
+	for _, part := range content.Parts {
+		if part.FunctionCall != nil {
+			toolCalls = append(toolCalls, part.FunctionCall)
+		}
+	}
+	if len(toolCalls) == 0 {
+		return
+	}
+
+	for _, fc := range toolCalls {
+		id := fc.ID
+		if id == "" {
+			id = fc.Name // fallback for providers that don't set ID
+		}
+		if m.seenCallIDs[id] {
+			continue
+		}
+		m.seenCallIDs[id] = true
+
+		if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
+			m.appendToolLog("Tool Reason", reason)
+		}
+
+		var keys []string
+		for k := range fc.Args {
+			if k != "reason" {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+
+		var parts []string
+		for _, k := range keys {
+			valStr := fmt.Sprintf("%v", fc.Args[k])
+			if len(valStr) > 189 {
+				valStr = safeTruncate(valStr, 186) + "..."
+			}
+			parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
+		}
+		m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
+	}
 }
 
 // formatMetricsLine renders a single-line post-call metrics summary.

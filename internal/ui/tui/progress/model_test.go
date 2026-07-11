@@ -267,6 +267,7 @@ func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
+		seenCallIDs:  make(map[string]bool),
 	}
 }
 
@@ -1151,4 +1152,166 @@ func TestModel_ToolLogs(t *testing.T) {
 		// Response text after tool logs
 		assert.Contains(t, out, "I'll read that file for you.")
 	})
+}
+
+func TestModel_ResponseEvent_ExtractsToolCalls(t *testing.T) {
+	ch := make(chan events.Event, 1)
+	m := newTestModel(t.Context(), ch)
+
+	content := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{Text: "Let me run a test for you."},
+			{FunctionCall: &llm.FunctionCall{
+				ID:   "call_1",
+				Name: "execute_command",
+				Args: map[string]interface{}{
+					"reason":  "Run unit tests",
+					"command": "go test ./...",
+				},
+			}},
+		},
+	}
+	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+
+	foundReason := false
+	foundAction := false
+	for _, log := range m.toolLogs {
+		if strings.Contains(log, "[Tool Reason] Run unit tests") {
+			foundReason = true
+		}
+		if strings.Contains(log, "[Tool Action] execute_command") {
+			foundAction = true
+		}
+	}
+	assert.True(t, foundReason, "expected [Tool Reason] in toolLogs from ResponseEvent")
+	assert.True(t, foundAction, "expected [Tool Action] in toolLogs from ResponseEvent")
+}
+
+func TestModel_ToolCallEvent_DedupsAfterResponseEvent(t *testing.T) {
+	ch := make(chan events.Event, 2)
+	m := newTestModel(t.Context(), ch)
+
+	content := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{
+				ID:   "call_1",
+				Name: "execute_command",
+				Args: map[string]interface{}{
+					"reason":  "Run unit tests",
+					"command": "go test ./...",
+				},
+			}},
+		},
+	}
+	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+	logCountAfterResponse := len(m.toolLogs)
+
+	m.Update(domainEventMsg(events.ToolCallEvent{
+		Calls: []*llm.FunctionCall{{
+			ID:   "call_1",
+			Name: "execute_command",
+			Args: map[string]interface{}{
+				"reason":  "Run unit tests",
+				"command": "go test ./...",
+			},
+		}},
+		Turn:     0,
+		MaxTurns: 10,
+	}))
+
+	assert.Equal(t, logCountAfterResponse, len(m.toolLogs),
+		"ToolCallEvent should not add log lines for already-seen calls")
+}
+
+func TestModel_ToolCallEvent_ShowsEngineForPartialNewCalls(t *testing.T) {
+	ch := make(chan events.Event, 2)
+	m := newTestModel(t.Context(), ch)
+
+	content := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{
+				ID:   "call_1",
+				Name: "execute_command",
+				Args: map[string]interface{}{"command": "go build"},
+			},
+			}},
+	}
+	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+	logCount := len(m.toolLogs)
+
+	m.Update(domainEventMsg(events.ToolCallEvent{
+		Calls: []*llm.FunctionCall{
+			{
+				ID:   "call_1",
+				Name: "execute_command",
+				Args: map[string]interface{}{"command": "go build"},
+			},
+			{
+				ID:   "call_2",
+				Name: "read_file",
+				Args: map[string]interface{}{"filepath": "main.go"},
+			},
+		},
+		Turn:     0,
+		MaxTurns: 10,
+	}))
+
+	assert.Greater(t, len(m.toolLogs), logCount,
+		"ToolCallEvent should add lines for new calls not already seen")
+
+	foundEngine := false
+	foundReadFile := false
+	for _, log := range m.toolLogs {
+		if strings.Contains(log, "[Tool Engine] Step 1/10") {
+			foundEngine = true
+		}
+		if strings.Contains(log, "[Tool Action] read_file") {
+			foundReadFile = true
+		}
+	}
+	assert.True(t, foundEngine, "expected [Tool Engine] for partially new ToolCallEvent")
+	assert.True(t, foundReadFile, "expected [Tool Action] for new call_2")
+}
+
+func TestModel_TurnStarted_ClearsSeenCallIDs(t *testing.T) {
+	ch := make(chan events.Event, 2)
+	m := newTestModel(t.Context(), ch)
+
+	content := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{
+				ID:   "call_1",
+				Name: "execute_command",
+				Args: map[string]interface{}{"command": "go test"},
+			}},
+		},
+	}
+	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+	assert.Len(t, m.seenCallIDs, 1, "seenCallIDs should have 1 entry after ResponseEvent")
+
+	m.Update(domainEventMsg(events.TurnStarted{Turn: 1, SessionTurns: 1, MaxTurns: 10}))
+	assert.Len(t, m.seenCallIDs, 0, "seenCallIDs should be empty after TurnStarted")
+
+	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+	assert.Len(t, m.seenCallIDs, 1, "seenCallIDs should accept same call ID in new turn")
+}
+
+func TestModel_ResponseEvent_NoToolCalls_NoSpuriousLogs(t *testing.T) {
+	ch := make(chan events.Event, 1)
+	m := newTestModel(t.Context(), ch)
+
+	content := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{Text: "Here is the result of the analysis."},
+		},
+	}
+	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
+
+	assert.Len(t, m.toolLogs, 0, "text-only ResponseEvent should not add tool logs")
+	assert.Len(t, m.seenCallIDs, 0, "text-only ResponseEvent should not populate seenCallIDs")
 }
