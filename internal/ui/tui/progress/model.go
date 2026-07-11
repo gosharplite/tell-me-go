@@ -539,15 +539,16 @@ func formatFinalLine(status events.TurnStatus, turnCost float64) string {
 // header (2 lines), scrollable body, footer (3 lines).
 // Falls back to renderMinimal when the terminal is too small (height < 5).
 func (m *model) View() string {
-	if m.height < 6 {
+	if m.height < 7 {
 		return m.renderMinimal()
 	}
 
-	// Body gets everything between header (2 lines) and footer (4 lines).
-	availableBody := m.height - 6
+	// Body gets everything between header+separator (3 lines) and footer (4 lines).
+	availableBody := m.height - 7
 
 	var sb strings.Builder
 	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
 	sb.WriteString(m.renderBody(availableBody))
 	sb.WriteString(m.renderFooter())
 	return sb.String()
