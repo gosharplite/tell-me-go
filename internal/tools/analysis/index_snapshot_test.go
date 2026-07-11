@@ -161,26 +161,34 @@ func (idx *indexer) Snapshot() *IndexSnapshot {
 }
 
 // SaveSnapshot writes the index snapshot to a JSON file.
-func (s *IndexSnapshot) SaveSnapshot(path string) error {
+func (s *IndexSnapshot) SaveSnapshot(path string) (err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	return enc.Encode(s.toJSON())
 }
 
 // LoadSnapshot reads an index snapshot from a JSON file.
-func LoadSnapshot(path string) (*IndexSnapshot, error) {
+func LoadSnapshot(path string) (s *IndexSnapshot, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 	var j indexSnapshotJSON
-	if err := json.NewDecoder(f).Decode(&j); err != nil {
+	if err = json.NewDecoder(f).Decode(&j); err != nil {
 		return nil, err
 	}
 	return fromJSON(&j), nil
