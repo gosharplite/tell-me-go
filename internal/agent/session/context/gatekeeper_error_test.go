@@ -195,7 +195,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	ic := &mockFailingCapturer{}
 	sd := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(testfixtures.MockSessionProvider)}
 
-	err := o.Run(context.Background(), sc, sd, ic)
+	err := o.Run(context.Background(), sc, sd, ic, false)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
 		t.Errorf("Expected config failed error, got: %v", err)
 	}

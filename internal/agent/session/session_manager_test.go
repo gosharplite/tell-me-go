@@ -66,7 +66,7 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	// (SessionManager now subscribes it directly)
 	mTurnsLogger.HandleEventFunc = func(ctx context.Context, e events.Event) {}
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.NoError(t, err)
 }
 
@@ -101,7 +101,7 @@ func TestSessionManager_Run_Error(t *testing.T) {
 	}
 	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "chat error")
 }
@@ -171,7 +171,7 @@ func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 
 	deps := &agenttest.StubChatterComposer{Paths: paths, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(testfixtures.MockSessionProvider)}
 
-	bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
+	bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
 	require.NotNil(t, bridge)
@@ -547,7 +547,7 @@ func TestSessionManager_AgentFactory_Error(t *testing.T) {
 	mCapturer := new(agenttest.MockCapturer)
 	mCapturer.IsTTYFn = func(v any) bool { return true }
 
-	err := o.Run(context.Background(), sc, deps, mCapturer)
+	err := o.Run(context.Background(), sc, deps, mCapturer, false)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "factory failed")
@@ -866,7 +866,7 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			}
 			mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
-			err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+			err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.expectedError)
 
@@ -947,7 +947,7 @@ func TestSessionManager_Run_BridgeListenError(t *testing.T) {
 		return nil
 	}
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.NoError(t, err, "Bridge Listen errors are intentionally discarded; Run should succeed when Chat succeeds")
 	assert.True(t, shutdownCalled, "Shutdown should be called via defer even when bridge panics")
 }
@@ -983,7 +983,7 @@ func TestSessionManager_Run_ShutdownError(t *testing.T) {
 	mChatter.ChatFn = func(ctx context.Context, s *ports.Session, prompt string) error { return nil } // Chat succeeds
 	mChatter.ShutdownFn = func(ctx context.Context) error { return fmt.Errorf("shutdown timeout") }   // Shutdown fails
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent shutdown failed")
@@ -1032,7 +1032,7 @@ func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
 		return nil
 	}
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to apply configuration")
@@ -1091,7 +1091,7 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 
 	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.NoError(t, err)
 }
 
@@ -1144,7 +1144,7 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 
 	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.NoError(t, err)
 }
 
@@ -1204,7 +1204,7 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	mChatter.ShutdownFn = func(ctx context.Context) error { return nil }
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer, false)
 	require.NoError(t, err)
 }
 
@@ -1295,7 +1295,7 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 			deps := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, Logger: mockLogger, TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(testfixtures.MockSessionProvider)}
 
 			bridge, err := session.AsSessionManagerInternal(orch).ApplyConfiguration(
-				context.Background(), mChatter, sCfg, deps, mCapturer)
+				context.Background(), mChatter, sCfg, deps, mCapturer, false)
 			require.NoError(t, err)
 			require.NotNil(t, uiSub, "Subscribe callback must be captured")
 

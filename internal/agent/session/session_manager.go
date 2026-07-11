@@ -21,16 +21,18 @@ import (
 
 // sessionManager manages the session lifecycle and agent execution.
 type sessionManager struct {
-	HomeDir         string
-	Version         string
-	SM              domain_security.Manager
-	Stdout          io.Writer
-	Stderr          io.Writer
-	AgentFactory    ports.ChatterFactory
-	HistoryRenderer ports.HistoryRenderer
-	UIRenderer      ports.UIRenderer
-	Clock           clock.Clock
-	EntropySource   io.Reader
+	HomeDir          string
+	Version          string
+	SM               domain_security.Manager
+	Stdout           io.Writer
+	Stderr           io.Writer
+	AgentFactory     ports.ChatterFactory
+	HistoryRenderer  ports.HistoryRenderer
+	UIRenderer       ports.UIRenderer
+	Clock            clock.Clock
+	EntropySource    io.Reader
+	progressRenderer ports.ProgressRenderer // nil unless TUI is active
+	tuiCleanup       func()
 }
 
 // sessionConfig contains configuration for a single session execution.
@@ -78,6 +80,11 @@ func WithEntropySource(r io.Reader) SessionManagerOption {
 	return func(sm *sessionManager) { sm.EntropySource = r }
 }
 
+// WithProgressRenderer injects a ProgressRenderer for TUI output mode.
+func withProgressRenderer(r ports.ProgressRenderer) SessionManagerOption {
+	return func(sm *sessionManager) { sm.progressRenderer = r }
+}
+
 // NewSessionManager creates a new sessionManager.
 func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, opts ...SessionManagerOption) SessionManager {
 	s := &sessionManager{
@@ -99,7 +106,7 @@ func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdo
 }
 
 // Run executes the session orchestration.
-func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer, ic ports.Capturer) (err error) {
+func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer, ic ports.Capturer, tuiOutput bool) (err error) {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -116,7 +123,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		return fmt.Errorf("failed to initialize agent: %w", err)
 	}
 
-	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
+	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic, tuiOutput)
 	listenStarted := false
 	// Single defer to guarantee deterministic teardown order:
 	// Stop Producers first, then Consumers.
@@ -129,6 +136,11 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", se)
 			// Aggregate with the named return error 'err'
 			err = errors.Join(err, fmt.Errorf("agent shutdown failed: %w", se))
+		}
+
+		// Signal TUI to exit after agent has flushed all events
+		if o.tuiCleanup != nil {
+			o.tuiCleanup()
 		}
 
 		// 2. Clean up Consumer (UI) second
@@ -202,7 +214,7 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 	})
 }
 
-func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer) (*ui.Bridge, error) {
+func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	logger := sd.GetLogger()
@@ -214,14 +226,18 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 		})
 	}
 
-	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
+	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), tuiOutput, paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return bridge, err
 	}
 	return bridge, nil
 }
 
-func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *ui.Bridge {
+func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, tuiOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *ui.Bridge {
+	if tuiOutput {
+		o.tuiCleanup = o.progressRenderer.Run(ctx, chatAgent)
+		return nil
+	}
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := ui.NewBridge(o.UIRenderer,
@@ -248,23 +264,25 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 }
 
 type RunParams struct {
-	HomeDir         string
-	Version         string
-	SM              domain_security.Manager
-	Stdout          io.Writer
-	Stderr          io.Writer
-	AgentFactory    ports.ChatterFactory
-	HistoryRenderer ports.HistoryRenderer
-	UIRenderer      ports.UIRenderer
-	ConfigPath      string
-	NewSession      bool
-	LastN           int
-	BackN           int
-	RawOutput       bool
-	Prompt          string
-	Config          *config.Config
-	Deps            ports.ChatterComposer
-	Capturer        ports.Capturer
+	HomeDir          string
+	Version          string
+	SM               domain_security.Manager
+	Stdout           io.Writer
+	Stderr           io.Writer
+	AgentFactory     ports.ChatterFactory
+	HistoryRenderer  ports.HistoryRenderer
+	UIRenderer       ports.UIRenderer
+	ConfigPath       string
+	NewSession       bool
+	LastN            int
+	BackN            int
+	RawOutput        bool
+	TUIOutput        bool
+	ProgressRenderer ports.ProgressRenderer
+	Prompt           string
+	Config           *config.Config
+	Deps             ports.ChatterComposer
+	Capturer         ports.Capturer
 }
 
 // Run is the high-level entry point for running a chat session.
@@ -279,6 +297,7 @@ func Run(ctx context.Context, params RunParams) error {
 		params.AgentFactory,
 		params.HistoryRenderer,
 		params.UIRenderer,
+		withProgressRenderer(params.ProgressRenderer),
 	)
 
 	sCfg := NewSessionConfig(
@@ -308,7 +327,7 @@ func Run(ctx context.Context, params RunParams) error {
 	// Phase 3: Main Orchestration Loop (Chat)
 	// Execute chat only if a prompt is provided. This removes CLI-specific early exits.
 	if sCfg.GetPrompt() != "" {
-		return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
+		return orch.Run(ctx, sCfg, params.Deps, params.Capturer, params.TUIOutput)
 	}
 
 	return nil

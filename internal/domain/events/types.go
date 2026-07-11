@@ -97,8 +97,9 @@ func (e StatusUpdate) Type() string { return "StatusUpdate" }
 
 // TurnStarted signals the beginning of a new Think-Act-Observe cycle.
 type TurnStarted struct {
-	Turn     int
-	MaxTurns int
+	Turn         int // Current tool-loop index
+	SessionTurns int // Total historical session turns
+	MaxTurns     int
 }
 
 func (e TurnStarted) Type() string { return "TurnStarted" }

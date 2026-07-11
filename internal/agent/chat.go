@@ -22,14 +22,16 @@ type CapturerInteractor interface {
 
 // ChatCommand defines the intent and configuration for a chat session.
 type ChatCommand struct {
-	ConfigPath   string
-	NewSession   bool
-	LastN        int
-	BackN        int
-	RawOutput    bool
-	UseTUIPrompt bool
-	Retry        bool
-	Prompt       string
+	ConfigPath       string
+	NewSession       bool
+	LastN            int
+	BackN            int
+	RawOutput        bool
+	UseTUIPrompt     bool
+	TUIOutput        bool
+	ProgressRenderer ports.ProgressRenderer
+	Retry            bool
+	Prompt           string
 }
 
 // ChatService defines the interface for chat orchestration operations.

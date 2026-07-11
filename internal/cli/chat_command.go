@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -63,6 +64,7 @@ type cliOptions struct {
 	backN        int
 	rawOutput    bool
 	tuiPrompt    bool
+	tuiOutput    bool
 	retry        bool
 }
 
@@ -77,6 +79,7 @@ func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.Lookup("back").NoOptDefVal = "1"
 	fs.BoolVarP(&opts.rawOutput, "raw", "r", false, "Show raw output (without markdown rendering)")
 	fs.BoolVarP(&opts.tuiPrompt, "interactive", "i", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVarP(&opts.tuiOutput, "tui-output", "o", false, "Enable TUI progress dashboard during agent turns")
 	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 }
 
@@ -203,14 +206,16 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		return err
 	}
 	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatCommand{
-		ConfigPath:   opts.configPath,
-		NewSession:   opts.newSession,
-		LastN:        opts.lastN,
-		BackN:        opts.backN,
-		RawOutput:    opts.rawOutput,
-		UseTUIPrompt: opts.tuiPrompt,
-		Retry:        opts.retry,
-		Prompt:       prompt,
+		ConfigPath:       opts.configPath,
+		NewSession:       opts.newSession,
+		LastN:            opts.lastN,
+		BackN:            opts.backN,
+		RawOutput:        opts.rawOutput,
+		UseTUIPrompt:     opts.tuiPrompt,
+		TUIOutput:        opts.tuiOutput,
+		ProgressRenderer: progress.NewRenderer(),
+		Retry:            opts.retry,
+		Prompt:           prompt,
 	}, capturer)
 }
 func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerInteractor, opts *cliOptions, args []string) (string, error) {
