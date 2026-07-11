@@ -38,20 +38,23 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 		}
 	})
 
-	tr, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
+	var cachedRenderer *glamour.TermRenderer
+	var lastWidth int
+
 	mdRender := func(text string, width int) string {
-		if err != nil || tr == nil {
-			return text
-		}
-		if width > 0 {
-			out, renderErr := tr.Render(text)
-			_ = width
+		if width != lastWidth || cachedRenderer == nil {
+			opts := []glamour.TermRendererOption{glamour.WithAutoStyle()}
+			if width > 0 {
+				opts = append(opts, glamour.WithWordWrap(width))
+			}
+			tr, renderErr := glamour.NewTermRenderer(opts...)
 			if renderErr != nil {
 				return text
 			}
-			return out
+			cachedRenderer = tr
+			lastWidth = width
 		}
-		out, renderErr := tr.Render(text)
+		out, renderErr := cachedRenderer.Render(text)
 		if renderErr != nil {
 			return text
 		}

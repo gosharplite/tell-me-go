@@ -40,6 +40,7 @@ type model struct {
 	timestamp    time.Time
 	err          error
 	responseText    string                // accumulated AI response text
+	rawResponseText string                // raw text before markdown rendering, for re-rendering on resize
 	mdRender        func(string, int) string // optional markdown renderer (text, width)
 	postCallStatus  *events.TurnStatus    // set when IsPostCall, has full status including Metrics and StartTime
 	finalCostLine   string                // rendered "Ready (...)" line from IsFinal
@@ -83,6 +84,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		if m.rawResponseText != "" && m.mdRender != nil {
+			m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
+		}
 		return m, nil
 
 	case error:
@@ -122,11 +126,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.waitForEvent()
 
 		case events.ResponseEvent:
-			text := extractResponseText(e.Content)
+			m.rawResponseText = extractResponseText(e.Content)
 			if m.mdRender != nil {
-				text = strings.TrimRight(m.mdRender(text, m.width), "\n")
+				m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
+			} else {
+				m.responseText = m.rawResponseText
 			}
-			m.responseText = text
 			return m, m.waitForEvent()
 		}
 		return m, m.waitForEvent()
@@ -208,25 +213,34 @@ func formatFinalLine(status events.TurnStatus, turnCost float64) string {
 
 // View renders the progress model as a two-line display with optional response text.
 func (m *model) View() string {
+	var sb strings.Builder
+
 	ts := m.timestamp.Format("15:04:05")
-	header := fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName)
-	info := fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
-		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName)
-	out := header + "\n" + info
+	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s\n", m.turn, m.sessionName))
+	sb.WriteString(fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
+		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName))
+
 	if m.responseText != "" {
-		out += "\n" + m.responseText
+		sb.WriteString("\n")
+		sb.WriteString(m.responseText)
 	}
+
 	if m.postCallStatus != nil {
-		out += "\n" // empty line before post-call
-		out += "\n" + fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
+		sb.WriteString("\n\n")
+		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
 			m.timestamp.Format("15:04:05"),
 			m.postCallStatus.Metrics.PromptTokens,
-			m.maxTokens, m.sessionName, m.modelName)
-		out += "\n" + formatMetricsLine(m.postCallStatus.Metrics,
-			m.postCallStatus.StartTime, m.timestamp, m.postCallStatus.CurrentTurns+1)
+			m.maxTokens, m.sessionName, m.modelName))
+		sb.WriteString("\n")
+		sb.WriteString(formatMetricsLine(m.postCallStatus.Metrics,
+			m.postCallStatus.StartTime, m.timestamp, m.postCallStatus.CurrentTurns+1))
 	}
+
 	if m.finalCostLine != "" {
-		out += "\n" + m.finalCostLine
+		sb.WriteString("\n")
+		sb.WriteString(m.finalCostLine)
 	}
-	return out + "\n"
+
+	sb.WriteString("\n")
+	return sb.String()
 }

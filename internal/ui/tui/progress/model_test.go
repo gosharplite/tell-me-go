@@ -110,16 +110,23 @@ func TestModel_Update(t *testing.T) {
 		assert.Nil(t, cmd, "unknown messages must return nil to avoid duplicate channel readers")
 	})
 
-	t.Run("WindowSizeMsg sets width", func(t *testing.T) {
+	t.Run("WindowSizeMsg triggers re-render with raw text", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
+		m.width = 80
+		m.rawResponseText = "hello"
+		m.mdRender = func(text string, width int) string {
+			return fmt.Sprintf("[w=%d]%s", width, text)
+		}
 
 		newModel, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 		updated := newModel.(*model)
 
 		assert.Equal(t, 120, updated.width)
-		assert.Nil(t, cmd, "WindowSizeMsg must not trigger channel read")
+		assert.Equal(t, "[w=120]hello", updated.responseText,
+			"response should be re-rendered with new width")
+		assert.Nil(t, cmd)
 	})
 
 	t.Run("default message returns nil cmd", func(t *testing.T) {
@@ -162,6 +169,8 @@ func TestModel_Update(t *testing.T) {
 
 		assert.Equal(t, "Hello, world! I am fine.", updated.responseText,
 			"should concatenate non-thought text parts, skipping thoughts")
+		assert.Equal(t, "Hello, world! I am fine.", updated.rawResponseText,
+			"rawResponseText should store unrendered text")
 		assert.NotNil(t, cmd)
 	})
 
