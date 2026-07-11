@@ -65,7 +65,7 @@ func TestModel_Update(t *testing.T) {
 		newModel, cmd := m.Update(domainEventMsg(msg))
 		updated := newModel.(*model)
 
-		assert.Equal(t, 5, updated.turn, "should be SessionTurns + 1")
+		assert.Equal(t, 0, updated.turn, "turn should NOT be set by TurnStatusEvent; only TurnStarted sets it")
 
 		assert.Equal(t, 1500, updated.tokens)
 		assert.Equal(t, 32000, updated.maxTokens)

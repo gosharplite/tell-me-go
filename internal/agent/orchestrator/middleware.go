@@ -71,7 +71,7 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 		Status: events.TurnStatus{
 			Timestamp:        Turn.Clock.Now(),
 			CurrentTurns:     Turn.Index,
-			SessionTurns:     Turn.CtxManager.History.GetTotalEntries() / 2,
+			SessionTurns:     Turn.SessionTurnsAtStart,
 			MaxHistoryTurns:  maxHistTurns,
 			Tokens:           Turn.State.Tokens,
 			MaxHistoryTokens: maxTokens,

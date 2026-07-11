@@ -331,7 +331,6 @@ func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
 
 // handleTurnStatus processes a TurnStatusEvent.
 func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
-	m.turn = e.Status.SessionTurns + 1
 	m.tokens = e.Status.Tokens
 	m.maxTokens = e.Status.MaxHistoryTokens
 	m.timestamp = e.Status.Timestamp
