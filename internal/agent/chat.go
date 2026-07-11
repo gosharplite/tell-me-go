@@ -28,8 +28,9 @@ type ChatCommand struct {
 	BackN        int
 	RawOutput    bool
 	UseTUIPrompt bool
-	TUIOutput    bool
-	Retry        bool
+	TUIOutput         bool
+	ProgressRenderer  ports.ProgressRenderer
+	Retry             bool
 	Prompt       string
 }
 

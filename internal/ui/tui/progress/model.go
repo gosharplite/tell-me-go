@@ -69,7 +69,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForEvent()
 
 	case events.TurnStarted:
-		m.turn = msg.Turn
+		m.turn = msg.Turn + 1
 		m.currentState = stateThinking
 		return m, m.waitForEvent()
 

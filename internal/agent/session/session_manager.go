@@ -11,14 +11,12 @@ import (
 	"fmt"
 	"io"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
-	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
 )
 
 // sessionManager manages the session lifecycle and agent execution.
@@ -32,8 +30,9 @@ type sessionManager struct {
 	HistoryRenderer ports.HistoryRenderer
 	UIRenderer      ports.UIRenderer
 	Clock           clock.Clock
-	EntropySource   io.Reader
-	tuiCleanup      func() // nil unless TUI is active
+	EntropySource     io.Reader
+	progressRenderer  ports.ProgressRenderer // nil unless TUI is active
+	tuiCleanup        func()
 }
 
 // sessionConfig contains configuration for a single session execution.
@@ -79,6 +78,11 @@ func WithClock(c clock.Clock) SessionManagerOption {
 // Defaults to rand.Reader.
 func WithEntropySource(r io.Reader) SessionManagerOption {
 	return func(sm *sessionManager) { sm.EntropySource = r }
+}
+
+// WithProgressRenderer injects a ProgressRenderer for TUI output mode.
+func WithProgressRenderer(r ports.ProgressRenderer) SessionManagerOption {
+	return func(sm *sessionManager) { sm.progressRenderer = r }
 }
 
 // NewSessionManager creates a new sessionManager.
@@ -231,22 +235,7 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 
 func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, tuiOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *ui.Bridge {
 	if tuiOutput {
-		ch := make(chan events.Event, 64)
-		o.tuiCleanup = func() { close(ch) }
-		chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
-			select {
-			case ch <- e:
-			default:
-				// drop if full — TUI can't keep up
-			}
-		})
-		m := progress.NewModel(context.Background(), ch)
-		p := tea.NewProgram(m, tea.WithInput(nil))
-		go func() {
-			if _, err := p.Run(); err != nil {
-				logger.Warn("Progress TUI exited with error", "error", err)
-			}
-		}()
+		o.tuiCleanup = o.progressRenderer.Run(ctx, chatAgent)
 		return nil
 	}
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
@@ -288,8 +277,9 @@ type RunParams struct {
 	LastN           int
 	BackN           int
 	RawOutput       bool
-	TUIOutput       bool
-	Prompt          string
+	TUIOutput         bool
+	ProgressRenderer  ports.ProgressRenderer
+	Prompt            string
 	Config          *config.Config
 	Deps            ports.ChatterComposer
 	Capturer        ports.Capturer
@@ -307,6 +297,7 @@ func Run(ctx context.Context, params RunParams) error {
 		params.AgentFactory,
 		params.HistoryRenderer,
 		params.UIRenderer,
+		WithProgressRenderer(params.ProgressRenderer),
 	)
 
 	sCfg := NewSessionConfig(

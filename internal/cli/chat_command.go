@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -212,6 +213,7 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		RawOutput:    opts.rawOutput,
 		UseTUIPrompt: opts.tuiPrompt,
 		TUIOutput:    opts.tuiOutput,
+		ProgressRenderer: progress.NewRenderer(),
 		Retry:        opts.retry,
 		Prompt:       prompt,
 	}, capturer)

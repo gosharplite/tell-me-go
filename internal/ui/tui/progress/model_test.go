@@ -25,7 +25,7 @@ func TestModel_Update(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.Equal(t, stateThinking, updated.currentState)
-		assert.Equal(t, 20, updated.turn)
+		assert.Equal(t, 21, updated.turn)
 		assert.NotNil(t, cmd)
 	})
 
