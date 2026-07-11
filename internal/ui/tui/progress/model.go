@@ -543,12 +543,12 @@ func formatFinalLine(status events.TurnStatus, turnCost float64) string {
 // header (2 lines), scrollable body, footer (3 lines).
 // Falls back to renderMinimal when the terminal is too small (height < 5).
 func (m *model) View() string {
-	if m.height < 5 {
+	if m.height < 6 {
 		return m.renderMinimal()
 	}
 
-	// Body gets everything between header (2 lines) and footer (3 lines).
-	availableBody := m.height - 5
+	// Body gets everything between header (2 lines) and footer (4 lines).
+	availableBody := m.height - 6
 
 	var sb strings.Builder
 	sb.WriteString(m.renderHeader())
@@ -613,24 +613,33 @@ func (m *model) renderBody(availableLines int) string {
 	return "\n" + strings.Join(bodyLines, "\n")
 }
 
-// renderFooter returns exactly 3 lines: metrics placeholder, final cost
-// placeholder, and spinner. Each line is either its real content or blank.
+// renderFooter returns exactly 4 lines: post-call payload, metrics, final
+// cost summary, and spinner. Each line is either its real content or blank.
 func (m *model) renderFooter() string {
 	var sb strings.Builder
 
-	// Line 1: post-call metrics (payload line is dropped — redundant with header).
+	// Line 1: post-call payload (exact token count, separate from header).
+	sb.WriteString("\n")
+	if m.postCallStatus != nil {
+		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
+			m.timestamp.Format("15:04:05"),
+			m.postCallStatus.Metrics.PromptTokens,
+			m.maxTokens, m.sessionName, m.modelName))
+	}
+
+	// Line 2: post-call metrics.
 	sb.WriteString("\n")
 	if m.postCallMetricsLine != "" {
 		sb.WriteString(m.postCallMetricsLine)
 	}
 
-	// Line 2: final cost summary.
+	// Line 3: final cost summary.
 	sb.WriteString("\n")
 	if m.finalCostLine != "" {
 		sb.WriteString(m.finalCostLine)
 	}
 
-	// Line 3: spinner.
+	// Line 4: spinner.
 	sb.WriteString("\n")
 	if m.spinner.active() && m.currentState != stateIdle {
 		frame := brailleFrames[m.spinner.frame%len(brailleFrames)]
