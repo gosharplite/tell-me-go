@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // uncoveredBlock represents a block of code with zero coverage.
@@ -340,14 +342,20 @@ func parseDetailedCoverage(ctx context.Context, r io.Reader, runner AnalysisGoRu
 func (m *healthManager) runCoverageTest(ctx context.Context, packagePath, tempPath string, hb chan<- struct{}) error {
 	// Heartbeat while running tests
 	done := make(chan struct{})
+	exited := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		defer close(exited)
+		clk := m.clk
+		if clk == nil {
+			clk = clock.RealClock{}
+		}
+		ticker := clk.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
 				return
-			case <-ticker.C:
+			case <-ticker.C():
 				if hb != nil {
 					select {
 					case hb <- struct{}{}:
@@ -357,7 +365,10 @@ func (m *healthManager) runCoverageTest(ctx context.Context, packagePath, tempPa
 			}
 		}
 	}()
-	defer close(done)
+	defer func() {
+		close(done)
+		<-exited
+	}()
 
 	_, err := m.Runner.RunTestsWithCoverage(ctx, packagePath, true, tempPath)
 	return err

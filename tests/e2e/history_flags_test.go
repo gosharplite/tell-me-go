@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
@@ -50,15 +51,33 @@ func newHistoryNavEnv(t *testing.T) *historyNavEnv {
 
 	histPath := filepath.Join(homeDir, "output", "assistant", "history.jsonl")
 
-	// 3. Populate session history with 3 distinct prompts
+	// 3. Populate session history with 3 distinct prompts directly via
+	// history.Manager (avoids 3 subprocess invocations at ~200ms each).
+	fs := persistence.NewOSFileSystem()
+	mgr := history.NewManager(fs, histPath, histPath+".archive")
+	if err := mgr.Load(context.Background()); err != nil {
+		t.Fatalf("Failed to load history: %v", err)
+	}
+
 	prompts := []string{"Message 1", "Message 2", "Message 3"}
 	for _, p := range prompts {
-		_, _, err := runCommandWithEnv(env, "", "-c="+configPath, p)
-		if err != nil {
-			t.Fatalf("Failed to send prompt %q: %v", p, err)
+		if err := mgr.AddContent(context.Background(), &llm.Content{
+			Role:  "user",
+			ID:    llm.NewID(),
+			Parts: []*llm.Part{{Text: p}},
+		}); err != nil {
+			t.Fatalf("Failed to add user content for %q: %v", p, err)
 		}
-		forceReconcileHistory(t, histPath)
-		waitForHistoryStable(t, histPath)
+		if err := mgr.AddContent(context.Background(), &llm.Content{
+			Role:  "model",
+			ID:    llm.NewID(),
+			Parts: []*llm.Part{{Text: "Response to your prompt"}},
+		}); err != nil {
+			t.Fatalf("Failed to add model content for %q: %v", p, err)
+		}
+	}
+	if err := mgr.Sync(context.Background()); err != nil {
+		t.Fatalf("Failed to sync history: %v", err)
 	}
 
 	return &historyNavEnv{

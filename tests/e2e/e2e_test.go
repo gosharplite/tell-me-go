@@ -26,6 +26,7 @@ import (
 
 var binPath string
 var projectRoot string
+var isTempBinDir bool
 
 // isShortMode checks os.Args directly for -test.short because
 // testing.Short() panics in TestMain before flag.Parse() has run.
@@ -38,30 +39,46 @@ func isShortMode() bool {
 	return false
 }
 
-// buildE2EBinary compiles cmd/tell-me-go into tempDir. It skips the build
-// if the existing binary is newer than main.go (incremental-run optimization).
-// On success it sets the package-level binPath and projectRoot variables.
-// On failure it prints to stderr and calls os.Exit(1).
+// buildE2EBinary compiles cmd/tell-me-go into a persistent cache directory.
+// The cache lives at <UserCacheDir>/tell-me-go/e2e-binary/ so that rebuilds only
+// happen when cmd/tell-me-go/main.go is newer than the cached binary.
+// If os.UserCacheDir() fails, it falls back to a temporary directory.
+// On success it sets the package-level binPath, projectRoot, and isTempBinDir
+// variables. On failure it prints to stderr and calls os.Exit(1).
 func buildE2EBinary() {
-	tempDir, err := os.MkdirTemp("", "tell-me-go-e2e")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
-		os.Exit(1)
-	}
-
-	binPath = filepath.Join(tempDir, "tell-me-go")
-	if runtime.GOOS == "windows" {
-		binPath += ".exe"
-	}
-
 	wd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
-		_ = os.RemoveAll(tempDir)
 		os.Exit(1)
 	}
 	projectRoot = filepath.Dir(filepath.Dir(wd))
 	mainPath := filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go")
+
+	exeSuffix := ""
+	if runtime.GOOS == "windows" {
+		exeSuffix = ".exe"
+	}
+
+	// Prefer a persistent cache directory so the binary survives across runs.
+	cacheDir, cacheErr := os.UserCacheDir()
+	if cacheErr == nil {
+		cacheDir = filepath.Join(cacheDir, "tell-me-go", "e2e-binary")
+		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create cache dir %s: %v\n", cacheDir, err)
+			os.Exit(1)
+		}
+		binPath = filepath.Join(cacheDir, "tell-me-go"+exeSuffix)
+		isTempBinDir = false
+	} else {
+		// Fallback: create a fresh temp directory (old behavior).
+		tempDir, err := os.MkdirTemp("", "tell-me-go-e2e")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
+			os.Exit(1)
+		}
+		binPath = filepath.Join(tempDir, "tell-me-go"+exeSuffix)
+		isTempBinDir = true
+	}
 
 	needsBuild := true
 	if binInfo, err := os.Stat(binPath); err == nil {
@@ -77,7 +94,10 @@ func buildE2EBinary() {
 		build := exec.Command("go", "build", "-o", binPath, mainPath)
 		if out, err := build.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
-			_ = os.RemoveAll(tempDir)
+			// Only clean up if we used a temp dir (cache dir should persist).
+			if isTempBinDir {
+				_ = os.RemoveAll(filepath.Dir(binPath))
+			}
 			os.Exit(1)
 		}
 	} else {
@@ -94,7 +114,9 @@ func TestMain(m *testing.M) {
 	buildE2EBinary()
 
 	code := m.Run()
-	_ = os.RemoveAll(filepath.Dir(binPath))
+	if isTempBinDir {
+		_ = os.RemoveAll(filepath.Dir(binPath))
+	}
 	os.Exit(code)
 }
 
@@ -207,11 +229,20 @@ func TestSessionArchiving(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 3. Run with -new flag (and a dummy prompt to trigger the logic)
-	// We expect it to fail on API call but archive the files first
-	_, _, _ = runCommandWithEnv(env, "", "--new", "hello")
+	// 3. Setup mock server — we only need the archive path, not an LLM response.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
 
-	// 4. Verify archive exists
+	configPath := createTempConfig(t, "google", server.URL)
+	env = append(env, "TELL_ME_MOCK_URL="+server.URL)
+
+	// 4. Run with -new flag (and a dummy prompt to trigger the logic)
+	// We expect it to fail on API call but archive the files first
+	_, _, _ = runCommandWithEnv(env, "", "-c", configPath, "--new", "hello")
+
+	// 5. Verify archive exists
 	backupsDir := filepath.Join(outputDir, "backups")
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil || len(entries) == 0 {
@@ -252,15 +283,24 @@ func TestBypassArchiving(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 3. Run with -new flag
-	_, _, _ = runCommandWithEnv(env, "", "--new", "hello")
+	// 3. Setup mock server — we only need the archive path, not an LLM response.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
 
-	// 4. Verify bypass file STILL exists in output (not archived)
+	configPath := createTempConfig(t, "google", server.URL)
+	env = append(env, "TELL_ME_MOCK_URL="+server.URL)
+
+	// 4. Run with -new flag
+	_, _, _ = runCommandWithEnv(env, "", "-c", configPath, "--new", "hello")
+
+	// 5. Verify bypass file STILL exists in output (not archived)
 	if _, err := os.Stat(bypassFile); os.IsNotExist(err) {
 		t.Errorf("Expected bypass file to remain in output directory, but it was moved or deleted")
 	}
 
-	// 5. Verify it's NOT in the backup
+	// 6. Verify it's NOT in the backup
 	backupsDir := filepath.Join(outputDir, "backups")
 	entries, _ := os.ReadDir(backupsDir)
 	if len(entries) > 0 {

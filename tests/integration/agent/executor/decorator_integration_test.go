@@ -38,7 +38,7 @@ func registerMockTool(reg tools.Registry, name string) error {
 
 	handler := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(2 * time.Second):
 			return tools.ToolResult{Text: "completed"}, nil
 		case <-ctx.Done():
 			return tools.ToolResult{Error: ctx.Err()}, nil
@@ -94,7 +94,7 @@ func TestIntegration_DecoratorKillsProcess(t *testing.T) {
 
 	// 6. Verify actual termination via elapsed time
 	require.NoError(t, err, "internal tool timeout is delivered via response, not Go error")
-	require.Less(t, elapsed, 3*time.Second, "Execution was not terminated by the decorator's context")
+	require.Less(t, elapsed, 2*time.Second, "Execution was not terminated by the decorator's context")
 
 	// 7. Verify domain boundary (Error translation via string content and events)
 	require.NotNil(t, resContent)
@@ -157,7 +157,7 @@ func TestIntegration_DecoratorKillsPipeline(t *testing.T) {
 
 	// 6. Verify actual termination via elapsed time
 	require.NoError(t, err, "internal tool timeout is delivered via response, not Go error")
-	require.Less(t, elapsed, 3*time.Second, "Execution was not terminated by the decorator's context")
+	require.Less(t, elapsed, 2*time.Second, "Execution was not terminated by the decorator's context")
 
 	// 7. Verify domain boundary (Error translation)
 	require.NotNil(t, resContent)

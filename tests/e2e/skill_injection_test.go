@@ -95,6 +95,7 @@ func TestE2ESkillInjection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
+	t.Parallel()
 
 	// 1. Setup temp home and mock skill
 	homeDir := t.TempDir()

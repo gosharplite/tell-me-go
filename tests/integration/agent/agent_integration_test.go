@@ -608,7 +608,7 @@ func TestAgent_Subscribe(t *testing.T) {
 
 	// Wait for the expected event (the second one, or the one with specific values)
 	var lastEvent events.ConfigUpdated
-	timeout := time.After(2 * time.Second)
+	timeout := time.After(500 * time.Millisecond)
 	found := false
 
 loop:

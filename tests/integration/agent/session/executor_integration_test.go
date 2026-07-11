@@ -210,7 +210,7 @@ func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(1 * time.Second):
 			return tools.ToolResult{Text: "finished late"}, nil
 		case <-ctx.Done():
 			close(exitSignal)
@@ -238,7 +238,7 @@ func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 	select {
 	case <-exitSignal:
 		// Success
-	case <-time.After(2 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Tool goroutine leaked after internal timeout")
 	}
 
@@ -255,7 +255,7 @@ func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 	select {
 	case <-exitSignal:
 		// Success
-	case <-time.After(2 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Tool goroutine leaked after parent context cancellation")
 	}
 }

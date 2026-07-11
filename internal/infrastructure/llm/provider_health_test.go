@@ -126,7 +126,7 @@ func TestLLMProviderHealthChecker_DegradedTransient(t *testing.T) {
 func TestLLMProviderHealthChecker_DegradedConnectivity(t *testing.T) {
 	t.Parallel()
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "http://invalid-host-999.local", nil)
+	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
 
 	report, _ := checker.Check(context.Background())
 	if report.Status != ports.StatusDegraded {

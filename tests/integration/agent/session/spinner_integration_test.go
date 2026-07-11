@@ -119,7 +119,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		// Wait for the spinner to start and write to stderr
 		select {
 		case <-stderr.OnWrite:
-		case <-time.After(5 * time.Second):
+		case <-time.After(1 * time.Second):
 			t.Fatal("Timeout waiting for spinner start")
 		}
 		assert.Contains(t, stderrRaw.String(), "Thinking...")
@@ -128,14 +128,14 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		clock.Tick() // Frame 1
 		select {
 		case <-stderr.OnWrite:
-		case <-time.After(2 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 			t.Error("Timeout waiting for spinner frame 1")
 		}
 
 		clock.Tick() // Frame 2
 		select {
 		case <-stderr.OnWrite:
-		case <-time.After(2 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 			t.Error("Timeout waiting for spinner frame 2")
 		}
 
@@ -223,7 +223,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// Wait for the spinner to start
 	select {
 	case <-stderr.OnWrite:
-	case <-time.After(5 * time.Second):
+	case <-time.After(1 * time.Second):
 		t.Fatal("Timeout waiting for spinner start")
 	}
 	assert.Contains(t, stderrRaw.String(), "Thinking...")
@@ -233,13 +233,13 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	clock.Tick()
 	select {
 	case <-stderr.OnWrite:
-	case <-time.After(2 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Error("Timeout waiting for spinner tick after handler context expired")
 	}
 	clock.Tick()
 	select {
 	case <-stderr.OnWrite:
-	case <-time.After(2 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Error("Timeout waiting for second spinner tick")
 	}
 
