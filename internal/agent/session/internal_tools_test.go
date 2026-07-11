@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -513,6 +514,10 @@ func testEmitHeartbeatsPath(t *testing.T, hb chan struct{}, wantRecv bool) {
 
 	it := NewInternalTools(&sessctx.Manager{History: &failingHMBase{}}, &ports.NoOpLogger{})
 
+	// Inject FakeClock so the ticker fires instantly instead of waiting 2s.
+	fakeClock := &clock.FakeClock{Ticker: clock.NewFakeTicker()}
+	it.clk = fakeClock
+
 	// Install a tick hook that signals once.
 	ticked := make(chan struct{}, 1)
 	it.hooks = signalHook{ch: ticked}
@@ -525,7 +530,10 @@ func testEmitHeartbeatsPath(t *testing.T, hb chan struct{}, wantRecv bool) {
 		close(returned)
 	}()
 
-	// Wait for the first tick to fire.
+	// Fire the fake ticker to trigger the tick immediately.
+	fakeClock.Ticker.Fire()
+
+	// Wait for the tick to be processed.
 	waitForTicked(t, ticked)
 
 	// Stop the goroutine.

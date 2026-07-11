@@ -11,6 +11,7 @@ import (
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // heartbeatHooks allows tests to observe or inject faults into the ticker loop.
@@ -29,6 +30,7 @@ type InternalTools struct {
 	ctxManager *sessctx.Manager
 	logger     ports.Logger
 	hooks      heartbeatHooks // prodHeartbeatHooks in production; test mocks in tests
+	clk        clock.Clock
 }
 
 // NewInternalTools creates a new InternalTools provider.
@@ -40,6 +42,7 @@ func NewInternalTools(cm *sessctx.Manager, logger ports.Logger) *InternalTools {
 		ctxManager: cm,
 		logger:     logger,
 		hooks:      prodHeartbeatHooks{},
+		clk:        clock.RealClock{},
 	}
 }
 
@@ -50,13 +53,13 @@ func (t *InternalTools) emitHeartbeats(done <-chan struct{}, hb chan<- struct{})
 			t.logger.Error("panic in summarize history background drainer: %v", r)
 		}
 	}()
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := t.clk.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-done:
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			t.hooks.onTick()
 			if hb != nil {
 				select {
