@@ -167,7 +167,7 @@ func formatMetricsLine(m *llm.Metrics, startTime time.Time, timestamp time.Time,
 	}
 
 	totalLatency := m.Duration + m.ToolDuration
-	timing := fmt.Sprintf("[%.2fs (∑T: %.2fs)]", totalLatency, m.CumulativeToolDuration)
+	timing := fmt.Sprintf("[%.2fs (ΣT: %.2fs)]", totalLatency, m.CumulativeToolDuration)
 	if !startTime.IsZero() {
 		sessionDur := time.Since(startTime).Seconds()
 		if turns > 0 {
