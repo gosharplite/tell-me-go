@@ -127,6 +127,12 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 	case llm.LLMErrorTimeout, llm.LLMErrorServerError:
 		// Fall through to retry logic below
 	default:
+		// Architect-acceptance (2026-07): ClassifyLLMError returns exactly one of
+		// the five known categories (RateLimited, ContextOverflow, AuthFailure,
+		// ServerError, Timeout). The default case is a defensive guard that is
+		// structurally unreachable. Same acceptance class as json.Marshal on
+		// all-string structs in global_prompt_tracker.go.
+		// See: docs/architect/INTENTIONAL_NON_FIXES.md.
 		// Unknown category — fall through to retry logic
 	}
 

@@ -252,6 +252,12 @@ func injectSyntheticLoopFeedback(ctx context.Context, Turn *Turn) error {
 				Parts: syntheticParts,
 			})
 		}
+		// Architect-acceptance (2026-07): reached only when HasToolCalls is true
+		// but Response has no FunctionCall parts — inconsistent internal state that
+		// does not occur in normal operation (HasToolCalls is derived from the
+		// presence of FunctionCall parts). Defensive guard — same acceptance class
+		// as defensive nil/empty guards on internal pipeline state (2026-07 Batch
+		// Triage). See: docs/architect/INTENTIONAL_NON_FIXES.md.
 		return nil
 	}
 

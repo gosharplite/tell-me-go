@@ -202,6 +202,12 @@ func (d *eventDispatcher) handleSystemMessage(ctx context.Context, e events.Even
 	case events.StatusUpdate:
 		msg, lvl = ev.Message, ev.Level
 	case events.ToolOutputStreamEvent:
+		// Architect-acceptance (2026-07): structurally unreachable via normal
+		// dispatch — ToolOutputStreamEvent is registered to handleToolOutputStream,
+		// not handleSystemMessage. This case exists as a defensive fallthrough
+		// for the same-handler dispatch pattern. Same acceptance class as
+		// defensive guards on internal pipeline state (2026-07 Batch Triage).
+		// See: docs/architect/INTENTIONAL_NON_FIXES.md.
 		msg, lvl = ev.Message, ev.Level
 	default:
 		return

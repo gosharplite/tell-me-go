@@ -236,3 +236,46 @@ func TestEventQueue_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	default:
 	}
 }
+
+// TestEventQueue_DrainRemainingEvents_EmptyChannel covers the BUSINESS_LOGIC
+// branch at event_queue.go:142-143 where the default: case returns immediately
+// when no events are available in the channel.
+func TestEventQueue_DrainRemainingEvents_EmptyChannel(t *testing.T) {
+	t.Parallel()
+
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 10)
+
+	// Queue is empty — drain must not block and must not panic.
+	var processed []events.Event
+	q.drainRemainingEvents(func(ctx context.Context, e events.Event) {
+		processed = append(processed, e)
+	})
+
+	assert.Empty(t, processed, "no events should be processed from an empty queue")
+}
+
+// TestEventQueue_DrainRemainingEvents_ProcessesAvailable covers the
+// non-empty path of drainRemainingEvents and the ok=false channel-close
+// termination at event_queue.go:138-139.
+func TestEventQueue_DrainRemainingEvents_ProcessesAvailable(t *testing.T) {
+	t.Parallel()
+
+	loopCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q := newEventQueue(slog.New(slog.NewTextHandler(io.Discard, nil)), loopCtx, 10)
+
+	// Enqueue two events.
+	q.sendDirect(events.SystemMessageEvent{Message: "first", Level: "info"})
+	q.sendDirect(events.SystemMessageEvent{Message: "second", Level: "warn"})
+
+	var processed []events.Event
+	q.drainRemainingEvents(func(ctx context.Context, e events.Event) {
+		processed = append(processed, e)
+	})
+
+	assert.Len(t, processed, 2, "both enqueued events should be processed")
+	assert.Equal(t, "first", processed[0].(events.SystemMessageEvent).Message)
+	assert.Equal(t, "second", processed[1].(events.SystemMessageEvent).Message)
+}

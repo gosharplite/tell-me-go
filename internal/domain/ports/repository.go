@@ -102,12 +102,17 @@ type Task struct {
 }
 
 // GetID returns the task's unique identifier.
+// Architect-acceptance (2026-07): struct field accessor satisfying the
+// FilterableItem interface. Same acceptance class as interface-satisfying
+// stubs in agenttest/helpers.go. See: docs/architect/INTENTIONAL_NON_FIXES.md.
 func (t Task) GetID() int64 { return t.ID }
 
 // GetStatus returns the task's current status.
+// Architect-acceptance (2026-07): struct field accessor — see GetID above.
 func (t Task) GetStatus() string { return t.Status }
 
 // GetCreatedAt returns the task's creation timestamp.
+// Architect-acceptance (2026-07): struct field accessor — see GetID above.
 func (t Task) GetCreatedAt() time.Time { return t.CreatedAt }
 
 // SessionInfo holds metadata about the current execution environment.
