@@ -1041,6 +1041,81 @@ func TestModel_ToolLogs(t *testing.T) {
 		assert.Contains(t, updated.toolLogs[0], "[System] some message")
 	})
 
+	t.Run("SystemMessageEvent error level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.SystemMessageEvent{
+			Message: "failed to connect to API",
+			Level:   "error",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Error] failed to connect to API")
+	})
+
+	t.Run("SystemMessageEvent info level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.SystemMessageEvent{
+			Message: "context window expanded to 128k",
+			Level:   "info",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Info] context window expanded to 128k")
+	})
+
+	t.Run("SystemMessageEvent default level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.SystemMessageEvent{
+			Message: "agent state changed",
+			Level:   "debug",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[System] agent state changed")
+	})
+
+	t.Run("StatusUpdate error level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.StatusUpdate{
+			Message: "context limit exceeded",
+			Level:   "error",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Error] context limit exceeded")
+	})
+
+	t.Run("StatusUpdate warn level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.StatusUpdate{
+			Message: "retry attempt 2 of 3",
+			Level:   "warn",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Warning] retry attempt 2 of 3")
+	})
+
 	t.Run("TurnStarted clears toolLogs", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)

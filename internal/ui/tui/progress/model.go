@@ -248,6 +248,30 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		}
 		m.appendToolLog(prefix, e.Message)
 		return m, m.waitForEvent()
+	case events.SystemMessageEvent:
+		prefix := "System"
+		switch e.Level {
+		case "error":
+			prefix = "Error"
+		case "warn":
+			prefix = "Warning"
+		case "info":
+			prefix = "Info"
+		}
+		m.appendToolLog(prefix, e.Message)
+		return m, m.waitForEvent()
+	case events.StatusUpdate:
+		prefix := "System"
+		switch e.Level {
+		case "error":
+			prefix = "Error"
+		case "warn":
+			prefix = "Warning"
+		case "info":
+			prefix = "Info"
+		}
+		m.appendToolLog(prefix, e.Message)
+		return m, m.waitForEvent()
 	case events.TurnStarted:
 		return m, m.handleTurnStarted(e)
 	case events.InferenceStartedEvent:
