@@ -139,6 +139,7 @@ func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, i
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
+		height:       24, // sensible default before first WindowSizeMsg
 		mdRender:     mdRender,
 		seenCallIDs:  make(map[string]bool),
 	}

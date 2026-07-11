@@ -344,6 +344,19 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[1], "Payload: ~0/0 tokens")
 	})
 
+	t.Run("default height is 24 before WindowSizeMsg", func(t *testing.T) {
+		ch := make(chan events.Event, 1)
+		m := NewModel(context.Background(), ch, nil).(*model)
+
+		assert.Equal(t, 24, m.height, "default height ensures full layout before WindowSizeMsg")
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+		assert.Len(t, lines, 24, "should use full layout, not renderMinimal")
+		assert.Contains(t, lines[0], "╭─ Turn 0 - ")
+		assert.Contains(t, lines[1], "Payload:")
+	})
+
 	t.Run("stateThinking shows turn and session", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
