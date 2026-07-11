@@ -255,11 +255,9 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	case events.ToolOutputStreamEvent:
 		return m, m.handleToolOutputStreamEvent(e)
 	case events.SystemMessageEvent:
-		m.appendLevelEventLog(e.Level, e.Message)
-		return m, m.waitForEvent()
+		return m, m.handleLeveledMessage(e.Level, e.Message)
 	case events.StatusUpdate:
-		m.appendLevelEventLog(e.Level, e.Message)
-		return m, m.waitForEvent()
+		return m, m.handleLeveledMessage(e.Level, e.Message)
 	case events.TurnStarted:
 		return m, m.handleTurnStarted(e)
 	case events.InferenceStartedEvent:
@@ -268,14 +266,20 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		return m, m.handleTurnStatus(e)
 	case events.ResponseEvent:
 		return m, m.handleResponseEvent(e)
-	case events.SummarizationStartedEvent:
-		return m, m.handleSpinnerEvent(e)
-	case events.ToolExecutionStartedEvent:
-		return m, m.handleSpinnerEvent(e)
-	case events.RetryWaitingEvent:
-		return m, m.handleSpinnerEvent(e)
+	case events.SummarizationStartedEvent,
+		events.ToolExecutionStartedEvent,
+		events.RetryWaitingEvent:
+		return m, m.handleSpinnerEvent(e.(spinnerInfoProvider))
 	}
 	return m, m.waitForEvent()
+}
+
+// handleLeveledMessage logs a leveled system message and returns a
+// waitForEvent command. It is used by both SystemMessageEvent and
+// StatusUpdate handlers.
+func (m *model) handleLeveledMessage(level, message string) tea.Cmd {
+	m.appendLevelEventLog(level, message)
+	return m.waitForEvent()
 }
 
 // handleTurnStarted processes a TurnStarted event.
@@ -348,8 +352,6 @@ func (m *model) handleToolCallEvent(e events.ToolCallEvent) tea.Cmd {
 	if len(e.Calls) == 0 {
 		return m.waitForEvent()
 	}
-	// Count new calls and track which ones need fresh log lines.
-	// Calls already extracted from ResponseEvent are skipped.
 	newCalls := make([]*llm.FunctionCall, 0, len(e.Calls))
 	for _, fc := range e.Calls {
 		id := fc.ID
@@ -357,38 +359,52 @@ func (m *model) handleToolCallEvent(e events.ToolCallEvent) tea.Cmd {
 			id = fc.Name
 		}
 		if !m.seenCallIDs[id] {
-			m.seenCallIDs[id] = true
 			newCalls = append(newCalls, fc)
 		}
 	}
-	// Only emit Tool Engine if there are new calls not already seen.
 	if len(newCalls) > 0 {
 		m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
 	}
-	// Only emit reason/action for new calls.
 	for _, fc := range newCalls {
-		if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
-			m.appendToolLog("Tool Reason", reason)
-		}
-		var keys []string
-		for k := range fc.Args {
-			if k != "reason" {
-				keys = append(keys, k)
-			}
-		}
-		sort.Strings(keys)
-
-		var parts []string
-		for _, k := range keys {
-			valStr := fmt.Sprintf("%v", fc.Args[k])
-			if len(valStr) > 189 {
-				valStr = safeTruncate(valStr, 186) + "..."
-			}
-			parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
-		}
-		m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
+		m.logToolCall(fc)
 	}
 	return m.waitForEvent()
+}
+
+// logToolCall logs a single function call's reason and action to the
+// tool log, deduplicating by call ID. Calls already logged (tracked in
+// seenCallIDs) are silently skipped.
+func (m *model) logToolCall(fc *llm.FunctionCall) {
+	id := fc.ID
+	if id == "" {
+		id = fc.Name
+	}
+	if m.seenCallIDs[id] {
+		return
+	}
+	m.seenCallIDs[id] = true
+
+	if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
+		m.appendToolLog("Tool Reason", reason)
+	}
+
+	var keys []string
+	for k := range fc.Args {
+		if k != "reason" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var parts []string
+	for _, k := range keys {
+		valStr := fmt.Sprintf("%v", fc.Args[k])
+		if len(valStr) > 189 {
+			valStr = safeTruncate(valStr, 186) + "..."
+		}
+		parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
+	}
+	m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
 }
 
 // handleToolResultEvent logs a truncated result snippet for a completed tool call.
@@ -453,38 +469,8 @@ func (m *model) extractToolCallsFromResponse(content *llm.Content) {
 	if len(toolCalls) == 0 {
 		return
 	}
-
 	for _, fc := range toolCalls {
-		id := fc.ID
-		if id == "" {
-			id = fc.Name // fallback for providers that don't set ID
-		}
-		if m.seenCallIDs[id] {
-			continue
-		}
-		m.seenCallIDs[id] = true
-
-		if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
-			m.appendToolLog("Tool Reason", reason)
-		}
-
-		var keys []string
-		for k := range fc.Args {
-			if k != "reason" {
-				keys = append(keys, k)
-			}
-		}
-		sort.Strings(keys)
-
-		var parts []string
-		for _, k := range keys {
-			valStr := fmt.Sprintf("%v", fc.Args[k])
-			if len(valStr) > 189 {
-				valStr = safeTruncate(valStr, 186) + "..."
-			}
-			parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
-		}
-		m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
+		m.logToolCall(fc)
 	}
 }
 

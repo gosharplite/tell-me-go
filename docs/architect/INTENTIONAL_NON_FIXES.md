@@ -437,6 +437,28 @@ Any AI agent recommending these should consult the rationale below.
   of refactoring outweighs the maintainability benefit.
 - **See**: `tests/e2e/history_flags_test.go:142`
 
+### cmd/tell-me-go/main.go — buildApp os.Getwd error path (non-Linux)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The `wd = "."` fallback when `os.Getwd()` fails is only
+  reachable on Linux via the chdir-into-deleted-directory technique used by
+  `TestBuildApp_GetwdError`. On macOS and Windows, the kernel caches the
+  working directory path, making the error structurally unreachable.
+  Same acceptance class as the platform-specific branches in
+  `pidlock/pidlock.go`.
+- **See**: `cmd/tell-me-go/main.go` (`buildApp`, `os.Getwd` error branch),
+  `cmd/tell-me-go/main_test.go` (`TestBuildApp_GetwdError`)
+
+### agent/agent.go — configRefreshHook.BeforeTurn/AfterTurn no-op stubs
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `configRefreshHook` implements `orchestrator.TurnHook` to
+  inject config hot-reload at phase transitions. `BeforeTurn` and `AfterTurn`
+  are empty because the hook only needs `OnPhaseTransition`. The empty methods
+  exist solely to satisfy the interface contract. Same acceptance class as
+  the `agenttest/helpers.go` interface-satisfying stubs.
+- **See**: `internal/agent/agent.go:382-383`
+
 ---
 
-*Last Updated: 2026-07 (skills.sh triage + agenttest stubs + test complexity + middleware loop-detection gap)*
+*Last Updated: 2026-07 (Task 4: buildApp debug coverage + platform gap docs + configRefreshHook stubs)*

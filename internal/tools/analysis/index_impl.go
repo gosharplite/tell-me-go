@@ -241,7 +241,16 @@ func (idx *indexer) collectTypeMethods(tn *types.TypeName, fn func(meta *symMeta
 		return true
 	}
 
-	// Harvest struct methods.
+	if !idx.harvestStructMethods(named, fn) {
+		return false
+	}
+	return idx.harvestInterfaceMethods(named, fn)
+}
+
+// harvestStructMethods collects exported methods from the named type's
+// method set and invokes fn for each. Returns false if fn requests early
+// termination.
+func (idx *indexer) harvestStructMethods(named *types.Named, fn func(meta *symMeta) bool) bool {
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
 		if m == nil || m.Pkg() == nil || !m.Exported() {
@@ -265,35 +274,41 @@ func (idx *indexer) collectTypeMethods(tn *types.TypeName, fn func(meta *symMeta
 			return false
 		}
 	}
+	return true
+}
 
-	// If the named type's underlying type is an interface,
-	// also harvest its interface methods.
-	if iface, ok := named.Underlying().(*types.Interface); ok {
-		for i := 0; i < iface.NumMethods(); i++ {
-			m := iface.Method(i)
-			if m == nil || m.Pkg() == nil || !m.Exported() {
-				continue
-			}
-			if isExportTestFile(idx.fset, m.Pos()) {
-				continue
-			}
-			mMeta := &symMeta{
-				id:                  getSymbolIdentity(m),
-				pkgPath:             getBasePkgPath(m.Pkg().Path()),
-				name:                m.Name(),
-				symType:             "Method",
-				isMethod:            true,
-				isInterfaceType:     false,
-				isInterfaceMethod:   true,
-				isWellKnownContract: isWellKnownContractObj(m),
-				obj:                 m,
-			}
-			if !fn(mMeta) {
-				return false
-			}
+// harvestInterfaceMethods collects exported methods from the named type's
+// underlying interface and invokes fn for each. Returns false if fn
+// requests early termination. Does nothing if the underlying type is not
+// an interface.
+func (idx *indexer) harvestInterfaceMethods(named *types.Named, fn func(meta *symMeta) bool) bool {
+	iface, ok := named.Underlying().(*types.Interface)
+	if !ok {
+		return true
+	}
+	for i := 0; i < iface.NumMethods(); i++ {
+		m := iface.Method(i)
+		if m == nil || m.Pkg() == nil || !m.Exported() {
+			continue
+		}
+		if isExportTestFile(idx.fset, m.Pos()) {
+			continue
+		}
+		mMeta := &symMeta{
+			id:                  getSymbolIdentity(m),
+			pkgPath:             getBasePkgPath(m.Pkg().Path()),
+			name:                m.Name(),
+			symType:             "Method",
+			isMethod:            true,
+			isInterfaceType:     false,
+			isInterfaceMethod:   true,
+			isWellKnownContract: isWellKnownContractObj(m),
+			obj:                 m,
+		}
+		if !fn(mMeta) {
+			return false
 		}
 	}
-
 	return true
 }
 
