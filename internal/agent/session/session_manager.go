@@ -81,7 +81,7 @@ func WithEntropySource(r io.Reader) SessionManagerOption {
 }
 
 // WithProgressRenderer injects a ProgressRenderer for TUI output mode.
-func WithProgressRenderer(r ports.ProgressRenderer) SessionManagerOption {
+func withProgressRenderer(r ports.ProgressRenderer) SessionManagerOption {
 	return func(sm *sessionManager) { sm.progressRenderer = r }
 }
 
@@ -297,7 +297,7 @@ func Run(ctx context.Context, params RunParams) error {
 		params.AgentFactory,
 		params.HistoryRenderer,
 		params.UIRenderer,
-		WithProgressRenderer(params.ProgressRenderer),
+		withProgressRenderer(params.ProgressRenderer),
 	)
 
 	sCfg := NewSessionConfig(
