@@ -6,11 +6,14 @@ package progress
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -126,4 +129,150 @@ func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 		eventCh:      ch,
 		currentState: stateIdle,
 	}
+}
+
+func TestModel_View(t *testing.T) {
+	t.Run("stateIdle shows empty defaults", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		out := m.View()
+
+		lines := strings.Split(out, "\n")
+		assert.True(t, len(lines) >= 2, "expected at least 2 lines, got %d: %q", len(lines), out)
+		assert.Contains(t, lines[0], "╭─ Turn 0 - ")
+		assert.Contains(t, lines[1], "Payload: ~0/0 tokens")
+	})
+
+	t.Run("stateThinking shows turn and session", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.turn = 5
+		m.sessionName = "test-session"
+		m.currentState = stateThinking
+
+		out := m.View()
+
+		assert.Contains(t, out, "╭─ Turn 5 - test-session")
+	})
+
+	t.Run("stateRendering shows all fields", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.turn = 3
+		m.sessionName = "coder-test"
+		m.modelName = "gpt-5"
+		m.tokens = 5000
+		m.maxTokens = 64000
+		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
+		m.currentState = stateRendering
+
+		out := m.View()
+
+		lines := strings.Split(out, "\n")
+		assert.True(t, len(lines) >= 2, "expected at least 2 lines, got %d: %q", len(lines), out)
+		assert.Contains(t, lines[0], "╭─ Turn 3 - coder-test")
+		assert.Contains(t, lines[1], "[14:30:00]")
+		assert.Contains(t, lines[1], "~5000/64000")
+		assert.Contains(t, lines[1], "coder-test")
+		assert.Contains(t, lines[1], "gpt-5")
+	})
+}
+
+func TestModel_Integration(t *testing.T) {
+	t.Run("idle to thinking to rendering", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 4)
+		m := newTestModel(ctx, ch)
+
+		// 1. Start idle
+		assert.Equal(t, stateIdle, m.currentState)
+
+		// 2. TurnStarted → thinking
+		newModel, cmd := m.Update(events.TurnStarted{Turn: 0})
+		m = newModel.(*model)
+		assert.Equal(t, stateThinking, m.currentState)
+		assert.Equal(t, 1, m.turn) // Turn.Index 0 + 1
+		assert.NotNil(t, cmd)
+
+		// 3. InferenceStartedEvent → model name set
+		newModel, cmd = m.Update(events.InferenceStartedEvent{Model: "gpt-5"})
+		m = newModel.(*model)
+		assert.Equal(t, "gpt-5", m.modelName)
+		assert.NotNil(t, cmd)
+
+		// 4. TurnStatusEvent → rendering with all fields
+		ts := time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
+		newModel, cmd = m.Update(events.TurnStatusEvent{
+			Status: events.TurnStatus{
+				Tokens:           1500,
+				MaxHistoryTokens: 32000,
+				Timestamp:        ts,
+				Mode:             "architect-johndoe",
+				Model:            "deepseek-v4-pro",
+			},
+		})
+		m = newModel.(*model)
+		assert.Equal(t, stateRendering, m.currentState)
+		assert.Equal(t, 1500, m.tokens)
+		assert.Equal(t, "deepseek-v4-pro", m.modelName)
+		assert.NotNil(t, cmd)
+
+		// Verify View after full cycle
+		out := m.View()
+		assert.Contains(t, out, "╭─ Turn 1 - architect-johndoe")
+		assert.Contains(t, out, "deepseek-v4-pro")
+	})
+
+	t.Run("full turn cycle with tool calls", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 8)
+		m := newTestModel(ctx, ch)
+
+		// Turn 1: thinking
+		newModel, _ := m.Update(events.TurnStarted{Turn: 0})
+		m = newModel.(*model)
+		assert.Equal(t, stateThinking, m.currentState)
+
+		// ToolCallEvent — currently a no-op, should not change state
+		newModel, cmd := m.Update(events.ToolCallEvent{
+			Calls:    []*llm.FunctionCall{{Name: "read_file"}},
+			Turn:     1,
+			MaxTurns: 5,
+		})
+		m = newModel.(*model)
+		assert.Equal(t, stateThinking, m.currentState, "ToolCallEvent should not change state")
+		assert.NotNil(t, cmd)
+
+		// ToolResultEvent — also no-op
+		newModel, cmd = m.Update(events.ToolResultEvent{
+			Name: "read_file",
+			Result: tools.ToolResult{Text: "file contents"},
+		})
+		m = newModel.(*model)
+		assert.Equal(t, stateThinking, m.currentState, "ToolResultEvent should not change state")
+		assert.NotNil(t, cmd)
+
+		// TurnStatus → rendering
+		ts := time.Now()
+		newModel, cmd = m.Update(events.TurnStatusEvent{
+			Status: events.TurnStatus{
+				Tokens: 2000, MaxHistoryTokens: 64000,
+				Timestamp: ts, Mode: "test", Model: "gpt-5",
+			},
+		})
+		m = newModel.(*model)
+		assert.Equal(t, stateRendering, m.currentState)
+		assert.NotNil(t, cmd)
+
+		// Turn 2: cycle restarts
+		newModel, cmd = m.Update(events.TurnStarted{Turn: 1})
+		m = newModel.(*model)
+		assert.Equal(t, stateThinking, m.currentState)
+		assert.Equal(t, 2, m.turn) // Turn.Index 1 + 1
+		assert.NotNil(t, cmd)
+	})
 }
