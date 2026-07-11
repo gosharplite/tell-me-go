@@ -49,8 +49,9 @@ type model struct {
 	responseText       string                   // accumulated AI response text
 	rawResponseText    string                   // raw text before markdown rendering, for re-rendering on resize
 	mdRender           func(string, int) string // optional markdown renderer (text, width)
-	postCallStatus     *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
-	finalCostLine      string                   // rendered "Ready (...)" line from IsFinal
+	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
+	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
+	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
 	spinnerStatus      string                   // current spinner text, e.g. " Executing [bash]..."
 	spinnerShowMetrics bool                     // if true, metrics (CPU/MEM) should be shown alongside spinner
 	spinnerFrame       int                      // index into brailleFrames, incremented each tick
@@ -213,6 +214,9 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 	if e.Status.IsPostCall && e.Status.Metrics != nil {
 		s := e.Status
 		m.postCallStatus = &s
+		m.postCallMetricsLine = formatMetricsLine(
+			s.Metrics, s.StartTime, s.Timestamp, s.CurrentTurns+1,
+		)
 	}
 	if e.Status.IsFinal {
 		turnCost := 0.0
@@ -221,6 +225,8 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 		}
 		m.finalCostLine = formatFinalLine(e.Status, turnCost)
 	}
+	m.spinnerStatus = ""
+	m.spinnerTickActive = false
 	return m.waitForEvent()
 }
 
@@ -328,8 +334,7 @@ func (m *model) View() string {
 			m.postCallStatus.Metrics.PromptTokens,
 			m.maxTokens, m.sessionName, m.modelName))
 		sb.WriteString("\n")
-		sb.WriteString(formatMetricsLine(m.postCallStatus.Metrics,
-			m.postCallStatus.StartTime, m.timestamp, m.postCallStatus.CurrentTurns+1))
+		sb.WriteString(m.postCallMetricsLine)
 	}
 
 	if m.finalCostLine != "" {

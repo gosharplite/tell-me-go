@@ -355,6 +355,12 @@ func TestModel_View(t *testing.T) {
 			},
 			StartTime: time.Date(2026, 1, 15, 14, 28, 0, 0, time.UTC),
 		}
+		m.postCallMetricsLine = formatMetricsLine(
+			m.postCallStatus.Metrics,
+			m.postCallStatus.StartTime,
+			m.timestamp,
+			m.postCallStatus.CurrentTurns+1,
+		)
 
 		out := m.View()
 		lines := strings.Split(out, "\n")
