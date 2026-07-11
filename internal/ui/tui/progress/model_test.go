@@ -1314,7 +1314,30 @@ func TestModel_ToolLogs(t *testing.T) {
 		assert.Contains(t, updated.toolLogs[0], "[Warning] retry attempt 2 of 3")
 	})
 
-	t.Run("TurnStarted clears toolLogs", func(t *testing.T) {
+	t.Run("tool_logs_accumulate_across_turns", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 4)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+
+		// Turn N: dispatch turn adds tool logs
+		m.appendToolLog("Tool Engine", "Step 1/5")
+		m.appendToolLog("Tool Action", "read_file(main.go)")
+		assert.Len(t, m.toolLogs, 2)
+
+		// Turn N+1: TurnStarted must NOT clear them
+		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
+		updated := newModel.(*model)
+		assert.Len(t, updated.toolLogs, 2, "tool logs should persist into execution turn")
+		assert.Contains(t, updated.toolLogs[0], "Step 1/5")
+		assert.Contains(t, updated.toolLogs[1], "read_file")
+
+		// Execution turn adds result
+		updated.appendToolLog("Tool Result", "read_file: file contents here")
+		assert.Len(t, updated.toolLogs, 3, "all three lines present during execution")
+	})
+
+	t.Run("TurnStarted does not clear toolLogs", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
@@ -1323,7 +1346,9 @@ func TestModel_ToolLogs(t *testing.T) {
 		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
 		updated := newModel.(*model)
 
-		assert.Nil(t, updated.toolLogs)
+		assert.NotNil(t, updated.toolLogs, "toolLogs should persist across TurnStarted")
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "Step 1/5")
 	})
 
 	t.Run("View renders toolLogs between header and response", func(t *testing.T) {
@@ -1521,8 +1546,7 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 	assert.NotEmpty(t, updated.postCallMetricsLine, "postCallMetricsLine should persist across TurnStarted")
 	assert.NotEmpty(t, updated.finalCostLine, "finalCostLine should persist across TurnStarted")
 
-	// Non-display fields should also be cleared.
-	assert.Nil(t, updated.toolLogs, "toolLogs should be nil on TurnStarted")
+	// Non-display fields should also be cleared (except toolLogs — sticky).
 	assert.Len(t, updated.seenCallIDs, 0, "seenCallIDs should be empty on TurnStarted")
 
 	// View() after TurnStarted must NOT contain stale response text,
@@ -1588,9 +1612,8 @@ func TestModel_FooterStatusLinesPersistAcrossTurns(t *testing.T) {
 	assert.Equal(t, "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)", updated.finalCostLine)
 	assert.NotNil(t, cmd)
 
-	// But responseText and toolLogs should still be cleared (turn-specific).
+	// But responseText should still be cleared (turn-specific).
 	assert.Empty(t, updated.responseText)
-	assert.Nil(t, updated.toolLogs)
 }
 
 func TestModel_ResponseEvent_NoToolCalls_NoSpuriousLogs(t *testing.T) {

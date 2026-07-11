@@ -289,7 +289,6 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.turn = e.SessionTurns + 1
 	m.currentState = stateThinking
 	m.spinner.clear()
-	m.toolLogs = nil
 	m.seenCallIDs = make(map[string]bool)
 	m.responseText = ""
 	m.rawResponseText = ""
