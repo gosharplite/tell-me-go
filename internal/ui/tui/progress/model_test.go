@@ -109,7 +109,7 @@ func TestModel_Update(t *testing.T) {
 
 		assert.True(t, updated.sessionDone)
 		assert.False(t, updated.spinner.active())
-		assert.NotNil(t, cmd) // idle tick keeps loop alive
+		assert.Nil(t, cmd) // stdin keeps loop alive; no idle tick needed
 	})
 
 	t.Run("sessionDone shows exit prompt in footer", func(t *testing.T) {
