@@ -6,6 +6,7 @@ package progress
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -154,6 +155,46 @@ func (m *model) appendToolLog(tag, message string) {
 	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, message))
 }
 
+// appendLevelEventLog appends a timestamped log line with a level-mapped
+// prefix. Used by ToolOutputStreamEvent, SystemMessageEvent, and StatusUpdate.
+func (m *model) appendLevelEventLog(level, message string) {
+	prefix := "System"
+	switch level {
+	case "error":
+		prefix = "Error"
+	case "warn":
+		prefix = "Warning"
+	case "output":
+		prefix = "Tool Output"
+	case "info":
+		prefix = "Info"
+	}
+	m.appendToolLog(prefix, message)
+}
+
+// safeTruncate truncates s to at most maxLen bytes, ensuring the cut
+// never lands in the middle of a multi-byte UTF-8 character.
+// If s is already shorter than maxLen, it is returned unchanged.
+func safeTruncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// Walk runes to find the byte index of the (maxLen)th rune.
+	var count, byteIdx int
+	for i := range s {
+		if count == maxLen {
+			byteIdx = i
+			break
+		}
+		count++
+	}
+	if byteIdx > 0 {
+		return s[:byteIdx]
+	}
+	// maxLen is 0 or s starts with a multi-byte rune exceeding maxLen.
+	return ""
+}
+
 // Init returns the initial command to start listening for events.
 func (m *model) Init() tea.Cmd {
 	return m.waitForEvent()
@@ -199,7 +240,7 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	switch e := events.Event(msg).(type) {
 	case events.ToolCallEvent:
-		if e.Calls == nil {
+		if len(e.Calls) == 0 {
 			return m, m.waitForEvent()
 		}
 		m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
@@ -207,14 +248,19 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
 				m.appendToolLog("Tool Reason", reason)
 			}
-			var parts []string
-			for k, v := range fc.Args {
-				if k == "reason" {
-					continue
+			var keys []string
+			for k := range fc.Args {
+				if k != "reason" {
+					keys = append(keys, k)
 				}
-				valStr := fmt.Sprintf("%v", v)
+			}
+			sort.Strings(keys)
+
+			var parts []string
+			for _, k := range keys {
+				valStr := fmt.Sprintf("%v", fc.Args[k])
 				if len(valStr) > 189 {
-					valStr = valStr[:186] + "..."
+					valStr = safeTruncate(valStr, 186) + "..."
 				}
 				parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
 			}
@@ -228,49 +274,20 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		if e.Result.Text != "" {
 			snippet := e.Result.Text
 			if len(snippet) > 200 {
-				snippet = snippet[:197] + "..."
+				snippet = safeTruncate(snippet, 197) + "..."
 			}
 			snippet = strings.ReplaceAll(snippet, "\n", " ")
 			m.appendToolLog("Tool Result", fmt.Sprintf("%s: %s", e.Name, snippet))
 		}
 		return m, m.waitForEvent()
 	case events.ToolOutputStreamEvent:
-		prefix := "System"
-		switch e.Level {
-		case "error":
-			prefix = "Error"
-		case "warn":
-			prefix = "Warning"
-		case "output":
-			prefix = "Tool Output"
-		case "info":
-			prefix = "Info"
-		}
-		m.appendToolLog(prefix, e.Message)
+		m.appendLevelEventLog(e.Level, e.Message)
 		return m, m.waitForEvent()
 	case events.SystemMessageEvent:
-		prefix := "System"
-		switch e.Level {
-		case "error":
-			prefix = "Error"
-		case "warn":
-			prefix = "Warning"
-		case "info":
-			prefix = "Info"
-		}
-		m.appendToolLog(prefix, e.Message)
+		m.appendLevelEventLog(e.Level, e.Message)
 		return m, m.waitForEvent()
 	case events.StatusUpdate:
-		prefix := "System"
-		switch e.Level {
-		case "error":
-			prefix = "Error"
-		case "warn":
-			prefix = "Warning"
-		case "info":
-			prefix = "Info"
-		}
-		m.appendToolLog(prefix, e.Message)
+		m.appendLevelEventLog(e.Level, e.Message)
 		return m, m.waitForEvent()
 	case events.TurnStarted:
 		return m, m.handleTurnStarted(e)
