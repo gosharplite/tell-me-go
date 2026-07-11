@@ -224,7 +224,7 @@ func TestModel_Update(t *testing.T) {
 
 		assert.NotEmpty(t, updated.finalCostLine)
 		assert.Contains(t, updated.finalCostLine, "Ready")
-		assert.Contains(t, updated.finalCostLine, "0.1505")
+		assert.Contains(t, updated.finalCostLine, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
 		assert.NotNil(t, cmd)
 	})
 }
@@ -310,6 +310,7 @@ func TestModel_View(t *testing.T) {
 		m.turn = 1
 		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
 		m.postCallStatus = &events.TurnStatus{
+			CurrentTurns: 0,
 			Metrics: &llm.Metrics{
 				PromptTokens:  1000,
 				CachedTokens:  800,
@@ -323,9 +324,11 @@ func TestModel_View(t *testing.T) {
 		}
 
 		out := m.View()
-		assert.Contains(t, out, "[deepseek-pro]")
-		assert.Contains(t, out, "M: 200 H: 800 C: 50")
-		assert.Contains(t, out, "($0.0012)")
+		lines := strings.Split(out, "\n")
+		// line 0: header, line 1: info, line 2: empty, line 3: token line, line 4: metrics line
+		assert.Contains(t, lines[4], "[14:30:00]")
+		assert.Contains(t, lines[4], "[deepseek-pro]")
+		assert.Contains(t, lines[4], "M: 200 H: 800 C: 50")
 	})
 
 	t.Run("with final summary", func(t *testing.T) {
@@ -333,11 +336,12 @@ func TestModel_View(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 		m.currentState = stateRendering
-		m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000) M: 116386 H: 15172096 99.2% O: 51607"
+		m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 99.2% O: 51607)"
 
 		out := m.View()
 		assert.Contains(t, out, "╰─⠿ Ready")
 		assert.Contains(t, out, "M: 116386")
+		assert.Contains(t, out, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
 	})
 }
 

@@ -137,13 +137,17 @@ func extractResponseText(content *llm.Content) string {
 }
 
 // formatMetricsLine renders a single-line post-call metrics summary.
-func formatMetricsLine(m *llm.Metrics, startTime time.Time) string {
+func formatMetricsLine(m *llm.Metrics, startTime time.Time, timestamp time.Time, turns int) string {
 	if m == nil {
 		return ""
 	}
 	miss := m.PromptTokens - m.CachedTokens
 	var parts []string
 
+	// Timestamp
+	parts = append(parts, fmt.Sprintf("[%s]", timestamp.Format("15:04:05")))
+
+	// Model display
 	display := m.Provider
 	if display == "" {
 		display = m.Model
@@ -166,7 +170,11 @@ func formatMetricsLine(m *llm.Metrics, startTime time.Time) string {
 	timing := fmt.Sprintf("[%.2fs (∑T: %.2fs)]", totalLatency, m.CumulativeToolDuration)
 	if !startTime.IsZero() {
 		sessionDur := time.Since(startTime).Seconds()
-		timing = fmt.Sprintf("%s / %.2fs", timing, sessionDur)
+		if turns > 0 {
+			timing = fmt.Sprintf("%s / %.2fs (%.2f)", timing, sessionDur, sessionDur/float64(turns))
+		} else {
+			timing = fmt.Sprintf("%s / %.2fs", timing, sessionDur)
+		}
 	}
 	parts = append(parts, timing)
 
@@ -175,22 +183,13 @@ func formatMetricsLine(m *llm.Metrics, startTime time.Time) string {
 
 // formatFinalLine renders the "Ready" summary line when IsFinal is true.
 func formatFinalLine(status events.TurnStatus, turnCost float64) string {
-	var parts []string
-	parts = append(parts, "Ready")
-
-	if turnCost > 0 || status.TaskCost > 0 || status.SessionCost > 0 || status.DailyCost > 0 {
-		parts = append(parts, fmt.Sprintf("($%.4f $%.4f $%.4f $%.4f)",
-			turnCost, status.TaskCost, status.SessionCost, status.DailyCost))
-	}
-
 	hitRate := 0.0
 	if total := status.TotalM + status.TotalH; total > 0 {
 		hitRate = float64(status.TotalH) / float64(total) * 100
 	}
-	parts = append(parts, fmt.Sprintf("M: %d H: %d %.1f%% O: %d",
-		status.TotalM, status.TotalH, hitRate, status.TotalO))
-
-	return "╰─⠿ " + strings.Join(parts, " ")
+	return fmt.Sprintf("╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)",
+		turnCost, status.TaskCost, status.SessionCost, status.DailyCost,
+		status.TotalM, status.TotalH, hitRate, status.TotalO)
 }
 
 // View renders the progress model as a two-line display with optional response text.
@@ -204,12 +203,13 @@ func (m *model) View() string {
 		out += "\n" + m.responseText
 	}
 	if m.postCallStatus != nil {
-		// Exact token count for post-call (no tilde)
+		out += "\n" // empty line before post-call
 		out += "\n" + fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
 			m.timestamp.Format("15:04:05"),
 			m.postCallStatus.Metrics.PromptTokens,
 			m.maxTokens, m.sessionName, m.modelName)
-		out += "\n" + formatMetricsLine(m.postCallStatus.Metrics, m.postCallStatus.StartTime)
+		out += "\n" + formatMetricsLine(m.postCallStatus.Metrics,
+			m.postCallStatus.StartTime, m.timestamp, m.postCallStatus.CurrentTurns+1)
 	}
 	if m.finalCostLine != "" {
 		out += "\n" + m.finalCostLine
