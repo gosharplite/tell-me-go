@@ -77,69 +77,97 @@ func (m *model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
-			return m, tea.Quit
-		}
-		return m, nil
-
+		return m.handleKeyMsg(msg)
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		if m.rawResponseText != "" && m.mdRender != nil {
-			m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
-		}
-		return m, nil
-
+		return m.handleWindowSizeMsg(msg)
 	case error:
 		m.err = msg
 		return m, nil
-
 	case domainEventMsg:
-		switch e := events.Event(msg).(type) {
-		case events.TurnStarted:
-			m.turn = e.SessionTurns + 1
-			m.currentState = stateThinking
-			return m, m.waitForEvent()
-
-		case events.InferenceStartedEvent:
-			m.modelName = e.Model
-			return m, m.waitForEvent()
-
-		case events.TurnStatusEvent:
-			m.turn = e.Status.SessionTurns + 1
-			m.tokens = e.Status.Tokens
-			m.maxTokens = e.Status.MaxHistoryTokens
-			m.timestamp = e.Status.Timestamp
-			m.sessionName = e.Status.Mode
-			m.modelName = e.Status.Model
-			m.currentState = stateRendering
-
-			if e.Status.IsPostCall && e.Status.Metrics != nil {
-				s := e.Status
-				m.postCallStatus = &s
-			}
-			if e.Status.IsFinal {
-				turnCost := 0.0
-				if e.Status.Metrics != nil {
-					turnCost = e.Status.Metrics.Cost
-				}
-				m.finalCostLine = formatFinalLine(e.Status, turnCost)
-			}
-			return m, m.waitForEvent()
-
-		case events.ResponseEvent:
-			m.rawResponseText = extractResponseText(e.Content)
-			if m.mdRender != nil {
-				m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
-			} else {
-				m.responseText = m.rawResponseText
-			}
-			return m, m.waitForEvent()
-		}
-		return m, m.waitForEvent()
-
+		return m.handleDomainEvent(msg)
 	default:
 		return m, nil
 	}
+}
+
+// handleKeyMsg processes keyboard messages.
+func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// handleWindowSizeMsg processes terminal resize events.
+func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	if m.rawResponseText != "" && m.mdRender != nil {
+		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
+	}
+	return m, nil
+}
+
+// handleDomainEvent dispatches a domain event to the appropriate handler.
+func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
+	switch e := events.Event(msg).(type) {
+	case events.TurnStarted:
+		return m, m.handleTurnStarted(e)
+	case events.InferenceStartedEvent:
+		return m, m.handleInferenceStarted(e)
+	case events.TurnStatusEvent:
+		return m, m.handleTurnStatus(e)
+	case events.ResponseEvent:
+		return m, m.handleResponseEvent(e)
+	}
+	return m, m.waitForEvent()
+}
+
+// handleTurnStarted processes a TurnStarted event.
+func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
+	m.turn = e.SessionTurns + 1
+	m.currentState = stateThinking
+	return m.waitForEvent()
+}
+
+// handleInferenceStarted processes an InferenceStartedEvent.
+func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
+	m.modelName = e.Model
+	return m.waitForEvent()
+}
+
+// handleTurnStatus processes a TurnStatusEvent.
+func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
+	m.turn = e.Status.SessionTurns + 1
+	m.tokens = e.Status.Tokens
+	m.maxTokens = e.Status.MaxHistoryTokens
+	m.timestamp = e.Status.Timestamp
+	m.sessionName = e.Status.Mode
+	m.modelName = e.Status.Model
+	m.currentState = stateRendering
+
+	if e.Status.IsPostCall && e.Status.Metrics != nil {
+		s := e.Status
+		m.postCallStatus = &s
+	}
+	if e.Status.IsFinal {
+		turnCost := 0.0
+		if e.Status.Metrics != nil {
+			turnCost = e.Status.Metrics.Cost
+		}
+		m.finalCostLine = formatFinalLine(e.Status, turnCost)
+	}
+	return m.waitForEvent()
+}
+
+// handleResponseEvent processes a ResponseEvent.
+func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
+	m.rawResponseText = extractResponseText(e.Content)
+	if m.mdRender != nil {
+		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
+	} else {
+		m.responseText = m.rawResponseText
+	}
+	return m.waitForEvent()
 }
 
 // extractResponseText concatenates non-thought text parts from an LLM response.

@@ -1,0 +1,111 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package progress
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestRenderer_MakeSubscriber(t *testing.T) {
+	r := &renderer{}
+
+	t.Run("high priority events are sent to channel", func(t *testing.T) {
+		ch := make(chan events.Event, 3)
+		sub := r.makeSubscriber(ch)
+
+		sub(context.Background(), events.TurnStarted{Turn: 1, SessionTurns: 0})
+		sub(context.Background(), events.TurnStatusEvent{})
+		sub(context.Background(), events.ResponseEvent{})
+
+		assert.Equal(t, 3, len(ch), "all three high-priority events should be in the channel")
+	})
+
+	t.Run("other events are sent non-blocking", func(t *testing.T) {
+		ch := make(chan events.Event, 1)
+		sub := r.makeSubscriber(ch)
+
+		sub(context.Background(), events.ToolCallEvent{})
+
+		select {
+		case e := <-ch:
+			_, ok := e.(events.ToolCallEvent)
+			assert.True(t, ok, "should receive ToolCallEvent from channel")
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("timed out waiting for non-priority event")
+		}
+	})
+
+	t.Run("high priority events drop after timeout when channel full", func(t *testing.T) {
+		ch := make(chan events.Event) // unbuffered
+		sub := r.makeSubscriber(ch)
+
+		done := make(chan struct{})
+		go func() {
+			sub(context.Background(), events.TurnStarted{Turn: 1, SessionTurns: 0})
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// subscriber returned (timed out after 100ms since no reader)
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("subscriber should have timed out and returned within 200ms")
+		}
+	})
+}
+
+func TestRenderer_MakeMarkdownRenderer(t *testing.T) {
+	r := &renderer{}
+
+	t.Run("renders markdown text", func(t *testing.T) {
+		render := r.makeMarkdownRenderer()
+
+		out := render("**bold**", 80)
+
+		assert.NotEmpty(t, out, "rendered output should not be empty")
+		assert.NotEqual(t, "**bold**", out, "output should differ from raw markdown input")
+		assert.Contains(t, out, "bold", "rendered output should contain the original text")
+	})
+
+	t.Run("caches renderer for same width", func(t *testing.T) {
+		render := r.makeMarkdownRenderer()
+
+		out1 := render("**first**", 80)
+		out2 := render("**second**", 80)
+
+		assert.NotEmpty(t, out1)
+		assert.NotEmpty(t, out2)
+		assert.Contains(t, out1, "first")
+		assert.Contains(t, out2, "second")
+	})
+
+	t.Run("recreates renderer on width change", func(t *testing.T) {
+		render := r.makeMarkdownRenderer()
+
+		out80a := render("**bold**", 80)
+		out120 := render("**bold**", 120)
+		out80b := render("**bold**", 80)
+
+		assert.NotEmpty(t, out80a)
+		assert.NotEmpty(t, out120)
+		assert.NotEmpty(t, out80b)
+
+		// both width-80 renders should produce identical output (second is cache hit)
+		assert.Equal(t, out80a, out80b, "same-width renders should produce identical output")
+	})
+
+	t.Run("width 0 uses auto-style only", func(t *testing.T) {
+		render := r.makeMarkdownRenderer()
+
+		out := render("**bold**", 0)
+
+		assert.NotEmpty(t, out, "width 0 should still produce output")
+		assert.Contains(t, out, "bold")
+	})
+}

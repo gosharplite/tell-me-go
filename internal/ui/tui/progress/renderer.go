@@ -23,7 +23,24 @@ func NewRenderer() ports.ProgressRenderer {
 func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func() {
 	ch := make(chan events.Event, 64)
 
-	source.Subscribe(func(ctx context.Context, e events.Event) {
+	source.Subscribe(r.makeSubscriber(ch))
+
+	mdRender := r.makeMarkdownRenderer()
+
+	m := NewModel(ctx, ch, mdRender)
+	p := tea.NewProgram(m, tea.WithInput(nil))
+	go func() {
+		_, _ = p.Run()
+	}()
+
+	return func() { close(ch) }
+}
+
+// makeSubscriber returns an event subscriber callback that writes events
+// to the channel. High-priority events use a 100ms deadline; all others
+// use a non-blocking send.
+func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, events.Event) {
+	return func(ctx context.Context, e events.Event) {
 		switch e.(type) {
 		case events.TurnStarted, events.TurnStatusEvent, events.ResponseEvent:
 			select {
@@ -36,12 +53,15 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 			default:
 			}
 		}
-	})
+	}
+}
 
+// makeMarkdownRenderer returns a markdown-to-ANSI render function that
+// caches the glamour TermRenderer and re-creates it on width changes.
+func (r *renderer) makeMarkdownRenderer() func(string, int) string {
 	var cachedRenderer *glamour.TermRenderer
 	var lastWidth int
-
-	mdRender := func(text string, width int) string {
+	return func(text string, width int) string {
 		if width != lastWidth || cachedRenderer == nil {
 			opts := []glamour.TermRendererOption{glamour.WithAutoStyle()}
 			if width > 0 {
@@ -60,11 +80,4 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 		}
 		return out
 	}
-	m := NewModel(ctx, ch, mdRender)
-	p := tea.NewProgram(m, tea.WithInput(nil))
-	go func() {
-		_, _ = p.Run()
-	}()
-
-	return func() { close(ch) }
 }
