@@ -33,8 +33,10 @@ type model struct {
 	maxTokens    int
 	timestamp    time.Time
 	err          error
-	responseText string // accumulated AI response text
-	mdRender     func(string) string // optional markdown renderer
+	responseText    string             // accumulated AI response text
+	mdRender        func(string) string // optional markdown renderer
+	postCallMetrics *llm.Metrics       // non-nil when TurnStatusEvent has IsPostCall
+	finalCostLine   string             // rendered "Ready (...)" line from IsFinal
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -89,6 +91,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionName = msg.Status.Mode
 		m.modelName = msg.Status.Model
 		m.currentState = stateRendering
+
+		if msg.Status.IsPostCall && msg.Status.Metrics != nil {
+			m.postCallMetrics = msg.Status.Metrics
+		}
+		if msg.Status.IsFinal {
+			m.finalCostLine = formatFinalLine(msg.Status)
+		}
 		return m, m.waitForEvent()
 
 	case events.ResponseEvent:
@@ -122,6 +131,63 @@ func extractResponseText(content *llm.Content) string {
 	return sb.String()
 }
 
+// formatMetricsLine renders a single-line post-call metrics summary.
+func formatMetricsLine(m *llm.Metrics) string {
+	if m == nil {
+		return ""
+	}
+	miss := m.PromptTokens - m.CachedTokens
+	var parts []string
+
+	display := m.Provider
+	if display == "" {
+		display = m.Model
+	}
+	if display != "" {
+		parts = append(parts, fmt.Sprintf("[%s]", display))
+	}
+
+	parts = append(parts, fmt.Sprintf("M: %d H: %d C: %d", miss, m.CachedTokens, m.ResponseTokens))
+
+	if m.ThinkingTokens > 0 {
+		parts = append(parts, fmt.Sprintf("Th: %d", m.ThinkingTokens))
+	}
+
+	if m.Cost > 0 {
+		parts = append(parts, fmt.Sprintf("($%.4f)", m.Cost))
+	}
+
+	totalLatency := m.Duration + m.ToolDuration
+	parts = append(parts, fmt.Sprintf("[%.2fs (∑T: %.2fs)]", totalLatency, m.CumulativeToolDuration))
+
+	return strings.Join(parts, " ")
+}
+
+// formatFinalLine renders the "Ready" summary line when IsFinal is true.
+func formatFinalLine(status events.TurnStatus) string {
+	var parts []string
+	parts = append(parts, "Ready")
+
+	if status.TaskCost > 0 {
+		parts = append(parts, fmt.Sprintf("($%.4f)", status.TaskCost))
+	}
+	if status.SessionCost > 0 {
+		parts = append(parts, fmt.Sprintf("$%.4f", status.SessionCost))
+	}
+	if status.DailyCost > 0 {
+		parts = append(parts, fmt.Sprintf("$%.4f", status.DailyCost))
+	}
+
+	hitRate := 0.0
+	if total := status.TotalM + status.TotalH; total > 0 {
+		hitRate = float64(status.TotalH) / float64(total) * 100
+	}
+	parts = append(parts, fmt.Sprintf("M: %d H: %d %.1f%% O: %d",
+		status.TotalM, status.TotalH, hitRate, status.TotalO))
+
+	return "╰─ " + strings.Join(parts, " ")
+}
+
 // View renders the progress model as a two-line display with optional response text.
 func (m *model) View() string {
 	ts := m.timestamp.Format("15:04:05")
@@ -131,6 +197,12 @@ func (m *model) View() string {
 	out := header + "\n" + info
 	if m.responseText != "" {
 		out += "\n" + m.responseText
+	}
+	if m.postCallMetrics != nil {
+		out += "\n" + formatMetricsLine(m.postCallMetrics)
+	}
+	if m.finalCostLine != "" {
+		out += "\n" + m.finalCostLine
 	}
 	return out + "\n"
 }

@@ -70,6 +70,8 @@ func TestModel_Update(t *testing.T) {
 		assert.Equal(t, "deepseek-v4-pro", updated.modelName, "modelName should be set from Status.Model")
 		assert.Equal(t, "architect-johndoe", updated.sessionName, "sessionName should be set from Status.Mode")
 		assert.Equal(t, stateRendering, updated.currentState)
+		assert.Nil(t, updated.postCallMetrics, "should be nil when IsPostCall is false")
+		assert.Empty(t, updated.finalCostLine, "should be empty when IsFinal is false")
 		assert.NotNil(t, cmd)
 	})
 
@@ -160,6 +162,68 @@ func TestModel_Update(t *testing.T) {
 			"should render through mdRender when set")
 		assert.NotNil(t, cmd)
 	})
+
+	t.Run("TurnStatusEvent with post-call metrics", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		metrics := &llm.Metrics{
+			PromptTokens:  1000,
+			CachedTokens:  800,
+			ResponseTokens: 50,
+			Cost:          0.0012,
+			Duration:      5.0,
+			ToolDuration:  2.0,
+			Provider:      "deepseek-pro",
+		}
+		msg := events.TurnStatusEvent{
+			Status: events.TurnStatus{
+				Tokens:     1500,
+				Timestamp:  time.Now(),
+				Mode:       "test",
+				Model:      "deepseek-v4-pro",
+				IsPostCall: true,
+				Metrics:    metrics,
+			},
+		}
+
+		newModel, cmd := m.Update(msg)
+		updated := newModel.(*model)
+
+		assert.NotNil(t, updated.postCallMetrics)
+		assert.Equal(t, int32(1000), updated.postCallMetrics.PromptTokens)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("TurnStatusEvent with final summary", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		msg := events.TurnStatusEvent{
+			Status: events.TurnStatus{
+				Tokens:       1500,
+				Timestamp:    time.Now(),
+				Mode:         "test",
+				Model:        "deepseek-v4-pro",
+				IsFinal:      true,
+				SessionCost:  0.1505,
+				TaskCost:     0.0012,
+				TotalM:       116386,
+				TotalH:       15172096,
+				TotalO:       51607,
+			},
+		}
+
+		newModel, cmd := m.Update(msg)
+		updated := newModel.(*model)
+
+		assert.NotEmpty(t, updated.finalCostLine)
+		assert.Contains(t, updated.finalCostLine, "Ready")
+		assert.Contains(t, updated.finalCostLine, "0.1505")
+		assert.NotNil(t, cmd)
+	})
 }
 
 // newTestModel creates a model for testing.
@@ -233,6 +297,41 @@ func TestModel_View(t *testing.T) {
 		lines := strings.Split(out, "\n")
 		// header, info, empty trailing — no response line
 		assert.Len(t, lines, 3)
+	})
+
+	t.Run("with post-call metrics", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateRendering
+		m.turn = 1
+		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
+		m.postCallMetrics = &llm.Metrics{
+			PromptTokens:  1000,
+			CachedTokens:  800,
+			ResponseTokens: 50,
+			Cost:          0.0012,
+			Duration:      5.0,
+			ToolDuration:  2.0,
+			Provider:      "deepseek-pro",
+		}
+
+		out := m.View()
+		assert.Contains(t, out, "[deepseek-pro]")
+		assert.Contains(t, out, "M: 200 H: 800 C: 50")
+		assert.Contains(t, out, "($0.0012)")
+	})
+
+	t.Run("with final summary", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateRendering
+		m.finalCostLine = "╰─ Ready ($0.0012) $0.1505 M: 116386 H: 15172096 99.2% O: 51607"
+
+		out := m.View()
+		assert.Contains(t, out, "╰─ Ready")
+		assert.Contains(t, out, "M: 116386")
 	})
 }
 
