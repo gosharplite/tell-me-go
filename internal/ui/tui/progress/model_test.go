@@ -618,7 +618,7 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		m.currentState = stateThinking
 		m.spinnerFrame = 3
 
-		newModel, cmd := m.Update(spinnerTickMsg(time.Now()))
+		newModel, cmd := m.Update(spinnerTickMsg{generation: 0})
 		updated := newModel.(*model)
 
 		assert.Equal(t, 4, updated.spinnerFrame)
@@ -634,7 +634,7 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		m.currentState = stateThinking
 		m.spinnerFrame = 9 // last frame
 
-		newModel, _ := m.Update(spinnerTickMsg(time.Now()))
+		newModel, _ := m.Update(spinnerTickMsg{generation: 0})
 		updated := newModel.(*model)
 
 		assert.Equal(t, 0, updated.spinnerFrame) // wraps to 0
@@ -648,7 +648,7 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		m.currentState = stateThinking
 		m.spinnerTickActive = true
 
-		newModel, cmd := m.Update(spinnerTickMsg(time.Now()))
+		newModel, cmd := m.Update(spinnerTickMsg{generation: 0})
 		updated := newModel.(*model)
 
 		assert.False(t, updated.spinnerTickActive)
@@ -663,7 +663,7 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		m.currentState = stateIdle // idle
 		m.spinnerTickActive = true
 
-		newModel, cmd := m.Update(spinnerTickMsg(time.Now()))
+		newModel, cmd := m.Update(spinnerTickMsg{generation: 0})
 		updated := newModel.(*model)
 
 		assert.False(t, updated.spinnerTickActive)

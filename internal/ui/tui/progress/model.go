@@ -20,7 +20,9 @@ import (
 type domainEventMsg events.Event
 
 // spinnerTickMsg is an internal message type for spinner frame ticks.
-type spinnerTickMsg time.Time
+type spinnerTickMsg struct {
+	generation int
+}
 
 type state int
 
@@ -57,6 +59,7 @@ type model struct {
 	spinnerFrame       int                      // index into brailleFrames, incremented each tick
 	spinnerTickActive  bool                     // true when a tick command is pending
 	spinnerStartTime   time.Time                // when the current spinner phase began, for elapsed display
+	spinnerGeneration  int                      // incremented each new spinner phase; stale ticks are dropped
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -89,8 +92,9 @@ func (m *model) spinnerTick() tea.Cmd {
 		return nil
 	}
 	m.spinnerTickActive = true
+	gen := m.spinnerGeneration
 	return tea.Tick(spinnerTickInterval, func(t time.Time) tea.Msg {
-		return spinnerTickMsg(t)
+		return spinnerTickMsg{generation: gen}
 	})
 }
 
@@ -107,6 +111,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
 	case spinnerTickMsg:
+		if msg.generation != m.spinnerGeneration {
+			return m, nil // stale tick from a previous turn, drop it
+		}
 		m.spinnerFrame = (m.spinnerFrame + 1) % len(brailleFrames)
 		m.spinnerTickActive = false
 		return m, m.spinnerTick()
@@ -154,6 +161,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		m.spinnerShowMetrics = info.WithMetrics
 		m.spinnerFrame = 0
 		m.spinnerStartTime = time.Now()
+		m.spinnerGeneration++
 		if !m.spinnerTickActive {
 			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
 		}
@@ -164,6 +172,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		m.spinnerShowMetrics = info.WithMetrics
 		m.spinnerFrame = 0
 		m.spinnerStartTime = time.Now()
+		m.spinnerGeneration++
 		if !m.spinnerTickActive {
 			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
 		}
@@ -174,6 +183,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 		m.spinnerShowMetrics = info.WithMetrics
 		m.spinnerFrame = 0
 		m.spinnerStartTime = time.Now()
+		m.spinnerGeneration++
 		if !m.spinnerTickActive {
 			return m, tea.Batch(m.waitForEvent(), m.spinnerTick())
 		}
@@ -200,6 +210,7 @@ func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
 	m.spinnerShowMetrics = info.WithMetrics
 	m.spinnerFrame = 0
 	m.spinnerStartTime = time.Now()
+	m.spinnerGeneration++
 	if !m.spinnerTickActive {
 		return tea.Batch(m.waitForEvent(), m.spinnerTick())
 	}
