@@ -289,6 +289,11 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.spinner.clear()
 	m.toolLogs = nil
 	m.seenCallIDs = make(map[string]bool)
+	m.responseText = ""
+	m.rawResponseText = ""
+	m.postCallStatus = nil
+	m.postCallMetricsLine = ""
+	m.finalCostLine = ""
 	return m.waitForEvent()
 }
 

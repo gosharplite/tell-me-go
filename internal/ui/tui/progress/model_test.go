@@ -1276,6 +1276,70 @@ func TestModel_ToolCallEvent_ShowsEngineForPartialNewCalls(t *testing.T) {
 	assert.True(t, foundReadFile, "expected [Tool Action] for new call_2")
 }
 
+func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
+	ch := make(chan events.Event, 2)
+	m := newTestModel(t.Context(), ch)
+
+	// Simulate a completed turn with all display state populated.
+	m.turn = 5
+	m.sessionName = "test"
+	m.modelName = "deepseek-v4-pro"
+	m.currentState = stateRendering
+	m.responseText = "Here is the AI response for turn 5."
+	m.rawResponseText = "Here is the AI response for turn 5."
+	m.postCallStatus = &events.TurnStatus{
+		Metrics: &llm.Metrics{
+			PromptTokens:   1000,
+			CachedTokens:   800,
+			ResponseTokens: 50,
+			Cost:           0.0012,
+			Duration:       5.0,
+			Provider:       "deepseek-pro",
+		},
+	}
+	m.postCallMetricsLine = "[14:30:05] [deepseek-pro] M: 200 H: 800 C: 50 ($0.0012) [7.00s (ΣT: 2.00s)]"
+	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 99.2% O: 51607)"
+
+	// Verify initial View() contains all the stale content.
+	outBefore := m.View()
+	assert.Contains(t, outBefore, "Here is the AI response for turn 5.")
+	assert.Contains(t, outBefore, "M: 200 H: 800 C: 50")
+	assert.Contains(t, outBefore, "╰─⠿ Ready")
+
+	// Fire TurnStarted for turn 6.
+	newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 5, SessionTurns: 5}))
+	updated := newModel.(*model)
+
+	assert.Equal(t, 6, updated.turn) // SessionTurns 5 + 1
+	assert.Equal(t, stateThinking, updated.currentState)
+
+	// All stale display fields must be cleared.
+	assert.Empty(t, updated.responseText, "responseText should be cleared on TurnStarted")
+	assert.Empty(t, updated.rawResponseText, "rawResponseText should be cleared on TurnStarted")
+	assert.Nil(t, updated.postCallStatus, "postCallStatus should be nil on TurnStarted")
+	assert.Empty(t, updated.postCallMetricsLine, "postCallMetricsLine should be cleared on TurnStarted")
+	assert.Empty(t, updated.finalCostLine, "finalCostLine should be cleared on TurnStarted")
+
+	// Non-display fields should also be cleared.
+	assert.Nil(t, updated.toolLogs, "toolLogs should be nil on TurnStarted")
+	assert.Len(t, updated.seenCallIDs, 0, "seenCallIDs should be empty on TurnStarted")
+
+	// View() after TurnStarted must NOT contain stale content.
+	updatedOut := updated.View()
+	assert.NotContains(t, updatedOut, "Here is the AI response for turn 5.",
+		"View after TurnStarted must not contain stale response text")
+	assert.NotContains(t, updatedOut, "M: 200 H: 800 C: 50",
+		"View after TurnStarted must not contain stale metrics line")
+	assert.NotContains(t, updatedOut, "╰─⠿ Ready",
+		"View after TurnStarted must not contain stale final cost line")
+	assert.Contains(t, updatedOut, "╭─ Turn 6 - test",
+		"View after TurnStarted should show new turn header")
+	assert.Contains(t, updatedOut, "Payload: ~0/0 tokens",
+		"View after TurnStarted should show payload line with zero tokens")
+
+	assert.NotNil(t, cmd)
+}
+
 func TestModel_TurnStarted_ClearsSeenCallIDs(t *testing.T) {
 	ch := make(chan events.Event, 2)
 	m := newTestModel(t.Context(), ch)
