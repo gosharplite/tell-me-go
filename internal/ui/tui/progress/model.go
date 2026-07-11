@@ -122,6 +122,8 @@ type model struct {
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
 	spinner             spinnerState
+
+	toolLogs []string // accumulated tool call/result/output lines, cleared each turn
 }
 
 // NewModel creates a new progress model that consumes events from the given
@@ -144,6 +146,12 @@ func (m *model) waitForEvent() tea.Cmd {
 		}
 		return domainEventMsg(e)
 	}
+}
+
+// appendToolLog appends a timestamped log line for tool events.
+func (m *model) appendToolLog(tag, message string) {
+	ts := time.Now().Format("15:04:05")
+	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, message))
 }
 
 // Init returns the initial command to start listening for events.
@@ -190,6 +198,56 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 // handleDomainEvent dispatches a domain event to the appropriate handler.
 func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	switch e := events.Event(msg).(type) {
+	case events.ToolCallEvent:
+		if e.Calls == nil {
+			return m, m.waitForEvent()
+		}
+		m.appendToolLog("Tool Engine", fmt.Sprintf("Step %d/%d", e.Turn+1, e.MaxTurns))
+		for _, fc := range e.Calls {
+			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
+				m.appendToolLog("Tool Reason", reason)
+			}
+			var parts []string
+			for k, v := range fc.Args {
+				if k == "reason" {
+					continue
+				}
+				valStr := fmt.Sprintf("%v", v)
+				if len(valStr) > 189 {
+					valStr = valStr[:186] + "..."
+				}
+				parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
+			}
+			m.appendToolLog("Tool Action", fmt.Sprintf("%s(%s)", fc.Name, strings.Join(parts, ", ")))
+		}
+		return m, m.waitForEvent()
+	case events.ToolResultEvent:
+		if e.Name == "" {
+			return m, m.waitForEvent()
+		}
+		if e.Result.Text != "" {
+			snippet := e.Result.Text
+			if len(snippet) > 200 {
+				snippet = snippet[:197] + "..."
+			}
+			snippet = strings.ReplaceAll(snippet, "\n", " ")
+			m.appendToolLog("Tool Result", fmt.Sprintf("%s: %s", e.Name, snippet))
+		}
+		return m, m.waitForEvent()
+	case events.ToolOutputStreamEvent:
+		prefix := "System"
+		switch e.Level {
+		case "error":
+			prefix = "Error"
+		case "warn":
+			prefix = "Warning"
+		case "output":
+			prefix = "Tool Output"
+		case "info":
+			prefix = "Info"
+		}
+		m.appendToolLog(prefix, e.Message)
+		return m, m.waitForEvent()
 	case events.TurnStarted:
 		return m, m.handleTurnStarted(e)
 	case events.InferenceStartedEvent:
@@ -216,6 +274,7 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.turn = e.SessionTurns + 1
 	m.currentState = stateThinking
 	m.spinner.clear()
+	m.toolLogs = nil
 	return m.waitForEvent()
 }
 
@@ -344,6 +403,13 @@ func (m *model) View() string {
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s\n", m.turn, m.sessionName))
 	sb.WriteString(fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
 		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName))
+
+	if len(m.toolLogs) > 0 {
+		for _, log := range m.toolLogs {
+			sb.WriteString("\n")
+			sb.WriteString(log)
+		}
+	}
 
 	if m.responseText != "" {
 		sb.WriteString("\n")

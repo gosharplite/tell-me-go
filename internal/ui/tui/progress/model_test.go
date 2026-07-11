@@ -839,3 +839,242 @@ func TestModel_SpinnerViewAllFrames(t *testing.T) {
 		})
 	}
 }
+
+func TestModel_ToolLogs(t *testing.T) {
+	t.Run("ToolCallEvent renders Step, Reason, and Action", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.ToolCallEvent{
+			Turn:     0,
+			MaxTurns: 5,
+			Calls: []*llm.FunctionCall{
+				{
+					Name: "execute_command",
+					Args: map[string]interface{}{
+						"reason":  "Stage the formatting fix for commit",
+						"command": "git add internal/ui/tui/progress/model.go",
+					},
+				},
+			},
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 3)
+		assert.Contains(t, updated.toolLogs[0], "[Tool Engine] Step 1/5")
+		assert.Contains(t, updated.toolLogs[1], "[Tool Reason] Stage the formatting fix for commit")
+		assert.Contains(t, updated.toolLogs[2], "[Tool Action] execute_command(command: git add internal/ui/tui/progress/model.go)")
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("ToolCallEvent with nil Calls is no-op", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.ToolCallEvent{
+			Turn:  0,
+			Calls: nil,
+		}))
+		updated := newModel.(*model)
+
+		assert.Nil(t, updated.toolLogs)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("ToolCallEvent skips empty reason", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolCallEvent{
+			Turn:     0,
+			MaxTurns: 3,
+			Calls: []*llm.FunctionCall{
+				{
+					Name: "read_file",
+					Args: map[string]interface{}{
+						"reason":   "",
+						"filepath": "/tmp/test.go",
+					},
+				},
+			},
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 2) // Step + Action only, no Reason
+		assert.Contains(t, updated.toolLogs[0], "[Tool Engine]")
+		assert.Contains(t, updated.toolLogs[1], "[Tool Action] read_file(filepath: /tmp/test.go)")
+	})
+
+	t.Run("ToolResultEvent renders snippet", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, cmd := m.Update(domainEventMsg(events.ToolResultEvent{
+			Name: "execute_command",
+			Result: tools.ToolResult{
+				Text: "Exit Code: 0 Output: (empty)",
+			},
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Tool Result] execute_command: Exit Code: 0 Output: (empty)")
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("ToolResultEvent truncates long text", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		longText := strings.Repeat("x", 250)
+		newModel, _ := m.Update(domainEventMsg(events.ToolResultEvent{
+			Name: "read_file",
+			Result: tools.ToolResult{
+				Text: longText,
+			},
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		snippet := updated.toolLogs[0]
+		// Should be truncated at 200 chars of text: timestamp(11) + tag(14) + "read_file: "(12) + 200 = ~237
+		assert.Less(t, len(snippet), 240)
+		assert.True(t, strings.HasSuffix(snippet, "..."))
+	})
+
+	t.Run("ToolResultEvent collapses newlines", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolResultEvent{
+			Name: "read_file",
+			Result: tools.ToolResult{
+				Text: "line1\nline2\nline3",
+			},
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.NotContains(t, updated.toolLogs[0], "\n")
+		assert.Contains(t, updated.toolLogs[0], "line1 line2 line3")
+	})
+
+	t.Run("ToolResultEvent with empty Name is no-op", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolResultEvent{
+			Name: "",
+			Result: tools.ToolResult{
+				Text: "some text",
+			},
+		}))
+		updated := newModel.(*model)
+
+		assert.Nil(t, updated.toolLogs)
+	})
+
+	t.Run("ToolOutputStreamEvent error level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolOutputStreamEvent{
+			Message: "command not found",
+			Level:   "error",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Error] command not found")
+	})
+
+	t.Run("ToolOutputStreamEvent warn level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolOutputStreamEvent{
+			Message: "deprecated flag used",
+			Level:   "warn",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Warning] deprecated flag used")
+	})
+
+	t.Run("ToolOutputStreamEvent output level", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolOutputStreamEvent{
+			Message: "Executing... (Output shown below)",
+			Level:   "output",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Tool Output] Executing...")
+	})
+
+	t.Run("ToolOutputStreamEvent unknown level defaults to System", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolOutputStreamEvent{
+			Message: "some message",
+			Level:   "debug",
+		}))
+		updated := newModel.(*model)
+
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[System] some message")
+	})
+
+	t.Run("TurnStarted clears toolLogs", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.toolLogs = []string{"[12:00:00] [Tool Engine] Step 1/5"}
+
+		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
+		updated := newModel.(*model)
+
+		assert.Nil(t, updated.toolLogs)
+	})
+
+	t.Run("View renders toolLogs between header and response", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.currentState = stateThinking
+		m.turn = 1
+		m.sessionName = "test"
+		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
+		m.toolLogs = []string{
+			"[14:30:00] [Tool Engine] Step 1/3",
+			"[14:30:00] [Tool Reason] read the file",
+		}
+		m.responseText = "I'll read that file for you."
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		// Header (line 0), token line (line 1), then tool logs
+		assert.Contains(t, lines[0], "╭─ Turn 1 - test")
+		assert.Contains(t, lines[2], "[Tool Engine] Step 1/3")
+		assert.Contains(t, lines[3], "[Tool Reason] read the file")
+		// Response text after tool logs
+		assert.Contains(t, out, "I'll read that file for you.")
+	})
+}
