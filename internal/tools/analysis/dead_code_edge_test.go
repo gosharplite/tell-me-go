@@ -23,6 +23,7 @@
 package analysis
 
 import (
+	"context"
 	"go/token"
 	"go/types"
 	"path/filepath"
@@ -65,15 +66,15 @@ func TestIdentifyModule_UnexpectedError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestHarvestPackageSymbols_EdgeCases exercises the four early-return
-// conditions in harvestPackageSymbols (harvest.go):
+// conditions in isInTargetScope (harvest.go), which was previously
+// exercised through harvestPackageSymbols:
 //  1. nil Module or path outside target module → skip
 //  2. path outside target directory → skip
 //  3. excluded package → skip
 //  4. normal harvest → declarations populated
 //
-// The first three are table-driven. The fourth uses types.NewPackage
-// and types.NewTypeName to construct a synthetic package with a
-// controlled scope.
+// The first three are table-driven and test isInTargetScope directly.
+// The fourth uses HarvestDeclarations via an indexer.
 func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 	t.Parallel()
 
@@ -93,7 +94,6 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 				name: "nil Module",
 				state: &scanState{
 					targetModule: "example.com/mod",
-					declarations: make(map[string]*symMeta),
 				},
 				pkg: &packages.Package{
 					PkgPath: "example.com/mod/pkg",
@@ -104,7 +104,6 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 				name: "path outside target module",
 				state: &scanState{
 					targetModule: "example.com/mod",
-					declarations: make(map[string]*symMeta),
 				},
 				pkg: &packages.Package{
 					PkgPath: "other.com/pkg",
@@ -116,7 +115,6 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 				state: &scanState{
 					targetModule: "example.com/mod",
 					targetPath:   "/target/dir",
-					declarations: make(map[string]*symMeta),
 				},
 				pkg: &packages.Package{
 					PkgPath: "example.com/mod/pkg",
@@ -129,7 +127,6 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 				state: &scanState{
 					targetModule:     "example.com/mod",
 					excludedPackages: []string{"skipme"},
-					declarations:     make(map[string]*symMeta),
 				},
 				pkg: &packages.Package{
 					PkgPath: "example.com/mod/skipme",
@@ -142,14 +139,13 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 			tt := tt
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				a.harvestPackageSymbols(tt.pkg, tt.state)
-				assert.Empty(t, tt.state.declarations,
-					"expected no declarations for skip path %q", tt.name)
+				assert.False(t, a.isInTargetScope(tt.pkg, tt.state),
+					"isInTargetScope should return false for skip path %q", tt.name)
 			})
 		}
 	})
 
-	// --- Normal harvest path ---
+	// --- Normal harvest path via fixtureIndexer ---
 
 	t.Run("normal harvest", func(t *testing.T) {
 		t.Parallel()
@@ -159,18 +155,21 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 			declarations: make(map[string]*symMeta),
 		}
 
-		// Build a synthetic package with an exported type.
-		tpkg := types.NewPackage("example.com/mod/pkg", "pkg")
-		tn := types.NewTypeName(token.NoPos, tpkg, "ExportedType", types.Typ[types.Int])
-		tpkg.Scope().Insert(tn)
-
-		pkg := &packages.Package{
-			PkgPath: "example.com/mod/pkg",
-			Module:  &packages.Module{Path: "example.com/mod"},
-			Types:   tpkg,
+		snap := &IndexSnapshot{
+			ModulePath: "example.com/mod",
+			Declarations: []*symMeta{
+				{id: "example.com/mod/pkg.ExportedType", pkgPath: "example.com/mod/pkg", name: "ExportedType", symType: "Type"},
+			},
+			UsagesByName: map[string][]location{},
+			ImplsCache:   map[string][]string{},
 		}
 
-		a.harvestPackageSymbols(pkg, state)
+		fi := newFixtureIndexer(snap)
+		err := fi.HarvestDeclarations(context.Background(), func(meta *symMeta) bool {
+			state.declarations[meta.id] = meta
+			return true
+		}, nil)
+		assert.NoError(t, err, "HarvestDeclarations should succeed")
 
 		assert.Len(t, state.declarations, 1, "expected exactly one declaration")
 		assert.Contains(t, state.declarations, "example.com/mod/pkg.ExportedType",

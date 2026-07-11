@@ -42,14 +42,29 @@ type OrphanReport struct {
 	Impact     int    `json:"impact,omitempty"`
 }
 
+// symMeta holds pre-computed metadata for a single exported symbol.
+// Exported as SymMeta for use by external test packages (analysistest).
 type symMeta struct {
 	id       string
 	pkgPath  string
 	name     string
 	symType  string
 	isMethod bool
-	obj      types.Object
+
+	// Pre-computed during harvest to avoid types.Object dependency downstream.
+	// Populated by harvestObjectSymbols in harvest.go.
+	isInterfaceType     bool
+	isInterfaceMethod   bool
+	isWellKnownContract bool
+
+	// obj is the original types.Object, retained for complexity/impact
+	// calculation which requires AST walking. May be nil when symMeta is
+	// loaded from a fixture.
+	obj types.Object
 }
+
+// SymMeta is the exported alias for symMeta, for use by sub-packages (e.g., analysistest).
+type SymMeta = symMeta
 
 type scanState struct {
 	pkgs             []*packages.Package
@@ -159,7 +174,28 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 		externalUses:     make(map[string]int),
 	}
 
-	a.harvestExportedSymbols(state)
+	// Build allowed package set for scope filtering during harvest.
+	allowedPkgs := make(map[string]bool, len(pkgs))
+	for _, pkg := range pkgs {
+		if a.isInTargetScope(pkg, state) {
+			allowedPkgs[getBasePkgPath(pkg.PkgPath)] = true
+		}
+	}
+
+	// Harvest declarations through the index interface.
+	if err := a.idx.HarvestDeclarations(ctx, func(meta *symMeta) bool {
+		if !allowedPkgs[meta.pkgPath] {
+			return true // skip: not in target scope
+		}
+		if _, exists := state.declarations[meta.id]; !exists {
+			m := *meta // copy to avoid aliasing loop variable
+			state.declarations[meta.id] = &m
+		}
+		return true
+	}, hb); err != nil {
+		return nil, fmt.Errorf("harvesting declarations: %w", err)
+	}
+
 	a.analyzeUsages(ctx, state, resolvedPath, hb)
 	a.propagateInterfaceUsages(ctx, state, hb)
 	a.propagateNamedInterfaceAssertionUsages(state, hb)
@@ -262,47 +298,20 @@ func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scan
 // they define contracts intended for external implementation.
 func (a *defaultDeadCodeAnalyzer) isInterfaceSymbol(meta *symMeta) bool {
 	if meta.symType == "Type" {
-		return a.isInterfaceType(meta.obj)
+		return meta.isInterfaceType
 	}
 	if meta.isMethod {
-		// Protect both interface definitions AND implementations of well-known contracts
-		return a.isInterfaceMethod(meta.obj) || a.isWellKnownContract(meta.obj)
+		return meta.isInterfaceMethod || meta.isWellKnownContract
 	}
 	return false
 }
 
 func (a *defaultDeadCodeAnalyzer) isInterfaceType(obj types.Object) bool {
-	tn, ok := obj.(*types.TypeName)
-	if !ok {
-		return false
-	}
-	_, ok = tn.Type().Underlying().(*types.Interface)
-	return ok
+	return isInterfaceTypeObj(obj)
 }
 
 func (a *defaultDeadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
-	fn, ok := obj.(*types.Func)
-	if !ok {
-		return false
-	}
-	// Defense-in-depth: *types.Func.Type() always returns *types.Signature
-	// through the public go/types API, but the ok check guards against
-	// unexpected future changes or edge cases in go/packages.
-	// GAP ACCEPTED (dead_code.go:277-280): The !ok branch is unreachable
-	// because *types.Func.Type() is guaranteed by the Go specification to
-	// return *types.Signature. This guard exists solely as defensive coding.
-	sig, ok := fn.Type().(*types.Signature)
-	if !ok {
-		return false
-	}
-	if sig.Recv() == nil {
-		// Interface methods defined directly on an interface have nil receivers in go/types.
-		// Since this function is only called when meta.isMethod == true, a nil receiver
-		// guarantees it is an interface method.
-		return true
-	}
-	_, ok = sig.Recv().Type().Underlying().(*types.Interface)
-	return ok
+	return isInterfaceMethodObj(obj)
 }
 
 func (a *defaultDeadCodeAnalyzer) protectContractSymbol(state *scanState, id string) {

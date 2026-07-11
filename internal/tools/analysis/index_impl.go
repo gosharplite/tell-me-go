@@ -5,7 +5,9 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -151,4 +153,138 @@ func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId st
 // sync.Once is replaced with singleflight.DoChan) but is currently unused.
 func (idx *indexer) WarmImplementations(ctx context.Context) {
 	_ = idx.computeImplementationsLazy()
+}
+
+// HarvestDeclarations walks all loaded packages and invokes fn for each
+// exported, non-test, non-init symbol. It satisfies symbolIndex.
+func (idx *indexer) HarvestDeclarations(ctx context.Context, fn func(meta *symMeta) bool, hb chan<- struct{}) error {
+	if err := idx.Refresh(ctx, hb); err != nil {
+		return fmt.Errorf("refreshing index for harvest: %w", err)
+	}
+
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	idx.collectDeclarations(func(meta *symMeta) bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		return fn(meta)
+	})
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return nil
+}
+
+// collectDeclarations walks all packages and invokes fn for each exported,
+// non-test, non-init symbol, including methods from named types and
+// interfaces. The caller must hold idx.mu.RLock(). Context cancellation
+// is the caller's responsibility.
+func (idx *indexer) collectDeclarations(fn func(meta *symMeta) bool) {
+	for _, pkg := range idx.pkgs {
+		if pkg.Types == nil || pkg.Types.Scope() == nil {
+			continue
+		}
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			obj := scope.Lookup(name)
+			if obj == nil || !obj.Exported() || obj.Name() == "init" {
+				continue
+			}
+			// Skip test functions
+			if strings.HasPrefix(obj.Name(), "Test") ||
+				strings.HasPrefix(obj.Name(), "Benchmark") ||
+				strings.HasPrefix(obj.Name(), "Example") ||
+				strings.HasPrefix(obj.Name(), "Fuzz") {
+				continue
+			}
+			// Skip export_test.go declarations
+			if isExportTestFile(idx.fset, obj.Pos()) {
+				continue
+			}
+
+			meta := &symMeta{
+				id:                  getSymbolIdentity(obj),
+				pkgPath:             getBasePkgPath(obj.Pkg().Path()),
+				name:                obj.Name(),
+				symType:             getSymbolType(obj),
+				isInterfaceType:     isInterfaceTypeObj(obj),
+				isInterfaceMethod:   isInterfaceMethodObj(obj),
+				isWellKnownContract: isWellKnownContractObj(obj),
+				obj:                 obj,
+			}
+
+			// Set isMethod based on symType
+			if meta.symType == "Method" {
+				meta.isMethod = true
+			}
+
+			if !fn(meta) {
+				return
+			}
+
+			// Harvest methods from named types (struct types with methods).
+			if tn, ok := obj.(*types.TypeName); ok {
+				t := tn.Type()
+				if alias, ok := t.(*types.Alias); ok {
+					t = types.Unalias(alias)
+				}
+				if named, ok := t.(*types.Named); ok {
+					// Harvest struct methods.
+					for i := 0; i < named.NumMethods(); i++ {
+						m := named.Method(i)
+						if m == nil || m.Pkg() == nil || !m.Exported() {
+							continue
+						}
+						if isExportTestFile(idx.fset, m.Pos()) {
+							continue
+						}
+						mMeta := &symMeta{
+							id:                  getSymbolIdentity(m),
+							pkgPath:             getBasePkgPath(m.Pkg().Path()),
+							name:                m.Name(),
+							symType:             "Method",
+							isMethod:            true,
+							isInterfaceType:     false,
+							isInterfaceMethod:   isInterfaceMethodObj(m),
+							isWellKnownContract: isWellKnownContractObj(m),
+							obj:                 m,
+						}
+						if !fn(mMeta) {
+							return
+						}
+					}
+
+					// If the named type's underlying type is an interface,
+					// also harvest its interface methods.
+					if iface, ok := named.Underlying().(*types.Interface); ok {
+						for i := 0; i < iface.NumMethods(); i++ {
+							m := iface.Method(i)
+							if m == nil || m.Pkg() == nil || !m.Exported() {
+								continue
+							}
+							if isExportTestFile(idx.fset, m.Pos()) {
+								continue
+							}
+							mMeta := &symMeta{
+								id:                  getSymbolIdentity(m),
+								pkgPath:             getBasePkgPath(m.Pkg().Path()),
+								name:                m.Name(),
+								symType:             "Method",
+								isMethod:            true,
+								isInterfaceType:     false,
+								isInterfaceMethod:   true,
+								isWellKnownContract: isWellKnownContractObj(m),
+								obj:                 m,
+							}
+							if !fn(mMeta) {
+								return
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }

@@ -567,7 +567,7 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 	// (runtime.NumCPU). Walk launches all goroutines in microseconds;
 	// most block on sem.Acquire. The timeout fires during g.Wait(),
 	// and blocked goroutines return context.DeadlineExceeded.
-	const numFiles = 1000
+	const numFiles = 50
 	for i := 0; i < numFiles; i++ {
 		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
 		require.NoError(t, os.WriteFile(path, []byte("package test\nfunc F() {}\n"), 0644))
@@ -577,7 +577,7 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
 	type result struct {

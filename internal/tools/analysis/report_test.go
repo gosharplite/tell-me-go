@@ -63,7 +63,7 @@ func TestCollectOrphanFindings_NilHeartbeat(t *testing.T) {
 		declarations: map[string]*symMeta{
 			"example.com/pkg.Func": {
 				id: "example.com/pkg.Func", pkgPath: "example.com/pkg",
-				name: "Func", symType: "Function", obj: nil,
+				name: "Func", symType: "Function", obj: newTestFuncObj("example.com/pkg", "Func"),
 			},
 		},
 		totalUses:    make(map[string]int),
@@ -71,8 +71,8 @@ func TestCollectOrphanFindings_NilHeartbeat(t *testing.T) {
 	}
 	a := &defaultDeadCodeAnalyzer{}
 	findings := a.collectOrphanFindings(context.Background(), state, false, nil)
-	if len(findings) != 0 {
-		t.Errorf("expected 0 findings for nil-obj declaration, got %d", len(findings))
+	if len(findings) != 1 {
+		t.Errorf("expected 1 finding (nil heartbeat, valid obj → DEAD via severity classifier), got %d", len(findings))
 	}
 }
 

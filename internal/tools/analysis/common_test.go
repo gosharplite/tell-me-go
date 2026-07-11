@@ -184,6 +184,10 @@ func (m *mockIndexer) GetImplementations(ctx context.Context, id string, hb chan
 
 func (m *mockIndexer) WarmImplementations(ctx context.Context) {}
 
+func (m *mockIndexer) HarvestDeclarations(ctx context.Context, fn func(meta *symMeta) bool, hb chan<- struct{}) error {
+	return nil
+}
+
 func (s *mockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
