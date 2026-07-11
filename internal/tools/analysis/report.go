@@ -64,7 +64,7 @@ func formatDisplayName(id string, meta *symMeta) string {
 // private, producing an OrphanReport if so. The logic is decomposed into a
 // pipeline of single-purpose evaluators (see orphan_evaluator.go).
 func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState, deep bool) *OrphanReport {
-	if meta.obj == nil {
+	if meta == nil {
 		return nil
 	}
 	ctx := &orphanEvalContext{

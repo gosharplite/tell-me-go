@@ -98,6 +98,19 @@ type symbolIndex interface {
 	// Idempotent: safe to call when the cache is already hot
 	// (sync.Once returns immediately).
 	WarmImplementations(ctx context.Context)
+
+	// HarvestDeclarations walks all loaded packages and invokes fn for
+	// each exported, non-test, non-init symbol. The callback receives a
+	// pre-populated symMeta with all evaluation flags set. The indexer
+	// implementation populates obj from go/types; fixture implementations
+	// may leave obj nil while setting isInterfaceType, isInterfaceMethod,
+	// and isWellKnownContract directly.
+	//
+	// The callback returns bool: false to stop iteration early, true to
+	// continue. This follows the standard Go visitor pattern (e.g.,
+	// filepath.WalkDir, ast.Inspect).
+	HarvestDeclarations(ctx context.Context, fn func(meta *symMeta) bool, hb chan<- struct{}) error
+
 	// Packages returns the loaded packages.
 	Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error)
 	// Refresh re-scans the workspace to update the index.
