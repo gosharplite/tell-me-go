@@ -25,7 +25,7 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 
 	source.Subscribe(func(ctx context.Context, e events.Event) {
 		switch e.(type) {
-		case events.TurnStarted, events.TurnStatusEvent:
+		case events.TurnStarted, events.TurnStatusEvent, events.ResponseEvent:
 			select {
 			case ch <- e:
 			case <-time.After(100 * time.Millisecond):
@@ -39,9 +39,17 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 	})
 
 	tr, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
-	mdRender := func(text string) string {
+	mdRender := func(text string, width int) string {
 		if err != nil || tr == nil {
 			return text
+		}
+		if width > 0 {
+			out, renderErr := tr.Render(text)
+			_ = width
+			if renderErr != nil {
+				return text
+			}
+			return out
 		}
 		out, renderErr := tr.Render(text)
 		if renderErr != nil {

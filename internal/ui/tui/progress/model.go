@@ -14,6 +14,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
+// domainEventMsg wraps a domain event to ensure exactly one reader exists on
+// the event channel. Native Bubble Tea messages must not trigger additional
+// channel reads.
+type domainEventMsg events.Event
+
 type state int
 
 const (
@@ -26,6 +31,7 @@ type model struct {
 	eventCh <-chan events.Event
 
 	currentState state
+	width        int // terminal width, updated via WindowSizeMsg
 	turn         int
 	modelName    string // display name, e.g. "deepseek-v4-pro"
 	sessionName  string // e.g. "architect-johndoe"
@@ -33,15 +39,15 @@ type model struct {
 	maxTokens    int
 	timestamp    time.Time
 	err          error
-	responseText    string             // accumulated AI response text
-	mdRender        func(string) string // optional markdown renderer
-	postCallStatus *events.TurnStatus // set when IsPostCall, has full status including Metrics and StartTime
-	finalCostLine   string             // rendered "Ready (...)" line from IsFinal
+	responseText    string                // accumulated AI response text
+	mdRender        func(string, int) string // optional markdown renderer (text, width)
+	postCallStatus  *events.TurnStatus    // set when IsPostCall, has full status including Metrics and StartTime
+	finalCostLine   string                // rendered "Ready (...)" line from IsFinal
 }
 
 // NewModel creates a new progress model that consumes events from the given
 // channel and optionally renders response text through mdRender.
-func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string) string) tea.Model {
+func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, int) string) tea.Model {
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
@@ -57,7 +63,7 @@ func (m *model) waitForEvent() tea.Cmd {
 		if !ok {
 			return tea.Quit()
 		}
-		return e
+		return domainEventMsg(e)
 	}
 }
 
@@ -73,52 +79,60 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
-		return m, m.waitForEvent()
+		return m, nil
 
-	case events.TurnStarted:
-		m.turn = msg.Turn + 1
-		m.currentState = stateThinking
-		return m, m.waitForEvent()
-
-	case events.InferenceStartedEvent:
-		m.modelName = msg.Model
-		return m, m.waitForEvent()
-
-	case events.TurnStatusEvent:
-		m.tokens = msg.Status.Tokens
-		m.maxTokens = msg.Status.MaxHistoryTokens
-		m.timestamp = msg.Status.Timestamp
-		m.sessionName = msg.Status.Mode
-		m.modelName = msg.Status.Model
-		m.currentState = stateRendering
-
-		if msg.Status.IsPostCall && msg.Status.Metrics != nil {
-			s := msg.Status // copy
-			m.postCallStatus = &s
-		}
-		if msg.Status.IsFinal {
-			turnCost := 0.0
-			if msg.Status.Metrics != nil {
-				turnCost = msg.Status.Metrics.Cost
-			}
-			m.finalCostLine = formatFinalLine(msg.Status, turnCost)
-		}
-		return m, m.waitForEvent()
-
-	case events.ResponseEvent:
-		text := extractResponseText(msg.Content)
-		if m.mdRender != nil {
-			text = strings.TrimRight(m.mdRender(text), "\n")
-		}
-		m.responseText = text
-		return m, m.waitForEvent()
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 
 	case error:
 		m.err = msg
+		return m, nil
+
+	case domainEventMsg:
+		switch e := events.Event(msg).(type) {
+		case events.TurnStarted:
+			m.turn = e.Turn + 1
+			m.currentState = stateThinking
+			return m, m.waitForEvent()
+
+		case events.InferenceStartedEvent:
+			m.modelName = e.Model
+			return m, m.waitForEvent()
+
+		case events.TurnStatusEvent:
+			m.tokens = e.Status.Tokens
+			m.maxTokens = e.Status.MaxHistoryTokens
+			m.timestamp = e.Status.Timestamp
+			m.sessionName = e.Status.Mode
+			m.modelName = e.Status.Model
+			m.currentState = stateRendering
+
+			if e.Status.IsPostCall && e.Status.Metrics != nil {
+				s := e.Status
+				m.postCallStatus = &s
+			}
+			if e.Status.IsFinal {
+				turnCost := 0.0
+				if e.Status.Metrics != nil {
+					turnCost = e.Status.Metrics.Cost
+				}
+				m.finalCostLine = formatFinalLine(e.Status, turnCost)
+			}
+			return m, m.waitForEvent()
+
+		case events.ResponseEvent:
+			text := extractResponseText(e.Content)
+			if m.mdRender != nil {
+				text = strings.TrimRight(m.mdRender(text, m.width), "\n")
+			}
+			m.responseText = text
+			return m, m.waitForEvent()
+		}
 		return m, m.waitForEvent()
 
 	default:
-		return m, m.waitForEvent()
+		return m, nil
 	}
 }
 
