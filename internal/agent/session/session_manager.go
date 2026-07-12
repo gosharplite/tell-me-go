@@ -258,8 +258,15 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 	}
 
 	// Footer
+	if ts.Metrics != nil {
+		fmt.Fprintf(o.Stdout, "\n[%s] Payload: %d/%d tokens - %s - %s\n",
+			ts.Timestamp.Format("15:04:05"),
+			ts.Metrics.PromptTokens,
+			ts.MaxHistoryTokens,
+			ts.Mode, ts.Model)
+	}
 	if metricsLine := ts.FormatMetricsLine(); metricsLine != "" {
-		fmt.Fprintf(o.Stdout, "\n%s\n", metricsLine)
+		fmt.Fprintf(o.Stdout, "%s\n", metricsLine)
 	}
 	turnCost := 0.0
 	if ts.Metrics != nil {
