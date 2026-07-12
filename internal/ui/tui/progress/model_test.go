@@ -109,10 +109,10 @@ func TestModel_Update(t *testing.T) {
 
 		assert.True(t, updated.sessionDone)
 		assert.False(t, updated.spinner.active())
-		assert.NotNil(t, cmd) // 3s auto-dismiss goroutine
+		assert.Nil(t, cmd) // stdin keeps loop alive; no tick needed
 	})
 
-	t.Run("sessionDone shows exit prompt and returns quit command", func(t *testing.T) {
+	t.Run("sessionDone shows exit prompt and waits for Ctrl+C", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
@@ -122,11 +122,10 @@ func TestModel_Update(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.True(t, updated.sessionDone)
+		assert.Nil(t, cmd) // nil command — stdin-driven loop, Ctrl+C quits
+
 		out := updated.View()
 		assert.Contains(t, out, "Press Ctrl+C to exit")
-
-		// cmd is a 3s sleep → tea.Quit(); verify non-nil
-		assert.NotNil(t, cmd)
 	})
 
 	t.Run("sessionDone shows exit prompt in footer", func(t *testing.T) {

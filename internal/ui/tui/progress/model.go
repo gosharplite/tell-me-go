@@ -220,10 +220,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case channelClosedMsg:
 		m.sessionDone = true
 		m.spinner.clear()
-		return m, func() tea.Msg {
-			time.Sleep(3 * time.Second)
-			return tea.Quit()
-		}
+		return m, nil
 	case error:
 		m.err = msg
 		return m, nil
