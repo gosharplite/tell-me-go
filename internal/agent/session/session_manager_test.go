@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
+	stdoui "github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
@@ -1321,4 +1322,178 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 			bridge.Cleanup()
 		})
 	}
+}
+
+func TestSessionManager_RenderPostTUISummary(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 1, 15, 18, 38, 7, 0, time.UTC)
+
+	historyRenderer := &stdoui.StdHistoryRenderer{}
+	mockUIRenderer := new(agenttest.MockUIRenderer)
+
+	var stdoutBuf bytes.Buffer
+	orch := session.NewSessionManager(
+		"home", "1.0.0",
+		nil,
+		&stdoutBuf, io.Discard,
+		nil, historyRenderer, mockUIRenderer,
+	)
+
+	mockHistory := new(agenttest.MockHistoryManager)
+	// Pre-populate history with a single model response.
+	mockHistory.SetInternalContents([]*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{Text: "Here is the generated code for your request."},
+			},
+		},
+	})
+
+	mockCapturer := new(agenttest.MockCapturer)
+	mockCapturer.IsTTYFn = func(v any) bool { return false }
+
+	sc := session.NewSessionConfig(
+		"", false, 0, 0, false, "", // LastN=0, RawOutput=false
+		&config.Config{Mode: "architect-johndoe", ShowThoughts: false},
+	)
+	deps := &agenttest.StubChatterComposer{
+		HistoryManager:  mockHistory,
+		Paths:           &persistence.Paths{},
+		SessionProvider: new(testfixtures.MockSessionProvider),
+	}
+
+	turnStatus := events.TurnStatus{
+		Timestamp:        ts,
+		SessionTurns:     4, // becomes Turn 5 in output
+		Tokens:           107630,
+		MaxHistoryTokens: 1000000,
+		Mode:             "architect-johndoe",
+		Model:            "deepseek-v4-pro",
+		IsFinal:          true,
+		StartTime:        ts.Add(-5 * time.Second),
+		Metrics: &llm.Metrics{
+			PromptTokens:           107630,
+			CachedTokens:           800,
+			ResponseTokens:         50,
+			Cost:                   0.0010,
+			Duration:               5.0,
+			ToolDuration:           2.0,
+			CumulativeToolDuration: 15.0,
+			Provider:               "deepseek-pro",
+		},
+		TaskCost:    0.0012,
+		SessionCost: 0.1505,
+		DailyCost:   0.0000,
+		TotalM:      116386,
+		TotalH:      15172096,
+		TotalO:      51607,
+	}
+
+	orchInternal := session.AsSessionManagerInternal(orch)
+	orchInternal.RenderPostTUISummary(turnStatus, deps, sc, mockCapturer)
+
+	output := stdoutBuf.String()
+
+	// Header
+	assert.Contains(t, output, "╭─ Turn 5 - architect-johndoe")
+	assert.Contains(t, output, "[18:38:07] Payload: ~107630/1000000 tokens - architect-johndoe - deepseek-v4-pro")
+
+	// Body: history content
+	assert.Contains(t, output, "Here is the generated code for your request.")
+
+	// Body: no [MODEL] role tag (SuppressRoles=true)
+	assert.NotContains(t, output, "[MODEL]")
+
+	// Footer: payload line
+	assert.Contains(t, output, "[18:38:07] Payload: 107630/1000000 tokens - architect-johndoe - deepseek-v4-pro")
+
+	// Footer: metrics line
+	assert.Contains(t, output, "M: 106830 H: 800 C: 50")
+	assert.Contains(t, output, "[deepseek-pro]")
+
+	// Footer: final cost line
+	assert.Contains(t, output, "╰─⠿ Ready")
+	assert.Contains(t, output, "($0.0010 $0.0012 $0.1505 $0.0000")
+	assert.Contains(t, output, "M: 116386 H: 15172096")
+}
+
+func TestSessionManager_RenderPostTUISummary_SkipsBodyWhenLastNSet(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 1, 15, 18, 38, 7, 0, time.UTC)
+
+	historyRenderer := &stdoui.StdHistoryRenderer{}
+	mockUIRenderer := new(agenttest.MockUIRenderer)
+
+	var stdoutBuf bytes.Buffer
+	orch := session.NewSessionManager(
+		"home", "1.0.0",
+		nil,
+		&stdoutBuf, io.Discard,
+		nil, historyRenderer, mockUIRenderer,
+	)
+
+	mockHistory := new(agenttest.MockHistoryManager)
+	mockHistory.SetInternalContents([]*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{Text: "Here is the generated code."},
+			},
+		},
+	})
+
+	mockCapturer := new(agenttest.MockCapturer)
+	mockCapturer.IsTTYFn = func(v any) bool { return false }
+
+	// LastN=5 means -l was explicitly passed and already rendered in Phase 1.
+	sc := session.NewSessionConfig(
+		"", false, 5, 0, false, "",
+		&config.Config{Mode: "test", ShowThoughts: false},
+	)
+	deps := &agenttest.StubChatterComposer{
+		HistoryManager:  mockHistory,
+		Paths:           &persistence.Paths{},
+		SessionProvider: new(testfixtures.MockSessionProvider),
+	}
+
+	turnStatus := events.TurnStatus{
+		Timestamp:        ts,
+		SessionTurns:     0,
+		Tokens:           500,
+		MaxHistoryTokens: 64000,
+		Mode:             "test",
+		Model:            "gpt-5",
+		IsFinal:          true,
+		StartTime:        ts.Add(-3 * time.Second),
+		Metrics: &llm.Metrics{
+			PromptTokens:   500,
+			CachedTokens:   100,
+			ResponseTokens: 60,
+			Cost:           0.0005,
+			Duration:       2.0,
+			ToolDuration:   1.0,
+			Provider:       "gpt-5",
+		},
+		TaskCost:    0.0005,
+		SessionCost: 0.0100,
+		DailyCost:   0.0000,
+		TotalM:      5000,
+		TotalH:      2000,
+		TotalO:      1000,
+	}
+
+	orchInternal := session.AsSessionManagerInternal(orch)
+	orchInternal.RenderPostTUISummary(turnStatus, deps, sc, mockCapturer)
+
+	output := stdoutBuf.String()
+
+	// Header and footer still present.
+	assert.Contains(t, output, "╭─ Turn 1 - test")
+	assert.Contains(t, output, "╰─⠿ Ready")
+
+	// Body must be skipped — LastN > 0 means already rendered.
+	assert.NotContains(t, output, "Here is the generated code.")
 }

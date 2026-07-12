@@ -9,6 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session/ui"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -19,6 +20,10 @@ type SessionDependenciesInternal = agenttest.StubChatterComposer
 
 func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
 	return o.applyConfiguration(ctx, chatAgent, sCfg, sd, capturer, tuiOutput)
+}
+
+func (o *sessionManager) RenderPostTUISummary(ts events.TurnStatus, sd ports.ChatterComposer, sc ports.SessionConfig, ic ports.Capturer) {
+	o.renderPostTUISummary(ts, sd, sc, ic)
 }
 
 func AsSessionManagerInternal(sm SessionManager) *sessionManager {
