@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,63 +18,178 @@ import (
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
-func TestTypeManager_GetTypeInfo(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name     string
-		code     string
-		typename string
-		want     []string
-		wantErr  bool
-	}{
-		{
-			name: "basic struct",
-			code: `package test
+// Shared types workspace — built once per test binary run.
+var (
+	typesOnce    sync.Once
+	typesMu      sync.Mutex
+	typesRoot    string
+	typesModule  string
+	typesIndexer *indexer
+)
+
+// getTypesWorkspaceIndexer returns a single pre-built indexer for all
+// type manager tests. The workspace is created once via sync.Once.
+// On -count=N, if a prior iteration's cleanup deleted the workspace,
+// it is recreated under a mutex.
+func getTypesWorkspaceIndexer(tb testing.TB) *indexer {
+	tb.Helper()
+	typesOnce.Do(func() {
+		createTypesWorkspace(tb)
+	})
+	typesMu.Lock()
+	defer typesMu.Unlock()
+	if typesRoot != "" {
+		if _, err := os.Stat(typesRoot); os.IsNotExist(err) {
+			createTypesWorkspace(tb)
+		}
+	}
+	return typesIndexer
+}
+
+// createTypesWorkspace builds the shared types workspace containing all
+// test scenarios as sub-packages under a single Go module. Must be called
+// while typesMu is held.
+func createTypesWorkspace(tb testing.TB) {
+	const sharedModule = "shared.types"
+
+	tmpDir := tb.TempDir()
+	typesRoot = filepath.Join(tmpDir, "types-shared")
+	if err := os.MkdirAll(typesRoot, 0755); err != nil {
+		tb.Fatal(err)
+	}
+
+	var err error
+	typesRoot, err = filepath.EvalSymlinks(typesRoot)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	typesModule = sharedModule
+
+	// Write a single top-level go.mod
+	if err := os.WriteFile(filepath.Join(typesRoot, "go.mod"),
+		[]byte("module "+sharedModule+"\n\ngo 1.25\n"), 0644); err != nil {
+		tb.Fatal(err)
+	}
+
+	// Each entry maps a sub-directory name to its Go source content.
+	workspaceFiles := map[string]string{
+		"get_type_info_basic_struct/test.go": `package basicstruct
 // MyStruct is a test struct
 type MyStruct struct {
-	ID int ` + "`" + `json:"id"` + "`" + `
+	ID int ` + "`json:\"id\"`" + `
 }
 func (s *MyStruct) Foo() {}
 `,
-			typename: "MyStruct",
-			want:     []string{"Type: MyStruct", "ID int `json:\"id\"`", "func (s *MyStruct) Foo()"},
-		},
-		{
-			name: "interface type",
-			code: `package test
+		"get_type_info_interface/test.go": `package ifacetype
 // Reader is an interface
 type Reader interface {
 	Read(p []byte) (n int, err error)
 }`,
-			typename: "Reader",
-			want:     []string{"Type: Reader", "Methods:", "Read"},
-		},
-		{
-			name: "type alias",
-			code: `package test
+		"get_type_info_alias/test.go": `package aliastype
 type MyInt int`,
-			typename: "MyInt",
-			want:     []string{"Type: MyInt", "Kind: alias"},
-		},
-		{
-			name: "interface type with embedding",
-			code: `package test
+		"get_type_info_embedding/test.go": `package embedtype
 type I1 interface { M1() }
 type I2 interface {
 	I1
 	M2()
 }`,
+		// empty file — used by "empty typename" subtest
+		"get_type_info_empty/test.go": `package emptytype
+`,
+		// empty file — used by "missing type" subtest
+		"get_type_info_missing/test.go": `package missingtype
+`,
+		"list_implementations/test.go": `package listimpl
+type I interface { M() }
+type S struct{}
+func (s S) M() {}
+`,
+		"list_symbols/test.go": `package listsym
+func F() {}
+type T struct{}
+var V int
+const C = 1
+`,
+		"find_usages/test.go": `package finduse
+func F() { F() }
+`,
+		"find_definitions/test.go": `package finddef
+func MyFunc() {}
+`,
+		"list_symbols_exported/test.go": `package listsymexp
+func Exported() {}
+func unexported() {}
+`,
+	}
+
+	for path, content := range workspaceFiles {
+		fullPath := filepath.Join(typesRoot, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			tb.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			tb.Fatal(err)
+		}
+	}
+
+	typesIndexer, err = newIndexer(typesRoot)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	typesIndexer.knownModulePath = sharedModule
+	if err := typesIndexer.Refresh(context.Background(), nil); err != nil {
+		tb.Fatal(err)
+	}
+}
+
+func TestTypeManager_GetTypeInfo(t *testing.T) {
+	t.Parallel()
+
+	idx := getTypesWorkspaceIndexer(t)
+	cache := newASTCache(".")
+	sp := &mockSecurityProvider{}
+	m := newTypeManager(idx, cache, sp, infra_persistence.NewOSFileSystem())
+
+	tests := []struct {
+		name     string
+		dir      string
+		typename string
+		want     []string
+		wantErr  bool
+	}{
+		{
+			name:     "basic struct",
+			dir:      "get_type_info_basic_struct",
+			typename: "MyStruct",
+			want:     []string{"Type: MyStruct", "ID int `json:\"id\"`", "func (s *MyStruct) Foo()"},
+		},
+		{
+			name:     "interface type",
+			dir:      "get_type_info_interface",
+			typename: "Reader",
+			want:     []string{"Type: Reader", "Methods:", "Read"},
+		},
+		{
+			name:     "type alias",
+			dir:      "get_type_info_alias",
+			typename: "MyInt",
+			want:     []string{"Type: MyInt", "Kind: alias"},
+		},
+		{
+			name:     "interface type with embedding",
+			dir:      "get_type_info_embedding",
 			typename: "I2",
 			want:     []string{"Type: I2", "M2"},
 		},
 		{
 			name: "empty typename",
-			code: `package test`,
+			dir:  "get_type_info_empty",
 			want: []string{"Please provide a typename."},
 		},
 		{
 			name:     "missing type",
-			code:     `package test`,
+			dir:      "get_type_info_missing",
 			typename: "Missing",
 			want:     []string{"Type not found."},
 		},
@@ -83,25 +199,13 @@ type I2 interface {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tmpDir := t.TempDir()
-			err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
-			if err != nil {
-				t.Fatal(err)
+			caseDir := filepath.Join(typesRoot, tt.dir)
+			args := map[string]interface{}{
+				"typename": tt.typename,
+				"path":     caseDir,
 			}
 
-			if tt.code != "" {
-				if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(tt.code), 0644); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			idx, _ := newIndexer(tmpDir)
-			idx.knownModulePath = "example.com/test"
-			cache := newASTCache(".")
-			sp := &mockSecurityProvider{}
-			m := newTypeManager(idx, cache, sp, infra_persistence.NewOSFileSystem())
-
-			res, err := m.GetTypeInfo(context.Background(), map[string]interface{}{"typename": tt.typename}, nil)
+			res, err := m.GetTypeInfo(context.Background(), args, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetTypeInfo() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -118,21 +222,8 @@ type I2 interface {
 
 func TestTypeManager_ListImplementations(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	code := `package test
-type I interface { M() }
-type S struct{}
-func (s S) M() {}
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	idx, _ := newIndexer(tmpDir)
-	idx.knownModulePath = "example.com/test"
+	idx := getTypesWorkspaceIndexer(t)
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": "I"}, nil)
@@ -146,24 +237,11 @@ func (s S) M() {}
 
 func TestTypeManager_ListSymbols(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	code := `package p
-func F() {}
-type T struct{}
-var V int
-const C = 1
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	idx, _ := newIndexer(tmpDir)
-	idx.knownModulePath = "example.com/test"
+	idx := getTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(typesRoot, "list_symbols")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
-	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
+	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": caseDir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,23 +255,11 @@ const C = 1
 
 func TestTypeManager_FindUsages(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	code := `package p
-func F() {
-	F()
-}
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	idx, _ := newIndexer(tmpDir)
-	idx.knownModulePath = "example.com/test"
+	idx := getTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(typesRoot, "find_usages")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
-	res, err := m.FindUsages(context.Background(), map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
+	res, err := m.FindUsages(context.Background(), map[string]interface{}{"path": caseDir, "query": "F"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,21 +271,11 @@ func F() {
 
 func TestTypeManager_FindDefinitions(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	code := `package p
-func MyFunc() {}
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	idx, _ := newIndexer(tmpDir)
-	idx.knownModulePath = "example.com/test"
+	idx := getTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(typesRoot, "find_definitions")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
-	res, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": tmpDir, "query": "MyFunc"}, nil)
+	res, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": caseDir, "query": "MyFunc"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,22 +313,11 @@ func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
 
 func TestTypeManager_ListSymbols_ExportedOnly(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	code := `package p
-func Exported() {}
-func unexported() {}
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	idx, _ := newIndexer(tmpDir)
-	idx.knownModulePath = "example.com/test"
+	idx := getTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(typesRoot, "list_symbols_exported")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
-	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": tmpDir, "exported_only": true}, nil)
+	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": caseDir, "exported_only": true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
