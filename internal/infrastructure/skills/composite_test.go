@@ -68,8 +68,8 @@ func TestCompositeRepository_GetAll(t *testing.T) {
 		{
 			name: "multi repo mixed",
 			repos: []domain_skills.SkillRepository{
-				&mockSkillRepo{skills: []domain_skills.Skill{s1}},       // succeeds
-				&mockSkillRepo{err: errBoom},                            // errors → skipped
+				&mockSkillRepo{skills: []domain_skills.Skill{s1}},     // succeeds
+				&mockSkillRepo{err: errBoom},                          // errors → skipped
 				&mockSkillRepo{skills: []domain_skills.Skill{s2, s3}}, // succeeds
 			},
 			wantLen: 3,
