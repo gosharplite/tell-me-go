@@ -250,9 +250,10 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 	// Body: last turn from history
 	if sc.GetLastN() == 0 {
 		o.HistoryRenderer.Render(o.Stdout, sd.GetHistoryManager(), 1, ports.HistoryRenderOptions{
-			Raw:          sc.GetRawOutput(),
-			ShowThoughts: cfg.ShowThoughts,
-			UseColor:     isTTY && !sc.GetRawOutput(),
+			Raw:           sc.GetRawOutput(),
+			ShowThoughts:  cfg.ShowThoughts,
+			UseColor:      isTTY && !sc.GetRawOutput(),
+			SuppressRoles: true,
 		})
 	}
 
