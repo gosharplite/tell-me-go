@@ -6,6 +6,7 @@ package progress
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -158,10 +159,14 @@ func (m *model) waitForEvent() tea.Cmd {
 	}
 }
 
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
 // appendToolLog appends a timestamped log line for tool events.
+// Embedded newlines are collapsed to spaces and ANSI escape codes are stripped.
 func (m *model) appendToolLog(tag, message string) {
 	ts := time.Now().Format("15:04:05")
 	sanitized := strings.ReplaceAll(message, "\n", " ")
+	sanitized = ansiRegex.ReplaceAllString(sanitized, "")
 	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, sanitized))
 }
 

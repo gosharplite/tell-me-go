@@ -578,6 +578,17 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[0], "⠋  Thinking...")
 	})
 
+	t.Run("appendToolLog_strips_ansi_escape_codes", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		m.appendToolLog("Test", "\x1b[31mred text\x1b[0m normal")
+		assert.Len(t, m.toolLogs, 1)
+		assert.NotContains(t, m.toolLogs[0], "\x1b")
+		assert.Contains(t, m.toolLogs[0], "red text normal")
+	})
+
 	t.Run("appendToolLog_sanitizes_embedded_newlines", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
