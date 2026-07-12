@@ -401,7 +401,7 @@ func TestModel_View(t *testing.T) {
 			},
 			StartTime: time.Date(2026, 1, 15, 14, 28, 0, 0, time.UTC),
 		}
-		m.postCallMetricsLine = m.postCallStatus.FormatMetricsLine()
+		m.postCallMetricsLine = FormatMetricsLine(*m.postCallStatus)
 
 		out := m.View()
 		assert.Contains(t, out, "M: 200 H: 800 C: 50")

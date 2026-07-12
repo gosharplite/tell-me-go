@@ -51,9 +51,12 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 		switch e.(type) {
 		case events.TurnStarted, events.TurnStatusEvent:
 			// Control-plane events — must never drop. The TUI cannot
-			// track turn progress without these. Blocks the agent's
-			// event publisher until the TUI drains the channel.
-			ch <- e
+			// track turn progress without these. Respects context
+			// cancellation to prevent deadlocks during shutdown.
+			select {
+			case ch <- e:
+			case <-ctx.Done():
+			}
 		case events.ResponseEvent:
 			// Display-plane event that can be regenerated from history.
 			// Use deadline to avoid blocking the agent on slow TUI.

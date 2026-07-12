@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
 )
 
 // sessionManager manages the session lifecycle and agent execution.
@@ -268,14 +269,14 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 			ts.MaxHistoryTokens,
 			ts.Mode, ts.Model)
 	}
-	if metricsLine := ts.FormatMetricsLine(); metricsLine != "" {
+	if metricsLine := progress.FormatMetricsLine(ts); metricsLine != "" {
 		fmt.Fprintf(o.Stdout, "%s\n", metricsLine)
 	}
 	turnCost := 0.0
 	if ts.Metrics != nil {
 		turnCost = ts.Metrics.Cost
 	}
-	fmt.Fprintf(o.Stdout, "%s\n", ts.FormatFinalLine(turnCost))
+	fmt.Fprintf(o.Stdout, "%s\n", progress.FormatFinalLine(ts, turnCost))
 }
 
 func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
