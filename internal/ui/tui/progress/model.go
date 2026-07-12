@@ -560,27 +560,6 @@ func (m *model) View() string {
 	sb.WriteString(m.renderBody(availableBody))
 	sb.WriteString("\n")
 	sb.WriteString(m.renderFooter())
-
-	// Safety net: guarantee exactly height visual lines.
-	// Edge cases (ANSI codes, terminal quirks, wrap miscalculation)
-	// can produce extra lines. Keep header top, footer bottom.
-	allLines := strings.Split(sb.String(), "\n")
-	if len(allLines) > m.height {
-		keepBody := m.height - 6 // 2 header + 4 footer = 6 fixed
-		if keepBody < 0 {
-			keepBody = 0
-		}
-		truncated := make([]string, 0, m.height)
-		truncated = append(truncated, allLines[:2]...)                    // header (lines 0-1)
-		bodyStart := len(allLines) - 4 - keepBody                         // keep tail
-		if bodyStart < 2 {
-			bodyStart = 2
-		}
-		truncated = append(truncated, allLines[bodyStart:bodyStart+keepBody]...) // body
-		truncated = append(truncated, allLines[len(allLines)-4:]...)            // footer (last 4)
-		return strings.Join(truncated, "\n")
-	}
-
 	return sb.String()
 }
 
@@ -608,27 +587,6 @@ func (m *model) renderHeader() string {
 	return sb.String()
 }
 
-// wrapLine splits s into visual lines of at most width runes.
-// When width <= 0 or s fits, returns a single-element slice.
-func wrapLine(s string, width int) []string {
-	if width <= 0 {
-		return []string{s}
-	}
-	var lines []string
-	runes := []rune(s)
-	for len(runes) > width {
-		lines = append(lines, string(runes[:width]))
-		runes = runes[width:]
-	}
-	if len(runes) > 0 {
-		lines = append(lines, string(runes))
-	}
-	if len(lines) == 0 {
-		return []string{s}
-	}
-	return lines
-}
-
 // renderBody returns exactly availableLines of content (tool logs + response),
 // top-aligned with a blank separator line first, height-constrained.
 // Content fills from the top downward; blank lines pad the bottom.
@@ -638,9 +596,11 @@ func (m *model) renderBody(availableLines int) string {
 
 	for _, log := range m.toolLogs {
 		for _, subLine := range strings.Split(log, "\n") {
-			for _, visualLine := range wrapLine(subLine, m.width) {
-				contentLines = append(contentLines, visualLine)
+			clipped := subLine
+			if m.width > 0 && len([]rune(clipped)) > m.width {
+				clipped = string([]rune(clipped)[:m.width-3]) + "..."
 			}
+			contentLines = append(contentLines, clipped)
 		}
 	}
 	if m.responseText != "" {
