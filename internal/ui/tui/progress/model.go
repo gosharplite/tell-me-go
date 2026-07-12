@@ -308,6 +308,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 // waitForEvent command.
 func (m *model) handleLeveledMessage(level, message string) tea.Cmd {
 	m.appendLevelEventLog(level, message)
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
@@ -371,7 +372,7 @@ func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 	if e.Content != nil {
 		m.extractToolCallsFromResponse(e.Content)
 	}
-
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
@@ -397,6 +398,7 @@ func (m *model) handleToolCallEvent(e events.ToolCallEvent) tea.Cmd {
 	for _, fc := range newCalls {
 		m.logToolCall(fc)
 	}
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
@@ -448,12 +450,14 @@ func (m *model) handleToolResultEvent(e events.ToolResultEvent) tea.Cmd {
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
 		m.appendToolLog("Tool Result", fmt.Sprintf("%s: %s", e.Name, snippet))
 	}
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
 // handleToolOutputStreamEvent logs tool output stream messages.
 func (m *model) handleToolOutputStreamEvent(e events.ToolOutputStreamEvent) tea.Cmd {
 	m.appendLevelEventLog(e.Level, e.Message)
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
@@ -557,10 +561,6 @@ func (m *model) View() string {
 
 	if m.height < 8 {
 		return m.renderMinimal()
-	}
-
-	if m.bodyVP.Height > 0 {
-		m.bodyVP.GotoBottom()
 	}
 
 	return m.headerVP.View() + "\n\n" + m.bodyVP.View() + "\n\n" + m.footerVP.View()
