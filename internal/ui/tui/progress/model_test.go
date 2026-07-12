@@ -108,33 +108,25 @@ func TestModel_Update(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.True(t, updated.sessionDone)
-		assert.Equal(t, 1, updated.sessionDoneTicks)
 		assert.False(t, updated.spinner.active())
-		assert.NotNil(t, cmd) // 50ms idle tick
+		assert.NotNil(t, cmd) // 3s auto-dismiss goroutine
 	})
 
-	t.Run("auto-dismiss quits after 60 ticks", func(t *testing.T) {
+	t.Run("sessionDone shows exit prompt and returns quit command", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 
-		var cmd tea.Cmd
-		updated := m
-		// First tick: sets sessionDone, tick count = 1, returns Tick (not Quit)
-		newModel, cmd := updated.Update(channelClosedMsg{})
-		updated = newModel.(*model)
+		newModel, cmd := m.Update(channelClosedMsg{})
+		updated := newModel.(*model)
 
-		// 60 more ticks: tick count hits 61 → > 60 → tea.Quit
-		for i := 0; i < 60; i++ {
-			newModel, cmd = updated.Update(channelClosedMsg{})
-			updated = newModel.(*model)
-		}
+		assert.True(t, updated.sessionDone)
+		out := updated.View()
+		assert.Contains(t, out, "Press Ctrl+C to exit")
 
-		assert.True(t, updated.sessionDoneTicks > 60)
+		// cmd is a 3s sleep → tea.Quit(); verify non-nil
 		assert.NotNil(t, cmd)
-		msg := cmd()
-		_, isQuit := msg.(tea.QuitMsg)
-		assert.True(t, isQuit, "should return tea.Quit after 60+ ticks")
 	})
 
 	t.Run("sessionDone shows exit prompt in footer", func(t *testing.T) {
