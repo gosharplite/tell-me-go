@@ -125,6 +125,20 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 
 	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic, tuiOutput)
 	listenStarted := false
+
+	// Capture the final TurnStatus when TUI is active, so we can render
+	// a summary to stdout after the TUI exits.
+	var finalTurnStatus events.TurnStatus
+	var hasFinalTurnStatus bool
+	if tuiOutput {
+		chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
+			if ts, ok := e.(events.TurnStatusEvent); ok && ts.Status.IsFinal {
+				finalTurnStatus = ts.Status
+				hasFinalTurnStatus = true
+			}
+		})
+	}
+
 	// Single defer to guarantee deterministic teardown order:
 	// Stop Producers first, then Consumers.
 	defer func() {
@@ -139,13 +153,13 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		}
 
 		// Signal TUI to exit after agent has flushed all events
-		// Architect-acceptance (2026-07): tuiCleanup is only non-nil when TUI
-		// mode is active. Testing this branch requires full TUI integration
-		// (progress renderer lifecycle). Same acceptance class as the
-		// integration-level branches in the 2026-07 skills.sh Batch Triage.
-		// See: docs/architect/INTENTIONAL_NON_FIXES.md.
 		if o.tuiCleanup != nil {
 			o.tuiCleanup()
+			// Render a summary to stdout now that the TUI is gone.
+			// Skip if -l was explicitly passed (already rendered in Phase 1).
+			if hasFinalTurnStatus {
+				o.renderPostTUISummary(finalTurnStatus, sd, sc, ic)
+			}
 		}
 
 		// 2. Clean up Consumer (UI) second
@@ -217,6 +231,40 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 		ShowThoughts: cfg.ShowThoughts,
 		UseColor:     isTTY && !sCfg.GetRawOutput(),
 	})
+}
+
+// renderPostTUISummary writes a header, the last turn from history, and a
+// footer to stdout after the TUI exits. This ensures the user sees a summary
+// when the TUI auto-closes instead of an empty terminal.
+func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.ChatterComposer, sc ports.SessionConfig, ic ports.Capturer) {
+	isTTY := ic.IsTTY(o.Stdout)
+	cfg := sc.GetConfig()
+
+	// Header
+	fmt.Fprintf(o.Stdout, "\n╭─ Turn %d - %s\n", ts.SessionTurns+1, ts.Mode)
+	fmt.Fprintf(o.Stdout, "[%s] Payload: ~%d/%d tokens - %s - %s\n\n",
+		ts.Timestamp.Format("15:04:05"),
+		ts.Tokens, ts.MaxHistoryTokens,
+		ts.Mode, ts.Model)
+
+	// Body: last turn from history
+	if sc.GetLastN() == 0 {
+		o.HistoryRenderer.Render(o.Stdout, sd.GetHistoryManager(), 1, ports.HistoryRenderOptions{
+			Raw:          sc.GetRawOutput(),
+			ShowThoughts: cfg.ShowThoughts,
+			UseColor:     isTTY && !sc.GetRawOutput(),
+		})
+	}
+
+	// Footer
+	if metricsLine := ts.FormatMetricsLine(); metricsLine != "" {
+		fmt.Fprintf(o.Stdout, "\n%s\n", metricsLine)
+	}
+	turnCost := 0.0
+	if ts.Metrics != nil {
+		turnCost = ts.Metrics.Cost
+	}
+	fmt.Fprintf(o.Stdout, "%s\n", ts.FormatFinalLine(turnCost))
 }
 
 func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {

@@ -341,16 +341,14 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 	if e.Status.IsPostCall && e.Status.Metrics != nil {
 		s := e.Status
 		m.postCallStatus = &s
-		m.postCallMetricsLine = formatMetricsLine(
-			s.Metrics, s.StartTime, s.Timestamp, s.CurrentTurns+1,
-		)
+		m.postCallMetricsLine = s.FormatMetricsLine()
 	}
 	if e.Status.IsFinal {
 		turnCost := 0.0
 		if e.Status.Metrics != nil {
 			turnCost = e.Status.Metrics.Cost
 		}
-		m.finalCostLine = formatFinalLine(e.Status, turnCost)
+		m.finalCostLine = e.Status.FormatFinalLine(turnCost)
 	}
 	if m.spinner.active() {
 		m.spinner.clear()
@@ -496,60 +494,6 @@ func (m *model) extractToolCallsFromResponse(content *llm.Content) {
 	for _, fc := range toolCalls {
 		m.logToolCall(fc)
 	}
-}
-
-// formatMetricsLine renders a single-line post-call metrics summary.
-func formatMetricsLine(m *llm.Metrics, startTime time.Time, timestamp time.Time, turns int) string {
-	if m == nil {
-		return ""
-	}
-	miss := m.PromptTokens - m.CachedTokens
-	var parts []string
-
-	parts = append(parts, fmt.Sprintf("[%s]", timestamp.Format("15:04:05")))
-
-	display := m.Provider
-	if display == "" {
-		display = m.Model
-	}
-	if display != "" {
-		parts = append(parts, fmt.Sprintf("[%s]", display))
-	}
-
-	parts = append(parts, fmt.Sprintf("M: %d H: %d C: %d", miss, m.CachedTokens, m.ResponseTokens))
-
-	if m.ThinkingTokens > 0 {
-		parts = append(parts, fmt.Sprintf("Th: %d", m.ThinkingTokens))
-	}
-
-	if m.Cost > 0 {
-		parts = append(parts, fmt.Sprintf("($%.4f)", m.Cost))
-	}
-
-	totalLatency := m.Duration + m.ToolDuration
-	timing := fmt.Sprintf("[%.2fs (ΣT: %.2fs)]", totalLatency, m.CumulativeToolDuration)
-	if !startTime.IsZero() {
-		sessionDur := time.Since(startTime).Seconds()
-		if turns > 0 {
-			timing = fmt.Sprintf("%s / %.2fs (%.2f)", timing, sessionDur, sessionDur/float64(turns))
-		} else {
-			timing = fmt.Sprintf("%s / %.2fs", timing, sessionDur)
-		}
-	}
-	parts = append(parts, timing)
-
-	return strings.Join(parts, " ")
-}
-
-// formatFinalLine renders the "Ready" summary line when IsFinal is true.
-func formatFinalLine(status events.TurnStatus, turnCost float64) string {
-	hitRate := 0.0
-	if total := status.TotalM + status.TotalH; total > 0 {
-		hitRate = float64(status.TotalH) / float64(total) * 100
-	}
-	return fmt.Sprintf("╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)",
-		turnCost, status.TaskCost, status.SessionCost, status.DailyCost,
-		status.TotalM, status.TotalH, hitRate, status.TotalO)
 }
 
 // View renders the progress model as three viewport zones.
