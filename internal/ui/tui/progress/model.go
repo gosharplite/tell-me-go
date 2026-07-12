@@ -6,11 +6,11 @@ package progress
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -42,7 +42,6 @@ var brailleFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 const spinnerTickInterval = 200 * time.Millisecond
 
 // spinnerState encapsulates the animated braille spinner state and lifecycle.
-// It is embedded in the model to keep spinner concerns separate from domain state.
 type spinnerState struct {
 	status     string
 	frame      int
@@ -100,7 +99,7 @@ func (s *spinnerState) clear() {
 func (s *spinnerState) render() string {
 	frame := brailleFrames[s.frame%len(brailleFrames)]
 	elapsed := int(time.Since(s.startTime).Seconds())
-	return fmt.Sprintf("\n%s %s (%ds)", frame, s.status, elapsed)
+	return fmt.Sprintf("%s %s (%ds)", frame, s.status, elapsed)
 }
 
 // active reports whether the spinner is currently running.
@@ -132,18 +131,29 @@ type model struct {
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
 	seenCallIDs map[string]bool // dedup tool logs from ResponseEvent vs ToolCallEvent
+
+	headerVP viewport.Model
+	bodyVP   viewport.Model
+	footerVP viewport.Model
 }
 
 // NewModel creates a new progress model that consumes events from the given
 // channel and optionally renders response text through mdRender.
 func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, int) string) tea.Model {
+	headerVP := viewport.New(80, 2)
+	bodyVP := viewport.New(80, 16)
+	footerVP := viewport.New(80, 4)
+
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
-		height:       24, // sensible default before first WindowSizeMsg
-		width:        80, // sensible default before first WindowSizeMsg
+		height:       24,
+		width:        80,
 		mdRender:     mdRender,
 		seenCallIDs:  make(map[string]bool),
+		headerVP:     headerVP,
+		bodyVP:       bodyVP,
+		footerVP:     footerVP,
 	}
 }
 
@@ -159,15 +169,10 @@ func (m *model) waitForEvent() tea.Cmd {
 	}
 }
 
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
 // appendToolLog appends a timestamped log line for tool events.
-// Embedded newlines are collapsed to spaces and ANSI escape codes are stripped.
 func (m *model) appendToolLog(tag, message string) {
 	ts := time.Now().Format("15:04:05")
-	sanitized := strings.ReplaceAll(message, "\n", " ")
-	sanitized = ansiRegex.ReplaceAllString(sanitized, "")
-	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, sanitized))
+	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, message))
 }
 
 // appendLevelEventLog appends a timestamped log line with a level-mapped
@@ -189,12 +194,10 @@ func (m *model) appendLevelEventLog(level, message string) {
 
 // safeTruncate truncates s to at most maxLen bytes, ensuring the cut
 // never lands in the middle of a multi-byte UTF-8 character.
-// If s is already shorter than maxLen, it is returned unchanged.
 func safeTruncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	// Walk runes to find the byte index of the (maxLen)th rune.
 	var count, byteIdx int
 	for i := range s {
 		if count == maxLen {
@@ -206,7 +209,6 @@ func safeTruncate(s string, maxLen int) string {
 	if byteIdx > 0 {
 		return s[:byteIdx]
 	}
-	// maxLen is 0 or s starts with a multi-byte rune exceeding maxLen.
 	return ""
 }
 
@@ -250,6 +252,16 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
+	m.headerVP.Width = msg.Width
+	m.headerVP.Height = 2
+	m.bodyVP.Width = msg.Width
+	if msg.Height > 8 {
+		m.bodyVP.Height = msg.Height - 8
+	} else {
+		m.bodyVP.Height = 0
+	}
+	m.footerVP.Width = msg.Width
+	m.footerVP.Height = 4
 	if m.rawResponseText != "" && m.mdRender != nil {
 		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
 	}
@@ -293,8 +305,7 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleLeveledMessage logs a leveled system message and returns a
-// waitForEvent command. It is used by both SystemMessageEvent and
-// StatusUpdate handlers.
+// waitForEvent command.
 func (m *model) handleLeveledMessage(level, message string) tea.Cmd {
 	m.appendLevelEventLog(level, message)
 	return m.waitForEvent()
@@ -357,9 +368,6 @@ func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 		m.responseText = m.rawResponseText
 	}
 
-	// Extract tool call info from ResponseEvent so [Tool Reason]
-	// and [Tool Action] appear immediately — before ToolCallEvent
-	// arrives from the Dispatcher.
 	if e.Content != nil {
 		m.extractToolCallsFromResponse(e.Content)
 	}
@@ -393,8 +401,7 @@ func (m *model) handleToolCallEvent(e events.ToolCallEvent) tea.Cmd {
 }
 
 // logToolCall logs a single function call's reason and action to the
-// tool log, deduplicating by call ID. Calls already logged (tracked in
-// seenCallIDs) are silently skipped.
+// tool log, deduplicating by call ID.
 func (m *model) logToolCall(fc *llm.FunctionCall) {
 	id := fc.ID
 	if id == "" {
@@ -451,8 +458,7 @@ func (m *model) handleToolOutputStreamEvent(e events.ToolOutputStreamEvent) tea.
 }
 
 // handleSpinnerEvent starts the spinner with the status text from a
-// spinner-bearing event (SummarizationStartedEvent, ToolExecutionStartedEvent,
-// RetryWaitingEvent).
+// spinner-bearing event.
 func (m *model) handleSpinnerEvent(e spinnerInfoProvider) tea.Cmd {
 	info, _ := e.SpinnerInfo()
 	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
@@ -473,9 +479,7 @@ func extractResponseText(content *llm.Content) string {
 }
 
 // extractToolCallsFromResponse populates toolLogs from FunctionCall parts
-// in the ResponseEvent content. This bridges the visibility gap between
-// ResponseEvent and ToolCallEvent. seenCallIDs prevents duplicates when
-// the real ToolCallEvent arrives later from the Dispatcher.
+// in the ResponseEvent content.
 func (m *model) extractToolCallsFromResponse(content *llm.Content) {
 	var toolCalls []*llm.FunctionCall
 	for _, part := range content.Parts {
@@ -499,10 +503,8 @@ func formatMetricsLine(m *llm.Metrics, startTime time.Time, timestamp time.Time,
 	miss := m.PromptTokens - m.CachedTokens
 	var parts []string
 
-	// Timestamp
 	parts = append(parts, fmt.Sprintf("[%s]", timestamp.Format("15:04:05")))
 
-	// Model display
 	display := m.Provider
 	if display == "" {
 		display = m.Model
@@ -547,43 +549,21 @@ func formatFinalLine(status events.TurnStatus, turnCost float64) string {
 		status.TotalM, status.TotalH, hitRate, status.TotalO)
 }
 
-// View renders the progress model as a three-zone fixed layout:
-// header (2 lines), scrollable body, footer (3 lines).
-// Falls back to renderMinimal when the terminal is too small (height < 5).
+// View renders the progress model as three viewport zones.
 func (m *model) View() string {
+	m.headerVP.SetContent(m.renderHeader())
+	m.bodyVP.SetContent(m.renderBodyContent())
+	m.footerVP.SetContent(m.renderFooterContent())
+
 	if m.height < 8 {
 		return m.renderMinimal()
 	}
 
-	// Body gets everything between header+gap (3 lines) and gap+footer (5 lines).
-	availableBody := m.height - 8
-
-	var sb strings.Builder
-	sb.WriteString(m.renderHeader())
-	sb.WriteString("\n")
-	sb.WriteString(m.renderBody(availableBody))
-	sb.WriteString("\n")
-	sb.WriteString(m.renderFooter())
-
-	// Safety net: guarantee exactly height visual lines.
-	allLines := strings.Split(sb.String(), "\n")
-	if len(allLines) > m.height {
-		keepBody := m.height - 6 // 2 header + 4 footer = 6 fixed
-		if keepBody < 0 {
-			keepBody = 0
-		}
-		truncated := make([]string, 0, m.height)
-		truncated = append(truncated, allLines[:2]...)                       // header (0-1)
-		bodyStart := len(allLines) - 4 - keepBody
-		if bodyStart < 2 {
-			bodyStart = 2
-		}
-		truncated = append(truncated, allLines[bodyStart:len(allLines)-4]...) // body
-		truncated = append(truncated, allLines[len(allLines)-4:]...)          // footer
-		return strings.Join(truncated, "\n")
+	if m.bodyVP.Height > 0 {
+		m.bodyVP.GotoBottom()
 	}
 
-	return sb.String()
+	return m.headerVP.View() + "\n\n" + m.bodyVP.View() + "\n\n" + m.footerVP.View()
 }
 
 // renderMinimal returns a single-line fallback for tiny terminals.
@@ -593,14 +573,12 @@ func (m *model) renderMinimal() string {
 	if m.sessionDone {
 		sb.WriteString(" Press Ctrl+C to exit")
 	} else if m.spinner.active() && m.currentState != stateIdle {
-		frame := brailleFrames[m.spinner.frame%len(brailleFrames)]
-		elapsed := int(time.Since(m.spinner.startTime).Seconds())
-		sb.WriteString(fmt.Sprintf(" %s %s (%ds)", frame, m.spinner.status, elapsed))
+		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render()))
 	}
 	return sb.String()
 }
 
-// renderHeader returns the turn header and payload line (2 lines, always present).
+// renderHeader returns the turn header and payload line.
 func (m *model) renderHeader() string {
 	ts := m.timestamp.Format("15:04:05")
 	var sb strings.Builder
@@ -610,82 +588,41 @@ func (m *model) renderHeader() string {
 	return sb.String()
 }
 
-// renderBody returns exactly availableLines of content (tool logs + response),
-// top-aligned with a blank separator line first, height-constrained.
-// Content fills from the top downward; blank lines pad the bottom.
-// When overflowing, the oldest entry at the top is pushed off.
-func (m *model) renderBody(availableLines int) string {
-	var contentLines []string
-
+// renderBodyContent returns tool logs and response text as plain content.
+// The viewport handles overflow and scrolling.
+func (m *model) renderBodyContent() string {
+	var sb strings.Builder
 	for _, log := range m.toolLogs {
-		clipped := log
-		if m.width > 2 && len([]rune(clipped)) > m.width-2 {
-			clipped = string([]rune(clipped)[:m.width-5]) + "..."
-		}
-		contentLines = append(contentLines, clipped)
+		sb.WriteString(log)
+		sb.WriteString("\n")
 	}
 	if m.responseText != "" {
-		for _, line := range strings.Split(m.responseText, "\n") {
-			contentLines = append(contentLines, line)
-		}
+		sb.WriteString(m.responseText)
 	}
-
-	bodyLines := make([]string, 0, availableLines)
-
-	availableForContent := availableLines
-	if len(contentLines) > availableForContent {
-		// Keep only the tail (newest content at bottom, oldest pushed off top).
-		bodyLines = append(bodyLines, contentLines[len(contentLines)-availableForContent:]...)
-	} else {
-		// Bottom-pad with blank lines so footer stays fixed.
-		bodyLines = append(bodyLines, contentLines...)
-		padding := availableForContent - len(contentLines)
-		for i := 0; i < padding; i++ {
-			bodyLines = append(bodyLines, "")
-		}
-	}
-
-	if len(bodyLines) == 0 {
-		return ""
-	}
-	return "\n" + strings.Join(bodyLines, "\n")
+	return sb.String()
 }
 
-// renderFooter returns exactly 4 lines: post-call payload, metrics, final
-// cost summary, and spinner. Each line is either its real content or blank.
-func (m *model) renderFooter() string {
+// renderFooterContent returns footer lines as plain content.
+func (m *model) renderFooterContent() string {
 	var sb strings.Builder
-
-	// Line 1: post-call payload (exact token count, separate from header).
-	sb.WriteString("\n")
 	if m.postCallStatus != nil {
-		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
+		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s\n",
 			m.timestamp.Format("15:04:05"),
 			m.postCallStatus.Metrics.PromptTokens,
 			m.maxTokens, m.sessionName, m.modelName))
 	}
-
-	// Line 2: post-call metrics.
-	sb.WriteString("\n")
 	if m.postCallMetricsLine != "" {
 		sb.WriteString(m.postCallMetricsLine)
+		sb.WriteString("\n")
 	}
-
-	// Line 3: final cost summary.
-	sb.WriteString("\n")
 	if m.finalCostLine != "" {
 		sb.WriteString(m.finalCostLine)
+		sb.WriteString("\n")
 	}
-
-	// Line 4: spinner or exit prompt.
-	sb.WriteString("\n")
 	if m.sessionDone {
 		sb.WriteString("Press Ctrl+C to exit")
 	} else if m.spinner.active() && m.currentState != stateIdle {
-		frame := brailleFrames[m.spinner.frame%len(brailleFrames)]
-		elapsed := int(time.Since(m.spinner.startTime).Seconds())
-		sb.WriteString(fmt.Sprintf("%s %s (%ds)", frame, m.spinner.status, elapsed))
+		sb.WriteString(m.spinner.render())
 	}
-
 	return sb.String()
 }
