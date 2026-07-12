@@ -597,9 +597,9 @@ func (m *model) renderHeader() string {
 }
 
 // renderBody returns exactly availableLines of content (tool logs + response),
-// top-aligned and height-constrained. Content fills from the top downward in
-// arrival order; blank lines pad the bottom. When overflowing, the oldest
-// entry at the top is pushed off.
+// top-aligned with a blank separator line first, height-constrained.
+// Content fills from the top downward; blank lines pad the bottom.
+// When overflowing, the oldest entry at the top is pushed off.
 func (m *model) renderBody(availableLines int) string {
 	var contentLines []string
 
@@ -613,13 +613,18 @@ func (m *model) renderBody(availableLines int) string {
 	}
 
 	bodyLines := make([]string, 0, availableLines)
-	if len(contentLines) > availableLines {
+
+	// Blank separator creates the visual gap between header and body.
+	bodyLines = append(bodyLines, "")
+
+	availableForContent := availableLines - 1
+	if len(contentLines) > availableForContent {
 		// Keep only the tail (newest content at bottom, oldest pushed off top).
-		bodyLines = contentLines[len(contentLines)-availableLines:]
+		bodyLines = append(bodyLines, contentLines[len(contentLines)-availableForContent:]...)
 	} else {
 		// Bottom-pad with blank lines so footer stays fixed.
 		bodyLines = append(bodyLines, contentLines...)
-		padding := availableLines - len(contentLines)
+		padding := availableForContent - len(contentLines)
 		for i := 0; i < padding; i++ {
 			bodyLines = append(bodyLines, "")
 		}
