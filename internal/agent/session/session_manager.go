@@ -144,49 +144,15 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 	}
 
 	// Single defer to guarantee deterministic teardown order:
-	// Stop Producers first, then Consumers.
+	// Stop Producers first, then Consumers (see teardownSession).
 	defer func() {
-		// 1. Stop Producers (Agent) first
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
-		defer cancel()
-
-		if se := chatAgent.Shutdown(shutdownCtx); se != nil {
-			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", se)
-			// Aggregate with the named return error 'err'
-			err = errors.Join(err, fmt.Errorf("agent shutdown failed: %w", se))
-		}
-
-		// Signal TUI to exit after agent has flushed all events
-		if o.tuiCleanup != nil {
-			o.tuiCleanup()
-			// Render a summary to stdout now that the TUI is gone.
-			// Skip if -l was explicitly passed (already rendered in Phase 1).
-			if hasFinalTurnStatus {
-				o.renderPostTUISummary(finalTurnStatus, sd, sc, ic)
-			}
-		}
-
-		// 2. Clean up Consumer (UI) second
-		if bridge != nil {
-			if !listenStarted {
-				bridge.AbortStart()
-			}
-			bridge.CloseInput()
-			bridge.Cleanup()
-		}
+		err = errors.Join(err, o.teardownSession(chatAgent, bridge, &listenStarted, finalTurnStatus, hasFinalTurnStatus, sd, sc, ic))
 	}()
 	if err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
-	b := make([]byte, 8)
-	var sessionID string
-	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
-		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
-		sessionID = fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
-	} else {
-		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
-	}
+	sessionID := o.generateSessionID()
 	sess := ports.NewSession(sessionID, sd.GetHistoryManager())
 
 	// The UI Bridge must outlive the chat execution to process trailing events
@@ -204,6 +170,66 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 
 	// Main Agent Loop — synchronous; the defer block handles cleanup.
 	return chatAgent.Chat(ctx, sess, sc.GetPrompt())
+}
+
+// teardownSession performs deterministic cleanup after the main agent loop:
+//  1. Stop Producers (Agent) first — flush events, capture shutdown errors.
+//  2. Signal TUI to exit (if active), then render a post-TUI summary to stdout.
+//  3. Clean up Consumer (UI bridge) second — abort if not started, close input, cleanup.
+//
+// Returns any shutdown errors to be joined with the Run() named return error.
+func (o *sessionManager) teardownSession(
+	chatAgent ports.Chatter,
+	bridge *ui.Bridge,
+	listenStarted *bool,
+	finalTurnStatus events.TurnStatus,
+	hasFinalTurnStatus bool,
+	sd ports.ChatterComposer,
+	sc ports.SessionConfig,
+	ic ports.Capturer,
+) error {
+	var errs error
+
+	// 1. Stop Producers (Agent) first
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
+	defer cancel()
+
+	if se := chatAgent.Shutdown(shutdownCtx); se != nil {
+		_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", se)
+		errs = errors.Join(errs, fmt.Errorf("agent shutdown failed: %w", se))
+	}
+
+	// Signal TUI to exit after agent has flushed all events
+	if o.tuiCleanup != nil {
+		o.tuiCleanup()
+		// Render a summary to stdout now that the TUI is gone.
+		// Skip if -l was explicitly passed (already rendered in Phase 1).
+		if hasFinalTurnStatus {
+			o.renderPostTUISummary(finalTurnStatus, sd, sc, ic)
+		}
+	}
+
+	// 2. Clean up Consumer (UI) second
+	if bridge != nil {
+		if !*listenStarted {
+			bridge.AbortStart()
+		}
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}
+
+	return errs
+}
+
+// generateSessionID creates a unique session identifier using the configured
+// entropy source. Falls back to a time-based ID if entropy is unavailable.
+func (o *sessionManager) generateSessionID() string {
+	b := make([]byte, 8)
+	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
+		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
+		return fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
+	}
+	return fmt.Sprintf("session-%s", hex.EncodeToString(b))
 }
 
 // Rollback deletes the specified number of turns from history.

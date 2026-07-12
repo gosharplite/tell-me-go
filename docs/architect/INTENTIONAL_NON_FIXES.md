@@ -253,6 +253,19 @@ Any AI agent recommending these should consult the rationale below.
   as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
 - **See**: `internal/domain/config/config.go:183-185`
 
+### domain/events/events.go — NoOpEventBus no-op stubs at 0%
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `NoOpEventBus.Publish`, `Subscribe`, `Shutdown`, `Flush`,
+  `Listen`, and `WaitStarted` are no-op stub methods required to satisfy the
+  `EventBus` interface contract. `NoOpEventBus` is used as a safe default
+  (`return nil` semantics) when no real EventBus is needed (e.g., tests,
+  uninitialized paths). Go's coverage instrumentation does not count empty
+  method bodies as covered. Same acceptance class as `agenttest/helpers.go`
+  interface-satisfying stubs, `auth.Invalidate` no-ops, and `watcher_noop.go`
+  stubs already documented below.
+- **See**: `internal/domain/events/events.go:65-70`
+
 ### domain/llm/types.go — NewID delegation wrapper
 
 - **Status**: ACCEPTED (2026-07)
