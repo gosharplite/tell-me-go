@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // domainEventMsg wraps a domain event to ensure exactly one reader exists on
@@ -43,20 +44,22 @@ const spinnerTickInterval = 200 * time.Millisecond
 
 // spinnerState encapsulates the animated braille spinner state and lifecycle.
 type spinnerState struct {
-	status     string
-	frame      int
-	tickActive bool
-	startTime  time.Time
-	generation int
+	status      string
+	frame       int
+	tickActive  bool
+	startTime   time.Time
+	generation  int
+	showMetrics bool // true when WithMetrics was set in the triggering event
 }
 
 // start initializes the spinner for a new phase. Returns a tick command
 // (or nil if a tick is already active from a previous phase).
-func (s *spinnerState) start(status string) tea.Cmd {
+func (s *spinnerState) start(status string, showMetrics bool) tea.Cmd {
 	s.status = status
 	s.frame = 0
 	s.startTime = time.Now()
 	s.generation++
+	s.showMetrics = showMetrics
 	return s.tick()
 }
 
@@ -90,13 +93,17 @@ func (s *spinnerState) handleTick(msg spinnerTickMsg) tea.Cmd {
 func (s *spinnerState) clear() {
 	s.status = ""
 	s.tickActive = false
+	s.showMetrics = false
 }
 
 // render returns the spinner line for display, including the current
 // braille frame, status text, and elapsed seconds.
-func (s *spinnerState) render() string {
+func (s *spinnerState) render(cpu, mem float64) string {
 	frame := brailleFrames[s.frame%len(brailleFrames)]
 	elapsed := int(time.Since(s.startTime).Seconds())
+	if s.showMetrics {
+		return fmt.Sprintf("%s %s (%ds) [CPU: %.1f%% | MEM: %.1f%%]", frame, s.status, elapsed, cpu, mem)
+	}
 	return fmt.Sprintf("%s %s (%ds)", frame, s.status, elapsed)
 }
 
@@ -121,6 +128,12 @@ type model struct {
 	responseText        string                   // accumulated AI response text
 	rawResponseText     string                   // raw text before markdown rendering, for re-rendering on resize
 	mdRender            func(string, int) string // optional markdown renderer (text, width)
+	metricsProvider     ports.SystemMetricsProvider
+	lastCPUTime         int64
+	lastIdleTime        int64
+	lastSampleTime      time.Time
+	lastCPUPercent      float64
+	lastMemPercent      float64
 	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
@@ -136,21 +149,22 @@ type model struct {
 
 // NewModel creates a new progress model that consumes events from the given
 // channel and optionally renders response text through mdRender.
-func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, int) string) tea.Model {
+func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, int) string, metricsProvider ports.SystemMetricsProvider) tea.Model {
 	headerVP := viewport.New(80, 2)
 	bodyVP := viewport.New(80, 16)
 	footerVP := viewport.New(80, 4)
 
 	return &model{
-		eventCh:      ch,
-		currentState: stateIdle,
-		height:       24,
-		width:        80,
-		mdRender:     mdRender,
-		seenCallIDs:  make(map[string]bool),
-		headerVP:     headerVP,
-		bodyVP:       bodyVP,
-		footerVP:     footerVP,
+		eventCh:         ch,
+		currentState:    stateIdle,
+		height:          24,
+		width:           80,
+		mdRender:        mdRender,
+		metricsProvider: metricsProvider,
+		seenCallIDs:     make(map[string]bool),
+		headerVP:        headerVP,
+		bodyVP:          bodyVP,
+		footerVP:        footerVP,
 	}
 }
 
@@ -222,6 +236,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
 	case spinnerTickMsg:
+		if m.spinner.showMetrics {
+			m.sampleMetrics(time.Now())
+		}
 		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
 	case channelClosedMsg:
 		return m, tea.Quit
@@ -324,7 +341,7 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 func (m *model) handleInferenceStarted(e events.InferenceStartedEvent) tea.Cmd {
 	m.modelName = e.Model
 	info, _ := e.SpinnerInfo()
-	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
+	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status, info.WithMetrics))
 }
 
 // handleTurnStatus processes a TurnStatusEvent.
@@ -460,7 +477,33 @@ func (m *model) handleToolOutputStreamEvent(e events.ToolOutputStreamEvent) tea.
 // spinner-bearing event.
 func (m *model) handleSpinnerEvent(e spinnerInfoProvider) tea.Cmd {
 	info, _ := e.SpinnerInfo()
-	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
+	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status, info.WithMetrics))
+}
+
+// sampleMetrics samples CPU and memory usage from the metrics provider.
+// Metrics are throttled to at most once per second; calls within the throttle
+// window return the cached values. Returns zeroes when the provider is nil.
+func (m *model) sampleMetrics(now time.Time) (cpu float64, mem float64) {
+	if m.metricsProvider == nil {
+		return 0, 0
+	}
+	if now.Sub(m.lastSampleTime) < time.Second && !m.lastSampleTime.IsZero() {
+		return m.lastCPUPercent, m.lastMemPercent
+	}
+	currentTotal, currentIdle := m.metricsProvider.GetCPUStats()
+	currentMem := m.metricsProvider.GetMemoryPercent()
+	if !m.lastSampleTime.IsZero() && currentIdle > 0 {
+		dTotal := float64(currentTotal - m.lastCPUTime)
+		dIdle := float64(currentIdle - m.lastIdleTime)
+		if dTotal > 0 {
+			m.lastCPUPercent = (1.0 - (dIdle / dTotal)) * 100.0
+		}
+	}
+	m.lastCPUTime = currentTotal
+	m.lastIdleTime = currentIdle
+	m.lastSampleTime = now
+	m.lastMemPercent = currentMem
+	return m.lastCPUPercent, m.lastMemPercent
 }
 
 // extractResponseText concatenates non-thought text parts from an LLM response.
@@ -572,7 +615,8 @@ func (m *model) renderMinimal() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
 	if m.spinner.active() && m.currentState != stateIdle {
-		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render()))
+		cpu, mem := m.lastCPUPercent, m.lastMemPercent
+		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render(cpu, mem)))
 	}
 	return sb.String()
 }
@@ -619,7 +663,8 @@ func (m *model) renderFooterContent() string {
 		sb.WriteString("\n")
 	}
 	if m.spinner.active() && m.currentState != stateIdle {
-		sb.WriteString(m.spinner.render())
+		cpu, mem := m.lastCPUPercent, m.lastMemPercent
+		sb.WriteString(m.spinner.render(cpu, mem))
 	}
 	return sb.String()
 }

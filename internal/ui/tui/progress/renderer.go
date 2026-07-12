@@ -13,11 +13,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-type renderer struct{}
+type renderer struct {
+	metricsProvider ports.SystemMetricsProvider
+}
 
 // NewRenderer creates a ProgressRenderer backed by the Bubble Tea progress model.
-func NewRenderer() ports.ProgressRenderer {
-	return &renderer{}
+func NewRenderer(metricsProvider ports.SystemMetricsProvider) ports.ProgressRenderer {
+	return &renderer{metricsProvider: metricsProvider}
 }
 
 func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func() {
@@ -27,7 +29,7 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 
 	mdRender := r.makeMarkdownRenderer()
 
-	m := NewModel(ctx, ch, mdRender)
+	m := NewModel(ctx, ch, mdRender, r.metricsProvider)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	done := make(chan struct{})
