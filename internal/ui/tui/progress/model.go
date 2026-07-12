@@ -127,6 +127,7 @@ type model struct {
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
 	sessionDone         bool                     // true when event channel closes; TUI waits for Ctrl+C
+	sessionDoneTicks    int                      // idle tick counter for 3s auto-dismiss
 	spinner             spinnerState
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
@@ -218,8 +219,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinnerTickMsg:
 		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
 	case channelClosedMsg:
-		m.sessionDone = true
-		m.spinner.clear()
+		if !m.sessionDone {
+			m.sessionDone = true
+			m.spinner.clear()
+		}
+		m.sessionDoneTicks++
+		if m.sessionDoneTicks > 60 { // 60 × 50ms = 3s
+			return m, tea.Quit
+		}
 		return m, tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
 			return channelClosedMsg{}
 		})
