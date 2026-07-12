@@ -1657,10 +1657,10 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 	assert.Empty(t, updated.responseText, "responseText should be cleared on TurnStarted")
 	assert.Empty(t, updated.rawResponseText, "rawResponseText should be cleared on TurnStarted")
 
-	// Footer status lines must PERSIST across TurnStarted (sticky).
-	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist across TurnStarted")
-	assert.NotEmpty(t, updated.postCallMetricsLine, "postCallMetricsLine should persist across TurnStarted")
-	assert.NotEmpty(t, updated.finalCostLine, "finalCostLine should persist across TurnStarted")
+	// Footer status lines: payload/metrics cleared, final cost persists.
+	assert.Nil(t, updated.postCallStatus, "postCallStatus should be nil on TurnStarted")
+	assert.Empty(t, updated.postCallMetricsLine, "postCallMetricsLine should be cleared on TurnStarted")
+	assert.NotEmpty(t, updated.finalCostLine, "finalCostLine should still persist (sticky)")
 
 	// Non-display fields should also be cleared (except toolLogs — sticky).
 	assert.Len(t, updated.seenCallIDs, 0, "seenCallIDs should be empty on TurnStarted")
@@ -1670,8 +1670,6 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 	updatedOut := updated.View()
 	assert.NotContains(t, updatedOut, "Here is the AI response for turn 5.",
 		"View after TurnStarted must not contain stale response text")
-	assert.Contains(t, updatedOut, "M: 200 H: 800 C: 50",
-		"View after TurnStarted should still contain sticky metrics line")
 	assert.Contains(t, updatedOut, "╰─⠿ Ready",
 		"View after TurnStarted should still contain sticky final cost line")
 	assert.Contains(t, updatedOut, "╭─ Turn 6 - test",
@@ -1718,13 +1716,13 @@ func TestModel_FooterStatusLinesPersistAcrossTurns(t *testing.T) {
 	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)"
 	m.postCallStatus = &events.TurnStatus{}
 
-	// Fire TurnStarted — footer should NOT be cleared.
+	// Fire TurnStarted — only finalCostLine should persist.
 	newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 1, SessionTurns: 1}))
 	updated := newModel.(*model)
 
 	assert.Equal(t, 2, updated.turn, "turn should increment")
-	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist")
-	assert.Equal(t, "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)", updated.postCallMetricsLine)
+	assert.Nil(t, updated.postCallStatus, "postCallStatus should be cleared")
+	assert.Empty(t, updated.postCallMetricsLine, "postCallMetricsLine should be cleared")
 	assert.Equal(t, "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)", updated.finalCostLine)
 	assert.NotNil(t, cmd)
 
