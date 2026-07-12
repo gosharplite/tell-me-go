@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/progress"
 )
 
 // sessionManager manages the session lifecycle and agent execution.
@@ -40,6 +41,7 @@ type sessionConfig struct {
 	ConfigPath string
 	NewSession bool
 	LastN      int
+	LastNSet   bool
 	BackN      int
 	RawOutput  bool
 	Prompt     string
@@ -48,17 +50,19 @@ type sessionConfig struct {
 
 func (c *sessionConfig) GetPrompt() string         { return c.Prompt }
 func (c *sessionConfig) GetLastN() int             { return c.LastN }
+func (c *sessionConfig) IsLastNSet() bool          { return c.LastNSet }
 func (c *sessionConfig) GetBackN() int             { return c.BackN }
 func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
 func (c *sessionConfig) GetConfigPath() string     { return c.ConfigPath }
 func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
 
 // NewSessionConfig creates a new sessionConfig with required parameters.
-func NewSessionConfig(configPath string, newSession bool, lastN, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
+func NewSessionConfig(configPath string, newSession bool, lastN int, lastNSet bool, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
 	return &sessionConfig{
 		ConfigPath: configPath,
 		NewSession: newSession,
 		LastN:      lastN,
+		LastNSet:   lastNSet,
 		BackN:      backN,
 		RawOutput:  rawOutput,
 		Prompt:     prompt,
@@ -125,50 +129,30 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 
 	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic, tuiOutput)
 	listenStarted := false
-	// Single defer to guarantee deterministic teardown order:
-	// Stop Producers first, then Consumers.
-	defer func() {
-		// 1. Stop Producers (Agent) first
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
-		defer cancel()
 
-		if se := chatAgent.Shutdown(shutdownCtx); se != nil {
-			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", se)
-			// Aggregate with the named return error 'err'
-			err = errors.Join(err, fmt.Errorf("agent shutdown failed: %w", se))
-		}
-
-		// Signal TUI to exit after agent has flushed all events
-		// Architect-acceptance (2026-07): tuiCleanup is only non-nil when TUI
-		// mode is active. Testing this branch requires full TUI integration
-		// (progress renderer lifecycle). Same acceptance class as the
-		// integration-level branches in the 2026-07 skills.sh Batch Triage.
-		// See: docs/architect/INTENTIONAL_NON_FIXES.md.
-		if o.tuiCleanup != nil {
-			o.tuiCleanup()
-		}
-
-		// 2. Clean up Consumer (UI) second
-		if bridge != nil {
-			if !listenStarted {
-				bridge.AbortStart()
+	// Capture the final TurnStatus when TUI is active, so we can render
+	// a summary to stdout after the TUI exits.
+	var finalTurnStatus events.TurnStatus
+	var hasFinalTurnStatus bool
+	if tuiOutput {
+		chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
+			if ts, ok := e.(events.TurnStatusEvent); ok && ts.Status.IsFinal {
+				finalTurnStatus = ts.Status
+				hasFinalTurnStatus = true
 			}
-			bridge.CloseInput()
-			bridge.Cleanup()
-		}
+		})
+	}
+
+	// Single defer to guarantee deterministic teardown order:
+	// Stop Producers first, then Consumers (see teardownSession).
+	defer func() {
+		err = errors.Join(err, o.teardownSession(chatAgent, bridge, &listenStarted, finalTurnStatus, hasFinalTurnStatus, sd, sc, ic))
 	}()
 	if err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
-	b := make([]byte, 8)
-	var sessionID string
-	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
-		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
-		sessionID = fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
-	} else {
-		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
-	}
+	sessionID := o.generateSessionID()
 	sess := ports.NewSession(sessionID, sd.GetHistoryManager())
 
 	// The UI Bridge must outlive the chat execution to process trailing events
@@ -186,6 +170,66 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 
 	// Main Agent Loop — synchronous; the defer block handles cleanup.
 	return chatAgent.Chat(ctx, sess, sc.GetPrompt())
+}
+
+// teardownSession performs deterministic cleanup after the main agent loop:
+//  1. Stop Producers (Agent) first — flush events, capture shutdown errors.
+//  2. Signal TUI to exit (if active), then render a post-TUI summary to stdout.
+//  3. Clean up Consumer (UI bridge) second — abort if not started, close input, cleanup.
+//
+// Returns any shutdown errors to be joined with the Run() named return error.
+func (o *sessionManager) teardownSession(
+	chatAgent ports.Chatter,
+	bridge *ui.Bridge,
+	listenStarted *bool,
+	finalTurnStatus events.TurnStatus,
+	hasFinalTurnStatus bool,
+	sd ports.ChatterComposer,
+	sc ports.SessionConfig,
+	ic ports.Capturer,
+) error {
+	var errs error
+
+	// 1. Stop Producers (Agent) first
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
+	defer cancel()
+
+	if se := chatAgent.Shutdown(shutdownCtx); se != nil {
+		_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", se)
+		errs = errors.Join(errs, fmt.Errorf("agent shutdown failed: %w", se))
+	}
+
+	// Signal TUI to exit after agent has flushed all events
+	if o.tuiCleanup != nil {
+		o.tuiCleanup()
+		// Render a summary to stdout now that the TUI is gone.
+		// Skip if -l was explicitly passed (already rendered in Phase 1).
+		if hasFinalTurnStatus {
+			o.renderPostTUISummary(finalTurnStatus, sd, sc, ic)
+		}
+	}
+
+	// 2. Clean up Consumer (UI) second
+	if bridge != nil {
+		if !*listenStarted {
+			bridge.AbortStart()
+		}
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}
+
+	return errs
+}
+
+// generateSessionID creates a unique session identifier using the configured
+// entropy source. Falls back to a time-based ID if entropy is unavailable.
+func (o *sessionManager) generateSessionID() string {
+	b := make([]byte, 8)
+	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
+		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
+		return fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
+	}
+	return fmt.Sprintf("session-%s", hex.EncodeToString(b))
 }
 
 // Rollback deletes the specified number of turns from history.
@@ -217,6 +261,48 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 		ShowThoughts: cfg.ShowThoughts,
 		UseColor:     isTTY && !sCfg.GetRawOutput(),
 	})
+}
+
+// renderPostTUISummary writes a header, the last turn from history, and a
+// footer to stdout after the TUI exits. This ensures the user sees a summary
+// when the TUI auto-closes instead of an empty terminal.
+func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.ChatterComposer, sc ports.SessionConfig, ic ports.Capturer) {
+	isTTY := ic.IsTTY(o.Stdout)
+	cfg := sc.GetConfig()
+
+	// Header
+	_, _ = fmt.Fprintf(o.Stdout, "\n╭─ Turn %d - %s\n", ts.SessionTurns+1, ts.Mode)
+	_, _ = fmt.Fprintf(o.Stdout, "[%s] Payload: ~%d/%d tokens - %s - %s\n\n",
+		ts.Timestamp.Format("15:04:05"),
+		ts.Tokens, ts.MaxHistoryTokens,
+		ts.Mode, ts.Model)
+
+	// Body: last turn from history
+	if !sc.IsLastNSet() {
+		o.HistoryRenderer.Render(o.Stdout, sd.GetHistoryManager(), 1, ports.HistoryRenderOptions{
+			Raw:           sc.GetRawOutput(),
+			ShowThoughts:  cfg.ShowThoughts,
+			UseColor:      isTTY && !sc.GetRawOutput(),
+			SuppressRoles: true,
+		})
+	}
+
+	// Footer
+	if ts.Metrics != nil {
+		_, _ = fmt.Fprintf(o.Stdout, "\n[%s] Payload: %d/%d tokens - %s - %s\n",
+			ts.Timestamp.Format("15:04:05"),
+			ts.Metrics.PromptTokens,
+			ts.MaxHistoryTokens,
+			ts.Mode, ts.Model)
+	}
+	if metricsLine := progress.FormatMetricsLine(ts); metricsLine != "" {
+		_, _ = fmt.Fprintf(o.Stdout, "%s\n", metricsLine)
+	}
+	turnCost := 0.0
+	if ts.Metrics != nil {
+		turnCost = ts.Metrics.Cost
+	}
+	_, _ = fmt.Fprintf(o.Stdout, "%s\n", progress.FormatFinalLine(ts, turnCost))
 }
 
 func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
@@ -313,6 +399,7 @@ func Run(ctx context.Context, params RunParams) error {
 		params.ConfigPath,
 		params.NewSession,
 		params.LastN,
+		params.LastN > 0,
 		params.BackN,
 		params.RawOutput,
 		params.Prompt,

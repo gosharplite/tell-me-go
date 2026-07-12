@@ -42,10 +42,11 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 	}
 
 	hr := &historyRenderer{
-		writer:       w,
-		raw:          options.Raw,
-		showThoughts: options.ShowThoughts,
-		useColor:     options.UseColor,
+		writer:        w,
+		raw:           options.Raw,
+		showThoughts:  options.ShowThoughts,
+		useColor:      options.UseColor,
+		suppressRoles: options.SuppressRoles,
 	}
 	if !options.Raw {
 		if options.CustomRenderer != nil {
@@ -71,14 +72,18 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 }
 
 type historyRenderer struct {
-	renderer     markdownRenderer
-	writer       io.Writer
-	raw          bool
-	showThoughts bool
-	useColor     bool
+	renderer      markdownRenderer
+	writer        io.Writer
+	raw           bool
+	showThoughts  bool
+	useColor      bool
+	suppressRoles bool
 }
 
 func (r *historyRenderer) renderHeader(role string) {
+	if r.suppressRoles {
+		return
+	}
 	roleStr := "[" + strings.ToUpper(role) + "]"
 	if r.useColor {
 		roleColor := colorBlue

@@ -120,6 +120,8 @@ type HistoryRenderOptions struct {
 	// TermRenderer. The value must have a Render(string)(string,error) method.
 	// Intended for testing. Ignored when Raw is true.
 	CustomRenderer interface{ Render(string) (string, error) }
+	// SuppressRoles omits [MODEL] and [USER] role headers from output.
+	SuppressRoles bool
 }
 
 // SystemMetricsProvider defines the interface for collecting host resource usage.

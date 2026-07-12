@@ -190,7 +190,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	cfg := &config.Config{
 		SelectedProvider: "test",
 	}
-	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
+	sc := session.NewSessionConfig("", false, 0, false, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
 	sd := &agenttest.StubChatterComposer{Paths: &persistence.Paths{}, Logger: slog.Default(), TurnsLogger: &ports.NoOpTurnsLogger{}, SessionProvider: new(testfixtures.MockSessionProvider)}

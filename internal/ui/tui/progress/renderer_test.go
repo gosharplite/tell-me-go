@@ -58,13 +58,45 @@ func TestRenderer_MakeSubscriber(t *testing.T) {
 			"subscriber should not wait excessively long")
 	})
 
-	t.Run("high priority events drop after timeout when channel full", func(t *testing.T) {
+	t.Run("control-plane events block when channel full", func(t *testing.T) {
+		ch := make(chan events.Event) // unbuffered — forces blocking path
+		sub := r.makeSubscriber(ch)
+
+		done := make(chan struct{})
+		ready := make(chan struct{})
+		go func() {
+			close(ready)
+			sub(context.Background(), events.TurnStarted{Turn: 1, SessionTurns: 0})
+			close(done)
+		}()
+
+		// Wait until the goroutine is about to enter the blocking send.
+		<-ready
+		select {
+		case <-done:
+			t.Fatal("TurnStarted should block when channel is full, but it returned")
+		default:
+			// Correct: goroutine is still blocked on the channel send.
+		}
+
+		// Now drain the event, unblocking the goroutine.
+		<-ch
+
+		select {
+		case <-done:
+			// Goroutine unblocked and completed.
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("TurnStarted should unblock after channel is drained")
+		}
+	})
+
+	t.Run("ResponseEvent drops after timeout when channel full", func(t *testing.T) {
 		ch := make(chan events.Event) // unbuffered
 		sub := r.makeSubscriber(ch)
 
 		done := make(chan struct{})
 		go func() {
-			sub(context.Background(), events.TurnStarted{Turn: 1, SessionTurns: 0})
+			sub(context.Background(), events.ResponseEvent{})
 			close(done)
 		}()
 
@@ -72,7 +104,7 @@ func TestRenderer_MakeSubscriber(t *testing.T) {
 		case <-done:
 			// subscriber returned (timed out after 100ms since no reader)
 		case <-time.After(200 * time.Millisecond):
-			t.Fatal("subscriber should have timed out and returned within 200ms")
+			t.Fatal("ResponseEvent should have timed out and returned within 200ms")
 		}
 	})
 }

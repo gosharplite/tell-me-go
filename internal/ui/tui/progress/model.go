@@ -57,10 +57,7 @@ func (s *spinnerState) start(status string) tea.Cmd {
 	s.frame = 0
 	s.startTime = time.Now()
 	s.generation++
-	if !s.tickActive {
-		return s.tick()
-	}
-	return nil
+	return s.tick()
 }
 
 // tick schedules the next spinner frame tick, or returns nil if the
@@ -81,6 +78,7 @@ func (s *spinnerState) tick() tea.Cmd {
 // or nil if the tick is stale (wrong generation) or spinner is inactive.
 func (s *spinnerState) handleTick(msg spinnerTickMsg) tea.Cmd {
 	if msg.generation != s.generation {
+		s.tickActive = false
 		return nil // stale tick from a previous turn
 	}
 	s.frame = (s.frame + 1) % len(brailleFrames)
@@ -126,7 +124,6 @@ type model struct {
 	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
-	sessionDone         bool                     // true when event channel closes; TUI waits for Ctrl+C
 	spinner             spinnerState
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
@@ -227,9 +224,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinnerTickMsg:
 		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
 	case channelClosedMsg:
-		m.sessionDone = true
-		m.spinner.clear()
-		return m, nil
+		return m, tea.Quit
 	case error:
 		m.err = msg
 		return m, nil
@@ -245,13 +240,6 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	}
-
-	// Route to bodyVP for scrolling when session is done.
-	if m.sessionDone {
-		var cmd tea.Cmd
-		m.bodyVP, cmd = m.bodyVP.Update(msg)
-		return m, cmd
 	}
 
 	return m, nil
@@ -351,16 +339,14 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 	if e.Status.IsPostCall && e.Status.Metrics != nil {
 		s := e.Status
 		m.postCallStatus = &s
-		m.postCallMetricsLine = formatMetricsLine(
-			s.Metrics, s.StartTime, s.Timestamp, s.CurrentTurns+1,
-		)
+		m.postCallMetricsLine = FormatMetricsLine(s)
 	}
 	if e.Status.IsFinal {
 		turnCost := 0.0
 		if e.Status.Metrics != nil {
 			turnCost = e.Status.Metrics.Cost
 		}
-		m.finalCostLine = formatFinalLine(e.Status, turnCost)
+		m.finalCostLine = FormatFinalLine(e.Status, turnCost)
 	}
 	if m.spinner.active() {
 		m.spinner.clear()
@@ -508,40 +494,45 @@ func (m *model) extractToolCallsFromResponse(content *llm.Content) {
 	}
 }
 
-// formatMetricsLine renders a single-line post-call metrics summary.
-func formatMetricsLine(m *llm.Metrics, startTime time.Time, timestamp time.Time, turns int) string {
-	if m == nil {
+// FormatMetricsLine renders a single-line post-call metrics summary from
+// a TurnStatus. Returns an empty string if Metrics is nil.
+func FormatMetricsLine(ts events.TurnStatus) string {
+	if ts.Metrics == nil {
 		return ""
 	}
-	miss := m.PromptTokens - m.CachedTokens
+	miss := ts.Metrics.PromptTokens - ts.Metrics.CachedTokens
 	var parts []string
 
-	parts = append(parts, fmt.Sprintf("[%s]", timestamp.Format("15:04:05")))
+	parts = append(parts, fmt.Sprintf("[%s]", ts.Timestamp.Format("15:04:05")))
 
-	display := m.Provider
+	display := ts.Metrics.Provider
 	if display == "" {
-		display = m.Model
+		display = ts.Metrics.Model
 	}
 	if display != "" {
 		parts = append(parts, fmt.Sprintf("[%s]", display))
 	}
 
-	parts = append(parts, fmt.Sprintf("M: %d H: %d C: %d", miss, m.CachedTokens, m.ResponseTokens))
+	parts = append(parts, fmt.Sprintf("M: %d H: %d C: %d",
+		miss, ts.Metrics.CachedTokens, ts.Metrics.ResponseTokens))
 
-	if m.ThinkingTokens > 0 {
-		parts = append(parts, fmt.Sprintf("Th: %d", m.ThinkingTokens))
+	if ts.Metrics.ThinkingTokens > 0 {
+		parts = append(parts, fmt.Sprintf("Th: %d", ts.Metrics.ThinkingTokens))
 	}
 
-	if m.Cost > 0 {
-		parts = append(parts, fmt.Sprintf("($%.4f)", m.Cost))
+	if ts.Metrics.Cost > 0 {
+		parts = append(parts, fmt.Sprintf("($%.4f)", ts.Metrics.Cost))
 	}
 
-	totalLatency := m.Duration + m.ToolDuration
-	timing := fmt.Sprintf("[%.2fs (ΣT: %.2fs)]", totalLatency, m.CumulativeToolDuration)
-	if !startTime.IsZero() {
-		sessionDur := time.Since(startTime).Seconds()
+	totalLatency := ts.Metrics.Duration + ts.Metrics.ToolDuration
+	timing := fmt.Sprintf("[%.2fs (ΣT: %.2fs)]",
+		totalLatency, ts.Metrics.CumulativeToolDuration)
+	if !ts.StartTime.IsZero() {
+		sessionDur := time.Since(ts.StartTime).Seconds()
+		turns := ts.CurrentTurns + 1
 		if turns > 0 {
-			timing = fmt.Sprintf("%s / %.2fs (%.2f)", timing, sessionDur, sessionDur/float64(turns))
+			timing = fmt.Sprintf("%s / %.2fs (%.2f)",
+				timing, sessionDur, sessionDur/float64(turns))
 		} else {
 			timing = fmt.Sprintf("%s / %.2fs", timing, sessionDur)
 		}
@@ -551,15 +542,16 @@ func formatMetricsLine(m *llm.Metrics, startTime time.Time, timestamp time.Time,
 	return strings.Join(parts, " ")
 }
 
-// formatFinalLine renders the "Ready" summary line when IsFinal is true.
-func formatFinalLine(status events.TurnStatus, turnCost float64) string {
+// FormatFinalLine renders the "Ready" summary line when the session is
+// complete. turnCost is the cost of the current turn (from Metrics.Cost).
+func FormatFinalLine(ts events.TurnStatus, turnCost float64) string {
 	hitRate := 0.0
-	if total := status.TotalM + status.TotalH; total > 0 {
-		hitRate = float64(status.TotalH) / float64(total) * 100
+	if total := ts.TotalM + ts.TotalH; total > 0 {
+		hitRate = float64(ts.TotalH) / float64(total) * 100
 	}
 	return fmt.Sprintf("╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)",
-		turnCost, status.TaskCost, status.SessionCost, status.DailyCost,
-		status.TotalM, status.TotalH, hitRate, status.TotalO)
+		turnCost, ts.TaskCost, ts.SessionCost, ts.DailyCost,
+		ts.TotalM, ts.TotalH, hitRate, ts.TotalO)
 }
 
 // View renders the progress model as three viewport zones.
@@ -579,9 +571,7 @@ func (m *model) View() string {
 func (m *model) renderMinimal() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
-	if m.sessionDone {
-		sb.WriteString(" Press Ctrl+C to exit")
-	} else if m.spinner.active() && m.currentState != stateIdle {
+	if m.spinner.active() && m.currentState != stateIdle {
 		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render()))
 	}
 	return sb.String()
@@ -628,9 +618,7 @@ func (m *model) renderFooterContent() string {
 		sb.WriteString(m.finalCostLine)
 		sb.WriteString("\n")
 	}
-	if m.sessionDone {
-		sb.WriteString("Press Ctrl+C to exit")
-	} else if m.spinner.active() && m.currentState != stateIdle {
+	if m.spinner.active() && m.currentState != stateIdle {
 		sb.WriteString(m.spinner.render())
 	}
 	return sb.String()

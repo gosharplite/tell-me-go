@@ -104,52 +104,10 @@ func TestModel_Update(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
-		newModel, cmd := m.Update(channelClosedMsg{})
-		updated := newModel.(*model)
+		_, cmd := m.Update(channelClosedMsg{})
 
-		assert.True(t, updated.sessionDone)
-		assert.False(t, updated.spinner.active())
-		assert.Nil(t, cmd) // stdin keeps loop alive; no tick needed
-	})
-
-	t.Run("sessionDone shows exit prompt and waits for Ctrl+C", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
-
-		newModel, cmd := m.Update(channelClosedMsg{})
-		updated := newModel.(*model)
-
-		assert.True(t, updated.sessionDone)
-		assert.Nil(t, cmd) // nil command — stdin-driven loop, Ctrl+C quits
-
-		out := updated.View()
-		assert.Contains(t, out, "Press Ctrl+C to exit")
-	})
-
-	t.Run("sessionDone shows exit prompt in footer", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
-		m.sessionDone = true
-
-		out := m.View()
-		assert.Contains(t, out, "Press Ctrl+C to exit")
-	})
-
-	t.Run("sessionDone shows exit prompt in renderMinimal", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
-		m.turn = 3
-		m.sessionName = "test"
-		m.sessionDone = true
-
-		out := m.View()
-		assert.Contains(t, out, "Press Ctrl+C to exit")
+		require.NotNil(t, cmd)
+		assert.IsType(t, tea.QuitMsg{}, cmd())
 	})
 
 	t.Run("unknown message returns nil cmd", func(t *testing.T) {
@@ -443,12 +401,7 @@ func TestModel_View(t *testing.T) {
 			},
 			StartTime: time.Date(2026, 1, 15, 14, 28, 0, 0, time.UTC),
 		}
-		m.postCallMetricsLine = formatMetricsLine(
-			m.postCallStatus.Metrics,
-			m.postCallStatus.StartTime,
-			m.timestamp,
-			m.postCallStatus.CurrentTurns+1,
-		)
+		m.postCallMetricsLine = FormatMetricsLine(*m.postCallStatus)
 
 		out := m.View()
 		assert.Contains(t, out, "M: 200 H: 800 C: 50")
@@ -838,6 +791,21 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		cmd := m.spinner.tick()
 		assert.NotNil(t, cmd)
 		assert.True(t, m.spinner.tickActive)
+	})
+
+	t.Run("stale_generation_tick_resets_tickActive", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinner.status = " Thinking..."
+		m.currentState = stateThinking
+		m.spinner.generation = 5
+		m.spinner.tickActive = true
+
+		cmd := m.spinner.handleTick(spinnerTickMsg{generation: 3})
+
+		assert.False(t, m.spinner.tickActive)
+		assert.Nil(t, cmd)
 	})
 }
 
