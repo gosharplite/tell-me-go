@@ -28,7 +28,7 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 	mdRender := r.makeMarkdownRenderer()
 
 	m := NewModel(ctx, ch, mdRender)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithInput(nil), tea.WithAltScreen())
 
 	done := make(chan struct{})
 	go func() {
