@@ -161,7 +161,8 @@ func (m *model) waitForEvent() tea.Cmd {
 // appendToolLog appends a timestamped log line for tool events.
 func (m *model) appendToolLog(tag, message string) {
 	ts := time.Now().Format("15:04:05")
-	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, message))
+	sanitized := strings.ReplaceAll(message, "\n", " ")
+	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, sanitized))
 }
 
 // appendLevelEventLog appends a timestamped log line with a level-mapped
@@ -616,13 +617,11 @@ func (m *model) renderBody(availableLines int) string {
 	var contentLines []string
 
 	for _, log := range m.toolLogs {
-		for _, subLine := range strings.Split(log, "\n") {
-			clipped := subLine
-			if m.width > 0 && len([]rune(clipped)) > m.width {
-				clipped = string([]rune(clipped)[:m.width-3]) + "..."
-			}
-			contentLines = append(contentLines, clipped)
+		clipped := log
+		if m.width > 0 && len([]rune(clipped)) > m.width {
+			clipped = string([]rune(clipped)[:m.width-3]) + "..."
 		}
+		contentLines = append(contentLines, clipped)
 	}
 	if m.responseText != "" {
 		for _, line := range strings.Split(m.responseText, "\n") {

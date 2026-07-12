@@ -578,6 +578,17 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[0], "⠋  Thinking...")
 	})
 
+	t.Run("appendToolLog_sanitizes_embedded_newlines", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		m.appendToolLog("Tool Action", "line1\nline2\nline3")
+		assert.Len(t, m.toolLogs, 1)
+		assert.NotContains(t, m.toolLogs[0], "\n")
+		assert.Contains(t, m.toolLogs[0], "line1 line2 line3")
+	})
+
 	t.Run("height_8_zero_body_lines", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
@@ -601,26 +612,6 @@ func TestModel_View(t *testing.T) {
 		assert.Equal(t, "", lines[5])
 		assert.Equal(t, "", lines[6])
 		assert.Equal(t, "", lines[7])
-	})
-
-	t.Run("tool_log_lines_split_on_embedded_newlines", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
-
-		// Tool log with embedded newlines (e.g. multi-line commit message)
-		m.appendToolLog("Tool Action", "line1\nline2\nline3")
-
-		out := m.View()
-		lines := strings.Split(out, "\n")
-
-		assert.Len(t, lines, 20, "total lines must equal terminal height despite embedded newlines")
-
-		// All three sub-lines should be visible
-		assert.Contains(t, out, "line1")
-		assert.Contains(t, out, "line2")
-		assert.Contains(t, out, "line3")
 	})
 
 	t.Run("safety_net_truncates_to_exactly_height_lines", func(t *testing.T) {
