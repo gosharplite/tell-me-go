@@ -79,15 +79,15 @@ func getNolintTestCases() []nolintTestCase {
 // setupNolintWorkspace creates a temporary module containing all test
 // case subdirectories. It returns the root directory and the shared
 // module path used in go.mod.
-func setupNolintWorkspace(t *testing.T, tests []nolintTestCase) (string, string) {
-	t.Helper()
-	rootTmpDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
+func setupNolintWorkspace(tb testing.TB, tests []nolintTestCase) (string, string) {
+	tb.Helper()
+	rootTmpDir, err := filepath.EvalSymlinks(tb.TempDir())
+	require.NoError(tb, err)
 
 	const sharedModule = "shared.nolint"
 	err = os.WriteFile(filepath.Join(rootTmpDir, "go.mod"),
 		[]byte("module "+sharedModule+"\n\ngo 1.25"), 0644)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	for _, tt := range tests {
 		caseDir := filepath.Join(rootTmpDir, getSafeName(tt.name))
@@ -98,12 +98,32 @@ func setupNolintWorkspace(t *testing.T, tests []nolintTestCase) (string, string)
 
 			fullPath := filepath.Join(caseDir, path)
 			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			err = os.WriteFile(fullPath, []byte(content), 0644)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 		}
 	}
 	return rootTmpDir, sharedModule
+}
+
+// newNolintWorkspaceIndexer creates a fresh, per-test workspace containing
+// all nolint test case sub-packages under a single Go module. Each call
+// uses t.TempDir() so parallel tests never share the same directory tree.
+func newNolintWorkspaceIndexer(t testing.TB) (root string, module string, idx *indexer) {
+	t.Helper()
+	allCases := getNolintTestCases()
+	root, module = setupNolintWorkspace(t, allCases)
+
+	var err error
+	idx, err = newIndexer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx.knownModulePath = module
+	if err := idx.Refresh(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	return root, module, idx
 }
 
 func TestNolintDeadcode_SingleLineComment(t *testing.T) {
@@ -111,25 +131,18 @@ func TestNolintDeadcode_SingleLineComment(t *testing.T) {
 	tt := getNolintTestCases()[0]
 	assert.Equal(t, "SingleLineComment", tt.name)
 
-	rootTmpDir, sharedModule := setupNolintWorkspace(t, []nolintTestCase{tt})
-
-	idx, err := newIndexer(rootTmpDir)
-	require.NoError(t, err)
-	idx.knownModulePath = sharedModule
+	root, _, idx := newNolintWorkspaceIndexer(t)
 	ctx := context.Background()
-	err = idx.Refresh(ctx, nil)
-	require.NoError(t, err)
 
 	safeName := getSafeName(tt.name)
-	caseDir := filepath.Join(rootTmpDir, safeName)
+	caseDir := filepath.Join(root, safeName)
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: root}, idx)
 	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": caseDir}, nil)
 	require.NoError(t, err)
 
 	assert.Contains(t, result.Text, "No dead or effectively private code found.",
 		"Symbol with //nolint:deadcode should be suppressed")
-	_ = sharedModule
 }
 
 func TestNolintDeadcode_BlockComment(t *testing.T) {
@@ -137,25 +150,18 @@ func TestNolintDeadcode_BlockComment(t *testing.T) {
 	tt := getNolintTestCases()[1]
 	assert.Equal(t, "BlockComment", tt.name)
 
-	rootTmpDir, sharedModule := setupNolintWorkspace(t, []nolintTestCase{tt})
-
-	idx, err := newIndexer(rootTmpDir)
-	require.NoError(t, err)
-	idx.knownModulePath = sharedModule
+	root, _, idx := newNolintWorkspaceIndexer(t)
 	ctx := context.Background()
-	err = idx.Refresh(ctx, nil)
-	require.NoError(t, err)
 
 	safeName := getSafeName(tt.name)
-	caseDir := filepath.Join(rootTmpDir, safeName)
+	caseDir := filepath.Join(root, safeName)
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: root}, idx)
 	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": caseDir}, nil)
 	require.NoError(t, err)
 
 	assert.Contains(t, result.Text, "No dead or effectively private code found.",
 		"Symbol with /* nolint:deadcode */ should be suppressed")
-	_ = sharedModule
 }
 
 func TestNolintDeadcode_NoComment(t *testing.T) {
@@ -163,23 +169,17 @@ func TestNolintDeadcode_NoComment(t *testing.T) {
 	tt := getNolintTestCases()[2]
 	assert.Equal(t, "NoComment", tt.name)
 
-	rootTmpDir, sharedModule := setupNolintWorkspace(t, []nolintTestCase{tt})
-
-	idx, err := newIndexer(rootTmpDir)
-	require.NoError(t, err)
-	idx.knownModulePath = sharedModule
+	root, module, idx := newNolintWorkspaceIndexer(t)
 	ctx := context.Background()
-	err = idx.Refresh(ctx, nil)
-	require.NoError(t, err)
 
 	safeName := getSafeName(tt.name)
-	caseDir := filepath.Join(rootTmpDir, safeName)
+	caseDir := filepath.Join(root, safeName)
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: root}, idx)
 	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": caseDir}, nil)
 	require.NoError(t, err)
 
-	expectedPkg := strings.ReplaceAll(tt.expected[0].Pkg, "example.com/test", sharedModule+"/"+safeName)
+	expectedPkg := strings.ReplaceAll(tt.expected[0].Pkg, "example.com/test", module+"/"+safeName)
 	assert.Contains(t, result.Text, fmt.Sprintf("[%s] %s", tt.expected[0].Severity, tt.expected[0].Symbol),
 		"Symbol without nolint:deadcode should NOT be suppressed")
 	assert.Contains(t, result.Text, fmt.Sprintf("### Package: %s", expectedPkg))
@@ -190,23 +190,17 @@ func TestNolintDeadcode_WrongComment(t *testing.T) {
 	tt := getNolintTestCases()[3]
 	assert.Equal(t, "WrongComment", tt.name)
 
-	rootTmpDir, sharedModule := setupNolintWorkspace(t, []nolintTestCase{tt})
-
-	idx, err := newIndexer(rootTmpDir)
-	require.NoError(t, err)
-	idx.knownModulePath = sharedModule
+	root, module, idx := newNolintWorkspaceIndexer(t)
 	ctx := context.Background()
-	err = idx.Refresh(ctx, nil)
-	require.NoError(t, err)
 
 	safeName := getSafeName(tt.name)
-	caseDir := filepath.Join(rootTmpDir, safeName)
+	caseDir := filepath.Join(root, safeName)
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: root}, idx)
 	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": caseDir}, nil)
 	require.NoError(t, err)
 
-	expectedPkg := strings.ReplaceAll(tt.expected[0].Pkg, "example.com/test", sharedModule+"/"+safeName)
+	expectedPkg := strings.ReplaceAll(tt.expected[0].Pkg, "example.com/test", module+"/"+safeName)
 	assert.Contains(t, result.Text, fmt.Sprintf("[%s] %s", tt.expected[0].Severity, tt.expected[0].Symbol),
 		"Symbol with //nolint:somethingelse should NOT be suppressed")
 	assert.Contains(t, result.Text, fmt.Sprintf("### Package: %s", expectedPkg))
@@ -217,25 +211,18 @@ func TestNolintDeadcode_Method(t *testing.T) {
 	tt := getNolintTestCases()[4]
 	assert.Equal(t, "Method", tt.name)
 
-	rootTmpDir, sharedModule := setupNolintWorkspace(t, []nolintTestCase{tt})
-
-	idx, err := newIndexer(rootTmpDir)
-	require.NoError(t, err)
-	idx.knownModulePath = sharedModule
+	root, _, idx := newNolintWorkspaceIndexer(t)
 	ctx := context.Background()
-	err = idx.Refresh(ctx, nil)
-	require.NoError(t, err)
 
 	safeName := getSafeName(tt.name)
-	caseDir := filepath.Join(rootTmpDir, safeName)
+	caseDir := filepath.Join(root, safeName)
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: root}, idx)
 	result, err := analyzer.FindOrphanedSymbols(ctx, map[string]interface{}{"path": caseDir}, nil)
 	require.NoError(t, err)
 
 	assert.Contains(t, result.Text, "No dead or effectively private code found.",
 		"Method with //nolint:deadcode should be suppressed")
-	_ = sharedModule
 }
 
 // ---------------------------------------------------------------------------

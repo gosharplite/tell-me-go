@@ -266,6 +266,10 @@ func (r *stdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 			defer r.locker.TerminalUnlock()
 		}
 		ui := r.getUIState()
+
+		// Synchronize terminal output by explicitly clearing any active spinner frame
+		writeBestEffort(ui.stderr, "\r%s", ui.c(termClearLine))
+
 		r.renderMetricsLine(ui, m, startTime, 0)
 	}
 }
@@ -425,6 +429,9 @@ func (r *stdUIRenderer) renderPostCallStatus(ui uiState, status events.TurnStatu
 	stderr := ui.stderr
 	timestamp := status.Timestamp.Format("15:04:05")
 	m := status.Metrics
+
+	// Synchronize terminal output by explicitly clearing any active spinner frame
+	writeBestEffort(stderr, "\r%s", ui.c(termClearLine))
 
 	if len(status.ToolReasons) > 0 {
 		for _, reason := range status.ToolReasons {

@@ -174,25 +174,9 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 		externalUses:     make(map[string]int),
 	}
 
-	// Build allowed package set for scope filtering during harvest.
-	allowedPkgs := make(map[string]bool, len(pkgs))
-	for _, pkg := range pkgs {
-		if a.isInTargetScope(pkg, state) {
-			allowedPkgs[getBasePkgPath(pkg.PkgPath)] = true
-		}
-	}
+	allowedPkgs := a.buildAllowedPkgSet(state)
 
-	// Harvest declarations through the index interface.
-	if err := a.idx.HarvestDeclarations(ctx, func(meta *symMeta) bool {
-		if !allowedPkgs[meta.pkgPath] {
-			return true // skip: not in target scope
-		}
-		if _, exists := state.declarations[meta.id]; !exists {
-			m := *meta // copy to avoid aliasing loop variable
-			state.declarations[meta.id] = &m
-		}
-		return true
-	}, hb); err != nil {
+	if err := a.harvestDeclarations(ctx, state, allowedPkgs, hb); err != nil {
 		return nil, fmt.Errorf("harvesting declarations: %w", err)
 	}
 
@@ -205,6 +189,40 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 	a.propagateTypedConstantUsages(state, hb)
 
 	return state, nil
+}
+
+// buildAllowedPkgSet constructs the set of base package paths that fall
+// within the target scope for declaration harvesting. Extracted from
+// runAnalysisPipeline to reduce cyclomatic complexity.
+func (a *defaultDeadCodeAnalyzer) buildAllowedPkgSet(state *scanState) map[string]bool {
+	allowedPkgs := make(map[string]bool, len(state.pkgs))
+	for _, pkg := range state.pkgs {
+		if a.isInTargetScope(pkg, state) {
+			allowedPkgs[getBasePkgPath(pkg.PkgPath)] = true
+		}
+	}
+	return allowedPkgs
+}
+
+// harvestDeclarations populates state.declarations by iterating over all
+// symbols harvested from the index, filtered to the allowed package set.
+// Extracted from runAnalysisPipeline to reduce cyclomatic complexity.
+func (a *defaultDeadCodeAnalyzer) harvestDeclarations(
+	ctx context.Context,
+	state *scanState,
+	allowedPkgs map[string]bool,
+	hb chan<- struct{},
+) error {
+	return a.idx.HarvestDeclarations(ctx, func(meta *symMeta) bool {
+		if !allowedPkgs[meta.pkgPath] {
+			return true // skip: not in target scope
+		}
+		if _, exists := state.declarations[meta.id]; !exists {
+			m := *meta // copy to avoid aliasing loop variable
+			state.declarations[meta.id] = &m
+		}
+		return true
+	}, hb)
 }
 
 func (a *defaultDeadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, error) {

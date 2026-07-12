@@ -467,7 +467,6 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, out, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
 	})
 
-
 	t.Run("body_content_visible_in_viewport", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
@@ -481,8 +480,6 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, out, "some tool output")
 		assert.Contains(t, out, "final response")
 	})
-
-
 
 	t.Run("renderMinimal_when_height_below_5", func(t *testing.T) {
 		ctx := context.Background()
@@ -519,10 +516,6 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
 		assert.Contains(t, lines[0], "⠋  Thinking...")
 	})
-
-
-
-
 
 }
 
