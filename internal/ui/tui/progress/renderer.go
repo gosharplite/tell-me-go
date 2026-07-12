@@ -21,7 +21,7 @@ func NewRenderer() ports.ProgressRenderer {
 }
 
 func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func() {
-	ch := make(chan events.Event, 64)
+	ch := make(chan events.Event, 256)
 
 	source.Subscribe(r.makeSubscriber(ch))
 
@@ -43,12 +43,20 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 }
 
 // makeSubscriber returns an event subscriber callback that writes events
-// to the channel. High-priority events use a 100ms deadline; all others
-// use a non-blocking send.
+// to the channel. Control-plane events (TurnStarted, TurnStatusEvent) block
+// until the TUI drains the channel — they must never be dropped. ResponseEvent
+// uses a 100ms deadline; all others use a 50ms deadline (best-effort).
 func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, events.Event) {
 	return func(ctx context.Context, e events.Event) {
 		switch e.(type) {
-		case events.TurnStarted, events.TurnStatusEvent, events.ResponseEvent:
+		case events.TurnStarted, events.TurnStatusEvent:
+			// Control-plane events — must never drop. The TUI cannot
+			// track turn progress without these. Blocks the agent's
+			// event publisher until the TUI drains the channel.
+			ch <- e
+		case events.ResponseEvent:
+			// Display-plane event that can be regenerated from history.
+			// Use deadline to avoid blocking the agent on slow TUI.
 			timer := time.NewTimer(100 * time.Millisecond)
 			select {
 			case ch <- e:
@@ -56,6 +64,7 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 			case <-timer.C:
 			}
 		default:
+			// Tool call/result/output events — best-effort, can drop.
 			timer := time.NewTimer(50 * time.Millisecond)
 			select {
 			case ch <- e:
