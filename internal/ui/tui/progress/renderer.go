@@ -79,6 +79,10 @@ func (r *renderer) makeMarkdownRenderer() func(string, int) string {
 			}
 			tr, renderErr := glamour.NewTermRenderer(opts...)
 			if renderErr != nil {
+				// glamour.NewTermRenderer only fails on invalid options or
+				// internal library errors, not on valid markdown input. The
+				// fallback returns raw unrendered text as a cosmetic degrade.
+				// Coverage gap accepted by architect — structurally unreachable.
 				return text
 			}
 			cachedRenderer = tr
@@ -86,6 +90,10 @@ func (r *renderer) makeMarkdownRenderer() func(string, int) string {
 		}
 		out, renderErr := cachedRenderer.Render(text)
 		if renderErr != nil {
+			// glamour.TermRenderer.Render only fails on internal rendering
+			// errors, not on valid markdown input. The fallback returns raw
+			// unrendered text as a cosmetic degrade.
+			// Coverage gap accepted by architect — structurally unreachable.
 			return text
 		}
 		return out

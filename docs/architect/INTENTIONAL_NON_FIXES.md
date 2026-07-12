@@ -294,6 +294,19 @@ Any AI agent recommending these should consult the rationale below.
   delegation, or a test fake. There is no business logic to cover.
 - **See**: `internal/pkg/clock/clock.go`
 
+### ui/tui/progress/renderer.go — glamour render error paths
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: The two glamour error paths in `makeMarkdownRenderer` —
+  `glamour.NewTermRenderer` (line 81) and `cachedRenderer.Render` (line 89) —
+  return the original unrendered markdown text as a cosmetic degrade. Glamour
+  only fails on invalid options or internal library errors, not on valid
+  markdown input. These are cosmetic fallbacks (raw markdown instead of
+  ANSI-rendered text in the TUI) and do not affect correctness. Structurally
+  unreachable in normal operation — same acceptance class as `json.Marshal`
+  on all-string structs in `global_prompt_tracker.go`.
+- **See**: `internal/ui/tui/progress/renderer.go:81-83, 88-90`
+
 ---
 
 ## Structural Concerns (ACCEPTED)
@@ -555,4 +568,4 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-07 (Task 5: pkg/clock coverage gap documentation + BUSINESS_LOGIC triage)*
+*Last Updated: 2026-07 (Task 5: pkg/clock coverage gap documentation + BUSINESS_LOGIC triage, Task 6: progress/renderer.go glamour coverage gap documentation)*
