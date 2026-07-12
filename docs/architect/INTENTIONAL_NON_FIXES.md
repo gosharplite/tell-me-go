@@ -658,4 +658,70 @@ Any AI agent recommending these should consult the rationale below.
 
 ---
 
-*Last Updated: 2026-07 (Task 5: pkg/clock coverage gap documentation + BUSINESS_LOGIC triage, Task 6: progress/renderer.go glamour coverage gap documentation)*
+## Complexity Alerts (ACCEPTED)
+
+### ui/tui/progress/model.go — handleDomainEvent (CC=11)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: This is a 10-case type-switch dispatching domain events in a
+  Bubble Tea `Update` handler. Each case is a clean one-liner delegation to a
+  dedicated handler method:
+
+  ```go
+  case events.ToolCallEvent:
+      return m, m.handleToolCallEvent(e)
+  case events.ToolResultEvent:
+      return m, m.handleToolResultEvent(e)
+  // ... 8 more identical patterns
+  ```
+
+  The cyclomatic complexity is inherent to the type-switch dispatch pattern —
+  each case adds 1 to CC. There is zero branching business logic within the
+  switch body. Refactoring into a `map[reflect.Type]eventHandler` registry
+  (mirroring what `eventDispatcher` already does in
+  `internal/agent/session/ui/dispatcher.go`) would trade one well-understood
+  Go pattern for another with no reduction in cognitive complexity. The code
+  is already clean and well-structured.
+- **See**: `internal/ui/tui/progress/model.go`
+
+### agent/session/ui/dispatcher.go — handleToolEvents (CC=10)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: This is a two-case type-switch (`ToolCallEvent` /
+  `ToolResultEvent`) where each case contains a duplicate `turnStartTime` guard
+  pattern:
+
+  ```go
+  // When turn-time tracking is active, skip stop/resume to preserve elapsed-time counter.
+  if !d.spinner.turnStartTime.IsZero() {
+      d.renderer.LogToolCall(...)
+      return
+  }
+  d.spinner.stopActiveSpinner()
+  d.renderer.LogToolCall(...)
+  if d.spinner.resumeActiveSpinner(...) { ... }
+  ```
+
+  The duplication is intentional and documented by inline comments: when
+  `turnStartTime` is active, the spinner must not be stopped mid-turn.
+  Extracting the pattern into a helper would obscure the distinct renderer
+  method called per case (`LogToolCall` vs `LogToolResult`), and the two
+  cases have slightly different guard clauses (nil-check vs empty-name-check).
+  The complexity is structural, not cognitive — the same pattern appears in
+  `handleUsageMetrics`, `handleTurnStatus`, `handleResponse`, and
+  `handleSystemMessage`, each with identical comment documentation.
+- **See**: `internal/agent/session/ui/dispatcher.go`
+
+### Acceptance Rationale (Shared)
+
+Both functions follow the same acceptance class as
+`TestHistoryNavigation_CompleteWorkflow` (CC=15, already documented in the
+Test Complexity section above): cyclomatic complexity driven by dispatch/branch
+count, not by branching business logic. The cost of refactoring (extracting
+dispatch registries, collapsing spinner-guard patterns) outweighs the
+maintainability benefit. The code is already clean, well-commented, and easy
+to reason about.
+
+---
+
+*Last Updated: 2026-07 (Task 1: Complexity Alerts documentation)*
