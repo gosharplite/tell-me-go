@@ -49,14 +49,18 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 	return func(ctx context.Context, e events.Event) {
 		switch e.(type) {
 		case events.TurnStarted, events.TurnStatusEvent, events.ResponseEvent:
+			timer := time.NewTimer(100 * time.Millisecond)
 			select {
 			case ch <- e:
-			case <-time.After(100 * time.Millisecond):
+				timer.Stop()
+			case <-timer.C:
 			}
 		default:
+			timer := time.NewTimer(50 * time.Millisecond)
 			select {
 			case ch <- e:
-			case <-time.After(50 * time.Millisecond):
+				timer.Stop()
+			case <-timer.C:
 			}
 		}
 	}
