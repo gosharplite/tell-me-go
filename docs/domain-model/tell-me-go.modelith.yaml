@@ -62,18 +62,6 @@ enums:
       - name: timeout
         definition: The `Provider` did not respond within `Config.HTTP_TIMEOUT`.
 
-  ToolCategory:
-    description: The logical group a `Tool` belongs to.
-    values:
-      - name: workspace
-        definition: File system, Git, and search operations.
-      - name: analysis
-        definition: AST-powered Go analysis, architecture verification, code health.
-      - name: integration
-        definition: External service connectors (Jira, Confluence, Azure DevOps, Teams).
-      - name: system
-        definition: Shell execution, testing, linting, and vulnerability scanning.
-
 entities:
   Session:
     definition: >
@@ -251,7 +239,10 @@ entities:
     attributes:
       - name: name
         type: string
-        description: The registry key (e.g. "vertex-flash", "deepseek-pro").
+        description: >
+          The registry key identifying this `Provider` (e.g. "vertex-flash", "deepseek-pro").
+          Note: In Go, this is the map key in `Config.Providers`, not a field on the `LLMProvider` struct.
+          It is listed here because it is the `Provider`'s primary identity in the domain.
       - name: type
         type: ProviderType
       - name: model
@@ -270,7 +261,10 @@ entities:
         description: Provider-specific reasoning effort (e.g. "HIGH").
       - name: lastError
         type: LLMError
-        description: The most recent error returned by this `Provider`, if any.
+        description: >
+          The most recent error returned by this `Provider` during the current `Session`, if any.
+          Used by the `Orchestrator` to decide retry vs. failover.
+          Note: Runtime-only — not stored on the `LLMProvider` struct. Tracked by the `Orchestrator`'s retry/failover logic. Resets on restart.
     invariants:
       - id: provider-unique-name
         statement: "Each `Provider` in the registry has a unique name."
@@ -336,6 +330,12 @@ entities:
       - name: compRate
         type: decimal
         description: USD per million output (completion) tokens.
+      - name: thinkingBudget
+        type: integer
+        description: Default thinking token budget for reasoning models (0 = disabled). Overridden by provider-level THINKING_BUDGET.
+      - name: searchQuery
+        type: decimal
+        description: USD per search query (Google Search grounding). Applies to Gemini models with search enabled.
     invariants:
       - id: pricing-unique-model
         statement: "Each `modelName` appears at most once in the pricing table."
@@ -354,15 +354,12 @@ entities:
       - name: description
         type: string
         description: Human-readable purpose; injected into the system prompt.
-      - name: category
-        type: ToolCategory
-        description: Logical group (workspace, analysis, integration, system).
       - name: schema
         type: object
         description: JSON Schema for the tool's parameters.
-      - name: requiresSafePath
+      - name: requiresConsent
         type: boolean
-        description: Whether this `Tool` must validate paths against the `SafePath` registry.
+        description: Whether the user must approve this `Tool`'s invocation before it executes. The `Orchestrator` displays a consent prompt before calling the handler. Distinct from `SafePath` validation which is performed by the `SecurityManager` on path-accessing tools.
     invariants:
       - id: tool-unique-name
         statement: "Each `Tool` has a unique name."
@@ -538,7 +535,8 @@ scenarios:
     steps:
       - "`Provider` returns a `Thought` requesting a `Tool` execution."
       - "`Orchestrator` validates the `Tool` name and arguments."
-      - "If the `Tool` requires a `SafePath`, `SecurityManager` checks authorization."
+      - "If the `Tool` requires consent, the `Orchestrator` prompts the user for approval."
+      - "If the `Tool` accesses paths, the `SecurityManager` validates them against the `SafePath` registry."
       - "`Orchestrator` executes the `Tool` (possibly concurrently with others)."
       - "The `Tool` result is fed back to the `Provider`."
       - "The cycle repeats until `Provider` emits a final text `Thought`."
@@ -547,15 +545,19 @@ scenarios:
 
   - name: Hallucination loop detection
     description: >
-      The `Orchestrator` detects when the LLM is stuck in a loop by hashing
-      consecutive responses and comparing against a repetition threshold.
+      The `Orchestrator` detects when the LLM is stuck in a loop via two
+      mechanisms: (1) response hashing — SHA-256 of the sanitized response is
+      compared against a sliding window of recent hashes; any duplicate
+      triggers the break, and (2) tool-call counting — identical
+      `FunctionCall` name+arguments pairs that repeat beyond the threshold
+      are detected immediately. When either triggers, synthetic feedback is
+      injected to break the cycle.
     actors: [Orchestrator, Session, Turn]
     steps:
-      - "`Orchestrator` computes SHA-256 of the final response for a `Turn`."
-      - "On the next `Turn`, the new response hash is compared to recent hashes."
-      - >
-        If N consecutive hashes match, the `Orchestrator` interrupts the loop
-        with a warning and asks the LLM to take a different approach.
+      - "`Orchestrator` computes SHA-256 of the sanitized final response (excluding mutable fields like ID) for a `Turn`."
+      - "The hash is compared against a sliding window of recent response hashes. Any duplicate in the window triggers detection."
+      - "In parallel, identical function-call name+arguments pairs are counted per-`Turn`. Repeating a tool call beyond the threshold triggers detection immediately."
+      - "When a loop is detected, the `Orchestrator` publishes a warning, persists the repeating response, injects synthetic corrective feedback, and signals the `Turn` to complete."
     invariants_touched: [session-max-turns]
 
   - name: Context overflow and summarisation
@@ -586,7 +588,7 @@ scenarios:
       - "`Provider` returns an error response."
       - "`Orchestrator` classifies the error: `rate_limited`, `server_error`, `timeout`, `auth_failure`, or `context_overflow`."
       - "For `rate_limited`: `Orchestrator` applies backoff and retries the same `Provider`."
-      - "For `server_error` or `timeout`: if `Config` defines a fallback, `Orchestrator` switches to the alternate `Provider`."
+      - "For `server_error` or `timeout`: the `Orchestrator` retries the same `Provider` with backoff. Provider-level failover to an alternate is handled by the gateway layer on subsequent requests, not by the per-turn recovery step."
       - "For `auth_failure`: `Orchestrator` surfaces the error immediately — no retry."
       - "For `context_overflow`: `Orchestrator` triggers `Context` summarisation and retries."
       - The user is informed of the resolution path taken.
@@ -594,14 +596,15 @@ scenarios:
 
   - name: Session undo and retry
     description: >
-      The user undoes the last N `Turn`s (rollback) and optionally retries the
-      last user message with a fresh LLM call.
+      The user undoes the last N `Turn`s via the `--back-n` CLI flag.
+      If a `--prompt` is also provided, a fresh chat session begins after
+      the rollback, effectively retrying with the rolled-back history.
     actors: [Orchestrator, Session, History]
     steps:
-      - User invokes undo (via CLI flag or command).
-      - "`Orchestrator` removes the last N `Turn`s from the `Session`."
-      - "`History` is updated to reflect the rollback."
-      - "If retry is requested, the last user prompt is re-sent to the `Provider`."
+      - "User invokes undo via the `--back-n` CLI flag."
+      - "`Orchestrator` rolls back the `History` manager, removing the last N `Turn`s from persistent storage."
+      - "`History` is synced to disk to reflect the rollback."
+      - "If a `--prompt` is also provided on the same invocation, a fresh `Session` begins after rollback, sending the new prompt to the `Provider` with the rolled-back history as context."
     invariants_touched: [history-persisted-after-turn]
 
   - name: Path authorization
