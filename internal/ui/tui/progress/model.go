@@ -444,12 +444,8 @@ func (m *model) handleToolResultEvent(e events.ToolResultEvent) tea.Cmd {
 	return m.waitForEvent()
 }
 
-// handleToolOutputStreamEvent logs tool output stream messages, suppressing
-// plain "output" level messages that are handled elsewhere.
+// handleToolOutputStreamEvent logs tool output stream messages.
 func (m *model) handleToolOutputStreamEvent(e events.ToolOutputStreamEvent) tea.Cmd {
-	if e.Level == "output" {
-		return m.waitForEvent()
-	}
 	m.appendLevelEventLog(e.Level, e.Message)
 	return m.waitForEvent()
 }
@@ -623,8 +619,8 @@ func (m *model) renderBody(availableLines int) string {
 
 	for _, log := range m.toolLogs {
 		clipped := log
-		if m.width > 0 && len([]rune(clipped)) > m.width {
-			clipped = string([]rune(clipped)[:m.width-3]) + "..."
+		if m.width > 1 && len([]rune(clipped)) > m.width-1 {
+			clipped = string([]rune(clipped)[:m.width-4]) + "..."
 		}
 		contentLines = append(contentLines, clipped)
 	}
