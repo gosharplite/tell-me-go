@@ -57,10 +57,7 @@ func (s *spinnerState) start(status string) tea.Cmd {
 	s.frame = 0
 	s.startTime = time.Now()
 	s.generation++
-	if !s.tickActive {
-		return s.tick()
-	}
-	return nil
+	return s.tick()
 }
 
 // tick schedules the next spinner frame tick, or returns nil if the
@@ -81,6 +78,7 @@ func (s *spinnerState) tick() tea.Cmd {
 // or nil if the tick is stale (wrong generation) or spinner is inactive.
 func (s *spinnerState) handleTick(msg spinnerTickMsg) tea.Cmd {
 	if msg.generation != s.generation {
+		s.tickActive = false
 		return nil // stale tick from a previous turn
 	}
 	s.frame = (s.frame + 1) % len(brailleFrames)

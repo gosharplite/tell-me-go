@@ -792,6 +792,21 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		assert.NotNil(t, cmd)
 		assert.True(t, m.spinner.tickActive)
 	})
+
+	t.Run("stale_generation_tick_resets_tickActive", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinner.status = " Thinking..."
+		m.currentState = stateThinking
+		m.spinner.generation = 5
+		m.spinner.tickActive = true
+
+		cmd := m.spinner.handleTick(spinnerTickMsg{generation: 3})
+
+		assert.False(t, m.spinner.tickActive)
+		assert.Nil(t, cmd)
+	})
 }
 
 func TestModel_SpinnerClearance(t *testing.T) {
