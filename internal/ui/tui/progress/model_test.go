@@ -621,6 +621,25 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, out, "line3")
 	})
 
+	t.Run("safety_net_truncates_to_exactly_height_lines", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+
+		// Fill with enough content to potentially overflow
+		for i := 0; i < 30; i++ {
+			m.appendToolLog("T", fmt.Sprintf("log line %d", i))
+		}
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		assert.Len(t, lines, 10, "must be exactly height lines")
+		assert.Contains(t, lines[0], "╭─ Turn")
+		assert.Contains(t, lines[1], "Payload:")
+	})
+
 	t.Run("tool_log_lines_clip_to_terminal_width", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)

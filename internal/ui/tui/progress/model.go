@@ -561,6 +561,25 @@ func (m *model) View() string {
 	sb.WriteString(m.renderBody(availableBody))
 	sb.WriteString("\n")
 	sb.WriteString(m.renderFooter())
+
+	// Safety net: guarantee exactly height visual lines.
+	allLines := strings.Split(sb.String(), "\n")
+	if len(allLines) > m.height {
+		keepBody := m.height - 6 // 2 header + 4 footer = 6 fixed
+		if keepBody < 0 {
+			keepBody = 0
+		}
+		truncated := make([]string, 0, m.height)
+		truncated = append(truncated, allLines[:2]...)                       // header (0-1)
+		bodyStart := len(allLines) - 4 - keepBody
+		if bodyStart < 2 {
+			bodyStart = 2
+		}
+		truncated = append(truncated, allLines[bodyStart:len(allLines)-4]...) // body
+		truncated = append(truncated, allLines[len(allLines)-4:]...)          // footer
+		return strings.Join(truncated, "\n")
+	}
+
 	return sb.String()
 }
 
