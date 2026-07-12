@@ -619,8 +619,8 @@ func (m *model) renderBody(availableLines int) string {
 
 	for _, log := range m.toolLogs {
 		clipped := log
-		if m.width > 1 && len([]rune(clipped)) > m.width-1 {
-			clipped = string([]rune(clipped)[:m.width-4]) + "..."
+		if m.width > 2 && len([]rune(clipped)) > m.width-2 {
+			clipped = string([]rune(clipped)[:m.width-5]) + "..."
 		}
 		contentLines = append(contentLines, clipped)
 	}
