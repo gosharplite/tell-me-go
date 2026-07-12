@@ -523,10 +523,10 @@ func TestModel_View(t *testing.T) {
 		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 20, "total lines must equal terminal height")
-		// Log at top of body zone (line 3, after separator), then blank padding below
-		assert.Contains(t, lines[3], "only one log")
-		// Lines 4 through 14 should be blank (bottom-padding for 11 blank after log)
-		for i := 4; i < 15; i++ {
+		// Log at top of body zone (line 2, body's leading \n doubles as separator)
+		assert.Contains(t, lines[2], "only one log")
+		// Lines 3 through 14 should be blank (bottom-padding for 12 blank after log)
+		for i := 3; i < 15; i++ {
 			assert.Empty(t, lines[i], "line %d should be blank padding", i)
 		}
 	})
@@ -1450,11 +1450,11 @@ func TestModel_ToolLogs(t *testing.T) {
 		out := m.View()
 		lines := strings.Split(out, "\n")
 
-		// Header (line 0), token line (line 1), separator (line 2), body (top-aligned).
+		// Header (line 0), token line (line 1), body (leading \n doubles as separator).
 		assert.Contains(t, lines[0], "╭─ Turn 1 - test")
-		// 3 body content lines at top of body zone: lines 3, 4, 5
-		assert.Contains(t, lines[3], "[Tool Engine] Step 1/3")
-		assert.Contains(t, lines[4], "[Tool Reason] read the file")
+		// 3 body content lines at top: lines 2, 3, 4
+		assert.Contains(t, lines[2], "[Tool Engine] Step 1/3")
+		assert.Contains(t, lines[3], "[Tool Reason] read the file")
 		// Response text after tool logs
 		assert.Contains(t, out, "I'll read that file for you.")
 	})

@@ -562,11 +562,10 @@ func (m *model) View() string {
 	}
 
 	// Body gets everything between header+separator (3 lines) and separator+footer (5 lines).
-	availableBody := m.height - 8
+	availableBody := m.height - 7
 
 	var sb strings.Builder
 	sb.WriteString(m.renderHeader())
-	sb.WriteString("\n")
 	sb.WriteString(m.renderBody(availableBody))
 	sb.WriteString("\n")
 	sb.WriteString(m.renderFooter())
