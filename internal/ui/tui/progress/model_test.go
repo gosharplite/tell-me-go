@@ -104,52 +104,10 @@ func TestModel_Update(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
-		newModel, cmd := m.Update(channelClosedMsg{})
-		updated := newModel.(*model)
+		_, cmd := m.Update(channelClosedMsg{})
 
-		assert.True(t, updated.sessionDone)
-		assert.False(t, updated.spinner.active())
-		assert.Nil(t, cmd) // stdin keeps loop alive; no tick needed
-	})
-
-	t.Run("sessionDone shows exit prompt and waits for Ctrl+C", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
-
-		newModel, cmd := m.Update(channelClosedMsg{})
-		updated := newModel.(*model)
-
-		assert.True(t, updated.sessionDone)
-		assert.Nil(t, cmd) // nil command — stdin-driven loop, Ctrl+C quits
-
-		out := updated.View()
-		assert.Contains(t, out, "Press Ctrl+C to exit")
-	})
-
-	t.Run("sessionDone shows exit prompt in footer", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
-		m.sessionDone = true
-
-		out := m.View()
-		assert.Contains(t, out, "Press Ctrl+C to exit")
-	})
-
-	t.Run("sessionDone shows exit prompt in renderMinimal", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
-		m.turn = 3
-		m.sessionName = "test"
-		m.sessionDone = true
-
-		out := m.View()
-		assert.Contains(t, out, "Press Ctrl+C to exit")
+		require.NotNil(t, cmd)
+		assert.IsType(t, tea.QuitMsg{}, cmd())
 	})
 
 	t.Run("unknown message returns nil cmd", func(t *testing.T) {

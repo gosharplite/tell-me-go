@@ -126,7 +126,6 @@ type model struct {
 	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
-	sessionDone         bool                     // true when event channel closes; TUI waits for Ctrl+C
 	spinner             spinnerState
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
@@ -227,9 +226,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinnerTickMsg:
 		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
 	case channelClosedMsg:
-		m.sessionDone = true
-		m.spinner.clear()
-		return m, nil
+		return m, tea.Quit
 	case error:
 		m.err = msg
 		return m, nil
@@ -245,13 +242,6 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	}
-
-	// Route to bodyVP for scrolling when session is done.
-	if m.sessionDone {
-		var cmd tea.Cmd
-		m.bodyVP, cmd = m.bodyVP.Update(msg)
-		return m, cmd
 	}
 
 	return m, nil
@@ -579,9 +569,7 @@ func (m *model) View() string {
 func (m *model) renderMinimal() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
-	if m.sessionDone {
-		sb.WriteString(" Press Ctrl+C to exit")
-	} else if m.spinner.active() && m.currentState != stateIdle {
+	if m.spinner.active() && m.currentState != stateIdle {
 		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render()))
 	}
 	return sb.String()
@@ -628,9 +616,7 @@ func (m *model) renderFooterContent() string {
 		sb.WriteString(m.finalCostLine)
 		sb.WriteString("\n")
 	}
-	if m.sessionDone {
-		sb.WriteString("Press Ctrl+C to exit")
-	} else if m.spinner.active() && m.currentState != stateIdle {
+	if m.spinner.active() && m.currentState != stateIdle {
 		sb.WriteString(m.spinner.render())
 	}
 	return sb.String()
