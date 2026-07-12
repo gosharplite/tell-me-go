@@ -105,6 +105,8 @@ func assertHeaderOrder(t *testing.T, indices map[string]int, order []string) {
 // assertHeaderFormat verifies the visual structure of the CLI output for a single turn.
 func assertHeaderFormat(t *testing.T, errOut string, mode string) {
 	t.Helper()
+	// Strip carriage returns (used by TUI for cursor positioning / line refresh)
+	errOut = strings.ReplaceAll(errOut, "\r", "")
 	lines := strings.Split(errOut, "\n")
 
 	patterns := []headerPattern{
