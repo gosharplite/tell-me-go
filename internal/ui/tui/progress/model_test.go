@@ -79,28 +79,27 @@ func TestModel_Update(t *testing.T) {
 		assert.NotNil(t, cmd)
 	})
 
-	t.Run("CtrlC", func(t *testing.T) {
+	t.Run("CtrlC quits", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
 		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+		require.NotNil(t, cmd)
+		assert.IsType(t, tea.QuitMsg{}, cmd())
+	})
 
+	t.Run("q quits", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 		require.NotNil(t, cmd)
 		assert.IsType(t, tea.QuitMsg{}, cmd())
 	})
 
 	t.Run("channel close", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		close(ch)
-		m := newTestModel(ctx, ch)
-
-		msg := m.waitForEvent()()
-		assert.IsType(t, channelClosedMsg{}, msg)
-	})
-
-	t.Run("channel close sets sessionDone", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)

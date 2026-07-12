@@ -242,9 +242,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg processes keyboard messages.
 func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlC {
+	switch msg.String() {
+	case "q", "ctrl+c":
 		return m, tea.Quit
 	}
+
+	// Route to bodyVP for scrolling when session is done.
+	if m.sessionDone {
+		var cmd tea.Cmd
+		m.bodyVP, cmd = m.bodyVP.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
