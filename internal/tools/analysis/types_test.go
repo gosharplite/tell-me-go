@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,58 +17,29 @@ import (
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
-// Shared types workspace — built once per test binary run.
-var (
-	typesOnce    sync.Once
-	typesMu      sync.Mutex
-	typesRoot    string
-	typesModule  string
-	typesIndexer *indexer
-)
+// newTypesWorkspaceIndexer creates a fresh, per-test workspace containing
+// all test scenarios as sub-packages under a single Go module. Each call
+// uses t.TempDir() so parallel tests never share the same directory tree.
+func newTypesWorkspaceIndexer(t testing.TB) (string, *indexer) {
+	t.Helper()
+	const knownModulePath = "shared.types"
 
-// getTypesWorkspaceIndexer returns a single pre-built indexer for all
-// type manager tests. The workspace is created once via sync.Once.
-// On -count=N, if a prior iteration's cleanup deleted the workspace,
-// it is recreated under a mutex.
-func getTypesWorkspaceIndexer(tb testing.TB) *indexer {
-	tb.Helper()
-	typesOnce.Do(func() {
-		createTypesWorkspace(tb)
-	})
-	typesMu.Lock()
-	defer typesMu.Unlock()
-	if typesRoot != "" {
-		if _, err := os.Stat(typesRoot); os.IsNotExist(err) {
-			createTypesWorkspace(tb)
-		}
-	}
-	return typesIndexer
-}
-
-// createTypesWorkspace builds the shared types workspace containing all
-// test scenarios as sub-packages under a single Go module. Must be called
-// while typesMu is held.
-func createTypesWorkspace(tb testing.TB) {
-	const sharedModule = "shared.types"
-
-	tmpDir := tb.TempDir()
-	typesRoot = filepath.Join(tmpDir, "types-shared")
-	if err := os.MkdirAll(typesRoot, 0755); err != nil {
-		tb.Fatal(err)
+	tmpDir := t.TempDir()
+	root := filepath.Join(tmpDir, "types-shared")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatal(err)
 	}
 
 	var err error
-	typesRoot, err = filepath.EvalSymlinks(typesRoot)
+	root, err = filepath.EvalSymlinks(root)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
 
-	typesModule = sharedModule
-
 	// Write a single top-level go.mod
-	if err := os.WriteFile(filepath.Join(typesRoot, "go.mod"),
-		[]byte("module "+sharedModule+"\n\ngo 1.25\n"), 0644); err != nil {
-		tb.Fatal(err)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"),
+		[]byte("module "+knownModulePath+"\n\ngo 1.25\n"), 0644); err != nil {
+		t.Fatal(err)
 	}
 
 	// Each entry maps a sub-directory name to its Go source content.
@@ -124,29 +94,30 @@ func unexported() {}
 	}
 
 	for path, content := range workspaceFiles {
-		fullPath := filepath.Join(typesRoot, path)
+		fullPath := filepath.Join(root, path)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-			tb.Fatal(err)
+			t.Fatal(err)
 		}
 		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-			tb.Fatal(err)
+			t.Fatal(err)
 		}
 	}
 
-	typesIndexer, err = newIndexer(typesRoot)
+	idx, err := newIndexer(root)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
-	typesIndexer.knownModulePath = sharedModule
-	if err := typesIndexer.Refresh(context.Background(), nil); err != nil {
-		tb.Fatal(err)
+	idx.knownModulePath = knownModulePath
+	if err := idx.Refresh(context.Background(), nil); err != nil {
+		t.Fatal(err)
 	}
+	return root, idx
 }
 
 func TestTypeManager_GetTypeInfo(t *testing.T) {
 	t.Parallel()
 
-	idx := getTypesWorkspaceIndexer(t)
+	root, idx := newTypesWorkspaceIndexer(t)
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 	m := newTypeManager(idx, cache, sp, infra_persistence.NewOSFileSystem())
@@ -199,7 +170,7 @@ func TestTypeManager_GetTypeInfo(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			caseDir := filepath.Join(typesRoot, tt.dir)
+			caseDir := filepath.Join(root, tt.dir)
 			args := map[string]interface{}{
 				"typename": tt.typename,
 				"path":     caseDir,
@@ -223,7 +194,7 @@ func TestTypeManager_GetTypeInfo(t *testing.T) {
 func TestTypeManager_ListImplementations(t *testing.T) {
 	t.Parallel()
 
-	idx := getTypesWorkspaceIndexer(t)
+	_, idx := newTypesWorkspaceIndexer(t)
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 
 	res, err := m.ListImplementations(context.Background(), map[string]interface{}{"interface_name": "I"}, nil)
@@ -238,8 +209,8 @@ func TestTypeManager_ListImplementations(t *testing.T) {
 func TestTypeManager_ListSymbols(t *testing.T) {
 	t.Parallel()
 
-	idx := getTypesWorkspaceIndexer(t)
-	caseDir := filepath.Join(typesRoot, "list_symbols")
+	root, idx := newTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(root, "list_symbols")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": caseDir}, nil)
 	if err != nil {
@@ -256,8 +227,8 @@ func TestTypeManager_ListSymbols(t *testing.T) {
 func TestTypeManager_FindUsages(t *testing.T) {
 	t.Parallel()
 
-	idx := getTypesWorkspaceIndexer(t)
-	caseDir := filepath.Join(typesRoot, "find_usages")
+	root, idx := newTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(root, "find_usages")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.FindUsages(context.Background(), map[string]interface{}{"path": caseDir, "query": "F"}, nil)
 	if err != nil {
@@ -272,8 +243,8 @@ func TestTypeManager_FindUsages(t *testing.T) {
 func TestTypeManager_FindDefinitions(t *testing.T) {
 	t.Parallel()
 
-	idx := getTypesWorkspaceIndexer(t)
-	caseDir := filepath.Join(typesRoot, "find_definitions")
+	root, idx := newTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(root, "find_definitions")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.FindDefinitions(context.Background(), map[string]interface{}{"path": caseDir, "query": "MyFunc"}, nil)
 	if err != nil {
@@ -314,8 +285,8 @@ func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
 func TestTypeManager_ListSymbols_ExportedOnly(t *testing.T) {
 	t.Parallel()
 
-	idx := getTypesWorkspaceIndexer(t)
-	caseDir := filepath.Join(typesRoot, "list_symbols_exported")
+	root, idx := newTypesWorkspaceIndexer(t)
+	caseDir := filepath.Join(root, "list_symbols_exported")
 	m := newTypeManager(idx, newASTCache("."), &mockSecurityProvider{}, infra_persistence.NewOSFileSystem())
 	res, err := m.ListSymbols(context.Background(), map[string]interface{}{"path": caseDir, "exported_only": true}, nil)
 	if err != nil {
