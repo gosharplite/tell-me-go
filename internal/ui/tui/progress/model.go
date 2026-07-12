@@ -552,11 +552,12 @@ func (m *model) View() string {
 		return m.renderMinimal()
 	}
 
-	// Body gets everything between header+separator (3 lines) and separator+footer (5 lines).
-	availableBody := m.height - 7
+	// Body gets everything between header+gap (3 lines) and gap+footer (5 lines).
+	availableBody := m.height - 8
 
 	var sb strings.Builder
 	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
 	sb.WriteString(m.renderBody(availableBody))
 	sb.WriteString("\n")
 	sb.WriteString(m.renderFooter())
@@ -611,10 +612,7 @@ func (m *model) renderBody(availableLines int) string {
 
 	bodyLines := make([]string, 0, availableLines)
 
-	// Blank separator creates the visual gap between header and body.
-	bodyLines = append(bodyLines, "")
-
-	availableForContent := availableLines - 1
+	availableForContent := availableLines
 	if len(contentLines) > availableForContent {
 		// Keep only the tail (newest content at bottom, oldest pushed off top).
 		bodyLines = append(bodyLines, contentLines[len(contentLines)-availableForContent:]...)
