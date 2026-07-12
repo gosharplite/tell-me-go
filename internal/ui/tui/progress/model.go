@@ -301,8 +301,6 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.seenCallIDs = make(map[string]bool)
 	m.responseText = ""
 	m.rawResponseText = ""
-	m.postCallStatus = nil
-	m.postCallMetricsLine = ""
 	return m.waitForEvent()
 }
 
