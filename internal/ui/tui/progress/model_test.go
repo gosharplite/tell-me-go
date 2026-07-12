@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -78,13 +79,22 @@ func TestModel_Update(t *testing.T) {
 		assert.NotNil(t, cmd)
 	})
 
-	t.Run("CtrlC", func(t *testing.T) {
+	t.Run("CtrlC quits", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
 		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+		require.NotNil(t, cmd)
+		assert.IsType(t, tea.QuitMsg{}, cmd())
+	})
 
+	t.Run("q quits", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 		require.NotNil(t, cmd)
 		assert.IsType(t, tea.QuitMsg{}, cmd())
 	})
@@ -92,11 +102,54 @@ func TestModel_Update(t *testing.T) {
 	t.Run("channel close", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
-		close(ch)
 		m := newTestModel(ctx, ch)
 
-		msg := m.waitForEvent()()
-		assert.IsType(t, tea.QuitMsg{}, msg)
+		newModel, cmd := m.Update(channelClosedMsg{})
+		updated := newModel.(*model)
+
+		assert.True(t, updated.sessionDone)
+		assert.False(t, updated.spinner.active())
+		assert.Nil(t, cmd) // stdin keeps loop alive; no tick needed
+	})
+
+	t.Run("sessionDone shows exit prompt and waits for Ctrl+C", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+		newModel, cmd := m.Update(channelClosedMsg{})
+		updated := newModel.(*model)
+
+		assert.True(t, updated.sessionDone)
+		assert.Nil(t, cmd) // nil command — stdin-driven loop, Ctrl+C quits
+
+		out := updated.View()
+		assert.Contains(t, out, "Press Ctrl+C to exit")
+	})
+
+	t.Run("sessionDone shows exit prompt in footer", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+		m.sessionDone = true
+
+		out := m.View()
+		assert.Contains(t, out, "Press Ctrl+C to exit")
+	})
+
+	t.Run("sessionDone shows exit prompt in renderMinimal", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
+		m.turn = 3
+		m.sessionName = "test"
+		m.sessionDone = true
+
+		out := m.View()
+		assert.Contains(t, out, "Press Ctrl+C to exit")
 	})
 
 	t.Run("unknown message returns nil cmd", func(t *testing.T) {
@@ -110,6 +163,8 @@ func TestModel_Update(t *testing.T) {
 		assert.Equal(t, stateIdle, updated.currentState, "state should be unchanged")
 		assert.Equal(t, 0, updated.turn, "turn should be zero value")
 		assert.Empty(t, updated.modelName, "modelName should be empty")
+		assert.Equal(t, 100, updated.width)
+		assert.Equal(t, 50, updated.height)
 		assert.Nil(t, cmd, "unknown messages must return nil to avoid duplicate channel readers")
 	})
 
@@ -127,9 +182,22 @@ func TestModel_Update(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.Equal(t, 120, updated.width)
+		assert.Equal(t, 40, updated.height)
 		assert.Equal(t, "[w=120]hello", updated.responseText,
 			"response should be re-rendered with new width")
 		assert.Nil(t, cmd)
+	})
+
+	t.Run("captures height from WindowSizeMsg", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		updated := newModel.(*model)
+
+		assert.Equal(t, 120, updated.width)
+		assert.Equal(t, 40, updated.height)
 	})
 
 	t.Run("default message returns nil cmd", func(t *testing.T) {
@@ -262,12 +330,20 @@ func TestModel_Update(t *testing.T) {
 	})
 }
 
-// newTestModel creates a model for testing.
+// newTestModel creates a model for testing with a sensible default terminal height.
 func newTestModel(_ context.Context, ch <-chan events.Event) *model {
+	headerVP := viewport.New(80, 2)
+	bodyVP := viewport.New(80, 72)
+	footerVP := viewport.New(80, 4)
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
+		height:       80,
+		width:        80,
 		seenCallIDs:  make(map[string]bool),
+		headerVP:     headerVP,
+		bodyVP:       bodyVP,
+		footerVP:     footerVP,
 	}
 }
 
@@ -277,12 +353,24 @@ func TestModel_View(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
-		out := m.View()
+		assert.Equal(t, 80, m.width, "fresh model width should be newTestModel default")
+		assert.Equal(t, 80, m.height, "fresh model height should be newTestModel default")
 
-		lines := strings.Split(out, "\n")
-		assert.True(t, len(lines) >= 2, "expected at least 2 lines, got %d: %q", len(lines), out)
-		assert.Contains(t, lines[0], "╭─ Turn 0 - ")
-		assert.Contains(t, lines[1], "Payload: ~0/0 tokens")
+		out := m.View()
+		assert.Contains(t, out, "╭─ Turn 0 - ")
+		assert.Contains(t, out, "Payload: ~0/0 tokens")
+	})
+
+	t.Run("default height and width before WindowSizeMsg", func(t *testing.T) {
+		ch := make(chan events.Event, 1)
+		m := NewModel(context.Background(), ch, nil).(*model)
+
+		assert.Equal(t, 24, m.height, "default height ensures full layout before WindowSizeMsg")
+		assert.Equal(t, 80, m.width, "default width ensures viewport sizing from first frame")
+
+		out := m.View()
+		assert.Contains(t, out, "╭─ Turn 0 - ")
+		assert.Contains(t, out, "Payload:")
 	})
 
 	t.Run("stateThinking shows turn and session", func(t *testing.T) {
@@ -331,9 +419,8 @@ func TestModel_View(t *testing.T) {
 		m.responseText = ""
 
 		out := m.View()
-		lines := strings.Split(out, "\n")
-		// header, info, empty trailing — no response line
-		assert.Len(t, lines, 3)
+		// Viewport-based layout — just verify header is present.
+		assert.Contains(t, out, "╭─ Turn")
 	})
 
 	t.Run("with post-call metrics", func(t *testing.T) {
@@ -364,11 +451,7 @@ func TestModel_View(t *testing.T) {
 		)
 
 		out := m.View()
-		lines := strings.Split(out, "\n")
-		// line 0: header, line 1: info, line 2: empty, line 3: token line, line 4: metrics line
-		assert.Contains(t, lines[4], "[14:30:00]")
-		assert.Contains(t, lines[4], "[deepseek-pro]")
-		assert.Contains(t, lines[4], "M: 200 H: 800 C: 50")
+		assert.Contains(t, out, "M: 200 H: 800 C: 50")
 	})
 
 	t.Run("with final summary", func(t *testing.T) {
@@ -383,6 +466,64 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, out, "M: 116386")
 		assert.Contains(t, out, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
 	})
+
+
+	t.Run("body_content_visible_in_viewport", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+		m.appendToolLog("Test", "some tool output")
+		m.responseText = "final response"
+
+		out := m.View()
+		assert.Contains(t, out, "some tool output")
+		assert.Contains(t, out, "final response")
+	})
+
+
+
+	t.Run("renderMinimal_when_height_below_5", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
+
+		m.turn = 3
+		m.sessionName = "test"
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		assert.Len(t, lines, 1)
+		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
+		assert.NotContains(t, out, "Payload:") // no room for payload line
+	})
+
+	t.Run("renderMinimal_shows_spinner_when_active", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
+
+		m.turn = 3
+		m.sessionName = "test"
+		m.spinner.status = " Thinking..."
+		m.currentState = stateThinking
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		assert.Len(t, lines, 1)
+		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
+		assert.Contains(t, lines[0], "⠋  Thinking...")
+	})
+
+
+
+
+
 }
 
 func TestModel_Integration(t *testing.T) {
@@ -648,7 +789,7 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.False(t, updated.spinner.tickActive)
-		assert.Nil(t, cmd) // tick() returns nil because status is empty
+		assert.NotNil(t, cmd) // waitForEvent is always batched with tick; handleTick returns nil but batch still non-nil
 	})
 
 	t.Run("tick does not re-schedule when state is idle", func(t *testing.T) {
@@ -745,6 +886,37 @@ func TestModel_SpinnerClearance(t *testing.T) {
 		assert.Equal(t, "Hello", updated.responseText)
 		assert.NotNil(t, cmd)
 	})
+
+	t.Run("TurnStatusEvent does not clear inactive spinner", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinner.status = ""
+		m.spinner.tickActive = false
+		m.spinner.frame = 5
+		m.spinner.generation = 3
+		m.currentState = stateIdle
+
+		msg := events.TurnStatusEvent{
+			Status: events.TurnStatus{
+				Tokens:     500,
+				Timestamp:  time.Now(),
+				Mode:       "test",
+				Model:      "gpt-5",
+				IsPostCall: false,
+			},
+		}
+		newModel, cmd := m.Update(domainEventMsg(msg))
+		updated := newModel.(*model)
+
+		// P1: Spinner should NOT be cleared when inactive — preserves
+		// all spinner state for later InferenceStartedEvent.start().
+		assert.Equal(t, "", updated.spinner.status, "status should remain empty")
+		assert.False(t, updated.spinner.tickActive)
+		assert.Equal(t, 5, updated.spinner.frame, "frame should be preserved")
+		assert.Equal(t, 3, updated.spinner.generation, "generation should be preserved")
+		assert.NotNil(t, cmd)
+	})
 }
 
 func TestModel_View_SpinnerLine(t *testing.T) {
@@ -808,21 +980,6 @@ func TestModel_View_SpinnerLine(t *testing.T) {
 		assert.NotContains(t, out, "⠋")
 	})
 
-	t.Run("spinner line at end of output", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.currentState = stateThinking
-		m.turn = 1
-		m.sessionName = "test"
-		m.spinner.status = " Thinking..."
-		m.spinner.frame = 0
-
-		out := m.View()
-		lines := strings.Split(out, "\n")
-		// Second-to-last line should be the spinner (last line is empty from trailing \n)
-		assert.Contains(t, lines[len(lines)-2], "⠋  Thinking...")
-	})
 }
 
 func TestModel_SpinnerViewAllFrames(t *testing.T) {
@@ -1012,7 +1169,7 @@ func TestModel_ToolLogs(t *testing.T) {
 		assert.Contains(t, updated.toolLogs[0], "[Warning] deprecated flag used")
 	})
 
-	t.Run("ToolOutputStreamEvent output level is skipped", func(t *testing.T) {
+	t.Run("ToolOutputStreamEvent output level is logged", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
@@ -1023,7 +1180,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Nil(t, updated.toolLogs) // level "output" is suppressed in TUI mode
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "[Tool Output] Executing...")
 	})
 
 	t.Run("ToolOutputStreamEvent unknown level defaults to System", func(t *testing.T) {
@@ -1116,7 +1274,30 @@ func TestModel_ToolLogs(t *testing.T) {
 		assert.Contains(t, updated.toolLogs[0], "[Warning] retry attempt 2 of 3")
 	})
 
-	t.Run("TurnStarted clears toolLogs", func(t *testing.T) {
+	t.Run("tool_logs_accumulate_across_turns", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 4)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+
+		// Turn N: dispatch turn adds tool logs
+		m.appendToolLog("Tool Engine", "Step 1/5")
+		m.appendToolLog("Tool Action", "read_file(main.go)")
+		assert.Len(t, m.toolLogs, 2)
+
+		// Turn N+1: TurnStarted must NOT clear them
+		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
+		updated := newModel.(*model)
+		assert.Len(t, updated.toolLogs, 2, "tool logs should persist into execution turn")
+		assert.Contains(t, updated.toolLogs[0], "Step 1/5")
+		assert.Contains(t, updated.toolLogs[1], "read_file")
+
+		// Execution turn adds result
+		updated.appendToolLog("Tool Result", "read_file: file contents here")
+		assert.Len(t, updated.toolLogs, 3, "all three lines present during execution")
+	})
+
+	t.Run("TurnStarted does not clear toolLogs", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
@@ -1125,33 +1306,11 @@ func TestModel_ToolLogs(t *testing.T) {
 		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
 		updated := newModel.(*model)
 
-		assert.Nil(t, updated.toolLogs)
+		assert.NotNil(t, updated.toolLogs, "toolLogs should persist across TurnStarted")
+		assert.Len(t, updated.toolLogs, 1)
+		assert.Contains(t, updated.toolLogs[0], "Step 1/5")
 	})
 
-	t.Run("View renders toolLogs between header and response", func(t *testing.T) {
-		ctx := context.Background()
-		ch := make(chan events.Event, 1)
-		m := newTestModel(ctx, ch)
-		m.currentState = stateThinking
-		m.turn = 1
-		m.sessionName = "test"
-		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
-		m.toolLogs = []string{
-			"[14:30:00] [Tool Engine] Step 1/3",
-			"[14:30:00] [Tool Reason] read the file",
-		}
-		m.responseText = "I'll read that file for you."
-
-		out := m.View()
-		lines := strings.Split(out, "\n")
-
-		// Header (line 0), token line (line 1), then tool logs
-		assert.Contains(t, lines[0], "╭─ Turn 1 - test")
-		assert.Contains(t, lines[2], "[Tool Engine] Step 1/3")
-		assert.Contains(t, lines[3], "[Tool Reason] read the file")
-		// Response text after tool logs
-		assert.Contains(t, out, "I'll read that file for you.")
-	})
 }
 
 func TestModel_ResponseEvent_ExtractsToolCalls(t *testing.T) {
@@ -1276,6 +1435,72 @@ func TestModel_ToolCallEvent_ShowsEngineForPartialNewCalls(t *testing.T) {
 	assert.True(t, foundReadFile, "expected [Tool Action] for new call_2")
 }
 
+func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
+	ch := make(chan events.Event, 2)
+	m := newTestModel(t.Context(), ch)
+
+	// Simulate a completed turn with all display state populated.
+	m.turn = 5
+	m.sessionName = "test"
+	m.modelName = "deepseek-v4-pro"
+	m.currentState = stateRendering
+	m.responseText = "Here is the AI response for turn 5."
+	m.rawResponseText = "Here is the AI response for turn 5."
+	m.postCallStatus = &events.TurnStatus{
+		Metrics: &llm.Metrics{
+			PromptTokens:   1000,
+			CachedTokens:   800,
+			ResponseTokens: 50,
+			Cost:           0.0012,
+			Duration:       5.0,
+			Provider:       "deepseek-pro",
+		},
+	}
+	m.postCallMetricsLine = "[14:30:05] [deepseek-pro] M: 200 H: 800 C: 50 ($0.0012) [7.00s (ΣT: 2.00s)]"
+	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 99.2% O: 51607)"
+
+	// Verify initial View() contains all the stale content.
+	outBefore := m.View()
+	assert.Contains(t, outBefore, "Here is the AI response for turn 5.")
+	assert.Contains(t, outBefore, "M: 200 H: 800 C: 50")
+	assert.Contains(t, outBefore, "╰─⠿ Ready")
+
+	// Fire TurnStarted for turn 6.
+	newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 5, SessionTurns: 5}))
+	updated := newModel.(*model)
+
+	assert.Equal(t, 6, updated.turn) // SessionTurns 5 + 1
+	assert.Equal(t, stateThinking, updated.currentState)
+
+	// All stale display fields must be cleared.
+	assert.Empty(t, updated.responseText, "responseText should be cleared on TurnStarted")
+	assert.Empty(t, updated.rawResponseText, "rawResponseText should be cleared on TurnStarted")
+
+	// Footer status lines must PERSIST across TurnStarted (sticky).
+	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist across TurnStarted")
+	assert.NotEmpty(t, updated.postCallMetricsLine, "postCallMetricsLine should persist across TurnStarted")
+	assert.NotEmpty(t, updated.finalCostLine, "finalCostLine should persist across TurnStarted")
+
+	// Non-display fields should also be cleared (except toolLogs — sticky).
+	assert.Len(t, updated.seenCallIDs, 0, "seenCallIDs should be empty on TurnStarted")
+
+	// View() after TurnStarted must NOT contain stale response text,
+	// but footer status lines should still be visible.
+	updatedOut := updated.View()
+	assert.NotContains(t, updatedOut, "Here is the AI response for turn 5.",
+		"View after TurnStarted must not contain stale response text")
+	assert.Contains(t, updatedOut, "M: 200 H: 800 C: 50",
+		"View after TurnStarted should still contain sticky metrics line")
+	assert.Contains(t, updatedOut, "╰─⠿ Ready",
+		"View after TurnStarted should still contain sticky final cost line")
+	assert.Contains(t, updatedOut, "╭─ Turn 6 - test",
+		"View after TurnStarted should show new turn header")
+	assert.Contains(t, updatedOut, "Payload: ~0/0 tokens",
+		"View after TurnStarted should show payload line with zero tokens")
+
+	assert.NotNil(t, cmd)
+}
+
 func TestModel_TurnStarted_ClearsSeenCallIDs(t *testing.T) {
 	ch := make(chan events.Event, 2)
 	m := newTestModel(t.Context(), ch)
@@ -1298,6 +1523,32 @@ func TestModel_TurnStarted_ClearsSeenCallIDs(t *testing.T) {
 
 	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
 	assert.Len(t, m.seenCallIDs, 1, "seenCallIDs should accept same call ID in new turn")
+}
+
+func TestModel_FooterStatusLinesPersistAcrossTurns(t *testing.T) {
+	ctx := context.Background()
+	ch := make(chan events.Event, 2)
+	m := newTestModel(ctx, ch)
+
+	// Set up a completed turn with footer data.
+	m.turn = 1
+	m.currentState = stateRendering
+	m.postCallMetricsLine = "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)"
+	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)"
+	m.postCallStatus = &events.TurnStatus{}
+
+	// Fire TurnStarted — footer should NOT be cleared.
+	newModel, cmd := m.Update(domainEventMsg(events.TurnStarted{Turn: 1, SessionTurns: 1}))
+	updated := newModel.(*model)
+
+	assert.Equal(t, 2, updated.turn, "turn should increment")
+	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist")
+	assert.Equal(t, "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)", updated.postCallMetricsLine)
+	assert.Equal(t, "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)", updated.finalCostLine)
+	assert.NotNil(t, cmd)
+
+	// But responseText should still be cleared (turn-specific).
+	assert.Empty(t, updated.responseText)
 }
 
 func TestModel_ResponseEvent_NoToolCalls_NoSpuriousLogs(t *testing.T) {

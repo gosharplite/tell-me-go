@@ -28,12 +28,18 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 	mdRender := r.makeMarkdownRenderer()
 
 	m := NewModel(ctx, ch, mdRender)
-	p := tea.NewProgram(m, tea.WithInput(nil))
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	done := make(chan struct{})
 	go func() {
 		_, _ = p.Run()
+		close(done)
 	}()
 
-	return func() { close(ch) }
+	return func() {
+		close(ch) // signal session done to model
+		<-done    // wait for user to dismiss TUI (Ctrl+C or q)
+	}
 }
 
 // makeSubscriber returns an event subscriber callback that writes events
@@ -43,14 +49,18 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 	return func(ctx context.Context, e events.Event) {
 		switch e.(type) {
 		case events.TurnStarted, events.TurnStatusEvent, events.ResponseEvent:
+			timer := time.NewTimer(100 * time.Millisecond)
 			select {
 			case ch <- e:
-			case <-time.After(100 * time.Millisecond):
+				timer.Stop()
+			case <-timer.C:
 			}
 		default:
+			timer := time.NewTimer(50 * time.Millisecond)
 			select {
 			case ch <- e:
-			default:
+				timer.Stop()
+			case <-timer.C:
 			}
 		}
 	}

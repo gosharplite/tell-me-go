@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -25,6 +26,9 @@ type spinnerTickMsg struct {
 	generation int
 }
 
+// channelClosedMsg signals that the event channel has been closed (session complete).
+type channelClosedMsg struct{}
+
 type state int
 
 const (
@@ -38,7 +42,6 @@ var brailleFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 const spinnerTickInterval = 200 * time.Millisecond
 
 // spinnerState encapsulates the animated braille spinner state and lifecycle.
-// It is embedded in the model to keep spinner concerns separate from domain state.
 type spinnerState struct {
 	status     string
 	frame      int
@@ -96,7 +99,7 @@ func (s *spinnerState) clear() {
 func (s *spinnerState) render() string {
 	frame := brailleFrames[s.frame%len(brailleFrames)]
 	elapsed := int(time.Since(s.startTime).Seconds())
-	return fmt.Sprintf("\n%s %s (%ds)", frame, s.status, elapsed)
+	return fmt.Sprintf("%s %s (%ds)", frame, s.status, elapsed)
 }
 
 // active reports whether the spinner is currently running.
@@ -109,6 +112,7 @@ type model struct {
 
 	currentState        state
 	width               int // terminal width, updated via WindowSizeMsg
+	height              int // terminal height, updated via WindowSizeMsg
 	turn                int
 	modelName           string // display name, e.g. "deepseek-v4-pro"
 	sessionName         string // e.g. "architect-johndoe"
@@ -122,30 +126,44 @@ type model struct {
 	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
 	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
+	sessionDone         bool                     // true when event channel closes; TUI waits for Ctrl+C
 	spinner             spinnerState
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
 	seenCallIDs map[string]bool // dedup tool logs from ResponseEvent vs ToolCallEvent
+
+	headerVP viewport.Model
+	bodyVP   viewport.Model
+	footerVP viewport.Model
 }
 
 // NewModel creates a new progress model that consumes events from the given
 // channel and optionally renders response text through mdRender.
 func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, int) string) tea.Model {
+	headerVP := viewport.New(80, 2)
+	bodyVP := viewport.New(80, 16)
+	footerVP := viewport.New(80, 4)
+
 	return &model{
 		eventCh:      ch,
 		currentState: stateIdle,
+		height:       24,
+		width:        80,
 		mdRender:     mdRender,
 		seenCallIDs:  make(map[string]bool),
+		headerVP:     headerVP,
+		bodyVP:       bodyVP,
+		footerVP:     footerVP,
 	}
 }
 
 // waitForEvent reads the next event from the channel. If the channel is
-// closed, it signals the Bubbletea runtime to quit.
+// closed, it signals that the session is complete (screen stays open for review).
 func (m *model) waitForEvent() tea.Cmd {
 	return func() tea.Msg {
 		e, ok := <-m.eventCh
 		if !ok {
-			return tea.Quit()
+			return channelClosedMsg{}
 		}
 		return domainEventMsg(e)
 	}
@@ -176,12 +194,10 @@ func (m *model) appendLevelEventLog(level, message string) {
 
 // safeTruncate truncates s to at most maxLen bytes, ensuring the cut
 // never lands in the middle of a multi-byte UTF-8 character.
-// If s is already shorter than maxLen, it is returned unchanged.
 func safeTruncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	// Walk runes to find the byte index of the (maxLen)th rune.
 	var count, byteIdx int
 	for i := range s {
 		if count == maxLen {
@@ -193,7 +209,6 @@ func safeTruncate(s string, maxLen int) string {
 	if byteIdx > 0 {
 		return s[:byteIdx]
 	}
-	// maxLen is 0 or s starts with a multi-byte rune exceeding maxLen.
 	return ""
 }
 
@@ -210,7 +225,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
 	case spinnerTickMsg:
-		return m, m.spinner.handleTick(msg)
+		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
+	case channelClosedMsg:
+		m.sessionDone = true
+		m.spinner.clear()
+		return m, nil
 	case error:
 		m.err = msg
 		return m, nil
@@ -223,15 +242,35 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg processes keyboard messages.
 func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlC {
+	switch msg.String() {
+	case "q", "ctrl+c":
 		return m, tea.Quit
 	}
+
+	// Route to bodyVP for scrolling when session is done.
+	if m.sessionDone {
+		var cmd tea.Cmd
+		m.bodyVP, cmd = m.bodyVP.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
 // handleWindowSizeMsg processes terminal resize events.
 func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
+	m.height = msg.Height
+	m.headerVP.Width = msg.Width
+	m.headerVP.Height = 2
+	m.bodyVP.Width = msg.Width
+	if msg.Height > 8 {
+		m.bodyVP.Height = msg.Height - 8
+	} else {
+		m.bodyVP.Height = 0
+	}
+	m.footerVP.Width = msg.Width
+	m.footerVP.Height = 4
 	if m.rawResponseText != "" && m.mdRender != nil {
 		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
 	}
@@ -275,10 +314,10 @@ func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleLeveledMessage logs a leveled system message and returns a
-// waitForEvent command. It is used by both SystemMessageEvent and
-// StatusUpdate handlers.
+// waitForEvent command.
 func (m *model) handleLeveledMessage(level, message string) tea.Cmd {
 	m.appendLevelEventLog(level, message)
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
@@ -287,8 +326,9 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.turn = e.SessionTurns + 1
 	m.currentState = stateThinking
 	m.spinner.clear()
-	m.toolLogs = nil
 	m.seenCallIDs = make(map[string]bool)
+	m.responseText = ""
+	m.rawResponseText = ""
 	return m.waitForEvent()
 }
 
@@ -322,7 +362,9 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 		}
 		m.finalCostLine = formatFinalLine(e.Status, turnCost)
 	}
-	m.spinner.clear()
+	if m.spinner.active() {
+		m.spinner.clear()
+	}
 	return m.waitForEvent()
 }
 
@@ -336,13 +378,10 @@ func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 		m.responseText = m.rawResponseText
 	}
 
-	// Extract tool call info from ResponseEvent so [Tool Reason]
-	// and [Tool Action] appear immediately — before ToolCallEvent
-	// arrives from the Dispatcher.
 	if e.Content != nil {
 		m.extractToolCallsFromResponse(e.Content)
 	}
-
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
@@ -368,12 +407,12 @@ func (m *model) handleToolCallEvent(e events.ToolCallEvent) tea.Cmd {
 	for _, fc := range newCalls {
 		m.logToolCall(fc)
 	}
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
 // logToolCall logs a single function call's reason and action to the
-// tool log, deduplicating by call ID. Calls already logged (tracked in
-// seenCallIDs) are silently skipped.
+// tool log, deduplicating by call ID.
 func (m *model) logToolCall(fc *llm.FunctionCall) {
 	id := fc.ID
 	if id == "" {
@@ -420,22 +459,19 @@ func (m *model) handleToolResultEvent(e events.ToolResultEvent) tea.Cmd {
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
 		m.appendToolLog("Tool Result", fmt.Sprintf("%s: %s", e.Name, snippet))
 	}
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
-// handleToolOutputStreamEvent logs tool output stream messages, suppressing
-// plain "output" level messages that are handled elsewhere.
+// handleToolOutputStreamEvent logs tool output stream messages.
 func (m *model) handleToolOutputStreamEvent(e events.ToolOutputStreamEvent) tea.Cmd {
-	if e.Level == "output" {
-		return m.waitForEvent()
-	}
 	m.appendLevelEventLog(e.Level, e.Message)
+	m.bodyVP.GotoBottom()
 	return m.waitForEvent()
 }
 
 // handleSpinnerEvent starts the spinner with the status text from a
-// spinner-bearing event (SummarizationStartedEvent, ToolExecutionStartedEvent,
-// RetryWaitingEvent).
+// spinner-bearing event.
 func (m *model) handleSpinnerEvent(e spinnerInfoProvider) tea.Cmd {
 	info, _ := e.SpinnerInfo()
 	return tea.Batch(m.waitForEvent(), m.spinner.start(info.Status))
@@ -456,9 +492,7 @@ func extractResponseText(content *llm.Content) string {
 }
 
 // extractToolCallsFromResponse populates toolLogs from FunctionCall parts
-// in the ResponseEvent content. This bridges the visibility gap between
-// ResponseEvent and ToolCallEvent. seenCallIDs prevents duplicates when
-// the real ToolCallEvent arrives later from the Dispatcher.
+// in the ResponseEvent content.
 func (m *model) extractToolCallsFromResponse(content *llm.Content) {
 	var toolCalls []*llm.FunctionCall
 	for _, part := range content.Parts {
@@ -482,10 +516,8 @@ func formatMetricsLine(m *llm.Metrics, startTime time.Time, timestamp time.Time,
 	miss := m.PromptTokens - m.CachedTokens
 	var parts []string
 
-	// Timestamp
 	parts = append(parts, fmt.Sprintf("[%s]", timestamp.Format("15:04:05")))
 
-	// Model display
 	display := m.Provider
 	if display == "" {
 		display = m.Model
@@ -530,46 +562,76 @@ func formatFinalLine(status events.TurnStatus, turnCost float64) string {
 		status.TotalM, status.TotalH, hitRate, status.TotalO)
 }
 
-// View renders the progress model as a two-line display with optional response text.
+// View renders the progress model as three viewport zones.
 func (m *model) View() string {
-	var sb strings.Builder
+	m.headerVP.SetContent(m.renderHeader())
+	m.bodyVP.SetContent(m.renderBodyContent())
+	m.footerVP.SetContent(m.renderFooterContent())
 
+	if m.height < 8 {
+		return m.renderMinimal()
+	}
+
+	return m.headerVP.View() + "\n\n" + m.bodyVP.View() + "\n\n" + m.footerVP.View()
+}
+
+// renderMinimal returns a single-line fallback for tiny terminals.
+func (m *model) renderMinimal() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
+	if m.sessionDone {
+		sb.WriteString(" Press Ctrl+C to exit")
+	} else if m.spinner.active() && m.currentState != stateIdle {
+		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render()))
+	}
+	return sb.String()
+}
+
+// renderHeader returns the turn header and payload line.
+func (m *model) renderHeader() string {
 	ts := m.timestamp.Format("15:04:05")
+	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s\n", m.turn, m.sessionName))
 	sb.WriteString(fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
 		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName))
+	return sb.String()
+}
 
-	if len(m.toolLogs) > 0 {
-		for _, log := range m.toolLogs {
-			sb.WriteString("\n")
-			sb.WriteString(log)
-		}
-	}
-
-	if m.responseText != "" {
+// renderBodyContent returns tool logs and response text as plain content.
+// The viewport handles overflow and scrolling.
+func (m *model) renderBodyContent() string {
+	var sb strings.Builder
+	for _, log := range m.toolLogs {
+		sb.WriteString(log)
 		sb.WriteString("\n")
+	}
+	if m.responseText != "" {
 		sb.WriteString(m.responseText)
 	}
+	return sb.String()
+}
 
+// renderFooterContent returns footer lines as plain content.
+func (m *model) renderFooterContent() string {
+	var sb strings.Builder
 	if m.postCallStatus != nil {
-		sb.WriteString("\n\n")
-		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s",
+		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens - %s - %s\n",
 			m.timestamp.Format("15:04:05"),
 			m.postCallStatus.Metrics.PromptTokens,
 			m.maxTokens, m.sessionName, m.modelName))
-		sb.WriteString("\n")
+	}
+	if m.postCallMetricsLine != "" {
 		sb.WriteString(m.postCallMetricsLine)
-	}
-
-	if m.finalCostLine != "" {
 		sb.WriteString("\n")
-		sb.WriteString(m.finalCostLine)
 	}
-
-	if m.spinner.active() && m.currentState != stateIdle {
+	if m.finalCostLine != "" {
+		sb.WriteString(m.finalCostLine)
+		sb.WriteString("\n")
+	}
+	if m.sessionDone {
+		sb.WriteString("Press Ctrl+C to exit")
+	} else if m.spinner.active() && m.currentState != stateIdle {
 		sb.WriteString(m.spinner.render())
 	}
-
-	sb.WriteString("\n")
 	return sb.String()
 }
