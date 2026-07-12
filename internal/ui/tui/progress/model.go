@@ -587,6 +587,27 @@ func (m *model) renderHeader() string {
 	return sb.String()
 }
 
+// wrapLine splits s into visual lines of at most width runes.
+// When width <= 0 or s fits, returns a single-element slice.
+func wrapLine(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+	var lines []string
+	runes := []rune(s)
+	for len(runes) > width {
+		lines = append(lines, string(runes[:width]))
+		runes = runes[width:]
+	}
+	if len(runes) > 0 {
+		lines = append(lines, string(runes))
+	}
+	if len(lines) == 0 {
+		return []string{s}
+	}
+	return lines
+}
+
 // renderBody returns exactly availableLines of content (tool logs + response),
 // top-aligned with a blank separator line first, height-constrained.
 // Content fills from the top downward; blank lines pad the bottom.
@@ -595,7 +616,9 @@ func (m *model) renderBody(availableLines int) string {
 	var contentLines []string
 
 	for _, log := range m.toolLogs {
-		contentLines = append(contentLines, log)
+		for _, visualLine := range wrapLine(log, m.width) {
+			contentLines = append(contentLines, visualLine)
+		}
 	}
 	if m.responseText != "" {
 		for _, line := range strings.Split(m.responseText, "\n") {

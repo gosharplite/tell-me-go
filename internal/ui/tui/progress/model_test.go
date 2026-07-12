@@ -601,6 +601,35 @@ func TestModel_View(t *testing.T) {
 		assert.Equal(t, "", lines[7])
 	})
 
+	t.Run("tool_log_lines_wrap_to_terminal_width", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 20, Height: 30})
+
+		// Append a tool log that's wider than the terminal
+		m.appendToolLog("Tool Result", "this is a very long tool result that should wrap across multiple visual lines")
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		// The original 1 tool log should now occupy multiple body lines.
+		// Check that the message is split across consecutive lines.
+		foundWrap := false
+		for i, line := range lines {
+			if strings.Contains(line, "should wrap") && i+1 < len(lines) {
+				if strings.Contains(lines[i+1], "multiple") {
+					foundWrap = true
+					break
+				}
+			}
+		}
+		assert.True(t, foundWrap, "long tool log should wrap to multiple visual lines")
+
+		// Total line count must still equal terminal height
+		assert.Len(t, lines, 30)
+	})
+
 	t.Run("spinner_start_stop_does_not_change_line_count", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
@@ -1448,6 +1477,41 @@ func TestModel_ToolLogs(t *testing.T) {
 		assert.Contains(t, lines[4], "[Tool Reason] read the file")
 		// Response text after tool logs
 		assert.Contains(t, out, "I'll read that file for you.")
+	})
+}
+
+func TestWrapLine(t *testing.T) {
+	t.Run("no wrap when fits", func(t *testing.T) {
+		lines := wrapLine("hello", 10)
+		assert.Len(t, lines, 1)
+		assert.Equal(t, "hello", lines[0])
+	})
+
+	t.Run("wraps at width", func(t *testing.T) {
+		lines := wrapLine("abcdefghij", 3)
+		assert.Len(t, lines, 4)
+		assert.Equal(t, "abc", lines[0])
+		assert.Equal(t, "def", lines[1])
+		assert.Equal(t, "ghi", lines[2])
+		assert.Equal(t, "j", lines[3])
+	})
+
+	t.Run("exact fit", func(t *testing.T) {
+		lines := wrapLine("abcde", 5)
+		assert.Len(t, lines, 1)
+		assert.Equal(t, "abcde", lines[0])
+	})
+
+	t.Run("width zero returns single line", func(t *testing.T) {
+		lines := wrapLine("hello", 0)
+		assert.Len(t, lines, 1)
+	})
+
+	t.Run("multi-byte unicode preserved", func(t *testing.T) {
+		lines := wrapLine("héllo世界", 4)
+		assert.Len(t, lines, 2)
+		assert.Equal(t, "héll", lines[0])
+		assert.Equal(t, "o世界", lines[1])
 	})
 }
 
