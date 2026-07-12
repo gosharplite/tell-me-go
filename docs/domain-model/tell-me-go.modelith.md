@@ -37,17 +37,6 @@ The API family backing an LLM `Provider`.
 | `deepseek` | DeepSeek API (V3.2 / V4) or Vertex AI Model-as-a-Service. |
 | `anthropic` | Anthropic API or Vertex AI hosted Claude (Opus 4.7). |
 
-### `ToolCategory`
-
-The logical group a `Tool` belongs to.
-
-| Value | Definition |
-| --- | --- |
-| `workspace` | File system, Git, and search operations. |
-| `analysis` | AST-powered Go analysis, architecture verification, code health. |
-| `integration` | External service connectors (Jira, Confluence, Azure DevOps, Teams). |
-| `system` | Shell execution, testing, linting, and vulnerability scanning. |
-
 ## Entities
 
 ### `Config`
@@ -136,6 +125,8 @@ The cost structure for a specific model variant. Maps a model identifier to per-
 | `hitRate` | decimal | USD per million cached input tokens. |
 | `missRate` | decimal | USD per million uncached input tokens. |
 | `compRate` | decimal | USD per million output (completion) tokens. |
+| `thinkingBudget` | integer | Default thinking token budget for reasoning models (0 = disabled). Overridden by provider-level THINKING_BUDGET. |
+| `searchQuery` | decimal | USD per search query (Google Search grounding). Applies to Gemini models with search enabled. |
 
 **Invariants**
 
@@ -149,14 +140,14 @@ An LLM backend reachable via a specific API. Encapsulates the type (gemini/opena
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | string | The registry key (e.g. "vertex-flash", "deepseek-pro"). |
+| `name` | string | The registry key identifying this `Provider` (e.g. "vertex-flash", "deepseek-pro"). Note: In Go, this is the map key in `Config.Providers`, not a field on the `LLMProvider` struct. It is listed here because it is the `Provider`'s primary identity in the domain. |
 | `type` | ProviderType |  |
 | `model` | string | The model identifier sent on the wire. |
 | `url` | string | Base API endpoint. |
 | `maxTokens` | integer |  |
 | `thinkingBudget` | integer | Max thinking tokens for reasoning models (0 = disabled). |
 | `thinkingLevel` | string | Provider-specific reasoning effort (e.g. "HIGH"). |
-| `lastError` | LLMError | The most recent error returned by this `Provider`, if any. |
+| `lastError` | LLMError | The most recent error returned by this `Provider` during the current `Session`, if any. Used by the `Orchestrator` to decide retry vs. failover. Note: Runtime-only — not stored on the `LLMProvider` struct. Tracked by the `Orchestrator`'s retry/failover logic. Resets on restart. |
 
 **Invariants**
 
@@ -263,9 +254,8 @@ A capability exposed to the LLM for agentic execution. `Tool`s are registered at
 | --- | --- | --- |
 | `name` | string | Unique tool identifier (e.g. "execute_command"). |
 | `description` | string | Human-readable purpose; injected into the system prompt. |
-| `category` | ToolCategory | Logical group (workspace, analysis, integration, system). |
 | `schema` | object | JSON Schema for the tool's parameters. |
-| `requiresSafePath` | boolean | Whether this `Tool` must validate paths against the `SafePath` registry. |
+| `requiresConsent` | boolean | Whether the user must approve this `Tool`'s invocation before it executes. The `Orchestrator` displays a consent prompt before calling the handler. Distinct from `SafePath` validation which is performed by the `SecurityManager` on path-accessing tools. |
 
 **Invariants**
 
@@ -420,11 +410,12 @@ The LLM requests a `Tool` call. The `Orchestrator` dispatches it, feeds the resu
 
 1. `Provider` returns a `Thought` requesting a `Tool` execution.
 2. `Orchestrator` validates the `Tool` name and arguments.
-3. If the `Tool` requires a `SafePath`, `SecurityManager` checks authorization.
-4. `Orchestrator` executes the `Tool` (possibly concurrently with others).
-5. The `Tool` result is fed back to the `Provider`.
-6. The cycle repeats until `Provider` emits a final text `Thought`.
-7. The `Turn` (with all `ToolCall`s) is persisted to `History`.
+3. If the `Tool` requires consent, the `Orchestrator` prompts the user for approval.
+4. If the `Tool` accesses paths, the `SecurityManager` validates them against the `SafePath` registry.
+5. `Orchestrator` executes the `Tool` (possibly concurrently with others).
+6. The `Tool` result is fed back to the `Provider`.
+7. The cycle repeats until `Provider` emits a final text `Thought`.
+8. The `Turn` (with all `ToolCall`s) is persisted to `History`.
 
 **Invariants touched**
 
@@ -433,16 +424,16 @@ The LLM requests a `Tool` call. The `Orchestrator` dispatches it, feeds the resu
 
 ### Hallucination loop detection
 
-The `Orchestrator` detects when the LLM is stuck in a loop by hashing consecutive responses and comparing against a repetition threshold.
+The `Orchestrator` detects when the LLM is stuck in a loop via two mechanisms: (1) response hashing — SHA-256 of the sanitized response is compared against a sliding window of recent hashes; any duplicate triggers the break, and (2) tool-call counting — identical `FunctionCall` name+arguments pairs that repeat beyond the threshold are detected immediately. When either triggers, synthetic feedback is injected to break the cycle.
 
 **Actors:** Orchestrator, Session, Turn
 
 **Steps**
 
-1. `Orchestrator` computes SHA-256 of the final response for a `Turn`.
-2. On the next `Turn`, the new response hash is compared to recent hashes.
-3. If N consecutive hashes match, the `Orchestrator` interrupts the loop with a warning and asks the LLM to take a different approach.
-
+1. `Orchestrator` computes SHA-256 of the sanitized final response (excluding mutable fields like ID) for a `Turn`.
+2. The hash is compared against a sliding window of recent response hashes. Any duplicate in the window triggers detection.
+3. In parallel, identical function-call name+arguments pairs are counted per-`Turn`. Repeating a tool call beyond the threshold triggers detection immediately.
+4. When a loop is detected, the `Orchestrator` publishes a warning, persists the repeating response, injects synthetic corrective feedback, and signals the `Turn` to complete.
 
 **Invariants touched**
 
@@ -480,7 +471,7 @@ When the selected `Provider` returns an error, the `Orchestrator` classifies it 
 1. `Provider` returns an error response.
 2. `Orchestrator` classifies the error: `rate_limited`, `server_error`, `timeout`, `auth_failure`, or `context_overflow`.
 3. For `rate_limited`: `Orchestrator` applies backoff and retries the same `Provider`.
-4. For `server_error` or `timeout`: if `Config` defines a fallback, `Orchestrator` switches to the alternate `Provider`.
+4. For `server_error` or `timeout`: the `Orchestrator` retries the same `Provider` with backoff. Provider-level failover to an alternate is handled by the gateway layer on subsequent requests, not by the per-turn recovery step.
 5. For `auth_failure`: `Orchestrator` surfaces the error immediately — no retry.
 6. For `context_overflow`: `Orchestrator` triggers `Context` summarisation and retries.
 7. The user is informed of the resolution path taken.
@@ -492,16 +483,16 @@ When the selected `Provider` returns an error, the `Orchestrator` classifies it 
 
 ### Session undo and retry
 
-The user undoes the last N `Turn`s (rollback) and optionally retries the last user message with a fresh LLM call.
+The user undoes the last N `Turn`s via the `--back-n` CLI flag. If a `--prompt` is also provided, a fresh chat session begins after the rollback, effectively retrying with the rolled-back history.
 
 **Actors:** Orchestrator, Session, History
 
 **Steps**
 
-1. User invokes undo (via CLI flag or command).
-2. `Orchestrator` removes the last N `Turn`s from the `Session`.
-3. `History` is updated to reflect the rollback.
-4. If retry is requested, the last user prompt is re-sent to the `Provider`.
+1. User invokes undo via the `--back-n` CLI flag.
+2. `Orchestrator` rolls back the `History` manager, removing the last N `Turn`s from persistent storage.
+3. `History` is synced to disk to reflect the rollback.
+4. If a `--prompt` is also provided on the same invocation, a fresh `Session` begins after rollback, sending the new prompt to the `Provider` with the rolled-back history as context.
 
 **Invariants touched**
 
