@@ -109,6 +109,10 @@ type SessionConfig interface {
 	// GetLastN returns the number of recent history entries to display.
 	GetLastN() int
 
+	// IsLastNSet returns true if -l was explicitly passed by the user.
+	// When false, GetLastN() returns 0 (default).
+	IsLastNSet() bool
+
 	// GetBackN returns the number of turns to roll back when processing
 	// a history navigation command.
 	GetBackN() int

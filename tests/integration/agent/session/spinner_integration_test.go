@@ -147,7 +147,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	}
 
 	// 3. Execution
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model:            "model",
 		Mode:             "mode",
 		SelectedProvider: "provider",

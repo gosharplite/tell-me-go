@@ -40,6 +40,7 @@ type sessionConfig struct {
 	ConfigPath string
 	NewSession bool
 	LastN      int
+	LastNSet   bool
 	BackN      int
 	RawOutput  bool
 	Prompt     string
@@ -48,17 +49,19 @@ type sessionConfig struct {
 
 func (c *sessionConfig) GetPrompt() string         { return c.Prompt }
 func (c *sessionConfig) GetLastN() int             { return c.LastN }
+func (c *sessionConfig) IsLastNSet() bool          { return c.LastNSet }
 func (c *sessionConfig) GetBackN() int             { return c.BackN }
 func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
 func (c *sessionConfig) GetConfigPath() string     { return c.ConfigPath }
 func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
 
 // NewSessionConfig creates a new sessionConfig with required parameters.
-func NewSessionConfig(configPath string, newSession bool, lastN, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
+func NewSessionConfig(configPath string, newSession bool, lastN int, lastNSet bool, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
 	return &sessionConfig{
 		ConfigPath: configPath,
 		NewSession: newSession,
 		LastN:      lastN,
+		LastNSet:   lastNSet,
 		BackN:      backN,
 		RawOutput:  rawOutput,
 		Prompt:     prompt,
@@ -248,7 +251,7 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 		ts.Mode, ts.Model)
 
 	// Body: last turn from history
-	if sc.GetLastN() == 0 {
+	if !sc.IsLastNSet() {
 		o.HistoryRenderer.Render(o.Stdout, sd.GetHistoryManager(), 1, ports.HistoryRenderOptions{
 			Raw:           sc.GetRawOutput(),
 			ShowThoughts:  cfg.ShowThoughts,
@@ -369,6 +372,7 @@ func Run(ctx context.Context, params RunParams) error {
 		params.ConfigPath,
 		params.NewSession,
 		params.LastN,
+		params.LastN > 0,
 		params.BackN,
 		params.RawOutput,
 		params.Prompt,

@@ -49,7 +49,7 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, &stderr, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})

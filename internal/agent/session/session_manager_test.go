@@ -50,7 +50,7 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	mTurnsLogger := &agenttest.MockTurnsLogger{}
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -87,7 +87,7 @@ func TestSessionManager_Run_Error(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -835,7 +835,7 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 			mUIRenderer := new(agenttest.MockUIRenderer)
 			orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-			sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+			sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 				Model: "model",
 				Mode:  "mode",
 			})
@@ -903,7 +903,7 @@ func TestSessionManager_Run_BridgeListenError(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -971,7 +971,7 @@ func TestSessionManager_Run_ShutdownError(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, &stderrBuf, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -1008,7 +1008,7 @@ func TestSessionManager_Run_ApplyConfigError(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -1071,7 +1071,7 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -1124,7 +1124,7 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -1185,7 +1185,7 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	mUIRenderer := new(agenttest.MockUIRenderer)
 	orch := session.NewSessionManager("home", "1.0.0", nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, session.WithClock(mClock), session.WithEntropySource(mEntropy))
 
-	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -1355,7 +1355,7 @@ func TestSessionManager_RenderPostTUISummary(t *testing.T) {
 	mockCapturer.IsTTYFn = func(v any) bool { return false }
 
 	sc := session.NewSessionConfig(
-		"", false, 0, 0, false, "", // LastN=0, RawOutput=false
+		"", false, 0, false, 0, false, "", // LastN=0, RawOutput=false
 		&config.Config{Mode: "architect-johndoe", ShowThoughts: false},
 	)
 	deps := &agenttest.StubChatterComposer{
@@ -1450,7 +1450,7 @@ func TestSessionManager_RenderPostTUISummary_SkipsBodyWhenLastNSet(t *testing.T)
 
 	// LastN=5 means -l was explicitly passed and already rendered in Phase 1.
 	sc := session.NewSessionConfig(
-		"", false, 5, 0, false, "",
+		"", false, 5, true, 0, false, "",
 		&config.Config{Mode: "test", ShowThoughts: false},
 	)
 	deps := &agenttest.StubChatterComposer{
