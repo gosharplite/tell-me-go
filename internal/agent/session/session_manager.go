@@ -245,8 +245,8 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 	cfg := sc.GetConfig()
 
 	// Header
-	fmt.Fprintf(o.Stdout, "\n╭─ Turn %d - %s\n", ts.SessionTurns+1, ts.Mode)
-	fmt.Fprintf(o.Stdout, "[%s] Payload: ~%d/%d tokens - %s - %s\n\n",
+	_, _ = fmt.Fprintf(o.Stdout, "\n╭─ Turn %d - %s\n", ts.SessionTurns+1, ts.Mode)
+	_, _ = fmt.Fprintf(o.Stdout, "[%s] Payload: ~%d/%d tokens - %s - %s\n\n",
 		ts.Timestamp.Format("15:04:05"),
 		ts.Tokens, ts.MaxHistoryTokens,
 		ts.Mode, ts.Model)
@@ -263,20 +263,20 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 
 	// Footer
 	if ts.Metrics != nil {
-		fmt.Fprintf(o.Stdout, "\n[%s] Payload: %d/%d tokens - %s - %s\n",
+		_, _ = fmt.Fprintf(o.Stdout, "\n[%s] Payload: %d/%d tokens - %s - %s\n",
 			ts.Timestamp.Format("15:04:05"),
 			ts.Metrics.PromptTokens,
 			ts.MaxHistoryTokens,
 			ts.Mode, ts.Model)
 	}
 	if metricsLine := progress.FormatMetricsLine(ts); metricsLine != "" {
-		fmt.Fprintf(o.Stdout, "%s\n", metricsLine)
+		_, _ = fmt.Fprintf(o.Stdout, "%s\n", metricsLine)
 	}
 	turnCost := 0.0
 	if ts.Metrics != nil {
 		turnCost = ts.Metrics.Cost
 	}
-	fmt.Fprintf(o.Stdout, "%s\n", progress.FormatFinalLine(ts, turnCost))
+	_, _ = fmt.Fprintf(o.Stdout, "%s\n", progress.FormatFinalLine(ts, turnCost))
 }
 
 func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {

@@ -63,15 +63,15 @@ func TestRenderer_MakeSubscriber(t *testing.T) {
 		sub := r.makeSubscriber(ch)
 
 		done := make(chan struct{})
+		ready := make(chan struct{})
 		go func() {
+			close(ready)
 			sub(context.Background(), events.TurnStarted{Turn: 1, SessionTurns: 0})
 			close(done)
 		}()
 
-		// TurnStarted should block since channel is full with no reader.
-		// Give the goroutine time to enter the blocking send, then verify
-		// it hasn't returned yet (it's still blocked).
-		time.Sleep(50 * time.Millisecond)
+		// Wait until the goroutine is about to enter the blocking send.
+		<-ready
 		select {
 		case <-done:
 			t.Fatal("TurnStarted should block when channel is full, but it returned")
