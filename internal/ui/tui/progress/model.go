@@ -616,8 +616,10 @@ func (m *model) renderBody(availableLines int) string {
 	var contentLines []string
 
 	for _, log := range m.toolLogs {
-		for _, visualLine := range wrapLine(log, m.width) {
-			contentLines = append(contentLines, visualLine)
+		for _, subLine := range strings.Split(log, "\n") {
+			for _, visualLine := range wrapLine(subLine, m.width) {
+				contentLines = append(contentLines, visualLine)
+			}
 		}
 	}
 	if m.responseText != "" {

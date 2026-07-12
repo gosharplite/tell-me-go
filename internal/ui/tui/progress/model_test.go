@@ -601,6 +601,26 @@ func TestModel_View(t *testing.T) {
 		assert.Equal(t, "", lines[7])
 	})
 
+	t.Run("tool_log_lines_split_on_embedded_newlines", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+
+		// Tool log with embedded newlines (e.g. multi-line commit message)
+		m.appendToolLog("Tool Action", "line1\nline2\nline3")
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		assert.Len(t, lines, 20, "total lines must equal terminal height despite embedded newlines")
+
+		// All three sub-lines should be visible
+		assert.Contains(t, out, "line1")
+		assert.Contains(t, out, "line2")
+		assert.Contains(t, out, "line3")
+	})
+
 	t.Run("tool_log_lines_wrap_to_terminal_width", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
