@@ -339,6 +339,7 @@ func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 		eventCh:      ch,
 		currentState: stateIdle,
 		height:       80, // sensible default; tests that need a specific height set it explicitly
+		width:        80, // sensible default
 		seenCallIDs:  make(map[string]bool),
 	}
 }
@@ -349,7 +350,7 @@ func TestModel_View(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 
-		assert.Equal(t, 0, m.width, "fresh model width should be 0")
+		assert.Equal(t, 80, m.width, "fresh model width should be newTestModel default")
 		assert.Equal(t, 80, m.height, "fresh model height should be newTestModel default")
 
 		out := m.View()
@@ -360,11 +361,12 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, lines[1], "Payload: ~0/0 tokens")
 	})
 
-	t.Run("default height is 24 before WindowSizeMsg", func(t *testing.T) {
+	t.Run("default height and width before WindowSizeMsg", func(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := NewModel(context.Background(), ch, nil).(*model)
 
 		assert.Equal(t, 24, m.height, "default height ensures full layout before WindowSizeMsg")
+		assert.Equal(t, 80, m.width, "default width ensures clip logic active from first frame")
 
 		out := m.View()
 		lines := strings.Split(out, "\n")
