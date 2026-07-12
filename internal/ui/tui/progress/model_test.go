@@ -621,6 +621,25 @@ func TestModel_View(t *testing.T) {
 		assert.Contains(t, out, "line3")
 	})
 
+	t.Run("safety_net_truncates_to_exactly_height_lines", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.Update(tea.WindowSizeMsg{Width: 30, Height: 10})
+
+		// Stuff body with 50 log lines at narrow width — each wraps across 3+ visual rows
+		for i := 0; i < 50; i++ {
+			m.appendToolLog("Test", fmt.Sprintf("log line %d with enough text to span terminal width", i))
+		}
+
+		out := m.View()
+		lines := strings.Split(out, "\n")
+
+		assert.Len(t, lines, 10, "must be exactly height lines after safety net")
+		assert.Contains(t, lines[0], "╭─ Turn")
+		assert.Contains(t, lines[1], "Payload:")
+	})
+
 	t.Run("tool_log_lines_wrap_to_terminal_width", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
