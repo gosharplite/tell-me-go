@@ -16,7 +16,7 @@ import (
 func TestShellTool_ExecuteCommand_Validation_Windows(t *testing.T) {
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &windowsTranslator{}, &windowsShellWrapper{validator: security.NewCommandValidator(sm, nil)})
+	tool := newTestShellTool(sm, security.NewCommandValidator(sm, nil))
 	ctx := context.Background()
 
 	tests := []struct {

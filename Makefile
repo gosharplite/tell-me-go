@@ -24,6 +24,14 @@ else
     IS_POSIX := true
 endif
 
+# Suppress GNU Make's sh.exe probe noise on Windows when there is no POSIX shell.
+# Without this, every make and sub-make emits "The system cannot find the path specified."
+ifeq ($(OS),Windows_NT)
+    ifeq ($(IS_POSIX),false)
+        SHELL := cmd.exe
+    endif
+endif
+
 .PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
@@ -477,7 +485,11 @@ endif
 # Domain model validation (modelith).
 # Requires modelith: go install github.com/stacklok/modelith/cmd/modelith@latest
 # Falls back to 'go run' if the binary is not on PATH.
-MODELITH := $(shell command -v modelith 2>/dev/null)
+ifeq ($(OS),Windows_NT)
+    MODELITH := $(shell where modelith 2>NUL)
+else
+    MODELITH := $(shell command -v modelith 2>/dev/null)
+endif
 MODELITH_CMD := $(if $(MODELITH),$(MODELITH),go run github.com/stacklok/modelith/cmd/modelith@latest)
 MODELITH_YAML := docs/domain-model/tell-me-go.modelith.yaml
 
