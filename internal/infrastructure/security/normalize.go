@@ -6,8 +6,10 @@ package security
 import "strings"
 
 // skipLineContinuation checks whether the backslash at raw[i] begins a line
-// continuation (\<LF> or \<CR><LF>). If so, it returns the new index position
-// (skipping the continuation) and true. Otherwise it returns i and false.
+// continuation (\<LF> or \<CR><LF>), or a backslash-before-CR sequence (\<CR>
+// not followed by LF) where POSIX semantics require consuming the backslash.
+// If so, it returns the new index position and true. Otherwise it returns i
+// and false.
 func skipLineContinuation(raw string, i int) (newI int, skipped bool) {
 	// \<LF>
 	if i+1 < len(raw) && raw[i+1] == '\n' {
@@ -16,6 +18,14 @@ func skipLineContinuation(raw string, i int) (newI int, skipped bool) {
 	// \<CR><LF>
 	if i+2 < len(raw) && raw[i+1] == '\r' && raw[i+2] == '\n' {
 		return i + 2, true
+	}
+	// \<CR> not followed by LF — consume backslash only, let CR pass
+	// through as a regular character. This preserves POSIX semantics
+	// (backslash before non-special char is removed) and guarantees
+	// idempotency by preventing spurious \<CR><LF> sequences in
+	// re-normalized output.
+	if i+1 < len(raw) && raw[i+1] == '\r' {
+		return i, true
 	}
 	return i, false
 }
