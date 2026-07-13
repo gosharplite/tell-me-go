@@ -213,7 +213,7 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		RawOutput:        opts.rawOutput,
 		UseTUIPrompt:     opts.tuiPrompt,
 		TUIOutput:        opts.tuiOutput,
-		ProgressRenderer: progress.NewRenderer(),
+		ProgressRenderer: progress.NewRenderer(c.Bootstrapper.GetSystemMetricsProvider()),
 		Retry:            opts.retry,
 		Prompt:           prompt,
 	}, capturer)

@@ -191,11 +191,12 @@ func (m *simpleMockBootstrapper) GetSuggestionService(stdctx.Context, []string) 
 }
 
 // Retain ONLY the methods that are strictly invoked during app.Run() setup
-func (m *simpleMockBootstrapper) GetAgentFactory() ports.ChatterFactory     { return nil }
-func (m *simpleMockBootstrapper) GetUIRenderer() ports.UIRenderer           { return nil }
-func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer { return nil }
-func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser   { return nil }
-func (m *simpleMockBootstrapper) GetChatService() agent.ChatService         { return nil }
+func (m *simpleMockBootstrapper) GetAgentFactory() ports.ChatterFactory                 { return nil }
+func (m *simpleMockBootstrapper) GetUIRenderer() ports.UIRenderer                       { return nil }
+func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer             { return nil }
+func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser               { return nil }
+func (m *simpleMockBootstrapper) GetChatService() agent.ChatService                     { return nil }
+func (m *simpleMockBootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider { return nil }
 
 // mockSMWithTracking extends mockSM with Close() call tracking for shutdown tests.
 type mockSMWithTracking struct {

@@ -174,6 +174,14 @@ func (bdr *binaryDependencyRenderer) renderBinaries(ui uiState, stderr io.Writer
 	}
 }
 
+func resolveGlamourStyle() string {
+	style := os.Getenv("GLAMOUR_STYLE")
+	if style == "" || style == "auto" {
+		return "dark"
+	}
+	return style
+}
+
 // NewRenderer creates a new ports.UIRenderer.
 func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock, metricsProvider ports.SystemMetricsProvider, opts ...RendererOption) ports.UIRenderer {
 	if clk == nil {
@@ -185,7 +193,7 @@ func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk c
 
 	cfg := &rendererConfig{
 		glamourOpts: []glamour.TermRendererOption{
-			glamour.WithAutoStyle(),
+			glamour.WithStandardStyle(resolveGlamourStyle()),
 			glamour.WithEmoji(),
 		},
 	}

@@ -19,6 +19,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// noopMetricsProvider is a SystemMetricsProvider that returns zeros.
+// Used in tests that don't exercise the metrics code path.
+type noopMetricsProvider struct{}
+
+func (n *noopMetricsProvider) GetCPUStats() (int64, int64) { return 0, 0 }
+func (n *noopMetricsProvider) GetMemoryPercent() float64   { return 0.0 }
+
 func TestModel_Update(t *testing.T) {
 	t.Run("TurnStarted", func(t *testing.T) {
 		ctx := context.Background()
@@ -126,24 +133,21 @@ func TestModel_Update(t *testing.T) {
 		assert.Nil(t, cmd, "unknown messages must return nil to avoid duplicate channel readers")
 	})
 
-	t.Run("WindowSizeMsg triggers re-render with raw text", func(t *testing.T) {
+	t.Run("WindowSizeMsg triggers async re-render with raw text", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 		m.width = 80
 		m.rawResponseText = "hello"
-		m.mdRender = func(text string, width int) string {
-			return fmt.Sprintf("[w=%d]%s", width, text)
-		}
 
 		newModel, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 		updated := newModel.(*model)
 
 		assert.Equal(t, 120, updated.width)
 		assert.Equal(t, 40, updated.height)
-		assert.Equal(t, "[w=120]hello", updated.responseText,
-			"response should be re-rendered with new width")
-		assert.Nil(t, cmd)
+		assert.Equal(t, "hello", updated.responseText,
+			"response should fallback to plaintext immediately")
+		assert.NotNil(t, cmd, "should dispatch async render command")
 	})
 
 	t.Run("captures height from WindowSizeMsg", func(t *testing.T) {
@@ -203,13 +207,10 @@ func TestModel_Update(t *testing.T) {
 		assert.NotNil(t, cmd)
 	})
 
-	t.Run("ResponseEvent with markdown renderer", func(t *testing.T) {
+	t.Run("ResponseEvent dispatches async command", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
-		m.mdRender = func(text string, width int) string {
-			return "**" + text + "**"
-		}
 
 		content := &llm.Content{
 			Parts: []*llm.Part{{Text: "Hello"}},
@@ -217,8 +218,8 @@ func TestModel_Update(t *testing.T) {
 		newModel, cmd := m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
 		updated := newModel.(*model)
 
-		assert.Equal(t, "**Hello**", updated.responseText,
-			"should render through mdRender when set")
+		assert.Equal(t, "Hello", updated.responseText,
+			"should update plaintext fallback immediately")
 		assert.NotNil(t, cmd)
 	})
 
@@ -294,14 +295,15 @@ func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 	bodyVP := viewport.New(80, 72)
 	footerVP := viewport.New(80, 4)
 	return &model{
-		eventCh:      ch,
-		currentState: stateIdle,
-		height:       80,
-		width:        80,
-		seenCallIDs:  make(map[string]bool),
-		headerVP:     headerVP,
-		bodyVP:       bodyVP,
-		footerVP:     footerVP,
+		eventCh:         ch,
+		currentState:    stateIdle,
+		height:          80,
+		width:           80,
+		metricsProvider: &noopMetricsProvider{},
+		seenCallIDs:     make(map[string]bool),
+		headerVP:        headerVP,
+		bodyVP:          bodyVP,
+		footerVP:        footerVP,
 	}
 }
 
@@ -321,7 +323,7 @@ func TestModel_View(t *testing.T) {
 
 	t.Run("default height and width before WindowSizeMsg", func(t *testing.T) {
 		ch := make(chan events.Event, 1)
-		m := NewModel(context.Background(), ch, nil).(*model)
+		m := NewModel(context.Background(), ch, &noopMetricsProvider{}).(*model)
 
 		assert.Equal(t, 24, m.height, "default height ensures full layout before WindowSizeMsg")
 		assert.Equal(t, 80, m.width, "default width ensures viewport sizing from first frame")
@@ -735,7 +737,7 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.False(t, updated.spinner.tickActive)
-		assert.NotNil(t, cmd) // waitForEvent is always batched with tick; handleTick returns nil but batch still non-nil
+		assert.Nil(t, cmd) // tick loop no longer spawns waitForEvent; handleTick returns nil when spinner is cleared
 	})
 
 	t.Run("tick does not re-schedule when state is idle", func(t *testing.T) {
@@ -806,6 +808,25 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 
 		assert.False(t, m.spinner.tickActive)
 		assert.Nil(t, cmd)
+	})
+
+	t.Run("session_complete_suppresses_tick", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinner.status = " Thinking..."
+		m.currentState = stateThinking
+		m.spinner.generation = 1
+		m.spinner.tickActive = true
+		m.sessionComplete = true
+
+		newModel, cmd := m.Update(spinnerTickMsg{generation: 1})
+		updated := newModel.(*model)
+
+		assert.True(t, updated.sessionComplete, "sessionComplete flag should remain true")
+		assert.Nil(t, cmd, "ticks must return nil when session is complete")
+		// frame should NOT advance — tick was suppressed
+		assert.Equal(t, 0, updated.spinner.frame, "frame should not advance when session is complete")
 	})
 }
 
@@ -1526,4 +1547,189 @@ func TestModel_ResponseEvent_NoToolCalls_NoSpuriousLogs(t *testing.T) {
 
 	assert.Len(t, m.toolLogs, 0, "text-only ResponseEvent should not add tool logs")
 	assert.Len(t, m.seenCallIDs, 0, "text-only ResponseEvent should not populate seenCallIDs")
+}
+
+func TestModel_SpinnerShowMetricsFlag(t *testing.T) {
+	t.Run("ToolExecutionStartedEvent sets showMetrics true", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.ToolExecutionStartedEvent{
+			ToolNames: []string{"bash"},
+		}))
+		updated := newModel.(*model)
+
+		assert.True(t, updated.spinner.showMetrics)
+	})
+
+	t.Run("InferenceStartedEvent sets showMetrics false", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.InferenceStartedEvent{
+			Model: "gpt-5",
+		}))
+		updated := newModel.(*model)
+
+		assert.False(t, updated.spinner.showMetrics)
+	})
+
+	t.Run("SummarizationStartedEvent sets showMetrics false", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.SummarizationStartedEvent{}))
+		updated := newModel.(*model)
+
+		assert.False(t, updated.spinner.showMetrics)
+	})
+
+	t.Run("RetryWaitingEvent sets showMetrics false", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		newModel, _ := m.Update(domainEventMsg(events.RetryWaitingEvent{
+			Duration: 5 * time.Second,
+		}))
+		updated := newModel.(*model)
+
+		assert.False(t, updated.spinner.showMetrics)
+	})
+
+	t.Run("clear resets showMetrics", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+
+		// Set showMetrics via ToolExecutionStartedEvent
+		newModel, _ := m.Update(domainEventMsg(events.ToolExecutionStartedEvent{
+			ToolNames: []string{"bash"},
+		}))
+		updated := newModel.(*model)
+		assert.True(t, updated.spinner.showMetrics)
+
+		// TurnStarted calls clear()
+		newModel2, _ := updated.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
+		updated2 := newModel2.(*model)
+
+		assert.False(t, updated2.spinner.showMetrics)
+	})
+}
+
+type testMetricsProvider struct {
+	cpuTotal int64
+	cpuIdle  int64
+	mem      float64
+}
+
+func (p *testMetricsProvider) GetCPUStats() (int64, int64) { return p.cpuTotal, p.cpuIdle }
+func (p *testMetricsProvider) GetMemoryPercent() float64   { return p.mem }
+
+func TestSpinnerRenderMetrics(t *testing.T) {
+	t.Run("showMetrics true renders CPU/MEM", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.currentState = stateThinking
+		m.spinner.status = " Executing [bash]..."
+		m.spinner.frame = 0
+		m.spinner.showMetrics = true
+		m.lastCPUPercent = 12.5
+		m.lastMemPercent = 45.2
+
+		out := m.View()
+		assert.Contains(t, out, "[CPU: 12.5% | MEM: 45.2%]")
+	})
+
+	t.Run("showMetrics false omits CPU/MEM", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.currentState = stateThinking
+		m.spinner.status = " Thinking..."
+		m.spinner.frame = 0
+		m.spinner.showMetrics = false
+		m.lastCPUPercent = 99.9
+		m.lastMemPercent = 99.9
+
+		out := m.View()
+		assert.NotContains(t, out, "[CPU:")
+	})
+
+	t.Run("renderMinimal shows metrics when active", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 4})
+		m.turn = 1
+		m.spinner.status = " Executing..."
+		m.spinner.showMetrics = true
+		m.currentState = stateThinking
+		m.lastCPUPercent = 8.0
+		m.lastMemPercent = 33.0
+
+		out := m.View()
+		assert.Contains(t, out, "[CPU: 8.0% | MEM: 33.0%]")
+	})
+}
+
+func TestSampleMetrics(t *testing.T) {
+	t.Run("rate-limited to 1 second", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		mp := &testMetricsProvider{cpuTotal: 1000, cpuIdle: 500, mem: 42.0}
+		m.metricsProvider = mp
+
+		now := time.Now()
+		cpu1, mem1 := m.sampleMetrics(now)
+		assert.Equal(t, 42.0, mem1)
+
+		// Within 1 second — must return cached
+		cpu2, mem2 := m.sampleMetrics(now.Add(500 * time.Millisecond))
+		assert.Equal(t, cpu1, cpu2)
+		assert.Equal(t, mem1, mem2)
+
+		// After 1 second — must re-sample
+		mp.mem = 99.0
+		_, mem3 := m.sampleMetrics(now.Add(1100 * time.Millisecond))
+		assert.Equal(t, 99.0, mem3)
+	})
+
+	t.Run("nil provider returns zeros", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.metricsProvider = nil
+
+		cpu, mem := m.sampleMetrics(time.Now())
+		assert.Equal(t, 0.0, cpu)
+		assert.Equal(t, 0.0, mem)
+	})
+}
+
+func TestModel_AsyncRenderGuards(t *testing.T) {
+	t.Run("stale generation is dropped", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.renderGeneration = 5
+		m.responseText = "Current"
+
+		newModel, cmd := m.Update(mdRenderCompleteMsg{
+			generation: 4, // stale
+			rendered:   "Stale",
+		})
+		updated := newModel.(*model)
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, "Current", updated.responseText)
+	})
+
+	t.Run("current generation is accepted", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.renderGeneration = 5
+		m.responseText = "Current"
+
+		newModel, cmd := m.Update(mdRenderCompleteMsg{
+			generation: 5,
+			rendered:   "Fresh",
+		})
+		updated := newModel.(*model)
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, "Fresh", updated.responseText)
+	})
 }

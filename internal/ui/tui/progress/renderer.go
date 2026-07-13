@@ -8,16 +8,17 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-type renderer struct{}
+type renderer struct {
+	metricsProvider ports.SystemMetricsProvider
+}
 
 // NewRenderer creates a ProgressRenderer backed by the Bubble Tea progress model.
-func NewRenderer() ports.ProgressRenderer {
-	return &renderer{}
+func NewRenderer(metricsProvider ports.SystemMetricsProvider) ports.ProgressRenderer {
+	return &renderer{metricsProvider: metricsProvider}
 }
 
 func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func() {
@@ -25,9 +26,7 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 
 	source.Subscribe(r.makeSubscriber(ch))
 
-	mdRender := r.makeMarkdownRenderer()
-
-	m := NewModel(ctx, ch, mdRender)
+	m := NewModel(ctx, ch, r.metricsProvider)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	done := make(chan struct{})
@@ -50,12 +49,17 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 	return func(ctx context.Context, e events.Event) {
 		switch e.(type) {
 		case events.TurnStarted, events.TurnStatusEvent:
-			// Control-plane events — must never drop. The TUI cannot
-			// track turn progress without these. Respects context
-			// cancellation to prevent deadlocks during shutdown.
+			// Control-plane events. A 5-second deadline prevents
+			// backpressure deadlock when the TUI channel is full
+			// (e.g., slow Glamour rendering). The subscriber loop's
+			// 30s timeout ctx is the ultimate backstop.
+			timer := time.NewTimer(5 * time.Second)
 			select {
 			case ch <- e:
+				timer.Stop()
+			case <-timer.C:
 			case <-ctx.Done():
+				timer.Stop()
 			}
 		case events.ResponseEvent:
 			// Display-plane event that can be regenerated from history.
@@ -75,39 +79,5 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 			case <-timer.C:
 			}
 		}
-	}
-}
-
-// makeMarkdownRenderer returns a markdown-to-ANSI render function that
-// caches the glamour TermRenderer and re-creates it on width changes.
-func (r *renderer) makeMarkdownRenderer() func(string, int) string {
-	var cachedRenderer *glamour.TermRenderer
-	var lastWidth int
-	return func(text string, width int) string {
-		if width != lastWidth || cachedRenderer == nil {
-			opts := []glamour.TermRendererOption{glamour.WithAutoStyle()}
-			if width > 0 {
-				opts = append(opts, glamour.WithWordWrap(width))
-			}
-			tr, renderErr := glamour.NewTermRenderer(opts...)
-			if renderErr != nil {
-				// glamour.NewTermRenderer only fails on invalid options or
-				// internal library errors, not on valid markdown input. The
-				// fallback returns raw unrendered text as a cosmetic degrade.
-				// Coverage gap accepted by architect — structurally unreachable.
-				return text
-			}
-			cachedRenderer = tr
-			lastWidth = width
-		}
-		out, renderErr := cachedRenderer.Render(text)
-		if renderErr != nil {
-			// glamour.TermRenderer.Render only fails on internal rendering
-			// errors, not on valid markdown input. The fallback returns raw
-			// unrendered text as a cosmetic degrade.
-			// Coverage gap accepted by architect — structurally unreachable.
-			return text
-		}
-		return out
 	}
 }

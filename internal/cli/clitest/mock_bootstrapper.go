@@ -27,6 +27,7 @@ type MockBootstrapper struct {
 	calledGetHistoryRenderer        int
 	calledGetHistoryBrowser         int
 	calledGetChatService            int
+	calledGetSystemMetricsProvider  int
 	calledMethods                   []string
 
 	// Function fields — set before test to script behaviour.
@@ -40,6 +41,7 @@ type MockBootstrapper struct {
 	GetHistoryRendererFunc        func() ports.HistoryRenderer
 	GetHistoryBrowserFunc         func() ports.HistoryBrowser
 	GetChatServiceFunc            func() agent.ChatService
+	GetSystemMetricsProviderFunc  func() ports.SystemMetricsProvider
 }
 
 // BootstrapperSnapshot holds a race-safe copy of mock call counts and
@@ -49,6 +51,7 @@ type BootstrapperSnapshot struct {
 	GetUnifiedHistoryProvider, GetSuggestionService              int
 	GetAgentFactory, GetUIRenderer, GetHistoryRenderer           int
 	GetHistoryBrowser, GetChatService                            int
+	GetSystemMetricsProvider                                     int
 	Methods                                                      []string
 }
 
@@ -71,6 +74,7 @@ func (m *MockBootstrapper) Snapshot() BootstrapperSnapshot {
 		GetHistoryRenderer:        m.calledGetHistoryRenderer,
 		GetHistoryBrowser:         m.calledGetHistoryBrowser,
 		GetChatService:            m.calledGetChatService,
+		GetSystemMetricsProvider:  m.calledGetSystemMetricsProvider,
 		Methods:                   methods,
 	}
 }
@@ -212,6 +216,20 @@ func (m *MockBootstrapper) GetChatService() agent.ChatService {
 
 	if m.GetChatServiceFunc != nil {
 		return m.GetChatServiceFunc()
+	}
+	return nil
+}
+
+// GetSystemMetricsProvider returns the host resource metrics provider.
+// When GetSystemMetricsProviderFunc is nil the default returns nil.
+func (m *MockBootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider {
+	m.mu.Lock()
+	m.calledGetSystemMetricsProvider++
+	m.calledMethods = append(m.calledMethods, "GetSystemMetricsProvider")
+	m.mu.Unlock()
+
+	if m.GetSystemMetricsProviderFunc != nil {
+		return m.GetSystemMetricsProviderFunc()
 	}
 	return nil
 }

@@ -737,4 +737,35 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-07 (Task 1: Complexity Alerts documentation)*
+### ui/tui/progress/model.go — (*model).Update (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: This is the standard Bubble Tea `Update` method — a type-switch
+  dispatching 8 message types (`KeyMsg`, `WindowSizeMsg`, `spinnerTickMsg`,
+  `mdRenderCompleteMsg`, `channelClosedMsg`, `error`, `domainEventMsg`, `default`),
+  each delegating to a dedicated handler. The CC is driven by the type-switch
+  (+8) + 3 guard conditions (`sessionComplete` check, `showMetrics` sampling,
+  `renderGeneration` staleness). Each case is a clean one-liner delegation.
+  Extracting guards into helper methods would fragment a well-understood dispatch
+  function with no cognitive benefit. Same acceptance class as `handleDomainEvent`
+  (type-switch dispatch pattern where CC is structural, not from branching
+  business logic).
+- **See**: `internal/ui/tui/progress/model.go:250`
+
+### ui/tui/progress/renderer.go — (*renderer).makeSubscriber (CC=11)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: This is a 3-case type-switch (`TurnStarted`/`TurnStatusEvent`,
+  `ResponseEvent`, `default`) where each case follows an identical
+  timer-guarded channel-send pattern with different timeout values (5s for
+  control-plane, 100ms for display-plane, 50ms for best-effort). The CC is
+  driven by the type-switch (+3) + `select` multi-case statements (+3 per
+  branch). Each branch is structurally identical and self-documenting via
+  inline comments. Extracting a `sendWithDeadline` helper would add indirection
+  for a 3-line pattern with no cognitive benefit. Same acceptance class as
+  `handleDomainEvent` (structural dispatch CC, not branching business logic).
+- **See**: `internal/ui/tui/progress/renderer.go:48`
+
+---
+
+*Last Updated: 2026-07 (Task 2: Complexity Alerts — (*model).Update and (*renderer).makeSubscriber)*
