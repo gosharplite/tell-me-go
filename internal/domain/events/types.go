@@ -185,6 +185,14 @@ type UsageMetricsEvent struct {
 
 func (e UsageMetricsEvent) Type() string { return "UsageMetricsEvent" }
 
+// UserPromptEvent carries the user's input text for display in the TUI body viewport.
+// It is emitted once per turn, before the agent begins processing.
+type UserPromptEvent struct {
+	Text string
+}
+
+func (e UserPromptEvent) Type() string { return "UserPromptEvent" }
+
 // SystemMessageEvent signals a system-level message (error, warning, info).
 type SystemMessageEvent struct {
 	Message string

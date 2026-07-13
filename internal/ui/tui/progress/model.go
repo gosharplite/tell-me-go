@@ -34,8 +34,8 @@ type channelClosedMsg struct{}
 
 // mdRenderCompleteMsg signals that an asynchronous markdown rendering task has finished.
 type mdRenderCompleteMsg struct {
-	generation int
-	rendered   string
+	index    int    // index in bodyLines to update
+	rendered string // glamour-rendered text
 }
 
 type state int
@@ -120,6 +120,17 @@ func (s *spinnerState) active() bool {
 	return s.status != ""
 }
 
+// bodyEntry is a single line/section in the body viewport.
+// For tool logs, raw is empty and needsRender is false. For response text
+// and user prompts, raw holds the pre-markdown source and needsRender is
+// true until glamour rendering completes, at which point text holds the
+// rendered output and needsRender becomes false.
+type bodyEntry struct {
+	text        string // rendered display text
+	raw         string // original raw text for re-render; empty for tool logs
+	needsRender bool   // true when raw awaits glamour rendering or re-render on resize
+}
+
 type model struct {
 	eventCh <-chan events.Event
 
@@ -133,10 +144,7 @@ type model struct {
 	maxTokens           int
 	timestamp           time.Time
 	err                 error
-	responseText        string // accumulated AI response text
-	rawResponseText     string // raw text before markdown rendering, for re-rendering on resize
-	renderGeneration    int    // incremented on each async render request to discard stale results
-	isDark              bool   // cached terminal background theme (legacy, now unused as we default to dark)
+	isDark              bool // cached terminal background theme (legacy, now unused as we default to dark)
 	metricsProvider     ports.SystemMetricsProvider
 	lastCPUTime         int64
 	lastIdleTime        int64
@@ -149,8 +157,8 @@ type model struct {
 	sessionComplete     bool               // true when event channel closes (true session end)
 	spinner             spinnerState
 
-	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
-	seenCallIDs map[string]bool // dedup tool logs from ResponseEvent vs ToolCallEvent
+	bodyLines   []bodyEntry     // append-only chronological transcript
+	seenCallIDs map[string]bool // dedup tool calls from ResponseEvent vs ToolCallEvent
 
 	headerVP viewport.Model
 	bodyVP   viewport.Model
@@ -201,7 +209,10 @@ func (m *model) waitForEvent() tea.Cmd {
 // appendToolLog appends a timestamped log line for tool events.
 func (m *model) appendToolLog(tag, message string) {
 	ts := time.Now().Format("15:04:05")
-	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, message))
+	m.bodyLines = append(m.bodyLines, bodyEntry{
+		text:        fmt.Sprintf("[%s] [%s] %s", ts, tag, message),
+		needsRender: false,
+	})
 }
 
 // appendLevelEventLog appends a timestamped log line with a level-mapped
@@ -262,10 +273,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.spinner.handleTick(msg)
 	case mdRenderCompleteMsg:
-		if msg.generation != m.renderGeneration {
-			return m, nil // stale: resized, new turn, or post-final
+		if msg.index < 0 || msg.index >= len(m.bodyLines) {
+			return m, nil // stale: index out of bounds
 		}
-		m.responseText = msg.rendered
+		if !m.bodyLines[msg.index].needsRender {
+			return m, nil // stale: already rendered or not a renderable entry
+		}
+		m.bodyLines[msg.index].text = msg.rendered
+		m.bodyLines[msg.index].needsRender = false
 		m.bodyVP.GotoBottom()
 		return m, nil
 	case channelClosedMsg:
@@ -306,13 +321,20 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 	m.footerVP.Width = msg.Width
 	m.footerVP.Height = 4
 
-	var cmd tea.Cmd
-	if m.rawResponseText != "" {
-		m.renderGeneration++
-		m.responseText = m.rawResponseText // instant plaintext fallback
-		cmd = m.renderMarkdownAsync(m.rawResponseText, m.width, m.renderGeneration)
+	// Re-render all renderable entries at the new width.
+	// Setting needsRender = true triggers a fresh glamour render;
+	// the existing mdRenderCompleteMsg handler will clear it on completion.
+	var cmds []tea.Cmd
+	for i := range m.bodyLines {
+		if m.bodyLines[i].raw != "" {
+			m.bodyLines[i].needsRender = true
+			cmds = append(cmds, m.renderMarkdownAsync(m.bodyLines[i].raw, m.width, i))
+		}
 	}
-	return m, cmd
+	if len(cmds) > 0 {
+		return m, tea.Batch(cmds...)
+	}
+	return m, nil
 }
 
 // spinnerInfoProvider is a local interface capturing events that can drive
@@ -325,6 +347,16 @@ type spinnerInfoProvider interface {
 // handleDomainEvent dispatches a domain event to the appropriate handler.
 func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	switch e := events.Event(msg).(type) {
+	case events.UserPromptEvent:
+		rawText := e.Text
+		m.bodyLines = append(m.bodyLines, bodyEntry{
+			text:        "[You] " + rawText,
+			raw:         rawText,
+			needsRender: true,
+		})
+		idx := len(m.bodyLines) - 1
+		m.bodyVP.GotoBottom()
+		return m, tea.Batch(m.waitForEvent(), m.renderMarkdownAsync(rawText, m.width, idx))
 	case events.ToolCallEvent:
 		return m, m.handleToolCallEvent(e)
 	case events.ToolResultEvent:
@@ -365,8 +397,6 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.currentState = stateThinking
 	m.spinner.clear()
 	m.seenCallIDs = make(map[string]bool)
-	m.responseText = ""
-	m.rawResponseText = ""
 	return m.waitForEvent()
 }
 
@@ -407,17 +437,29 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 // handleResponseEvent processes a ResponseEvent.
 func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 	m.spinner.clear()
-	m.rawResponseText = extractResponseText(e.Content)
 
-	m.renderGeneration++
-	m.responseText = m.rawResponseText // instant plaintext fallback
-	renderCmd := m.renderMarkdownAsync(m.rawResponseText, m.width, m.renderGeneration)
-
+	// Extract tool calls from response content BEFORE the early return
+	// so dedup works even when the response has no display text (e.g.
+	// function-call-only responses). Tool call lines appear above the
+	// response in the chronological body viewport.
 	if e.Content != nil {
 		m.extractToolCallsFromResponse(e.Content)
 	}
+
+	rawText := extractResponseText(e.Content)
+	if rawText == "" {
+		return m.waitForEvent()
+	}
+
+	idx := len(m.bodyLines)
+	m.bodyLines = append(m.bodyLines, bodyEntry{
+		text:        rawText, // instant plaintext fallback
+		raw:         rawText,
+		needsRender: true,
+	})
+
 	m.bodyVP.GotoBottom()
-	return tea.Batch(m.waitForEvent(), renderCmd)
+	return tea.Batch(m.waitForEvent(), m.renderMarkdownAsync(rawText, m.width, idx))
 }
 
 // handleToolCallEvent processes a ToolCallEvent, deduplicating calls already
@@ -552,7 +594,7 @@ func extractResponseText(content *llm.Content) string {
 	return sb.String()
 }
 
-// extractToolCallsFromResponse populates toolLogs from FunctionCall parts
+// extractToolCallsFromResponse populates bodyLines from FunctionCall parts
 // in the ResponseEvent content.
 func (m *model) extractToolCallsFromResponse(content *llm.Content) {
 	var toolCalls []*llm.FunctionCall
@@ -645,7 +687,7 @@ func (m *model) View() string {
 // renderMinimal returns a single-line fallback for tiny terminals.
 func (m *model) renderMinimal() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
+	sb.WriteString(fmt.Sprintf("╭─⠿ Turn %d - %s", m.turn, m.sessionName))
 	if m.spinner.active() && m.currentState != stateIdle {
 		cpu, mem := m.lastCPUPercent, m.lastMemPercent
 		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render(cpu, mem)))
@@ -657,22 +699,19 @@ func (m *model) renderMinimal() string {
 func (m *model) renderHeader() string {
 	ts := m.timestamp.Format("15:04:05")
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s\n", m.turn, m.sessionName))
+	sb.WriteString(fmt.Sprintf("╭─⠿ Turn %d - %s\n", m.turn, m.sessionName))
 	sb.WriteString(fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
 		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName))
 	return sb.String()
 }
 
-// renderBodyContent returns tool logs and response text as plain content.
+// renderBodyContent returns the body transcript as plain content.
 // The viewport handles overflow and scrolling.
 func (m *model) renderBodyContent() string {
 	var sb strings.Builder
-	for _, log := range m.toolLogs {
-		sb.WriteString(log)
+	for _, line := range m.bodyLines {
+		sb.WriteString(line.text)
 		sb.WriteString("\n")
-	}
-	if m.responseText != "" {
-		sb.WriteString(m.responseText)
 	}
 	return sb.String()
 }
@@ -703,8 +742,8 @@ func (m *model) renderFooterContent() string {
 
 // renderMarkdownAsync dispatches an asynchronous command to render markdown text.
 // It returns a tea.Cmd that will yield an mdRenderCompleteMsg with the rendered text
-// and the current generation.
-func (m *model) renderMarkdownAsync(text string, width int, generation int) tea.Cmd {
+// and the bodyLines index to update.
+func (m *model) renderMarkdownAsync(text string, width int, index int) tea.Cmd {
 	isDark := m.isDark // capture locally for goroutine
 	return func() tea.Msg {
 		style := "light"
@@ -717,15 +756,15 @@ func (m *model) renderMarkdownAsync(text string, width int, generation int) tea.
 		}
 		tr, err := glamour.NewTermRenderer(opts...)
 		if err != nil {
-			return mdRenderCompleteMsg{generation: generation, rendered: text}
+			return mdRenderCompleteMsg{index: index, rendered: text}
 		}
 		out, err := tr.Render(text)
 		if err != nil {
-			return mdRenderCompleteMsg{generation: generation, rendered: text}
+			return mdRenderCompleteMsg{index: index, rendered: text}
 		}
 		return mdRenderCompleteMsg{
-			generation: generation,
-			rendered:   strings.TrimRight(out, "\n"),
+			index:    index,
+			rendered: strings.TrimRight(out, "\n"),
 		}
 	}
 }

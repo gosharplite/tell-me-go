@@ -271,7 +271,7 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 	cfg := sc.GetConfig()
 
 	// Header
-	_, _ = fmt.Fprintf(o.Stdout, "\n╭─ Turn %d - %s\n", ts.SessionTurns+1, ts.Mode)
+	_, _ = fmt.Fprintf(o.Stdout, "\n╭─⠿ Turn %d - %s\n", ts.SessionTurns+1, ts.Mode)
 	_, _ = fmt.Fprintf(o.Stdout, "[%s] Payload: ~%d/%d tokens - %s - %s\n\n",
 		ts.Timestamp.Format("15:04:05"),
 		ts.Tokens, ts.MaxHistoryTokens,

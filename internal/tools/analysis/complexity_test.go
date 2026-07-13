@@ -548,11 +548,12 @@ func TestGatherComplexities_ContextCancelled_MockFS(t *testing.T) {
 // g.Wait() is ever reached. To hit g.Wait(), Walk must finish successfully
 // and goroutines must still be running when the context expires.
 //
-// Strategy: use context.WithTimeout with a 10ms timeout. Walk (directory
-// traversal) completes in microseconds, launching all goroutines. Then
-// g.Wait() blocks until the timeout fires; goroutines blocked on
-// sem.Acquire see context.DeadlineExceeded; g.Wait() captures and wraps it
-// with "gathering complexity metrics: %w".
+// Strategy: create files with enough Go functions (2000 each) that parsing
+// takes measurable wall-clock time. This keeps the semaphore saturated so
+// goroutines remain blocked on sem.Acquire when the context deadline fires.
+// The approach is deterministic: it does not depend on machine speed because
+// the file count (200) exceeds any realistic NumCPU value and each file
+// requires non-trivial parser work.
 func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
@@ -563,21 +564,31 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 		[]byte("module example.com/test\ngo 1.25"), 0644,
 	))
 
-	// Create enough files that goroutine count exceeds semaphore slots
-	// (runtime.NumCPU). Walk launches all goroutines in microseconds;
-	// most block on sem.Acquire. The timeout fires during g.Wait(),
-	// and blocked goroutines return context.DeadlineExceeded.
-	const numFiles = 50
+	// Generate a file with 2000 functions — large enough that parser.ParseFile
+	// takes measurable time (typically 2–10ms), keeping semaphore slots
+	// occupied so remaining goroutines block on sem.Acquire.
+	var sb strings.Builder
+	sb.WriteString("package test\n")
+	for j := 0; j < 2000; j++ {
+		sb.WriteString(fmt.Sprintf("func F%d() {}\n", j))
+	}
+	largeFile := []byte(sb.String())
+
+	// 200 files × NumCPU concurrency ensures goroutines overflow the
+	// semaphore on any realistic machine (max ~256 cores). The 10ms
+	// timeout fires while goroutines are still queued on sem.Acquire,
+	// producing a deterministic context.DeadlineExceeded via g.Wait().
+	const numFiles = 200
 	for i := 0; i < numFiles; i++ {
 		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
-		require.NoError(t, os.WriteFile(path, []byte("package test\nfunc F() {}\n"), 0644))
+		require.NoError(t, os.WriteFile(path, largeFile, 0644))
 	}
 
 	cache := newASTCache(".")
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp, infra_persistence.NewOSFileSystem())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
 	type result struct {
@@ -593,17 +604,16 @@ func TestComplexityAnalyzer_ErrgroupError(t *testing.T) {
 	res := <-ch
 	require.Error(t, res.err)
 
-	// The timeout should fire while goroutines are blocked on sem.Acquire,
+	// The timeout fires while goroutines are blocked on sem.Acquire,
 	// causing g.Wait() to capture context.DeadlineExceeded wrapped with
 	// "gathering complexity metrics".
 	if !errors.Is(res.err, context.DeadlineExceeded) {
 		t.Errorf("errors.Is(err, context.DeadlineExceeded) = false, err type: %T, value: %v", res.err, res.err)
 	}
 
-	// Under race detection, filepath.Walk may complete before the timeout
-	// fires (race overhead slows goroutine scheduling), so the error comes
-	// from g.Wait() wrapped. Under heavy load (no -race), Walk may return
-	// early with the bare error. Both paths are valid.
+	// Under race detection the error is always wrapped by g.Wait().
+	// Without -race, Walk may return early with the bare error if the
+	// deadline fires during traversal. Both paths are valid.
 	if !strings.Contains(res.err.Error(), "gathering complexity metrics") &&
 		!strings.Contains(res.err.Error(), "context deadline exceeded") {
 		t.Errorf("expected 'gathering complexity metrics' or bare timeout, got: %v", res.err)

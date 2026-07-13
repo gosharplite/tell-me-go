@@ -324,6 +324,7 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 	if err := a.applyConfig(ctx); err != nil {
 		return err
 	}
+	a.emit(ctx, events.UserPromptEvent{Text: prompt})
 	a.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 
 	// Register a hook that refreshes configuration between the inference
