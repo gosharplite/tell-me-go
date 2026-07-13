@@ -27,13 +27,13 @@ import (
 // because these are package-level variables.
 func setRenameRetryConfig(t *testing.T, attempts int, delay time.Duration) {
 	t.Helper()
-	origAttempts := MaxRenameAttempts
-	origDelay := RenameRetryDelay
-	MaxRenameAttempts = attempts
-	RenameRetryDelay = delay
+	origAttempts := maxRenameAttempts
+	origDelay := renameRetryDelay
+	maxRenameAttempts = attempts
+	renameRetryDelay = delay
 	t.Cleanup(func() {
-		MaxRenameAttempts = origAttempts
-		RenameRetryDelay = origDelay
+		maxRenameAttempts = origAttempts
+		renameRetryDelay = origDelay
 	})
 }
 
