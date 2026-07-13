@@ -222,7 +222,7 @@ type executeParams struct {
 	Reason     string            `json:"reason"`
 	OutputFile string            `json:"output_file"`
 	Append     bool              `json:"append"`
-	Timeout    int               `json:"timeout"`
+	Timeout    float64           `json:"timeout"`
 }
 
 func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -257,7 +257,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 
 	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
 		// Enforce timeout via context
-		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(timeout)*time.Second)
+		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(float64(timeout)*float64(time.Second)))
 		defer cancel()
 
 		return t.executor.RunCommand(tCtx, parts, executionConfig{
@@ -334,7 +334,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		Reason     string   `json:"reason"`
 		OutputFile string   `json:"output_file"`
 		Append     bool     `json:"append"`
-		Timeout    int      `json:"timeout"`
+		Timeout    float64  `json:"timeout"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
@@ -362,7 +362,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
 		// Enforce timeout via context
-		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(timeout)*time.Second)
+		tCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(float64(timeout)*float64(time.Second)))
 		defer cancel()
 
 		feedback := &warnWriter{eventBus: t.eventBus, ctx: context.WithoutCancel(tCtx)}
@@ -483,9 +483,9 @@ func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 	return res, err
 }
 
-func (t *shellTool) formatTimeoutResult(res executionResult, timeout int) tools.ToolResult {
+func (t *shellTool) formatTimeoutResult(res executionResult, timeout float64) tools.ToolResult {
 	text := fmt.Sprintf(
-		"Error: command timed out after %ds (tool-enforced limit; the process tree was terminated). "+
+		"Error: command timed out after %vs (tool-enforced limit; the process tree was terminated). "+
 			"If more time is needed, retry with a larger 'timeout' parameter (e.g., timeout: 120).",
 		timeout)
 	if res.Output != "" {

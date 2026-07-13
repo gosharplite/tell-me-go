@@ -1149,6 +1149,12 @@ func BenchmarkSQLiteQuery_10000Tasks(b *testing.B) {
 
 func seedMixedStatusTasks(t *testing.T, store *sqliteTaskStore, ctx context.Context, now time.Time, count int) {
 	t.Helper()
+
+	// BEGIN transaction — avoids per-INSERT disk sync, matching seedBenchmarkTasks pattern
+	if _, err := store.db.ExecContext(ctx, "BEGIN"); err != nil {
+		t.Fatalf("begin transaction: %v", err)
+	}
+
 	for i := 1; i <= count; i++ {
 		status := "completed"
 		if i <= 500 {
@@ -1165,6 +1171,11 @@ func seedMixedStatusTasks(t *testing.T, store *sqliteTaskStore, ctx context.Cont
 		if err := store.Append(ctx, task); err != nil {
 			t.Fatalf("append task %d: %v", i, err)
 		}
+	}
+
+	// COMMIT — flush all INSERTs to disk atomically
+	if _, err := store.db.ExecContext(ctx, "COMMIT"); err != nil {
+		t.Fatalf("commit transaction: %v", err)
 	}
 }
 
