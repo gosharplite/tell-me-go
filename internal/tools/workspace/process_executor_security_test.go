@@ -27,6 +27,9 @@ func (f *mkdirErrorFS) MkdirAll(ctx context.Context, path string, perm os.FileMo
 }
 
 func TestProcessExecutor_AtomicWrites(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tmpFile := filepath.Join(t.TempDir(), "atomic_test.txt")
 	executor := newprocessExecutor()
 

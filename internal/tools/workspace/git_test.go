@@ -623,7 +623,7 @@ func TestRunGitCommand_ContextCancellation(t *testing.T) {
 	m := &gitManager{Exec: executor}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 		cancel()
 	}()
 	_, err := m.runGitCommand(ctx, nil, "status")

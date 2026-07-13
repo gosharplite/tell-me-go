@@ -14,6 +14,9 @@ import (
 )
 
 func TestShellTool_ExecuteCommand_Structured(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tool := newshellTool(sm, &events.NoOpEventBus{}, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})

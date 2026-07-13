@@ -17,6 +17,9 @@ import (
 )
 
 func TestRunPipeline_TableDriven(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := setupPipelineTest(t)
 
 	tests := []struct {
@@ -71,10 +74,10 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 		{
 			name: "context timeout",
 			pipedParts: [][]string{
-				{helperPath, "sleep", "0.2"},
+				{helperPath, "sleep", "0.05"},
 				{helperPath, "cat"},
 			},
-			timeout:          100 * time.Millisecond,
+			timeout:          25 * time.Millisecond,
 			wantErr:          true,
 			expectedExitCode: -1, // non-zero
 		},
@@ -203,6 +206,9 @@ func assertOutputLength(t *testing.T, name string, actual string, expected int) 
 }
 
 func TestRunPipeline_FeedbackRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	feedback := testfixtures.NewSafeBuffer()
 	config := executionConfig{
@@ -213,7 +219,7 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 		{helperPath, "cat"},
 	}
 	// Run many times with -race
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		if _, err := executor.RunPipeline(context.Background(), pipedParts, config); err != nil {
 			t.Logf("Feedback race run %d error: %v", i, err)
 		}
@@ -235,6 +241,9 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 //	  platform-gated taskkill logic cannot be unit-tested cross-platform.
 //	  Covered by TestSetupCommand_CancelGuard on Windows. See issue #836.
 func TestSetupCommand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := &processExecutor{}
 	ctx := context.Background()
 

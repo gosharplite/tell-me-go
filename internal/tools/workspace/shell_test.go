@@ -23,6 +23,9 @@ import (
 )
 
 func TestShellTool_UTF8SafeTruncation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tool, ctx, args := setupTruncationTest(t)
 
 	tests := []struct {
@@ -135,6 +138,9 @@ func verifyTruncationResult(t *testing.T, res tools.ToolResult, expected, forbid
 }
 
 func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tool := newTestShellTool(sm, &toolstest.MockCommandValidator{})
@@ -175,6 +181,7 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 }
 
 func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
+	t.Parallel()
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tool := newTestShellTool(sm, &toolstest.MockCommandValidator{})
@@ -238,6 +245,9 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 }
 
 func TestShellTool_PipeCommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	ctx := context.Background()
 	helperSlash := filepath.ToSlash(helperPath)
 
@@ -328,6 +338,9 @@ func assertPipeError(t *testing.T, err error, res tools.ToolResult) {
 }
 
 func TestShellTool_SecurityVisibility(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true) // So we don't block on Authorize
 
@@ -443,6 +456,9 @@ func (m *mockShellSecurity) LogAudit(action string, args ...any) {
 }
 
 func TestShellTool_AuthorizeAndAuditPipeline_OutputFileError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	validator := &toolstest.MockCommandValidator{}
@@ -543,6 +559,9 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 }
 
 func TestShellTool_ExecuteCommand_AuthorizeError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	validator := &toolstest.MockCommandValidator{}
@@ -574,6 +593,9 @@ func TestShellTool_ExecuteCommand_AuthorizeError(t *testing.T) {
 }
 
 func TestShellTool_PrepareCommand_WrapShell(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 
@@ -604,6 +626,9 @@ func TestShellTool_PrepareCommand_WrapShell(t *testing.T) {
 }
 
 func TestShellTool_StartHeartbeat_WithChannel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	validator := &toolstest.MockCommandValidator{}
@@ -631,6 +656,9 @@ func TestShellTool_StartHeartbeat_WithChannel(t *testing.T) {
 }
 
 func TestShellTool_StartHeartbeat_TickFires(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	validator := &toolstest.MockCommandValidator{}
@@ -643,7 +671,7 @@ func TestShellTool_StartHeartbeat_TickFires(t *testing.T) {
 
 	// Sleep just long enough for the 1ms heartbeat ticker to fire at least once
 	res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
-		"command": fmt.Sprintf("%s sleep 0.05", helperSlash),
+		"command": fmt.Sprintf("%s sleep 0.005", helperSlash),
 		"reason":  "test heartbeat tick fires",
 		"timeout": 10,
 	}, hb)
@@ -657,6 +685,9 @@ func TestShellTool_StartHeartbeat_TickFires(t *testing.T) {
 }
 
 func TestShellTool_PrepareCommand_ValidateStructureAfterWrap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 
@@ -700,6 +731,9 @@ func TestShellTool_PrepareCommand_ValidateStructureAfterWrap(t *testing.T) {
 }
 
 func TestShellTool_TimeoutParameter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tool := newTestShellTool(sm, &toolstest.MockCommandValidator{})
@@ -784,6 +818,7 @@ func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
 }
 
 func TestWindowsTranslator_Translate_LS(t *testing.T) {
+	t.Parallel()
 	w := &windowsTranslator{}
 
 	tests := []struct {
@@ -834,6 +869,7 @@ func TestWindowsTranslator_Translate_LS(t *testing.T) {
 }
 
 func TestWindowsTranslator_Translate_CP_MV(t *testing.T) {
+	t.Parallel()
 	w := &windowsTranslator{}
 
 	tests := []struct {
@@ -864,6 +900,9 @@ func TestWindowsTranslator_Translate_CP_MV(t *testing.T) {
 }
 
 func TestShellTool_TimeoutEnforcement(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tool := newTestShellTool(sm, &toolstest.MockCommandValidator{})
@@ -877,9 +916,9 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 		// The timeout enforcement path is identical regardless of duration;
 		// scaling down avoids a 1-second wall-clock wait.
 		args := map[string]interface{}{
-			"command": fmt.Sprintf("%s sleep 0.11", helperSlash),
+			"command": fmt.Sprintf("%s sleep 0.02", helperSlash),
 			"reason":  "testing timeout enforcement",
-			"timeout": 0.05,
+			"timeout": 0.01,
 		}
 		res, err := tool.ExecuteCommand(ctx, args, nil)
 
@@ -893,9 +932,9 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 	t.Run("PipeCommands timeout enforcement", func(t *testing.T) {
 		t.Parallel()
 		args := map[string]interface{}{
-			"commands": []interface{}{fmt.Sprintf("%s sleep 0.11", helperSlash), fmt.Sprintf("%s echo done", helperSlash)},
+			"commands": []interface{}{fmt.Sprintf("%s sleep 0.02", helperSlash), fmt.Sprintf("%s echo done", helperSlash)},
 			"reason":   "testing pipe timeout enforcement",
-			"timeout":  0.05,
+			"timeout":  0.01,
 		}
 		res, err := tool.PipeCommands(ctx, args, nil)
 
@@ -1500,6 +1539,9 @@ func TestShellTool_PrepareCommand_ValidateStructureError(t *testing.T) {
 // Verifies that "echo a<LF>echo b" triggers auto-wrap via HasBareNewline
 // and both commands execute (no fusion, no truncation).
 func TestShellTool_BareLFExecutesBoth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	// Use the REAL validator to exercise Normalize + HasBareNewline routing
@@ -1532,6 +1574,9 @@ func TestShellTool_BareLFExecutesBoth(t *testing.T) {
 // Verifies that "echo a > f<LF>echo b >> f" routes through Wrap and executes
 // correctly. Heredocs must remain functional.
 func TestShellTool_SHcRouteRegression(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	v := security.NewCommandValidator(sm, nil)
@@ -1573,6 +1618,9 @@ func TestShellTool_SHcRouteRegression(t *testing.T) {
 // line continuations. Asserts clean argv and that IsSafe's rejection reason
 // is never "newlines are not allowed".
 func TestShellTool_EndToEndSplitBrain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	v := security.NewCommandValidator(sm, nil)

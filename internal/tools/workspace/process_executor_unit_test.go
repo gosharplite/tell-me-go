@@ -25,6 +25,9 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestStderrPrefixConsistency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 
 	// Test RunCommand prefix
@@ -50,6 +53,7 @@ func TestStderrPrefixConsistency(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSanitizeAndTruncateUTF8(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		max      int
@@ -81,6 +85,9 @@ func TestSanitizeAndTruncateUTF8(t *testing.T) {
 // TestProcessExecutor_Output_Success verifies that Output returns stdout
 // with a trailing newline on successful command execution.
 func TestProcessExecutor_Output_Success(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	out, err := executor.Output(ctx, helperPath, "echo", "hello")
@@ -95,6 +102,9 @@ func TestProcessExecutor_Output_Success(t *testing.T) {
 // TestProcessExecutor_Output_ExitError verifies that Output returns an error
 // containing the exit status when the command exits non-zero.
 func TestProcessExecutor_Output_ExitError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	out, err := executor.Output(ctx, helperPath, "exit", "1")
@@ -112,6 +122,9 @@ func TestProcessExecutor_Output_ExitError(t *testing.T) {
 // TestProcessExecutor_CombinedOutput_Success verifies that CombinedOutput
 // returns combined stdout+stderr on successful command execution.
 func TestProcessExecutor_CombinedOutput_Success(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	out, err := executor.CombinedOutput(ctx, helperPath, "echo", "hello")
@@ -126,6 +139,9 @@ func TestProcessExecutor_CombinedOutput_Success(t *testing.T) {
 // TestProcessExecutor_CombinedOutput_ExitError verifies that CombinedOutput
 // returns an error containing the exit status when the command exits non-zero.
 func TestProcessExecutor_CombinedOutput_ExitError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	out, err := executor.CombinedOutput(ctx, helperPath, "exit", "2")
@@ -141,6 +157,9 @@ func TestProcessExecutor_CombinedOutput_ExitError(t *testing.T) {
 }
 
 func TestProcessExecutor_Output_RunError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 
@@ -198,6 +217,9 @@ func TestProcessExecutor_CaptureError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProcessExecutor_LookPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 
 	t.Run("existing command", func(t *testing.T) {
@@ -237,6 +259,7 @@ func (f *failingWriter) Write(p []byte) (int, error) {
 }
 
 func TestWriteTracker_Write_NormalWrite(t *testing.T) {
+	t.Parallel()
 	feedback := &bytes.Buffer{}
 	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
 	var w bytes.Buffer
@@ -253,6 +276,7 @@ func TestWriteTracker_Write_NormalWrite(t *testing.T) {
 }
 
 func TestWriteTracker_Write_WriteFailure(t *testing.T) {
+	t.Parallel()
 	feedback := &bytes.Buffer{}
 	wt := &writeTracker{feedback: feedback, filePath: "important.txt"}
 	wt.Write(&failingWriter{}, []byte("data"))
@@ -272,6 +296,7 @@ func TestWriteTracker_Write_WriteFailure(t *testing.T) {
 }
 
 func TestWriteTracker_Write_AlreadyFailed(t *testing.T) {
+	t.Parallel()
 	feedback := &bytes.Buffer{}
 	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
 	wt.failed.Store(true)
@@ -282,6 +307,7 @@ func TestWriteTracker_Write_AlreadyFailed(t *testing.T) {
 }
 
 func TestWriteTracker_Write_TypedNilFile(t *testing.T) {
+	t.Parallel()
 	feedback := &bytes.Buffer{}
 	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
 	var f *os.File = nil
@@ -296,6 +322,7 @@ func TestWriteTracker_Write_TypedNilFile(t *testing.T) {
 }
 
 func TestWriteTracker_Write_NilInterface(t *testing.T) {
+	t.Parallel()
 	feedback := &bytes.Buffer{}
 	wt := &writeTracker{feedback: feedback, filePath: "test.txt"}
 	wt.Write(nil, []byte("data"))
@@ -312,6 +339,9 @@ func TestWriteTracker_Write_NilInterface(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex0(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	_, err := e.newPipelineCmd(ctx, []string{}, 0, executionConfig{})
@@ -324,6 +354,9 @@ func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex0(t *testing.T) {
 }
 
 func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex2(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	_, err := e.newPipelineCmd(ctx, []string{}, 2, executionConfig{})
@@ -336,6 +369,9 @@ func TestProcessExecutor_newPipelineCmd_EmptyPartsIndex2(t *testing.T) {
 }
 
 func TestProcessExecutor_newPipelineCmd_ValidParts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	cmd, err := e.newPipelineCmd(ctx, []string{"echo", "hello"}, 0, executionConfig{})
@@ -351,6 +387,9 @@ func TestProcessExecutor_newPipelineCmd_ValidParts(t *testing.T) {
 }
 
 func TestProcessExecutor_newPipelineCmd_WithEnv(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	config := executionConfig{Env: map[string]string{"GOOS": "linux", "CUSTOM_VAR": "testval"}}
@@ -386,6 +425,7 @@ func TestProcessExecutor_newPipelineCmd_WithEnv(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProcessExecutor_handleCaptureError_NilError(t *testing.T) {
+	t.Parallel()
 	e := newprocessExecutor()
 	var sb strings.Builder
 	var mu sync.Mutex
@@ -400,6 +440,7 @@ func TestProcessExecutor_handleCaptureError_NilError(t *testing.T) {
 }
 
 func TestProcessExecutor_handleCaptureError_ErrTooLongWithCapacity(t *testing.T) {
+	t.Parallel()
 	e := newprocessExecutor()
 	var sb strings.Builder
 	var mu sync.Mutex
@@ -415,6 +456,7 @@ func TestProcessExecutor_handleCaptureError_ErrTooLongWithCapacity(t *testing.T)
 }
 
 func TestProcessExecutor_handleCaptureError_ErrTooLongNoCapacity(t *testing.T) {
+	t.Parallel()
 	e := newprocessExecutor()
 	var sb strings.Builder
 	sb.WriteString("12345")
@@ -430,6 +472,7 @@ func TestProcessExecutor_handleCaptureError_ErrTooLongNoCapacity(t *testing.T) {
 }
 
 func TestProcessExecutor_handleCaptureError_WithFeedback(t *testing.T) {
+	t.Parallel()
 	e := newprocessExecutor()
 	var sb strings.Builder
 	var mu sync.Mutex
@@ -447,6 +490,7 @@ func TestProcessExecutor_handleCaptureError_WithFeedback(t *testing.T) {
 }
 
 func TestProcessExecutor_handleCaptureError_Truncation(t *testing.T) {
+	t.Parallel()
 	e := newprocessExecutor()
 	var sb strings.Builder
 	sb.WriteString("abcde")
@@ -469,6 +513,7 @@ func TestProcessExecutor_handleCaptureError_Truncation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFormatPipelineResult_ExitCodeNormalization(t *testing.T) {
+	t.Parallel()
 	executor := newprocessExecutor()
 
 	tests := []struct {

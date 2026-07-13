@@ -18,6 +18,9 @@ import (
 )
 
 func TestRunCommand_Basic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	res, err := executor.RunCommand(context.Background(), []string{helperPath, "echo", "hello world"}, executionConfig{})
 	if err != nil {
@@ -32,6 +35,9 @@ func TestRunCommand_Basic(t *testing.T) {
 }
 
 func TestRunCommand_MaxCapture(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	config := executionConfig{
 		MaxCapture: 5,
@@ -49,6 +55,9 @@ func TestRunCommand_MaxCapture(t *testing.T) {
 }
 
 func TestRunCommand_OutputFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tmpFile := filepath.Join(t.TempDir(), "test_output.txt")
 
 	executor := newprocessExecutor()
@@ -70,6 +79,9 @@ func TestRunCommand_OutputFile(t *testing.T) {
 }
 
 func TestRunCommand_Append(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tmpFile := filepath.Join(t.TempDir(), "test_append.txt")
 
 	executor := newprocessExecutor()
@@ -99,6 +111,9 @@ func TestRunCommand_Append(t *testing.T) {
 }
 
 func TestRunPipeline_Basic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	tmpDir := t.TempDir()
 	outputFile := tmpDir + "/output.txt"
@@ -132,6 +147,9 @@ func TestRunPipeline_Basic(t *testing.T) {
 }
 
 func TestRunPipeline_StderrCapture(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	tmpDir := t.TempDir()
 	outputFile := tmpDir + "/stderr_output.txt"
@@ -172,6 +190,9 @@ func TestRunPipeline_StderrCapture(t *testing.T) {
 }
 
 func TestRunPipeline_Advanced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := setupPipelineTest(t)
 
 	tests := []struct {
@@ -234,11 +255,14 @@ func TestRunPipeline_Advanced(t *testing.T) {
 }
 
 func TestRunPipeline_ContextCancel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 
-	pipedParts := [][]string{{helperPath, "sleep", "10"}, {helperPath, "cat"}}
+	pipedParts := [][]string{{helperPath, "sleep", "2"}, {helperPath, "cat"}}
 	res, err := executor.RunPipeline(ctx, pipedParts, executionConfig{})
 
 	// The test should verify that if the context is cancelled,
@@ -253,6 +277,9 @@ func TestRunPipeline_ContextCancel(t *testing.T) {
 }
 
 func TestRunCommand_FileWriteError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "readonly.txt")
 	if err := os.WriteFile(outputPath, []byte("init"), 0444); err != nil { // Read-only
@@ -283,6 +310,9 @@ func TestRunCommand_FileWriteError(t *testing.T) {
 }
 
 func TestRunPipeline_MultiCommandPrefix(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	pipedParts := [][]string{
 		{helperPath, "multi-line", "1"},
@@ -305,6 +335,9 @@ func TestRunPipeline_MultiCommandPrefix(t *testing.T) {
 }
 
 func TestRunPipeline_FileWriteError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "readonly_pipe.txt")
 	if err := os.WriteFile(outputPath, []byte("init"), 0444); err != nil {
@@ -337,6 +370,9 @@ func TestRunPipeline_FileWriteError(t *testing.T) {
 }
 
 func TestRunCommand_DeadlockPrevention(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	// This command writes more than the typical pipe buffer (64KB) to stderr,
 	// then writes to stdout. With sequential reading (stdout then stderr),
@@ -362,6 +398,9 @@ func TestRunCommand_DeadlockPrevention(t *testing.T) {
 }
 
 func TestRunPipeline_SharedMaxCapture(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	config := executionConfig{
 		MaxCapture: 15, // Large enough for some formatting but less than both combined
@@ -386,6 +425,9 @@ func TestRunPipeline_SharedMaxCapture(t *testing.T) {
 }
 
 func TestRunCommand_SharedMaxCapture(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	config := executionConfig{
 		MaxCapture: 15,
@@ -412,6 +454,9 @@ func TestRunCommand_SharedMaxCapture(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunCommand_SetupCommandFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 
@@ -431,6 +476,9 @@ func TestRunCommand_SetupCommandFailure(t *testing.T) {
 }
 
 func TestRunCommand_StartFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("directory-as-executable behaves differently on Windows")
 	}
@@ -454,6 +502,9 @@ func TestRunCommand_StartFailure(t *testing.T) {
 }
 
 func TestRunCommand_WaitSignalKill(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 
 	t.Run("non-ExitError in formatPipelineResult", func(t *testing.T) {
@@ -472,6 +523,9 @@ func TestRunCommand_WaitSignalKill(t *testing.T) {
 }
 
 func TestRunCommand_FileCloseError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	tmpDir := t.TempDir()
@@ -494,13 +548,16 @@ func TestRunCommand_FileCloseError(t *testing.T) {
 }
 
 func TestRunCommand_ContextCancellationDuringWait(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 
 	// Start a command that blocks, then cancel via short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	res, err := executor.RunCommand(ctx, []string{helperPath, "sleep", "10"}, executionConfig{})
+	res, err := executor.RunCommand(ctx, []string{helperPath, "sleep", "2"}, executionConfig{})
 
 	if err == nil {
 		t.Fatal("expected error from context cancellation")
@@ -520,6 +577,9 @@ func TestRunCommand_ContextCancellationDuringWait(t *testing.T) {
 // TestRunPipeline_TooFewCommands verifies that RunPipeline rejects
 // a single-command pipeline with a clear error message and exit code 1.
 func TestRunPipeline_TooFewCommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	res, err := executor.RunPipeline(ctx, [][]string{{helperPath, "echo", "hello"}}, executionConfig{})
@@ -538,6 +598,9 @@ func TestRunPipeline_TooFewCommands(t *testing.T) {
 // the error from newPipelineCmd when a sub-command is empty, including
 // the specific index in the error message and producing exit code 1.
 func TestRunPipeline_NewPipelineError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	res, err := executor.RunPipeline(ctx, [][]string{{helperPath, "echo", "hello"}, {}}, executionConfig{})
@@ -555,6 +618,9 @@ func TestRunPipeline_NewPipelineError(t *testing.T) {
 // TestRunPipeline_ZeroCommands verifies that RunPipeline rejects
 // an empty pipeline with the same error as a too-few-commands pipeline.
 func TestRunPipeline_ZeroCommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	executor := newprocessExecutor()
 	ctx := context.Background()
 	res, err := executor.RunPipeline(ctx, [][]string{}, executionConfig{})
@@ -574,6 +640,9 @@ func TestRunPipeline_ZeroCommands(t *testing.T) {
 // non-*exec.ExitError. The exit code must be non-zero and partial output
 // should be preserved.
 func TestRunCommand_NonExitError_SignalKill(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
@@ -595,6 +664,9 @@ func TestRunCommand_NonExitError_SignalKill(t *testing.T) {
 // TestRunCommand_NonExitError_CommandNotFound verifies RunCommand behavior
 // when the executable cannot be found.
 func TestRunCommand_NonExitError_CommandNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	res, err := e.RunCommand(ctx, []string{"nonexistent_command_xyz_31415"}, executionConfig{})
@@ -621,6 +693,9 @@ func TestRunCommand_NonExitError_CommandNotFound(t *testing.T) {
 // and validates the return semantics. The error promotion behavior is
 // verified through TestCloseFile in the unit test file using a stubCloser.
 func TestRunCommand_OutputFileCloseError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	tmpDir := t.TempDir()
@@ -657,6 +732,9 @@ func TestRunCommand_OutputFileCloseError(t *testing.T) {
 //  2. The file is closed (and thus flushable/readable) after RunCommand returns
 //  3. No spurious close errors are returned for a normal, successful command
 func TestRunCommand_CloseFileIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	tmpDir := t.TempDir()
@@ -688,6 +766,9 @@ func TestRunCommand_CloseFileIntegration(t *testing.T) {
 // TestRunPipeline_OutputFileCloseError verifies the Close error propagation
 // path in RunPipeline via the closeFile helper.
 func TestRunPipeline_OutputFileCloseError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 	tmpDir := t.TempDir()
@@ -734,6 +815,9 @@ func TestRunPipeline_OutputFileCloseError(t *testing.T) {
 // (lines 82-84), see TestRunCommand_NonExitErrorWaitPath_SIGKILL,
 // which uses context.Background() to bypass the context check.
 func TestRunCommand_NonExitErrorWaitPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 
 	t.Run("signal kill via formatPipelineResult", func(t *testing.T) {
@@ -759,10 +843,10 @@ func TestRunCommand_NonExitErrorWaitPath(t *testing.T) {
 		// RunCommand path: when cmd.Wait() returns a non-ExitError (e.g., signal),
 		// the context check at lines 77-79 takes priority and returns ctx.Err()
 		// before the non-ExitError branch at lines 82-84 is reached.
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
 
-		res, err := e.RunCommand(ctx, []string{helperPath, "sleep", "10"}, executionConfig{})
+		res, err := e.RunCommand(ctx, []string{helperPath, "sleep", "2"}, executionConfig{})
 		if err == nil {
 			t.Fatal("expected error from killed process")
 		}
