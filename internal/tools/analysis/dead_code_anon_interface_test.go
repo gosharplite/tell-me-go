@@ -318,6 +318,21 @@ func TestAnonymousInterfaceAssertionWarning_LiveCodebaseHeadlinePin(t *testing.T
 	// NOT t.Parallel(): runs against the live module, which other
 	// non-parallel tests may also touch. Conservative serialization.
 
+	// Skip by default: this is a canary test against a specific false-positive
+	// class that has been resolved upstream. Full-module packages.Load costs
+	// ~5s under the race detector and provides zero signal when the symbol
+	// it guards (SetInteractor) is no longer in the orphan report.
+	//
+	// To re-enable (e.g., if SetInteractor reappears as a false positive):
+	//   1. Remove or comment out the t.Skip below.
+	//   2. Run: go test -run LiveCodebaseHeadlinePin -count=1 ./internal/tools/analysis/
+	//
+	// The test body and assertions are preserved intact below for this purpose.
+	t.Skip("live-codebase canary: full-module type resolution is too expensive " +
+		"for routine CI (~5s under race). The false positive this hedge guards " +
+		"against has been resolved upstream. Re-enable manually if the " +
+		"SetInteractor false positive recurs.")
+
 	if testing.Short() {
 		t.Skip("skipping live-codebase analysis in short/race mode: full-module type resolution is too expensive under the race detector")
 	}

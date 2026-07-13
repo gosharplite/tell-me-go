@@ -20,6 +20,23 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
+// setRenameRetryConfig overrides MaxRenameAttempts and RenameRetryDelay for the
+// duration of a single test and restores originals on t.Cleanup.
+//
+// IMPORTANT: Tests that call setRenameRetryConfig must NOT use t.Parallel(),
+// because these are package-level variables.
+func setRenameRetryConfig(t *testing.T, attempts int, delay time.Duration) {
+	t.Helper()
+	origAttempts := maxRenameAttempts
+	origDelay := renameRetryDelay
+	maxRenameAttempts = attempts
+	renameRetryDelay = delay
+	t.Cleanup(func() {
+		maxRenameAttempts = origAttempts
+		renameRetryDelay = origDelay
+	})
+}
+
 func TestAtomicWrite_ErrorHandling(t *testing.T) {
 	ctx := context.Background()
 	data := []byte("test-data")
@@ -142,6 +159,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 		{
 			name: "Rename exhausted retries",
 			setupMock: func() *mockFileSystem {
+				setRenameRetryConfig(t, 2, time.Millisecond)
 				m := newMockFS()
 				m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
 					return errors.New("Access is denied")
@@ -149,7 +167,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 				return m
 			},
 			wantErr:    true,
-			errPattern: "failed to rename temp file after 5 attempts: Access is denied",
+			errPattern: "failed to rename temp file after 2 attempts: Access is denied",
 		},
 	}
 
@@ -477,6 +495,7 @@ func TestCleanupOldBackups_RemoveAllError(t *testing.T) {
 }
 
 func TestRenameWithRetry_TransientThenPermanent(t *testing.T) {
+	setRenameRetryConfig(t, 5, time.Millisecond)
 	ctx := context.Background()
 	m := newMockFS()
 
@@ -606,6 +625,7 @@ func TestAtomicWrite_CancelAfterWrite(t *testing.T) {
 // After the first failure the function enters the backoff select; the
 // test cancels the context during the sleep, causing ctx.Done() to fire.
 func TestRenameWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
+	setRenameRetryConfig(t, 5, time.Millisecond)
 	m := newMockFS()
 	callCount := 0
 	firstAttemptDone := make(chan struct{})

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
@@ -21,8 +22,8 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
-	// 1. Strict timeout: If locks block forever, the test fails explicitly in 3 seconds.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// 1. Strict timeout: If locks block forever, the test fails explicitly in 10 seconds.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// 2. Hermetic Environment
@@ -60,15 +61,21 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	done := make(chan struct{})
 	errs := make(chan error, len(actions))
 
-	// 4. Execute rapidly
+	// 4. Execute rapidly in parallel — actions are independent, so running them
+	//    concurrently cuts test duration from ~4× to ~1× single-invocation time.
 	go func() {
+		var wg sync.WaitGroup
 		for _, action := range actions {
-			// Run the built binary via the runCommandWithEnv helper from e2e_test.go
-			_, _, err := runCommandWithEnv(env, "", "-c", configPath, action)
-			if err != nil {
-				errs <- fmt.Errorf("Action %q error: %v", action, err)
-			}
+			wg.Add(1)
+			go func(action string) {
+				defer wg.Done()
+				_, _, err := runCommandWithEnv(env, "", "-c", configPath, action)
+				if err != nil {
+					errs <- fmt.Errorf("Action %q error: %v", action, err)
+				}
+			}(action)
 		}
+		wg.Wait()
 		close(done)
 	}()
 

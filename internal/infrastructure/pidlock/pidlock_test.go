@@ -11,6 +11,20 @@ import (
 	"time"
 )
 
+// setTestBackoff overrides DefaultAcquireBackoff for the duration of a single
+// test and restores the original on t.Cleanup. This eliminates the 1.55s sleep
+// penalty when tests exercise retry-exhaustion paths.
+//
+// IMPORTANT: Tests that call setTestBackoff must NOT use t.Parallel(), because
+// DefaultAcquireBackoff is a package-level variable and concurrent mutation
+// would cause data races and incorrect backoff values.
+func setTestBackoff(t *testing.T, backoff []time.Duration) {
+	t.Helper()
+	orig := DefaultAcquireBackoff
+	DefaultAcquireBackoff = backoff
+	t.Cleanup(func() { DefaultAcquireBackoff = orig })
+}
+
 // =============================================================================
 // IsStale tests
 // =============================================================================
@@ -158,7 +172,7 @@ func TestRelease_NilFile(t *testing.T) {
 // =============================================================================
 
 func TestAcquire_StaleLock_RemoveSucceeds(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 	tmpDir, err := os.MkdirTemp("", "acquire_stale_ok_test")
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +214,7 @@ func TestAcquire_StaleLock_RemoveSucceeds(t *testing.T) {
 }
 
 func TestAcquire_FreshLock_NotStale(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond})
 	tmpDir, err := os.MkdirTemp("", "acquire_fresh_test")
 	if err != nil {
 		t.Fatal(err)
@@ -234,6 +248,8 @@ func TestAcquire_StaleLock_RemoveFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on Windows: chmod does not prevent file removal")
 	}
+
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 
 	tmpDir, err := os.MkdirTemp("", "acquire_remove_fail_test")
 	if err != nil {
@@ -287,7 +303,7 @@ func TestAcquire_StaleLock_RemoveFails(t *testing.T) {
 // =============================================================================
 
 func TestAcquire_ByLockPath_StaleLock_RemoveSucceeds(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 	tmpDir, err := os.MkdirTemp("", "acquire_stale_ok_test2")
 	if err != nil {
 		t.Fatal(err)
@@ -334,7 +350,7 @@ func assertLockAcquiredAndReleased(t *testing.T, lockPath string) {
 }
 
 func TestAcquire_ByLockPath_FreshLock_NotStale(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond})
 	tmpDir, err := os.MkdirTemp("", "acquire_fresh_test2")
 	if err != nil {
 		t.Fatal(err)
@@ -368,6 +384,8 @@ func TestAcquire_ByLockPath_StaleLock_RemoveFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on Windows: chmod does not prevent file removal")
 	}
+
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 
 	tmpDir, err := os.MkdirTemp("", "acquire_remove_fail_test2")
 	if err != nil {

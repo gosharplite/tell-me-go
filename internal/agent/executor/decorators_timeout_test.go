@@ -31,16 +31,16 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 	}{
 		{
 			name:             "Override default timeout - Success",
-			requestedTimeout: 2, // 2 seconds
-			nextDelay:        1 * time.Second,
-			defaultTimeout:   500 * time.Millisecond,
+			requestedTimeout: 0.2, // 200ms
+			nextDelay:        100 * time.Millisecond,
+			defaultTimeout:   50 * time.Millisecond,
 		},
 		{
 			name:              "Override default timeout - Still Times Out",
-			requestedTimeout:  1, // 1 second
-			nextDelay:         2 * time.Second,
-			defaultTimeout:    500 * time.Millisecond,
-			expectedErrSubstr: "timed out after 1s",
+			requestedTimeout:  0.1, // 100ms
+			nextDelay:         200 * time.Millisecond,
+			defaultTimeout:    50 * time.Millisecond,
+			expectedErrSubstr: "timed out after 100ms",
 		},
 		{
 			name:             "Capped at 2 hours",
@@ -50,15 +50,15 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 		},
 		{
 			name:             "Floating point timeout",
-			requestedTimeout: 1.5,
-			nextDelay:        1 * time.Second,
-			defaultTimeout:   500 * time.Millisecond,
+			requestedTimeout: 0.15,
+			nextDelay:        100 * time.Millisecond,
+			defaultTimeout:   50 * time.Millisecond,
 		},
 		{
 			name:             "int64 timeout success",
-			requestedTimeout: int64(3), // 3 seconds
-			nextDelay:        1 * time.Second,
-			defaultTimeout:   500 * time.Millisecond,
+			requestedTimeout: int64(1), // 1 second
+			nextDelay:        100 * time.Millisecond,
+			defaultTimeout:   50 * time.Millisecond,
 		},
 		{
 			name:              "zero float timeout falls back to default",

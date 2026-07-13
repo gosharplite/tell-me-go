@@ -872,11 +872,14 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 	helperSlash := filepath.ToSlash(helperPath)
 
 	t.Run("ExecuteCommand timeout enforcement", func(t *testing.T) {
-		// Sleep for 1.1 seconds with a 1 second timeout (minimum given timeout is int seconds)
+		t.Parallel()
+		// Use a short sleep (0.11s) with a shorter timeout (0.05s).
+		// The timeout enforcement path is identical regardless of duration;
+		// scaling down avoids a 1-second wall-clock wait.
 		args := map[string]interface{}{
-			"command": fmt.Sprintf("%s sleep 1.1", helperSlash),
+			"command": fmt.Sprintf("%s sleep 0.11", helperSlash),
 			"reason":  "testing timeout enforcement",
-			"timeout": 1,
+			"timeout": 0.05,
 		}
 		res, err := tool.ExecuteCommand(ctx, args, nil)
 
@@ -888,11 +891,11 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 	})
 
 	t.Run("PipeCommands timeout enforcement", func(t *testing.T) {
-		// Sleep for 1.1 seconds with a 1 second timeout (minimum given timeout is int seconds)
+		t.Parallel()
 		args := map[string]interface{}{
-			"commands": []interface{}{fmt.Sprintf("%s sleep 1.1", helperSlash), fmt.Sprintf("%s echo done", helperSlash)},
+			"commands": []interface{}{fmt.Sprintf("%s sleep 0.11", helperSlash), fmt.Sprintf("%s echo done", helperSlash)},
 			"reason":   "testing pipe timeout enforcement",
-			"timeout":  1,
+			"timeout":  0.05,
 		}
 		res, err := tool.PipeCommands(ctx, args, nil)
 

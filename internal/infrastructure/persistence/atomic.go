@@ -16,10 +16,14 @@ import (
 	"time"
 )
 
-const (
-	maxRenameAttempts = 5
-	renameRetryDelay  = 100 * time.Millisecond
-)
+// maxRenameAttempts is the number of rename retries before giving up.
+// Tests may override this to reduce test duration.
+var maxRenameAttempts = 5
+
+// renameRetryDelay is the base delay between rename retries.
+// The actual delay is (attempt+1) * renameRetryDelay (linear backoff).
+// Tests may override this to reduce test duration.
+var renameRetryDelay = 100 * time.Millisecond
 
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
 // This ensures that the target file is either fully updated or not updated at all.
