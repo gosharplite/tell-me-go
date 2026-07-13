@@ -5,6 +5,7 @@ package ui_test
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -197,7 +198,13 @@ func TestStartSpinnerLifecycle(t *testing.T) {
 		// Advance time by 200ms and trigger a tick. The goroutine will process it.
 		mc.Add(200 * time.Millisecond)
 		mc.Tick()
-		time.Sleep(50 * time.Millisecond) // let goroutine write to stderr
+		// Poll until the second frame appears in stderr.
+		for i := 0; i < 1000; i++ {
+			if strings.Contains(stderr.String(), "⠙") {
+				break
+			}
+			runtime.Gosched()
+		}
 
 		out1 := stderr.String()
 		if !strings.Contains(out1, "⠙") {
@@ -210,7 +217,13 @@ func TestStartSpinnerLifecycle(t *testing.T) {
 		// Advance another 800ms (total 1s) and trigger tick. Frame: ⠹, elapsed: 1s.
 		mc.Add(800 * time.Millisecond)
 		mc.Tick()
-		time.Sleep(50 * time.Millisecond)
+		// Poll until the third frame appears in stderr.
+		for i := 0; i < 1000; i++ {
+			if strings.Contains(stderr.String(), "⠹") {
+				break
+			}
+			runtime.Gosched()
+		}
 
 		out2 := stderr.String()
 		if !strings.Contains(out2, "⠹") {
@@ -221,8 +234,7 @@ func TestStartSpinnerLifecycle(t *testing.T) {
 		}
 
 		// Stop the spinner.
-		stopFunc()
-		time.Sleep(50 * time.Millisecond) // let goroutine exit
+		stopFunc() // synchronous: stopFunc writes the clear line immediately
 
 		outFinal := stderr.String()
 		if !strings.Contains(outFinal, ui.TermClearLine) {
@@ -278,7 +290,13 @@ func TestStartSpinnerLifecycle(t *testing.T) {
 
 		// Cancel the context — the goroutine must exit via <-ctx.Done().
 		cancel()
-		time.Sleep(50 * time.Millisecond) // let goroutine run cleanupOnStop
+		// Poll until goroutine processes cancellation and writes clear line.
+		for i := 0; i < 1000; i++ {
+			if strings.Contains(stderr.String(), ui.TermClearLine) {
+				break
+			}
+			runtime.Gosched()
+		}
 
 		outFinal := stderr.String()
 		if !strings.Contains(outFinal, ui.TermClearLine) {

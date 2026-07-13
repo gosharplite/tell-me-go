@@ -43,12 +43,13 @@ func (m *mockClock) tick() {
 }
 func (m *mockClock) Jitter(base float64) float64 { return base }
 
-// newMockClockWithTicker creates a mock clock with a buffered ticker channel,
-// allowing tests to manually advance the ticker with the tick() method.
+// newMockClockWithTicker creates a mock clock with a single-slot buffered
+// ticker channel, allowing tests to manually advance the ticker with the
+// tick() method.
 func newMockClockWithTicker(now time.Time) *mockClock {
 	return &mockClock{
 		now:      now,
-		tickerCh: make(chan time.Time, 16),
+		tickerCh: make(chan time.Time, 1),
 	}
 }
 
