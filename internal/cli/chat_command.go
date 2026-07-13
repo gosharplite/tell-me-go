@@ -14,7 +14,6 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
@@ -214,7 +213,7 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		RawOutput:        opts.rawOutput,
 		UseTUIPrompt:     opts.tuiPrompt,
 		TUIOutput:        opts.tuiOutput,
-		ProgressRenderer: progress.NewRenderer(telemetry.NewSystemMetricsProvider()),
+		ProgressRenderer: progress.NewRenderer(c.Bootstrapper.GetSystemMetricsProvider()),
 		Retry:            opts.retry,
 		Prompt:           prompt,
 	}, capturer)

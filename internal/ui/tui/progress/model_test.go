@@ -24,7 +24,7 @@ import (
 type noopMetricsProvider struct{}
 
 func (n *noopMetricsProvider) GetCPUStats() (int64, int64) { return 0, 0 }
-func (n *noopMetricsProvider) GetMemoryPercent() float64    { return 0.0 }
+func (n *noopMetricsProvider) GetMemoryPercent() float64   { return 0.0 }
 
 func TestModel_Update(t *testing.T) {
 	t.Run("TurnStarted", func(t *testing.T) {
@@ -1614,7 +1614,7 @@ type testMetricsProvider struct {
 }
 
 func (p *testMetricsProvider) GetCPUStats() (int64, int64) { return p.cpuTotal, p.cpuIdle }
-func (p *testMetricsProvider) GetMemoryPercent() float64    { return p.mem }
+func (p *testMetricsProvider) GetMemoryPercent() float64   { return p.mem }
 
 func TestSpinnerRenderMetrics(t *testing.T) {
 	t.Run("showMetrics true renders CPU/MEM", func(t *testing.T) {

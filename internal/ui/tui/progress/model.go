@@ -134,9 +134,9 @@ type model struct {
 	lastSampleTime      time.Time
 	lastCPUPercent      float64
 	lastMemPercent      float64
-	postCallStatus      *events.TurnStatus       // set when IsPostCall, has full status including Metrics and StartTime
-	postCallMetricsLine string                   // pre-rendered metrics line, frozen when IsPostCall fires
-	finalCostLine       string                   // rendered "Ready (...)" line from IsFinal
+	postCallStatus      *events.TurnStatus // set when IsPostCall, has full status including Metrics and StartTime
+	postCallMetricsLine string             // pre-rendered metrics line, frozen when IsPostCall fires
+	finalCostLine       string             // rendered "Ready (...)" line from IsFinal
 	spinner             spinnerState
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn

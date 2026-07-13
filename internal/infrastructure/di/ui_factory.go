@@ -21,6 +21,7 @@ type uiFactory interface {
 	UIRenderer() ports.UIRenderer
 	HistoryRenderer() ports.HistoryRenderer
 	HistoryBrowser() ports.HistoryBrowser
+	SystemMetricsProvider() ports.SystemMetricsProvider
 }
 
 type defaultUIFactory struct {
@@ -28,7 +29,7 @@ type defaultUIFactory struct {
 	Stdout                io.Writer
 	Stderr                io.Writer
 	Logger                *slog.Logger
-	SystemMetricsProvider ports.SystemMetricsProvider
+	systemMetricsProvider ports.SystemMetricsProvider
 }
 
 func newUIFactory(sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger) uiFactory {
@@ -37,16 +38,21 @@ func newUIFactory(sm ConfigurableSecurityManager, stdout, stderr io.Writer, logg
 		Stdout:                stdout,
 		Stderr:                stderr,
 		Logger:                logger,
-		SystemMetricsProvider: telemetry.NewSystemMetricsProvider(),
+		systemMetricsProvider: telemetry.NewSystemMetricsProvider(),
 	}
 }
 
 func (f *defaultUIFactory) UIRenderer() ports.UIRenderer {
-	return ui.NewRenderer(f.SM, f.Stdout, f.Stderr, clock.RealClock{}, f.SystemMetricsProvider)
+	return ui.NewRenderer(f.SM, f.Stdout, f.Stderr, clock.RealClock{}, f.systemMetricsProvider)
 }
 
 func (f *defaultUIFactory) HistoryRenderer() ports.HistoryRenderer {
 	return &ui.StdHistoryRenderer{}
+}
+
+// SystemMetricsProvider returns the host resource metrics provider.
+func (f *defaultUIFactory) SystemMetricsProvider() ports.SystemMetricsProvider {
+	return f.systemMetricsProvider
 }
 
 // tuiHistoryBrowser implements ports.HistoryBrowser using the TUI.

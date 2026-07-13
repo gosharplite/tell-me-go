@@ -300,3 +300,8 @@ func (b *Bootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
 func (b *Bootstrapper) GetChatService() agent.ChatService {
 	return b.chatFactory.ChatService()
 }
+
+// GetSystemMetricsProvider returns the host resource metrics provider.
+func (b *Bootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider {
+	return b.uiFactory.SystemMetricsProvider()
+}
