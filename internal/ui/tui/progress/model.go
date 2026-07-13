@@ -34,8 +34,8 @@ type channelClosedMsg struct{}
 
 // mdRenderCompleteMsg signals that an asynchronous markdown rendering task has finished.
 type mdRenderCompleteMsg struct {
-	generation int
-	rendered   string
+	index    int    // index in bodyLines to update
+	rendered string // glamour-rendered text
 }
 
 type state int
@@ -120,6 +120,14 @@ func (s *spinnerState) active() bool {
 	return s.status != ""
 }
 
+// bodyEntry is a single line/section in the body viewport.
+// For tool logs, raw is empty. For response text, raw holds the
+// pre-markdown source for re-rendering on terminal resize.
+type bodyEntry struct {
+	text string // rendered display text
+	raw  string // original raw text for re-render; empty for tool logs
+}
+
 type model struct {
 	eventCh <-chan events.Event
 
@@ -133,10 +141,7 @@ type model struct {
 	maxTokens           int
 	timestamp           time.Time
 	err                 error
-	responseText        string // accumulated AI response text
-	rawResponseText     string // raw text before markdown rendering, for re-rendering on resize
-	renderGeneration    int    // incremented on each async render request to discard stale results
-	isDark              bool   // cached terminal background theme (legacy, now unused as we default to dark)
+	isDark              bool // cached terminal background theme (legacy, now unused as we default to dark)
 	metricsProvider     ports.SystemMetricsProvider
 	lastCPUTime         int64
 	lastIdleTime        int64
@@ -149,8 +154,9 @@ type model struct {
 	sessionComplete     bool               // true when event channel closes (true session end)
 	spinner             spinnerState
 
-	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
-	seenCallIDs map[string]bool // dedup tool logs from ResponseEvent vs ToolCallEvent
+	bodyLines        []bodyEntry     // append-only chronological transcript
+	rawResponseIndex int             // index in bodyLines of the last response entry needing render; -1 if none
+	seenCallIDs      map[string]bool // dedup tool calls from ResponseEvent vs ToolCallEvent
 
 	headerVP viewport.Model
 	bodyVP   viewport.Model
@@ -173,16 +179,17 @@ func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.S
 	footerVP := viewport.New(80, 4)
 
 	return &model{
-		eventCh:         ch,
-		currentState:    stateIdle,
-		height:          24,
-		width:           80,
-		isDark:          resolveIsDark(),
-		metricsProvider: metricsProvider,
-		seenCallIDs:     make(map[string]bool),
-		headerVP:        headerVP,
-		bodyVP:          bodyVP,
-		footerVP:        footerVP,
+		eventCh:          ch,
+		currentState:     stateIdle,
+		height:           24,
+		width:            80,
+		isDark:           resolveIsDark(),
+		metricsProvider:  metricsProvider,
+		seenCallIDs:      make(map[string]bool),
+		rawResponseIndex: -1,
+		headerVP:         headerVP,
+		bodyVP:           bodyVP,
+		footerVP:         footerVP,
 	}
 }
 
@@ -201,7 +208,9 @@ func (m *model) waitForEvent() tea.Cmd {
 // appendToolLog appends a timestamped log line for tool events.
 func (m *model) appendToolLog(tag, message string) {
 	ts := time.Now().Format("15:04:05")
-	m.toolLogs = append(m.toolLogs, fmt.Sprintf("[%s] [%s] %s", ts, tag, message))
+	m.bodyLines = append(m.bodyLines, bodyEntry{
+		text: fmt.Sprintf("[%s] [%s] %s", ts, tag, message),
+	})
 }
 
 // appendLevelEventLog appends a timestamped log line with a level-mapped
@@ -262,10 +271,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.spinner.handleTick(msg)
 	case mdRenderCompleteMsg:
-		if msg.generation != m.renderGeneration {
-			return m, nil // stale: resized, new turn, or post-final
+		if msg.index < 0 || msg.index >= len(m.bodyLines) {
+			return m, nil // stale: turn changed
 		}
-		m.responseText = msg.rendered
+		if m.bodyLines[msg.index].raw == "" {
+			return m, nil // stale: no longer a response entry
+		}
+		m.bodyLines[msg.index].text = msg.rendered
 		m.bodyVP.GotoBottom()
 		return m, nil
 	case channelClosedMsg:
@@ -307,10 +319,11 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 	m.footerVP.Height = 4
 
 	var cmd tea.Cmd
-	if m.rawResponseText != "" {
-		m.renderGeneration++
-		m.responseText = m.rawResponseText // instant plaintext fallback
-		cmd = m.renderMarkdownAsync(m.rawResponseText, m.width, m.renderGeneration)
+	if m.rawResponseIndex >= 0 && m.rawResponseIndex < len(m.bodyLines) {
+		entry := m.bodyLines[m.rawResponseIndex]
+		if entry.raw != "" {
+			cmd = m.renderMarkdownAsync(entry.raw, m.width, m.rawResponseIndex)
+		}
 	}
 	return m, cmd
 }
@@ -365,8 +378,6 @@ func (m *model) handleTurnStarted(e events.TurnStarted) tea.Cmd {
 	m.currentState = stateThinking
 	m.spinner.clear()
 	m.seenCallIDs = make(map[string]bool)
-	m.responseText = ""
-	m.rawResponseText = ""
 	return m.waitForEvent()
 }
 
@@ -407,17 +418,28 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 // handleResponseEvent processes a ResponseEvent.
 func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 	m.spinner.clear()
-	m.rawResponseText = extractResponseText(e.Content)
 
-	m.renderGeneration++
-	m.responseText = m.rawResponseText // instant plaintext fallback
-	renderCmd := m.renderMarkdownAsync(m.rawResponseText, m.width, m.renderGeneration)
-
+	// Extract tool calls from response content BEFORE the early return
+	// so dedup works even when the response has no display text (e.g.
+	// function-call-only responses). Tool call lines appear above the
+	// response in the chronological body viewport.
 	if e.Content != nil {
 		m.extractToolCallsFromResponse(e.Content)
 	}
+
+	rawText := extractResponseText(e.Content)
+	if rawText == "" {
+		return m.waitForEvent()
+	}
+
+	m.rawResponseIndex = len(m.bodyLines)
+	m.bodyLines = append(m.bodyLines, bodyEntry{
+		text: rawText, // instant plaintext fallback
+		raw:  rawText,
+	})
+
 	m.bodyVP.GotoBottom()
-	return tea.Batch(m.waitForEvent(), renderCmd)
+	return tea.Batch(m.waitForEvent(), m.renderMarkdownAsync(rawText, m.width, m.rawResponseIndex))
 }
 
 // handleToolCallEvent processes a ToolCallEvent, deduplicating calls already
@@ -552,7 +574,7 @@ func extractResponseText(content *llm.Content) string {
 	return sb.String()
 }
 
-// extractToolCallsFromResponse populates toolLogs from FunctionCall parts
+// extractToolCallsFromResponse populates bodyLines from FunctionCall parts
 // in the ResponseEvent content.
 func (m *model) extractToolCallsFromResponse(content *llm.Content) {
 	var toolCalls []*llm.FunctionCall
@@ -663,16 +685,13 @@ func (m *model) renderHeader() string {
 	return sb.String()
 }
 
-// renderBodyContent returns tool logs and response text as plain content.
+// renderBodyContent returns the body transcript as plain content.
 // The viewport handles overflow and scrolling.
 func (m *model) renderBodyContent() string {
 	var sb strings.Builder
-	for _, log := range m.toolLogs {
-		sb.WriteString(log)
+	for _, line := range m.bodyLines {
+		sb.WriteString(line.text)
 		sb.WriteString("\n")
-	}
-	if m.responseText != "" {
-		sb.WriteString(m.responseText)
 	}
 	return sb.String()
 }
@@ -703,8 +722,8 @@ func (m *model) renderFooterContent() string {
 
 // renderMarkdownAsync dispatches an asynchronous command to render markdown text.
 // It returns a tea.Cmd that will yield an mdRenderCompleteMsg with the rendered text
-// and the current generation.
-func (m *model) renderMarkdownAsync(text string, width int, generation int) tea.Cmd {
+// and the bodyLines index to update.
+func (m *model) renderMarkdownAsync(text string, width int, index int) tea.Cmd {
 	isDark := m.isDark // capture locally for goroutine
 	return func() tea.Msg {
 		style := "light"
@@ -717,15 +736,15 @@ func (m *model) renderMarkdownAsync(text string, width int, generation int) tea.
 		}
 		tr, err := glamour.NewTermRenderer(opts...)
 		if err != nil {
-			return mdRenderCompleteMsg{generation: generation, rendered: text}
+			return mdRenderCompleteMsg{index: index, rendered: text}
 		}
 		out, err := tr.Render(text)
 		if err != nil {
-			return mdRenderCompleteMsg{generation: generation, rendered: text}
+			return mdRenderCompleteMsg{index: index, rendered: text}
 		}
 		return mdRenderCompleteMsg{
-			generation: generation,
-			rendered:   strings.TrimRight(out, "\n"),
+			index:    index,
+			rendered: strings.TrimRight(out, "\n"),
 		}
 	}
 }

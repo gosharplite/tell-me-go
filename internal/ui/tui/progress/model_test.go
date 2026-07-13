@@ -138,14 +138,15 @@ func TestModel_Update(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 		m.width = 80
-		m.rawResponseText = "hello"
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "hello", raw: "hello"})
+		m.rawResponseIndex = 0
 
 		newModel, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 		updated := newModel.(*model)
 
 		assert.Equal(t, 120, updated.width)
 		assert.Equal(t, 40, updated.height)
-		assert.Equal(t, "hello", updated.responseText,
+		assert.Equal(t, "hello", updated.bodyLines[0].text,
 			"response should fallback to plaintext immediately")
 		assert.NotNil(t, cmd, "should dispatch async render command")
 	})
@@ -200,10 +201,12 @@ func TestModel_Update(t *testing.T) {
 		newModel, cmd := m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
 		updated := newModel.(*model)
 
-		assert.Equal(t, "Hello, world! I am fine.", updated.responseText,
+		require.NotEmpty(t, updated.bodyLines, "bodyLines should have response entry")
+		last := updated.bodyLines[len(updated.bodyLines)-1]
+		assert.Equal(t, "Hello, world! I am fine.", last.text,
 			"should concatenate non-thought text parts, skipping thoughts")
-		assert.Equal(t, "Hello, world! I am fine.", updated.rawResponseText,
-			"rawResponseText should store unrendered text")
+		assert.Equal(t, "Hello, world! I am fine.", last.raw,
+			"raw should store unrendered text")
 		assert.NotNil(t, cmd)
 	})
 
@@ -218,7 +221,8 @@ func TestModel_Update(t *testing.T) {
 		newModel, cmd := m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
 		updated := newModel.(*model)
 
-		assert.Equal(t, "Hello", updated.responseText,
+		require.NotEmpty(t, updated.bodyLines)
+		assert.Equal(t, "Hello", updated.bodyLines[len(updated.bodyLines)-1].text,
 			"should update plaintext fallback immediately")
 		assert.NotNil(t, cmd)
 	})
@@ -295,15 +299,16 @@ func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 	bodyVP := viewport.New(80, 72)
 	footerVP := viewport.New(80, 4)
 	return &model{
-		eventCh:         ch,
-		currentState:    stateIdle,
-		height:          80,
-		width:           80,
-		metricsProvider: &noopMetricsProvider{},
-		seenCallIDs:     make(map[string]bool),
-		headerVP:        headerVP,
-		bodyVP:          bodyVP,
-		footerVP:        footerVP,
+		eventCh:          ch,
+		currentState:     stateIdle,
+		height:           80,
+		width:            80,
+		metricsProvider:  &noopMetricsProvider{},
+		seenCallIDs:      make(map[string]bool),
+		rawResponseIndex: -1,
+		headerVP:         headerVP,
+		bodyVP:           bodyVP,
+		footerVP:         footerVP,
 	}
 }
 
@@ -357,7 +362,7 @@ func TestModel_View(t *testing.T) {
 		m.maxTokens = 64000
 		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
 		m.currentState = stateRendering
-		m.responseText = "Hello, world!"
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Hello, world!"})
 
 		out := m.View()
 
@@ -376,7 +381,7 @@ func TestModel_View(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 		m.currentState = stateRendering
-		m.responseText = ""
+		m.bodyLines = nil
 
 		out := m.View()
 		// Viewport-based layout — just verify header is present.
@@ -429,7 +434,7 @@ func TestModel_View(t *testing.T) {
 		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 
 		m.appendToolLog("Test", "some tool output")
-		m.responseText = "final response"
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "final response"})
 
 		out := m.View()
 		assert.Contains(t, out, "some tool output")
@@ -522,7 +527,8 @@ func TestModel_Integration(t *testing.T) {
 			},
 		}))
 		m = newModel.(*model)
-		assert.Equal(t, "Sure, I can help with that.", m.responseText)
+		require.NotEmpty(t, m.bodyLines)
+		assert.Equal(t, "Sure, I can help with that.", m.bodyLines[len(m.bodyLines)-1].text)
 		assert.NotNil(t, cmd)
 
 		// Verify View after full cycle
@@ -865,7 +871,8 @@ func TestModel_SpinnerClearance(t *testing.T) {
 
 		assert.Empty(t, updated.spinner.status)
 		assert.False(t, updated.spinner.tickActive)
-		assert.Equal(t, "Hello", updated.responseText)
+		require.NotEmpty(t, updated.bodyLines)
+		assert.Equal(t, "Hello", updated.bodyLines[len(updated.bodyLines)-1].text)
 		assert.NotNil(t, cmd)
 	})
 
@@ -1001,10 +1008,10 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 3)
-		assert.Contains(t, updated.toolLogs[0], "[Tool Engine] Step 1/5")
-		assert.Contains(t, updated.toolLogs[1], "[Tool Reason] Stage the formatting fix for commit")
-		assert.Contains(t, updated.toolLogs[2], "[Tool Action] execute_command(command: git add internal/ui/tui/progress/model.go)")
+		assert.Len(t, updated.bodyLines, 3)
+		assert.Contains(t, updated.bodyLines[0].text, "[Tool Engine] Step 1/5")
+		assert.Contains(t, updated.bodyLines[1].text, "[Tool Reason] Stage the formatting fix for commit")
+		assert.Contains(t, updated.bodyLines[2].text, "[Tool Action] execute_command(command: git add internal/ui/tui/progress/model.go)")
 		assert.NotNil(t, cmd)
 	})
 
@@ -1019,7 +1026,7 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Nil(t, updated.toolLogs)
+		assert.Empty(t, updated.bodyLines)
 		assert.NotNil(t, cmd)
 	})
 
@@ -1043,9 +1050,9 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 2) // Step + Action only, no Reason
-		assert.Contains(t, updated.toolLogs[0], "[Tool Engine]")
-		assert.Contains(t, updated.toolLogs[1], "[Tool Action] read_file(filepath: /tmp/test.go)")
+		assert.Len(t, updated.bodyLines, 2) // Step + Action only, no Reason
+		assert.Contains(t, updated.bodyLines[0].text, "[Tool Engine]")
+		assert.Contains(t, updated.bodyLines[1].text, "[Tool Action] read_file(filepath: /tmp/test.go)")
 	})
 
 	t.Run("ToolResultEvent renders snippet", func(t *testing.T) {
@@ -1061,8 +1068,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Tool Result] execute_command: Exit Code: 0 Output: (empty)")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Tool Result] execute_command: Exit Code: 0 Output: (empty)")
 		assert.NotNil(t, cmd)
 	})
 
@@ -1080,8 +1087,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		snippet := updated.toolLogs[0]
+		assert.Len(t, updated.bodyLines, 1)
+		snippet := updated.bodyLines[0].text
 		// Should be truncated at 200 chars of text: timestamp(11) + tag(14) + "read_file: "(12) + 200 = ~237
 		assert.Less(t, len(snippet), 240)
 		assert.True(t, strings.HasSuffix(snippet, "..."))
@@ -1100,9 +1107,9 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.NotContains(t, updated.toolLogs[0], "\n")
-		assert.Contains(t, updated.toolLogs[0], "line1 line2 line3")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.NotContains(t, updated.bodyLines[0].text, "\n")
+		assert.Contains(t, updated.bodyLines[0].text, "line1 line2 line3")
 	})
 
 	t.Run("ToolResultEvent with empty Name is no-op", func(t *testing.T) {
@@ -1118,7 +1125,7 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Nil(t, updated.toolLogs)
+		assert.Empty(t, updated.bodyLines)
 	})
 
 	t.Run("ToolOutputStreamEvent error level", func(t *testing.T) {
@@ -1132,8 +1139,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Error] command not found")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Error] command not found")
 	})
 
 	t.Run("ToolOutputStreamEvent warn level", func(t *testing.T) {
@@ -1147,8 +1154,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Warning] deprecated flag used")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Warning] deprecated flag used")
 	})
 
 	t.Run("ToolOutputStreamEvent output level is logged", func(t *testing.T) {
@@ -1162,8 +1169,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Tool Output] Executing...")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Tool Output] Executing...")
 	})
 
 	t.Run("ToolOutputStreamEvent unknown level defaults to System", func(t *testing.T) {
@@ -1177,8 +1184,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[System] some message")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[System] some message")
 	})
 
 	t.Run("SystemMessageEvent error level", func(t *testing.T) {
@@ -1192,8 +1199,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Error] failed to connect to API")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Error] failed to connect to API")
 	})
 
 	t.Run("SystemMessageEvent info level", func(t *testing.T) {
@@ -1207,8 +1214,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Info] context window expanded to 128k")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Info] context window expanded to 128k")
 	})
 
 	t.Run("SystemMessageEvent default level", func(t *testing.T) {
@@ -1222,8 +1229,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[System] agent state changed")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[System] agent state changed")
 	})
 
 	t.Run("StatusUpdate error level", func(t *testing.T) {
@@ -1237,8 +1244,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Error] context limit exceeded")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Error] context limit exceeded")
 	})
 
 	t.Run("StatusUpdate warn level", func(t *testing.T) {
@@ -1252,8 +1259,8 @@ func TestModel_ToolLogs(t *testing.T) {
 		}))
 		updated := newModel.(*model)
 
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "[Warning] retry attempt 2 of 3")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "[Warning] retry attempt 2 of 3")
 	})
 
 	t.Run("tool_logs_accumulate_across_turns", func(t *testing.T) {
@@ -1265,32 +1272,32 @@ func TestModel_ToolLogs(t *testing.T) {
 		// Turn N: dispatch turn adds tool logs
 		m.appendToolLog("Tool Engine", "Step 1/5")
 		m.appendToolLog("Tool Action", "read_file(main.go)")
-		assert.Len(t, m.toolLogs, 2)
+		assert.Len(t, m.bodyLines, 2)
 
 		// Turn N+1: TurnStarted must NOT clear them
 		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
 		updated := newModel.(*model)
-		assert.Len(t, updated.toolLogs, 2, "tool logs should persist into execution turn")
-		assert.Contains(t, updated.toolLogs[0], "Step 1/5")
-		assert.Contains(t, updated.toolLogs[1], "read_file")
+		assert.Len(t, updated.bodyLines, 2, "tool logs should persist into execution turn")
+		assert.Contains(t, updated.bodyLines[0].text, "Step 1/5")
+		assert.Contains(t, updated.bodyLines[1].text, "read_file")
 
 		// Execution turn adds result
 		updated.appendToolLog("Tool Result", "read_file: file contents here")
-		assert.Len(t, updated.toolLogs, 3, "all three lines present during execution")
+		assert.Len(t, updated.bodyLines, 3, "all three lines present during execution")
 	})
 
 	t.Run("TurnStarted does not clear toolLogs", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
-		m.toolLogs = []string{"[12:00:00] [Tool Engine] Step 1/5"}
+		m.bodyLines = []bodyEntry{{text: "[12:00:00] [Tool Engine] Step 1/5"}}
 
 		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
 		updated := newModel.(*model)
 
-		assert.NotNil(t, updated.toolLogs, "toolLogs should persist across TurnStarted")
-		assert.Len(t, updated.toolLogs, 1)
-		assert.Contains(t, updated.toolLogs[0], "Step 1/5")
+		assert.NotEmpty(t, updated.bodyLines, "bodyLines should persist across TurnStarted")
+		assert.Len(t, updated.bodyLines, 1)
+		assert.Contains(t, updated.bodyLines[0].text, "Step 1/5")
 	})
 
 }
@@ -1317,16 +1324,16 @@ func TestModel_ResponseEvent_ExtractsToolCalls(t *testing.T) {
 
 	foundReason := false
 	foundAction := false
-	for _, log := range m.toolLogs {
-		if strings.Contains(log, "[Tool Reason] Run unit tests") {
+	for _, entry := range m.bodyLines {
+		if strings.Contains(entry.text, "[Tool Reason] Run unit tests") {
 			foundReason = true
 		}
-		if strings.Contains(log, "[Tool Action] execute_command") {
+		if strings.Contains(entry.text, "[Tool Action] execute_command") {
 			foundAction = true
 		}
 	}
-	assert.True(t, foundReason, "expected [Tool Reason] in toolLogs from ResponseEvent")
-	assert.True(t, foundAction, "expected [Tool Action] in toolLogs from ResponseEvent")
+	assert.True(t, foundReason, "expected [Tool Reason] in bodyLines from ResponseEvent")
+	assert.True(t, foundAction, "expected [Tool Action] in bodyLines from ResponseEvent")
 }
 
 func TestModel_ToolCallEvent_DedupsAfterResponseEvent(t *testing.T) {
@@ -1347,7 +1354,7 @@ func TestModel_ToolCallEvent_DedupsAfterResponseEvent(t *testing.T) {
 		},
 	}
 	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
-	logCountAfterResponse := len(m.toolLogs)
+	logCountAfterResponse := len(m.bodyLines)
 
 	m.Update(domainEventMsg(events.ToolCallEvent{
 		Calls: []*llm.FunctionCall{{
@@ -1362,7 +1369,7 @@ func TestModel_ToolCallEvent_DedupsAfterResponseEvent(t *testing.T) {
 		MaxTurns: 10,
 	}))
 
-	assert.Equal(t, logCountAfterResponse, len(m.toolLogs),
+	assert.Equal(t, logCountAfterResponse, len(m.bodyLines),
 		"ToolCallEvent should not add log lines for already-seen calls")
 }
 
@@ -1381,7 +1388,7 @@ func TestModel_ToolCallEvent_ShowsEngineForPartialNewCalls(t *testing.T) {
 			}},
 	}
 	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
-	logCount := len(m.toolLogs)
+	logCount := len(m.bodyLines)
 
 	m.Update(domainEventMsg(events.ToolCallEvent{
 		Calls: []*llm.FunctionCall{
@@ -1400,16 +1407,16 @@ func TestModel_ToolCallEvent_ShowsEngineForPartialNewCalls(t *testing.T) {
 		MaxTurns: 10,
 	}))
 
-	assert.Greater(t, len(m.toolLogs), logCount,
+	assert.Greater(t, len(m.bodyLines), logCount,
 		"ToolCallEvent should add lines for new calls not already seen")
 
 	foundEngine := false
 	foundReadFile := false
-	for _, log := range m.toolLogs {
-		if strings.Contains(log, "[Tool Engine] Step 1/10") {
+	for _, entry := range m.bodyLines {
+		if strings.Contains(entry.text, "[Tool Engine] Step 1/10") {
 			foundEngine = true
 		}
-		if strings.Contains(log, "[Tool Action] read_file") {
+		if strings.Contains(entry.text, "[Tool Action] read_file") {
 			foundReadFile = true
 		}
 	}
@@ -1426,8 +1433,7 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 	m.sessionName = "test"
 	m.modelName = "deepseek-v4-pro"
 	m.currentState = stateRendering
-	m.responseText = "Here is the AI response for turn 5."
-	m.rawResponseText = "Here is the AI response for turn 5."
+	m.bodyLines = append(m.bodyLines, bodyEntry{text: "Here is the AI response for turn 5."})
 	m.postCallStatus = &events.TurnStatus{
 		Metrics: &llm.Metrics{
 			PromptTokens:   1000,
@@ -1454,23 +1460,25 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 	assert.Equal(t, 6, updated.turn) // SessionTurns 5 + 1
 	assert.Equal(t, stateThinking, updated.currentState)
 
-	// All stale display fields must be cleared.
-	assert.Empty(t, updated.responseText, "responseText should be cleared on TurnStarted")
-	assert.Empty(t, updated.rawResponseText, "rawResponseText should be cleared on TurnStarted")
+	// bodyLines is append-only: previous response must persist
+	require.NotEmpty(t, updated.bodyLines)
+	last := updated.bodyLines[len(updated.bodyLines)-1]
+	assert.Equal(t, "Here is the AI response for turn 5.", last.text,
+		"response should persist in bodyLines across TurnStarted")
 
 	// Footer status lines must PERSIST across TurnStarted (sticky).
 	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist across TurnStarted")
 	assert.NotEmpty(t, updated.postCallMetricsLine, "postCallMetricsLine should persist across TurnStarted")
 	assert.NotEmpty(t, updated.finalCostLine, "finalCostLine should persist across TurnStarted")
 
-	// Non-display fields should also be cleared (except toolLogs — sticky).
+	// Non-display fields should also be cleared (except bodyLines — append-only).
 	assert.Len(t, updated.seenCallIDs, 0, "seenCallIDs should be empty on TurnStarted")
 
-	// View() after TurnStarted must NOT contain stale response text,
-	// but footer status lines should still be visible.
+	// View() after TurnStarted should still contain previous response in scrollback,
+	// and footer status lines should still be visible.
 	updatedOut := updated.View()
-	assert.NotContains(t, updatedOut, "Here is the AI response for turn 5.",
-		"View after TurnStarted must not contain stale response text")
+	assert.Contains(t, updatedOut, "Here is the AI response for turn 5.",
+		"View after TurnStarted should still contain previous response in scrollback")
 	assert.Contains(t, updatedOut, "M: 200 H: 800 C: 50",
 		"View after TurnStarted should still contain sticky metrics line")
 	assert.Contains(t, updatedOut, "╰─⠿ Ready",
@@ -1528,9 +1536,6 @@ func TestModel_FooterStatusLinesPersistAcrossTurns(t *testing.T) {
 	assert.Equal(t, "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)", updated.postCallMetricsLine)
 	assert.Equal(t, "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)", updated.finalCostLine)
 	assert.NotNil(t, cmd)
-
-	// But responseText should still be cleared (turn-specific).
-	assert.Empty(t, updated.responseText)
 }
 
 func TestModel_ResponseEvent_NoToolCalls_NoSpuriousLogs(t *testing.T) {
@@ -1545,7 +1550,7 @@ func TestModel_ResponseEvent_NoToolCalls_NoSpuriousLogs(t *testing.T) {
 	}
 	m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
 
-	assert.Len(t, m.toolLogs, 0, "text-only ResponseEvent should not add tool logs")
+	assert.Len(t, m.bodyLines, 1, "text-only ResponseEvent should add exactly one bodyLines entry (the response)")
 	assert.Len(t, m.seenCallIDs, 0, "text-only ResponseEvent should not populate seenCallIDs")
 }
 
@@ -1703,34 +1708,34 @@ func TestSampleMetrics(t *testing.T) {
 }
 
 func TestModel_AsyncRenderGuards(t *testing.T) {
-	t.Run("stale generation is dropped", func(t *testing.T) {
+	t.Run("stale index is dropped", func(t *testing.T) {
 		m := newTestModel(t.Context(), make(chan events.Event, 1))
-		m.renderGeneration = 5
-		m.responseText = "Current"
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Current", raw: "Current"})
+		m.rawResponseIndex = 0
 
 		newModel, cmd := m.Update(mdRenderCompleteMsg{
-			generation: 4, // stale
-			rendered:   "Stale",
+			index:    -1, // stale: negative index
+			rendered: "Stale",
 		})
 		updated := newModel.(*model)
 
 		assert.Nil(t, cmd)
-		assert.Equal(t, "Current", updated.responseText)
+		assert.Equal(t, "Current", updated.bodyLines[0].text)
 	})
 
-	t.Run("current generation is accepted", func(t *testing.T) {
+	t.Run("current index is accepted", func(t *testing.T) {
 		m := newTestModel(t.Context(), make(chan events.Event, 1))
-		m.renderGeneration = 5
-		m.responseText = "Current"
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Current", raw: "Current"})
+		m.rawResponseIndex = 0
 
 		newModel, cmd := m.Update(mdRenderCompleteMsg{
-			generation: 5,
-			rendered:   "Fresh",
+			index:    0,
+			rendered: "Fresh",
 		})
 		updated := newModel.(*model)
 
 		assert.Nil(t, cmd)
-		assert.Equal(t, "Fresh", updated.responseText)
+		assert.Equal(t, "Fresh", updated.bodyLines[0].text)
 	})
 }
 
