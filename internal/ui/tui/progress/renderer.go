@@ -52,12 +52,17 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 	return func(ctx context.Context, e events.Event) {
 		switch e.(type) {
 		case events.TurnStarted, events.TurnStatusEvent:
-			// Control-plane events — must never drop. The TUI cannot
-			// track turn progress without these. Respects context
-			// cancellation to prevent deadlocks during shutdown.
+			// Control-plane events. A 5-second deadline prevents
+			// backpressure deadlock when the TUI channel is full
+			// (e.g., slow Glamour rendering). The subscriber loop's
+			// 30s timeout ctx is the ultimate backstop.
+			timer := time.NewTimer(5 * time.Second)
 			select {
 			case ch <- e:
+				timer.Stop()
+			case <-timer.C:
 			case <-ctx.Done():
+				timer.Stop()
 			}
 		case events.ResponseEvent:
 			// Display-plane event that can be regenerated from history.

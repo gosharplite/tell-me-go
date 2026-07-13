@@ -236,6 +236,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
 	case spinnerTickMsg:
+		if m.finalCostLine != "" {
+			return m, nil // terminal state reached; suppress all ticks
+		}
 		if m.spinner.showMetrics {
 			m.sampleMetrics(time.Now())
 		}
