@@ -1733,3 +1733,137 @@ func TestModel_AsyncRenderGuards(t *testing.T) {
 		assert.Equal(t, "Fresh", updated.responseText)
 	})
 }
+
+func TestSpinnerStartCommandProducesTick(t *testing.T) {
+	t.Run("start returns command that fires tick after 200ms", func(t *testing.T) {
+		s := &spinnerState{}
+
+		cmd := s.start(" Thinking...", false)
+		require.NotNil(t, cmd, "spinner.start() must return a non-nil tea.Cmd")
+
+		// Execute the command — tea.Tick blocks for spinnerTickInterval (200ms)
+		// then returns a spinnerTickMsg.
+		start := time.Now()
+		msg := cmd()
+		elapsed := time.Since(start)
+
+		assert.GreaterOrEqual(t, elapsed, 200*time.Millisecond,
+			"tea.Tick should block at least 200ms")
+		assert.Less(t, elapsed, 300*time.Millisecond,
+			"tea.Tick should not block excessively")
+
+		tickMsg, ok := msg.(spinnerTickMsg)
+		require.True(t, ok, "command must return spinnerTickMsg")
+		assert.Equal(t, s.generation, tickMsg.generation,
+			"tick generation must match spinner generation")
+	})
+
+	t.Run("feeding tick message through model advances frame and schedules next tick", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+
+		// Start the spinner to set initial state.
+		m.spinner.start(" Thinking...", false)
+
+		// Simulate the first tick arriving from the tea.Tick command.
+		newModel, cmd := m.Update(spinnerTickMsg{generation: m.spinner.generation})
+		updated := newModel.(*model)
+
+		assert.Equal(t, 1, updated.spinner.frame, "frame must advance from 0 to 1")
+		assert.NotNil(t, cmd, "next tick must be scheduled")
+	})
+
+	t.Run("stale generation tick is dropped and does not re-schedule", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+
+		// Start → generation 1.
+		m.spinner.start(" Thinking...", false)
+		gen1 := m.spinner.generation
+
+		// Start again (e.g., new turn) → generation 2.
+		m.spinner.start(" Executing...", false)
+
+		// Tick with stale generation 1 must be dropped.
+		newModel, cmd := m.Update(spinnerTickMsg{generation: gen1})
+		updated := newModel.(*model)
+
+		assert.Equal(t, 0, updated.spinner.frame,
+			"frame must NOT advance on stale generation tick")
+		assert.Nil(t, cmd, "stale tick must not schedule next tick")
+	})
+}
+
+func TestWaitEventsRenderSpinnerInView(t *testing.T) {
+	tests := []struct {
+		name         string
+		event        events.Event
+		wantContains string
+	}{
+		{
+			name:         "InferenceStartedEvent with model",
+			event:        events.InferenceStartedEvent{Model: "gpt-5"},
+			wantContains: " Thinking [gpt-5]...",
+		},
+		{
+			name:         "InferenceStartedEvent without model",
+			event:        events.InferenceStartedEvent{},
+			wantContains: " Thinking...",
+		},
+		{
+			name:         "SummarizationStartedEvent",
+			event:        events.SummarizationStartedEvent{},
+			wantContains: " Compressing context...",
+		},
+		{
+			name:         "ToolExecutionStartedEvent no tools",
+			event:        events.ToolExecutionStartedEvent{},
+			wantContains: " Executing tools...",
+		},
+		{
+			name:         "ToolExecutionStartedEvent one tool",
+			event:        events.ToolExecutionStartedEvent{ToolNames: []string{"bash"}},
+			wantContains: " Executing [bash]...",
+		},
+		{
+			name:         "ToolExecutionStartedEvent multiple tools",
+			event:        events.ToolExecutionStartedEvent{ToolNames: []string{"read", "write"}},
+			wantContains: " Executing tools [read, write]...",
+		},
+		{
+			name:         "RetryWaitingEvent",
+			event:        events.RetryWaitingEvent{Duration: 3 * time.Second},
+			wantContains: " Retrying in 3s...",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := make(chan events.Event, 1)
+			m := newTestModel(t.Context(), ch)
+			// WindowSizeMsg is needed for proper viewport sizing.
+			m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+			// The spinner only renders when currentState != stateIdle.
+			// In production, TurnStarted sets stateThinking before spinner events.
+			m.currentState = stateThinking
+
+			newModel, cmd := m.Update(domainEventMsg(tt.event))
+			updated := newModel.(*model)
+
+			assert.NotNil(t, cmd, "event must return a non-nil command")
+			assert.NotEmpty(t, updated.spinner.status,
+				"spinner.status must not be empty after wait event")
+
+			out := updated.View()
+			assert.Contains(t, out, tt.wantContains,
+				"View() must contain spinner status text after wait event")
+			// Verify a braille frame character is present (any of the 10 frames).
+			foundFrame := false
+			for _, frame := range brailleFrames {
+				if strings.Contains(out, frame) {
+					foundFrame = true
+					break
+				}
+			}
+			assert.True(t, foundFrame, "View() must contain a braille spinner frame")
+		})
+	}
+}

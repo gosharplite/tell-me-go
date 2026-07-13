@@ -13,7 +13,8 @@ import (
 
 type mockClock struct {
 	clock.Clock
-	now time.Time
+	now      time.Time
+	tickerCh chan time.Time // optional: if non-nil, NewTicker returns a ticker backed by this channel
 }
 
 func (m *mockClock) Now() time.Time {
@@ -27,9 +28,29 @@ func (m *mockClock) Since(t time.Time) time.Duration {
 func (m *mockClock) Sleep(d time.Duration)                  {}
 func (m *mockClock) After(d time.Duration) <-chan time.Time { return nil }
 func (m *mockClock) NewTicker(d time.Duration) clock.Ticker {
+	if m.tickerCh != nil {
+		return &mockTicker{c: m.tickerCh}
+	}
 	return mockTicker{c: nil}
 }
+
+// tick sends the current mock time through the ticker channel, triggering any
+// goroutine waiting on the ticker. No-op if tickerCh is nil.
+func (m *mockClock) tick() {
+	if m.tickerCh != nil {
+		m.tickerCh <- m.now
+	}
+}
 func (m *mockClock) Jitter(base float64) float64 { return base }
+
+// newMockClockWithTicker creates a mock clock with a buffered ticker channel,
+// allowing tests to manually advance the ticker with the tick() method.
+func newMockClockWithTicker(now time.Time) *mockClock {
+	return &mockClock{
+		now:      now,
+		tickerCh: make(chan time.Time, 16),
+	}
+}
 
 type mockTicker struct {
 	c <-chan time.Time

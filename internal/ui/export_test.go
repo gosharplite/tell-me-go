@@ -56,6 +56,18 @@ func (m *MockClock) Add(d time.Duration) {
 	m.now = m.now.Add(d)
 }
 
+// NewMockClockWithTicker creates a MockClock backed by a buffered ticker
+// channel. Use Tick() to manually trigger ticker firings.
+func NewMockClockWithTicker(now time.Time) *MockClock {
+	return newMockClockWithTicker(now)
+}
+
+// Tick sends the current mock time through the ticker channel, unblocking
+// any goroutine waiting on a ticker created by this clock.
+func (m *MockClock) Tick() {
+	m.tick()
+}
+
 func (r *stdUIRenderer) DrawLoadingIndicator(ui UIState, frame string, start time.Time, message string, showMetrics bool, m ports.SystemMetricsProvider) {
 	r.drawLoadingIndicator(ui, frame, start, message, showMetrics, nil)
 }
