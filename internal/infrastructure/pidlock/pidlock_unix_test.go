@@ -176,7 +176,7 @@ func TestIsStale_UnparseablePID(t *testing.T) {
 // =============================================================================
 
 func TestAcquire_WritesPID(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 	tmpDir := t.TempDir()
 
 	lockPath := tmpDir + "/test.lock"
@@ -212,7 +212,7 @@ func TestAcquire_WritesPID(t *testing.T) {
 }
 
 func TestAcquire_BreaksDeadPIDLock(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 	tmpDir := t.TempDir()
 
 	lockPath := tmpDir + "/test.lock"
@@ -256,7 +256,7 @@ func TestAcquire_BreaksDeadPIDLock(t *testing.T) {
 }
 
 func TestAcquire_RespectsAlivePIDLock(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond})
 	tmpDir := t.TempDir()
 
 	lockPath := tmpDir + "/test.lock"
@@ -289,7 +289,7 @@ func TestAcquire_RespectsAlivePIDLock(t *testing.T) {
 // =============================================================================
 
 func TestAcquire_RetryExhaustion(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond})
 	tmpDir := t.TempDir()
 
 	lockPath := tmpDir + "/test.lock"
@@ -317,9 +317,9 @@ func TestAcquire_RetryExhaustion(t *testing.T) {
 		t.Error("expected non-empty error message")
 	}
 
-	// Should have waited at least 50ms (first backoff).
-	if elapsed < 50*time.Millisecond {
-		t.Errorf("expected at least 50ms of backoff, got %v", elapsed)
+	// Should have waited at least 1ms (first backoff after override).
+	if elapsed < time.Millisecond {
+		t.Errorf("expected at least 1ms of backoff, got %v", elapsed)
 	}
 
 	// The lock file should still exist (never broken).
@@ -329,7 +329,7 @@ func TestAcquire_RetryExhaustion(t *testing.T) {
 }
 
 func TestAcquire_StaleLockRemoveThenReacquire(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 	tmpDir := t.TempDir()
 
 	lockPath := tmpDir + "/test.lock"
@@ -377,7 +377,7 @@ func TestAcquire_StaleLockRemoveThenReacquire(t *testing.T) {
 // We simulate this by removing the stale lock, then creating a fresh lock
 // (with our PID) before the retry loop comes around.
 func TestAcquire_TOCTOU_Safety(t *testing.T) {
-	t.Parallel()
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 	tmpDir := t.TempDir()
 
 	lockPath := tmpDir + "/test.lock"
@@ -486,6 +486,8 @@ func TestAcquire_NonIsExistOpenError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on Windows: chmod behavior differs")
 	}
+
+	setTestBackoff(t, []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond})
 
 	tmpDir := t.TempDir()
 

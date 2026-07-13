@@ -17,24 +17,31 @@ func TestOutputFormattingFlags(t *testing.T) {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
-	// 1. Setup Mock Server
+	// 1. Setup Mock Server (shared — httptest.Server is goroutine-safe)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Use a unique string that includes markdown.
 		resp := createTextResponse("google", "Text with **bold** and _italics_")
 		_, _ = fmt.Fprint(w, resp)
 	}))
-	defer server.Close()
+	// Use t.Cleanup instead of defer so the server stays alive during parallel
+	// subtests. (defer runs when the parent function returns, which happens
+	// before t.Parallel subtests resume.)
+	t.Cleanup(func() { server.Close() })
 
-	// 2. Setup Environment
-	homeDir := t.TempDir()
+	// 2. Shared config (read-only, safe for parallel subtests)
 	configPath := createTempConfig(t, "google", server.URL)
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL,
-	}
+	mockURL := server.URL
 
 	t.Run("RawOutput", func(t *testing.T) {
+		t.Parallel()
+		// Each subtest needs its own home dir to avoid SQLITE_BUSY when
+		// two binaries initialize the persistence layer concurrently.
+		homeDir := t.TempDir()
+		env := []string{
+			"TELL_ME_HOME=" + homeDir,
+			"TELL_ME_MOCK_URL=" + mockURL,
+		}
 		// Test -r (Raw Output)
 		stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-r", "Format this")
 		if err != nil {
@@ -53,6 +60,14 @@ func TestOutputFormattingFlags(t *testing.T) {
 	})
 
 	t.Run("InteractiveFallback", func(t *testing.T) {
+		t.Parallel()
+		// Each subtest needs its own home dir to avoid SQLITE_BUSY when
+		// two binaries initialize the persistence layer concurrently.
+		homeDir := t.TempDir()
+		env := []string{
+			"TELL_ME_HOME=" + homeDir,
+			"TELL_ME_MOCK_URL=" + mockURL,
+		}
 		// Test -i (Interactive/TUI Mode)
 		// Fallback to standard input in a non-TTY environment.
 		stdinContent := "Hello from piped stdin"

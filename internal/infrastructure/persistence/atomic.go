@@ -16,10 +16,14 @@ import (
 	"time"
 )
 
-const (
-	maxRenameAttempts = 5
-	renameRetryDelay  = 100 * time.Millisecond
-)
+// MaxRenameAttempts is the number of rename retries before giving up.
+// Tests may override this to reduce test duration.
+var MaxRenameAttempts = 5
+
+// RenameRetryDelay is the base delay between rename retries.
+// The actual delay is (attempt+1) * RenameRetryDelay (linear backoff).
+// Tests may override this to reduce test duration.
+var RenameRetryDelay = 100 * time.Millisecond
 
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
 // This ensures that the target file is either fully updated or not updated at all.
@@ -112,7 +116,7 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 
 func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath string, perm os.FileMode) error {
 	var lastErr error
-	for i := 0; i < maxRenameAttempts; i++ {
+	for i := 0; i < MaxRenameAttempts; i++ {
 		if err := fs.Rename(ctx, tmpPath, targetPath); err != nil {
 			if isCrossDeviceError(err) {
 				return fallbackCopy(ctx, fs, tmpPath, targetPath, perm)
@@ -123,7 +127,7 @@ func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath str
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(time.Duration(i+1) * renameRetryDelay): // Linear backoff
+				case <-time.After(time.Duration(i+1) * RenameRetryDelay): // Linear backoff
 				}
 				continue
 			}
@@ -131,7 +135,7 @@ func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath str
 		}
 		return nil
 	}
-	return fmt.Errorf("failed to rename temp file after %d attempts: %w", maxRenameAttempts, lastErr)
+	return fmt.Errorf("failed to rename temp file after %d attempts: %w", MaxRenameAttempts, lastErr)
 }
 
 func isTransientRenameError(ctx context.Context, fs FileSystem, err error, targetPath string) bool {
