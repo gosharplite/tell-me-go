@@ -735,6 +735,39 @@ dispatch registries, collapsing spinner-guard patterns) outweighs the
 maintainability benefit. The code is already clean, well-commented, and easy
 to reason about.
 
+### ui/renderer_spinner_test.go — TestStartSpinnerLifecycle (CC=17)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Sequential lifecycle test with 4 subtests ("starts, ticks multiple frames,
+  and stops cleanly", "stop is idempotent", "spinner does not run when not in
+  terminal context", "context cancellation stops spinner and clears indicator").
+  Steps are not independent — each subtest builds on the spinner lifecycle
+  (start → tick → stop). The CC=17 comes from assertion boilerplate
+  (`t.Fatalf`, `t.Errorf`, `runtime.Gosched` poll loops), not branching
+  business logic. Splitting would duplicate the expensive setup
+  (`MockClockWithTicker` + `SetForceSpinner`) per subtest. Same acceptance
+  class as `TestHistoryNavigation_CompleteWorkflow` (CC=15, already documented
+  in the Test Complexity section above).
+- **See**: `internal/ui/renderer_spinner_test.go:176`
+
+### tools/analysis/index_snapshot_test.go — (*indexer).snapshot (CC=11)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Production method defined in a `_test.go` file (package `analysis`,
+  not `analysis_test`) because it needs access to unexported indexer fields
+  (`idx.mu`, `idx.pkgs`, `idx.symbolsByPath`, `idx.usagesByName`,
+  `idx.implsCache`). It deep-copies the indexer's complete internal state into
+  an `indexSnapshot` struct for test-fixture generation. The CC=11 comes from
+  5 deep-copy loops (`fileToPkg`, `decls`, `implsCopy`, `symbolsCopy`,
+  `usagesCopy`) + 3 guards (`modulePath` discovery, `CompiledGoFiles` dedup,
+  `collectDeclarations` filter). Only called from `fixture_gen_test.go:58` —
+  pure test infrastructure. Splitting the copy loops into helpers would
+  fragment a coherent snapshot operation for cosmetic CC reduction with no
+  maintainability benefit. Same acceptance class as `createPrecisionWorkspace`
+  (CC=12, test-fixture builder) and the type-switch dispatch entries in this
+  section.
+- **See**: `internal/tools/analysis/index_snapshot_test.go:107`,
+  `internal/tools/analysis/fixture_gen_test.go:58`
 ---
 
 ### ui/tui/progress/model.go — (*model).Update (CC=12)
