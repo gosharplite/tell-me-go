@@ -138,8 +138,7 @@ func TestModel_Update(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 		m.width = 80
-		m.bodyLines = append(m.bodyLines, bodyEntry{text: "hello", raw: "hello"})
-		m.rawResponseIndex = 0
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "hello", raw: "hello", needsRender: true})
 
 		newModel, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 		updated := newModel.(*model)
@@ -304,9 +303,8 @@ func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 		height:           80,
 		width:            80,
 		metricsProvider:  &noopMetricsProvider{},
-		seenCallIDs:      make(map[string]bool),
-		rawResponseIndex: -1,
-		headerVP:         headerVP,
+		seenCallIDs:     make(map[string]bool),
+		headerVP:        headerVP,
 		bodyVP:           bodyVP,
 		footerVP:         footerVP,
 	}
@@ -362,7 +360,7 @@ func TestModel_View(t *testing.T) {
 		m.maxTokens = 64000
 		m.timestamp = time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
 		m.currentState = stateRendering
-		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Hello, world!"})
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Hello, world!", needsRender: false})
 
 		out := m.View()
 
@@ -434,7 +432,7 @@ func TestModel_View(t *testing.T) {
 		m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 
 		m.appendToolLog("Test", "some tool output")
-		m.bodyLines = append(m.bodyLines, bodyEntry{text: "final response"})
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "final response", needsRender: false})
 
 		out := m.View()
 		assert.Contains(t, out, "some tool output")
@@ -1290,7 +1288,7 @@ func TestModel_ToolLogs(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
-		m.bodyLines = []bodyEntry{{text: "[12:00:00] [Tool Engine] Step 1/5"}}
+		m.bodyLines = []bodyEntry{{text: "[12:00:00] [Tool Engine] Step 1/5", needsRender: false}}
 
 		newModel, _ := m.Update(domainEventMsg(events.TurnStarted{Turn: 0, SessionTurns: 0}))
 		updated := newModel.(*model)
@@ -1433,7 +1431,7 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 	m.sessionName = "test"
 	m.modelName = "deepseek-v4-pro"
 	m.currentState = stateRendering
-	m.bodyLines = append(m.bodyLines, bodyEntry{text: "Here is the AI response for turn 5."})
+	m.bodyLines = append(m.bodyLines, bodyEntry{text: "Here is the AI response for turn 5.", needsRender: false})
 	m.postCallStatus = &events.TurnStatus{
 		Metrics: &llm.Metrics{
 			PromptTokens:   1000,
@@ -1710,8 +1708,7 @@ func TestSampleMetrics(t *testing.T) {
 func TestModel_AsyncRenderGuards(t *testing.T) {
 	t.Run("stale index is dropped", func(t *testing.T) {
 		m := newTestModel(t.Context(), make(chan events.Event, 1))
-		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Current", raw: "Current"})
-		m.rawResponseIndex = 0
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Current", raw: "Current", needsRender: true})
 
 		newModel, cmd := m.Update(mdRenderCompleteMsg{
 			index:    -1, // stale: negative index
@@ -1725,8 +1722,7 @@ func TestModel_AsyncRenderGuards(t *testing.T) {
 
 	t.Run("current index is accepted", func(t *testing.T) {
 		m := newTestModel(t.Context(), make(chan events.Event, 1))
-		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Current", raw: "Current"})
-		m.rawResponseIndex = 0
+		m.bodyLines = append(m.bodyLines, bodyEntry{text: "Current", raw: "Current", needsRender: true})
 
 		newModel, cmd := m.Update(mdRenderCompleteMsg{
 			index:    0,

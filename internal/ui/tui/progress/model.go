@@ -121,11 +121,14 @@ func (s *spinnerState) active() bool {
 }
 
 // bodyEntry is a single line/section in the body viewport.
-// For tool logs, raw is empty. For response text, raw holds the
-// pre-markdown source for re-rendering on terminal resize.
+// For tool logs, raw is empty and needsRender is false. For response text
+// and user prompts, raw holds the pre-markdown source and needsRender is
+// true until glamour rendering completes, at which point text holds the
+// rendered output and needsRender becomes false.
 type bodyEntry struct {
-	text string // rendered display text
-	raw  string // original raw text for re-render; empty for tool logs
+	text        string // rendered display text
+	raw         string // original raw text for re-render; empty for tool logs
+	needsRender bool   // true when raw awaits glamour rendering or re-render on resize
 }
 
 type model struct {
@@ -154,9 +157,8 @@ type model struct {
 	sessionComplete     bool               // true when event channel closes (true session end)
 	spinner             spinnerState
 
-	bodyLines        []bodyEntry     // append-only chronological transcript
-	rawResponseIndex int             // index in bodyLines of the last response entry needing render; -1 if none
-	seenCallIDs      map[string]bool // dedup tool calls from ResponseEvent vs ToolCallEvent
+	bodyLines   []bodyEntry     // append-only chronological transcript
+	seenCallIDs map[string]bool // dedup tool calls from ResponseEvent vs ToolCallEvent
 
 	headerVP viewport.Model
 	bodyVP   viewport.Model
@@ -185,9 +187,8 @@ func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.S
 		width:            80,
 		isDark:           resolveIsDark(),
 		metricsProvider:  metricsProvider,
-		seenCallIDs:      make(map[string]bool),
-		rawResponseIndex: -1,
-		headerVP:         headerVP,
+		seenCallIDs:     make(map[string]bool),
+		headerVP:        headerVP,
 		bodyVP:           bodyVP,
 		footerVP:         footerVP,
 	}
@@ -209,7 +210,8 @@ func (m *model) waitForEvent() tea.Cmd {
 func (m *model) appendToolLog(tag, message string) {
 	ts := time.Now().Format("15:04:05")
 	m.bodyLines = append(m.bodyLines, bodyEntry{
-		text: fmt.Sprintf("[%s] [%s] %s", ts, tag, message),
+		text:        fmt.Sprintf("[%s] [%s] %s", ts, tag, message),
+		needsRender: false,
 	})
 }
 
@@ -272,12 +274,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.spinner.handleTick(msg)
 	case mdRenderCompleteMsg:
 		if msg.index < 0 || msg.index >= len(m.bodyLines) {
-			return m, nil // stale: turn changed
+			return m, nil // stale: index out of bounds
 		}
-		if m.bodyLines[msg.index].raw == "" {
-			return m, nil // stale: no longer a response entry
+		if !m.bodyLines[msg.index].needsRender {
+			return m, nil // stale: already rendered or not a renderable entry
 		}
 		m.bodyLines[msg.index].text = msg.rendered
+		m.bodyLines[msg.index].needsRender = false
 		m.bodyVP.GotoBottom()
 		return m, nil
 	case channelClosedMsg:
@@ -318,14 +321,20 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 	m.footerVP.Width = msg.Width
 	m.footerVP.Height = 4
 
-	var cmd tea.Cmd
-	if m.rawResponseIndex >= 0 && m.rawResponseIndex < len(m.bodyLines) {
-		entry := m.bodyLines[m.rawResponseIndex]
-		if entry.raw != "" {
-			cmd = m.renderMarkdownAsync(entry.raw, m.width, m.rawResponseIndex)
+	// Re-render all renderable entries at the new width.
+	// Setting needsRender = true triggers a fresh glamour render;
+	// the existing mdRenderCompleteMsg handler will clear it on completion.
+	var cmds []tea.Cmd
+	for i := range m.bodyLines {
+		if m.bodyLines[i].raw != "" {
+			m.bodyLines[i].needsRender = true
+			cmds = append(cmds, m.renderMarkdownAsync(m.bodyLines[i].raw, m.width, i))
 		}
 	}
-	return m, cmd
+	if len(cmds) > 0 {
+		return m, tea.Batch(cmds...)
+	}
+	return m, nil
 }
 
 // spinnerInfoProvider is a local interface capturing events that can drive
@@ -339,9 +348,15 @@ type spinnerInfoProvider interface {
 func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	switch e := events.Event(msg).(type) {
 	case events.UserPromptEvent:
-		m.appendToolLog("You", e.Text)
+		rawText := e.Text
+		m.bodyLines = append(m.bodyLines, bodyEntry{
+			text:        "[You] " + rawText,
+			raw:         rawText,
+			needsRender: true,
+		})
+		idx := len(m.bodyLines) - 1
 		m.bodyVP.GotoBottom()
-		return m, m.waitForEvent()
+		return m, tea.Batch(m.waitForEvent(), m.renderMarkdownAsync(rawText, m.width, idx))
 	case events.ToolCallEvent:
 		return m, m.handleToolCallEvent(e)
 	case events.ToolResultEvent:
@@ -436,14 +451,15 @@ func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 		return m.waitForEvent()
 	}
 
-	m.rawResponseIndex = len(m.bodyLines)
+	idx := len(m.bodyLines)
 	m.bodyLines = append(m.bodyLines, bodyEntry{
-		text: rawText, // instant plaintext fallback
-		raw:  rawText,
+		text:        rawText, // instant plaintext fallback
+		raw:         rawText,
+		needsRender: true,
 	})
 
 	m.bodyVP.GotoBottom()
-	return tea.Batch(m.waitForEvent(), m.renderMarkdownAsync(rawText, m.width, m.rawResponseIndex))
+	return tea.Batch(m.waitForEvent(), m.renderMarkdownAsync(rawText, m.width, idx))
 }
 
 // handleToolCallEvent processes a ToolCallEvent, deduplicating calls already
