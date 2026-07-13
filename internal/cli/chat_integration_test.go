@@ -50,6 +50,11 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	var stdout strings.Builder
 	var stderr strings.Builder
 	sm := security.NewSecurityManager(nil)
+	defer func() {
+		if sm != nil {
+			_ = sm.Close()
+		}
+	}()
 
 	mClient := &mockClient{}
 	// We use the real bootstrapper but wrap it to return our mock chatter
@@ -103,11 +108,6 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		t.Fatalf("Execute failed: %v\nStderr: %s", err, stderr.String())
-	}
-
-	// Ensure SecurityManager is closed to release file handles (commands.log) on Windows
-	if sm != nil {
-		_ = sm.Close()
 	}
 
 	t.Run("Archiving", func(t *testing.T) {
