@@ -27,6 +27,9 @@ import (
 // An internal retry loop absorbs the inherent goroutine scheduling
 // race between the pre-reap and cmd.Wait().
 func TestRunCommand_NonExitErrorWaitPath_SIGKILL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	const maxAttempts = 50
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {

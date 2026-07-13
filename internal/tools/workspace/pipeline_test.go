@@ -83,57 +83,60 @@ func TestPipeline_WirePipesCleanupOnFailure_LastStdoutPipe(t *testing.T) {
 // waited and cleaned up, and the error message identifies which command
 // failed.
 func TestPipeline_StartFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 
-	t.Run("pipeline start fails on 2nd command", func(t *testing.T) {
-		pipedParts := [][]string{
-			{helperPath, "echo", "hello"},
-			{"/nonexistent/binary_xyz_31415", "arg1"},
-		}
+	tests := []struct {
+		name       string
+		pipedParts [][]string
+		wantIndex  string // substring expected in error: "command 1" or "command 2"
+	}{
+		{
+			name: "fails on 2nd command",
+			pipedParts: [][]string{
+				{helperPath, "echo", "hello"},
+				{"/nonexistent/binary_xyz_31415", "arg1"},
+			},
+			wantIndex: "command 1 failed to start",
+		},
+		{
+			name: "fails on 3rd command",
+			pipedParts: [][]string{
+				{helperPath, "echo", "hello"},
+				{helperPath, "cat"},
+				{"/nonexistent/binary_xyz_31415", "arg1"},
+			},
+			wantIndex: "command 2 failed to start",
+		},
+	}
 
-		res, err := e.RunPipeline(ctx, pipedParts, executionConfig{})
-		if err == nil {
-			t.Fatal("expected error from pipeline start failure")
-		}
-		if !strings.Contains(err.Error(), "pipeline failed to start") {
-			t.Errorf("expected 'pipeline failed to start' in error, got: %v", err)
-		}
-		if !strings.Contains(err.Error(), "command 1 failed to start") {
-			t.Errorf("expected 'command 1 failed to start' in error, got: %v", err)
-		}
-		if res.ExitCode != 1 {
-			t.Errorf("expected exit code 1, got %d", res.ExitCode)
-		}
-	})
-
-	t.Run("pipeline start fails on 3rd command", func(t *testing.T) {
-		pipedParts := [][]string{
-			{helperPath, "echo", "hello"},
-			{helperPath, "cat"},
-			{"/nonexistent/binary_xyz_31415", "arg1"},
-		}
-
-		res, err := e.RunPipeline(ctx, pipedParts, executionConfig{})
-		if err == nil {
-			t.Fatal("expected error from pipeline start failure")
-		}
-		if !strings.Contains(err.Error(), "pipeline failed to start") {
-			t.Errorf("expected 'pipeline failed to start' in error, got: %v", err)
-		}
-		if !strings.Contains(err.Error(), "command 2 failed to start") {
-			t.Errorf("expected 'command 2 failed to start' in error, got: %v", err)
-		}
-		if res.ExitCode != 1 {
-			t.Errorf("expected exit code 1, got %d", res.ExitCode)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := e.RunPipeline(ctx, tt.pipedParts, executionConfig{})
+			if err == nil {
+				t.Fatal("expected error from pipeline start failure")
+			}
+			if !strings.Contains(err.Error(), "pipeline failed to start") {
+				t.Errorf("expected 'pipeline failed to start' in error, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tt.wantIndex) {
+				t.Errorf("expected %q in error, got: %v", tt.wantIndex, err)
+			}
+			if res.ExitCode != 1 {
+				t.Errorf("expected exit code 1, got %d", res.ExitCode)
+			}
+		})
+	}
 }
 
 // TestPipeline_captureStderrAsync verifies that captureStderrAsync correctly
 // reads lines from a reader into the streamProcessor's stderr builder with
 // the expected prefix, and handles scanner errors via appendErr.
 func TestPipeline_captureStderrAsync(t *testing.T) {
+	t.Parallel()
 	t.Run("captures lines with index prefix", func(t *testing.T) {
 		mu := &sync.Mutex{}
 		truncated := &atomic.Bool{}
@@ -203,6 +206,9 @@ func TestPipeline_captureStderrAsync(t *testing.T) {
 // command whose Start() fails. Without the p.closePipes() fix in the error
 // path, the first command blocks on the pipe write and p.wait() hangs forever.
 func TestPipeline_StartFailureDeadlock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 
 	pipedParts := [][]string{
@@ -243,6 +249,9 @@ func TestPipeline_StartFailureDeadlock(t *testing.T) {
 // TestRunPipeline_EnvPropagation verifies that custom environment variables
 // set via executionConfig.Env are visible to commands executed inside a pipeline.
 func TestRunPipeline_EnvPropagation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 
@@ -290,6 +299,9 @@ func TestRunPipeline_EnvPropagation(t *testing.T) {
 // objects never fail on the first StderrPipe/StdoutPipe call) but must
 // be exercised via dependency injection.
 func TestNewPipeline_WirePipesError_Propagation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := &processExecutor{
 		wirePipesFn: func(p *pipeline) error {
 			return fmt.Errorf("failed to get stderr pipe for command 0: injected failure")
@@ -352,6 +364,9 @@ func TestNewPipeline_WirePipesError(t *testing.T) {
 // TestRunPipeline_NewPipelineError (2nd command fails), this test confirms
 // correct index reporting for deeper pipelines.
 func TestNewPipeline_LoopErrorOnThirdCommand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	e := newprocessExecutor()
 	ctx := context.Background()
 

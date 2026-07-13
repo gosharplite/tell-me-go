@@ -15,32 +15,42 @@ import (
 var helperPath string
 
 func TestMain(m *testing.M) {
-	tmpDir, err := os.MkdirTemp("", "tmgo-test-*")
+	// Build the helper binary to a stable cache directory so that
+	// subsequent test runs skip the go build step when the source
+	// hasn't changed. This avoids ~1.5s of linker overhead per run.
+	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		log.Fatalf("failed to create temp dir: %v", err)
+		log.Fatalf("failed to get user cache dir: %v", err)
 	}
 
-	// Build the helper binary
-	target := filepath.Join(tmpDir, "helper")
+	helperDir := filepath.Join(cacheDir, "tell-me-go-test-helper")
+	if err := os.MkdirAll(helperDir, 0755); err != nil {
+		log.Fatalf("failed to create helper cache dir: %v", err)
+	}
+
+	target := filepath.Join(helperDir, "helper")
 	if runtime.GOOS == "windows" {
 		target += ".exe"
 	}
 
-	cmd := exec.Command("go", "build", "-o", target, "../../infrastructure/testing/testdata/helper/main.go")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		_ = os.RemoveAll(tmpDir)
-		log.Fatalf("failed to build test helper: %v\n%s", err, string(out))
+	srcFile := "../../infrastructure/testing/testdata/helper/main.go"
+
+	// Only rebuild if the source is newer than the cached binary.
+	srcInfo, srcErr := os.Stat(srcFile)
+	binInfo, binErr := os.Stat(target)
+	if binErr != nil || srcErr != nil || srcInfo.ModTime().After(binInfo.ModTime()) {
+		cmd := exec.Command("go", "build", "-o", target, srcFile)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			log.Fatalf("failed to build test helper: %v\n%s", err, string(out))
+		}
 	}
 
 	absPath, err := filepath.Abs(target)
 	if err != nil {
-		_ = os.RemoveAll(tmpDir)
 		log.Fatalf("failed to get absolute path for helper: %v", err)
 	}
 
 	helperPath = absPath
 
-	code := m.Run()
-	_ = os.RemoveAll(tmpDir)
-	os.Exit(code)
+	os.Exit(m.Run())
 }

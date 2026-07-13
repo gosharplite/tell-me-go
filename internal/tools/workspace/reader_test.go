@@ -178,6 +178,9 @@ func (m *mockDiffRunErrorExecutor) LookPath(name string) (string, error) {
 }
 
 func TestGetFileDiff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
 	f2 := filepath.Join(tempDir, "f2.txt")
@@ -265,6 +268,9 @@ func TestReadFile_Binary(t *testing.T) {
 }
 
 func TestGetFileDiff_Errors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
 	if err := os.WriteFile(f1, []byte("line1\n"), 0644); err != nil {
@@ -297,6 +303,9 @@ func TestGetFileDiff_Errors(t *testing.T) {
 }
 
 func TestGetFileDiff_RunCommandError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
 	f2 := filepath.Join(tempDir, "f2.txt")
@@ -575,6 +584,9 @@ func (m *noDiffExecutor) RunCommand(ctx context.Context, parts []string, config 
 }
 
 func TestValidateDiffPrerequisites(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tempDir := t.TempDir()
 	validFile := filepath.Join(tempDir, "valid.txt")
 	if err := os.WriteFile(validFile, []byte("content"), 0644); err != nil {
@@ -997,6 +1009,9 @@ func TestFindFile_MissingPattern(t *testing.T) {
 }
 
 func TestGetFileDiff_SecurityErrorFile2(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
 	if err := os.WriteFile(f1, []byte("line1\n"), 0644); err != nil {
@@ -1262,6 +1277,9 @@ func TestBuildTree_DepthExceedsMaxDepth(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetFileDiff_SecurityErrorFile1(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping process-spawning test in short mode")
+	}
 	tempDir := t.TempDir()
 	f2 := filepath.Join(tempDir, "f2.txt")
 	if err := os.WriteFile(f2, []byte("line1\n"), 0644); err != nil {
