@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -29,6 +30,12 @@ type spinnerTickMsg struct {
 
 // channelClosedMsg signals that the event channel has been closed (session complete).
 type channelClosedMsg struct{}
+
+// mdRenderCompleteMsg signals that an asynchronous markdown rendering task has finished.
+type mdRenderCompleteMsg struct {
+	generation int
+	rendered   string
+}
 
 type state int
 
@@ -125,9 +132,9 @@ type model struct {
 	maxTokens           int
 	timestamp           time.Time
 	err                 error
-	responseText        string                   // accumulated AI response text
-	rawResponseText     string                   // raw text before markdown rendering, for re-rendering on resize
-	mdRender            func(string, int) string // optional markdown renderer (text, width)
+	responseText        string // accumulated AI response text
+	rawResponseText     string // raw text before markdown rendering, for re-rendering on resize
+	renderGeneration    int    // incremented on each async render request to discard stale results
 	metricsProvider     ports.SystemMetricsProvider
 	lastCPUTime         int64
 	lastIdleTime        int64
@@ -148,8 +155,8 @@ type model struct {
 }
 
 // NewModel creates a new progress model that consumes events from the given
-// channel and optionally renders response text through mdRender.
-func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, int) string, metricsProvider ports.SystemMetricsProvider) tea.Model {
+// channel.
+func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.SystemMetricsProvider) tea.Model {
 	headerVP := viewport.New(80, 2)
 	bodyVP := viewport.New(80, 16)
 	footerVP := viewport.New(80, 4)
@@ -159,7 +166,6 @@ func NewModel(_ context.Context, ch <-chan events.Event, mdRender func(string, i
 		currentState:    stateIdle,
 		height:          24,
 		width:           80,
-		mdRender:        mdRender,
 		metricsProvider: metricsProvider,
 		seenCallIDs:     make(map[string]bool),
 		headerVP:        headerVP,
@@ -243,6 +249,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sampleMetrics(time.Now())
 		}
 		return m, m.spinner.handleTick(msg)
+	case mdRenderCompleteMsg:
+		if msg.generation != m.renderGeneration {
+			return m, nil // stale: resized, new turn, or post-final
+		}
+		m.responseText = msg.rendered
+		m.bodyVP.GotoBottom()
+		return m, nil
 	case channelClosedMsg:
 		return m, tea.Quit
 	case error:
@@ -279,10 +292,14 @@ func (m *model) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) 
 	}
 	m.footerVP.Width = msg.Width
 	m.footerVP.Height = 4
-	if m.rawResponseText != "" && m.mdRender != nil {
-		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
+
+	var cmd tea.Cmd
+	if m.rawResponseText != "" {
+		m.renderGeneration++
+		m.responseText = m.rawResponseText // instant plaintext fallback
+		cmd = m.renderMarkdownAsync(m.rawResponseText, m.width, m.renderGeneration)
 	}
-	return m, nil
+	return m, cmd
 }
 
 // spinnerInfoProvider is a local interface capturing events that can drive
@@ -378,17 +395,16 @@ func (m *model) handleTurnStatus(e events.TurnStatusEvent) tea.Cmd {
 func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 	m.spinner.clear()
 	m.rawResponseText = extractResponseText(e.Content)
-	if m.mdRender != nil {
-		m.responseText = strings.TrimRight(m.mdRender(m.rawResponseText, m.width), "\n")
-	} else {
-		m.responseText = m.rawResponseText
-	}
+
+	m.renderGeneration++
+	m.responseText = m.rawResponseText // instant plaintext fallback
+	renderCmd := m.renderMarkdownAsync(m.rawResponseText, m.width, m.renderGeneration)
 
 	if e.Content != nil {
 		m.extractToolCallsFromResponse(e.Content)
 	}
 	m.bodyVP.GotoBottom()
-	return m.waitForEvent()
+	return tea.Batch(m.waitForEvent(), renderCmd)
 }
 
 // handleToolCallEvent processes a ToolCallEvent, deduplicating calls already
@@ -670,4 +686,28 @@ func (m *model) renderFooterContent() string {
 		sb.WriteString(m.spinner.render(cpu, mem))
 	}
 	return sb.String()
+}
+
+// renderMarkdownAsync dispatches an asynchronous command to render markdown text.
+// It returns a tea.Cmd that will yield an mdRenderCompleteMsg with the rendered text
+// and the current generation.
+func (m *model) renderMarkdownAsync(text string, width int, generation int) tea.Cmd {
+	return func() tea.Msg {
+		opts := []glamour.TermRendererOption{glamour.WithAutoStyle()}
+		if width > 0 {
+			opts = append(opts, glamour.WithWordWrap(width))
+		}
+		tr, err := glamour.NewTermRenderer(opts...)
+		if err != nil {
+			return mdRenderCompleteMsg{generation: generation, rendered: text}
+		}
+		out, err := tr.Render(text)
+		if err != nil {
+			return mdRenderCompleteMsg{generation: generation, rendered: text}
+		}
+		return mdRenderCompleteMsg{
+			generation: generation,
+			rendered:   strings.TrimRight(out, "\n"),
+		}
+	}
 }

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -27,9 +26,7 @@ func (r *renderer) Run(ctx context.Context, source ports.EventSubscriber) func()
 
 	source.Subscribe(r.makeSubscriber(ch))
 
-	mdRender := r.makeMarkdownRenderer()
-
-	m := NewModel(ctx, ch, mdRender, r.metricsProvider)
+	m := NewModel(ctx, ch, r.metricsProvider)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	done := make(chan struct{})
@@ -85,36 +82,4 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 	}
 }
 
-// makeMarkdownRenderer returns a markdown-to-ANSI render function that
-// caches the glamour TermRenderer and re-creates it on width changes.
-func (r *renderer) makeMarkdownRenderer() func(string, int) string {
-	var cachedRenderer *glamour.TermRenderer
-	var lastWidth int
-	return func(text string, width int) string {
-		if width != lastWidth || cachedRenderer == nil {
-			opts := []glamour.TermRendererOption{glamour.WithAutoStyle()}
-			if width > 0 {
-				opts = append(opts, glamour.WithWordWrap(width))
-			}
-			tr, renderErr := glamour.NewTermRenderer(opts...)
-			if renderErr != nil {
-				// glamour.NewTermRenderer only fails on invalid options or
-				// internal library errors, not on valid markdown input. The
-				// fallback returns raw unrendered text as a cosmetic degrade.
-				// Coverage gap accepted by architect — structurally unreachable.
-				return text
-			}
-			cachedRenderer = tr
-			lastWidth = width
-		}
-		out, renderErr := cachedRenderer.Render(text)
-		if renderErr != nil {
-			// glamour.TermRenderer.Render only fails on internal rendering
-			// errors, not on valid markdown input. The fallback returns raw
-			// unrendered text as a cosmetic degrade.
-			// Coverage gap accepted by architect — structurally unreachable.
-			return text
-		}
-		return out
-	}
-}
+

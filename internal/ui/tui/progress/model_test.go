@@ -133,24 +133,21 @@ func TestModel_Update(t *testing.T) {
 		assert.Nil(t, cmd, "unknown messages must return nil to avoid duplicate channel readers")
 	})
 
-	t.Run("WindowSizeMsg triggers re-render with raw text", func(t *testing.T) {
+	t.Run("WindowSizeMsg triggers async re-render with raw text", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 		m.width = 80
 		m.rawResponseText = "hello"
-		m.mdRender = func(text string, width int) string {
-			return fmt.Sprintf("[w=%d]%s", width, text)
-		}
 
 		newModel, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 		updated := newModel.(*model)
 
 		assert.Equal(t, 120, updated.width)
 		assert.Equal(t, 40, updated.height)
-		assert.Equal(t, "[w=120]hello", updated.responseText,
-			"response should be re-rendered with new width")
-		assert.Nil(t, cmd)
+		assert.Equal(t, "hello", updated.responseText,
+			"response should fallback to plaintext immediately")
+		assert.NotNil(t, cmd, "should dispatch async render command")
 	})
 
 	t.Run("captures height from WindowSizeMsg", func(t *testing.T) {
@@ -210,13 +207,10 @@ func TestModel_Update(t *testing.T) {
 		assert.NotNil(t, cmd)
 	})
 
-	t.Run("ResponseEvent with markdown renderer", func(t *testing.T) {
+	t.Run("ResponseEvent dispatches async command", func(t *testing.T) {
 		ctx := context.Background()
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
-		m.mdRender = func(text string, width int) string {
-			return "**" + text + "**"
-		}
 
 		content := &llm.Content{
 			Parts: []*llm.Part{{Text: "Hello"}},
@@ -224,8 +218,8 @@ func TestModel_Update(t *testing.T) {
 		newModel, cmd := m.Update(domainEventMsg(events.ResponseEvent{Content: content}))
 		updated := newModel.(*model)
 
-		assert.Equal(t, "**Hello**", updated.responseText,
-			"should render through mdRender when set")
+		assert.Equal(t, "Hello", updated.responseText,
+			"should update plaintext fallback immediately")
 		assert.NotNil(t, cmd)
 	})
 
@@ -329,7 +323,7 @@ func TestModel_View(t *testing.T) {
 
 	t.Run("default height and width before WindowSizeMsg", func(t *testing.T) {
 		ch := make(chan events.Event, 1)
-		m := NewModel(context.Background(), ch, nil, &noopMetricsProvider{}).(*model)
+		m := NewModel(context.Background(), ch,  &noopMetricsProvider{}).(*model)
 
 		assert.Equal(t, 24, m.height, "default height ensures full layout before WindowSizeMsg")
 		assert.Equal(t, 80, m.width, "default width ensures viewport sizing from first frame")
@@ -1686,5 +1680,37 @@ func TestSampleMetrics(t *testing.T) {
 		cpu, mem := m.sampleMetrics(time.Now())
 		assert.Equal(t, 0.0, cpu)
 		assert.Equal(t, 0.0, mem)
+	})
+}
+
+func TestModel_AsyncRenderGuards(t *testing.T) {
+	t.Run("stale generation is dropped", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.renderGeneration = 5
+		m.responseText = "Current"
+
+		newModel, cmd := m.Update(mdRenderCompleteMsg{
+			generation: 4, // stale
+			rendered:   "Stale",
+		})
+		updated := newModel.(*model)
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, "Current", updated.responseText)
+	})
+
+	t.Run("current generation is accepted", func(t *testing.T) {
+		m := newTestModel(t.Context(), make(chan events.Event, 1))
+		m.renderGeneration = 5
+		m.responseText = "Current"
+
+		newModel, cmd := m.Update(mdRenderCompleteMsg{
+			generation: 5,
+			rendered:   "Fresh",
+		})
+		updated := newModel.(*model)
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, "Fresh", updated.responseText)
 	})
 }
