@@ -743,7 +743,7 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		updated := newModel.(*model)
 
 		assert.False(t, updated.spinner.tickActive)
-		assert.NotNil(t, cmd) // waitForEvent is always batched with tick; handleTick returns nil but batch still non-nil
+		assert.Nil(t, cmd) // tick loop no longer spawns waitForEvent; handleTick returns nil when spinner is cleared
 	})
 
 	t.Run("tick does not re-schedule when state is idle", func(t *testing.T) {

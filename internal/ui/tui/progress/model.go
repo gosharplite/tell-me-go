@@ -239,7 +239,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.spinner.showMetrics {
 			m.sampleMetrics(time.Now())
 		}
-		return m, tea.Batch(m.spinner.handleTick(msg), m.waitForEvent())
+		return m, m.spinner.handleTick(msg)
 	case channelClosedMsg:
 		return m, tea.Quit
 	case error:
