@@ -323,7 +323,7 @@ func TestModel_View(t *testing.T) {
 
 	t.Run("default height and width before WindowSizeMsg", func(t *testing.T) {
 		ch := make(chan events.Event, 1)
-		m := NewModel(context.Background(), ch,  &noopMetricsProvider{}).(*model)
+		m := NewModel(context.Background(), ch, &noopMetricsProvider{}).(*model)
 
 		assert.Equal(t, 24, m.height, "default height ensures full layout before WindowSizeMsg")
 		assert.Equal(t, 80, m.width, "default width ensures viewport sizing from first frame")

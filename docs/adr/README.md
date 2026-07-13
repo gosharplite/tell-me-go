@@ -56,6 +56,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-048** | GitHub Code Search as skills.sh Discovery Mechanism | 2026-07 | Accepted | [2026-07-skills-sh-github-discovery.md](2026-07-skills-sh-github-discovery.md) |
 | **ADR-049** | Third-Party Skill Injection Security Model | 2026-07 | Accepted | [2026-07-skills-sh-injection-security.md](2026-07-skills-sh-injection-security.md) |
 | **ADR-050** | Duplicate Skill Name Resolution Policy | 2026-07 | Accepted | [2026-07-skills-sh-duplicate-resolution.md](2026-07-skills-sh-duplicate-resolution.md) |
+| **ADR-051** | Async TUI Rendering for Large Responses | 2026-07 | Accepted | [2026-07-async-tui-rendering.md](2026-07-async-tui-rendering.md) |
 
 ## How to Create a New ADR
 

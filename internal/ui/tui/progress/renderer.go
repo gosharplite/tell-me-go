@@ -81,5 +81,3 @@ func (r *renderer) makeSubscriber(ch chan<- events.Event) func(context.Context, 
 		}
 	}
 }
-
-

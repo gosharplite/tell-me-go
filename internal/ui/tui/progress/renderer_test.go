@@ -108,5 +108,3 @@ func TestRenderer_MakeSubscriber(t *testing.T) {
 		}
 	})
 }
-
-
