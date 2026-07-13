@@ -383,6 +383,22 @@ Any AI agent recommending these should consult the rationale below.
   on all-string structs in `global_prompt_tracker.go`.
 - **See**: `internal/ui/tui/progress/renderer.go:81-83, 88-90`
 
+### ui/tui/progress/model.go — renderMarkdownAsync goroutine body at 13.3%
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `renderMarkdownAsync` constructs a `tea.Cmd` closure that
+  calls `glamour.NewTermRenderer` and `tr.Render` inside a goroutine managed
+  by the Bubble Tea runtime. Unit tests only exercise the closure-creation
+  line (13.3%); the goroutine body — including both glamour error fallback
+  paths that return plaintext on render failure — never executes
+  synchronously in test code. These are the same cosmetic fallback paths
+  already documented for `renderer.go` (plaintext instead of ANSI-rendered
+  text). Testing the goroutine body would require a full TUI integration
+  harness with `tea.NewProgram` to trigger `mdRenderCompleteMsg`. Same
+  acceptance class as `glamour render error paths` in `renderer.go`:
+  structurally unreachable in normal operation, cosmetic degrade only.
+- **See**: `internal/ui/tui/progress/model.go:746` (`renderMarkdownAsync`)
+
 ---
 
 ## Structural Concerns (ACCEPTED)
