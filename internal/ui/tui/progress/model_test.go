@@ -809,6 +809,25 @@ func TestModel_SpinnerTickAnimation(t *testing.T) {
 		assert.False(t, m.spinner.tickActive)
 		assert.Nil(t, cmd)
 	})
+
+	t.Run("session_complete_suppresses_tick", func(t *testing.T) {
+		ctx := context.Background()
+		ch := make(chan events.Event, 1)
+		m := newTestModel(ctx, ch)
+		m.spinner.status = " Thinking..."
+		m.currentState = stateThinking
+		m.spinner.generation = 1
+		m.spinner.tickActive = true
+		m.sessionComplete = true
+
+		newModel, cmd := m.Update(spinnerTickMsg{generation: 1})
+		updated := newModel.(*model)
+
+		assert.True(t, updated.sessionComplete, "sessionComplete flag should remain true")
+		assert.Nil(t, cmd, "ticks must return nil when session is complete")
+		// frame should NOT advance — tick was suppressed
+		assert.Equal(t, 0, updated.spinner.frame, "frame should not advance when session is complete")
+	})
 }
 
 func TestModel_SpinnerClearance(t *testing.T) {

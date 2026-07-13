@@ -146,6 +146,7 @@ type model struct {
 	postCallStatus      *events.TurnStatus // set when IsPostCall, has full status including Metrics and StartTime
 	postCallMetricsLine string             // pre-rendered metrics line, frozen when IsPostCall fires
 	finalCostLine       string             // rendered "Ready (...)" line from IsFinal
+	sessionComplete     bool               // true when event channel closes (true session end)
 	spinner             spinnerState
 
 	toolLogs    []string        // accumulated tool call/result/output lines, cleared each turn
@@ -253,7 +254,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSizeMsg(msg)
 	case spinnerTickMsg:
-		if m.finalCostLine != "" {
+		if m.sessionComplete {
 			return m, nil // terminal state reached; suppress all ticks
 		}
 		if m.spinner.showMetrics {
@@ -268,6 +269,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bodyVP.GotoBottom()
 		return m, nil
 	case channelClosedMsg:
+		m.sessionComplete = true
 		return m, tea.Quit
 	case error:
 		m.err = msg
