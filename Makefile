@@ -485,7 +485,11 @@ endif
 # Domain model validation (modelith).
 # Requires modelith: go install github.com/stacklok/modelith/cmd/modelith@latest
 # Falls back to 'go run' if the binary is not on PATH.
-MODELITH := $(shell command -v modelith 2>/dev/null)
+ifeq ($(OS),Windows_NT)
+    MODELITH := $(shell where modelith 2>NUL)
+else
+    MODELITH := $(shell command -v modelith 2>/dev/null)
+endif
 MODELITH_CMD := $(if $(MODELITH),$(MODELITH),go run github.com/stacklok/modelith/cmd/modelith@latest)
 MODELITH_YAML := docs/domain-model/tell-me-go.modelith.yaml
 
