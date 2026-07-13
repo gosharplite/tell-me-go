@@ -317,7 +317,7 @@ func TestModel_View(t *testing.T) {
 		assert.Equal(t, 80, m.height, "fresh model height should be newTestModel default")
 
 		out := m.View()
-		assert.Contains(t, out, "╭─ Turn 0 - ")
+		assert.Contains(t, out, "╭─⠿ Turn 0 - ")
 		assert.Contains(t, out, "Payload: ~0/0 tokens")
 	})
 
@@ -329,7 +329,7 @@ func TestModel_View(t *testing.T) {
 		assert.Equal(t, 80, m.width, "default width ensures viewport sizing from first frame")
 
 		out := m.View()
-		assert.Contains(t, out, "╭─ Turn 0 - ")
+		assert.Contains(t, out, "╭─⠿ Turn 0 - ")
 		assert.Contains(t, out, "Payload:")
 	})
 
@@ -343,7 +343,7 @@ func TestModel_View(t *testing.T) {
 
 		out := m.View()
 
-		assert.Contains(t, out, "╭─ Turn 5 - test-session")
+		assert.Contains(t, out, "╭─⠿ Turn 5 - test-session")
 	})
 
 	t.Run("stateRendering shows all fields", func(t *testing.T) {
@@ -363,7 +363,7 @@ func TestModel_View(t *testing.T) {
 
 		lines := strings.Split(out, "\n")
 		assert.True(t, len(lines) >= 2, "expected at least 2 lines, got %d: %q", len(lines), out)
-		assert.Contains(t, lines[0], "╭─ Turn 3 - coder-test")
+		assert.Contains(t, lines[0], "╭─⠿ Turn 3 - coder-test")
 		assert.Contains(t, lines[1], "[14:30:00]")
 		assert.Contains(t, lines[1], "~5000/64000")
 		assert.Contains(t, lines[1], "coder-test")
@@ -380,7 +380,7 @@ func TestModel_View(t *testing.T) {
 
 		out := m.View()
 		// Viewport-based layout — just verify header is present.
-		assert.Contains(t, out, "╭─ Turn")
+		assert.Contains(t, out, "╭─⠿ Turn")
 	})
 
 	t.Run("with post-call metrics", func(t *testing.T) {
@@ -449,7 +449,7 @@ func TestModel_View(t *testing.T) {
 		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 1)
-		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
+		assert.Contains(t, lines[0], "╭─⠿ Turn 3 - test")
 		assert.NotContains(t, out, "Payload:") // no room for payload line
 	})
 
@@ -468,7 +468,7 @@ func TestModel_View(t *testing.T) {
 		lines := strings.Split(out, "\n")
 
 		assert.Len(t, lines, 1)
-		assert.Contains(t, lines[0], "╭─ Turn 3 - test")
+		assert.Contains(t, lines[0], "╭─⠿ Turn 3 - test")
 		assert.Contains(t, lines[0], "⠋  Thinking...")
 	})
 
@@ -527,7 +527,7 @@ func TestModel_Integration(t *testing.T) {
 
 		// Verify View after full cycle
 		out := m.View()
-		assert.Contains(t, out, "╭─ Turn 1 - architect-johndoe")
+		assert.Contains(t, out, "╭─⠿ Turn 1 - architect-johndoe")
 		assert.Contains(t, out, "deepseek-v4-pro")
 		assert.Contains(t, out, "Sure, I can help with that.")
 	})
@@ -1475,7 +1475,7 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 		"View after TurnStarted should still contain sticky metrics line")
 	assert.Contains(t, updatedOut, "╰─⠿ Ready",
 		"View after TurnStarted should still contain sticky final cost line")
-	assert.Contains(t, updatedOut, "╭─ Turn 6 - test",
+	assert.Contains(t, updatedOut, "╭─⠿ Turn 6 - test",
 		"View after TurnStarted should show new turn header")
 	assert.Contains(t, updatedOut, "Payload: ~0/0 tokens",
 		"View after TurnStarted should show payload line with zero tokens")

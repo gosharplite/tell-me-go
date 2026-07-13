@@ -645,7 +645,7 @@ func (m *model) View() string {
 // renderMinimal returns a single-line fallback for tiny terminals.
 func (m *model) renderMinimal() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s", m.turn, m.sessionName))
+	sb.WriteString(fmt.Sprintf("╭─⠿ Turn %d - %s", m.turn, m.sessionName))
 	if m.spinner.active() && m.currentState != stateIdle {
 		cpu, mem := m.lastCPUPercent, m.lastMemPercent
 		sb.WriteString(fmt.Sprintf(" %s", m.spinner.render(cpu, mem)))
@@ -657,7 +657,7 @@ func (m *model) renderMinimal() string {
 func (m *model) renderHeader() string {
 	ts := m.timestamp.Format("15:04:05")
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("╭─ Turn %d - %s\n", m.turn, m.sessionName))
+	sb.WriteString(fmt.Sprintf("╭─⠿ Turn %d - %s\n", m.turn, m.sessionName))
 	sb.WriteString(fmt.Sprintf("[%s] Payload: ~%d/%d tokens - %s - %s",
 		ts, m.tokens, m.maxTokens, m.sessionName, m.modelName))
 	return sb.String()
