@@ -24,6 +24,14 @@ else
     IS_POSIX := true
 endif
 
+# Suppress GNU Make's sh.exe probe noise on Windows when there is no POSIX shell.
+# Without this, every make and sub-make emits "The system cannot find the path specified."
+ifeq ($(OS),Windows_NT)
+    ifeq ($(IS_POSIX),false)
+        SHELL := cmd.exe
+    endif
+endif
+
 .PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
