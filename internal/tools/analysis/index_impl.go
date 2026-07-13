@@ -184,6 +184,20 @@ func (idx *indexer) HarvestDeclarations(ctx context.Context, fn func(meta *symMe
 	return nil
 }
 
+// testPrefixes lists the standard Go test function name prefixes that should
+// be excluded from declaration collection: Test, Benchmark, Example, Fuzz.
+var testPrefixes = []string{"Test", "Benchmark", "Example", "Fuzz"}
+
+// hasTestPrefix reports whether name starts with a standard Go test prefix.
+func hasTestPrefix(name string) bool {
+	for _, p := range testPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // shouldSkipDecl returns true if the given object should be excluded from
 // declaration collection. Filters out nil, unexported, init, test/benchmark/
 // example/fuzz functions, and export_test.go declarations.
@@ -197,10 +211,7 @@ func (idx *indexer) shouldSkipDecl(obj types.Object) bool {
 	if obj.Name() == "init" {
 		return true
 	}
-	if strings.HasPrefix(obj.Name(), "Test") ||
-		strings.HasPrefix(obj.Name(), "Benchmark") ||
-		strings.HasPrefix(obj.Name(), "Example") ||
-		strings.HasPrefix(obj.Name(), "Fuzz") {
+	if hasTestPrefix(obj.Name()) {
 		return true
 	}
 	if isExportTestFile(idx.fset, obj.Pos()) {
