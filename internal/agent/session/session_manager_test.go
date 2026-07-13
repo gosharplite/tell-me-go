@@ -1325,7 +1325,7 @@ func TestSessionManager_SetupUIRendering_HandleEventError(t *testing.T) {
 }
 
 func TestSessionManager_RenderPostTUISummary(t *testing.T) {
-	t.Parallel()
+	t.Setenv("GLAMOUR_STYLE", "notty")
 
 	ts := time.Date(2026, 1, 15, 18, 38, 7, 0, time.UTC)
 
@@ -1420,7 +1420,7 @@ func TestSessionManager_RenderPostTUISummary(t *testing.T) {
 }
 
 func TestSessionManager_RenderPostTUISummary_SkipsBodyWhenLastNSet(t *testing.T) {
-	t.Parallel()
+	t.Setenv("GLAMOUR_STYLE", "notty")
 
 	ts := time.Date(2026, 1, 15, 18, 38, 7, 0, time.UTC)
 

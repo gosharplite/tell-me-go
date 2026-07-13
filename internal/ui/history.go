@@ -53,7 +53,7 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 			hr.renderer = options.CustomRenderer
 		} else {
 			hr.renderer, _ = glamour.NewTermRenderer(
-				glamour.WithAutoStyle(),
+				glamour.WithStandardStyle(resolveGlamourStyle()),
 				glamour.WithEmoji(),
 			)
 		}

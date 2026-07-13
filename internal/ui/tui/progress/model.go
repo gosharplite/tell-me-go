@@ -6,6 +6,7 @@ package progress
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/muesli/termenv"
 )
 
 // domainEventMsg wraps a domain event to ensure exactly one reader exists on
@@ -136,7 +136,7 @@ type model struct {
 	responseText        string // accumulated AI response text
 	rawResponseText     string // raw text before markdown rendering, for re-rendering on resize
 	renderGeneration    int    // incremented on each async render request to discard stale results
-	isDark              bool   // cached terminal background theme to prevent concurrent termenv probes
+	isDark              bool   // cached terminal background theme (legacy, now unused as we default to dark)
 	metricsProvider     ports.SystemMetricsProvider
 	lastCPUTime         int64
 	lastIdleTime        int64
@@ -156,6 +156,14 @@ type model struct {
 	footerVP viewport.Model
 }
 
+// resolveIsDark evaluates the GLAMOUR_STYLE environment variable to determine
+// if the dark theme should be used. It explicitly avoids termenv's active IO
+// probes (which cause race conditions with Bubble Tea's input loop).
+func resolveIsDark() bool {
+	style := os.Getenv("GLAMOUR_STYLE")
+	return style == "" || style == "auto" || style == "dark"
+}
+
 // NewModel creates a new progress model that consumes events from the given
 // channel.
 func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.SystemMetricsProvider) tea.Model {
@@ -168,7 +176,7 @@ func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.S
 		currentState:    stateIdle,
 		height:          24,
 		width:           80,
-		isDark:          termenv.HasDarkBackground(),
+		isDark:          resolveIsDark(),
 		metricsProvider: metricsProvider,
 		seenCallIDs:     make(map[string]bool),
 		headerVP:        headerVP,
