@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/muesli/termenv"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -135,6 +136,7 @@ type model struct {
 	responseText        string // accumulated AI response text
 	rawResponseText     string // raw text before markdown rendering, for re-rendering on resize
 	renderGeneration    int    // incremented on each async render request to discard stale results
+	isDark              bool   // cached terminal background theme to prevent concurrent termenv probes
 	metricsProvider     ports.SystemMetricsProvider
 	lastCPUTime         int64
 	lastIdleTime        int64
@@ -166,6 +168,7 @@ func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.S
 		currentState:    stateIdle,
 		height:          24,
 		width:           80,
+		isDark:          termenv.HasDarkBackground(),
 		metricsProvider: metricsProvider,
 		seenCallIDs:     make(map[string]bool),
 		headerVP:        headerVP,
@@ -692,8 +695,13 @@ func (m *model) renderFooterContent() string {
 // It returns a tea.Cmd that will yield an mdRenderCompleteMsg with the rendered text
 // and the current generation.
 func (m *model) renderMarkdownAsync(text string, width int, generation int) tea.Cmd {
+	isDark := m.isDark // capture locally for goroutine
 	return func() tea.Msg {
-		opts := []glamour.TermRendererOption{glamour.WithAutoStyle()}
+		style := "light"
+		if isDark {
+			style = "dark"
+		}
+		opts := []glamour.TermRendererOption{glamour.WithStandardStyle(style)}
 		if width > 0 {
 			opts = append(opts, glamour.WithWordWrap(width))
 		}
