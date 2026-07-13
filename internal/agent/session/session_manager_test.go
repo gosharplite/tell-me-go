@@ -1397,7 +1397,7 @@ func TestSessionManager_RenderPostTUISummary(t *testing.T) {
 	output := stdoutBuf.String()
 
 	// Header
-	assert.Contains(t, output, "╭─ Turn 5 - architect-johndoe")
+	assert.Contains(t, output, "╭─⠿ Turn 5 - architect-johndoe")
 	assert.Contains(t, output, "[18:38:07] Payload: ~107630/1000000 tokens - architect-johndoe - deepseek-v4-pro")
 
 	// Body: history content
@@ -1491,7 +1491,7 @@ func TestSessionManager_RenderPostTUISummary_SkipsBodyWhenLastNSet(t *testing.T)
 	output := stdoutBuf.String()
 
 	// Header and footer still present.
-	assert.Contains(t, output, "╭─ Turn 1 - test")
+	assert.Contains(t, output, "╭─⠿ Turn 1 - test")
 	assert.Contains(t, output, "╰─⠿ Ready")
 
 	// Body must be skipped — LastN > 0 means already rendered.
