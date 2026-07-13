@@ -181,16 +181,16 @@ func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.S
 	footerVP := viewport.New(80, 4)
 
 	return &model{
-		eventCh:          ch,
-		currentState:     stateIdle,
-		height:           24,
-		width:            80,
-		isDark:           resolveIsDark(),
-		metricsProvider:  metricsProvider,
+		eventCh:         ch,
+		currentState:    stateIdle,
+		height:          24,
+		width:           80,
+		isDark:          resolveIsDark(),
+		metricsProvider: metricsProvider,
 		seenCallIDs:     make(map[string]bool),
 		headerVP:        headerVP,
-		bodyVP:           bodyVP,
-		footerVP:         footerVP,
+		bodyVP:          bodyVP,
+		footerVP:        footerVP,
 	}
 }
 

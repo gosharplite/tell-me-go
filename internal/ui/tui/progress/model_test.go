@@ -298,15 +298,15 @@ func newTestModel(_ context.Context, ch <-chan events.Event) *model {
 	bodyVP := viewport.New(80, 72)
 	footerVP := viewport.New(80, 4)
 	return &model{
-		eventCh:          ch,
-		currentState:     stateIdle,
-		height:           80,
-		width:            80,
-		metricsProvider:  &noopMetricsProvider{},
+		eventCh:         ch,
+		currentState:    stateIdle,
+		height:          80,
+		width:           80,
+		metricsProvider: &noopMetricsProvider{},
 		seenCallIDs:     make(map[string]bool),
 		headerVP:        headerVP,
-		bodyVP:           bodyVP,
-		footerVP:         footerVP,
+		bodyVP:          bodyVP,
+		footerVP:        footerVP,
 	}
 }
 
