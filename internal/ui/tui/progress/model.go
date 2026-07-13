@@ -338,6 +338,10 @@ type spinnerInfoProvider interface {
 // handleDomainEvent dispatches a domain event to the appropriate handler.
 func (m *model) handleDomainEvent(msg domainEventMsg) (tea.Model, tea.Cmd) {
 	switch e := events.Event(msg).(type) {
+	case events.UserPromptEvent:
+		m.appendToolLog("You", e.Text)
+		m.bodyVP.GotoBottom()
+		return m, m.waitForEvent()
 	case events.ToolCallEvent:
 		return m, m.handleToolCallEvent(e)
 	case events.ToolResultEvent:
