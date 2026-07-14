@@ -41,6 +41,37 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
 *   **Development Tools** (optional): For building from source, running tests, and contributing, install `golangci-lint`, `staticcheck`, `govulncheck`, `goimports`, and `gh` (GitHub CLI). See the Development section below.
 
 ## 🛠️ Installation
+
+### Pre-built Binaries (no Go required)
+Download the latest binary for your platform from [GitHub Releases](https://github.com/gosharplite/tell-me-go/releases):
+
+**Linux (amd64):**
+```bash
+curl -L https://github.com/gosharplite/tell-me-go/releases/latest/download/tell-me-go-linux-amd64.tar.gz | tar xz
+sudo mv tell-me-go-linux-amd64 /usr/local/bin/tell-me-go
+```
+
+**macOS (Apple Silicon):**
+```bash
+curl -L https://github.com/gosharplite/tell-me-go/releases/latest/download/tell-me-go-darwin-arm64.tar.gz | tar xz
+sudo mv tell-me-go-darwin-arm64 /usr/local/bin/tell-me-go
+```
+
+**macOS (Intel):**
+```bash
+curl -L https://github.com/gosharplite/tell-me-go/releases/latest/download/tell-me-go-darwin-amd64.tar.gz | tar xz
+sudo mv tell-me-go-darwin-amd64 /usr/local/bin/tell-me-go
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-WebRequest -Uri https://github.com/gosharplite/tell-me-go/releases/latest/download/tell-me-go-windows-amd64.zip -OutFile tell-me-go.zip
+Expand-Archive tell-me-go.zip -DestinationPath .
+```
+
+Linux ARM64 and Windows ARM64 binaries are also available on the [releases page](https://github.com/gosharplite/tell-me-go/releases).
+
+### From Source (requires Go 1.26.4+)
 ```bash
 go install github.com/gosharplite/tell-me-go/cmd/tell-me-go@latest
 ```
