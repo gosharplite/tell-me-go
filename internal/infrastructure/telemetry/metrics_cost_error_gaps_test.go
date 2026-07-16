@@ -48,7 +48,7 @@ func TestRecordCostIfNeeded_AutoSessionID(t *testing.T) {
 		ledger:  nil, // nil so loadHistory does NOT trigger recovery
 	}
 
-	timestamp := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	timestamp := time.Now()
 	breakdown := domain_pricing.CostBreakdown{
 		TotalCost: 0.05,
 		InputCost: 0.02,
@@ -305,9 +305,10 @@ func TestUpdateLedgerHistory_MarshalError(t *testing.T) {
 
 	// Pre-create global_costs.json with one valid session record so
 	// loadHistory returns non-empty data.
+	now := time.Now()
 	existingRecord := sessionCostRecord{
-		Date:      "2026-06-15",
-		Timestamp: time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+		Date:      now.Format("2006-01-02"),
+		Timestamp: now,
 		Session:   "test-mode/test-session.log",
 		Model:     "gpt-4",
 		TotalCost: 0.10,
@@ -338,8 +339,8 @@ func TestUpdateLedgerHistory_MarshalError(t *testing.T) {
 	}
 
 	nanRecord := sessionCostRecord{
-		Date:      "2026-06-15",
-		Timestamp: time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+		Date:      now.Format("2006-01-02"),
+		Timestamp: now,
 		Session:   "test-mode/test-session.log", // same session → upsert
 		Model:     "gpt-4",
 		TotalCost: math.NaN(),
@@ -373,8 +374,8 @@ func TestUpdateLedgerHistory_MarshalError(t *testing.T) {
 	// Call updateLedgerHistory with a valid float64 value and verify the
 	// file is updated with the upserted record.
 	validRecord := sessionCostRecord{
-		Date:      "2026-06-15",
-		Timestamp: time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+		Date:      now.Format("2006-01-02"),
+		Timestamp: now,
 		Session:   "test-mode/test-session.log", // same session → upsert
 		Model:     "gpt-4",
 		TotalCost: 0.05,
