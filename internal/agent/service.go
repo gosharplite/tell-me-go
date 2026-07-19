@@ -55,6 +55,7 @@ type chatService struct {
 	UIRenderer       ports.UIRenderer
 	HistoryRenderer  ports.HistoryRenderer
 	HistoryBrowser   ports.HistoryBrowser
+	HistoryEditor    ports.HistoryEditor
 	LogOpener        LogFileOpener
 
 	// resolvePaths resolves session filesystem paths. Defaults to persistence.ResolvePaths.
@@ -72,6 +73,7 @@ func NewChatService(
 	uiRenderer ports.UIRenderer,
 	historyRenderer ports.HistoryRenderer,
 	historyBrowser ports.HistoryBrowser,
+	historyEditor ports.HistoryEditor,
 	logOpener LogFileOpener,
 	opts ...ChatServiceOption,
 ) ChatService {
@@ -86,6 +88,7 @@ func NewChatService(
 		UIRenderer:       uiRenderer,
 		HistoryRenderer:  historyRenderer,
 		HistoryBrowser:   historyBrowser,
+		HistoryEditor:    historyEditor,
 		LogOpener:        logOpener,
 		resolvePaths:     persistence.ResolvePaths, // default
 	}
@@ -214,6 +217,11 @@ func (s *chatService) finalizeSessionState(ctx context.Context, hManager ports.H
 // BrowseHistory initializes the TUI history browser and runs the Bubble Tea loop.
 func (s *chatService) BrowseHistory(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
 	return s.HistoryBrowser.Browse(ctx, provider, hManager)
+}
+
+// EditLastTurn launches the editor TUI for the last model turn.
+func (s *chatService) EditLastTurn(ctx context.Context, hManager ports.HistoryManager) error {
+	return s.HistoryEditor.Edit(ctx, hManager)
 }
 
 // GetToolNames retrieves the names of all available tools.

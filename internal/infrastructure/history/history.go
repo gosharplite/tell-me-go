@@ -469,6 +469,101 @@ func rollbackRemainingTurns(remainingMsgs int, hasSystem bool) int {
 	return effectiveLen / 2
 }
 
+// GetLastModelTurn returns the index and a deep copy of the last model-role
+// Content entry. It returns ports.ErrHistoryNotFound if no model turns exist.
+func (m *Manager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for i := len(m.Contents) - 1; i >= 0; i-- {
+		if m.Contents[i].Role == "model" {
+			return i, llm.CloneContent(m.Contents[i]), nil
+		}
+	}
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+// collectUpdatedParts builds a new Parts slice by replacing the text and
+// thought parts in original with newText and newThought. Non-text,
+// non-thought parts (function calls, responses, inline data) are preserved.
+// An empty newThought omits the thought part. An empty newText omits the
+// text part (the old text part is dropped with no replacement).
+func collectUpdatedParts(original []*llm.Part, newText string, newThought string) []*llm.Part {
+	var newParts []*llm.Part
+	textSet := false
+	for _, p := range original {
+		if p.IsThought {
+			continue
+		}
+		if p.Text != "" {
+			// Drop all text parts. Insert newText once at the position
+			// of the first text part. The editor concatenates all text
+			// parts into one buffer, so preserving subsequent parts
+			// would duplicate content on save.
+			if !textSet {
+				textSet = true
+				if newText != "" {
+					newParts = append(newParts, &llm.Part{Text: newText})
+				}
+			}
+			continue
+		}
+		// Keep function calls, function responses, inline data, etc.
+		newParts = append(newParts, p)
+	}
+	if !textSet && newText != "" {
+		newParts = append(newParts, &llm.Part{Text: newText})
+	}
+	// If the original had a thought part, insert newThought at its position.
+	// If there was no thought part but newThought is provided, append it.
+	if newThought != "" {
+		thoughtPart := &llm.Part{Text: newThought, IsThought: true}
+		// Find where the first thought part was in the original
+		thoughtIdx := -1
+		for i, p := range original {
+			if p.IsThought {
+				thoughtIdx = i
+				break
+			}
+		}
+		// KNOWN LIMITATION: thoughtIdx is computed from original, but
+		// text parts are dropped during the rebuild, so newParts may
+		// have fewer elements. For common provider layouts (thought-first
+		// or thought-after-a-single-text-part) the index is correct.
+		// For exotic layouts like [textA, textB, thought, FC] where both
+		// text parts are dropped, the thought inserts earlier than
+		// expected. Cosmetic — the semantic content is preserved.
+		if thoughtIdx >= 0 && thoughtIdx <= len(newParts) {
+			newParts = append(newParts[:thoughtIdx], append([]*llm.Part{thoughtPart}, newParts[thoughtIdx:]...)...)
+		} else {
+			newParts = append(newParts, thoughtPart)
+		}
+	}
+	return newParts
+}
+
+// UpdateTurnContent replaces the text and thought parts of the Content at
+// the given index, then persists via Save. The index must reference a
+// model-role entry. An empty newThought removes any thought part.
+func (m *Manager) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if index < 0 || index >= len(m.Contents) {
+		return fmt.Errorf("index %d out of bounds [0, %d)", index, len(m.Contents))
+	}
+	if m.Contents[index].Role != "model" {
+		return fmt.Errorf("index %d has role %q, expected \"model\"", index, m.Contents[index].Role)
+	}
+
+	m.Contents[index].Parts = collectUpdatedParts(m.Contents[index].Parts, newText, newThought)
+
+	if err := m.store.Save(ctx, m.Contents); err != nil {
+		return fmt.Errorf("save after updating turn %d: %w", index, err)
+	}
+	return nil
+}
+
 // GetLastUserMessage finds the text of the last user message and the number of turns to rollback to remove it and everything after it.
 func (m *Manager) GetLastUserMessage(ctx context.Context) (string, int, error) {
 	m.mu.RLock()

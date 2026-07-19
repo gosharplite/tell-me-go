@@ -75,6 +75,14 @@ func (m *mockHistoryModifier) RollbackTurns(ctx context.Context, turns int) (int
 	return 0, 0, 0, nil
 }
 
+func (m *mockHistoryModifier) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+func (m *mockHistoryModifier) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	return nil
+}
+
 func newHistoryState(userContent, modelContent string) []ports.HistoryViewDTO {
 	return []ports.HistoryViewDTO{
 		{ID: "user-0", Role: "user", ContentPreview: userContent, OriginalIndex: 0},

@@ -57,6 +57,7 @@ func (f *defaultChatFactory) ChatService() agent.ChatService {
 		f.UIFact.UIRenderer(),
 		f.UIFact.HistoryRenderer(),
 		f.UIFact.HistoryBrowser(),
+		f.UIFact.HistoryEditor(),
 		infra_persistence.NewDomainFS(f.FileSystem),
 	)
 }

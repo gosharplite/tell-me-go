@@ -1024,3 +1024,174 @@ func TestLoad_BackfillSaveFailure_GracefulDegradation(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateTurnContent_ClearText(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	// Setup: user → model turn with text and thought
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
+		{Text: "hi there"},
+		{Text: "thinking...", IsThought: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// GetLastModelTurn to find the model content index
+	idx, _, err := m.GetLastModelTurn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Clear the text but keep the thought
+	err = m.UpdateTurnContent(ctx, idx, "", "still thinking...")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify: no empty text part exists
+	content := m.Contents[idx]
+	for _, p := range content.Parts {
+		if p.Text == "" && !p.IsThought {
+			t.Error("expected no empty text parts after clearing text")
+		}
+	}
+
+	// Verify: thought part was updated
+	hasThought := false
+	for _, p := range content.Parts {
+		if p.IsThought && p.Text == "still thinking..." {
+			hasThought = true
+		}
+	}
+	if !hasThought {
+		t.Error("expected thought part 'still thinking...' to be present")
+	}
+}
+
+func TestUpdateTurnContent_ReplaceText(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
+		{Text: "old response"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, _, err := m.GetLastModelTurn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.UpdateTurnContent(ctx, idx, "new response", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := m.Contents[idx]
+	if len(content.Parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(content.Parts))
+	}
+	if content.Parts[0].Text != "new response" {
+		t.Errorf("expected text 'new response', got %q", content.Parts[0].Text)
+	}
+}
+
+func TestUpdateTurnContent_AddTextWhenNone(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	// Model content with function call only, no text
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
+		{FunctionCall: &llm.FunctionCall{Name: "search", Args: map[string]interface{}{"q": "test"}}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, _, err := m.GetLastModelTurn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add text when there was none
+	err = m.UpdateTurnContent(ctx, idx, "new text", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := m.Contents[idx]
+	// Should have function call + new text
+	if len(content.Parts) != 2 {
+		t.Fatalf("expected 2 parts, got %d", len(content.Parts))
+	}
+	hasText := false
+	hasFuncCall := false
+	for _, p := range content.Parts {
+		if p.Text == "new text" && !p.IsThought {
+			hasText = true
+		}
+		if p.FunctionCall != nil {
+			hasFuncCall = true
+		}
+	}
+	if !hasText {
+		t.Error("expected text part 'new text'")
+	}
+	if !hasFuncCall {
+		t.Error("expected function call to be preserved")
+	}
+}
+
+func TestUpdateTurnContent_MultiPartText(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	// Simulate a model turn with two text parts (e.g., multi-part response)
+	m.Contents = []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}, ID: llm.NewID()},
+		{Role: "model", Parts: []*llm.Part{
+			{Text: "Part A"},
+			{Text: "Part B"},
+		}, ID: llm.NewID()},
+	}
+
+	// Edit: concatenated "Part APart B" → "Edited"
+	err := m.UpdateTurnContent(ctx, 1, "Edited", "")
+	if err != nil {
+		t.Fatalf("UpdateTurnContent: %v", err)
+	}
+
+	// Verify only one text part remains with the edited value
+	if len(m.Contents[1].Parts) != 1 {
+		t.Fatalf("expected 1 part after edit, got %d: %+v", len(m.Contents[1].Parts), m.Contents[1].Parts)
+	}
+	if m.Contents[1].Parts[0].Text != "Edited" {
+		t.Errorf("expected text %q, got %q", "Edited", m.Contents[1].Parts[0].Text)
+	}
+}

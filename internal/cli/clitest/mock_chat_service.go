@@ -25,6 +25,7 @@ type MockChatService struct {
 	calledProcessMessage     int
 	calledGetLastUserMessage int
 	calledBrowseHistory      int
+	calledEditLastTurn       int
 	calledGetToolNames       int
 	calledStreamTurnsLog     int
 	calledRunDiagnostics     int
@@ -34,6 +35,7 @@ type MockChatService struct {
 	ProcessMessageFunc     func(ctx context.Context, cfg *domain_config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error
 	GetLastUserMessageFunc func(ctx context.Context, hManager ports.HistoryManager) (string, int, error)
 	BrowseHistoryFunc      func(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error
+	EditLastTurnFunc       func(ctx context.Context, hManager ports.HistoryManager) error
 	GetToolNamesFunc       func(ctx context.Context, reg tools.Registry) ([]string, error)
 	StreamTurnsLogFunc     func(ctx context.Context, cfg *domain_config.Config, out io.Writer) error
 	RunDiagnosticsFunc     func(ctx context.Context, cfg *domain_config.Config, configPath string, jsonOutput bool) error
@@ -49,9 +51,9 @@ type MockChatService struct {
 // ChatServiceSnapshot holds a race-safe copy of mock call counts and
 // ordered method names.
 type ChatServiceSnapshot struct {
-	ProcessMessage, GetLastUserMessage, BrowseHistory int
-	GetToolNames, StreamTurnsLog, RunDiagnostics      int
-	Methods                                           []string
+	ProcessMessage, GetLastUserMessage, BrowseHistory, EditLastTurn int
+	GetToolNames, StreamTurnsLog, RunDiagnostics                    int
+	Methods                                                         []string
 }
 
 // Snapshot returns a race-safe copy of invocation counts and ordered
@@ -66,6 +68,7 @@ func (m *MockChatService) Snapshot() ChatServiceSnapshot {
 		ProcessMessage:     m.calledProcessMessage,
 		GetLastUserMessage: m.calledGetLastUserMessage,
 		BrowseHistory:      m.calledBrowseHistory,
+		EditLastTurn:       m.calledEditLastTurn,
 		GetToolNames:       m.calledGetToolNames,
 		StreamTurnsLog:     m.calledStreamTurnsLog,
 		RunDiagnostics:     m.calledRunDiagnostics,
@@ -112,6 +115,20 @@ func (m *MockChatService) BrowseHistory(ctx context.Context, provider ports.Unif
 
 	if m.BrowseHistoryFunc != nil {
 		return m.BrowseHistoryFunc(ctx, provider, hManager)
+	}
+	return nil
+}
+
+// EditLastTurn launches an interactive TUI to edit the last model turn.
+// When EditLastTurnFunc is nil the default is success (nil error).
+func (m *MockChatService) EditLastTurn(ctx context.Context, hManager ports.HistoryManager) error {
+	m.mu.Lock()
+	m.calledEditLastTurn++
+	m.calledMethods = append(m.calledMethods, "EditLastTurn")
+	m.mu.Unlock()
+
+	if m.EditLastTurnFunc != nil {
+		return m.EditLastTurnFunc(ctx, hManager)
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
@@ -158,6 +159,21 @@ func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 }
 
 func (m *mockHistoryManager) GetFilePath() string { return "" }
+
+func (m *mockHistoryManager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for i := len(m.Contents) - 1; i >= 0; i-- {
+		if m.Contents[i].Role == "model" {
+			return i, llm.CloneContent(m.Contents[i]), nil
+		}
+	}
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+func (m *mockHistoryManager) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	return nil
+}
 
 func (m *mockHistoryManager) Sync(ctx context.Context) error {
 	return nil
