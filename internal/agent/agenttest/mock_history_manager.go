@@ -28,7 +28,7 @@ type MockHistoryManager struct {
 	AddContentFunc  func(ctx context.Context, content *llm.Content) error
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 
-	GetLastModelTurnFunc func(ctx context.Context) (int, *llm.Content, error)
+	GetLastModelTurnFunc  func(ctx context.Context) (int, *llm.Content, error)
 	UpdateTurnContentFunc func(ctx context.Context, index int, newText string, newThought string) error
 }
 
@@ -134,7 +134,7 @@ func (m *MockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 	}
 	return actualRemoved, len(m.Contents) / 2, len(m.Contents), nil
 }
-func (m *MockHistoryManager) GetFilePath() string       { return "" }
+func (m *MockHistoryManager) GetFilePath() string { return "" }
 func (m *MockHistoryManager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
 	if m.GetLastModelTurnFunc != nil {
 		return m.GetLastModelTurnFunc(ctx)

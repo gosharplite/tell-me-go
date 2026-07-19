@@ -162,8 +162,8 @@ func (m *EditorModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea
 	}
 
 	// Divide: top 55% for text, bottom 45% for thought (minus label lines)
-	labelHeight := 1   // one line for each label
-	dividerHeight := 1 // divider line
+	labelHeight := 1                                              // one line for each label
+	dividerHeight := 1                                            // divider line
 	available := m.height - (2 * labelHeight) - dividerHeight - 1 // -1 for footer
 	textHeight := available * 55 / 100
 	thoughtHeight := available - textHeight
