@@ -73,8 +73,8 @@ func (m *EditorModel) EditedThought() string {
 	return strings.TrimSpace(m.thoughtArea.Value())
 }
 
-// WasSaved returns true if the user pressed Ctrl+S to save.
-func (m *EditorModel) WasSaved() bool {
+// wasSaved returns true if the user pressed Ctrl+S to save.
+func (m *EditorModel) wasSaved() bool {
 	return m.saved
 }
 
