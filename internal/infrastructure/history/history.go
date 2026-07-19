@@ -495,13 +495,20 @@ func collectUpdatedParts(original []*llm.Part, newText string, newThought string
 		if p.IsThought {
 			continue
 		}
-		if p.Text != "" && !p.IsThought && !textSet {
-			textSet = true
-			if newText != "" {
-				newParts = append(newParts, &llm.Part{Text: newText})
+		if p.Text != "" {
+			// Drop all text parts. Insert newText once at the position
+			// of the first text part. The editor concatenates all text
+			// parts into one buffer, so preserving subsequent parts
+			// would duplicate content on save.
+			if !textSet {
+				textSet = true
+				if newText != "" {
+					newParts = append(newParts, &llm.Part{Text: newText})
+				}
 			}
 			continue
 		}
+		// Keep function calls, function responses, inline data, etc.
 		newParts = append(newParts, p)
 	}
 	if !textSet && newText != "" {

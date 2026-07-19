@@ -1163,3 +1163,35 @@ func TestUpdateTurnContent_AddTextWhenNone(t *testing.T) {
 		t.Error("expected function call to be preserved")
 	}
 }
+
+func TestUpdateTurnContent_MultiPartText(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	// Simulate a model turn with two text parts (e.g., multi-part response)
+	m.Contents = []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}, ID: llm.NewID()},
+		{Role: "model", Parts: []*llm.Part{
+			{Text: "Part A"},
+			{Text: "Part B"},
+		}, ID: llm.NewID()},
+	}
+
+	// Edit: concatenated "Part APart B" → "Edited"
+	err := m.UpdateTurnContent(ctx, 1, "Edited", "")
+	if err != nil {
+		t.Fatalf("UpdateTurnContent: %v", err)
+	}
+
+	// Verify only one text part remains with the edited value
+	if len(m.Contents[1].Parts) != 1 {
+		t.Fatalf("expected 1 part after edit, got %d: %+v", len(m.Contents[1].Parts), m.Contents[1].Parts)
+	}
+	if m.Contents[1].Parts[0].Text != "Edited" {
+		t.Errorf("expected text %q, got %q", "Edited", m.Contents[1].Parts[0].Text)
+	}
+}
