@@ -15,12 +15,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/editor"
 )
 
 type uiFactory interface {
 	UIRenderer() ports.UIRenderer
 	HistoryRenderer() ports.HistoryRenderer
 	HistoryBrowser() ports.HistoryBrowser
+	HistoryEditor() ports.HistoryEditor
 	SystemMetricsProvider() ports.SystemMetricsProvider
 }
 
@@ -96,6 +98,63 @@ func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHis
 
 func (f *defaultUIFactory) HistoryBrowser() ports.HistoryBrowser {
 	return &tuiHistoryBrowser{
+		logger:     f.Logger,
+		initLogger: tui.InitLogger,
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {
+			return &teaProgramRunner{p: tea.NewProgram(model, opts...)}
+		},
+	}
+}
+
+// tuiHistoryEditor implements ports.HistoryEditor using the editor TUI.
+type tuiHistoryEditor struct {
+	logger     *slog.Logger
+	initLogger func() (io.Closer, error)
+	newProgram func(model tea.Model, opts ...tea.ProgramOption) programRunner
+}
+
+// Edit launches the TUI turn editor.
+func (e *tuiHistoryEditor) Edit(ctx stdctx.Context, hManager ports.HistoryManager) error {
+	if closer, err := e.initLogger(); err == nil {
+		defer func() {
+			if closeErr := closer.Close(); closeErr != nil {
+				e.logger.Warn("failed to close tui logger", "error", closeErr)
+			}
+		}()
+	}
+
+	index, content, err := hManager.GetLastModelTurn(ctx)
+	if err != nil {
+		return fmt.Errorf("get last model turn: %w", err)
+	}
+
+	// Extract text and thought from parts
+	var text, thought string
+	for _, p := range content.Parts {
+		if p.IsThought {
+			thought += p.Text
+		} else if p.Text != "" {
+			text += p.Text
+		}
+	}
+
+	model := editor.NewModel(text, thought)
+	p := e.newProgram(model, tea.WithAltScreen())
+	result, runErr := p.Run()
+	if runErr != nil {
+		return fmt.Errorf("tui editor error: %w", runErr)
+	}
+
+	ed := result.(*editor.EditorModel)
+	if ed.WasAborted() {
+		return stdctx.Canceled
+	}
+
+	return hManager.UpdateTurnContent(ctx, index, ed.EditedText(), ed.EditedThought())
+}
+
+func (f *defaultUIFactory) HistoryEditor() ports.HistoryEditor {
+	return &tuiHistoryEditor{
 		logger:     f.Logger,
 		initLogger: tui.InitLogger,
 		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {

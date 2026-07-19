@@ -63,6 +63,14 @@ func (s *stubHistoryManager) RollbackTurns(_ stdctx.Context, _ int) (int, int, i
 	return 0, 0, 0, nil
 }
 
+func (s *stubHistoryManager) GetLastModelTurn(_ stdctx.Context) (int, *llm.Content, error) {
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+func (s *stubHistoryManager) UpdateTurnContent(_ stdctx.Context, _ int, _ string, _ string) error {
+	return nil
+}
+
 // stubUnifiedHistoryProvider satisfies ports.UnifiedHistoryProvider.
 type stubUnifiedHistoryProvider struct{}
 

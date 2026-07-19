@@ -469,6 +469,69 @@ func rollbackRemainingTurns(remainingMsgs int, hasSystem bool) int {
 	return effectiveLen / 2
 }
 
+// GetLastModelTurn returns the index and a deep copy of the last model-role
+// Content entry. It returns ports.ErrHistoryNotFound if no model turns exist.
+func (m *Manager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for i := len(m.Contents) - 1; i >= 0; i-- {
+		if m.Contents[i].Role == "model" {
+			return i, llm.CloneContent(m.Contents[i]), nil
+		}
+	}
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+// UpdateTurnContent replaces the text and thought parts of the Content at
+// the given index, then persists via Save. The index must reference a
+// model-role entry. An empty newThought removes any thought part.
+func (m *Manager) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if index < 0 || index >= len(m.Contents) {
+		return fmt.Errorf("index %d out of bounds [0, %d)", index, len(m.Contents))
+	}
+	if m.Contents[index].Role != "model" {
+		return fmt.Errorf("index %d has role %q, expected \"model\"", index, m.Contents[index].Role)
+	}
+
+	// Collect new parts: keep non-text non-thought parts (e.g., function calls)
+	// but replace text and thought.
+	var newParts []*llm.Part
+	textSet := false
+	for _, p := range m.Contents[index].Parts {
+		if p.IsThought {
+			continue // thought parts are replaced below
+		}
+		if p.Text != "" && !p.IsThought && !textSet {
+			// Replace the first non-thought text part with new text
+			newParts = append(newParts, &llm.Part{Text: newText})
+			textSet = true
+			continue
+		}
+		// Keep function calls, function responses, inline data, etc.
+		newParts = append(newParts, p)
+	}
+	// If there was no existing text part, add one
+	if !textSet && newText != "" {
+		newParts = append(newParts, &llm.Part{Text: newText})
+	}
+
+	// Add thought part if requested
+	if newThought != "" {
+		newParts = append(newParts, &llm.Part{Text: newThought, IsThought: true})
+	}
+
+	m.Contents[index].Parts = newParts
+
+	if err := m.store.Save(ctx, m.Contents); err != nil {
+		return fmt.Errorf("save after updating turn %d: %w", index, err)
+	}
+	return nil
+}
+
 // GetLastUserMessage finds the text of the last user message and the number of turns to rollback to remove it and everything after it.
 func (m *Manager) GetLastUserMessage(ctx context.Context) (string, int, error) {
 	m.mu.RLock()

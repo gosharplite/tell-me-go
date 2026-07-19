@@ -197,6 +197,14 @@ func (m *mockErrorHistoryReader) RollbackTurns(ctx context.Context, turns int) (
 	return 0, 0, 0, nil
 }
 
+func (m *mockErrorHistoryReader) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+func (m *mockErrorHistoryReader) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	return nil
+}
+
 func TestHistory_GetWindowError(t *testing.T) {
 	t.Run("GetWindow error renders formatted error message", func(t *testing.T) {
 		mock := &mockErrorHistoryReader{

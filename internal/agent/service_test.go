@@ -56,7 +56,7 @@ func newProcessMessageFixtures(
 
 	service = agent.NewChatService(
 		"home", "v1", io.Discard, stderr, sm,
-		sf, chatterFactory, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
+		sf, chatterFactory, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
 	)
 
 	return
@@ -480,7 +480,7 @@ func TestGetLastUserMessage(t *testing.T) {
 
 	service := agent.NewChatService(
 		"home", "v1", io.Discard, io.Discard, sm,
-		nil, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
+		nil, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
 	)
 
 	msg, turns, err := service.GetLastUserMessage(ctx, mockHM)
@@ -525,6 +525,14 @@ func (m *mockHistoryManagerForRetry) RollbackTurns(ctx context.Context, turns in
 }
 
 func (m *mockHistoryManagerForRetry) GetFilePath() string { return "" }
+
+func (m *mockHistoryManagerForRetry) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+func (m *mockHistoryManagerForRetry) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	return nil
+}
 
 type mockFileSystemStream struct {
 	persistence.FileSystem
@@ -638,7 +646,7 @@ func TestStreamTurnsLog(t *testing.T) {
 
 			service := agent.NewChatService(
 				homeDir, "v1", io.Discard, io.Discard, nil,
-				nil, nil, nil, nil, nil, mFS,
+				nil, nil, nil, nil, nil, nil, mFS,
 			)
 
 			var out bytes.Buffer
@@ -884,7 +892,7 @@ func TestRunDiagnostics(t *testing.T) {
 			var stdout bytes.Buffer
 			service := agent.NewChatService(
 				"home", "v1", &stdout, io.Discard, nil,
-				sf, nil, uir, nil, nil, nil,
+				sf, nil, uir, nil, nil, nil, nil,
 			)
 
 			cfg := &config.Config{Mode: "assistant"}
@@ -959,7 +967,7 @@ func TestBrowseHistory(t *testing.T) {
 
 			service := agent.NewChatService(
 				"home", "v1", io.Discard, io.Discard, nil,
-				nil, nil, nil, nil, browser, nil,
+				nil, nil, nil, nil, browser, nil, nil,
 			)
 
 			err := service.BrowseHistory(ctx, nil, mockHM)
@@ -1042,7 +1050,7 @@ func TestGetToolNames(t *testing.T) {
 
 			service := agent.NewChatService(
 				"home", "v1", io.Discard, io.Discard, nil,
-				nil, nil, nil, nil, nil, nil,
+				nil, nil, nil, nil, nil, nil, nil,
 			)
 
 			names, err := service.GetToolNames(ctx, reg)
@@ -1068,7 +1076,7 @@ func TestChatService_StreamTurnsLog_EmptyMode(t *testing.T) {
 
 	service := agent.NewChatService(
 		"/nonexistent", "v1", io.Discard, io.Discard, nil,
-		nil, nil, nil, nil, nil, mFS,
+		nil, nil, nil, nil, nil, nil, mFS,
 	)
 
 	var out bytes.Buffer
@@ -1095,7 +1103,7 @@ func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 	// Passing nil for LogOpener proves this: if Open is reached, the test panics.
 	service := agent.NewChatService(
 		"/test", "v1", io.Discard, io.Discard, nil,
-		nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil,
 		agent.WithPathResolver(emptyPathResolver),
 	)
 

@@ -80,6 +80,17 @@ type HistoryModifier interface {
 	// RollbackTurns removes the last N turns (1 turn = 2 messages) from the history.
 	// It returns the actual number of turns removed, the remaining turns, the remaining total messages, and any error.
 	RollbackTurns(ctx context.Context, turns int) (actualRemoved int, remainingTurns int, remainingMsgs int, err error)
+
+	// GetLastModelTurn returns the index (in the underlying content slice) and
+	// a deep copy of the last model-role Content entry. It returns
+	// ErrHistoryNotFound if no model turns exist in the history.
+	GetLastModelTurn(ctx context.Context) (index int, content *llm.Content, err error)
+
+	// UpdateTurnContent replaces the text and thought parts of the Content at
+	// the given index in memory, then persists the change via Save.
+	// The index must reference a model-role entry. Passing an empty string for
+	// newThought removes any existing thought part from that turn.
+	UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error
 }
 
 // HistoryManager defines the interface for interacting with history.

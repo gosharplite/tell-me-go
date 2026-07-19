@@ -85,6 +85,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		container.GetUIRenderer(),
 		container.GetHistoryRenderer(),
 		container.GetHistoryBrowser(),
+		nil,
 		infra_persistence.NewOSFileSystem(),
 	)
 

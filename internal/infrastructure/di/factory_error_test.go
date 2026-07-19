@@ -216,6 +216,14 @@ func (m *mockHistoryManagerFull) RollbackTurns(ctx context.Context, turns int) (
 	return 0, 0, 0, nil
 }
 
+func (m *mockHistoryManagerFull) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	return 0, nil, ports.ErrHistoryNotFound
+}
+
+func (m *mockHistoryManagerFull) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	return nil
+}
+
 func TestGetHistoryManager_FailurePaths(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()

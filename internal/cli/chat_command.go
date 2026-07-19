@@ -66,6 +66,7 @@ type cliOptions struct {
 	tuiPrompt    bool
 	tuiOutput    bool
 	retry        bool
+	editLast     bool
 }
 
 func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
@@ -81,6 +82,7 @@ func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.BoolVarP(&opts.tuiPrompt, "interactive", "i", false, "Enable interactive TUI prompt with suggestions")
 	fs.BoolVarP(&opts.tuiOutput, "tui-output", "o", false, "Enable TUI progress dashboard during agent turns")
 	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
+	fs.BoolVarP(&opts.editLast, "edit-last", "e", false, "Edit the last model response (text and thinking) in an interactive TUI")
 }
 
 // newChatCommand creates a new Chat Command as a Cobra command.
@@ -139,7 +141,12 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		return c.handleTurnsLogWorkflow(ctx, cfg, opts)
 	}
 
-	// 4. Setup chat session (TUI logic + capturer setup)
+	// 4. Handle edit-last: launch the turn editor TUI
+	if opts.editLast {
+		return c.handleEditLastWorkflow(ctx, cfg, opts)
+	}
+
+	// 5. Setup chat session (TUI logic + capturer setup)
 	capturer, cleanup, err := c.setupChatSession(ctx, cfg, opts, args)
 	if err != nil {
 		return err
@@ -164,6 +171,14 @@ func (c *chatCommand) handleDiagnosticWorkflow(ctx stdctx.Context, cfg *domain_c
 
 func (c *chatCommand) handleTurnsLogWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) error {
 	return c.ChatService.StreamTurnsLog(ctx, cfg, c.Stdout)
+}
+
+func (c *chatCommand) handleEditLastWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) error {
+	hManager, err := c.Bootstrapper.GetHistoryManager(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("error getting history manager for edit: %w", err)
+	}
+	return c.ChatService.EditLastTurn(ctx, hManager)
 }
 
 func (c *chatCommand) isTUIConfigured(cfg *domain_config.Config) bool {
@@ -215,6 +230,7 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		TUIOutput:        opts.tuiOutput,
 		ProgressRenderer: progress.NewRenderer(c.Bootstrapper.GetSystemMetricsProvider()),
 		Retry:            opts.retry,
+		EditLastTurn:     opts.editLast,
 		Prompt:           prompt,
 	}, capturer)
 }

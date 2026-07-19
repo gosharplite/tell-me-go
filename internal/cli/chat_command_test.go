@@ -1297,3 +1297,150 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 		}
 	})
 }
+
+// TestChatCommand_HandleEditLastWorkflow_Success verifies the happy path:
+// GetHistoryManager returns a valid hManager, EditLastTurn succeeds.
+func TestChatCommand_HandleEditLastWorkflow_Success(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	editLastCalled := false
+	mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+		return &stubHistoryManager{}, nil
+	}
+	mService.EditLastTurnFunc = func(ctx stdctx.Context, hManager ports.HistoryManager) error {
+		editLastCalled = true
+		return nil
+	}
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"-e"})
+	require.NoError(t, err)
+	if !editLastCalled {
+		t.Error("expected EditLastTurn to be called")
+	}
+
+	snap := mService.Snapshot()
+	if snap.EditLastTurn != 1 {
+		t.Errorf("expected EditLastTurn count 1, got %d", snap.EditLastTurn)
+	}
+	if snap.ProcessMessage != 0 {
+		t.Errorf("expected ProcessMessage NOT to be called, got %d", snap.ProcessMessage)
+	}
+
+	bootSnap := mb.Snapshot()
+	if bootSnap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", bootSnap.GetHistoryManager)
+	}
+	if bootSnap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", bootSnap.BuildSessionDependencies)
+	}
+}
+
+// TestChatCommand_HandleEditLastWorkflow_GetHistoryManagerError verifies that
+// when GetHistoryManager returns an error, handleEditLastWorkflow propagates it.
+func TestChatCommand_HandleEditLastWorkflow_GetHistoryManagerError(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+		return nil, errors.New("history manager unavailable")
+	}
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"-e"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error getting history manager for edit")
+	assert.Contains(t, err.Error(), "history manager unavailable")
+
+	snap := mService.Snapshot()
+	if snap.EditLastTurn != 0 {
+		t.Errorf("expected EditLastTurn NOT to be called, got %d", snap.EditLastTurn)
+	}
+}
+
+// TestChatCommand_HandleEditLastWorkflow_EditLastTurnError verifies that
+// when EditLastTurn returns an error, it is propagated.
+func TestChatCommand_HandleEditLastWorkflow_EditLastTurnError(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+		return &stubHistoryManager{}, nil
+	}
+	editErr := errors.New("editor failed")
+	mService.EditLastTurnFunc = func(ctx stdctx.Context, hManager ports.HistoryManager) error {
+		return editErr
+	}
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"-e"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, editErr)
+
+	snap := mService.Snapshot()
+	if snap.EditLastTurn != 1 {
+		t.Errorf("expected EditLastTurn count 1, got %d", snap.EditLastTurn)
+	}
+}
+
+// TestChatCommand_Execute_EditLastFlag verifies the -e flag is registered
+// and recognized by cobra.
+func TestChatCommand_Execute_EditLastFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newChatCommand(&context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		ChatService:  &clitest.MockChatService{},
+		Bootstrapper: &clitest.MockBootstrapper{},
+		Loader:       &configtest.MockConfigLoader{},
+	}, nil)
+
+	flag := cmd.Flags().Lookup("edit-last")
+	require.NotNil(t, flag, "expected --edit-last flag to be registered")
+	if flag.Shorthand != "e" {
+		t.Errorf("expected shorthand 'e', got %q", flag.Shorthand)
+	}
+}

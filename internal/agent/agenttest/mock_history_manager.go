@@ -27,6 +27,9 @@ type MockHistoryManager struct {
 
 	AddContentFunc  func(ctx context.Context, content *llm.Content) error
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
+
+	GetLastModelTurnFunc func(ctx context.Context) (int, *llm.Content, error)
+	UpdateTurnContentFunc func(ctx context.Context, index int, newText string, newThought string) error
 }
 
 func (m *MockHistoryManager) GetTotalEntries() int {
@@ -132,6 +135,25 @@ func (m *MockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 	return actualRemoved, len(m.Contents) / 2, len(m.Contents), nil
 }
 func (m *MockHistoryManager) GetFilePath() string       { return "" }
+func (m *MockHistoryManager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
+	if m.GetLastModelTurnFunc != nil {
+		return m.GetLastModelTurnFunc(ctx)
+	}
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
+	for i := len(m.Contents) - 1; i >= 0; i-- {
+		if m.Contents[i].Role == "model" {
+			return i, llm.CloneContent(m.Contents[i]), nil
+		}
+	}
+	return 0, nil, nil
+}
+func (m *MockHistoryManager) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
+	if m.UpdateTurnContentFunc != nil {
+		return m.UpdateTurnContentFunc(ctx, index, newText, newThought)
+	}
+	return nil
+}
 func (m *MockHistoryManager) SetGetWindowErr(err error) { m.GetWindowErr = err }
 func (m *MockHistoryManager) SetInternalContents(contents []*llm.Content) {
 	m.Mu.Lock()
