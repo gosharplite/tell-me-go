@@ -483,6 +483,36 @@ func (m *Manager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, erro
 	return 0, nil, ports.ErrHistoryNotFound
 }
 
+// collectUpdatedParts builds a new Parts slice by replacing the text and
+// thought parts in original with newText and newThought. Non-text,
+// non-thought parts (function calls, responses, inline data) are preserved.
+// An empty newThought omits the thought part. An empty newText omits the
+// text part (the old text part is dropped with no replacement).
+func collectUpdatedParts(original []*llm.Part, newText string, newThought string) []*llm.Part {
+	var newParts []*llm.Part
+	textSet := false
+	for _, p := range original {
+		if p.IsThought {
+			continue
+		}
+		if p.Text != "" && !p.IsThought && !textSet {
+			textSet = true
+			if newText != "" {
+				newParts = append(newParts, &llm.Part{Text: newText})
+			}
+			continue
+		}
+		newParts = append(newParts, p)
+	}
+	if !textSet && newText != "" {
+		newParts = append(newParts, &llm.Part{Text: newText})
+	}
+	if newThought != "" {
+		newParts = append(newParts, &llm.Part{Text: newThought, IsThought: true})
+	}
+	return newParts
+}
+
 // UpdateTurnContent replaces the text and thought parts of the Content at
 // the given index, then persists via Save. The index must reference a
 // model-role entry. An empty newThought removes any thought part.
@@ -497,37 +527,7 @@ func (m *Manager) UpdateTurnContent(ctx context.Context, index int, newText stri
 		return fmt.Errorf("index %d has role %q, expected \"model\"", index, m.Contents[index].Role)
 	}
 
-	// Collect new parts: keep non-text non-thought parts (e.g., function calls)
-	// but replace text and thought.
-	var newParts []*llm.Part
-	textSet := false
-	for _, p := range m.Contents[index].Parts {
-		if p.IsThought {
-			continue // thought parts are replaced below
-		}
-		if p.Text != "" && !p.IsThought && !textSet {
-			textSet = true
-			// Only add the new text part if it is non-empty.
-			// Anthropic and other providers reject empty text blocks.
-			if newText != "" {
-				newParts = append(newParts, &llm.Part{Text: newText})
-			}
-			continue
-		}
-		// Keep function calls, function responses, inline data, etc.
-		newParts = append(newParts, p)
-	}
-	// If there was no existing text part, add one
-	if !textSet && newText != "" {
-		newParts = append(newParts, &llm.Part{Text: newText})
-	}
-
-	// Add thought part if requested
-	if newThought != "" {
-		newParts = append(newParts, &llm.Part{Text: newThought, IsThought: true})
-	}
-
-	m.Contents[index].Parts = newParts
+	m.Contents[index].Parts = collectUpdatedParts(m.Contents[index].Parts, newText, newThought)
 
 	if err := m.store.Save(ctx, m.Contents); err != nil {
 		return fmt.Errorf("save after updating turn %d: %w", index, err)
