@@ -34,7 +34,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Resilience**: Real-time USD cost auditing, deterministic budgets, and descriptive API error handling.
 *   **Persistence & Recovery**: 
     *   **Durability**: Automatic history saving with built-in **Auto-Repair** for crash resilience and session continuity.
-    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and `SafePath`).
+    *   **Archiving**: New sessions (`--new`) archive history while preserving global state (tasks and `SafePath`).
 
 ## 📋 Prerequisites
 *   **Go**: 1.26.4 or higher.
@@ -111,6 +111,10 @@ Retry the last user message (automatically rolls back the last attempt):
 ```bash
 tell-me-go --retry
 ```
+Edit the last model response (text and thinking) in an interactive TUI:
+```bash
+tell-me-go -e
+```
 
 **Session Logs:**
 Print the full execution trace (turns log) for the current session and exit. This is useful for inspecting the detailed background process or debugging:
@@ -124,10 +128,20 @@ Skip Markdown rendering (useful for piping to other scripts):
 tell-me-go -r "Write a bash script to list files"
 ```
 
+**TUI Progress Dashboard:**
+Enable a real-time progress dashboard with live token usage and tool execution status during agent turns:
+```bash
+tell-me-go -o "Refactor the auth module"
+```
+
 **System Diagnostics:**
 Run a comprehensive health check:
 ```bash
 tell-me-go -d
+```
+Use `--json` with `-d` for machine-readable diagnostic output:
+```bash
+tell-me-go -d --json
 ```
 
 **Pre-flight Status Log:**
