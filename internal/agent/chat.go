@@ -55,4 +55,8 @@ type ChatService interface {
 
 	// RunDiagnostics performs a comprehensive system health check.
 	RunDiagnostics(ctx context.Context, cfg *config.Config, configPath string, jsonOutput bool) error
+
+	// EditLastTurn launches an interactive TUI to edit the last model turn's
+	// text and thought content. It blocks until the editor is dismissed.
+	EditLastTurn(ctx context.Context, hManager ports.HistoryManager) error
 }

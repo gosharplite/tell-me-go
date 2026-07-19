@@ -95,6 +95,12 @@ var wellKnownContractMethods = map[string][]wellKnownContractSignature{
 	"ServeHTTP": {{params: []string{"net/http.ResponseWriter", "*net/http.Request"}, results: nil}},
 	// database/sql.Scanner.Scan
 	"Scan": {{params: []string{"any"}, results: []string{"error"}}},
+	// github.com/charmbracelet/bubbletea.Model.Init
+	"Init": {{params: nil, results: []string{"github.com/charmbracelet/bubbletea.Cmd"}}},
+	// github.com/charmbracelet/bubbletea.Model.Update
+	"Update": {{params: []string{"github.com/charmbracelet/bubbletea.Msg"}, results: []string{"github.com/charmbracelet/bubbletea.Model", "github.com/charmbracelet/bubbletea.Cmd"}}},
+	// github.com/charmbracelet/bubbletea.Model.View
+	"View": {{params: nil, results: []string{"string"}}},
 }
 
 // canonicalTypeString returns t.String() with two stdlib-alias normalizations

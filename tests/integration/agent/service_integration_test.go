@@ -46,7 +46,7 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 			service := agent.NewChatService(
 				"home", "v1", io.Discard, io.Discard, nil,
-				mockSF, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
+				mockSF, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
 			)
 
 			// 3. Attempt ProcessMessage
