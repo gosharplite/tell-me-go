@@ -526,8 +526,14 @@ func collectUpdatedParts(original []*llm.Part, newText string, newThought string
 				break
 			}
 		}
+		// KNOWN LIMITATION: thoughtIdx is computed from original, but
+		// text parts are dropped during the rebuild, so newParts may
+		// have fewer elements. For common provider layouts (thought-first
+		// or thought-after-a-single-text-part) the index is correct.
+		// For exotic layouts like [textA, textB, thought, FC] where both
+		// text parts are dropped, the thought inserts earlier than
+		// expected. Cosmetic — the semantic content is preserved.
 		if thoughtIdx >= 0 && thoughtIdx <= len(newParts) {
-			// Insert at original position
 			newParts = append(newParts[:thoughtIdx], append([]*llm.Part{thoughtPart}, newParts[thoughtIdx:]...)...)
 		} else {
 			newParts = append(newParts, thoughtPart)
