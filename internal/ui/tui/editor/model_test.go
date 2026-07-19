@@ -4,6 +4,7 @@
 package editor
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -133,20 +134,22 @@ func TestEsc_AbortsAndQuits(t *testing.T) {
 	}
 }
 
-func TestQ_AbortsAndQuits(t *testing.T) {
+func TestQ_TypesCharacter(t *testing.T) {
 	model := NewModel("hello", "thinking...")
 	model.ready = true
 	model.width = 80
 	model.height = 24
 
-	newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	// Pressing "q" should type the character, not abort
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 
 	editor := newModel.(*EditorModel)
-	if !editor.WasAborted() {
-		t.Error("expected WasAborted() to be true after 'q'")
+	if editor.WasAborted() {
+		t.Error("pressing 'q' should not abort the editor")
 	}
-	if cmd == nil {
-		t.Fatal("expected tea.Quit command after 'q'")
+	// Verify "q" was appended to the text area value
+	if !strings.Contains(editor.textArea.Value(), "q") {
+		t.Error("expected 'q' to be typed into the text area")
 	}
 }
 

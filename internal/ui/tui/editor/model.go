@@ -23,7 +23,7 @@ import (
 //
 //	Tab / Shift+Tab     — switch focus between textareas
 //	Ctrl+S              — save both and quit (sets saved=true)
-//	Esc / Ctrl+C / q    — abort and quit (sets saved=false)
+//	Esc / Ctrl+C         — abort and quit (sets saved=false)
 type EditorModel struct {
 	textArea    textarea.Model
 	thoughtArea textarea.Model
@@ -78,7 +78,7 @@ func (m *EditorModel) wasSaved() bool {
 	return m.saved
 }
 
-// WasAborted returns true if the user pressed Esc/q/Ctrl+C.
+// WasAborted returns true if the user pressed Esc/Ctrl+C.
 func (m *EditorModel) WasAborted() bool {
 	return m.aborted
 }
@@ -114,7 +114,7 @@ func (m *EditorModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.saved = true
 		return m, tea.Quit
 
-	case "esc", "ctrl+c", "q":
+	case "esc", "ctrl+c":
 		m.aborted = true
 		return m, tea.Quit
 
@@ -238,7 +238,7 @@ func (m *EditorModel) View() string {
 	sb.WriteString("\n")
 
 	// Footer
-	sb.WriteString(footerStyle.Render("Ctrl+S: save & exit  |  Tab: switch  |  Esc/q: abort"))
+	sb.WriteString(footerStyle.Render("Ctrl+S: save & exit  |  Tab: switch  |  Esc: abort"))
 
 	return sb.String()
 }

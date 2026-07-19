@@ -506,9 +506,12 @@ func (m *Manager) UpdateTurnContent(ctx context.Context, index int, newText stri
 			continue // thought parts are replaced below
 		}
 		if p.Text != "" && !p.IsThought && !textSet {
-			// Replace the first non-thought text part with new text
-			newParts = append(newParts, &llm.Part{Text: newText})
 			textSet = true
+			// Only add the new text part if it is non-empty.
+			// Anthropic and other providers reject empty text blocks.
+			if newText != "" {
+				newParts = append(newParts, &llm.Part{Text: newText})
+			}
 			continue
 		}
 		// Keep function calls, function responses, inline data, etc.
