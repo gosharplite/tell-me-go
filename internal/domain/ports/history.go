@@ -13,6 +13,9 @@ import (
 // Sentinel errors for history operations.
 var (
 	ErrHistoryNotFound = errors.New("history not found")
+	// ErrEditAborted is returned by HistoryEditor.Edit when the user aborts
+	// the edit session (e.g., pressing Esc).
+	ErrEditAborted = errors.New("edit aborted by user")
 )
 
 // HistoryReader defines the interface for reading chat history.

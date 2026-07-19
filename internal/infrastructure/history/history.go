@@ -514,8 +514,24 @@ func collectUpdatedParts(original []*llm.Part, newText string, newThought string
 	if !textSet && newText != "" {
 		newParts = append(newParts, &llm.Part{Text: newText})
 	}
+	// If the original had a thought part, insert newThought at its position.
+	// If there was no thought part but newThought is provided, append it.
 	if newThought != "" {
-		newParts = append(newParts, &llm.Part{Text: newThought, IsThought: true})
+		thoughtPart := &llm.Part{Text: newThought, IsThought: true}
+		// Find where the first thought part was in the original
+		thoughtIdx := -1
+		for i, p := range original {
+			if p.IsThought {
+				thoughtIdx = i
+				break
+			}
+		}
+		if thoughtIdx >= 0 && thoughtIdx <= len(newParts) {
+			// Insert at original position
+			newParts = append(newParts[:thoughtIdx], append([]*llm.Part{thoughtPart}, newParts[thoughtIdx:]...)...)
+		} else {
+			newParts = append(newParts, thoughtPart)
+		}
 	}
 	return newParts
 }

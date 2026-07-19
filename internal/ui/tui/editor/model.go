@@ -124,8 +124,8 @@ func (m *EditorModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "shift+tab":
-		// Reverse: go from 1→0 or 0→1 (same as forward with 2 elements)
-		m.focused = (m.focused + 1) % 2
+		const numPanes = 2
+		m.focused = (m.focused - 1 + numPanes) % numPanes
 		m.syncFocus()
 		return m, nil
 	}

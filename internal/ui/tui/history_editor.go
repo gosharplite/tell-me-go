@@ -7,6 +7,7 @@ import (
 	stdctx "context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -20,13 +21,15 @@ type ProgramRunner interface {
 
 // HistoryEditor launches the TUI turn editor for the last model turn.
 type HistoryEditor struct {
+	logger     *slog.Logger
 	initLogger func() (io.Closer, error)
 	newProgram func(model tea.Model, opts ...tea.ProgramOption) ProgramRunner
 }
 
 // NewHistoryEditor creates a new HistoryEditor.
-func NewHistoryEditor(initLogger func() (io.Closer, error), newProgram func(model tea.Model, opts ...tea.ProgramOption) ProgramRunner) *HistoryEditor {
+func NewHistoryEditor(logger *slog.Logger, initLogger func() (io.Closer, error), newProgram func(model tea.Model, opts ...tea.ProgramOption) ProgramRunner) *HistoryEditor {
 	return &HistoryEditor{
+		logger:     logger,
 		initLogger: initLogger,
 		newProgram: newProgram,
 	}
@@ -37,7 +40,7 @@ func (e *HistoryEditor) Edit(ctx stdctx.Context, hManager ports.HistoryManager) 
 	if closer, err := e.initLogger(); err == nil {
 		defer func() {
 			if closeErr := closer.Close(); closeErr != nil {
-				_ = closeErr
+				e.logger.Warn("failed to close tui logger", "error", closeErr)
 			}
 		}()
 	}
@@ -63,9 +66,12 @@ func (e *HistoryEditor) Edit(ctx stdctx.Context, hManager ports.HistoryManager) 
 		return fmt.Errorf("tui editor error: %w", runErr)
 	}
 
-	ed := result.(*editor.EditorModel)
+	ed, ok := result.(*editor.EditorModel)
+	if !ok {
+		return fmt.Errorf("tui editor returned unexpected model type: %T", result)
+	}
 	if ed.WasAborted() {
-		return stdctx.Canceled
+		return ports.ErrEditAborted
 	}
 
 	return hManager.UpdateTurnContent(ctx, index, ed.EditedText(), ed.EditedThought())

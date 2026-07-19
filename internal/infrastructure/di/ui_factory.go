@@ -60,15 +60,10 @@ func (f *defaultUIFactory) SystemMetricsProvider() ports.SystemMetricsProvider {
 type tuiHistoryBrowser struct {
 	logger     *slog.Logger
 	initLogger func() (io.Closer, error)
-	newProgram func(model tea.Model, opts ...tea.ProgramOption) programRunner
+	newProgram func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner
 }
 
-// programRunner abstracts tea.Program.Run to allow fault injection in tests.
-type programRunner interface {
-	Run() (tea.Model, error)
-}
-
-// teaProgramRunner wraps a *tea.Program to satisfy the programRunner interface.
+// teaProgramRunner wraps a *tea.Program to satisfy the tui.ProgramRunner interface.
 type teaProgramRunner struct {
 	p *tea.Program
 }
@@ -99,7 +94,7 @@ func (f *defaultUIFactory) HistoryBrowser() ports.HistoryBrowser {
 	return &tuiHistoryBrowser{
 		logger:     f.Logger,
 		initLogger: tui.InitLogger,
-		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner {
 			return &teaProgramRunner{p: tea.NewProgram(model, opts...)}
 		},
 	}
@@ -107,6 +102,7 @@ func (f *defaultUIFactory) HistoryBrowser() ports.HistoryBrowser {
 
 func (f *defaultUIFactory) HistoryEditor() ports.HistoryEditor {
 	return tui.NewHistoryEditor(
+		f.Logger,
 		tui.InitLogger,
 		func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner {
 			return &teaProgramRunner{p: tea.NewProgram(model, opts...)}

@@ -178,7 +178,11 @@ func (c *chatCommand) handleEditLastWorkflow(ctx stdctx.Context, cfg *domain_con
 	if err != nil {
 		return fmt.Errorf("error getting history manager for edit: %w", err)
 	}
-	return c.ChatService.EditLastTurn(ctx, hManager)
+	err = c.ChatService.EditLastTurn(ctx, hManager)
+	if errors.Is(err, ports.ErrEditAborted) {
+		return nil // user aborted, not an error
+	}
+	return err
 }
 
 func (c *chatCommand) isTUIConfigured(cfg *domain_config.Config) bool {
@@ -230,7 +234,6 @@ func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.
 		TUIOutput:        opts.tuiOutput,
 		ProgressRenderer: progress.NewRenderer(c.Bootstrapper.GetSystemMetricsProvider()),
 		Retry:            opts.retry,
-		EditLastTurn:     opts.editLast,
 		Prompt:           prompt,
 	}, capturer)
 }

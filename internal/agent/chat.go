@@ -31,7 +31,6 @@ type ChatCommand struct {
 	TUIOutput        bool
 	ProgressRenderer ports.ProgressRenderer
 	Retry            bool
-	EditLastTurn     bool
 	Prompt           string
 }
 

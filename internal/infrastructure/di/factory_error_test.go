@@ -24,6 +24,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -529,12 +530,12 @@ type failingCloser struct{ err error }
 
 func (c *failingCloser) Close() error { return c.err }
 
-// stubProgramRunner is a programRunner that immediately succeeds.
+// stubProgramRunner is a tui.ProgramRunner that immediately succeeds.
 type stubProgramRunner struct{}
 
 func (r *stubProgramRunner) Run() (tea.Model, error) { return nil, nil }
 
-// failingProgramRunner is a programRunner that returns a configurable error.
+// failingProgramRunner is a tui.ProgramRunner that returns a configurable error.
 type failingProgramRunner struct{ err error }
 
 func (r *failingProgramRunner) Run() (tea.Model, error) { return nil, r.err }
@@ -575,7 +576,7 @@ func TestTUIHistoryBrowser_Browse_LoggerCloseError(t *testing.T) {
 		initLogger: func() (io.Closer, error) {
 			return &failingCloser{err: simulatedErr}, nil
 		},
-		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner {
 			return &stubProgramRunner{}
 		},
 	}
@@ -611,7 +612,7 @@ func TestTUIHistoryBrowser_Browse_ProgramRunError(t *testing.T) {
 		initLogger: func() (io.Closer, error) {
 			return nil, errors.New("logger init skipped")
 		},
-		newProgram: func(model tea.Model, opts ...tea.ProgramOption) programRunner {
+		newProgram: func(model tea.Model, opts ...tea.ProgramOption) tui.ProgramRunner {
 			return &failingProgramRunner{err: simulatedErr}
 		},
 	}
