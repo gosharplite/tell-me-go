@@ -238,6 +238,18 @@ func TestClassify(t *testing.T) {
 			containsMatch: "EOF",
 		},
 		{
+			name:          "HTTP/2 stream INTERNAL_ERR",
+			input:         errors.New("stream error: stream ID 7; INTERNAL_ERR"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "INTERNAL_ERR",
+		},
+		{
+			name:          "HTTP/2 stream error generic",
+			input:         errors.New("stream error: stream ID 3; PROTOCOL_ERROR"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "PROTOCOL_ERROR",
+		},
+		{
 			name:         "wrapped syscall.ECONNRESET",
 			input:        fmt.Errorf("read tcp 10.80.9.9:47548->3.173.21.63:443: read: %w", syscall.ECONNRESET),
 			expectedWrap: llm.ErrTransient,
