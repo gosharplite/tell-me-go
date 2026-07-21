@@ -120,6 +120,8 @@ func getSharedFixtureDir(tb testing.TB) string {
 	sharedIdxOnce.Do(func() {
 		sharedFixtureDir = getFixturePath(tb)
 	})
+	sharedIdxMu.Lock()
+	defer sharedIdxMu.Unlock()
 	return sharedFixtureDir
 }
 
