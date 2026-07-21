@@ -1114,3 +1114,93 @@ func TestChatService_StreamTurnsLog_EmptyPath(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, "turns log path not available", err.Error())
 }
+
+func TestUpdateLastTurn(t *testing.T) {
+	ctx := context.Background()
+
+	service := agent.NewChatService(
+		"home", "v1", io.Discard, io.Discard, &agenttest.MockServiceSecurityManager{},
+		nil, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil, nil,
+	)
+
+	t.Run("delete when text is empty", func(t *testing.T) {
+		hm := &agenttest.MockHistoryManager{}
+		hm.SetInternalContents([]*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "q1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "a1"}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "q2"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "a2"}}},
+		})
+
+		err := service.UpdateLastTurn(ctx, hm, "")
+
+		assert.NoError(t, err)
+		assert.Equal(t, 2, hm.GetTotalEntries())
+	})
+
+	t.Run("replace when text is non-empty", func(t *testing.T) {
+		var gotIdx int
+		var gotText string
+		hm := &agenttest.MockHistoryManager{
+			GetLastModelTurnFunc: func(ctx context.Context) (int, *llm.Content, error) {
+				return 3, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "old"}}}, nil
+			},
+			UpdateTurnContentFunc: func(ctx context.Context, index int, newText, newThought string) error {
+				gotIdx = index
+				gotText = newText
+				return nil
+			},
+		}
+
+		err := service.UpdateLastTurn(ctx, hm, "new response")
+
+		assert.NoError(t, err)
+		assert.Equal(t, 3, gotIdx)
+		assert.Equal(t, "new response", gotText)
+	})
+
+	t.Run("error when GetLastModelTurn fails", func(t *testing.T) {
+		hm := &agenttest.MockHistoryManager{
+			GetLastModelTurnFunc: func(ctx context.Context) (int, *llm.Content, error) {
+				return 0, nil, errors.New("no model turns")
+			},
+		}
+
+		err := service.UpdateLastTurn(ctx, hm, "some text")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update last turn")
+	})
+
+	t.Run("error when RollbackTurns fails on delete", func(t *testing.T) {
+		hm := &agenttest.MockHistoryManager{}
+		hm.SetInternalContents([]*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "q1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "a1"}}},
+		})
+		hm.SetRollbackErr(errors.New("rollback failed"))
+
+		err := service.UpdateLastTurn(ctx, hm, "")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update last turn (delete)")
+		assert.Contains(t, err.Error(), "rollback failed")
+	})
+
+	t.Run("error when UpdateTurnContent fails", func(t *testing.T) {
+		hm := &agenttest.MockHistoryManager{
+			GetLastModelTurnFunc: func(ctx context.Context) (int, *llm.Content, error) {
+				return 1, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "old"}}}, nil
+			},
+			UpdateTurnContentFunc: func(ctx context.Context, index int, newText, newThought string) error {
+				return errors.New("update failed")
+			},
+		}
+
+		err := service.UpdateLastTurn(ctx, hm, "new text")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "update last turn")
+		assert.Contains(t, err.Error(), "update failed")
+	})
+}
