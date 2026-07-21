@@ -67,6 +67,7 @@ type cliOptions struct {
 	tuiOutput    bool
 	retry        bool
 	editLast     bool
+	updateTurnText string
 }
 
 func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
@@ -83,6 +84,7 @@ func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.BoolVarP(&opts.tuiOutput, "tui-output", "o", false, "Enable TUI progress dashboard during agent turns")
 	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 	fs.BoolVarP(&opts.editLast, "edit-last", "e", false, "Edit the last model response (text and thinking) in an interactive TUI")
+	fs.StringVar(&opts.updateTurnText, "update-turn", "__NOT_SET__", "Replace text of the last model response headlessly; use empty string \"\" to delete the turn instead (for inter-agent refusal recovery)")
 }
 
 // newChatCommand creates a new Chat Command as a Cobra command.
@@ -104,7 +106,7 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 	c.capturerFactory = ui.NewCapturer
 
 	if opts == nil {
-		opts = &cliOptions{}
+		opts = &cliOptions{updateTurnText: "__NOT_SET__"}
 	}
 
 	cmd := &cobra.Command{
@@ -146,6 +148,12 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		return c.handleEditLastWorkflow(ctx, cfg, opts)
 	}
 
+	// Handle update-turn: headless last-turn edit for inter-agent refusal recovery.
+	// The sentinel "__NOT_SET__" means the flag was not passed.
+	if opts.updateTurnText != "__NOT_SET__" {
+		return c.handleUpdateTurnWorkflow(ctx, cfg, opts)
+	}
+
 	// 5. Setup chat session (TUI logic + capturer setup)
 	capturer, cleanup, err := c.setupChatSession(ctx, cfg, opts, args)
 	if err != nil {
@@ -183,6 +191,14 @@ func (c *chatCommand) handleEditLastWorkflow(ctx stdctx.Context, cfg *domain_con
 		return nil // user aborted, not an error
 	}
 	return err
+}
+
+func (c *chatCommand) handleUpdateTurnWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) error {
+	hManager, err := c.Bootstrapper.GetHistoryManager(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("error getting history manager for update-turn: %w", err)
+	}
+	return c.ChatService.UpdateLastTurn(ctx, hManager, opts.updateTurnText)
 }
 
 func (c *chatCommand) isTUIConfigured(cfg *domain_config.Config) bool {

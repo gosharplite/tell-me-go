@@ -26,6 +26,7 @@ type MockChatService struct {
 	calledGetLastUserMessage int
 	calledBrowseHistory      int
 	calledEditLastTurn       int
+	calledUpdateLastTurn     int
 	calledGetToolNames       int
 	calledStreamTurnsLog     int
 	calledRunDiagnostics     int
@@ -36,6 +37,7 @@ type MockChatService struct {
 	GetLastUserMessageFunc func(ctx context.Context, hManager ports.HistoryManager) (string, int, error)
 	BrowseHistoryFunc      func(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error
 	EditLastTurnFunc       func(ctx context.Context, hManager ports.HistoryManager) error
+	UpdateLastTurnFunc     func(ctx context.Context, hManager ports.HistoryManager, text string) error
 	GetToolNamesFunc       func(ctx context.Context, reg tools.Registry) ([]string, error)
 	StreamTurnsLogFunc     func(ctx context.Context, cfg *domain_config.Config, out io.Writer) error
 	RunDiagnosticsFunc     func(ctx context.Context, cfg *domain_config.Config, configPath string, jsonOutput bool) error
@@ -52,7 +54,8 @@ type MockChatService struct {
 // ordered method names.
 type ChatServiceSnapshot struct {
 	ProcessMessage, GetLastUserMessage, BrowseHistory, EditLastTurn int
-	GetToolNames, StreamTurnsLog, RunDiagnostics                    int
+	UpdateLastTurn                                                   int
+	GetToolNames, StreamTurnsLog, RunDiagnostics                     int
 	Methods                                                         []string
 }
 
@@ -69,6 +72,7 @@ func (m *MockChatService) Snapshot() ChatServiceSnapshot {
 		GetLastUserMessage: m.calledGetLastUserMessage,
 		BrowseHistory:      m.calledBrowseHistory,
 		EditLastTurn:       m.calledEditLastTurn,
+		UpdateLastTurn:     m.calledUpdateLastTurn,
 		GetToolNames:       m.calledGetToolNames,
 		StreamTurnsLog:     m.calledStreamTurnsLog,
 		RunDiagnostics:     m.calledRunDiagnostics,
@@ -129,6 +133,21 @@ func (m *MockChatService) EditLastTurn(ctx context.Context, hManager ports.Histo
 
 	if m.EditLastTurnFunc != nil {
 		return m.EditLastTurnFunc(ctx, hManager)
+	}
+	return nil
+}
+
+// UpdateLastTurn replaces the text of the last model turn, or deletes
+// the turn entirely when text is empty. When UpdateLastTurnFunc is nil
+// the default is success (nil error).
+func (m *MockChatService) UpdateLastTurn(ctx context.Context, hManager ports.HistoryManager, text string) error {
+	m.mu.Lock()
+	m.calledUpdateLastTurn++
+	m.calledMethods = append(m.calledMethods, "UpdateLastTurn")
+	m.mu.Unlock()
+
+	if m.UpdateLastTurnFunc != nil {
+		return m.UpdateLastTurnFunc(ctx, hManager, text)
 	}
 	return nil
 }

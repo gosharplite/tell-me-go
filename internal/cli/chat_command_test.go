@@ -1042,7 +1042,7 @@ func TestChatCommand_BuildCapturer_NonTUI_SetupCapturerError(t *testing.T) {
 		},
 	}
 
-	opts := &cliOptions{tuiPrompt: false} // non-TUI path
+	opts := &cliOptions{tuiPrompt: false, updateTurnText: "__NOT_SET__"} // non-TUI path
 	capturer, cleanup, err := c.buildCapturer(stdctx.Background(), nil, opts)
 
 	require.Error(t, err)
@@ -1075,7 +1075,7 @@ func TestChatCommand_ExecuteChat_SetupSessionError(t *testing.T) {
 		},
 	}
 
-	opts := &cliOptions{} // tuiPrompt defaults to false → non-TUI path
+	opts := &cliOptions{updateTurnText: "__NOT_SET__"} // tuiPrompt defaults to false → non-TUI path
 	err := c.executeChat(stdctx.Background(), opts, []string{"hello"})
 
 	require.Error(t, err)
@@ -1134,7 +1134,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  &clitest.MockChatService{},
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
@@ -1168,7 +1168,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  &clitest.MockChatService{},
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
@@ -1213,7 +1213,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  ms,
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
@@ -1277,7 +1277,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  ms,
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
