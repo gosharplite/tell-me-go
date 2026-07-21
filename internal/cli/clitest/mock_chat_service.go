@@ -54,8 +54,8 @@ type MockChatService struct {
 // ordered method names.
 type ChatServiceSnapshot struct {
 	ProcessMessage, GetLastUserMessage, BrowseHistory, EditLastTurn int
-	UpdateLastTurn                                                   int
-	GetToolNames, StreamTurnsLog, RunDiagnostics                     int
+	UpdateLastTurn                                                  int
+	GetToolNames, StreamTurnsLog, RunDiagnostics                    int
 	Methods                                                         []string
 }
 

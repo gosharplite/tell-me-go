@@ -55,18 +55,18 @@ func (c *chatCommand) warnf(format string, args ...interface{}) {
 }
 
 type cliOptions struct {
-	configPath   string
-	newSession   bool
-	showTurnsLog bool
-	diagnostic   bool
-	jsonOutput   bool
-	lastN        int
-	backN        int
-	rawOutput    bool
-	tuiPrompt    bool
-	tuiOutput    bool
-	retry        bool
-	editLast     bool
+	configPath     string
+	newSession     bool
+	showTurnsLog   bool
+	diagnostic     bool
+	jsonOutput     bool
+	lastN          int
+	backN          int
+	rawOutput      bool
+	tuiPrompt      bool
+	tuiOutput      bool
+	retry          bool
+	editLast       bool
 	updateTurnText string
 }
 
