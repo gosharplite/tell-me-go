@@ -1042,7 +1042,7 @@ func TestChatCommand_BuildCapturer_NonTUI_SetupCapturerError(t *testing.T) {
 		},
 	}
 
-	opts := &cliOptions{tuiPrompt: false} // non-TUI path
+	opts := &cliOptions{tuiPrompt: false, updateTurnText: "__NOT_SET__"} // non-TUI path
 	capturer, cleanup, err := c.buildCapturer(stdctx.Background(), nil, opts)
 
 	require.Error(t, err)
@@ -1075,7 +1075,7 @@ func TestChatCommand_ExecuteChat_SetupSessionError(t *testing.T) {
 		},
 	}
 
-	opts := &cliOptions{} // tuiPrompt defaults to false → non-TUI path
+	opts := &cliOptions{updateTurnText: "__NOT_SET__"} // tuiPrompt defaults to false → non-TUI path
 	err := c.executeChat(stdctx.Background(), opts, []string{"hello"})
 
 	require.Error(t, err)
@@ -1134,7 +1134,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  &clitest.MockChatService{},
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
@@ -1168,7 +1168,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  &clitest.MockChatService{},
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
@@ -1213,7 +1213,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  ms,
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
@@ -1277,7 +1277,7 @@ func TestChatCommand_BuildCapturer_TUI_Fallback(t *testing.T) {
 			ChatService:  ms,
 		}
 
-		opts := &cliOptions{tuiPrompt: true}
+		opts := &cliOptions{tuiPrompt: true, updateTurnText: "__NOT_SET__"}
 		capturer, cleanup, err := c.buildCapturer(
 			stdctx.Background(), &config.Config{}, opts)
 
@@ -1421,6 +1421,136 @@ func TestChatCommand_HandleEditLastWorkflow_EditLastTurnError(t *testing.T) {
 	if snap.EditLastTurn != 1 {
 		t.Errorf("expected EditLastTurn count 1, got %d", snap.EditLastTurn)
 	}
+}
+
+// TestChatCommand_HandleUpdateTurnWorkflow_Success verifies the happy path:
+// GetHistoryManager returns a valid hManager, UpdateLastTurn succeeds.
+func TestChatCommand_HandleUpdateTurnWorkflow_Success(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	mb := &clitest.MockBootstrapper{}
+	ml := &configtest.MockConfigLoader{
+		LoadFunc: func(path string) (*config.Config, error) {
+			return &config.Config{}, nil
+		},
+	}
+	ms := &clitest.MockChatService{}
+
+	updateCalled := false
+	var gotText string
+	mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+		return &stubHistoryManager{}, nil
+	}
+	ms.UpdateLastTurnFunc = func(ctx stdctx.Context, hManager ports.HistoryManager, text string) error {
+		updateCalled = true
+		gotText = text
+		return nil
+	}
+
+	c := &chatCommand{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		ChatService:  ms,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	opts := &cliOptions{updateTurnText: "new response"}
+	err := c.executeChat(stdctx.Background(), opts, []string{})
+
+	require.NoError(t, err)
+	assert.True(t, updateCalled, "expected UpdateLastTurn to be called")
+	assert.Equal(t, "new response", gotText)
+
+	snap := ms.Snapshot()
+	assert.Equal(t, 1, snap.UpdateLastTurn)
+	assert.Equal(t, 0, snap.ProcessMessage)
+
+	bootSnap := mb.Snapshot()
+	assert.Equal(t, 1, bootSnap.GetHistoryManager)
+}
+
+// TestChatCommand_HandleUpdateTurnWorkflow_SentinelSkips verifies that
+// when updateTurnText is the sentinel "__NOT_SET__", the update-turn
+// handler branch is skipped and UpdateLastTurn is NOT called.
+func TestChatCommand_HandleUpdateTurnWorkflow_SentinelSkips(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	mb := &clitest.MockBootstrapper{}
+	ml := &configtest.MockConfigLoader{
+		LoadFunc: func(path string) (*config.Config, error) {
+			return &config.Config{}, nil
+		},
+	}
+	ms := &clitest.MockChatService{}
+
+	// Provide a capturer override so the fall-through chat-session setup
+	// can complete without a real TTY.
+	mockCap := &mockCapturerInteractor{}
+
+	c := &chatCommand{
+		Version:          "1.0.0",
+		Stdin:            strings.NewReader(""),
+		Stdout:           &stdout,
+		Stderr:           &stderr,
+		ChatService:      ms,
+		Bootstrapper:     mb,
+		Loader:           ml,
+		capturerOverride: mockCap,
+	}
+
+	opts := &cliOptions{updateTurnText: "__NOT_SET__"}
+	err := c.executeChat(stdctx.Background(), opts, []string{})
+
+	// The call falls through to chat session setup. With a mock capturer,
+	// the workflow completes. What matters is that UpdateLastTurn was NOT called.
+	require.NoError(t, err)
+
+	snap := ms.Snapshot()
+	assert.Equal(t, 0, snap.UpdateLastTurn, "UpdateLastTurn should NOT be called when sentinel is set")
+}
+
+// TestChatCommand_HandleUpdateTurnWorkflow_GetHistoryManagerError verifies that
+// when GetHistoryManager returns an error, handleUpdateTurnWorkflow propagates it.
+func TestChatCommand_HandleUpdateTurnWorkflow_GetHistoryManagerError(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	mb := &clitest.MockBootstrapper{
+		GetHistoryManagerFunc: func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+			return nil, errors.New("history manager unavailable")
+		},
+	}
+	ml := &configtest.MockConfigLoader{
+		LoadFunc: func(path string) (*config.Config, error) {
+			return &config.Config{}, nil
+		},
+	}
+	ms := &clitest.MockChatService{}
+
+	c := &chatCommand{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		ChatService:  ms,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	opts := &cliOptions{updateTurnText: "some text"}
+	err := c.executeChat(stdctx.Background(), opts, []string{})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error getting history manager for update-turn")
+	assert.Contains(t, err.Error(), "history manager unavailable")
+
+	snap := ms.Snapshot()
+	assert.Equal(t, 0, snap.UpdateLastTurn, "UpdateLastTurn should NOT be called when GetHistoryManager fails")
 }
 
 // TestChatCommand_Execute_EditLastFlag verifies the -e flag is registered

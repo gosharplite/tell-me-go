@@ -224,6 +224,30 @@ func (s *chatService) EditLastTurn(ctx context.Context, hManager ports.HistoryMa
 	return s.HistoryEditor.Edit(ctx, hManager)
 }
 
+// UpdateLastTurn replaces the text of the last model turn, or deletes
+// the turn entirely when text is empty (useful for refusal recovery).
+func (s *chatService) UpdateLastTurn(ctx context.Context, hManager ports.HistoryManager, text string) error {
+	if text == "" {
+		// Delete the last model turn by rolling back one turn.
+		_, _, _, err := hManager.RollbackTurns(ctx, 1)
+		if err != nil {
+			return fmt.Errorf("update last turn (delete): %w", err)
+		}
+		return nil
+	}
+
+	idx, _, err := hManager.GetLastModelTurn(ctx)
+	if err != nil {
+		return fmt.Errorf("update last turn: %w", err)
+	}
+
+	if err := hManager.UpdateTurnContent(ctx, idx, text, ""); err != nil {
+		return fmt.Errorf("update last turn: %w", err)
+	}
+
+	return nil
+}
+
 // GetToolNames retrieves the names of all available tools.
 func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]string, error) {
 	declarations := reg.GetDeclarations()

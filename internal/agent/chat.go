@@ -59,4 +59,8 @@ type ChatService interface {
 	// EditLastTurn launches an interactive TUI to edit the last model turn's
 	// text and thought content. It blocks until the editor is dismissed.
 	EditLastTurn(ctx context.Context, hManager ports.HistoryManager) error
+
+	// UpdateLastTurn replaces the text of the last model turn, or deletes
+	// the turn entirely when text is empty (useful for refusal recovery).
+	UpdateLastTurn(ctx context.Context, hManager ports.HistoryManager, text string) error
 }
