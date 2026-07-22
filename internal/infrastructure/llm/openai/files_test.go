@@ -239,19 +239,17 @@ func TestCleanupUploadedFiles(t *testing.T) {
 	defer server.Close()
 
 	c := &client{
-		baseURL:       strings.TrimSuffix(server.URL, "/"),
-		httpClient:    server.Client(),
-		logger:        &ports.NoOpLogger{},
-		uploadedFiles: []string{"file-1", "file-2"},
+		baseURL:    strings.TrimSuffix(server.URL, "/"),
+		httpClient: server.Client(),
+		logger:     &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
 
-	c.cleanupUploadedFiles(context.Background())
+	ta := newTurnAssets()
+	ta.uploaded = []string{"file-1", "file-2"}
+	ta.release(context.Background(), c)
 
 	if len(deletedIDs) != 2 {
 		t.Errorf("expected 2 deletes, got %d: %v", len(deletedIDs), deletedIDs)
-	}
-	if len(c.uploadedFiles) != 0 {
-		t.Errorf("uploadedFiles not cleared: %v", c.uploadedFiles)
 	}
 }

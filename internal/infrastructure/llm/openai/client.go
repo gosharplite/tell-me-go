@@ -31,9 +31,6 @@ type client struct {
 	maxTokens      int
 	logger         ports.Logger
 	timeout        time.Duration
-	// uploadedFiles tracks file IDs uploaded during the current SendChat
-	// call, for cleanup after the LLM response.
-	uploadedFiles []string
 }
 
 // openaiOption defines a functional option for configuring the OpenAI Client.
@@ -233,6 +230,84 @@ type imageURLValue struct {
 	URL string `json:"url"`
 }
 
+// turnAssets carries turn-scoped file-upload state: the binding from
+// domain Parts to Kimi server file IDs, plus a list of uploaded file
+// IDs for post-response cleanup. It is owned by a single SendChat call
+// and never shared across goroutines.
+type turnAssets struct {
+	// bindings maps parts to their uploaded file IDs (ms:// references).
+	bindings map[*llm.Part]string
+	// uploaded is the ordered list of file IDs for cleanup.
+	uploaded []string
+}
+
+func newTurnAssets() *turnAssets {
+	return &turnAssets{
+		bindings: make(map[*llm.Part]string),
+	}
+}
+
+// resolveURL returns the image_url value for a part: ms://{file_id}
+// if it was uploaded, or a base64 data URI otherwise. Nil-safe —
+// returns a base64 data URI when ta is nil (no uploads occurred).
+func (ta *turnAssets) resolveURL(p *llm.Part) string {
+	if ta != nil {
+		if fileID, ok := ta.bindings[p]; ok {
+			return "ms://" + fileID
+		}
+	}
+	return fmt.Sprintf("data:%s;base64,%s",
+		p.InlineData.MIMEType,
+		base64.StdEncoding.EncodeToString(p.InlineData.Data))
+}
+
+// release deletes all files uploaded during this turn. Best-effort;
+// individual failures are logged. Uses a detached context so cleanup
+// proceeds even if the caller's context is at deadline.
+func (ta *turnAssets) release(ctx context.Context, c *client) {
+	if len(ta.uploaded) == 0 {
+		return
+	}
+	// Detach from the caller's context — cleanup is best-effort and
+	// must not be gated by the response deadline.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	for _, id := range ta.uploaded {
+		if err := c.deleteFile(cleanupCtx, id); err != nil {
+			c.logger.Warn("cleanup_uploaded_file_failed",
+				"file_id", id,
+				"error", err.Error(),
+			)
+		}
+	}
+}
+
+// collectHistoryParts gathers all non-system parts from history for
+// asset preparation.
+func collectHistoryParts(history []*llm.Content) []*llm.Part {
+	var parts []*llm.Part
+	for _, h := range history {
+		if h.Role == "system" {
+			continue
+		}
+		parts = append(parts, h.Parts...)
+	}
+	return parts
+}
+
+// applyPreparedParts writes prepared parts back into history, matching
+// by index. Call after prepareImageAssets has mutated parts in place.
+func applyPreparedParts(history []*llm.Content, prepared []*llm.Part) {
+	idx := 0
+	for _, h := range history {
+		if h.Role == "system" {
+			continue
+		}
+		h.Parts = prepared[idx : idx+len(h.Parts)]
+		idx += len(h.Parts)
+	}
+}
+
 type message struct {
 	Role             string      `json:"role"`
 	Content          interface{} `json:"content,omitempty"` // string, []requestContentBlock, or []any (mixed text+image)
@@ -337,7 +412,7 @@ func (c *client) appendMessagesFromHistoryItem(
 	ctx context.Context,
 	sink openaiSink,
 	h *llm.Content,
-	resolver llm.AssetResolver,
+	ta *turnAssets,
 	personaInjected *bool,
 ) error {
 	role := normalizeRole(h.Role)
@@ -352,18 +427,8 @@ func (c *client) appendMessagesFromHistoryItem(
 		return nil
 	}
 
-	// Hydrate lazy-loaded image assets before extraction.
-	// Parts with AssetID whose InlineData.Data is nil are resolved
-	// from the AssetResolver so they can be serialized as image_url
-	// blocks. Gated on SupportsVision — non-vision models skip.
-	var err error
-	otherParts, err = c.hydrateImageAssets(ctx, otherParts, resolver)
-	if err != nil {
-		return err
-	}
-	if _, err := c.uploadImageAssets(ctx, otherParts); err != nil {
-		return err
-	}
+	// Separate image parts before classification — classifyParts only
+	// handles text and function calls.
 	imageParts, textParts := extractImageParts(otherParts)
 
 	text, reasoning, toolCalls, err := c.classifyParts(textParts)
@@ -385,7 +450,7 @@ func (c *client) appendMessagesFromHistoryItem(
 		// Images are placed before text (images-first ordering). This is
 		// intentional for the describe-this-image use case — interleaved
 		// part ordering within a single history item is not preserved.
-		blocks := imageBlocks(imageParts)
+		blocks := imageBlocks(imageParts, ta)
 		if text != "" {
 			blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
 		}
@@ -472,76 +537,57 @@ func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, reso
 	return out, nil
 }
 
-// uploadImageAssets uploads InlineData parts to the Kimi file API and
-// sets Part.AssetID to the returned file ID. Parts that already have
-// an AssetID (uploaded previously or reloaded from persistence) are
-// skipped. Gated on SupportsVision and a non-empty base URL that is
-// a Kimi endpoint (api.moonshot.ai). Returns the set of file IDs
-// uploaded so the caller can track them for cleanup.
-func (c *client) uploadImageAssets(ctx context.Context, parts []*llm.Part) ([]string, error) {
-	if !c.capabilities.SupportsVision || !strings.Contains(c.baseURL, "api.moonshot.ai") {
-		return nil, nil
+// prepareImageAssets hydrates and uploads image parts for a single
+// turn. Returns the turnAssets with file bindings and the prepared
+// (possibly cloned) part slice. Caller must call release after the
+// LLM response.
+func (c *client) prepareImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) (*turnAssets, []*llm.Part, error) {
+	ta := newTurnAssets()
+
+	out, err := c.hydrateImageAssets(ctx, parts, resolver)
+	if err != nil {
+		return ta, out, err
 	}
-	var uploaded []string
-	for _, p := range parts {
+
+	// Upload fresh images to Kimi file API
+	if !c.capabilities.SupportsVision || !strings.Contains(c.baseURL, "api.moonshot.ai") {
+		return ta, out, nil
+	}
+	for _, p := range out {
 		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 			continue
 		}
-		if p.AssetID != "" {
-			continue // already uploaded or reloaded
+		if _, ok := ta.bindings[p]; ok {
+			continue // already uploaded in this turn
 		}
-		// Determine MIME type for filename extension
 		ext := "png"
 		if p.InlineData.MIMEType != "" {
-			if mimeParts := strings.Split(p.InlineData.MIMEType, "/"); len(mimeParts) == 2 {
-				ext = mimeParts[1]
+			if parts := strings.Split(p.InlineData.MIMEType, "/"); len(parts) == 2 {
+				ext = parts[1]
 			}
 		}
 		filename := fmt.Sprintf("image.%s", ext)
 		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, "image")
 		if err != nil {
-			return uploaded, fmt.Errorf("upload image: %w", err)
+			ta.release(ctx, c)
+			return ta, out, fmt.Errorf("upload image: %w", err)
 		}
-		p.AssetID = fileID
-		uploaded = append(uploaded, fileID)
-		c.uploadedFiles = append(c.uploadedFiles, fileID)
+		ta.bindings[p] = fileID
+		ta.uploaded = append(ta.uploaded, fileID)
 	}
-	return uploaded, nil
-}
-
-// cleanupUploadedFiles deletes all files uploaded during the current
-// SendChat call. Best-effort — individual delete failures are logged
-// but do not fail the cleanup. Called after a successful LLM response.
-func (c *client) cleanupUploadedFiles(ctx context.Context) {
-	for _, id := range c.uploadedFiles {
-		if err := c.deleteFile(ctx, id); err != nil {
-			c.logger.Warn("cleanup_uploaded_file_failed",
-				"file_id", id,
-				"error", err.Error(),
-			)
-		}
-	}
-	c.uploadedFiles = c.uploadedFiles[:0]
+	return ta, out, nil
 }
 
 // imageBlocks converts InlineData parts to image_url content blocks.
-// Parts with an AssetID that starts with "file-" are referenced via
-// ms://{file_id} (uploaded files). Otherwise, InlineData is encoded
-// as a base64 data URI.
-func imageBlocks(parts []*llm.Part) []any {
+// Uses turnAssets to resolve ms:// URLs for uploaded files; falls
+// back to base64 data URIs for non-uploaded parts.
+func imageBlocks(parts []*llm.Part, ta *turnAssets) []any {
 	var blocks []any
 	for _, p := range parts {
 		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 			continue
 		}
-		var url string
-		if strings.HasPrefix(p.AssetID, "file-") {
-			url = "ms://" + p.AssetID
-		} else {
-			url = fmt.Sprintf("data:%s;base64,%s",
-				p.InlineData.MIMEType,
-				base64.StdEncoding.EncodeToString(p.InlineData.Data))
-		}
+		url := ta.resolveURL(p)
 		blocks = append(blocks, imageURLBlock{
 			Type:     "image_url",
 			ImageURL: imageURLValue{URL: url},

@@ -32,7 +32,7 @@ func TestImageBlocks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			blocks := imageBlocks(tt.parts)
+			blocks := imageBlocks(tt.parts, nil)
 			if len(blocks) != tt.want {
 				t.Errorf("got %d blocks, want %d", len(blocks), tt.want)
 			}
@@ -179,17 +179,20 @@ func TestVision_KimiMsURLPayload(t *testing.T) {
 		t.Fatal("kimi-k3 should have SupportsVision")
 	}
 
-	// Build history with an image part that has AssetID set (simulating
-	// a previously uploaded file). imageBlocks should produce ms:// URL.
+	// Build history with an image part. Pre-populate a turnAssets with
+	// a file binding to simulate a previously uploaded file.
+	imgPart := &llm.Part{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}}
 	history := []*llm.Content{{
 		Role: "user",
 		Parts: []*llm.Part{
-			{AssetID: "file-abc123", InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
+			imgPart,
 			{Text: "describe this"},
 		},
 	}}
 
-	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	ta := newTurnAssets()
+	ta.bindings[imgPart] = "file-abc123"
+	msgs, err := c.toStandardMessages(context.Background(), history, ta)
 	if err != nil {
 		t.Fatalf("toStandardMessages failed: %v", err)
 	}

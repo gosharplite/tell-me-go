@@ -67,12 +67,12 @@ func (s *standardSink) AddToolResponse(id, response string) {
 // Chat Completions input conversion
 // ---------------------------------------------------------------------------
 
-func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
+func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content, ta *turnAssets) ([]message, error) {
 	sink := &standardSink{}
 	personaInjected := c.maybeInjectInitialPersona(sink)
 
 	for _, h := range history {
-		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, resolver, &personaInjected); err != nil {
+		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, ta, &personaInjected); err != nil {
 			return nil, err
 		}
 	}
@@ -121,21 +121,21 @@ func (c *client) resolveOutputBudget() int {
 // buildRequestBody assembles the chat request payload, populating
 // either Input (for /responses) or Messages (for /chat/completions)
 // depending on the selected API strategy.
-func (c *client) buildRequestBody(ctx context.Context, strat apiStrategy, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
+func (c *client) buildRequestBody(ctx context.Context, strat apiStrategy, history []*llm.Content, toolDecls []*tools.ToolDeclaration, ta *turnAssets) (*chatRequest, error) {
 	req := chatRequest{
 		Model: c.model,
 		Tools: c.toOpenAITools(toolDecls, strat.useResponses),
 	}
 
 	if strat.useResponses {
-		items, err := c.toResponsesInput(ctx, history, resolver)
+		items, err := c.toResponsesInput(ctx, history, ta)
 		if err != nil {
 			return nil, err
 		}
 		req.Input = items
 		req.Reasoning = &reasoningConfig{Effort: strat.effort}
 	} else {
-		messages, err := c.toStandardMessages(ctx, history, resolver)
+		messages, err := c.toStandardMessages(ctx, history, ta)
 		if err != nil {
 			return nil, err
 		}
@@ -177,10 +177,10 @@ func (c *client) injectTransportHints(req *chatRequest) {
 // prepareChatRequest constructs the chat request payload by delegating
 // to focused helpers for API strategy, body assembly, output budget,
 // and transport hints.
-func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
+func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, ta *turnAssets) (*chatRequest, error) {
 	strat := c.resolveAPIStrategy(len(toolDecls))
 
-	req, err := c.buildRequestBody(ctx, strat, history, toolDecls, resolver)
+	req, err := c.buildRequestBody(ctx, strat, history, toolDecls, ta)
 	if err != nil {
 		return nil, err
 	}
@@ -238,13 +238,32 @@ func (c *client) createHTTPRequest(ctx context.Context, payload *chatRequest) (*
 // ---------------------------------------------------------------------------
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, resolver)
+	// Prepare image assets for the turn: hydrate from resolver,
+	// upload to Kimi file API. Skip if no vision capability.
+	var ta *turnAssets
+	if c.capabilities.SupportsVision {
+		var prepared []*llm.Part
+		var err error
+		ta, prepared, err = c.prepareImageAssets(ctx, collectHistoryParts(history), resolver)
+		if err != nil {
+			return nil, nil, err
+		}
+		applyPreparedParts(history, prepared)
+	}
+
+	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, ta)
 	if err != nil {
+		if ta != nil {
+			ta.release(context.Background(), c)
+		}
 		return nil, nil, err
 	}
 	endpoint := c.resolveEndpoint(reqPayload)
 	req, err := c.createHTTPRequest(ctx, reqPayload)
 	if err != nil {
+		if ta != nil {
+			ta.release(context.Background(), c)
+		}
 		return nil, nil, err
 	}
 
@@ -253,11 +272,19 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	ttfb := time.Since(startTime) // Time To First Byte
 
 	if err != nil {
+		if ta != nil {
+			ta.release(context.Background(), c)
+		}
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
+
+	// Defer cleanup on success
+	if ta != nil {
+		defer ta.release(context.Background(), c)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
@@ -270,16 +297,10 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		}
 	}
 
-	content, metrics, err := func() (*llm.Content, *llm.Metrics, error) {
-		if endpoint == "/responses" {
-			return c.decodeResponsesAPIResponse(resp, startTime, ttfb, endpoint)
-		}
-		return c.decodeStandardResponse(resp, startTime, ttfb, endpoint)
-	}()
-	if err == nil {
-		c.cleanupUploadedFiles(ctx)
+	if endpoint == "/responses" {
+		return c.decodeResponsesAPIResponse(resp, startTime, ttfb, endpoint)
 	}
-	return content, metrics, err
+	return c.decodeStandardResponse(resp, startTime, ttfb, endpoint)
 }
 
 // decodeStandardResponse decodes a /chat/completions JSON response from

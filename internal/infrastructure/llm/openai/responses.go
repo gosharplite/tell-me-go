@@ -80,12 +80,12 @@ func (c *client) resolveBlockType(role string) string {
 // Responses API input conversion
 // ---------------------------------------------------------------------------
 
-func (c *client) toResponsesInput(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]historyItem, error) {
+func (c *client) toResponsesInput(ctx context.Context, history []*llm.Content, ta *turnAssets) ([]historyItem, error) {
 	sink := &responsesSink{client: c}
 	personaInjected := c.maybeInjectInitialPersona(sink)
 
 	for _, h := range history {
-		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, resolver, &personaInjected); err != nil {
+		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, ta, &personaInjected); err != nil {
 			return nil, err
 		}
 	}
