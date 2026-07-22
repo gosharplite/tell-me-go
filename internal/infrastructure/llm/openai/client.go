@@ -369,6 +369,9 @@ func (c *client) appendMessagesFromHistoryItem(
 	// string format otherwise.
 	var content any = text
 	if c.capabilities.SupportsVision && len(imageParts) > 0 {
+		// Images are placed before text (images-first ordering). This is
+		// intentional for the describe-this-image use case — interleaved
+		// part ordering within a single history item is not preserved.
 		blocks := imageBlocks(imageParts)
 		if text != "" {
 			blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
@@ -419,16 +422,17 @@ func extractImageParts(parts []*llm.Part) (images []*llm.Part, rest []*llm.Part)
 func imageBlocks(parts []*llm.Part) []any {
 	var blocks []any
 	for _, p := range parts {
-		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
-			blocks = append(blocks, imageURLBlock{
-				Type: "image_url",
-				ImageURL: imageURLValue{
-					URL: fmt.Sprintf("data:%s;base64,%s",
-						p.InlineData.MIMEType,
-						base64.StdEncoding.EncodeToString(p.InlineData.Data)),
-				},
-			})
+		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+			continue
 		}
+		blocks = append(blocks, imageURLBlock{
+			Type: "image_url",
+			ImageURL: imageURLValue{
+				URL: fmt.Sprintf("data:%s;base64,%s",
+					p.InlineData.MIMEType,
+					base64.StdEncoding.EncodeToString(p.InlineData.Data)),
+			},
+		})
 	}
 	return blocks
 }

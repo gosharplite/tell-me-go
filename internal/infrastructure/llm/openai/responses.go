@@ -28,8 +28,15 @@ func (s *responsesSink) AddMessage(role string, content any, reasoning *string, 
 	r := role
 	// content is either a string (text-only) or []any (mixed text+image blocks).
 	// Vision-capable models use the standard sink; the responses sink only
-	// sees string content. Cast accordingly.
-	text, _ := content.(string)
+	// sees string content. Log a warning if non-string content arrives —
+	// no model has both SupportsVision + RequiresResponsesAPI today.
+	text, ok := content.(string)
+	if !ok {
+		s.client.logger.Warn("responses_sink_non_string_content",
+			"model", s.client.model,
+			"note", "images in content dropped — /responses API not used with vision models")
+		return
+	}
 	s.items = append(s.items, historyItem{
 		Type:    "message",
 		Role:    &r,
