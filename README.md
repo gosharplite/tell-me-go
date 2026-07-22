@@ -450,6 +450,8 @@ the 3-pass build order, and design rationale.
 ## Design Decisions
 Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).
 
+For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, and Flopsy — see [Evolution of Environment Management](docs/architect/environment-management-evolution.md).
+
 **Before proposing structural changes or flagging potential issues**, consult these two files first — they are the authoritative source for project conventions and known anomalies:
 
 - **[Makefile](Makefile)** — Defines all build/test conventions, coverage exclusions (including `*test/` and `testing/` directories), and architectural guard checks (`verify-architecture`, `verify-no-test-sleep`, `verify-testutil-convention`, etc.).
