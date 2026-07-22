@@ -67,6 +67,13 @@ type Capabilities struct {
 	// Set for all models known to use reasoning_content natively:
 	// deepseek-* and kimi-* model families.
 	SupportsReasoningContent bool
+	// SupportsVision indicates the model natively understands images via
+	// image_url content parts in the messages array. When true, InlineData
+	// parts are serialized as base64 image_url blocks rather than being
+	// silently dropped.
+	//
+	// Set for: kimi-* models (K3, K2.7, K2.6).
+	SupportsVision bool
 	// RequiresVertexThinkingKwargs indicates that the transport silently
 	// disables DeepSeek thinking mode unless the non-standard parameter
 	// chat_template_kwargs.thinking=true is included in the request body.
@@ -167,6 +174,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 
 	if isKimiModel(model) {
 		caps.SupportsReasoningContent = true
+		caps.SupportsVision = true
 		if isKimiK3Model(model) {
 			caps.SupportsReasoningEffort = true
 		}

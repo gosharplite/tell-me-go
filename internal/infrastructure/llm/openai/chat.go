@@ -46,10 +46,10 @@ type standardSink struct {
 	messages []message
 }
 
-func (s *standardSink) AddMessage(role, text string, reasoning *string, toolCalls []toolCall) {
+func (s *standardSink) AddMessage(role string, content any, reasoning *string, toolCalls []toolCall) {
 	s.messages = append(s.messages, message{
 		Role:             role,
-		Content:          text,
+		Content:          content,
 		ReasoningContent: reasoning,
 		ToolCalls:        toolCalls,
 	})

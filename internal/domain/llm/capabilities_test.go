@@ -18,6 +18,7 @@ func TestResolveCapabilities(t *testing.T) {
 		maxTokensField               MaxTokensField
 		isDeepSeek                   bool
 		supportsReasoningContent     bool
+		supportsVision               bool
 		requiresVertexThinkingKwargs bool
 	}{
 		{
@@ -28,6 +29,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			model:                    "o1-mini",
@@ -37,6 +39,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldCompletion,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			model:                    "gpt-5",
@@ -46,6 +49,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldCompletion,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			name:                     "gpt-5.3 does not require responses API (minor < 4)",
@@ -56,6 +60,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldCompletion,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			name:                     "gpt-4.5 does not require responses API (major < 5)",
@@ -66,6 +71,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			model:                    "gpt-5.4",
@@ -75,6 +81,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			model:                    "gpt-6",
@@ -84,6 +91,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			model:                    "gpt-7",
@@ -93,6 +101,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			name:                     "gpt-7.0 requires responses API (major>5, n>=2)",
@@ -103,6 +112,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			name:                     "gpt-10.1 requires responses API (major>5, n>=2, two-digit major)",
@@ -113,6 +123,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldOutput,
 			isDeepSeek:               false,
 			supportsReasoningContent: false,
+			supportsVision:           false,
 		},
 		{
 			model:                    "deepseek-reasoner",
@@ -122,6 +133,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsVision:           false,
 		},
 		{
 			model:                    "deepseek-ai/deepseek-r1-0528-maas",
@@ -131,6 +143,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsVision:           false,
 		},
 		{
 			model:                    "deepseek-r1",
@@ -140,6 +153,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsVision:           false,
 		},
 		{
 			model:                    "deepseek-v3",
@@ -149,6 +163,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsVision:           false,
 		},
 		{
 			model:                    "deepseek-ai/deepseek-v3",
@@ -158,6 +173,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsVision:           false,
 		},
 		{
 			name:                         "vertex deepseek requires thinking kwargs",
@@ -166,6 +182,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			supportsReasoningContent:     true,
+			supportsVision:               false,
 			requiresVertexThinkingKwargs: true,
 		},
 		{
@@ -175,6 +192,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			supportsReasoningContent:     true,
+			supportsVision:               false,
 			requiresVertexThinkingKwargs: false,
 		},
 		{
@@ -184,6 +202,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   false,
 			supportsReasoningContent:     false,
+			supportsVision:               false,
 			requiresVertexThinkingKwargs: false,
 		},
 		{
@@ -193,6 +212,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			supportsReasoningContent:     true,
+			supportsVision:               false,
 			requiresVertexThinkingKwargs: false,
 		},
 		{
@@ -201,6 +221,7 @@ func TestResolveCapabilities(t *testing.T) {
 			baseURL:                  "",
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  true,
+			supportsVision:           true,
 			maxTokensField:           MaxTokensFieldCompletion,
 		},
 		{
@@ -209,6 +230,7 @@ func TestResolveCapabilities(t *testing.T) {
 			baseURL:                  "",
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  true,
+			supportsVision:           true,
 			maxTokensField:           MaxTokensFieldCompletion,
 		},
 		{
@@ -217,6 +239,7 @@ func TestResolveCapabilities(t *testing.T) {
 			baseURL:                  "",
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  false,
+			supportsVision:           true,
 			maxTokensField:           MaxTokensFieldLegacy,
 		},
 		{
@@ -225,6 +248,7 @@ func TestResolveCapabilities(t *testing.T) {
 			baseURL:                  "",
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  false,
+			supportsVision:           true,
 			maxTokensField:           MaxTokensFieldLegacy,
 		},
 	}
@@ -253,6 +277,9 @@ func TestResolveCapabilities(t *testing.T) {
 			}
 			if caps.SupportsReasoningContent != tt.supportsReasoningContent {
 				t.Errorf("expected SupportsReasoningContent %v, got %v", tt.supportsReasoningContent, caps.SupportsReasoningContent)
+			}
+			if caps.SupportsVision != tt.supportsVision {
+				t.Errorf("expected SupportsVision %v, got %v", tt.supportsVision, caps.SupportsVision)
 			}
 			if caps.RequiresVertexThinkingKwargs != tt.requiresVertexThinkingKwargs {
 				t.Errorf("expected RequiresVertexThinkingKwargs %v, got %v", tt.requiresVertexThinkingKwargs, caps.RequiresVertexThinkingKwargs)
