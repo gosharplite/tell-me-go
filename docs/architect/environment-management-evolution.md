@@ -2,6 +2,14 @@
 
 How `tell-me-go` environment management evolved from simple shell aliases to a multi-role, provider-switchable system — all in Bash.
 
+- [Stage 1: Bash Aliases](#stage-1-bash-aliases)
+- [Stage 2: Toby — Tag-Based Environment Manager](#stage-2-toby--tag-based-environment-manager)
+- [Stage 3: Dobby — Multi-Role with Mid-Session Provider Switching](#stage-3-dobby--multi-role-with-mid-session-provider-switching)
+- [Stage 4: Porter & Sprawl — Self-Contained Workspaces and Sub-Agent Orchestration](#stage-4-porter--sprawl--self-contained-workspaces-and-sub-agent-orchestration)
+- [Stage 5: SSH Sub-Agent Sprawl — Remote Orchestration](#stage-5-ssh-sub-agent-sprawl--remote-orchestration)
+- [Stage 6: Winky — Agent-Deployed Remote Dev Environment](#stage-6-winky--agent-deployed-remote-dev-environment)
+- [Stage 7: Flopsy — Dynamic Role Aliases from Variations](#stage-7-flopsy--dynamic-role-aliases-from-variations)
+
 ---
 
 ## Stage 1: Bash Aliases
