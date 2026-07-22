@@ -352,7 +352,9 @@ func (c *client) appendMessagesFromHistoryItem(
 	// Hydrate lazy-loaded image assets before extraction.
 	// Parts with AssetID but no InlineData are resolved from the
 	// AssetResolver so they can be serialized as image_url blocks.
-	if err := hydrateImageAssets(ctx, otherParts, resolver); err != nil {
+	var err error
+	otherParts, err = c.hydrateImageAssets(ctx, otherParts, resolver)
+	if err != nil {
 		return err
 	}
 
@@ -424,27 +426,46 @@ func extractImageParts(parts []*llm.Part) (images []*llm.Part, rest []*llm.Part)
 	return
 }
 
-// hydrateImageAssets resolves AssetID references on parts that lack
-// InlineData, populating them from the AssetResolver. Parts that
-// already have InlineData.Data or have no AssetID are unchanged.
-// Returns an error if resolution fails.
-func hydrateImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) error {
-	if resolver == nil {
-		return nil
+// hydrateImageAssets resolves AssetID references on parts whose
+// InlineData.Data is nil (lazy-hydration pattern from session reload).
+// It uses copy-on-write — the returned slice is independent of the
+// input — to avoid mutating shared session history. Preserves MIMEType
+// from any existing InlineData blob. Gated on SupportsVision; non-vision
+// models return the input unchanged. Resolve errors are propagated:
+// a corrupt asset store should fail the session loudly.
+func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) ([]*llm.Part, error) {
+	if resolver == nil || !c.capabilities.SupportsVision {
+		return parts, nil
 	}
-	for _, p := range parts {
-		if p.AssetID == "" || p.InlineData != nil {
+	out := parts
+	cloned := false
+	for i, p := range parts {
+		if p.AssetID == "" || (p.InlineData != nil && len(p.InlineData.Data) > 0) {
 			continue
 		}
 		data, err := resolver.Resolve(ctx, p.AssetID)
 		if err != nil {
-			return fmt.Errorf("resolve asset %s: %w", p.AssetID, err)
+			return nil, fmt.Errorf("resolve asset %s: %w", p.AssetID, err)
 		}
-		p.InlineData = &llm.Blob{
-			Data: data,
+		// Copy-on-write: clone the full slice once on first mutation
+		if !cloned {
+			out = make([]*llm.Part, len(parts))
+			copy(out, parts)
+			cloned = true
 		}
+		// Clone the part to avoid mutating shared session history
+		pc := *p
+		if p.InlineData != nil {
+			// Preserve MIMEType from the existing blob (set during AddImage)
+			blob := *p.InlineData
+			blob.Data = data
+			pc.InlineData = &blob
+		} else {
+			pc.InlineData = &llm.Blob{Data: data}
+		}
+		out[i] = &pc
 	}
-	return nil
+	return out, nil
 }
 
 // imageBlocks converts InlineData parts to image_url content blocks.

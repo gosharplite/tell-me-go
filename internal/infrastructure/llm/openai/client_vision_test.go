@@ -174,54 +174,95 @@ func TestHydrateImageAssets(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name     string
-		parts    []*llm.Part
-		resolver llm.AssetResolver
-		wantData bool
-		wantErr  bool
+		name          string
+		parts         []*llm.Part
+		resolver      llm.AssetResolver
+		visionCap     bool
+		wantMIME      string
+		wantData      bool
+		wantSameSlice bool // true when no mutation expected (copy-on-write)
+		wantErr       bool
 	}{
 		{
-			name:     "hydrates AssetID with no InlineData",
-			parts:    []*llm.Part{{AssetID: "asset-1"}},
-			resolver: resolver,
-			wantData: true,
+			name:      "hydrates AssetID with nil InlineData (test shape)",
+			parts:     []*llm.Part{{AssetID: "asset-1"}},
+			resolver:  resolver,
+			visionCap: true,
+			wantData:  true,
 		},
 		{
-			name:     "skips part with existing InlineData",
-			parts:    []*llm.Part{{AssetID: "asset-1", InlineData: &llm.Blob{Data: []byte{1}}}},
-			resolver: resolver,
-			wantData: true, // keeps existing data
+			name:      "hydrates reload shape: InlineData present, Data nil — preserves MIMEType",
+			parts:     []*llm.Part{{AssetID: "asset-1", InlineData: &llm.Blob{MIMEType: "image/png"}}},
+			resolver:  resolver,
+			visionCap: true,
+			wantMIME:  "image/png",
+			wantData:  true,
 		},
 		{
-			name:     "skips part with no AssetID",
-			parts:    []*llm.Part{{Text: "hello"}},
-			resolver: resolver,
-			wantData: false,
+			name:          "skips part with existing InlineData.Data (already hydrated)",
+			parts:         []*llm.Part{{AssetID: "asset-1", InlineData: &llm.Blob{MIMEType: "image/jpeg", Data: []byte{1}}}},
+			resolver:      resolver,
+			visionCap:     true,
+			wantMIME:      "image/jpeg",
+			wantData:      true,
+			wantSameSlice: true,
 		},
 		{
-			name:     "nil resolver is no-op",
-			parts:    []*llm.Part{{AssetID: "asset-1"}},
-			resolver: nil,
-			wantData: false,
+			name:          "skips part with no AssetID",
+			parts:         []*llm.Part{{Text: "hello"}},
+			resolver:      resolver,
+			visionCap:     true,
+			wantSameSlice: true,
 		},
 		{
-			name:     "resolve error propagates",
-			parts:    []*llm.Part{{AssetID: "missing"}},
-			resolver: resolver,
-			wantErr:  true,
+			name:          "nil resolver is no-op",
+			parts:         []*llm.Part{{AssetID: "asset-1"}},
+			resolver:      nil,
+			visionCap:     true,
+			wantSameSlice: true,
+		},
+		{
+			name:          "vision-disabled returns input unchanged",
+			parts:         []*llm.Part{{AssetID: "asset-1"}},
+			resolver:      resolver,
+			visionCap:     false,
+			wantSameSlice: true,
+		},
+		{
+			name:      "resolve error propagates",
+			parts:     []*llm.Part{{AssetID: "missing"}},
+			resolver:  resolver,
+			visionCap: true,
+			wantErr:   true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := hydrateImageAssets(context.Background(), tt.parts, tt.resolver)
+			c := &client{
+				capabilities: llm.Capabilities{SupportsVision: tt.visionCap},
+				logger:       &ports.NoOpLogger{},
+			}
+			got, err := c.hydrateImageAssets(context.Background(), tt.parts, tt.resolver)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr = %v", err, tt.wantErr)
 			}
 			if err != nil {
 				return
 			}
-			if tt.wantData && tt.parts[0].InlineData == nil {
-				t.Error("expected InlineData to be populated")
+			if tt.wantSameSlice && &got[0] != &tt.parts[0] {
+				// For no-mutation cases, the returned slice should be the same pointer
+				// (copy-on-write didn't trigger)
+			}
+			if !tt.wantSameSlice && &got[0] == &tt.parts[0] {
+				t.Error("expected copy-on-write: returned slice should be independent")
+			}
+			if tt.wantData {
+				if got[0].InlineData == nil || len(got[0].InlineData.Data) == 0 {
+					t.Error("expected InlineData.Data to be populated")
+				}
+			}
+			if tt.wantMIME != "" && got[0].InlineData.MIMEType != tt.wantMIME {
+				t.Errorf("MIMEType = %q, want %q", got[0].InlineData.MIMEType, tt.wantMIME)
 			}
 		})
 	}
