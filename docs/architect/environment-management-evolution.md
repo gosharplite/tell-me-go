@@ -121,3 +121,84 @@ Each reads from `$TELL_ME_HOME/configs/<role>.yaml` with the active provider and
 - **Provider baked into directory name**: Switching providers for the same project means a new `ait-<tag>-<new-provider>` directory — losing session history, tasks, and `SafePath` from the old one.
 - **No mid-session switching**: The provider is fixed at source time. Comparing models on the same prompt requires two separate environments.
 - **Single master config**: `butler.yaml` is the source of truth; adding a new provider means updating the template.
+
+---
+
+## Stage 3: Dobby — Multi-Role with Mid-Session Provider Switching
+
+Dobby's key innovation: the provider is **not** baked into the directory name. Environments are named `ait-<tag>` (no `-<provider>` suffix), so switching providers keeps the same session history, tasks, and `SafePath`. You can even hot-swap providers mid-session without opening a new terminal.
+
+### How It's Sourced
+
+```bash
+# In .bashrc
+source /path/to/dobby.sh -n myproject vertex-flash
+
+# Interactively:
+source dobby.sh                      # fzf picker for tag + provider
+source dobby.sh -n                   # fzf picker, create if tag is new
+source dobby.sh -n -p                # create with Vertex priority headers
+source dobby.sh -n -c                # create without docs/ folder
+source dobby.sh myproject vertex-flash  # direct
+
+# Mid-session provider switch (same tag, same terminal):
+source dobby.sh openai               # hot-swap LLM, keep all state
+```
+
+### Directory Structure
+
+```text
+ait-<tag>/                           # Provider NOT in the name
+├── .gitignore                       # Ignores output/ and secrets/
+├── configs/
+│   ├── butler.yaml                  # Master config (all providers + pricing)
+│   ├── butler-priority.yaml         # Variant with Vertex priority headers
+│   ├── architect.yaml               # Generated from butler, architect persona
+│   ├── coder.yaml                   # Generated from butler, coder persona
+│   ├── reviewer.yaml                # Generated from butler, reviewer persona
+│   └── tester.yaml                  # Generated from butler, tester persona
+├── secrets/
+│   ├── key.json                     # Service account credentials
+│   └── keys                         # API key env vars (sourced)
+├── docs/skills/                     # Shared skill/pattern files
+└── output/                          # Isolated session data
+```
+
+### Key Features
+
+| Feature | How |
+|---------|-----|
+| **Provider not in path** | `ait-<tag>` instead of `ait-<tag>-<provider>` — provider is selected at source time, not encoded in the directory |
+| **Mid-session switching** | `source dobby.sh <new-provider>` hot-swaps the LLM while keeping the same tag, session history, tasks, and `SafePath` |
+| **Template-based provisioning** | `-n` clones `ait-base/`, regenerates all role configs from `butler.yaml` while preserving each role's `PERSON` |
+| **Priority mode** (`-p`) | Generates role configs from `butler-priority.yaml` with Vertex AI shared/priority headers |
+| **Clean mode** (`-c`) | Skips copying the `docs/` folder |
+| **Re-entry guard** | Detects if already sourced — if so, allows **provider-only** switching (rejects `-n` since the tag is fixed) |
+| **Prompt preservation** | Saves original `PS1` on first source, restores and re-applies on re-entry so prefixes never stack |
+| **Role functions** | `b` (butler), `a` (architect), `c` (coder), `t` (tester), `r` (reviewer) — each sets `TELL_ME_MODE`, `TELL_ME_SELECTED_PROVIDER`, and `TELL_ME_HOME` at invocation time |
+
+### Mid-Session Provider Switching in Detail
+
+This is Dobby's standout feature. Since the provider is not in the directory name:
+
+```bash
+# Start with Vertex Flash
+source dobby.sh myproject vertex-flash
+b "Write a regex for email validation"
+# Session history, tasks, SafePath all live in ait-myproject/output/
+
+# Switch to OpenAI — same tag, same terminal, same state
+source dobby.sh openai
+b "Write a regex for email validation"
+# Compares models on the same prompt, with full session context preserved
+```
+
+The re-entry guard detects `DOBBY_SOURCED`, strips the old prompt prefix, and re-applies with the new provider. The tag stays fixed; only the provider changes.
+
+### What It Solves vs. Stage 2
+
+| Limitation (Toby) | Stage 3 (Dobby) |
+|--------------------|------------------|
+| Provider baked into directory name | `ait-<tag>` — provider is a runtime choice |
+| Switching provider = new directory, lost state | Mid-session `source dobby.sh <provider>` keeps all state |
+| Provider comparison needs two environments | Same prompt, same tag, hot-swap and re-run |
