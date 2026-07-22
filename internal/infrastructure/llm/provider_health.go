@@ -30,7 +30,7 @@ type llmProviderHealthChecker struct {
 func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
 	if baseURL == "" {
 		switch strings.ToLower(providerName) {
-		case "openai", "deepseek":
+		case "openai", "deepseek", "kimi":
 			baseURL = "https://api.openai.com/v1"
 		case "anthropic":
 			baseURL = "https://api.anthropic.com/v1"
@@ -209,7 +209,7 @@ func (c *llmProviderHealthChecker) classifyErrorStatus(statusCode int, report *p
 func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
 	p := strings.ToLower(c.providerName)
 	switch p {
-	case "openai", "deepseek":
+	case "openai", "deepseek", "kimi":
 		return "GET", c.baseURL + "/models", nil
 	case "google", "gemini":
 		// Gemini API often uses a different base for models or needs the key as a query param.

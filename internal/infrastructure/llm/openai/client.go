@@ -343,7 +343,7 @@ func (c *client) appendMessagesFromHistoryItem(
 	c.injectPersona(sink, personaInjected, role)
 
 	var reasoningPtr *string
-	if (c.capabilities.IsDeepSeek && role == "assistant") || (reasoning != "") {
+	if (c.capabilities.SupportsReasoningContent && role == "assistant") || (reasoning != "") {
 		reasoningPtr = &reasoning
 	}
 
@@ -415,7 +415,7 @@ func (c *client) classifyParts(parts []*llm.Part) (text string, reasoning string
 			})
 		} else if p.Text != "" {
 			if p.IsThought {
-				if c.capabilities.IsDeepSeek {
+				if c.capabilities.SupportsReasoningContent {
 					reasoningParts = append(reasoningParts, p.Text)
 				} else {
 					textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Text))

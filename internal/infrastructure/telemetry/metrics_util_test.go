@@ -17,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
@@ -298,7 +299,7 @@ func TestGetPricing_FallbackOnMissingFile(t *testing.T) {
 	t.Parallel()
 	anotherDir := t.TempDir()
 	pd := GetPricing(context.Background(), nil, filepath.Join(anotherDir, "output"))
-	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+	if pd.UpdatedAt != config.DefaultPricing().UpdatedAt {
 		t.Errorf("expected hardcoded fallback, got %q", pd.UpdatedAt)
 	}
 }
@@ -317,7 +318,7 @@ func TestGetPricing_FallbackOnInvalidJSON(t *testing.T) {
 	}
 
 	pd := GetPricing(context.Background(), nil, outputDir)
-	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+	if pd.UpdatedAt != config.DefaultPricing().UpdatedAt {
 		t.Errorf("expected hardcoded fallback on invalid JSON, got %q", pd.UpdatedAt)
 	}
 }
@@ -351,7 +352,7 @@ func TestGetPricing_FallbackOnUnreadableFile(t *testing.T) {
 	pd := GetPricing(context.Background(), nil, outputDir)
 
 	// Should fall back to hardcoded default pricing.
-	if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+	if pd.UpdatedAt != config.DefaultPricing().UpdatedAt {
 		t.Errorf("expected hardcoded fallback on unreadable file, got UpdatedAt=%q", pd.UpdatedAt)
 	}
 	// Also verify we got a real model entry, not a zero-value PricingData.
