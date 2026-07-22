@@ -19,8 +19,8 @@ type namedClient struct {
 
 // FailoverGateway implements llm.ExtendedClient by iterating through an ordered
 // list of provider clients on Generate, falling through on transient errors.
-// Non-Generate methods (SendChat, GenerateImages, RefreshAuth) delegate to the
-// primary (first) client.
+// Non-Generate methods (SendChat, GenerateImages, ExtractDocument, RefreshAuth)
+// delegate to the primary (first) client.
 //
 // Separation of concerns:
 //

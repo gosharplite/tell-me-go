@@ -260,7 +260,7 @@ func registerMedia(r tools.Registry, fs persistence.FileSystem, sm security.Mana
 		return err
 	}
 
-	if err := r.RegisterToToolkit("media", &tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("media", &tools.ToolDeclaration{
 		Name:        "read_document",
 		Description: "Extracts text content from a document file (PDF, DOCX, MD, TXT, etc.) using the provider's document extraction API. Returns the full extracted text.",
 		Parameters: &tools.Schema{
@@ -273,7 +273,7 @@ func registerMedia(r tools.Registry, fs persistence.FileSystem, sm security.Mana
 			},
 			Required: []string{"filepath"},
 		},
-	}, m.readDocument); err != nil {
+	}, m.readDocument, tools.ToolOptions{LongRunning: true}); err != nil {
 		return err
 	}
 	return nil

@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"go.uber.org/goleak"
@@ -645,4 +646,103 @@ func TestRegisterMedia_ErrorPaths(t *testing.T) {
 			t.Errorf("expected simulated error, got: %v", err)
 		}
 	})
+
+	t.Run("third RegisterToToolkitWithOptions fails", func(t *testing.T) {
+		r := newFaultyRegistry(registry.New(), 2)
+		err := registerMedia(r, fs, sm, client, tmpDir)
+		if err == nil {
+			t.Fatal("expected error on third registration failure")
+		}
+		if !strings.Contains(err.Error(), "simulated registration failure") {
+			t.Errorf("expected simulated error, got: %v", err)
+		}
+	})
 }
+
+func TestReadDocument(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.pdf")
+	content := "extracted document text"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := newMediaMockSecurityManager()
+
+	client := &documentExtractorClient{text: content}
+
+	m := newMediaManager(persistencetest.NewPlainOSFileSystem(), sm, client, tempDir,
+		withMediaHeartbeatInterval(10*time.Millisecond),
+	)
+
+	ctx := context.Background()
+	res, err := m.readDocument(ctx, map[string]interface{}{
+		"filepath": path,
+	}, nil)
+	if err != nil {
+		t.Fatalf("readDocument: %v", err)
+	}
+	if !strings.Contains(res.Text, content) {
+		t.Errorf("expected extracted text, got %q", res.Text)
+	}
+	if !strings.Contains(res.Text, path) {
+		t.Errorf("expected path in output, got %q", res.Text)
+	}
+}
+
+func TestReadDocument_NotImplemented(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.pdf")
+	if err := os.WriteFile(path, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := newMediaMockSecurityManager()
+
+	client := &notImplementedDocumentClient{}
+
+	m := newMediaManager(persistencetest.NewPlainOSFileSystem(), sm, client, tempDir,
+		withMediaHeartbeatInterval(10*time.Millisecond),
+	)
+
+	ctx := context.Background()
+	_, err := m.readDocument(ctx, map[string]interface{}{
+		"filepath": path,
+	}, nil)
+	if err == nil {
+		t.Fatal("expected ErrNotImplemented")
+	}
+	if !errors.Is(err, tools.ErrNotImplemented) {
+		t.Errorf("expected ErrNotImplemented, got %v", err)
+	}
+}
+
+// documentExtractorClient implements llm.LLMClient with a stub ExtractDocument.
+type documentExtractorClient struct {
+	text string
+}
+
+func (c *documentExtractorClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return c.text, nil
+}
+
+func (c *documentExtractorClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return nil, nil, fmt.Errorf("not implemented")
+}
+func (c *documentExtractorClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (c *documentExtractorClient) RefreshAuth() error { return nil }
+
+type notImplementedDocumentClient struct{}
+
+func (c *notImplementedDocumentClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}
+func (c *notImplementedDocumentClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return nil, nil, fmt.Errorf("not implemented")
+}
+func (c *notImplementedDocumentClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (c *notImplementedDocumentClient) RefreshAuth() error { return nil }
