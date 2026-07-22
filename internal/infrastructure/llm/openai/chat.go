@@ -12,7 +12,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
@@ -209,26 +208,11 @@ func (c *client) createHTTPRequest(ctx context.Context, payload *chatRequest) (*
 	}
 
 	endpoint := c.resolveEndpoint(payload)
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(body))
+	req, err := c.newAuthenticatedRequest(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
-
-	// Apply custom headers
-	for k, v := range c.headers {
-		req.Header.Set(k, v)
-	}
-
-	// Apply authentication
-	authReq := &auth.Request{Headers: make(map[string]string)}
-	if err := c.authenticator.Apply(ctx, authReq); err != nil {
-		return nil, err
-	}
-	for k, v := range authReq.Headers {
-		req.Header.Set(k, v)
-	}
 
 	return req, nil
 }

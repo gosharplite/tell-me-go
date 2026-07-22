@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -752,6 +753,30 @@ func (c *client) ResetConnections() {
 	if closer, ok := c.transport.(idleConnectionCloser); ok {
 		closer.CloseIdleConnections()
 	}
+}
+
+// newAuthenticatedRequest creates an HTTP request with all headers applied:
+// custom provider headers (c.headers) and authenticator headers (by name,
+// not by map iteration value). Used by both chat completions and file API
+// endpoints for consistent authentication.
+func (c *client) newAuthenticatedRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	// Custom provider headers (e.g. reasoning_effort)
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+	// Authenticator headers (e.g. Authorization, x-api-key)
+	authReq := &auth.Request{Headers: make(map[string]string)}
+	if err := c.authenticator.Apply(ctx, authReq); err != nil {
+		return nil, err
+	}
+	for k, v := range authReq.Headers {
+		req.Header.Set(k, v)
+	}
+	return req, nil
 }
 
 // truncate returns a string truncated to n characters with "..." appended.

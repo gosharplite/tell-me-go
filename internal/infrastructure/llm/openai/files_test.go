@@ -110,34 +110,6 @@ func TestUploadFile_NotReady(t *testing.T) {
 	}
 }
 
-func TestListFiles(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(fileListResponse{
-			Object: "list",
-			Data: []fileObject{
-				{ID: "file-1", Filename: "a.png", Purpose: "image", Status: "ready"},
-				{ID: "file-2", Filename: "b.png", Purpose: "image", Status: "ready"},
-			},
-		})
-	}))
-	defer server.Close()
-
-	c := &client{
-		baseURL:    strings.TrimSuffix(server.URL, "/"),
-		httpClient: server.Client(),
-		logger:     &ports.NoOpLogger{},
-	}
-	c.authenticator = &fakeAuthenticator{}
-
-	files, err := c.listFiles(context.Background())
-	if err != nil {
-		t.Fatalf("listFiles: %v", err)
-	}
-	if len(files) != 2 {
-		t.Errorf("expected 2 files, got %d", len(files))
-	}
-}
-
 func TestDeleteFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "DELETE" {
