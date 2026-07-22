@@ -250,8 +250,7 @@ func TestHydrateImageAssets(t *testing.T) {
 				return
 			}
 			if tt.wantSameSlice && &got[0] != &tt.parts[0] {
-				// For no-mutation cases, the returned slice should be the same pointer
-				// (copy-on-write didn't trigger)
+				t.Error("expected no copy-on-write: input slice returned unchanged")
 			}
 			if !tt.wantSameSlice && &got[0] == &tt.parts[0] {
 				t.Error("expected copy-on-write: returned slice should be independent")

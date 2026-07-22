@@ -350,8 +350,9 @@ func (c *client) appendMessagesFromHistoryItem(
 	}
 
 	// Hydrate lazy-loaded image assets before extraction.
-	// Parts with AssetID but no InlineData are resolved from the
-	// AssetResolver so they can be serialized as image_url blocks.
+	// Parts with AssetID whose InlineData.Data is nil are resolved
+	// from the AssetResolver so they can be serialized as image_url
+	// blocks. Gated on SupportsVision — non-vision models skip.
 	var err error
 	otherParts, err = c.hydrateImageAssets(ctx, otherParts, resolver)
 	if err != nil {
