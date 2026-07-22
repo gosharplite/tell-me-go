@@ -12,7 +12,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
@@ -67,12 +66,12 @@ func (s *standardSink) AddToolResponse(id, response string) {
 // Chat Completions input conversion
 // ---------------------------------------------------------------------------
 
-func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
+func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content, ta *turnAssets) ([]message, error) {
 	sink := &standardSink{}
 	personaInjected := c.maybeInjectInitialPersona(sink)
 
 	for _, h := range history {
-		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, resolver, &personaInjected); err != nil {
+		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, ta, &personaInjected); err != nil {
 			return nil, err
 		}
 	}
@@ -121,21 +120,21 @@ func (c *client) resolveOutputBudget() int {
 // buildRequestBody assembles the chat request payload, populating
 // either Input (for /responses) or Messages (for /chat/completions)
 // depending on the selected API strategy.
-func (c *client) buildRequestBody(ctx context.Context, strat apiStrategy, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
+func (c *client) buildRequestBody(ctx context.Context, strat apiStrategy, history []*llm.Content, toolDecls []*tools.ToolDeclaration, ta *turnAssets) (*chatRequest, error) {
 	req := chatRequest{
 		Model: c.model,
 		Tools: c.toOpenAITools(toolDecls, strat.useResponses),
 	}
 
 	if strat.useResponses {
-		items, err := c.toResponsesInput(ctx, history, resolver)
+		items, err := c.toResponsesInput(ctx, history, ta)
 		if err != nil {
 			return nil, err
 		}
 		req.Input = items
 		req.Reasoning = &reasoningConfig{Effort: strat.effort}
 	} else {
-		messages, err := c.toStandardMessages(ctx, history, resolver)
+		messages, err := c.toStandardMessages(ctx, history, ta)
 		if err != nil {
 			return nil, err
 		}
@@ -177,10 +176,10 @@ func (c *client) injectTransportHints(req *chatRequest) {
 // prepareChatRequest constructs the chat request payload by delegating
 // to focused helpers for API strategy, body assembly, output budget,
 // and transport hints.
-func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
+func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, ta *turnAssets) (*chatRequest, error) {
 	strat := c.resolveAPIStrategy(len(toolDecls))
 
-	req, err := c.buildRequestBody(ctx, strat, history, toolDecls, resolver)
+	req, err := c.buildRequestBody(ctx, strat, history, toolDecls, ta)
 	if err != nil {
 		return nil, err
 	}
@@ -209,26 +208,11 @@ func (c *client) createHTTPRequest(ctx context.Context, payload *chatRequest) (*
 	}
 
 	endpoint := c.resolveEndpoint(payload)
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(body))
+	req, err := c.newAuthenticatedRequest(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
-
-	// Apply custom headers
-	for k, v := range c.headers {
-		req.Header.Set(k, v)
-	}
-
-	// Apply authentication
-	authReq := &auth.Request{Headers: make(map[string]string)}
-	if err := c.authenticator.Apply(ctx, authReq); err != nil {
-		return nil, err
-	}
-	for k, v := range authReq.Headers {
-		req.Header.Set(k, v)
-	}
 
 	return req, nil
 }
@@ -238,7 +222,27 @@ func (c *client) createHTTPRequest(ctx context.Context, payload *chatRequest) (*
 // ---------------------------------------------------------------------------
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, resolver)
+	// Prepare image assets for the turn: hydrate from resolver,
+	// upload to Kimi file API. Skip if no vision capability.
+	var ta *turnAssets
+	if c.capabilities.SupportsVision {
+		var prepared []*llm.Part
+		var err error
+		ta, prepared, err = c.prepareImageAssets(ctx, collectHistoryParts(history), resolver)
+		if err != nil {
+			return nil, nil, err
+		}
+		applyPreparedParts(history, prepared)
+	}
+
+	// Register cleanup for all exit paths. Per-turn files are useless
+	// after this call — the orchestrator retries by rebuilding from
+	// scratch, triggering fresh uploads.
+	if ta != nil {
+		defer ta.release(context.Background(), c)
+	}
+
+	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, ta)
 	if err != nil {
 		return nil, nil, err
 	}
