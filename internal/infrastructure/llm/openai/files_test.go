@@ -40,12 +40,12 @@ func TestUploadFile(t *testing.T) {
 			t.Fatalf("form file: %v", err)
 		}
 		buf := make([]byte, 4)
-		file.Read(buf)
+		_, _ = file.Read(buf)
 		if string(buf) != "test" {
 			t.Errorf("expected file content 'test', got %q", string(buf))
 		}
 
-		json.NewEncoder(w).Encode(fileObject{
+		_ = json.NewEncoder(w).Encode(fileObject{
 			ID:     "file-abc123",
 			Status: "ready",
 		})
@@ -72,7 +72,7 @@ func TestUploadFile(t *testing.T) {
 func TestUploadFile_ErrorStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error": "unauthorized"}`))
+		_, _ = w.Write([]byte(`{"error": "unauthorized"}`))
 	}))
 	defer server.Close()
 
@@ -91,7 +91,7 @@ func TestUploadFile_ErrorStatus(t *testing.T) {
 
 func TestUploadFile_NotReady(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(fileObject{
+		_ = json.NewEncoder(w).Encode(fileObject{
 			ID:     "file-abc123",
 			Status: "processing",
 		})
@@ -137,7 +137,7 @@ func TestDeleteFile(t *testing.T) {
 
 func TestGetFileContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("extracted document text"))
+		_, _ = w.Write([]byte("extracted document text"))
 	}))
 	defer server.Close()
 
@@ -162,9 +162,9 @@ func TestExtractDocument(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "POST" && r.URL.Path == "/files":
-			json.NewEncoder(w).Encode(fileObject{ID: "file-doc", Status: "ready"})
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-doc", Status: "ready"})
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/content"):
-			w.Write([]byte("doc content here"))
+			_, _ = w.Write([]byte("doc content here"))
 		case r.Method == "DELETE":
 			deletedID = strings.TrimPrefix(r.URL.Path, "/files/")
 			w.WriteHeader(http.StatusOK)
@@ -298,7 +298,7 @@ func TestPrepareImageAssets_KimiURL_Uploads(t *testing.T) {
 		switch {
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files"):
 			uploaded = true
-			json.NewEncoder(w).Encode(fileObject{ID: "file-xyz", Status: "ready"})
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-xyz", Status: "ready"})
 		case r.Method == "DELETE":
 			deleted = true
 			w.WriteHeader(http.StatusOK)
