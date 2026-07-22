@@ -24,13 +24,6 @@ type fileObject struct {
 	Status    string `json:"status"`
 }
 
-// fileDeleteResponse is the API response from DELETE /v1/files/{id}.
-type fileDeleteResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Deleted bool   `json:"deleted"`
-}
-
 // uploadFile uploads a file to the Kimi API and returns the file ID.
 // purpose must be "image", "video", or "file-extract".
 // filename is the original filename for metadata.
@@ -66,7 +59,7 @@ func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose 
 	if err != nil {
 		return "", fmt.Errorf("upload request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
@@ -96,7 +89,7 @@ func (c *client) deleteFile(ctx context.Context, fileID string) error {
 	if err != nil {
 		return fmt.Errorf("delete file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("delete file failed (status %d)", resp.StatusCode)
@@ -116,7 +109,7 @@ func (c *client) getFileContent(ctx context.Context, fileID string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("get content: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("get content failed (status %d)", resp.StatusCode)

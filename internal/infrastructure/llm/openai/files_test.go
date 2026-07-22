@@ -6,6 +6,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -223,5 +224,118 @@ func TestCleanupUploadedFiles(t *testing.T) {
 
 	if len(deletedIDs) != 2 {
 		t.Errorf("expected 2 deletes, got %d: %v", len(deletedIDs), deletedIDs)
+	}
+}
+
+func TestCollectApplyRoundTrip(t *testing.T) {
+	original := []*llm.Content{
+		{Role: "system", Parts: []*llm.Part{{Text: "system prompt"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "hello"}, {Text: "world"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
+		{Role: "user", Parts: []*llm.Part{}},
+	}
+	collected := collectHistoryParts(original)
+	// system parts excluded; user: 2 + model: 1 + empty-user: 0 = 3
+	if len(collected) != 3 {
+		t.Fatalf("expected 3 parts (system excluded), got %d", len(collected))
+	}
+	// Mutate collected parts
+	for i := range collected {
+		collected[i] = &llm.Part{Text: fmt.Sprintf("modified-%d", i)}
+	}
+	applyPreparedParts(original, collected)
+	// System untouched
+	if original[0].Parts[0].Text != "system prompt" {
+		t.Error("system was modified")
+	}
+	// User parts replaced
+	if original[1].Parts[0].Text != "modified-0" {
+		t.Error("user part not applied")
+	}
+	if original[1].Parts[1].Text != "modified-1" {
+		t.Error("user part 2 not applied")
+	}
+	// Model part replaced
+	if original[2].Parts[0].Text != "modified-2" {
+		t.Error("model part not applied")
+	}
+	// Empty user still empty
+	if len(original[3].Parts) != 0 {
+		t.Error("empty user got parts")
+	}
+}
+
+func TestPrepareImageAssets_Gating(t *testing.T) {
+	// Non-Kimi URL — should skip upload entirely
+	c := &client{
+		baseURL:    "https://api.openai.com/v1",
+		httpClient: http.DefaultClient,
+		logger:     &ports.NoOpLogger{},
+	}
+	c.authenticator = &fakeAuthenticator{}
+	c.capabilities = llm.Capabilities{SupportsVision: true}
+
+	parts := []*llm.Part{
+		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}},
+	}
+	ta, out, err := c.prepareImageAssets(context.Background(), parts, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ta.uploaded) != 0 {
+		t.Error("non-Kimi URL should not upload")
+	}
+	if len(ta.bindings) != 0 {
+		t.Error("non-Kimi URL should have no bindings")
+	}
+	_ = out
+	ta.release(context.Background(), c)
+}
+
+func TestPrepareImageAssets_KimiURL_Uploads(t *testing.T) {
+	var uploaded, deleted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files"):
+			uploaded = true
+			json.NewEncoder(w).Encode(fileObject{ID: "file-xyz", Status: "ready"})
+		case r.Method == "DELETE":
+			deleted = true
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:    server.URL + "/api.moonshot.ai",
+		httpClient: server.Client(),
+		logger:     &ports.NoOpLogger{},
+	}
+	c.authenticator = &fakeAuthenticator{}
+	c.capabilities = llm.Capabilities{SupportsVision: true}
+
+	parts := []*llm.Part{
+		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
+	}
+	ta, out, err := c.prepareImageAssets(context.Background(), parts, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !uploaded {
+		t.Error("expected POST /files upload")
+	}
+	if len(ta.uploaded) != 1 {
+		t.Errorf("expected 1 uploaded file, got %d", len(ta.uploaded))
+	}
+	if ta.bindings[out[0]] != "file-xyz" {
+		t.Error("expected binding for uploaded part")
+	}
+	if ta.resolveURL(out[0]) != "ms://file-xyz" {
+		t.Errorf("expected ms:// URL, got %s", ta.resolveURL(out[0]))
+	}
+
+	ta.release(context.Background(), c)
+	if !deleted {
+		t.Error("expected DELETE after release")
 	}
 }
