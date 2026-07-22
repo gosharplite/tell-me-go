@@ -75,6 +75,9 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 
 	images, err := m.client.GenerateImages(ctx, req.Model, prompt, "image/png")
 	if err != nil {
+		if errors.Is(err, llm.ErrNotImplemented) {
+			return tools.ToolResult{}, tools.ErrNotImplemented
+		}
 		return tools.ToolResult{}, fmt.Errorf("generate images: %w", err)
 	}
 
