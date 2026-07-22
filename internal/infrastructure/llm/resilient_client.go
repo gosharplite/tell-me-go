@@ -101,3 +101,8 @@ func (r *resilientClient) RefreshAuth() error {
 func (r *resilientClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return r.client.GenerateImages(ctx, model, prompt, mimeType)
 }
+
+// ExtractDocument delegates to the underlying client.
+func (r *resilientClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return r.client.ExtractDocument(ctx, data, filename)
+}

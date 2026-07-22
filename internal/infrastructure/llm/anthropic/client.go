@@ -310,7 +310,11 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 }
 
 func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return nil, fmt.Errorf("GenerateImages not implemented for Anthropic")
+	return nil, llm.ErrNotImplemented
+}
+
+func (c *client) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
 }
 
 func (c *client) RefreshAuth() error {

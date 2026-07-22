@@ -11,6 +11,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"time"
 )
 
 // fileObject is the API response from POST /v1/files.
@@ -138,8 +139,11 @@ func (c *client) extractDocument(ctx context.Context, data []byte, filename stri
 		return "", fmt.Errorf("upload document: %w", err)
 	}
 	defer func() {
-		// Best-effort cleanup; don't shadow the primary error
-		_ = c.deleteFile(ctx, fileID)
+		// Best-effort cleanup with detached context — not gated by
+		// the caller's context deadline.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = c.deleteFile(cleanupCtx, fileID)
 	}()
 
 	content, err := c.getFileContent(ctx, fileID)

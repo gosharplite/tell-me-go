@@ -31,6 +31,10 @@ func (m *primaryMockClient) GenerateImages(ctx context.Context, model, prompt, m
 
 func (m *primaryMockClient) RefreshAuth() error { return nil }
 
+func (m *primaryMockClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", domain_llm.ErrNotImplemented
+}
+
 // secondaryMockClient returns a success response.
 type secondaryMockClient struct{ callCount *int32 }
 
@@ -51,6 +55,10 @@ func (m *secondaryMockClient) GenerateImages(ctx context.Context, model, prompt,
 }
 
 func (m *secondaryMockClient) RefreshAuth() error { return nil }
+
+func (m *secondaryMockClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", domain_llm.ErrNotImplemented
+}
 
 // TestFailover_PrimaryTransient_SecondarySucceeds verifies that when the
 // primary client returns a transient error, the FailoverGateway falls

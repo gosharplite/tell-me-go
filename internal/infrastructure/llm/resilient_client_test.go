@@ -216,6 +216,10 @@ func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string
 	return nil, nil
 }
 
+func (m *mockLLMClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}
+
 func (m *mockLLMClient) ResetConnections() {
 	m.resetCalled = true
 }
