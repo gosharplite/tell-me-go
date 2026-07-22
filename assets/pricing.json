@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-27T10:45:00Z",
+  "updated_at": "2026-07-18T12:00:00Z",
   "models": {
     "default": {
       "hit": 0.0,
@@ -41,6 +41,11 @@
       "hit": 0.056,
       "miss": 0.56,
       "comp": 1.68
+    },
+    "kimi-": {
+      "hit": 0.3,
+      "miss": 3.0,
+      "comp": 15.0
     },
     "claude-": {
       "hit": 0.50,
