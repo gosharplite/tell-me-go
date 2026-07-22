@@ -6,6 +6,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -164,4 +165,76 @@ func TestVision_KimiImagePayload(t *testing.T) {
 	if !strings.Contains(string(b), "describe this") {
 		t.Error("JSON payload missing text content")
 	}
+}
+
+func TestHydrateImageAssets(t *testing.T) {
+	resolver := &testAssetResolver{
+		data: map[string][]byte{
+			"asset-1": []byte{0x89, 0x50, 0x4E, 0x47},
+		},
+	}
+	tests := []struct {
+		name     string
+		parts    []*llm.Part
+		resolver llm.AssetResolver
+		wantData bool
+		wantErr  bool
+	}{
+		{
+			name:     "hydrates AssetID with no InlineData",
+			parts:    []*llm.Part{{AssetID: "asset-1"}},
+			resolver: resolver,
+			wantData: true,
+		},
+		{
+			name:     "skips part with existing InlineData",
+			parts:    []*llm.Part{{AssetID: "asset-1", InlineData: &llm.Blob{Data: []byte{1}}}},
+			resolver: resolver,
+			wantData: true, // keeps existing data
+		},
+		{
+			name:     "skips part with no AssetID",
+			parts:    []*llm.Part{{Text: "hello"}},
+			resolver: resolver,
+			wantData: false,
+		},
+		{
+			name:     "nil resolver is no-op",
+			parts:    []*llm.Part{{AssetID: "asset-1"}},
+			resolver: nil,
+			wantData: false,
+		},
+		{
+			name:     "resolve error propagates",
+			parts:    []*llm.Part{{AssetID: "missing"}},
+			resolver: resolver,
+			wantErr:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := hydrateImageAssets(context.Background(), tt.parts, tt.resolver)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("error = %v, wantErr = %v", err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if tt.wantData && tt.parts[0].InlineData == nil {
+				t.Error("expected InlineData to be populated")
+			}
+		})
+	}
+}
+
+type testAssetResolver struct {
+	data map[string][]byte
+}
+
+func (r *testAssetResolver) Resolve(ctx context.Context, assetID string) ([]byte, error) {
+	d, ok := r.data[assetID]
+	if !ok {
+		return nil, fmt.Errorf("asset not found: %s", assetID)
+	}
+	return d, nil
 }

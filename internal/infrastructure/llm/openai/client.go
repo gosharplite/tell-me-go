@@ -349,6 +349,13 @@ func (c *client) appendMessagesFromHistoryItem(
 		return nil
 	}
 
+	// Hydrate lazy-loaded image assets before extraction.
+	// Parts with AssetID but no InlineData are resolved from the
+	// AssetResolver so they can be serialized as image_url blocks.
+	if err := hydrateImageAssets(ctx, otherParts, resolver); err != nil {
+		return err
+	}
+
 	// Separate image parts before classification — classifyParts only
 	// handles text and function calls.
 	imageParts, textParts := extractImageParts(otherParts)
@@ -415,6 +422,29 @@ func extractImageParts(parts []*llm.Part) (images []*llm.Part, rest []*llm.Part)
 		}
 	}
 	return
+}
+
+// hydrateImageAssets resolves AssetID references on parts that lack
+// InlineData, populating them from the AssetResolver. Parts that
+// already have InlineData.Data or have no AssetID are unchanged.
+// Returns an error if resolution fails.
+func hydrateImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) error {
+	if resolver == nil {
+		return nil
+	}
+	for _, p := range parts {
+		if p.AssetID == "" || p.InlineData != nil {
+			continue
+		}
+		data, err := resolver.Resolve(ctx, p.AssetID)
+		if err != nil {
+			return fmt.Errorf("resolve asset %s: %w", p.AssetID, err)
+		}
+		p.InlineData = &llm.Blob{
+			Data: data,
+		}
+	}
+	return nil
 }
 
 // imageBlocks converts InlineData parts to image_url content blocks.
