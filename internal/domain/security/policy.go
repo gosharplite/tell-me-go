@@ -181,6 +181,7 @@ func DefaultPolicy() *Policy {
 			// Media Tools
 			"create_image": true,
 			"read_image":   true,
+			"read_document": true,
 		},
 		AutoApprovableCommands: map[string]bool{
 			"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
