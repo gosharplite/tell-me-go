@@ -204,6 +204,14 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldCompletion,
 		},
 		{
+			name:                     "kimi-k3 namespaced (moonshotai/kimi-k3)",
+			model:                    "moonshotai/kimi-k3",
+			baseURL:                  "",
+			supportsReasoningContent: true,
+			supportsReasoningEffort:  true,
+			maxTokensField:           MaxTokensFieldCompletion,
+		},
+		{
 			name:                     "kimi-k2.7-code",
 			model:                    "kimi-k2.7-code",
 			baseURL:                  "",
