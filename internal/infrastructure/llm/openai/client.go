@@ -5,6 +5,7 @@ package openai
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -218,9 +219,20 @@ type requestContentBlock struct {
 	Text string `json:"text"` // Required field for input_text / output_text
 }
 
+// imageURLBlock represents an image_url content part for vision-capable models.
+type imageURLBlock struct {
+	Type     string        `json:"type"`
+	ImageURL imageURLValue `json:"image_url"`
+}
+
+// imageURLValue holds the URL payload for an image_url block.
+type imageURLValue struct {
+	URL string `json:"url"`
+}
+
 type message struct {
 	Role             string      `json:"role"`
-	Content          interface{} `json:"content,omitempty"` // string or []requestContentBlock
+	Content          interface{} `json:"content,omitempty"` // string, []requestContentBlock, or []any (mixed text+image)
 	ToolCalls        []toolCall  `json:"tool_calls,omitempty"`
 	ToolCallID       string      `json:"tool_call_id,omitempty"`
 	ReasoningContent *string     `json:"reasoning_content,omitempty"`
@@ -304,7 +316,9 @@ type completionTokensDetails struct {
 }
 
 type openaiSink interface {
-	AddMessage(role, text string, reasoning *string, toolCalls []toolCall)
+	// AddMessage adds a message to the sink. content is either a string
+	// (text-only) or []any (mixed text+image blocks for vision models).
+	AddMessage(role string, content any, reasoning *string, toolCalls []toolCall)
 	AddToolResponse(id, response string)
 }
 
@@ -335,7 +349,11 @@ func (c *client) appendMessagesFromHistoryItem(
 		return nil
 	}
 
-	text, reasoning, toolCalls, err := c.classifyParts(otherParts)
+	// Separate image parts before classification — classifyParts only
+	// handles text and function calls.
+	imageParts, textParts := extractImageParts(otherParts)
+
+	text, reasoning, toolCalls, err := c.classifyParts(textParts)
 	if err != nil {
 		return err
 	}
@@ -347,7 +365,18 @@ func (c *client) appendMessagesFromHistoryItem(
 		reasoningPtr = &reasoning
 	}
 
-	sink.AddMessage(role, text, reasoningPtr, toolCalls)
+	// Build content: array format when images present AND vision supported,
+	// string format otherwise.
+	var content any = text
+	if c.capabilities.SupportsVision && len(imageParts) > 0 {
+		blocks := imageBlocks(imageParts)
+		if text != "" {
+			blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
+		}
+		content = blocks
+	}
+
+	sink.AddMessage(role, content, reasoningPtr, toolCalls)
 
 	return nil
 }
@@ -370,6 +399,38 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 		}
 	}
 	return
+}
+
+// extractImageParts separates InlineData parts from a part slice.
+// Returns the image parts and the remaining non-image, non-tool-response parts.
+func extractImageParts(parts []*llm.Part) (images []*llm.Part, rest []*llm.Part) {
+	for _, p := range parts {
+		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
+			images = append(images, p)
+		} else {
+			rest = append(rest, p)
+		}
+	}
+	return
+}
+
+// imageBlocks converts InlineData parts to image_url content blocks.
+// Returns nil if there are no InlineData parts.
+func imageBlocks(parts []*llm.Part) []any {
+	var blocks []any
+	for _, p := range parts {
+		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
+			blocks = append(blocks, imageURLBlock{
+				Type: "image_url",
+				ImageURL: imageURLValue{
+					URL: fmt.Sprintf("data:%s;base64,%s",
+						p.InlineData.MIMEType,
+						base64.StdEncoding.EncodeToString(p.InlineData.Data)),
+				},
+			})
+		}
+	}
+	return blocks
 }
 
 func (c *client) appendToolResponseMessages(sink openaiSink, toolResponseParts []*llm.Part) error {
