@@ -202,3 +202,126 @@ The re-entry guard detects `DOBBY_SOURCED`, strips the old prompt prefix, and re
 | Provider baked into directory name | `ait-<tag>` — provider is a runtime choice |
 | Switching provider = new directory, lost state | Mid-session `source dobby.sh <provider>` keeps all state |
 | Provider comparison needs two environments | Same prompt, same tag, hot-swap and re-run |
+
+---
+
+## Stage 4: Porter & Sprawl — Self-Contained Workspaces and Sub-Agent Orchestration
+
+Stage 4 shifts from *human* environment management to enabling the **butler AI itself** to spawn and orchestrate sub-agents. Two tools emerge: **Porter** (human-facing, self-contained workspace stager) and **Sprawl** (headless sub-agent spawner for the butler to use inside pipeline pods).
+
+### Porter — Self-Contained Workspace Stager
+
+Porter is a single Bash script with everything embedded — configs, secrets, skills, role personas. No external template directory. Copy it anywhere and source it.
+
+```bash
+source porter              # fzf pick provider, tag = random hex
+source porter deepseek-pro # explicit provider
+source porter -p           # Vertex priority tier headers
+source porter -c           # skip docs/skills
+
+b --new "hello"            # talk to the butler
+db vertex-pro              # switch provider mid-session (via dobby.sh)
+```
+
+**What makes it different from Dobby:**
+
+| | Dobby | Porter |
+|---|---|---|
+| **Template** | External `ait-base/` directory | Fully embedded in the script |
+| **Workspace** | Named `ait-<tag>/` in a fixed base dir | `/tmp/dobby.XXXXXX/` (random, ephemeral) |
+| **Deployment** | Requires the full `dobby/` directory tree | Single file, copy anywhere |
+| **Secrets** | Copied from template on provision | Embedded (API keys, service account JSON) |
+| **Role configs** | Generated from `butler.yaml` at provision time | Generated on-the-fly from embedded YAML |
+| **Tag** | Human-chosen name (`myproject`) | Random hex (`aBcDeF`) |
+
+Porter integrates with Dobby: after sourcing porter once, the `db` alias (dobby.sh) can still switch providers within the same ephemeral workspace.
+
+### Sprawl — Sub-Agent Spawner
+
+Sprawl (`sprawl-agent.sh`) is designed for the **butler AI** to spawn isolated sub-agents inside pipeline pods. It creates a disposable `/tmp/dobby.XXXXXX/` workspace pre-configured for a specific role and provider.
+
+```bash
+eval $(bash sprawl-agent.sh architect deepseek-pro)
+# → exports: ROLE, PROVIDER, DOBBY_HOME, CONFIG, TMP
+
+# Send prompt (fresh session):
+tell-me-go --new -r -c "$CONFIG" < prompt_file
+
+# Follow-up (same session):
+tell-me-go -r -c "$CONFIG" < prompt_file
+
+# Retrieve last response:
+tell-me-go -l 1 -r -c "$CONFIG"
+```
+
+**Key differences from Porter:**
+
+| | Porter | Sprawl |
+|---|---|---|
+| **Who runs it** | Human in a terminal | Butler AI via `execute_command` |
+| **Purpose** | Interactive env with `b`/`a`/`c`/`t`/`r` | Headless, single-role sub-agent |
+| **Shell functions** | Yes | No — raw `tell-me-go` calls |
+| **Session model** | Multi-turn interactive | Single-task, then discard |
+| **Provider switching** | Via `db` alias | N/A — one provider per spawn |
+
+### The Three-Step Protocol
+
+Communication with sub-agents follows a mandatory three-step protocol to avoid heredoc breakage, path collisions, and race conditions:
+
+**Step 1 — Create a unique staging file:**
+```bash
+mktemp /tmp/tell-me-go-prompt.XXXXXX
+# → /tmp/tell-me-go-prompt.9HzLqL
+```
+
+**Step 2 — Write the prompt** using the `write_file` tool (never inline heredocs in `execute_command`).
+
+**Step 3 — Send to sub-agent:**
+```bash
+PROMPT_FILE=$(mktemp) && cp "$STAGING" "$PROMPT_FILE" && \
+TELL_ME_HOME="$DOBBY_HOME" tell-me-go --new -r -c "$CONFIG" < "$PROMPT_FILE"
+```
+
+### Multi-Agent Orchestration Pattern
+
+The butler spawns independent sub-agents and routes work through them:
+
+```
+Butler
+  ├── spawns Architect (deepseek-pro)  → analyzes issue, plans implementation
+  ├── spawns Coder (deepseek-pro)      → implements each task (--new per task)
+  ├── spawns Reviewer (deepseek-pro)   → reviews code against idioms/security
+  └── spawns Tester (deepseek-pro)     → verifies coverage, flags edge cases
+```
+
+**Session strategy:**
+- **Architect**: single session across all tasks (preserves context for consistent planning)
+- **Coder**: `--new` per task (each implementation is self-contained)
+- **Reviewer/Tester**: `--new` per review cycle
+
+**Token monitoring**: Sub-agents are checked periodically — if token usage exceeds ~80% of context window, the butler restarts with `--new` to prevent silent context truncation.
+
+### Persisting State Across Subshells
+
+Each `execute_command` is a fresh subshell — spawn variables from `eval` don't persist. The butler writes them to a tracking file:
+
+```bash
+# After spawning all agents, write paths to a file:
+. /tmp/sprawl-paths.env
+
+# In subsequent commands:
+. /tmp/sprawl-paths.env && \
+  TELL_ME_HOME="$ARCHITECT_HOME" tell-me-go --new -r -c "$ARCHITECT_CONFIG" < prompt
+```
+
+Communication is strictly **sequential** — parallel sub-agent calls are explicitly avoided due to subshell variable inheritance issues.
+
+### What It Solves vs. Stage 3
+
+| Limitation (Dobby) | Stage 4 (Porter & Sprawl) |
+|--------------------|---------------------------|
+| Requires external template directory | Porter: single self-contained script; Sprawl: copies from parent session |
+| Human-only operation | Butler AI can spawn and orchestrate sub-agents |
+| Fixed workspace location | Ephemeral `/tmp/dobby.XXXXXX/` — disposable, collision-free |
+| One role at a time | Multiple concurrent sub-agents, each with isolated state |
+| Manual role handoff | Automated Architect → Coder → Reviewer loop |
