@@ -325,3 +325,144 @@ Communication is strictly **sequential** — parallel sub-agent calls are explic
 | Fixed workspace location | Ephemeral `/tmp/dobby.XXXXXX/` — disposable, collision-free |
 | One role at a time | Multiple concurrent sub-agents, each with isolated state |
 | Manual role handoff | Automated Architect → Coder → Reviewer loop |
+
+---
+
+## Stage 5: SSH Sub-Agent Sprawl — Remote Orchestration
+
+Stage 5 extends sub-agent orchestration **across machines**. The butler now spawns sub-agents on remote hosts via SSH, with prompt delivery through stdin pipes rather than local files. This offloads LLM work to dedicated compute and enables session survival across local reboots.
+
+### Architecture
+
+```
+┌──────────────────────┐         SSH          ┌──────────────────────┐
+│    Orchestrator      │ ─── stdin pipe ───→  │    Remote Host        │
+│    (local)           │                      │                       │
+│                      │ ←── stdout    ────── │  /tmp/porter          │
+│  ais-ssh/            │                      │  /tmp/dobby.XXXXXX/   │
+│  ssh-sprawl-agent.sh │                      │  ├── configs/         │
+│  /tmp/ssh-sprawl-    │                      │  ├── secrets/         │
+│    paths.env         │                      │  └── output/          │
+└──────────────────────┘                      └──────────────────────┘
+```
+
+### Spawning a Remote Sub-Agent
+
+```bash
+eval $(bash ssh-sprawl-agent.sh <host> architect deepseek-pro)
+# → exports: SSH_HOST, ROLE, PROVIDER, DOBBY_HOME, CONFIG, TMP
+```
+
+What happens under the hood:
+
+1. SSH's into the remote host
+2. Sources `/tmp/porter` (pre-deployed) with the given provider — porter creates the full workspace with all role configs, secrets, and skills
+3. Captures `DOBBY_HOME`, `DOBBY_TAG`, etc. from the remote shell
+4. Writes paths to both stdout (for `eval`) and `/tmp/ssh-sprawl-paths.env` (for cross-subshell persistence)
+
+### The Tracking File
+
+Each sub-agent gets a role-keyed prefix in `/tmp/ssh-sprawl-paths.env`:
+
+| Role | Key prefix | Example variables |
+|------|-----------|-------------------|
+| butler | `B_` | `B_HOST`, `B_HOME`, `B_CONFIG`, `B_PROVIDER` |
+| architect | `A_` | `A_HOST`, `A_HOME`, `A_CONFIG`, `A_PROVIDER` |
+| coder | `C_` | `C_HOST`, `C_HOME`, `C_CONFIG`, `C_PROVIDER` |
+| tester | `T_` | `T_HOST`, `T_HOME`, `T_CONFIG`, `T_PROVIDER` |
+| reviewer | `R_` | `R_HOST`, `R_HOME`, `R_CONFIG`, `R_PROVIDER` |
+
+Keys include sanitized host and provider names (e.g., `A_websc_34_80_110_236_deepseek_pro`), allowing one agent per role per provider per host with no collisions.
+
+### The SSH Three-Step Protocol
+
+Every remote sub-agent interaction follows the same pattern as local sprawl, but with SSH stdin pipes instead of local file descriptors:
+
+**Step 1 — Create a unique staging file (local):**
+```bash
+mktemp /tmp/tell-me-go-prompt.XXXXXX
+```
+
+**Step 2 — Write the prompt** using the `write_file` tool.
+
+**Step 3 — Send via SSH stdin pipe (fresh session):**
+```bash
+. /tmp/ssh-sprawl-paths.env
+
+ssh ${A_HOST} -- "source ${A_HOME}/secrets/keys; \
+  TELL_ME_SELECTED_PROVIDER=${A_PROVIDER} TELL_ME_HOME=${A_HOME} \
+  tell-me-go --new -r -c ${A_CONFIG}" < "$PROMPT_FILE"
+```
+
+**Step 4 — Retrieve response:**
+```bash
+. /tmp/ssh-sprawl-paths.env
+
+ssh ${A_HOST} -- "TELL_ME_SELECTED_PROVIDER=${A_PROVIDER} TELL_ME_HOME=${A_HOME} \
+  tell-me-go -l 1 -r -c ${A_CONFIG}"
+```
+
+### Why SSH stdin pipe (not scp)?
+
+| Approach | Problem |
+|----------|---------|
+| `scp` prompt file to remote | Extra round-trip, stale file risk, cleanup burden |
+| Heredocs in `execute_command` | Shell escaping breaks multi-line prompts |
+| **SSH stdin pipe** (`< file`) | Prompt never touches remote disk, no cleanup needed |
+
+The prompt is streamed directly into `tell-me-go`'s stdin via SSH. No temp files on the remote side.
+
+### Secrets: Must Source Before Every Call
+
+Unlike local sub-agents where env vars persist in the shell, each SSH command is a **fresh shell**. API keys must be sourced every time:
+
+```bash
+source ${A_HOME}/secrets/keys
+```
+
+This is embedded before every `tell-me-go` invocation. Without it, env-var-based providers (DeepSeek, OpenAI, Anthropic) fail with authentication errors. No secrets are transmitted over SSH — they live on the remote host.
+
+### Key Differences: Local vs SSH
+
+| | Stage 4 (Local Sprawl) | Stage 5 (SSH Sprawl) |
+|---|---|---|
+| **Spawning** | `eval $(bash sprawl-agent.sh ...)` | `eval $(bash ssh-sprawl-agent.sh <host> ...)` |
+| **Workspace location** | Local `/tmp/dobby.XXXXXX/` | Remote `/tmp/dobby.XXXXXX/` |
+| **Prompt delivery** | `tell-me-go < file` (local FD) | `ssh ... "tell-me-go ..." < file` (stdin pipe) |
+| **Response retrieval** | `tell-me-go -l 1 -r -c "$CONFIG"` | `ssh ... "tell-me-go -l 1 -r -c \$CONFIG"` |
+| **API keys** | Inherited from parent env | Sourced from `$DOBBY_HOME/secrets/keys` each call |
+| **Session persistence** | Lost on local reboot | Survives local reboot (remote persists) |
+| **`porter` dependency** | None (uses existing `TELL_ME_HOME`) | Must be deployed on remote (`/tmp/porter`) |
+
+### Prerequisites (One-Time Per Host)
+
+1. **Deploy porter**: `scp porter <host>:/tmp/porter`
+2. **Install tools**: `tell-me-go`, `yq`, `fzf` on the remote (porter auto-discovers them at `/usr/local/bin`, `/usr/local/go/bin`, and `$HOME/go/bin`)
+3. **Verify**: A single `ls` command checks porter + all tools before spawning
+
+### Session Strategy
+
+Same as local sprawl, now remote-aware:
+- **Architect**: single session across all tasks (context preserved on remote)
+- **Coder**: `--new` per task
+- **Reviewer/Tester**: `--new` per review cycle
+- **Communication is strictly sequential** — concurrent writes to the same remote SQLite DB will corrupt the session
+
+### Cleanup (Mandatory)
+
+Three-step cleanup at end of session, **in order**:
+
+1. **Remove workspaces**: Iterate `/tmp/ssh-sprawl-paths.env`, `ssh <host> -- "rm -rf <tmp>"` for each remote workspace
+2. **Remove porter**: `ssh <host> -- "rm -rf /tmp/porter"` from every remote host — porter embeds secrets, leaving it behind is a security risk
+3. **Remove local artifacts**: `rm -f /tmp/ssh-sprawl-paths.env /tmp/tell-me-go-prompt.*`
+
+Step ordering matters: workspaces → porter → local artifacts. The tracking file must survive partial failures so cleanup can be retried.
+
+### What It Solves vs. Stage 4
+
+| Limitation (Stage 4) | Stage 5 (SSH Sprawl) |
+|-----------------------|----------------------|
+| All agents run locally — compete for CPU/memory | Agents offloaded to dedicated remote hosts |
+| Session lost on local reboot | Remote sessions persist independently |
+| Single-machine bottleneck | Horizontally scalable across hosts |
+| No cross-machine orchestration | Butler orchestrates agents on any reachable host |
