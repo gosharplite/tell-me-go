@@ -37,7 +37,7 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 	var err error
 
 	switch p.Type {
-	case "openai", "deepseek":
+	case "openai", "deepseek", "kimi":
 		baseClient = openai.NewClient(p.URL, p.Model, authenticator,
 			openai.WithHeaders(p.Headers),
 			openai.WithPersona(persona),
@@ -76,7 +76,7 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 // newClient is the central factory for creating LLM provider clients.
 //
 // It inspects cfg.GetActiveProvider() to determine the provider type
-// ("openai", "deepseek", "anthropic", "google", "gemini"), creates the
+// ("openai", "deepseek", "kimi", "anthropic", "google", "gemini"), creates the
 // appropriate authenticator, resolves timeout and thinking budget, and
 // instantiates a provider-specific client. The resulting client is
 // wrapped in a resilientClient for automatic retry on transient failures.
@@ -217,6 +217,12 @@ var authStrategies = map[string]authStrategy{
 		}
 		return &auth.BearerAuth{Token: p.APIKey}, nil
 	},
+	"kimi": func(p *config.LLMProvider) (auth.Authenticator, error) {
+		if p.APIKey == "" {
+			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+		}
+		return &auth.BearerAuth{Token: p.APIKey}, nil
+	},
 	"anthropic": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
@@ -249,7 +255,7 @@ func resolveTimeout(cfg *config.Config) time.Duration {
 //
 // The authenticator type is determined by the provider type and
 // available credentials:
-//   - APIKey: BearerAuth (OpenAI/DeepSeek), AnthropicAuth, or
+//   - APIKey: BearerAuth (OpenAI/DeepSeek/Kimi), AnthropicAuth, or
 //     APIKeyAuth (Google/Gemini with explicit key)
 //   - Service Account JSON file: ServiceAccountAuth
 //   - Google/Gemini without API key: VertexAuth (Application Default

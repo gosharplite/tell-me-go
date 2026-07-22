@@ -51,8 +51,22 @@ type Capabilities struct {
 	// as a coupled boolean plus an implicit precedence rule. See
 	// MaxTokensField for the per-value semantics.
 	MaxTokensField MaxTokensField
-	// IsDeepSeek indicates if the model follows DeepSeek-specific conventions (e.g., reasoning_content in assistant messages).
+	// IsDeepSeek indicates if the model is a DeepSeek variant.
+	// Prefer SupportsReasoningContent for reasoning_content serialization
+	// decisions; IsDeepSeek is retained for classification, diagnostics,
+	// and test assertions. It has no production code gating on it directly
+	// as of the SupportsReasoningContent generalization.
 	IsDeepSeek bool
+	// SupportsReasoningContent indicates the model uses the reasoning_content
+	// field on assistant messages for reasoning/thinking traces. When true,
+	// thought parts are serialized into reasoning_content rather than being
+	// wrapped in <thought> XML tags, and reasoning_content is always included
+	// on assistant messages (even when empty) to satisfy the provider's
+	// multi-turn protocol.
+	//
+	// Set for all models known to use reasoning_content natively:
+	// deepseek-* and kimi-* model families.
+	SupportsReasoningContent bool
 	// RequiresVertexThinkingKwargs indicates that the transport silently
 	// disables DeepSeek thinking mode unless the non-standard parameter
 	// chat_template_kwargs.thinking=true is included in the request body.
@@ -104,6 +118,24 @@ func resolveTokenField(requireResponses, isReasoner bool) MaxTokensField {
 	}
 }
 
+// isDeepSeekModel returns true for DeepSeek model IDs, including
+// namespaced variants like deepseek-ai/deepseek-v3.2-maas.
+func isDeepSeekModel(model string) bool {
+	return strings.Contains(model, "deepseek-")
+}
+
+// isKimiModel returns true for Kimi model IDs, including
+// namespaced variants like moonshotai/kimi-k3.
+func isKimiModel(model string) bool {
+	return strings.Contains(model, "kimi-")
+}
+
+// isKimiK3Model returns true for Kimi K3 model IDs, including
+// namespaced variants like moonshotai/kimi-k3.
+func isKimiK3Model(model string) bool {
+	return model == "kimi-k3" || strings.HasSuffix(model, "/kimi-k3")
+}
+
 // ResolveCapabilities returns the capability set for a given model name and
 // provider base URL. The base URL is required for transport-conditional
 // capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
@@ -111,17 +143,16 @@ func resolveTokenField(requireResponses, isReasoner bool) MaxTokensField {
 // default to false.
 func ResolveCapabilities(model, baseURL string) Capabilities {
 	v := parseGPTVersion(model)
-	isDeepSeek := strings.Contains(model, "deepseek-")
 	isReasoner := strings.HasPrefix(model, "o1") ||
 		strings.HasPrefix(model, "o3") ||
 		isGpt5OrNewer(v)
 	requireResponses := isGpt54OrNewer(model)
 
 	caps := Capabilities{
-		IsDeepSeek: isDeepSeek,
+		IsDeepSeek: isDeepSeekModel(model),
 	}
 
-	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
+	if isDeepSeekModel(model) && strings.Contains(baseURL, "aiplatform.googleapis.com") {
 		caps.RequiresVertexThinkingKwargs = true
 	}
 
@@ -134,7 +165,17 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		caps.RequiresResponsesAPI = true
 	}
 
-	caps.MaxTokensField = resolveTokenField(requireResponses, isReasoner)
+	if isKimiModel(model) {
+		caps.SupportsReasoningContent = true
+		if isKimiK3Model(model) {
+			caps.SupportsReasoningEffort = true
+		}
+	}
+
+	caps.SupportsReasoningContent = caps.SupportsReasoningContent || isDeepSeekModel(model)
+
+	isCompletionTokensModel := isReasoner || isKimiK3Model(model)
+	caps.MaxTokensField = resolveTokenField(requireResponses, isCompletionTokensModel)
 
 	return caps
 }

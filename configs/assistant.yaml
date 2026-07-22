@@ -20,6 +20,14 @@ PROVIDERS:
     URL: "https://api.deepseek.com"
     API_KEY: "${DEEPSEEK_API_KEY}"
     MAX_TOKENS: 32768
+  kimi:
+    TYPE: "kimi"
+    MODEL: "kimi-k3"
+    URL: "https://api.moonshot.ai/v1"
+    API_KEY: "${MOONSHOT_API_KEY}"
+    MAX_TOKENS: 32768
+    HEADERS:
+      reasoning_effort: "max"
   vertex-deepseek:
     TYPE: "deepseek"
     MODEL: "deepseek-ai/deepseek-v3.2-maas"
@@ -110,6 +118,12 @@ MODELS:
       HIT:      0.056
       MISS:     0.56
       COMP:     1.68
+  "kimi-k3":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.3
+      MISS:     3.0
+      COMP:     15.0
   "gemini-3-flash-preview":
     CONTEXT_WINDOW: 200000
     PRICING:
