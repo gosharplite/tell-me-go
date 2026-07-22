@@ -235,19 +235,20 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		applyPreparedParts(history, prepared)
 	}
 
+	// Register cleanup for all exit paths. Per-turn files are useless
+	// after this call — the orchestrator retries by rebuilding from
+	// scratch, triggering fresh uploads.
+	if ta != nil {
+		defer ta.release(context.Background(), c)
+	}
+
 	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, ta)
 	if err != nil {
-		if ta != nil {
-			ta.release(context.Background(), c)
-		}
 		return nil, nil, err
 	}
 	endpoint := c.resolveEndpoint(reqPayload)
 	req, err := c.createHTTPRequest(ctx, reqPayload)
 	if err != nil {
-		if ta != nil {
-			ta.release(context.Background(), c)
-		}
 		return nil, nil, err
 	}
 
@@ -256,19 +257,11 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	ttfb := time.Since(startTime) // Time To First Byte
 
 	if err != nil {
-		if ta != nil {
-			ta.release(context.Background(), c)
-		}
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
-
-	// Defer cleanup on success
-	if ta != nil {
-		defer ta.release(context.Background(), c)
-	}
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
