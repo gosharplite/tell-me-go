@@ -118,6 +118,24 @@ func resolveTokenField(requireResponses, isReasoner bool) MaxTokensField {
 	}
 }
 
+// isDeepSeekModel returns true for DeepSeek model IDs, including
+// namespaced variants like deepseek-ai/deepseek-v3.2-maas.
+func isDeepSeekModel(model string) bool {
+	return strings.Contains(model, "deepseek-")
+}
+
+// isKimiModel returns true for Kimi model IDs, including
+// namespaced variants like moonshotai/kimi-k3.
+func isKimiModel(model string) bool {
+	return strings.Contains(model, "kimi-")
+}
+
+// isKimiK3Model returns true for Kimi K3 model IDs, including
+// namespaced variants like moonshotai/kimi-k3.
+func isKimiK3Model(model string) bool {
+	return model == "kimi-k3" || strings.HasSuffix(model, "/kimi-k3")
+}
+
 // ResolveCapabilities returns the capability set for a given model name and
 // provider base URL. The base URL is required for transport-conditional
 // capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
@@ -125,31 +143,18 @@ func resolveTokenField(requireResponses, isReasoner bool) MaxTokensField {
 // default to false.
 func ResolveCapabilities(model, baseURL string) Capabilities {
 	v := parseGPTVersion(model)
-	isDeepSeek := strings.Contains(model, "deepseek-")
 	isReasoner := strings.HasPrefix(model, "o1") ||
 		strings.HasPrefix(model, "o3") ||
 		isGpt5OrNewer(v)
 	requireResponses := isGpt54OrNewer(model)
 
 	caps := Capabilities{
-		IsDeepSeek: isDeepSeek,
+		IsDeepSeek: isDeepSeekModel(model),
 	}
 
-	// Kimi models: all use reasoning_content like DeepSeek
-	isKimi := strings.Contains(model, "kimi-")
-	isKimiK3 := model == "kimi-k3" || strings.HasSuffix(model, "/kimi-k3")
-	if isKimi {
-		caps.SupportsReasoningContent = true
-		// Only K3 uses top-level reasoning_effort; K2.x use the thinking param
-		if isKimiK3 {
-			caps.SupportsReasoningEffort = true
-		}
-	}
-
-	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
+	if isDeepSeekModel(model) && strings.Contains(baseURL, "aiplatform.googleapis.com") {
 		caps.RequiresVertexThinkingKwargs = true
 	}
-	caps.SupportsReasoningContent = caps.SupportsReasoningContent || isDeepSeek
 
 	if isReasoner {
 		caps.UseDeveloperRole = true
@@ -160,8 +165,16 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		caps.RequiresResponsesAPI = true
 	}
 
-	// kimi-k3 is a reasoning model: use max_completion_tokens like o-series / gpt-5.x
-	isCompletionTokensModel := isReasoner || isKimiK3
+	if isKimiModel(model) {
+		caps.SupportsReasoningContent = true
+		if isKimiK3Model(model) {
+			caps.SupportsReasoningEffort = true
+		}
+	}
+
+	caps.SupportsReasoningContent = caps.SupportsReasoningContent || isDeepSeekModel(model)
+
+	isCompletionTokensModel := isReasoner || isKimiK3Model(model)
 	caps.MaxTokensField = resolveTokenField(requireResponses, isCompletionTokensModel)
 
 	return caps
