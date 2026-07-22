@@ -203,3 +203,8 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 
 	return results, nil
 }
+
+// ExtractDocument is not supported by Gemini.
+func (c *Client) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}

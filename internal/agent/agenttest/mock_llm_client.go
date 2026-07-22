@@ -86,3 +86,8 @@ func (m *MockLLMClient) Generate(ctx context.Context, input []*llm.Content, tool
 
 	return m.SendChat(ctx, input, tools, resolver)
 }
+
+// ExtractDocument is a stub that returns ErrNotImplemented.
+func (m *MockLLMClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}

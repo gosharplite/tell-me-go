@@ -65,6 +65,10 @@ func (m *mockExtendedClient) RefreshAuth() error {
 	return nil
 }
 
+func (m *mockExtendedClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}
+
 // assertPanic asserts that fn panics with a message containing wantMsg.
 func assertPanic(t *testing.T, fn func(), wantMsg string) {
 	t.Helper()

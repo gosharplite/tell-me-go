@@ -19,8 +19,8 @@ type namedClient struct {
 
 // FailoverGateway implements llm.ExtendedClient by iterating through an ordered
 // list of provider clients on Generate, falling through on transient errors.
-// Non-Generate methods (SendChat, GenerateImages, RefreshAuth) delegate to the
-// primary (first) client.
+// Non-Generate methods (SendChat, GenerateImages, ExtractDocument, RefreshAuth)
+// delegate to the primary (first) client.
 //
 // Separation of concerns:
 //
@@ -112,4 +112,9 @@ func (fg *failoverGateway) GenerateImages(ctx context.Context, model, prompt str
 // RefreshAuth delegates to the primary client.
 func (fg *failoverGateway) RefreshAuth() error {
 	return fg.clients[0].Client.RefreshAuth()
+}
+
+// ExtractDocument delegates to the primary client.
+func (fg *failoverGateway) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return fg.clients[0].Client.ExtractDocument(ctx, data, filename)
 }

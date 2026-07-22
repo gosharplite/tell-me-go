@@ -41,6 +41,10 @@ func (m *goldenPathMockClient) GenerateImages(ctx context.Context, model, prompt
 
 func (m *goldenPathMockClient) RefreshAuth() error { return nil }
 
+func (m *goldenPathMockClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}
+
 // TestGoldenPath_ConfigToShutdown exercises the full vertical:
 // DI bootstrap → agent init → chat → graceful shutdown.
 // It runs in-process under -short and -race.

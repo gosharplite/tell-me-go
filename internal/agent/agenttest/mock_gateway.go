@@ -61,3 +61,8 @@ func (m *MockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 // RefreshAuth is a stub that always returns nil. It is not used by
 // current consumers and does not participate in spy logging.
 func (m *MockGateway) RefreshAuth() error { return nil }
+
+// ExtractDocument is a stub that returns ErrNotImplemented.
+func (m *MockGateway) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}

@@ -736,7 +736,11 @@ func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Conte
 }
 
 func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return nil, fmt.Errorf("GenerateImages not implemented for OpenAI")
+	return nil, llm.ErrNotImplemented
+}
+
+func (c *client) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return c.extractDocument(ctx, data, filename)
 }
 
 func (c *client) RefreshAuth() error {

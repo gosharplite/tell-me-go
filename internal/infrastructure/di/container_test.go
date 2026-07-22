@@ -76,6 +76,10 @@ func (m *mockLLMClient) RefreshAuth() error {
 	return nil
 }
 
+func (m *mockLLMClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}
+
 func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	m.generateCalls++
 	if m.GenerateFunc != nil {

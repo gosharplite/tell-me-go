@@ -179,8 +179,9 @@ func DefaultPolicy() *Policy {
 			"remove_skill":  true,
 
 			// Media Tools
-			"create_image": true,
-			"read_image":   true,
+			"create_image":  true,
+			"read_image":    true,
+			"read_document": true,
 		},
 		AutoApprovableCommands: map[string]bool{
 			"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,

@@ -251,6 +251,10 @@ func (m *mockExtendedClient) RefreshAuth() error {
 	return nil
 }
 
+func (m *mockExtendedClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", llm.ErrNotImplemented
+}
+
 func (m *mockExtendedClient) Close() error {
 	m.closeCalls++
 	if m.CloseFunc != nil {
