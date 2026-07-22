@@ -380,7 +380,7 @@ Each sub-agent gets a role-keyed prefix in `/tmp/ssh-sprawl-paths.env`:
 | tester | `T_` | `T_HOST`, `T_HOME`, `T_CONFIG`, `T_PROVIDER` |
 | reviewer | `R_` | `R_HOST`, `R_HOME`, `R_CONFIG`, `R_PROVIDER` |
 
-Keys include sanitized host and provider names (e.g., `A_websc_34_80_110_236_deepseek_pro`), allowing one agent per role per provider per host with no collisions.
+Keys include sanitized host and provider names (e.g., `A_user_example_host_deepseek_pro`), allowing one agent per role per provider per host with no collisions.
 
 ### The SSH Three-Step Protocol
 
@@ -602,21 +602,21 @@ Flopsy eliminates this. Role aliases are **discovered at source time** from a `c
 The `ait-base/configs/variations/` directory contains lightweight YAML files, each with just `MODE` and `PERSON`:
 
 ```yaml
-# configs/variations/tony.yaml
-MODE: "tony"
-PERSON: "Your name is Tony, an AI assistant who..."
+# configs/variations/alice.yaml
+MODE: "alice"
+PERSON: "Your name is Alice, an AI assistant who..."
 
-# configs/variations/helen.yaml
-MODE: "helen"
-PERSON: "Your name is Helen, an AI assistant who..."
+# configs/variations/carol.yaml
+MODE: "carol"
+PERSON: "Your name is Carol, an AI assistant who..."
 ```
 
 When you run `source flopsy.sh -n`, Flopsy:
 
 1. Scans `configs/variations/` for `*.yaml` files
 2. Reads each file's `MODE` and `PERSON`
-3. Takes the **first letter** of the filename as the shell alias — `tony.yaml` → `t`, `helen.yaml` → `h`
-4. Generates a full config (`configs/tony.yaml`, `configs/helen.yaml`) by merging the variation's `MODE` + `PERSON` with `butler.yaml` (all providers, pricing, tools)
+3. Takes the **first letter** of the filename as the shell alias — `alice.yaml` → `a`, `carol.yaml` → `c`
+4. Generates a full config (`configs/alice.yaml`, `configs/carol.yaml`) by merging the variation's `MODE` + `PERSON` with `butler.yaml` (all providers, pricing, tools)
 5. Defines shell functions dynamically via `eval`
 
 ### Validation Rules
@@ -624,7 +624,7 @@ When you run `source flopsy.sh -n`, Flopsy:
 Flopsy enforces two constraints at creation time:
 
 - **`b` is reserved** for butler — no variation file can start with `b`
-- **Unique first letters** — `tony.yaml` and `tester.yaml` can't coexist (both would claim `t`)
+- **Unique first letters** — `alice.yaml` and `architect.yaml` can't coexist (both would claim `a`)
 
 Violations abort creation and clean up the partial workspace.
 
@@ -632,17 +632,17 @@ Violations abort creation and clean up the partial workspace.
 
 ```bash
 source flopsy.sh -n studio vertex-flash
-# Scans variations/, discovers: tony→t, helen→h, jenny→j, micole→m
+# Scans variations/, discovers: alice→a, carol→c, dave→d, eve→e
 
 b "Hello!"   # Butler (always available)
-t "Hello!"   # Tony (from variations/tony.yaml)
-h "Hello!"   # Helen (from variations/helen.yaml)
-j "Hello!"   # Jenny (from variations/jenny.yaml)
-m "Hello!"   # Micole (from variations/micole.yaml)
+a "Hello!"   # Alice (from variations/alice.yaml)
+c "Hello!"   # Carol (from variations/carol.yaml)
+d "Hello!"   # Dave (from variations/dave.yaml)
+e "Hello!"   # Eve (from variations/eve.yaml)
 
 # Mid-session provider switch — aliases survive:
 source flopsy.sh openai
-t "Same Tony, different model"
+a "Same Alice, different model"
 ```
 
 The summary on source shows all discovered commands:
@@ -650,10 +650,10 @@ The summary on source shows all discovered commands:
 ```
 Commands:
   b "prompt"        butler (assistant)
-  t "prompt"        tony
-  h "prompt"        helen
-  j "prompt"        jenny
-  m "prompt"        micole
+  a "prompt"        alice
+  c "prompt"        carol
+  d "prompt"        dave
+  e "prompt"        eve
 ```
 
 ### What It Solves vs. Stage 3 (Dobby)
