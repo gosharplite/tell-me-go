@@ -61,5 +61,13 @@ func (lc *lazyClient) RefreshAuth() error {
 	return lc.client.RefreshAuth()
 }
 
+func (lc *lazyClient) ExtractDocument(ctx stdctx.Context, data []byte, filename string) (string, error) {
+	lc.init()
+	if lc.err != nil {
+		return "", fmt.Errorf("LLM provider initialization failed: %w", lc.err)
+	}
+	return lc.client.ExtractDocument(ctx, data, filename)
+}
+
 // Ensure LazyClient satisfies llm.ExtendedClient at compile time.
 var _ llm.ExtendedClient = (*lazyClient)(nil)

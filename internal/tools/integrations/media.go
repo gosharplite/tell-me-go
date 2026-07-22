@@ -5,6 +5,7 @@ package integrations
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -172,6 +173,48 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 	}, nil
 }
 
+func (m *mediaManager) readDocument(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	if m.client == nil {
+		return tools.ToolResult{}, tools.ErrNotImplemented
+	}
+
+	var a struct {
+		Filepath string `json:"filepath"`
+	}
+	if err := tools.UnmarshalArgs(args, &a); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("unmarshal args: %w", err)
+	}
+
+	if m.sm == nil {
+		return tools.ToolResult{}, fmt.Errorf("path validator is required")
+	}
+
+	safePath, err := m.sm.IsPathSafe(a.Filepath)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("security validation failed for path %s: %w", a.Filepath, err)
+	}
+
+	data, err := m.fs.ReadFile(ctx, safePath)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("read file %s: %w", safePath, err)
+	}
+
+	stop := telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)
+	defer stop()
+
+	text, err := m.client.ExtractDocument(ctx, data, filepath.Base(safePath))
+	if err != nil {
+		if errors.Is(err, llm.ErrNotImplemented) {
+			return tools.ToolResult{}, tools.ErrNotImplemented
+		}
+		return tools.ToolResult{}, fmt.Errorf("extract document: %w", err)
+	}
+
+	return tools.ToolResult{
+		Text: fmt.Sprintf("--- Extracted content from %s ---\n%s", safePath, text),
+	}, nil
+}
+
 func registerMedia(r tools.Registry, fs persistence.FileSystem, sm security.Manager, client llm.LLMClient, assetsDir string) error {
 	m := newMediaManager(fs, sm, client, assetsDir)
 
@@ -214,6 +257,23 @@ func registerMedia(r tools.Registry, fs persistence.FileSystem, sm security.Mana
 			Required: []string{"filepath"},
 		},
 	}, m.readImage); err != nil {
+		return err
+	}
+
+	if err := r.RegisterToToolkit("media", &tools.ToolDeclaration{
+		Name:        "read_document",
+		Description: "Extracts text content from a document file (PDF, DOCX, MD, TXT, etc.) using the provider's document extraction API. Returns the full extracted text.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the document file (e.g., './assets/report.pdf').",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, m.readDocument); err != nil {
 		return err
 	}
 	return nil

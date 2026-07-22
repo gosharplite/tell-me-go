@@ -81,6 +81,10 @@ type AssetResolver interface {
 type LLMClient interface {
 	SendChat(ctx context.Context, history []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver) (*Content, *Metrics, error)
 	GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
+	// ExtractDocument extracts text content from a document (PDF, DOCX, MD, etc.)
+	// by uploading it to the provider's file extraction API. Returns the extracted
+	// text. Providers that don't support document extraction return ErrNotImplemented.
+	ExtractDocument(ctx context.Context, data []byte, filename string) (string, error)
 	RefreshAuth() error
 }
 
@@ -96,6 +100,11 @@ var (
 
 	// ErrMaxTurnsReached is returned when the model reaches the turn limit.
 	ErrMaxTurnsReached = errors.New("maximum tool execution turns reached")
+
+	// ErrNotImplemented is returned by provider methods that are not supported
+	// by a particular provider (e.g., GenerateImages on OpenAI, ExtractDocument
+	// on Anthropic/Gemini).
+	ErrNotImplemented = errors.New("not implemented for this provider")
 
 	// errBudgetExceeded is returned when the session cost exceeds the configured budget.
 	errBudgetExceeded = errors.New("session budget exceeded")

@@ -739,6 +739,10 @@ func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 	return nil, fmt.Errorf("GenerateImages not implemented for OpenAI")
 }
 
+func (c *client) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return c.extractDocument(ctx, data, filename)
+}
+
 func (c *client) RefreshAuth() error {
 	c.authenticator.Invalidate()
 	return nil

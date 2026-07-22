@@ -589,13 +589,13 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 		},
 		{
 			name:            "network wraps error",
-			failAfter:       27,
+			failAfter:       28,
 			wantSubstring:   "network",
 			setAtlassianEnv: true,
 		},
 		{
 			name:            "teams wraps error",
-			failAfter:       29,
+			failAfter:       30,
 			wantSubstring:   "teams",
 			setAtlassianEnv: true,
 		},

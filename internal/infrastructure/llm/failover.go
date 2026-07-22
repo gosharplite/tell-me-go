@@ -113,3 +113,8 @@ func (fg *failoverGateway) GenerateImages(ctx context.Context, model, prompt str
 func (fg *failoverGateway) RefreshAuth() error {
 	return fg.clients[0].Client.RefreshAuth()
 }
+
+// ExtractDocument delegates to the primary client.
+func (fg *failoverGateway) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return fg.clients[0].Client.ExtractDocument(ctx, data, filename)
+}
