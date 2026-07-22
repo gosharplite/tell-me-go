@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -230,6 +231,84 @@ type imageURLValue struct {
 	URL string `json:"url"`
 }
 
+// turnAssets carries turn-scoped file-upload state: the binding from
+// domain Parts to Kimi server file IDs, plus a list of uploaded file
+// IDs for post-response cleanup. It is owned by a single SendChat call
+// and never shared across goroutines.
+type turnAssets struct {
+	// bindings maps parts to their uploaded file IDs (ms:// references).
+	bindings map[*llm.Part]string
+	// uploaded is the ordered list of file IDs for cleanup.
+	uploaded []string
+}
+
+func newTurnAssets() *turnAssets {
+	return &turnAssets{
+		bindings: make(map[*llm.Part]string),
+	}
+}
+
+// resolveURL returns the image_url value for a part: ms://{file_id}
+// if it was uploaded, or a base64 data URI otherwise. Nil-safe —
+// returns a base64 data URI when ta is nil (no uploads occurred).
+func (ta *turnAssets) resolveURL(p *llm.Part) string {
+	if ta != nil {
+		if fileID, ok := ta.bindings[p]; ok {
+			return "ms://" + fileID
+		}
+	}
+	return fmt.Sprintf("data:%s;base64,%s",
+		p.InlineData.MIMEType,
+		base64.StdEncoding.EncodeToString(p.InlineData.Data))
+}
+
+// release deletes all files uploaded during this turn. Best-effort;
+// individual failures are logged. Uses a detached context so cleanup
+// proceeds even if the caller's context is at deadline.
+func (ta *turnAssets) release(ctx context.Context, c *client) {
+	if len(ta.uploaded) == 0 {
+		return
+	}
+	// Detach from the caller's context — cleanup is best-effort and
+	// must not be gated by the response deadline.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	for _, id := range ta.uploaded {
+		if err := c.deleteFile(cleanupCtx, id); err != nil {
+			c.logger.Warn("cleanup_uploaded_file_failed",
+				"file_id", id,
+				"error", err.Error(),
+			)
+		}
+	}
+}
+
+// collectHistoryParts gathers all non-system parts from history for
+// asset preparation.
+func collectHistoryParts(history []*llm.Content) []*llm.Part {
+	var parts []*llm.Part
+	for _, h := range history {
+		if h.Role == "system" {
+			continue
+		}
+		parts = append(parts, h.Parts...)
+	}
+	return parts
+}
+
+// applyPreparedParts writes prepared parts back into history, matching
+// by index. Call after prepareImageAssets has mutated parts in place.
+func applyPreparedParts(history []*llm.Content, prepared []*llm.Part) {
+	idx := 0
+	for _, h := range history {
+		if h.Role == "system" {
+			continue
+		}
+		h.Parts = prepared[idx : idx+len(h.Parts)]
+		idx += len(h.Parts)
+	}
+}
+
 type message struct {
 	Role             string      `json:"role"`
 	Content          interface{} `json:"content,omitempty"` // string, []requestContentBlock, or []any (mixed text+image)
@@ -334,7 +413,7 @@ func (c *client) appendMessagesFromHistoryItem(
 	ctx context.Context,
 	sink openaiSink,
 	h *llm.Content,
-	resolver llm.AssetResolver,
+	ta *turnAssets,
 	personaInjected *bool,
 ) error {
 	role := normalizeRole(h.Role)
@@ -347,16 +426,6 @@ func (c *client) appendMessagesFromHistoryItem(
 
 	if len(otherParts) == 0 {
 		return nil
-	}
-
-	// Hydrate lazy-loaded image assets before extraction.
-	// Parts with AssetID whose InlineData.Data is nil are resolved
-	// from the AssetResolver so they can be serialized as image_url
-	// blocks. Gated on SupportsVision — non-vision models skip.
-	var err error
-	otherParts, err = c.hydrateImageAssets(ctx, otherParts, resolver)
-	if err != nil {
-		return err
 	}
 
 	// Separate image parts before classification — classifyParts only
@@ -382,7 +451,7 @@ func (c *client) appendMessagesFromHistoryItem(
 		// Images are placed before text (images-first ordering). This is
 		// intentional for the describe-this-image use case — interleaved
 		// part ordering within a single history item is not preserved.
-		blocks := imageBlocks(imageParts)
+		blocks := imageBlocks(imageParts, ta)
 		if text != "" {
 			blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
 		}
@@ -469,21 +538,60 @@ func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, reso
 	return out, nil
 }
 
+// prepareImageAssets hydrates and uploads image parts for a single
+// turn. Returns the turnAssets with file bindings and the prepared
+// (possibly cloned) part slice. Caller must call release after the
+// LLM response.
+func (c *client) prepareImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) (*turnAssets, []*llm.Part, error) {
+	ta := newTurnAssets()
+
+	out, err := c.hydrateImageAssets(ctx, parts, resolver)
+	if err != nil {
+		return ta, out, err
+	}
+
+	// Upload fresh images to Kimi file API
+	if !c.capabilities.SupportsVision || !strings.Contains(c.baseURL, "api.moonshot.ai") {
+		return ta, out, nil
+	}
+	for _, p := range out {
+		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+			continue
+		}
+		if _, ok := ta.bindings[p]; ok {
+			continue // already uploaded in this turn
+		}
+		ext := "png"
+		if p.InlineData.MIMEType != "" {
+			if parts := strings.Split(p.InlineData.MIMEType, "/"); len(parts) == 2 {
+				ext = parts[1]
+			}
+		}
+		filename := fmt.Sprintf("image.%s", ext)
+		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, "image")
+		if err != nil {
+			ta.release(ctx, c)
+			return ta, out, fmt.Errorf("upload image: %w", err)
+		}
+		ta.bindings[p] = fileID
+		ta.uploaded = append(ta.uploaded, fileID)
+	}
+	return ta, out, nil
+}
+
 // imageBlocks converts InlineData parts to image_url content blocks.
-// Returns nil if there are no InlineData parts.
-func imageBlocks(parts []*llm.Part) []any {
+// Uses turnAssets to resolve ms:// URLs for uploaded files; falls
+// back to base64 data URIs for non-uploaded parts.
+func imageBlocks(parts []*llm.Part, ta *turnAssets) []any {
 	var blocks []any
 	for _, p := range parts {
 		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 			continue
 		}
+		url := ta.resolveURL(p)
 		blocks = append(blocks, imageURLBlock{
-			Type: "image_url",
-			ImageURL: imageURLValue{
-				URL: fmt.Sprintf("data:%s;base64,%s",
-					p.InlineData.MIMEType,
-					base64.StdEncoding.EncodeToString(p.InlineData.Data)),
-			},
+			Type:     "image_url",
+			ImageURL: imageURLValue{URL: url},
 		})
 	}
 	return blocks
@@ -645,6 +753,30 @@ func (c *client) ResetConnections() {
 	if closer, ok := c.transport.(idleConnectionCloser); ok {
 		closer.CloseIdleConnections()
 	}
+}
+
+// newAuthenticatedRequest creates an HTTP request with all headers applied:
+// custom provider headers (c.headers) and authenticator headers (by name,
+// not by map iteration value). Used by both chat completions and file API
+// endpoints for consistent authentication.
+func (c *client) newAuthenticatedRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	// Custom provider headers (e.g. reasoning_effort)
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+	// Authenticator headers (e.g. Authorization, x-api-key)
+	authReq := &auth.Request{Headers: make(map[string]string)}
+	if err := c.authenticator.Apply(ctx, authReq); err != nil {
+		return nil, err
+	}
+	for k, v := range authReq.Headers {
+		req.Header.Set(k, v)
+	}
+	return req, nil
 }
 
 // truncate returns a string truncated to n characters with "..." appended.
