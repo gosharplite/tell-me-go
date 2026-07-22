@@ -51,8 +51,20 @@ type Capabilities struct {
 	// as a coupled boolean plus an implicit precedence rule. See
 	// MaxTokensField for the per-value semantics.
 	MaxTokensField MaxTokensField
-	// IsDeepSeek indicates if the model follows DeepSeek-specific conventions (e.g., reasoning_content in assistant messages).
+	// IsDeepSeek indicates if the model follows DeepSeek-specific conventions.
+	// For reasoning_content behavior, prefer SupportsReasoningContent which
+	// covers both DeepSeek and Kimi models. IsDeepSeek remains for
+	// DeepSeek-specific token-counting conventions (prompt_cache_hit_tokens, etc.).
 	IsDeepSeek bool
+	// SupportsReasoningContent indicates the model uses the reasoning_content
+	// field on assistant messages for reasoning/thinking traces. When true,
+	// thought parts are serialized into reasoning_content rather than being
+	// wrapped in <thought> XML tags, and reasoning_content is always included
+	// on assistant messages (even when empty) to satisfy the provider's
+	// multi-turn protocol.
+	//
+	// Set for: DeepSeek reasoner, Kimi K3, Kimi K2.7, Kimi K2.6 (thinking mode).
+	SupportsReasoningContent bool
 	// RequiresVertexThinkingKwargs indicates that the transport silently
 	// disables DeepSeek thinking mode unless the non-standard parameter
 	// chat_template_kwargs.thinking=true is included in the request body.
@@ -121,9 +133,22 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		IsDeepSeek: isDeepSeek,
 	}
 
+	// Kimi models: all use reasoning_content like DeepSeek
+	isKimi := strings.HasPrefix(model, "kimi-")
+	if isKimi {
+		caps.SupportsReasoningContent = true
+		// Only K3 uses top-level reasoning_effort; K2.x use the thinking param
+		if model == "kimi-k3" {
+			caps.SupportsReasoningEffort = true
+			// K3 is a reasoning model → use max_completion_tokens
+			caps.MaxTokensField = MaxTokensFieldCompletion
+		}
+	}
+
 	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
 		caps.RequiresVertexThinkingKwargs = true
 	}
+	caps.SupportsReasoningContent = caps.SupportsReasoningContent || isDeepSeek
 
 	if isReasoner {
 		caps.UseDeveloperRole = true

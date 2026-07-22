@@ -37,7 +37,7 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 	var err error
 
 	switch p.Type {
-	case "openai", "deepseek":
+	case "openai", "deepseek", "kimi":
 		baseClient = openai.NewClient(p.URL, p.Model, authenticator,
 			openai.WithHeaders(p.Headers),
 			openai.WithPersona(persona),
@@ -213,6 +213,12 @@ var authStrategies = map[string]authStrategy{
 			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
 				return auth.NewVertexAuth(), nil
 			}
+			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+		}
+		return &auth.BearerAuth{Token: p.APIKey}, nil
+	},
+	"kimi": func(p *config.LLMProvider) (auth.Authenticator, error) {
+		if p.APIKey == "" {
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
 		return &auth.BearerAuth{Token: p.APIKey}, nil
