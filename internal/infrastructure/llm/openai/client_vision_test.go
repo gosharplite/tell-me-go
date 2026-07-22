@@ -106,7 +106,10 @@ func TestVisionDisabled_KeepsStringContent(t *testing.T) {
 }
 
 func TestVision_KimiImagePayload(t *testing.T) {
-	c := NewClient("https://api.moonshot.ai/v1", "kimi-k3",
+	// Use a non-Kimi URL so uploadImageAssets is skipped (gated on
+	// api.moonshot.ai). SupportsVision is set from model name "kimi-k3",
+	// so the base64 image path is still exercised.
+	c := NewClient("", "kimi-k3",
 		&auth.BearerAuth{Token: "test"},
 		WithLogger(&ports.NoOpLogger{}),
 	)
@@ -164,6 +167,53 @@ func TestVision_KimiImagePayload(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "describe this") {
 		t.Error("JSON payload missing text content")
+	}
+}
+
+func TestVision_KimiMsURLPayload(t *testing.T) {
+	c := NewClient("", "kimi-k3",
+		&auth.BearerAuth{Token: "test"},
+		WithLogger(&ports.NoOpLogger{}),
+	)
+	if !c.capabilities.SupportsVision {
+		t.Fatal("kimi-k3 should have SupportsVision")
+	}
+
+	// Build history with an image part that has AssetID set (simulating
+	// a previously uploaded file). imageBlocks should produce ms:// URL.
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{AssetID: "file-abc123", InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
+			{Text: "describe this"},
+		},
+	}}
+
+	msgs, err := c.toStandardMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toStandardMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	msg := msgs[0]
+
+	if _, ok := msg.Content.([]any); !ok {
+		t.Fatalf("expected []any content, got %T", msg.Content)
+	}
+
+	b, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	// Verify ms:// URL is used (not base64 data URI)
+	if !strings.Contains(string(b), "ms://file-abc123") {
+		t.Error("JSON payload missing ms://file-abc123 URL")
+	}
+	if strings.Contains(string(b), "data:image/png;base64") {
+		t.Error("JSON payload should NOT contain base64 data URI when AssetID is set")
 	}
 }
 

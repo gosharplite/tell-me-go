@@ -31,6 +31,9 @@ type client struct {
 	maxTokens      int
 	logger         ports.Logger
 	timeout        time.Duration
+	// uploadedFiles tracks file IDs uploaded during the current SendChat
+	// call, for cleanup after the LLM response.
+	uploadedFiles []string
 }
 
 // openaiOption defines a functional option for configuring the OpenAI Client.
@@ -358,9 +361,9 @@ func (c *client) appendMessagesFromHistoryItem(
 	if err != nil {
 		return err
 	}
-
-	// Separate image parts before classification — classifyParts only
-	// handles text and function calls.
+	if _, err := c.uploadImageAssets(ctx, otherParts); err != nil {
+		return err
+	}
 	imageParts, textParts := extractImageParts(otherParts)
 
 	text, reasoning, toolCalls, err := c.classifyParts(textParts)
@@ -469,21 +472,79 @@ func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, reso
 	return out, nil
 }
 
+// uploadImageAssets uploads InlineData parts to the Kimi file API and
+// sets Part.AssetID to the returned file ID. Parts that already have
+// an AssetID (uploaded previously or reloaded from persistence) are
+// skipped. Gated on SupportsVision and a non-empty base URL that is
+// a Kimi endpoint (api.moonshot.ai). Returns the set of file IDs
+// uploaded so the caller can track them for cleanup.
+func (c *client) uploadImageAssets(ctx context.Context, parts []*llm.Part) ([]string, error) {
+	if !c.capabilities.SupportsVision || !strings.Contains(c.baseURL, "api.moonshot.ai") {
+		return nil, nil
+	}
+	var uploaded []string
+	for _, p := range parts {
+		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+			continue
+		}
+		if p.AssetID != "" {
+			continue // already uploaded or reloaded
+		}
+		// Determine MIME type for filename extension
+		ext := "png"
+		if p.InlineData.MIMEType != "" {
+			if mimeParts := strings.Split(p.InlineData.MIMEType, "/"); len(mimeParts) == 2 {
+				ext = mimeParts[1]
+			}
+		}
+		filename := fmt.Sprintf("image.%s", ext)
+		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, "image")
+		if err != nil {
+			return uploaded, fmt.Errorf("upload image: %w", err)
+		}
+		p.AssetID = fileID
+		uploaded = append(uploaded, fileID)
+		c.uploadedFiles = append(c.uploadedFiles, fileID)
+	}
+	return uploaded, nil
+}
+
+// cleanupUploadedFiles deletes all files uploaded during the current
+// SendChat call. Best-effort — individual delete failures are logged
+// but do not fail the cleanup. Called after a successful LLM response.
+func (c *client) cleanupUploadedFiles(ctx context.Context) {
+	for _, id := range c.uploadedFiles {
+		if err := c.deleteFile(ctx, id); err != nil {
+			c.logger.Warn("cleanup_uploaded_file_failed",
+				"file_id", id,
+				"error", err.Error(),
+			)
+		}
+	}
+	c.uploadedFiles = c.uploadedFiles[:0]
+}
+
 // imageBlocks converts InlineData parts to image_url content blocks.
-// Returns nil if there are no InlineData parts.
+// Parts with an AssetID that starts with "file-" are referenced via
+// ms://{file_id} (uploaded files). Otherwise, InlineData is encoded
+// as a base64 data URI.
 func imageBlocks(parts []*llm.Part) []any {
 	var blocks []any
 	for _, p := range parts {
 		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 			continue
 		}
+		var url string
+		if strings.HasPrefix(p.AssetID, "file-") {
+			url = "ms://" + p.AssetID
+		} else {
+			url = fmt.Sprintf("data:%s;base64,%s",
+				p.InlineData.MIMEType,
+				base64.StdEncoding.EncodeToString(p.InlineData.Data))
+		}
 		blocks = append(blocks, imageURLBlock{
-			Type: "image_url",
-			ImageURL: imageURLValue{
-				URL: fmt.Sprintf("data:%s;base64,%s",
-					p.InlineData.MIMEType,
-					base64.StdEncoding.EncodeToString(p.InlineData.Data)),
-			},
+			Type:     "image_url",
+			ImageURL: imageURLValue{URL: url},
 		})
 	}
 	return blocks

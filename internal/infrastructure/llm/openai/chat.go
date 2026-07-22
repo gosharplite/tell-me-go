@@ -270,10 +270,16 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		}
 	}
 
-	if endpoint == "/responses" {
-		return c.decodeResponsesAPIResponse(resp, startTime, ttfb, endpoint)
+	content, metrics, err := func() (*llm.Content, *llm.Metrics, error) {
+		if endpoint == "/responses" {
+			return c.decodeResponsesAPIResponse(resp, startTime, ttfb, endpoint)
+		}
+		return c.decodeStandardResponse(resp, startTime, ttfb, endpoint)
+	}()
+	if err == nil {
+		c.cleanupUploadedFiles(ctx)
 	}
-	return c.decodeStandardResponse(resp, startTime, ttfb, endpoint)
+	return content, metrics, err
 }
 
 // decodeStandardResponse decodes a /chat/completions JSON response from
