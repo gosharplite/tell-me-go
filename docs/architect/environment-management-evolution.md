@@ -466,3 +466,117 @@ Step ordering matters: workspaces → porter → local artifacts. The tracking f
 | Session lost on local reboot | Remote sessions persist independently |
 | Single-machine bottleneck | Horizontally scalable across hosts |
 | No cross-machine orchestration | Butler orchestrates agents on any reachable host |
+
+---
+
+## Stage 6: Winky — Agent-Deployed Remote Dev Environment
+
+Stage 5 (SSH Sprawl) is designed for the **butler AI** to orchestrate sub-agents. But what about a **human** who wants a quick interactive `tell-me-go` environment on a remote host — without manually copying templates, installing tools, and configuring secrets?
+
+Winky bridges this gap. The butler AI deploys the infrastructure (tools, template, script) to a remote host, then **stops**. The human SSH's in and sources `winky.sh` to pick their own tag and provider.
+
+### The Agent/User Boundary
+
+This is Winky's defining design principle — a hard boundary between what the agent does and what the user does:
+
+| Steps | Who | What |
+|-------|-----|------|
+| **0–5** | **Agent (butler)** | Check host, install tools, create `/tmp/winky/`, deploy `winky.sh` and `ait-base/` |
+| **6** | **User** | SSH in and `source winky.sh -n` to pick their own tag |
+
+The agent **must not** source `winky.sh` or create any `ait-<tag>/` directory. The tag (`coder`, `butler`, `tester`, etc.) is the user's choice.
+
+### Agent Steps (0–5)
+
+**Step 0 — Confirm target host.** Ask the user which host.
+
+**Step 1 — Check tools:**
+```bash
+ssh <host> -- 'for tool in fzf yq tell-me-go; do
+  ls /usr/local/bin/$tool /usr/local/go/bin/$tool $HOME/go/bin/$tool 2>/dev/null | head -1 || echo "$tool: MISSING"
+done'
+```
+
+**Step 2 — Install missing binaries.** Same toolchain as SSH Sprawl (tell-me-go, yq, fzf).
+
+**Step 3 — Create workspace:**
+```bash
+ssh <host> -- 'mkdir -p /tmp/winky'
+```
+
+**Step 4 — Deploy winky.sh:**
+```bash
+scp winky.sh <host>:/tmp/winky/winky.sh
+```
+
+**Step 5 — Deploy ait-base template:**
+```bash
+scp -r ait-base <host>:/tmp/winky/ait-base
+```
+
+After Step 5, the remote contains only:
+```
+/tmp/winky/
+  winky.sh
+  ait-base/
+    configs/
+    docs/
+    output/
+    secrets/
+```
+
+No `ait-<tag>/` directory exists — the agent stopped at the right time. If one does, the agent overstepped.
+
+### User Step (6)
+
+```bash
+ssh <host>
+source /tmp/winky/winky.sh -n
+```
+
+`winky.sh` uses `fzf` to let the user pick a **tag** and **provider**, then creates `ait-<tag>/` from the `ait-base/` template. After creation, it functions identically to Dobby:
+
+```bash
+b "Hello!"   # Butler
+a "Design..."# Architect
+c "Write..." # Coder
+t "Test..."  # Tester
+r "Review..."# Reviewer
+
+# Mid-session provider switch:
+source /tmp/winky/winky.sh openai
+```
+
+The prompt updates to `[tag|provider]` and all helper functions are available.
+
+### What Winky Is (and Isn't)
+
+Winky is essentially **Dobby deployed to a remote host at `/tmp/winky/`**. The script is a Dobby variant with `WINKY_` prefix instead of `DOBBY_`. What makes it unique is not the code — it's the **deployment model**:
+
+| | Dobby | Winky |
+|---|---|---|
+| **Who deploys** | Human (manually) | Butler AI (automated bootstrap) |
+| **Where** | Local machine | Remote host (`/tmp/winky/`) |
+| **Template** | Pre-existing in `dobby/` directory | Deployed by agent via `scp` |
+| **Toolchain** | Pre-existing | Checked + installed by agent |
+| **Tag choice** | Human at source time | Human at source time (agent never picks) |
+| **After setup** | Identical experience | Identical experience |
+
+### Comparison Across Remote Approaches
+
+| | Stage 5 (SSH Sprawl) | Stage 6 (Winky) |
+|---|---|---|
+| **Audience** | Butler AI | Human |
+| **Interface** | Raw `tell-me-go` calls via SSH stdin pipe | Interactive shell with `b`/`a`/`c`/`t`/`r` |
+| **Session model** | Single-task sub-agent, then discard | Multi-turn interactive |
+| **Workspace** | Ephemeral `/tmp/dobby.XXXXXX/` | Fixed `/tmp/winky/ait-<tag>/` |
+| **Tag** | Auto-generated hex | Human-chosen |
+| **Setup** | `eval $(ssh-sprawl-agent.sh ...)` per spawn | One-time bootstrap, then `source winky.sh` |
+
+### What It Solves vs. Stage 5
+
+| Limitation (Stage 5) | Stage 6 (Winky) |
+|-----------------------|------------------|
+| Human must manually set up remote env | Butler AI bootstraps everything |
+| Headless — no interactive shell functions | Full Dobby-like interactive experience on remote |
+| Ephemeral workspaces, discarded after task | Persistent workspace, human-managed sessions |
