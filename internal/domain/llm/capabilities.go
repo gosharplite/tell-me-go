@@ -137,10 +137,11 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 
 	// Kimi models: all use reasoning_content like DeepSeek
 	isKimi := strings.Contains(model, "kimi-")
+	isKimiK3 := model == "kimi-k3" || strings.HasSuffix(model, "/kimi-k3")
 	if isKimi {
 		caps.SupportsReasoningContent = true
 		// Only K3 uses top-level reasoning_effort; K2.x use the thinking param
-		if model == "kimi-k3" {
+		if isKimiK3 {
 			caps.SupportsReasoningEffort = true
 		}
 	}
@@ -160,7 +161,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 	}
 
 	// kimi-k3 is a reasoning model: use max_completion_tokens like o-series / gpt-5.x
-	isCompletionTokensModel := isReasoner || model == "kimi-k3"
+	isCompletionTokensModel := isReasoner || isKimiK3
 	caps.MaxTokensField = resolveTokenField(requireResponses, isCompletionTokensModel)
 
 	return caps
