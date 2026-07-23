@@ -72,6 +72,7 @@ func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose 
 		return "", fmt.Errorf("decode upload response: %w", err)
 	}
 
+	// Live api.moonshot.ai returns "ok" (observed 2026-07-23); docs say "ready". Accept both.
 	if fo.Status != "ok" && fo.Status != "ready" {
 		return "", fmt.Errorf("upload status %q (expected ok or ready)", fo.Status)
 	}
