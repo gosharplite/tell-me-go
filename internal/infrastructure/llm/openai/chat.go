@@ -222,13 +222,13 @@ func (c *client) createHTTPRequest(ctx context.Context, payload *chatRequest) (*
 // ---------------------------------------------------------------------------
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	// Prepare image assets for the turn: hydrate from resolver,
-	// upload to Kimi file API. Skip if no vision capability.
+	// Prepare media assets for the turn: hydrate from resolver,
+	// upload to Kimi file API. Skip if no vision/video capability.
 	var ta *turnAssets
-	if c.capabilities.SupportsVision {
+	if c.capabilities.SupportsVision || c.capabilities.SupportsVideo {
 		var prepared []*llm.Part
 		var err error
-		ta, prepared, err = c.prepareImageAssets(ctx, collectHistoryParts(history), resolver)
+		ta, prepared, err = c.prepareMediaAssets(ctx, collectHistoryParts(history), resolver)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -19,6 +19,7 @@ func TestResolveCapabilities(t *testing.T) {
 		isDeepSeek                   bool
 		supportsReasoningContent     bool
 		supportsVision               bool
+		supportsVideo                bool
 		requiresVertexThinkingKwargs bool
 	}{
 		{
@@ -222,6 +223,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  true,
 			supportsVision:           true,
+			supportsVideo:            true,
 			maxTokensField:           MaxTokensFieldCompletion,
 		},
 		{
@@ -231,6 +233,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  true,
 			supportsVision:           true,
+			supportsVideo:            true,
 			maxTokensField:           MaxTokensFieldCompletion,
 		},
 		{
@@ -240,6 +243,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  false,
 			supportsVision:           true,
+			supportsVideo:            true,
 			maxTokensField:           MaxTokensFieldLegacy,
 		},
 		{
@@ -249,6 +253,7 @@ func TestResolveCapabilities(t *testing.T) {
 			supportsReasoningContent: true,
 			supportsReasoningEffort:  false,
 			supportsVision:           true,
+			supportsVideo:            true,
 			maxTokensField:           MaxTokensFieldLegacy,
 		},
 	}
@@ -281,6 +286,9 @@ func TestResolveCapabilities(t *testing.T) {
 			if caps.SupportsVision != tt.supportsVision {
 				t.Errorf("expected SupportsVision %v, got %v", tt.supportsVision, caps.SupportsVision)
 			}
+			if caps.SupportsVideo != tt.supportsVideo {
+				t.Errorf("expected SupportsVideo %v, got %v", tt.supportsVideo, caps.SupportsVideo)
+			}
 			if caps.RequiresVertexThinkingKwargs != tt.requiresVertexThinkingKwargs {
 				t.Errorf("expected RequiresVertexThinkingKwargs %v, got %v", tt.requiresVertexThinkingKwargs, caps.RequiresVertexThinkingKwargs)
 			}
@@ -312,6 +320,18 @@ func TestParseGPTVersion(t *testing.T) {
 			got := parseGPTVersion(tt.model)
 			if got != tt.want {
 				t.Errorf("parseGPTVersion(%q) = %+v; want %+v", tt.model, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveCapabilities_SupportsVideo_TrueForKimiModels(t *testing.T) {
+	kimiModels := []string{"kimi-k3", "kimi-k2.7-code", "kimi-k2.6"}
+	for _, model := range kimiModels {
+		t.Run(model, func(t *testing.T) {
+			caps := ResolveCapabilities(model, "")
+			if !caps.SupportsVideo {
+				t.Errorf("expected SupportsVideo=true for %s, got false", model)
 			}
 		})
 	}

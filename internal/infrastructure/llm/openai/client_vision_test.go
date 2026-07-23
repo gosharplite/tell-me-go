@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
 
-func TestImageBlocks(t *testing.T) {
+func TestMediaBlocks(t *testing.T) {
 	tests := []struct {
 		name  string
 		parts []*llm.Part
@@ -26,40 +26,60 @@ func TestImageBlocks(t *testing.T) {
 			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}},
 			{InlineData: &llm.Blob{MIMEType: "image/jpeg", Data: []byte{2}}},
 		}, 2},
-		{"no images", []*llm.Part{{Text: "hello"}}, 0},
+		{"single video", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{0x00, 0x00, 0x00}}}}, 1},
+		{"mixed image and video", []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}},
+			{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: []byte{2}}},
+		}, 2},
+		{"no media", []*llm.Part{{Text: "hello"}}, 0},
 		{"nil InlineData", []*llm.Part{{InlineData: nil}}, 0},
 		{"empty data", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: nil}}}, 0},
+		{"pdf skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}}, 0},
+		{"audio skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "audio/mp3", Data: []byte{2}}}}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			blocks := imageBlocks(tt.parts, nil)
+			blocks := mediaBlocks(tt.parts, nil)
 			if len(blocks) != tt.want {
 				t.Errorf("got %d blocks, want %d", len(blocks), tt.want)
 			}
-			// Verify base64 URL format for image blocks
+			// Verify URL format for each block type
 			for _, b := range blocks {
-				ib, ok := b.(imageURLBlock)
-				if !ok {
-					t.Fatal("block is not imageURLBlock")
-				}
-				if ib.Type != "image_url" {
-					t.Errorf("type = %q, want image_url", ib.Type)
-				}
-				if !strings.HasPrefix(ib.ImageURL.URL, "data:") {
-					t.Errorf("URL doesn't start with data: %q", ib.ImageURL.URL)
+				switch block := b.(type) {
+				case imageURLBlock:
+					if block.Type != "image_url" {
+						t.Errorf("image type = %q, want image_url", block.Type)
+					}
+					if !strings.HasPrefix(block.ImageURL.URL, "data:") {
+						t.Errorf("image URL doesn't start with data: %q", block.ImageURL.URL)
+					}
+				case videoURLBlock:
+					if block.Type != "video_url" {
+						t.Errorf("video type = %q, want video_url", block.Type)
+					}
+					if !strings.HasPrefix(block.VideoURL.URL, "data:") {
+						t.Errorf("video URL doesn't start with data: %q", block.VideoURL.URL)
+					}
+				default:
+					t.Fatalf("block is not imageURLBlock or videoURLBlock: %T", b)
 				}
 			}
 		})
 	}
 }
 
-func TestExtractImageParts(t *testing.T) {
+func TestExtractMediaParts(t *testing.T) {
 	img := &llm.Part{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}}
 	txt := &llm.Part{Text: "hello"}
-	parts := []*llm.Part{img, txt}
-	images, rest := extractImageParts(parts)
-	if len(images) != 1 || len(rest) != 1 {
-		t.Errorf("got %d images, %d rest; want 1,1", len(images), len(rest))
+	pdf := &llm.Part{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}
+	audio := &llm.Part{InlineData: &llm.Blob{MIMEType: "audio/mp3", Data: []byte{2}}}
+	parts := []*llm.Part{img, txt, pdf, audio}
+	media, rest := extractMediaParts(parts)
+	if len(media) != 1 {
+		t.Errorf("got %d media, want 1 (only image, not PDF or audio)", len(media))
+	}
+	if len(rest) != 3 {
+		t.Errorf("got %d rest, want 3 (text + PDF + audio)", len(rest))
 	}
 }
 
@@ -220,7 +240,7 @@ func TestVision_KimiMsURLPayload(t *testing.T) {
 	}
 }
 
-func TestHydrateImageAssets(t *testing.T) {
+func TestHydrateMediaAssets(t *testing.T) {
 	resolver := &testAssetResolver{
 		data: map[string][]byte{
 			"asset-1": []byte{0x89, 0x50, 0x4E, 0x47},
@@ -295,7 +315,7 @@ func TestHydrateImageAssets(t *testing.T) {
 				capabilities: llm.Capabilities{SupportsVision: tt.visionCap},
 				logger:       &ports.NoOpLogger{},
 			}
-			got, err := c.hydrateImageAssets(context.Background(), tt.parts, tt.resolver)
+			got, err := c.hydrateMediaAssets(context.Background(), tt.parts, tt.resolver)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr = %v", err, tt.wantErr)
 			}
