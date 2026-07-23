@@ -573,7 +573,12 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 		return ta, out, nil
 	}
 	for _, p := range out {
-		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+		if p.InlineData == nil || len(p.InlineData.Data) == 0 || !isMediaMIME(p.InlineData.MIMEType) {
+			if p.InlineData != nil && len(p.InlineData.Data) > 0 && !isMediaMIME(p.InlineData.MIMEType) {
+				c.logger.Warn("skipping_unsupported_media_mime",
+					"mime", p.InlineData.MIMEType,
+				)
+			}
 			continue
 		}
 		if _, ok := ta.bindings[p]; ok {
