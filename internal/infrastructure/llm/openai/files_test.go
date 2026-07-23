@@ -299,7 +299,7 @@ func TestCollectApplyRoundTrip(t *testing.T) {
 	}
 }
 
-func TestPrepareImageAssets_Gating(t *testing.T) {
+func TestPrepareMediaAssets_Gating(t *testing.T) {
 	// Non-Kimi URL — should skip upload entirely
 	c := &client{
 		baseURL:    "https://api.openai.com/v1",
@@ -312,7 +312,7 @@ func TestPrepareImageAssets_Gating(t *testing.T) {
 	parts := []*llm.Part{
 		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}},
 	}
-	ta, out, err := c.prepareImageAssets(context.Background(), parts, nil)
+	ta, out, err := c.prepareMediaAssets(context.Background(), parts, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestPrepareImageAssets_Gating(t *testing.T) {
 	ta.release(context.Background(), c)
 }
 
-func TestPrepareImageAssets_KimiURL_Uploads(t *testing.T) {
+func TestPrepareMediaAssets_KimiURL_Uploads(t *testing.T) {
 	var uploaded, deleted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -353,7 +353,7 @@ func TestPrepareImageAssets_KimiURL_Uploads(t *testing.T) {
 	parts := []*llm.Part{
 		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
 	}
-	ta, out, err := c.prepareImageAssets(context.Background(), parts, nil)
+	ta, out, err := c.prepareMediaAssets(context.Background(), parts, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -368,6 +368,80 @@ func TestPrepareImageAssets_KimiURL_Uploads(t *testing.T) {
 	}
 	if ta.resolveURL(out[0]) != "ms://file-xyz" {
 		t.Errorf("expected ms:// URL, got %s", ta.resolveURL(out[0]))
+	}
+
+	ta.release(context.Background(), c)
+	if !deleted {
+		t.Error("expected DELETE after release")
+	}
+}
+
+func TestPrepareMediaAssets_KimiURL_UploadsVideo(t *testing.T) {
+	var uploaded, deleted bool
+	var uploadPurpose string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files"):
+			uploaded = true
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
+				t.Errorf("parse multipart: %v", err)
+			}
+			uploadPurpose = r.FormValue("purpose")
+			// Live api.moonshot.ai returns "ok" (observed 2026-07-23).
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-xyz", Status: "ok"})
+		case r.Method == "DELETE":
+			deleted = true
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:    server.URL + "/api.moonshot.ai",
+		httpClient: server.Client(),
+		logger:     &ports.NoOpLogger{},
+	}
+	c.authenticator = &fakeAuthenticator{}
+	c.capabilities = llm.Capabilities{SupportsVideo: true}
+
+	videoData := []byte{0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70}
+	parts := []*llm.Part{
+		{InlineData: &llm.Blob{MIMEType: "video/mp4", Data: videoData}},
+	}
+	ta, out, err := c.prepareMediaAssets(context.Background(), parts, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !uploaded {
+		t.Error("expected POST /files upload")
+	}
+	if uploadPurpose != "video" {
+		t.Errorf("expected purpose=video, got %q", uploadPurpose)
+	}
+	if len(ta.uploaded) != 1 {
+		t.Errorf("expected 1 uploaded file, got %d", len(ta.uploaded))
+	}
+	if ta.bindings[out[0]] != "file-xyz" {
+		t.Error("expected binding for uploaded part")
+	}
+	if ta.resolveURL(out[0]) != "ms://file-xyz" {
+		t.Errorf("expected ms:// URL, got %s", ta.resolveURL(out[0]))
+	}
+
+	// Verify video_url block is produced (not image_url)
+	blocks := mediaBlocks(out, ta)
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 media block, got %d", len(blocks))
+	}
+	vb, ok := blocks[0].(videoURLBlock)
+	if !ok {
+		t.Fatalf("expected videoURLBlock, got %T", blocks[0])
+	}
+	if vb.Type != "video_url" {
+		t.Errorf("expected type=video_url, got %q", vb.Type)
+	}
+	if !strings.HasPrefix(vb.VideoURL.URL, "ms://") {
+		t.Errorf("expected ms:// URL prefix, got %q", vb.VideoURL.URL)
 	}
 
 	ta.release(context.Background(), c)
