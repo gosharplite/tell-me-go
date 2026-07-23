@@ -176,6 +176,57 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 	}, nil
 }
 
+func (m *mediaManager) readVideo(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	// readVideo is a synchronous read operation (not registered as LongRunning),
+	// so heartbeat is intentionally not started. The hb parameter is required by
+	// the tools.ToolFunc interface signature.
+	_ = hb
+
+	var a struct {
+		Filepath string `json:"filepath"`
+	}
+	if err := tools.UnmarshalArgs(args, &a); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("unmarshal args: %w", err)
+	}
+
+	if m.sm == nil {
+		return tools.ToolResult{}, fmt.Errorf("path validator is required")
+	}
+
+	safePath, err := m.sm.IsPathSafe(a.Filepath)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("security validation failed for path %s: %w", a.Filepath, err)
+	}
+
+	data, err := m.fs.ReadFile(ctx, safePath)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("read file %s: %w", safePath, err)
+	}
+
+	mimeType := "video/mp4"
+	ext := strings.ToLower(filepath.Ext(safePath))
+	switch ext {
+	case ".mov":
+		mimeType = "video/quicktime"
+	case ".webm":
+		mimeType = "video/webm"
+	case ".avi":
+		mimeType = "video/x-msvideo"
+	case ".mkv":
+		mimeType = "video/x-matroska"
+	}
+
+	return tools.ToolResult{
+		Text: fmt.Sprintf("Successfully read video from %s", safePath),
+		BinaryData: []tools.BinaryData{
+			{
+				MIMEType: mimeType,
+				Data:     data,
+			},
+		},
+	}, nil
+}
+
 func (m *mediaManager) readDocument(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if m.client == nil {
 		return tools.ToolResult{}, tools.ErrNotImplemented
@@ -260,6 +311,23 @@ func registerMedia(r tools.Registry, fs persistence.FileSystem, sm security.Mana
 			Required: []string{"filepath"},
 		},
 	}, m.readImage); err != nil {
+		return err
+	}
+
+	if err := r.RegisterToToolkit("media", &tools.ToolDeclaration{
+		Name:        "read_video",
+		Description: "Reads a local video file for vision/video analysis. The model can describe scenes, actions, and content within the video.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the video file (e.g., './assets/demo.mp4').",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, m.readVideo); err != nil {
 		return err
 	}
 
