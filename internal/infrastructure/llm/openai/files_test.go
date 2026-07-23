@@ -300,7 +300,7 @@ func TestCollectApplyRoundTrip(t *testing.T) {
 }
 
 func TestPrepareMediaAssets_Gating(t *testing.T) {
-	// Non-Kimi URL — should skip upload entirely
+	// no upload capability — should skip
 	c := &client{
 		baseURL:    "https://api.openai.com/v1",
 		httpClient: http.DefaultClient,
@@ -343,12 +343,12 @@ func TestPrepareMediaAssets_KimiURL_Uploads(t *testing.T) {
 	defer server.Close()
 
 	c := &client{
-		baseURL:    server.URL + "/api.moonshot.ai",
+		baseURL:    server.URL,
 		httpClient: server.Client(),
 		logger:     &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
-	c.capabilities = llm.Capabilities{SupportsVision: true}
+	c.capabilities = llm.Capabilities{SupportsFileUpload: true}
 
 	parts := []*llm.Part{
 		{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{0x89, 0x50}}},
@@ -397,12 +397,12 @@ func TestPrepareMediaAssets_KimiURL_UploadsVideo(t *testing.T) {
 	defer server.Close()
 
 	c := &client{
-		baseURL:    server.URL + "/api.moonshot.ai",
+		baseURL:    server.URL,
 		httpClient: server.Client(),
 		logger:     &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
-	c.capabilities = llm.Capabilities{SupportsVideo: true}
+	c.capabilities = llm.Capabilities{SupportsFileUpload: true}
 
 	videoData := []byte{0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70}
 	parts := []*llm.Part{
@@ -461,12 +461,12 @@ func TestPrepareMediaAssets_KimiURL_SkipsUnsupportedMIME(t *testing.T) {
 	defer server.Close()
 
 	c := &client{
-		baseURL:    server.URL + "/api.moonshot.ai",
+		baseURL:    server.URL,
 		httpClient: server.Client(),
 		logger:     &ports.NoOpLogger{},
 	}
 	c.authenticator = &fakeAuthenticator{}
-	c.capabilities = llm.Capabilities{SupportsVision: true}
+	c.capabilities = llm.Capabilities{SupportsFileUpload: true}
 
 	parts := []*llm.Part{
 		{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}},
