@@ -600,6 +600,28 @@ func TestMediaTools_ErrorPaths(t *testing.T) {
 			},
 			errText: "path validator is required",
 		},
+		{
+			name: "readVideo unmarshal error",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, newMediaMockSecurityManager(), &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readVideo(ctx, map[string]interface{}{"filepath": 123}, nil)
+				return err
+			},
+			errText: "unmarshal args",
+		},
+		{
+			name: "nil security manager in readVideo",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, nil, &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readVideo(ctx, map[string]interface{}{"filepath": "test.mp4"}, nil)
+				return err
+			},
+			errText: "path validator is required",
+		},
 	}
 
 	for _, tt := range tests {
