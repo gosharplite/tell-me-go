@@ -34,6 +34,8 @@ func TestMediaBlocks(t *testing.T) {
 		{"no media", []*llm.Part{{Text: "hello"}}, 0},
 		{"nil InlineData", []*llm.Part{{InlineData: nil}}, 0},
 		{"empty data", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: nil}}}, 0},
+		{"pdf skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}}, 0},
+		{"audio skipped", []*llm.Part{{InlineData: &llm.Blob{MIMEType: "audio/mp3", Data: []byte{2}}}}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,10 +71,15 @@ func TestMediaBlocks(t *testing.T) {
 func TestExtractMediaParts(t *testing.T) {
 	img := &llm.Part{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte{1}}}
 	txt := &llm.Part{Text: "hello"}
-	parts := []*llm.Part{img, txt}
+	pdf := &llm.Part{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}}
+	audio := &llm.Part{InlineData: &llm.Blob{MIMEType: "audio/mp3", Data: []byte{2}}}
+	parts := []*llm.Part{img, txt, pdf, audio}
 	media, rest := extractMediaParts(parts)
-	if len(media) != 1 || len(rest) != 1 {
-		t.Errorf("got %d media, %d rest; want 1,1", len(media), len(rest))
+	if len(media) != 1 {
+		t.Errorf("got %d media, want 1 (only image, not PDF or audio)", len(media))
+	}
+	if len(rest) != 3 {
+		t.Errorf("got %d rest, want 3 (text + PDF + audio)", len(rest))
 	}
 }
 

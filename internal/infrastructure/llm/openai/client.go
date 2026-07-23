@@ -259,7 +259,7 @@ func newTurnAssets() *turnAssets {
 	}
 }
 
-// resolveURL returns the image_url value for a part: ms://{file_id}
+// resolveURL returns the media URL value for a part: ms://{file_id}
 // if it was uploaded, or a base64 data URI otherwise. Nil-safe —
 // returns a base64 data URI when ta is nil (no uploads occurred).
 func (ta *turnAssets) resolveURL(p *llm.Part) string {
@@ -494,11 +494,18 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 	return
 }
 
-// extractMediaParts separates InlineData parts (image and video) from a part slice.
-// Returns the media parts and the remaining non-media, non-tool-response parts.
+// isMediaMIME returns true for MIME types that can be rendered as
+// image_url or video_url content blocks in chat messages.
+func isMediaMIME(mime string) bool {
+	return strings.HasPrefix(mime, "image/") || strings.HasPrefix(mime, "video/")
+}
+
+// extractMediaParts separates InlineData parts with image/* or video/*
+// MIME types from a part slice. Returns the media parts and the
+// remaining non-media, non-tool-response parts.
 func extractMediaParts(parts []*llm.Part) (media []*llm.Part, rest []*llm.Part) {
 	for _, p := range parts {
-		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
+		if p.InlineData != nil && len(p.InlineData.Data) > 0 && isMediaMIME(p.InlineData.MIMEType) {
 			media = append(media, p)
 		} else {
 			rest = append(rest, p)
@@ -569,6 +576,12 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 			continue
 		}
+		if !isMediaMIME(p.InlineData.MIMEType) {
+			c.logger.Warn("skipping_unsupported_media_mime",
+				"mime", p.InlineData.MIMEType,
+			)
+			continue
+		}
 		if _, ok := ta.bindings[p]; ok {
 			continue // already uploaded in this turn
 		}
@@ -597,7 +610,10 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 // mediaBlocks converts InlineData parts to image_url or video_url content blocks.
 // Uses turnAssets to resolve ms:// URLs for uploaded files; falls
 // back to base64 data URIs for non-uploaded parts. Video MIME types
-// (video/*) produce video_url blocks; all others produce image_url blocks.
+// (video/*) produce video_url blocks; image MIME types (image/*)
+// produce image_url blocks. Unknown MIME types are silently skipped
+// (extractMediaParts should have already filtered them out; this is a
+// defensive double-check).
 func mediaBlocks(parts []*llm.Part, ta *turnAssets) []any {
 	var blocks []any
 	for _, p := range parts {
@@ -610,7 +626,7 @@ func mediaBlocks(parts []*llm.Part, ta *turnAssets) []any {
 				Type:     "video_url",
 				VideoURL: videoURLValue{URL: url},
 			})
-		} else {
+		} else if strings.HasPrefix(p.InlineData.MIMEType, "image/") {
 			blocks = append(blocks, imageURLBlock{
 				Type:     "image_url",
 				ImageURL: imageURLValue{URL: url},

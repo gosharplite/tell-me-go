@@ -449,3 +449,42 @@ func TestPrepareMediaAssets_KimiURL_UploadsVideo(t *testing.T) {
 		t.Error("expected DELETE after release")
 	}
 }
+
+func TestPrepareMediaAssets_KimiURL_SkipsUnsupportedMIME(t *testing.T) {
+	var uploaded bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files") {
+			uploaded = true
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-should-not-exist", Status: "ok"})
+		}
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:    server.URL + "/api.moonshot.ai",
+		httpClient: server.Client(),
+		logger:     &ports.NoOpLogger{},
+	}
+	c.authenticator = &fakeAuthenticator{}
+	c.capabilities = llm.Capabilities{SupportsVision: true}
+
+	parts := []*llm.Part{
+		{InlineData: &llm.Blob{MIMEType: "application/pdf", Data: []byte{1}}},
+	}
+	ta, out, err := c.prepareMediaAssets(context.Background(), parts, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = out
+	if uploaded {
+		t.Error("PDF should not be uploaded")
+	}
+	if len(ta.uploaded) != 0 {
+		t.Errorf("expected 0 uploaded files, got %d", len(ta.uploaded))
+	}
+	if len(ta.bindings) != 0 {
+		t.Error("PDF should have no bindings")
+	}
+
+	ta.release(context.Background(), c)
+}
