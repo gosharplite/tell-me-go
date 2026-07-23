@@ -233,7 +233,7 @@ func TestVision_KimiMsURLPayload(t *testing.T) {
 	}
 }
 
-func TestHydrateImageAssets(t *testing.T) {
+func TestHydrateMediaAssets(t *testing.T) {
 	resolver := &testAssetResolver{
 		data: map[string][]byte{
 			"asset-1": []byte{0x89, 0x50, 0x4E, 0x47},

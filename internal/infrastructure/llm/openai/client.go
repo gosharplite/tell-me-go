@@ -231,7 +231,7 @@ type imageURLValue struct {
 	URL string `json:"url"`
 }
 
-// videoURLBlock represents a video_url content part for vision-capable models.
+// videoURLBlock represents a video_url content part for video-capable models.
 type videoURLBlock struct {
 	Type     string        `json:"type"`
 	VideoURL videoURLValue `json:"video_url"`
