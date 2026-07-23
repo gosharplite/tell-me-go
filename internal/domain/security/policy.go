@@ -181,6 +181,7 @@ func DefaultPolicy() *Policy {
 			// Media Tools
 			"create_image":  true,
 			"read_image":    true,
+			"read_video":    true,
 			"read_document": true,
 		},
 		AutoApprovableCommands: map[string]bool{

@@ -310,6 +310,143 @@ func TestMediaTools_ReadImage(t *testing.T) {
 	}
 }
 
+func TestReadVideo(t *testing.T) {
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Create test video files
+	mp4File := filepath.Join(tmpDir, "test.mp4")
+	_ = os.WriteFile(mp4File, []byte("mp4-data"), 0644)
+
+	movFile := filepath.Join(tmpDir, "test.mov")
+	_ = os.WriteFile(movFile, []byte("mov-data"), 0644)
+
+	webmFile := filepath.Join(tmpDir, "test.webm")
+	_ = os.WriteFile(webmFile, []byte("webm-data"), 0644)
+
+	aviFile := filepath.Join(tmpDir, "test.avi")
+	_ = os.WriteFile(aviFile, []byte("avi-data"), 0644)
+
+	mkvFile := filepath.Join(tmpDir, "test.mkv")
+	_ = os.WriteFile(mkvFile, []byte("mkv-data"), 0644)
+
+	unknownExtFile := filepath.Join(tmpDir, "test.mpg")
+	_ = os.WriteFile(unknownExtFile, []byte("mpg-data"), 0644)
+
+	// Create a directory
+	subDir := filepath.Join(tmpDir, "subdir")
+	_ = os.Mkdir(subDir, 0755)
+
+	// Create a write-only file (on Unix-like systems)
+	unreadableFile := filepath.Join(tmpDir, "unreadable.mp4")
+	_ = os.WriteFile(unreadableFile, []byte("secret"), 0200)
+
+	tests := []struct {
+		name         string
+		filepath     string
+		isPathSafe   bool
+		wantMimeType string
+		wantErr      bool
+	}{
+		{
+			name:         "read valid mp4",
+			filepath:     mp4File,
+			isPathSafe:   true,
+			wantMimeType: "video/mp4",
+		},
+		{
+			name:         "read valid mov",
+			filepath:     movFile,
+			isPathSafe:   true,
+			wantMimeType: "video/quicktime",
+		},
+		{
+			name:         "read valid webm",
+			filepath:     webmFile,
+			isPathSafe:   true,
+			wantMimeType: "video/webm",
+		},
+		{
+			name:         "read valid avi",
+			filepath:     aviFile,
+			isPathSafe:   true,
+			wantMimeType: "video/x-msvideo",
+		},
+		{
+			name:         "read valid mkv",
+			filepath:     mkvFile,
+			isPathSafe:   true,
+			wantMimeType: "video/x-matroska",
+		},
+		{
+			name:         "read unknown extension defaults to mp4",
+			filepath:     unknownExtFile,
+			isPathSafe:   true,
+			wantMimeType: "video/mp4",
+		},
+		{
+			name:       "security violation",
+			filepath:   "/etc/passwd",
+			isPathSafe: false,
+			wantErr:    true,
+		},
+		{
+			name:       "file not found",
+			filepath:   filepath.Join(tmpDir, "nonexistent.mp4"),
+			isPathSafe: true,
+			wantErr:    true,
+		},
+		{
+			name:       "read directory failure",
+			filepath:   subDir,
+			isPathSafe: true,
+			wantErr:    true,
+		},
+		{
+			name:       "permission denied failure",
+			filepath:   unreadableFile,
+			isPathSafe: true,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "permission denied failure" && runtime.GOOS == "windows" {
+				t.Skip("Skipping on Windows: os.Chmod(0200) does not reliably make files unreadable for the owner.")
+			}
+			sm := newMediaMockSecurityManager()
+			sm.isPathSafeFunc = func(path string) (string, error) {
+				if !tt.isPathSafe {
+					return "", errors.New("unsafe path")
+				}
+				return path, nil
+			}
+			fs := &mockFileSystem{}
+			m := newMediaManager(fs, sm, nil, "")
+
+			res, err := m.readVideo(ctx, map[string]interface{}{"filepath": tt.filepath}, nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readVideo() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if len(res.BinaryData) != 1 {
+					t.Fatalf("got %d videos, want 1", len(res.BinaryData))
+				}
+				if res.BinaryData[0].MIMEType != tt.wantMimeType {
+					t.Errorf("got MIME %s, want %s", res.BinaryData[0].MIMEType, tt.wantMimeType)
+				}
+			}
+		})
+	}
+}
+
 func TestNewMediaManager(t *testing.T) {
 	sm := newMediaMockSecurityManager()
 	fs := &mockFileSystem{}
@@ -463,6 +600,28 @@ func TestMediaTools_ErrorPaths(t *testing.T) {
 			},
 			errText: "path validator is required",
 		},
+		{
+			name: "readVideo unmarshal error",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, newMediaMockSecurityManager(), &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readVideo(ctx, map[string]interface{}{"filepath": 123}, nil)
+				return err
+			},
+			errText: "unmarshal args",
+		},
+		{
+			name: "nil security manager in readVideo",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, nil, &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readVideo(ctx, map[string]interface{}{"filepath": "test.mp4"}, nil)
+				return err
+			},
+			errText: "path validator is required",
+		},
 	}
 
 	for _, tt := range tests {
@@ -590,13 +749,13 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 		},
 		{
 			name:            "network wraps error",
-			failAfter:       28,
+			failAfter:       29,
 			wantSubstring:   "network",
 			setAtlassianEnv: true,
 		},
 		{
 			name:            "teams wraps error",
-			failAfter:       30,
+			failAfter:       31,
 			wantSubstring:   "teams",
 			setAtlassianEnv: true,
 		},
@@ -647,11 +806,22 @@ func TestRegisterMedia_ErrorPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("third RegisterToToolkitWithOptions fails", func(t *testing.T) {
+	t.Run("third RegisterToToolkit fails", func(t *testing.T) {
 		r := newFaultyRegistry(registry.New(), 2)
 		err := registerMedia(r, fs, sm, client, tmpDir)
 		if err == nil {
 			t.Fatal("expected error on third registration failure")
+		}
+		if !strings.Contains(err.Error(), "simulated registration failure") {
+			t.Errorf("expected simulated error, got: %v", err)
+		}
+	})
+
+	t.Run("fourth RegisterToToolkitWithOptions fails", func(t *testing.T) {
+		r := newFaultyRegistry(registry.New(), 3)
+		err := registerMedia(r, fs, sm, client, tmpDir)
+		if err == nil {
+			t.Fatal("expected error on fourth registration failure")
 		}
 		if !strings.Contains(err.Error(), "simulated registration failure") {
 			t.Errorf("expected simulated error, got: %v", err)
