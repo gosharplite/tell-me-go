@@ -225,7 +225,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	// Prepare media assets for the turn: hydrate from resolver,
 	// upload to Kimi file API. Skip if no vision/video capability.
 	var ta *turnAssets
-	if c.capabilities.SupportsVision {
+	if c.capabilities.SupportsVision || c.capabilities.SupportsVideo {
 		var prepared []*llm.Part
 		var err error
 		ta, prepared, err = c.prepareMediaAssets(ctx, collectHistoryParts(history), resolver)

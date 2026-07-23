@@ -507,14 +507,14 @@ func extractMediaParts(parts []*llm.Part) (media []*llm.Part, rest []*llm.Part) 
 	return
 }
 
-// hydrateImageAssets resolves AssetID references on parts whose
+// hydrateMediaAssets resolves AssetID references on parts whose
 // InlineData.Data is nil (lazy-hydration pattern from session reload).
 // It uses copy-on-write — the returned slice is independent of the
 // input — to avoid mutating shared session history. Preserves MIMEType
-// from any existing InlineData blob. Gated on SupportsVision; non-vision
-// models return the input unchanged. Resolve errors are propagated:
-// a corrupt asset store should fail the session loudly.
-func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) ([]*llm.Part, error) {
+// from any existing InlineData blob. Gated on SupportsVision || SupportsVideo;
+// non-vision/non-video models return the input unchanged. Resolve errors are
+// propagated: a corrupt asset store should fail the session loudly.
+func (c *client) hydrateMediaAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) ([]*llm.Part, error) {
 	if resolver == nil || (!c.capabilities.SupportsVision && !c.capabilities.SupportsVideo) {
 		return parts, nil
 	}
@@ -556,7 +556,7 @@ func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, reso
 func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) (*turnAssets, []*llm.Part, error) {
 	ta := newTurnAssets()
 
-	out, err := c.hydrateImageAssets(ctx, parts, resolver)
+	out, err := c.hydrateMediaAssets(ctx, parts, resolver)
 	if err != nil {
 		return ta, out, err
 	}
@@ -578,11 +578,11 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 				ext = parts[1]
 			}
 		}
-		filename := fmt.Sprintf("image.%s", ext)
 		purpose := "image"
 		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
 			purpose = "video"
 		}
+		filename := fmt.Sprintf("%s.%s", purpose, ext)
 		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, purpose)
 		if err != nil {
 			ta.release(ctx, c)

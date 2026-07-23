@@ -308,7 +308,7 @@ func TestHydrateImageAssets(t *testing.T) {
 				capabilities: llm.Capabilities{SupportsVision: tt.visionCap},
 				logger:       &ports.NoOpLogger{},
 			}
-			got, err := c.hydrateImageAssets(context.Background(), tt.parts, tt.resolver)
+			got, err := c.hydrateMediaAssets(context.Background(), tt.parts, tt.resolver)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr = %v", err, tt.wantErr)
 			}
