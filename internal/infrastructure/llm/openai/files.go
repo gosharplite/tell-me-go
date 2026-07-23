@@ -72,8 +72,8 @@ func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose 
 		return "", fmt.Errorf("decode upload response: %w", err)
 	}
 
-	if fo.Status != "ready" {
-		return "", fmt.Errorf("upload status %q (expected ready)", fo.Status)
+	if fo.Status != "ok" && fo.Status != "ready" {
+		return "", fmt.Errorf("upload status %q (expected ok or ready)", fo.Status)
 	}
 
 	return fo.ID, nil

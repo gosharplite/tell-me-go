@@ -45,9 +45,11 @@ func TestUploadFile(t *testing.T) {
 			t.Errorf("expected file content 'test', got %q", string(buf))
 		}
 
+		// Live api.moonshot.ai returns "ok" (observed 2026-07-23).
+		// Docs: https://platform.kimi.ai/docs/api/files-upload.md (example: "ready")
 		_ = json.NewEncoder(w).Encode(fileObject{
 			ID:     "file-abc123",
-			Status: "ready",
+			Status: "ok",
 		})
 	}))
 	defer server.Close()
@@ -106,8 +108,38 @@ func TestUploadFile_NotReady(t *testing.T) {
 	c.authenticator = &fakeAuthenticator{}
 
 	_, err := c.uploadFile(context.Background(), []byte("test"), "cat.png", "image")
-	if err == nil || !strings.Contains(err.Error(), "expected ready") {
-		t.Errorf("expected 'expected ready' error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "expected ok or ready") {
+		t.Errorf("expected 'expected ok or ready' error, got %v", err)
+	}
+}
+
+// TestUploadFile_ReadyAlsoAccepted verifies that the documented
+// "ready" status is accepted for forward-compatibility, even though
+// the live api.moonshot.ai currently returns "ok".
+func TestUploadFile_ReadyAlsoAccepted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(fileObject{
+			ID: "file-ready123",
+			// Docs: https://platform.kimi.ai/docs/api/files-upload.md (example: "ready")
+			// Server may align with docs in the future — accept both.
+			Status: "ready",
+		})
+	}))
+	defer server.Close()
+
+	c := &client{
+		baseURL:    strings.TrimSuffix(server.URL, "/"),
+		httpClient: server.Client(),
+		logger:     &ports.NoOpLogger{},
+	}
+	c.authenticator = &fakeAuthenticator{}
+
+	id, err := c.uploadFile(context.Background(), []byte("test"), "doc.md", "file-extract")
+	if err != nil {
+		t.Fatalf("uploadFile with status 'ready': %v", err)
+	}
+	if id != "file-ready123" {
+		t.Errorf("expected file-ready123, got %s", id)
 	}
 }
 
@@ -162,7 +194,9 @@ func TestExtractDocument(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "POST" && r.URL.Path == "/files":
-			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-doc", Status: "ready"})
+			// Live api.moonshot.ai returns "ok" (observed 2026-07-23).
+			// Docs: https://platform.kimi.ai/docs/api/files-upload.md (example: "ready")
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-doc", Status: "ok"})
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/content"):
 			_, _ = w.Write([]byte("doc content here"))
 		case r.Method == "DELETE":
@@ -298,7 +332,9 @@ func TestPrepareImageAssets_KimiURL_Uploads(t *testing.T) {
 		switch {
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/files"):
 			uploaded = true
-			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-xyz", Status: "ready"})
+			// Live api.moonshot.ai returns "ok" (observed 2026-07-23).
+			// Docs: https://platform.kimi.ai/docs/api/files-upload.md (example: "ready")
+			_ = json.NewEncoder(w).Encode(fileObject{ID: "file-xyz", Status: "ok"})
 		case r.Method == "DELETE":
 			deleted = true
 			w.WriteHeader(http.StatusOK)
