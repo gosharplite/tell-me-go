@@ -231,6 +231,17 @@ type imageURLValue struct {
 	URL string `json:"url"`
 }
 
+// videoURLBlock represents a video_url content part for vision-capable models.
+type videoURLBlock struct {
+	Type     string        `json:"type"`
+	VideoURL videoURLValue `json:"video_url"`
+}
+
+// videoURLValue holds the URL payload for a video_url block.
+type videoURLValue struct {
+	URL string `json:"url"`
+}
+
 // turnAssets carries turn-scoped file-upload state: the binding from
 // domain Parts to Kimi server file IDs, plus a list of uploaded file
 // IDs for post-response cleanup. It is owned by a single SendChat call
@@ -297,7 +308,7 @@ func collectHistoryParts(history []*llm.Content) []*llm.Part {
 }
 
 // applyPreparedParts writes prepared parts back into history, matching
-// by index. Call after prepareImageAssets has mutated parts in place.
+// by index. Call after prepareMediaAssets has mutated parts in place.
 func applyPreparedParts(history []*llm.Content, prepared []*llm.Part) {
 	idx := 0
 	for _, h := range history {
@@ -428,9 +439,9 @@ func (c *client) appendMessagesFromHistoryItem(
 		return nil
 	}
 
-	// Separate image parts before classification — classifyParts only
+	// Separate media parts before classification — classifyParts only
 	// handles text and function calls.
-	imageParts, textParts := extractImageParts(otherParts)
+	mediaParts, textParts := extractMediaParts(otherParts)
 
 	text, reasoning, toolCalls, err := c.classifyParts(textParts)
 	if err != nil {
@@ -444,14 +455,14 @@ func (c *client) appendMessagesFromHistoryItem(
 		reasoningPtr = &reasoning
 	}
 
-	// Build content: array format when images present AND vision supported,
+	// Build content: array format when media present AND vision/video supported,
 	// string format otherwise.
 	var content any = text
-	if c.capabilities.SupportsVision && len(imageParts) > 0 {
-		// Images are placed before text (images-first ordering). This is
+	if (c.capabilities.SupportsVision || c.capabilities.SupportsVideo) && len(mediaParts) > 0 {
+		// Media blocks are placed before text (media-first ordering). This is
 		// intentional for the describe-this-image use case — interleaved
 		// part ordering within a single history item is not preserved.
-		blocks := imageBlocks(imageParts, ta)
+		blocks := mediaBlocks(mediaParts, ta)
 		if text != "" {
 			blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
 		}
@@ -483,12 +494,12 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 	return
 }
 
-// extractImageParts separates InlineData parts from a part slice.
-// Returns the image parts and the remaining non-image, non-tool-response parts.
-func extractImageParts(parts []*llm.Part) (images []*llm.Part, rest []*llm.Part) {
+// extractMediaParts separates InlineData parts (image and video) from a part slice.
+// Returns the media parts and the remaining non-media, non-tool-response parts.
+func extractMediaParts(parts []*llm.Part) (media []*llm.Part, rest []*llm.Part) {
 	for _, p := range parts {
 		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
-			images = append(images, p)
+			media = append(media, p)
 		} else {
 			rest = append(rest, p)
 		}
@@ -504,7 +515,7 @@ func extractImageParts(parts []*llm.Part) (images []*llm.Part, rest []*llm.Part)
 // models return the input unchanged. Resolve errors are propagated:
 // a corrupt asset store should fail the session loudly.
 func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) ([]*llm.Part, error) {
-	if resolver == nil || !c.capabilities.SupportsVision {
+	if resolver == nil || (!c.capabilities.SupportsVision && !c.capabilities.SupportsVideo) {
 		return parts, nil
 	}
 	out := parts
@@ -538,11 +549,11 @@ func (c *client) hydrateImageAssets(ctx context.Context, parts []*llm.Part, reso
 	return out, nil
 }
 
-// prepareImageAssets hydrates and uploads image parts for a single
-// turn. Returns the turnAssets with file bindings and the prepared
-// (possibly cloned) part slice. Caller must call release after the
-// LLM response.
-func (c *client) prepareImageAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) (*turnAssets, []*llm.Part, error) {
+// prepareMediaAssets hydrates and uploads media parts (image and video)
+// for a single turn. Returns the turnAssets with file bindings and the
+// prepared (possibly cloned) part slice. Caller must call release after
+// the LLM response.
+func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) (*turnAssets, []*llm.Part, error) {
 	ta := newTurnAssets()
 
 	out, err := c.hydrateImageAssets(ctx, parts, resolver)
@@ -550,8 +561,8 @@ func (c *client) prepareImageAssets(ctx context.Context, parts []*llm.Part, reso
 		return ta, out, err
 	}
 
-	// Upload fresh images to Kimi file API
-	if !c.capabilities.SupportsVision || !strings.Contains(c.baseURL, "api.moonshot.ai") {
+	// Upload fresh media to Kimi file API
+	if (!c.capabilities.SupportsVision && !c.capabilities.SupportsVideo) || !strings.Contains(c.baseURL, "api.moonshot.ai") {
 		return ta, out, nil
 	}
 	for _, p := range out {
@@ -568,10 +579,14 @@ func (c *client) prepareImageAssets(ctx context.Context, parts []*llm.Part, reso
 			}
 		}
 		filename := fmt.Sprintf("image.%s", ext)
-		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, "image")
+		purpose := "image"
+		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
+			purpose = "video"
+		}
+		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, purpose)
 		if err != nil {
 			ta.release(ctx, c)
-			return ta, out, fmt.Errorf("upload image: %w", err)
+			return ta, out, fmt.Errorf("upload media: %w", err)
 		}
 		ta.bindings[p] = fileID
 		ta.uploaded = append(ta.uploaded, fileID)
@@ -579,20 +594,28 @@ func (c *client) prepareImageAssets(ctx context.Context, parts []*llm.Part, reso
 	return ta, out, nil
 }
 
-// imageBlocks converts InlineData parts to image_url content blocks.
+// mediaBlocks converts InlineData parts to image_url or video_url content blocks.
 // Uses turnAssets to resolve ms:// URLs for uploaded files; falls
-// back to base64 data URIs for non-uploaded parts.
-func imageBlocks(parts []*llm.Part, ta *turnAssets) []any {
+// back to base64 data URIs for non-uploaded parts. Video MIME types
+// (video/*) produce video_url blocks; all others produce image_url blocks.
+func mediaBlocks(parts []*llm.Part, ta *turnAssets) []any {
 	var blocks []any
 	for _, p := range parts {
 		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
 			continue
 		}
 		url := ta.resolveURL(p)
-		blocks = append(blocks, imageURLBlock{
-			Type:     "image_url",
-			ImageURL: imageURLValue{URL: url},
-		})
+		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
+			blocks = append(blocks, videoURLBlock{
+				Type:     "video_url",
+				VideoURL: videoURLValue{URL: url},
+			})
+		} else {
+			blocks = append(blocks, imageURLBlock{
+				Type:     "image_url",
+				ImageURL: imageURLValue{URL: url},
+			})
+		}
 	}
 	return blocks
 }

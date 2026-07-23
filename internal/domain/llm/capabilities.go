@@ -74,6 +74,13 @@ type Capabilities struct {
 	//
 	// Set for: kimi-* models (K3, K2.7, K2.6).
 	SupportsVision bool
+	// SupportsVideo indicates the model natively understands video via
+	// video_url content parts in the messages array. When true, InlineData
+	// parts with video MIME types are uploaded with purpose="video" and
+	// serialized as video_url blocks.
+	//
+	// Set for: kimi-* models (K3, K2.7, K2.6).
+	SupportsVideo bool
 	// RequiresVertexThinkingKwargs indicates that the transport silently
 	// disables DeepSeek thinking mode unless the non-standard parameter
 	// chat_template_kwargs.thinking=true is included in the request body.
@@ -175,6 +182,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 	if isKimiModel(model) {
 		caps.SupportsReasoningContent = true
 		caps.SupportsVision = true
+		caps.SupportsVideo = true
 		if isKimiK3Model(model) {
 			caps.SupportsReasoningEffort = true
 		}
