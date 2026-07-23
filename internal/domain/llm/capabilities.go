@@ -81,6 +81,14 @@ type Capabilities struct {
 	//
 	// Set for: kimi-* models (K3, K2.7, K2.6).
 	SupportsVideo bool
+	// SupportsFileUpload indicates the model supports file uploads via a
+	// provider-specific file API (e.g., Kimi / Moonshot). When true,
+	// InlineData parts with image or video MIME types are uploaded as
+	// files before the chat request and referenced via provider-specific
+	// URL schemes (e.g., ms://) in the message payload.
+	//
+	// Set for: kimi-* model family.
+	SupportsFileUpload bool
 	// RequiresVertexThinkingKwargs indicates that the transport silently
 	// disables DeepSeek thinking mode unless the non-standard parameter
 	// chat_template_kwargs.thinking=true is included in the request body.
@@ -183,6 +191,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		caps.SupportsReasoningContent = true
 		caps.SupportsVision = true
 		caps.SupportsVideo = true
+		caps.SupportsFileUpload = true
 		if isKimiK3Model(model) {
 			caps.SupportsReasoningEffort = true
 		}
