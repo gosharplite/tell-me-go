@@ -569,7 +569,7 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 	}
 
 	// Upload fresh media to Kimi file API
-	if (!c.capabilities.SupportsVision && !c.capabilities.SupportsVideo) || !strings.Contains(c.baseURL, "api.moonshot.ai") {
+	if !c.capabilities.SupportsFileUpload {
 		return ta, out, nil
 	}
 	for _, p := range out {
