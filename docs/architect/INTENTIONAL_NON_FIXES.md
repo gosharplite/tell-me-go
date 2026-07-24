@@ -541,6 +541,17 @@ Any AI agent recommending these should consult the rationale below.
   `plainOSFS.Chmod`, and `OSFileSystem.Chmod`.
 - **See**: `internal/domain/services/task_service.go:95-97`
 
+### agent/service.go — EditLastTurn delegation wrapper
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `chatService.EditLastTurn` is a pure delegation wrapper that
+  calls `s.HistoryEditor.Edit(ctx, hManager)`. The underlying `HistoryEditor.Edit`
+  method is exercised by its own tests; testing a pass-through method provides
+  no value. Same acceptance class as `AppendTask`, `domainFS.Chmod`,
+  `mockFileSystem.Chmod`, `plainOSFS.Chmod`, and `HasBareNewline` — all
+  delegation wrappers already documented in this file.
+- **See**: `internal/agent/service.go:223-225`
+
 ### persistence/state.go — NewSessionStateFromEnv thin entry point at 0%
 
 - **Status**: ACCEPTED (2026-07)
@@ -814,6 +825,21 @@ to reason about.
   for a 3-line pattern with no cognitive benefit. Same acceptance class as
   `handleDomainEvent` (structural dispatch CC, not branching business logic).
 - **See**: `internal/ui/tui/progress/renderer.go:48`
+
+### ui/tui/history_editor.go — (*HistoryEditor).Edit (CC=10)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Sequential TUI orchestration with error handling at each step:
+  initLogger guard, GetLastModelTurn error, part-aggregation loop (`for range`
+  + `if IsThought` + `else if Text`), `p.Run()` error, type-assertion guard,
+  and `WasAborted()` check. Every branch is a single-line error return or
+  delegation. The CC is structural (error guards + one aggregation loop), not
+  branching business logic. Extracting the 3-line part-aggregation loop into a
+  helper would fragment a coherent sequential function for cosmetic CC reduction
+  with no cognitive benefit. Same acceptance class as `handleDomainEvent`
+  (type-switch dispatch), `handleToolEvents` (spinner-guard pattern), and
+  `(*model).Update` (Bubble Tea dispatch).
+- **See**: `internal/ui/tui/history_editor.go:39`
 
 ---
 

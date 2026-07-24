@@ -25,36 +25,56 @@ type fileObject struct {
 	Status    string `json:"status"`
 }
 
-// uploadFile uploads a file to the Kimi API and returns the file ID.
-// purpose must be "image", "video", or "file-extract".
-// filename is the original filename for metadata.
-func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose string) (string, error) {
+// buildFileUploadBody constructs a multipart/form-data body for the Kimi
+// file upload API. It returns the body buffer and the Content-Type header
+// value (including boundary).
+func buildFileUploadBody(data []byte, filename, purpose string) (*bytes.Buffer, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
 	// purpose field
 	if err := w.WriteField("purpose", purpose); err != nil {
-		return "", fmt.Errorf("write purpose field: %w", err)
+		return nil, "", fmt.Errorf("write purpose field: %w", err)
 	}
 
 	// file field
 	fw, err := w.CreateFormFile("file", filename)
 	if err != nil {
-		return "", fmt.Errorf("create form file: %w", err)
+		return nil, "", fmt.Errorf("create form file: %w", err)
 	}
 	if _, err := fw.Write(data); err != nil {
-		return "", fmt.Errorf("write file data: %w", err)
+		return nil, "", fmt.Errorf("write file data: %w", err)
 	}
 
 	if err := w.Close(); err != nil {
-		return "", fmt.Errorf("close multipart writer: %w", err)
+		return nil, "", fmt.Errorf("close multipart writer: %w", err)
 	}
 
-	req, err := c.newAuthenticatedRequest(ctx, "POST", c.baseURL+"/files", &buf)
+	return &buf, w.FormDataContentType(), nil
+}
+
+// isUploadStatusReady returns true when the file upload status is one of
+// the accepted values. Live api.moonshot.ai returns "ok" (observed
+// 2026-07-23); the docs say "ready". Both are accepted for
+// forward-compatibility.
+func isUploadStatusReady(status string) bool {
+	return status == "ok" || status == "ready"
+}
+
+// uploadFile uploads a file to the Kimi API and returns the file ID.
+// purpose must be "image", "video", or "file-extract".
+// filename is the original filename for metadata.
+func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose string) (string, error) {
+	buf, contentType, err := buildFileUploadBody(data, filename, purpose)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := c.newAuthenticatedRequest(ctx, "POST", c.baseURL+"/files", buf)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Content-Type", contentType)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -62,6 +82,13 @@ func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	return parseFileUploadResponse(resp)
+}
+
+// parseFileUploadResponse decodes the JSON file object from the upload
+// response and validates the status field. Both "ok" (live API behavior)
+// and "ready" (documented) are accepted for forward-compatibility.
+func parseFileUploadResponse(resp *http.Response) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		return "", fmt.Errorf("upload failed (status %d): %s", resp.StatusCode, string(body))
@@ -72,8 +99,7 @@ func (c *client) uploadFile(ctx context.Context, data []byte, filename, purpose 
 		return "", fmt.Errorf("decode upload response: %w", err)
 	}
 
-	// Live api.moonshot.ai returns "ok" (observed 2026-07-23); docs say "ready". Accept both.
-	if fo.Status != "ok" && fo.Status != "ready" {
+	if !isUploadStatusReady(fo.Status) {
 		return "", fmt.Errorf("upload status %q (expected ok or ready)", fo.Status)
 	}
 

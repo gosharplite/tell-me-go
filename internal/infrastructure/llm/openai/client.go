@@ -420,6 +420,40 @@ func (c *client) maybeInjectInitialPersona(sink openaiSink) (personaInjected boo
 	return false
 }
 
+// shouldIncludeReasoning returns true when a reasoning_content field should
+// be included on the outgoing message. It is included when the model supports
+// reasoning_content natively and the role is assistant, or when non-empty
+// reasoning text was produced by classifyParts.
+func shouldIncludeReasoning(caps llm.Capabilities, role, reasoning string) bool {
+	return (caps.SupportsReasoningContent && role == "assistant") || (reasoning != "")
+}
+
+// hasSupportedMedia returns true when the client supports vision or video
+// and there are media parts to include in the message.
+func hasSupportedMedia(caps llm.Capabilities, mediaParts []*llm.Part) bool {
+	return (caps.SupportsVision || caps.SupportsVideo) && len(mediaParts) > 0
+}
+
+// buildMessageContent assembles the content value for a sink message. Returns
+// a plain text string when no media parts are present or the model lacks
+// vision/video support. Returns []any (mixed text + image_url/video_url blocks)
+// otherwise, with media blocks placed before text (media-first ordering).
+func (c *client) buildMessageContent(text string, mediaParts []*llm.Part, ta *turnAssets) any {
+	// Build content: array format when media present AND vision/video supported,
+	// string format otherwise.
+	if !hasSupportedMedia(c.capabilities, mediaParts) {
+		return text
+	}
+	// Media blocks are placed before text (media-first ordering). This is
+	// intentional for the describe-this-image use case — interleaved
+	// part ordering within a single history item is not preserved.
+	blocks := mediaBlocks(mediaParts, ta)
+	if text != "" {
+		blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
+	}
+	return blocks
+}
+
 func (c *client) appendMessagesFromHistoryItem(
 	ctx context.Context,
 	sink openaiSink,
@@ -451,23 +485,11 @@ func (c *client) appendMessagesFromHistoryItem(
 	c.injectPersona(sink, personaInjected, role)
 
 	var reasoningPtr *string
-	if (c.capabilities.SupportsReasoningContent && role == "assistant") || (reasoning != "") {
+	if shouldIncludeReasoning(c.capabilities, role, reasoning) {
 		reasoningPtr = &reasoning
 	}
 
-	// Build content: array format when media present AND vision/video supported,
-	// string format otherwise.
-	var content any = text
-	if (c.capabilities.SupportsVision || c.capabilities.SupportsVideo) && len(mediaParts) > 0 {
-		// Media blocks are placed before text (media-first ordering). This is
-		// intentional for the describe-this-image use case — interleaved
-		// part ordering within a single history item is not preserved.
-		blocks := mediaBlocks(mediaParts, ta)
-		if text != "" {
-			blocks = append(blocks, requestContentBlock{Type: "text", Text: text})
-		}
-		content = blocks
-	}
+	content := c.buildMessageContent(text, mediaParts, ta)
 
 	sink.AddMessage(role, content, reasoningPtr, toolCalls)
 
@@ -514,6 +536,36 @@ func extractMediaParts(parts []*llm.Part) (media []*llm.Part, rest []*llm.Part) 
 	return
 }
 
+// isHydrationCandidate returns true when a part has an unresolved AssetID
+// and its InlineData has not yet been populated. Parts without an AssetID
+// or with already-present data are not candidates.
+func isHydrationCandidate(p *llm.Part) bool {
+	return p.AssetID != "" && (p.InlineData == nil || len(p.InlineData.Data) == 0)
+}
+
+// clonePartForHydration creates an independent copy of a part with hydrated
+// InlineData. Preserves MIMEType from any existing InlineData blob (set
+// during AddImage). Returns a pointer to the cloned part.
+func clonePartForHydration(p *llm.Part, data []byte) *llm.Part {
+	// Clone the part to avoid mutating shared session history
+	pc := *p
+	if p.InlineData != nil {
+		// Preserve MIMEType from the existing blob (set during AddImage)
+		blob := *p.InlineData
+		blob.Data = data
+		pc.InlineData = &blob
+	} else {
+		pc.InlineData = &llm.Blob{Data: data}
+	}
+	return &pc
+}
+
+// shouldSkipHydration returns true when hydration should be skipped entirely:
+// no resolver is available or the model lacks both vision and video support.
+func shouldSkipHydration(resolver llm.AssetResolver, caps llm.Capabilities) bool {
+	return resolver == nil || (!caps.SupportsVision && !caps.SupportsVideo)
+}
+
 // hydrateMediaAssets resolves AssetID references on parts whose
 // InlineData.Data is nil (lazy-hydration pattern from session reload).
 // It uses copy-on-write — the returned slice is independent of the
@@ -522,13 +574,13 @@ func extractMediaParts(parts []*llm.Part) (media []*llm.Part, rest []*llm.Part) 
 // non-vision/non-video models return the input unchanged. Resolve errors are
 // propagated: a corrupt asset store should fail the session loudly.
 func (c *client) hydrateMediaAssets(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) ([]*llm.Part, error) {
-	if resolver == nil || (!c.capabilities.SupportsVision && !c.capabilities.SupportsVideo) {
+	if shouldSkipHydration(resolver, c.capabilities) {
 		return parts, nil
 	}
 	out := parts
 	cloned := false
 	for i, p := range parts {
-		if p.AssetID == "" || (p.InlineData != nil && len(p.InlineData.Data) > 0) {
+		if !isHydrationCandidate(p) {
 			continue
 		}
 		data, err := resolver.Resolve(ctx, p.AssetID)
@@ -541,19 +593,58 @@ func (c *client) hydrateMediaAssets(ctx context.Context, parts []*llm.Part, reso
 			copy(out, parts)
 			cloned = true
 		}
-		// Clone the part to avoid mutating shared session history
-		pc := *p
-		if p.InlineData != nil {
-			// Preserve MIMEType from the existing blob (set during AddImage)
-			blob := *p.InlineData
-			blob.Data = data
-			pc.InlineData = &blob
-		} else {
-			pc.InlineData = &llm.Blob{Data: data}
-		}
-		out[i] = &pc
+		out[i] = clonePartForHydration(p, data)
 	}
 	return out, nil
+}
+
+// fileExtensionFromMIME extracts the file extension from a MIME type
+// string (e.g., "image/png" → "png"). Returns "png" as a safe default
+// for empty or unparseable MIME types.
+func fileExtensionFromMIME(mime string) string {
+	if mime == "" {
+		return "png"
+	}
+	if parts := strings.Split(mime, "/"); len(parts) == 2 {
+		return parts[1]
+	}
+	return "png"
+}
+
+// uploadMediaParts uploads media InlineData parts to the Kimi file API
+// and records bindings in ta. Parts with nil/empty data, non-media MIME
+// types, or already-uploaded bindings are skipped. On upload failure,
+// previously uploaded files in this batch are released and the error
+// is returned.
+func (c *client) uploadMediaParts(ctx context.Context, parts []*llm.Part, ta *turnAssets) error {
+	for _, p := range parts {
+		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
+			continue
+		}
+		if !isMediaMIME(p.InlineData.MIMEType) {
+			c.logger.Warn("skipping_unsupported_media_mime",
+				"mime", p.InlineData.MIMEType,
+			)
+			continue
+		}
+		if _, ok := ta.bindings[p]; ok {
+			continue // already uploaded in this turn
+		}
+		ext := fileExtensionFromMIME(p.InlineData.MIMEType)
+		purpose := "image"
+		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
+			purpose = "video"
+		}
+		filename := fmt.Sprintf("%s.%s", purpose, ext)
+		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, purpose)
+		if err != nil {
+			ta.release(ctx, c)
+			return fmt.Errorf("upload media: %w", err)
+		}
+		ta.bindings[p] = fileID
+		ta.uploaded = append(ta.uploaded, fileID)
+	}
+	return nil
 }
 
 // prepareMediaAssets hydrates and uploads media parts (image and video)
@@ -568,42 +659,12 @@ func (c *client) prepareMediaAssets(ctx context.Context, parts []*llm.Part, reso
 		return ta, out, err
 	}
 
-	// Upload fresh media to Kimi file API
-	if !c.capabilities.SupportsFileUpload {
-		return ta, out, nil
+	if c.capabilities.SupportsFileUpload {
+		if err := c.uploadMediaParts(ctx, out, ta); err != nil {
+			return ta, out, err
+		}
 	}
-	for _, p := range out {
-		if p.InlineData == nil || len(p.InlineData.Data) == 0 {
-			continue
-		}
-		if !isMediaMIME(p.InlineData.MIMEType) {
-			c.logger.Warn("skipping_unsupported_media_mime",
-				"mime", p.InlineData.MIMEType,
-			)
-			continue
-		}
-		if _, ok := ta.bindings[p]; ok {
-			continue // already uploaded in this turn
-		}
-		ext := "png"
-		if p.InlineData.MIMEType != "" {
-			if parts := strings.Split(p.InlineData.MIMEType, "/"); len(parts) == 2 {
-				ext = parts[1]
-			}
-		}
-		purpose := "image"
-		if strings.HasPrefix(p.InlineData.MIMEType, "video/") {
-			purpose = "video"
-		}
-		filename := fmt.Sprintf("%s.%s", purpose, ext)
-		fileID, err := c.uploadFile(ctx, p.InlineData.Data, filename, purpose)
-		if err != nil {
-			ta.release(ctx, c)
-			return ta, out, fmt.Errorf("upload media: %w", err)
-		}
-		ta.bindings[p] = fileID
-		ta.uploaded = append(ta.uploaded, fileID)
-	}
+
 	return ta, out, nil
 }
 
