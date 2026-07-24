@@ -217,22 +217,37 @@ func (c *client) createHTTPRequest(ctx context.Context, payload *chatRequest) (*
 	return req, nil
 }
 
+// hasVisualCapability returns true when the model supports vision or video.
+func hasVisualCapability(caps llm.Capabilities) bool {
+	return caps.SupportsVision || caps.SupportsVideo
+}
+
+// prepareMediaForTurn prepares media assets for the current turn when the
+// model supports vision or video. Returns the turnAssets for cleanup (nil if
+// no media preparation occurred). On error, the caller should abort the turn.
+func (c *client) prepareMediaForTurn(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) (*turnAssets, error) {
+	if !hasVisualCapability(c.capabilities) {
+		return nil, nil
+	}
+
+	// Prepare media assets for the turn: hydrate from resolver,
+	// upload to Kimi file API.
+	ta, prepared, err := c.prepareMediaAssets(ctx, collectHistoryParts(history), resolver)
+	if err != nil {
+		return nil, err
+	}
+	applyPreparedParts(history, prepared)
+	return ta, nil
+}
+
 // ---------------------------------------------------------------------------
 // SendChat — main entry point
 // ---------------------------------------------------------------------------
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	// Prepare media assets for the turn: hydrate from resolver,
-	// upload to Kimi file API. Skip if no vision/video capability.
-	var ta *turnAssets
-	if c.capabilities.SupportsVision || c.capabilities.SupportsVideo {
-		var prepared []*llm.Part
-		var err error
-		ta, prepared, err = c.prepareMediaAssets(ctx, collectHistoryParts(history), resolver)
-		if err != nil {
-			return nil, nil, err
-		}
-		applyPreparedParts(history, prepared)
+	ta, err := c.prepareMediaForTurn(ctx, history, resolver)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Register cleanup for all exit paths. Per-turn files are useless
