@@ -158,48 +158,66 @@ func isKimiK3Model(model string) bool {
 	return model == "kimi-k3" || strings.HasSuffix(model, "/kimi-k3")
 }
 
+// resolveGPTFamily derives GPT and o-series capabilities from the model string.
+func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool) {
+	v := parseGPTVersion(model)
+	isReasoner = strings.HasPrefix(model, "o1") ||
+		strings.HasPrefix(model, "o3") ||
+		isGpt5OrNewer(v)
+	requireResponses = isGpt54OrNewer(model)
+	return
+}
+
+// resolveDeepSeekFamily derives DeepSeek capabilities from the model string and
+// base URL. The base URL is used only for RequiresVertexThinkingKwargs detection.
+func resolveDeepSeekFamily(model, baseURL string) (isDeepSeek, supportsReasoningContent, requiresVertexThinkingKwargs bool) {
+	isDeepSeek = isDeepSeekModel(model)
+	supportsReasoningContent = isDeepSeek
+	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
+		requiresVertexThinkingKwargs = true
+	}
+	return
+}
+
+// resolveKimiFamily derives Kimi capabilities from the model string.
+func resolveKimiFamily(model string) (supportsReasoningContent, supportsVision, supportsVideo, supportsFileUpload, supportsReasoningEffort, isKimiK3 bool) {
+	if !isKimiModel(model) {
+		return
+	}
+	supportsReasoningContent = true
+	supportsVision = true
+	supportsVideo = true
+	supportsFileUpload = true
+	if isKimiK3Model(model) {
+		supportsReasoningEffort = true
+		isKimiK3 = true
+	}
+	return
+}
+
 // ResolveCapabilities returns the capability set for a given model name and
 // provider base URL. The base URL is required for transport-conditional
 // capabilities such as RequiresVertexThinkingKwargs. Pass an empty string
 // if the URL is not available; transport-conditional capabilities will
 // default to false.
 func ResolveCapabilities(model, baseURL string) Capabilities {
-	v := parseGPTVersion(model)
-	isReasoner := strings.HasPrefix(model, "o1") ||
-		strings.HasPrefix(model, "o3") ||
-		isGpt5OrNewer(v)
-	requireResponses := isGpt54OrNewer(model)
+	isReasoner, requireResponses := resolveGPTFamily(model)
+	isDeepSeek, dsReasoningContent, vertexThinkingKwargs := resolveDeepSeekFamily(model, baseURL)
+	kReasoningContent, supportsVision, supportsVideo, supportsFileUpload, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
 
 	caps := Capabilities{
-		IsDeepSeek: isDeepSeekModel(model),
+		SupportsReasoningEffort:      isReasoner || kReasoningEffort,
+		RequiresResponsesAPI:         requireResponses,
+		UseDeveloperRole:             isReasoner,
+		IsDeepSeek:                   isDeepSeek,
+		SupportsReasoningContent:     dsReasoningContent || kReasoningContent,
+		SupportsVision:               supportsVision,
+		SupportsVideo:                supportsVideo,
+		SupportsFileUpload:           supportsFileUpload,
+		RequiresVertexThinkingKwargs: vertexThinkingKwargs,
 	}
 
-	if isDeepSeekModel(model) && strings.Contains(baseURL, "aiplatform.googleapis.com") {
-		caps.RequiresVertexThinkingKwargs = true
-	}
-
-	if isReasoner {
-		caps.UseDeveloperRole = true
-		caps.SupportsReasoningEffort = true
-	}
-
-	if requireResponses {
-		caps.RequiresResponsesAPI = true
-	}
-
-	if isKimiModel(model) {
-		caps.SupportsReasoningContent = true
-		caps.SupportsVision = true
-		caps.SupportsVideo = true
-		caps.SupportsFileUpload = true
-		if isKimiK3Model(model) {
-			caps.SupportsReasoningEffort = true
-		}
-	}
-
-	caps.SupportsReasoningContent = caps.SupportsReasoningContent || isDeepSeekModel(model)
-
-	isCompletionTokensModel := isReasoner || isKimiK3Model(model)
+	isCompletionTokensModel := isReasoner || isKimiK3
 	caps.MaxTokensField = resolveTokenField(requireResponses, isCompletionTokensModel)
 
 	return caps

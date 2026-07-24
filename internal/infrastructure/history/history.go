@@ -483,62 +483,113 @@ func (m *Manager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, erro
 	return 0, nil, ports.ErrHistoryNotFound
 }
 
-// collectUpdatedParts builds a new Parts slice by replacing the text and
-// thought parts in original with newText and newThought. Non-text,
-// non-thought parts (function calls, responses, inline data) are preserved.
-// An empty newThought omits the thought part. An empty newText omits the
-// text part (the old text part is dropped with no replacement).
-func collectUpdatedParts(original []*llm.Part, newText string, newThought string) []*llm.Part {
-	var newParts []*llm.Part
-	textSet := false
+// isNonTextNonThought returns true when a part is neither a thought nor a
+// text part (i.e., it's a function call, function response, inline data, etc.).
+func isNonTextNonThought(p *llm.Part) bool {
+	return !p.IsThought && p.Text == ""
+}
+
+// findTextReplacementIndex scans original for the position where newText
+// should be inserted. It returns the count of non-text, non-thought parts
+// that appear before the first text part. Returns -1 if no text part exists.
+func findTextReplacementIndex(original []*llm.Part) int {
+	insertIdx := 0
 	for _, p := range original {
 		if p.IsThought {
 			continue
 		}
 		if p.Text != "" {
-			// Drop all text parts. Insert newText once at the position
-			// of the first text part. The editor concatenates all text
-			// parts into one buffer, so preserving subsequent parts
-			// would duplicate content on save.
-			if !textSet {
-				textSet = true
-				if newText != "" {
-					newParts = append(newParts, &llm.Part{Text: newText})
-				}
-			}
-			continue
+			return insertIdx
 		}
-		// Keep function calls, function responses, inline data, etc.
-		newParts = append(newParts, p)
+		insertIdx++
 	}
-	if !textSet && newText != "" {
-		newParts = append(newParts, &llm.Part{Text: newText})
+	return -1
+}
+
+// insertTextAtPosition inserts a text part into parts at the given index.
+// If text is empty, parts is returned unchanged. If idx is out of range,
+// the text part is appended.
+func insertTextAtPosition(parts []*llm.Part, text string, idx int) []*llm.Part {
+	if text == "" {
+		return parts
 	}
+	textPart := &llm.Part{Text: text}
+	if idx >= 0 && idx <= len(parts) {
+		return append(parts[:idx], append([]*llm.Part{textPart}, parts[idx:]...)...)
+	}
+	return append(parts, textPart)
+}
+
+// rebuildTextParts builds a new Parts slice from original, replacing all text
+// parts with newText (inserted once at the first text part position). Non-text,
+// non-thought parts (function calls, function responses, inline data) are preserved.
+// If original has no text parts and newText is non-empty, newText is appended.
+func rebuildTextParts(original []*llm.Part, newText string) []*llm.Part {
+	insertIdx := findTextReplacementIndex(original)
+
+	// Keep function calls, function responses, inline data, etc.
+	// Drop all text parts. The editor concatenates all text parts
+	// into one buffer, so preserving subsequent parts would
+	// duplicate content on save.
+	var newParts []*llm.Part
+	for _, p := range original {
+		if isNonTextNonThought(p) {
+			newParts = append(newParts, p)
+		}
+	}
+
+	return insertTextAtPosition(newParts, newText, insertIdx)
+}
+
+// findThoughtIndex returns the index of the first thought part in original,
+// or -1 if none exists.
+func findThoughtIndex(original []*llm.Part) int {
+	for i, p := range original {
+		if p.IsThought {
+			return i
+		}
+	}
+	return -1
+}
+
+// insertThoughtIfPresent inserts a thought part into newParts if newThought is
+// non-empty. The insertion position mirrors the position of the first thought
+// part in original. If original had no thought part, newThought is appended.
+// KNOWN LIMITATION: thoughtIdx is computed from original, but newParts may have
+// fewer elements because text parts are dropped. For common provider layouts
+// this is correct; for exotic layouts it's cosmetic — semantic content is preserved.
+func insertThoughtIfPresent(newParts []*llm.Part, original []*llm.Part, newThought string) []*llm.Part {
 	// If the original had a thought part, insert newThought at its position.
 	// If there was no thought part but newThought is provided, append it.
-	if newThought != "" {
-		thoughtPart := &llm.Part{Text: newThought, IsThought: true}
-		// Find where the first thought part was in the original
-		thoughtIdx := -1
-		for i, p := range original {
-			if p.IsThought {
-				thoughtIdx = i
-				break
-			}
-		}
-		// KNOWN LIMITATION: thoughtIdx is computed from original, but
-		// text parts are dropped during the rebuild, so newParts may
-		// have fewer elements. For common provider layouts (thought-first
-		// or thought-after-a-single-text-part) the index is correct.
-		// For exotic layouts like [textA, textB, thought, FC] where both
-		// text parts are dropped, the thought inserts earlier than
-		// expected. Cosmetic — the semantic content is preserved.
-		if thoughtIdx >= 0 && thoughtIdx <= len(newParts) {
-			newParts = append(newParts[:thoughtIdx], append([]*llm.Part{thoughtPart}, newParts[thoughtIdx:]...)...)
-		} else {
-			newParts = append(newParts, thoughtPart)
-		}
+	if newThought == "" {
+		return newParts
 	}
+
+	thoughtPart := &llm.Part{Text: newThought, IsThought: true}
+	thoughtIdx := findThoughtIndex(original)
+
+	// KNOWN LIMITATION: thoughtIdx is computed from original, but
+	// text parts are dropped during the rebuild, so newParts may
+	// have fewer elements. For common provider layouts (thought-first
+	// or thought-after-a-single-text-part) the index is correct.
+	// For exotic layouts like [textA, textB, thought, FC] where both
+	// text parts are dropped, the thought inserts earlier than
+	// expected. Cosmetic — the semantic content is preserved.
+	if thoughtIdx >= 0 && thoughtIdx <= len(newParts) {
+		return append(newParts[:thoughtIdx], append([]*llm.Part{thoughtPart}, newParts[thoughtIdx:]...)...)
+	}
+	return append(newParts, thoughtPart)
+}
+
+// collectUpdatedParts builds a new Parts slice by replacing the text and
+// thought parts in original with newText and newThought. Non-text,
+// non-thought parts (function calls, responses, inline data) are preserved.
+// An empty newThought omits the thought part. An empty newText omits the
+// text part (the old text part is dropped with no replacement).
+// Delegates to rebuildTextParts and insertThoughtIfPresent.
+func collectUpdatedParts(original []*llm.Part, newText string, newThought string) []*llm.Part {
+	newParts := rebuildTextParts(original, newText)
+	newParts = insertThoughtIfPresent(newParts, original, newThought)
 	return newParts
 }
 
