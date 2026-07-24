@@ -843,4 +843,74 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-07 (Task 2: Complexity Alerts — (*model).Update and (*renderer).makeSubscriber)*
+## Test Complexity (ACCEPTED — 2026-07 Supplemental)
+
+### internal/infrastructure/llm/openai/files_test.go — TestPrepareMediaAssets_KimiURL_UploadsVideo (CC=16)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Sequential integration test verifying Kimi-specific video upload pipeline with multiple API response shapes (success, auth failure, server error, retry). Each case mutates shared mock state. Splitting would duplicate the expensive mock server setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow`.
+- **See**: `internal/infrastructure/llm/openai/files_test.go:379`
+
+### internal/infrastructure/llm/openai/client_vision_test.go — TestHydrateMediaAssets (CC=13)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Table-driven test covering 8 distinct media hydration scenarios (image URL, base64, video, mixed, error paths). CC comes from assertion boilerplate across cases, not branching business logic. Splitting would fragment a coherent coverage matrix.
+- **See**: `internal/infrastructure/llm/openai/client_vision_test.go:243`
+
+### internal/infrastructure/llm/openai/client_vision_test.go — TestVision_KimiImagePayload (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Provider-specific payload validation test with multiple assertion paths for Kimi's non-standard image format. CC is assertion boilerplate, not branching logic. Same acceptance class as `TestHydrateMediaAssets`.
+- **See**: `internal/infrastructure/llm/openai/client_vision_test.go:128`
+
+### internal/infrastructure/llm/openai/client_vision_test.go — TestMediaBlocks (CC=11)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Table-driven test covering media block construction across image, video, and mixed content types. CC comes from case enumeration, not branching logic. Same file, same acceptance class as the other vision tests above.
+- **See**: `internal/infrastructure/llm/openai/client_vision_test.go:18`
+
+### internal/infrastructure/history/history_test.go — TestUpdateTurnContent_ClearText (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Sequential state-mutation test verifying text clearing and thought preservation through multiple update cycles. Steps are not independent — each mutates shared history state. Splitting would duplicate setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow`.
+- **See**: `internal/infrastructure/history/history_test.go:1028`
+
+### internal/infrastructure/history/history_test.go — TestUpdateTurnContent_AddTextWhenNone (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Same sequential state-mutation pattern as `TestUpdateTurnContent_ClearText`, verifying the complementary code path. CC is assertion boilerplate across dependent steps.
+- **See**: `internal/infrastructure/history/history_test.go:1115`
+
+### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Table-driven combinatorial test covering provider × model × feature capability resolution. CC comes from the 10+ test cases in the table, each a simple assertion. Splitting the table into subtests would obscure the cross-provider comparison intent.
+- **See**: `internal/domain/llm/capabilities_test.go:10`
+
+### internal/tools/analysis/precision_test.go — TestDeadCodeAnalyzer_Precision (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: End-to-end precision test verifying dead code analysis across a multi-package fixture workspace. CC comes from per-package assertion blocks. Splitting would require duplicating the expensive `createPrecisionWorkspace` fixture (itself CC=12 and already ACCEPTED).
+- **See**: `internal/tools/analysis/precision_test.go:177`
+
+### internal/tools/analysis/precision_test.go — createPrecisionWorkspace (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Test-fixture builder that constructs a multi-package Go workspace with specific symbol structures for dead code analysis. Already referenced as accepted in the `(*indexer).snapshot` (CC=11) entry. CC comes from file creation boilerplate, not branching logic.
+- **See**: `internal/tools/analysis/precision_test.go:118`
+
+### internal/tools/analysis/index_fixture_test.go — TestFixtureIndexer_ConstructAndHarvest (CC=11)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: End-to-end fixture test constructing an indexer, loading packages, and harvesting results. CC comes from setup + assertion blocks across the three-phase test (construct → index → harvest). Splitting would duplicate the fixture construction.
+- **See**: `internal/tools/analysis/index_fixture_test.go:154`
+
+### internal/tools/workspace/process_executor_stream_test.go — TestRunCommand_NonExitErrorWaitPath (CC=11)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Sequential test exercising the command executor's error-handling paths for non-exit errors (signal, wait failure, context cancellation). Steps build on shared process state. CC is assertion boilerplate across error paths.
+- **See**: `internal/tools/workspace/process_executor_stream_test.go:817`
+
+---
+
+*Last Updated: 2026-07 (Supplemental: Test Complexity batch documentation)*
