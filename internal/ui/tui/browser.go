@@ -368,6 +368,13 @@ func (m *rootBrowserModel) handleEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newThought := m.editor.EditedThought()
 			if err := m.cmdService.UpdateTurnContent(m.ctx, m.editIndex, newText, newThought); err != nil {
 				m.err = err
+			} else if m.selectedTurn >= 0 && m.selectedTurn < len(m.history) {
+				// Update the in-memory DTO so the viewport renders the edited
+				// content immediately without a full history re-fetch.
+				dto := &m.history[m.selectedTurn]
+				dto.ContentPreview = newText
+				dto.ThoughtProcess = newThought
+				delete(m.cachedThoughts, dto.ID)
 			}
 			m.editing = false
 			m.editor = nil
