@@ -171,6 +171,15 @@ func (m *mockHistoryManager) GetLastModelTurn(ctx context.Context) (int, *llm.Co
 	return 0, nil, ports.ErrHistoryNotFound
 }
 
+func (m *mockHistoryManager) GetModelTurn(ctx context.Context, index int) (*llm.Content, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if index < 0 || index >= len(m.Contents) {
+		return nil, ports.ErrHistoryNotFound
+	}
+	return llm.CloneContent(m.Contents[index]), nil
+}
+
 func (m *mockHistoryManager) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
 	return nil
 }
