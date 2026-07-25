@@ -1,6 +1,6 @@
 # Evolution of Environment Management
 
-How `tell-me-go` environment management evolved from simple shell aliases to a multi-role, provider-switchable system — all in Bash.
+How `tell-me-go` environment management evolved from simple shell aliases to a multi-role, provider-switchable, group-categorized system — all in Bash.
 
 - [Stage 1: Bash Aliases](#stage-1-bash-aliases)
 - [Stage 2: Toby — Tag-Based Environment Manager](#stage-2-toby--tag-based-environment-manager)
@@ -9,6 +9,7 @@ How `tell-me-go` environment management evolved from simple shell aliases to a m
 - [Stage 5: SSH Sub-Agent Sprawl — Remote Orchestration](#stage-5-ssh-sub-agent-sprawl--remote-orchestration)
 - [Stage 6: Winky — Agent-Deployed Remote Dev Environment](#stage-6-winky--agent-deployed-remote-dev-environment)
 - [Stage 7: Flopsy — Dynamic Role Aliases from Variations](#stage-7-flopsy--dynamic-role-aliases-from-variations)
+- [Stage 8: Niffler — Group-Based Environment Categories](#stage-8-niffler--group-based-environment-categories)
 
 ---
 
@@ -674,3 +675,187 @@ Commands:
 | Stage 7 (Flopsy) | `b` + any number of discovered aliases | Add a YAML file to `variations/` |
 
 Flopsy is the endpoint of the role-flexibility arc: from one fixed role, to five fixed roles, to an arbitrary number of user-defined roles discovered at source time.
+
+---
+
+## Stage 8: Niffler — Group-Based Environment Categories
+
+All previous stages share a single template: one `ait-base/` with one set of roles or variations. This breaks down when you need **fundamentally different categories** of AI environments — for example, a software engineering pipeline (Architect, Coder, Reviewer, Tester with Go skill injection) alongside a creative writing studio (named personas with no technical docs).
+
+Niffler solves this by adding a **GROUP layer** above Flopsy's tag+provider model. Groups are self-contained category templates under `ait-base/`, and each tag is provisioned from exactly one group.
+
+### How It's Sourced
+
+```bash
+# In .bashrc
+source /path/to/niffler.sh -n engineers myproject vertex-flash
+
+# Interactively:
+source niffler.sh -n                  # fzf picker: group → tag → provider
+source niffler.sh -n -p               # create with Vertex priority headers
+source niffler.sh -n -c               # create without docs/ folder
+source niffler.sh -n actors studio vertex-flash  # direct (group + tag + provider)
+
+# Mid-session provider switch (same tag, same group — group is irrelevant):
+source niffler.sh openai              # hot-swap LLM, keep all state
+source niffler.sh mytag deepseek-pro  # switch tag + provider
+```
+
+### Directory Structure
+
+```text
+ait-base/
+├── actors/                          ← GROUP: creative personas
+│   ├── configs/
+│   │   ├── butler.yaml              ← master config (all providers + pricing)
+│   │   ├── alice.yaml               ← stub: MODE + PERSON only
+│   │   ├── carol.yaml
+│   │   ├── diana.yaml
+│   │   └── eve.yaml
+│   └── secrets/
+│       ├── key.json                 ← Service account credentials
+│       └── keys                     ← API key env vars (sourced)
+│
+├── engineers/                       ← GROUP: development roles
+│   ├── configs/
+│   │   ├── butler.yaml              ← master config (all providers + pricing)
+│   │   ├── butler-priority.yaml     ← Variant with Vertex priority headers
+│   │   ├── architect.yaml           ← stub: MODE + PERSON only
+│   │   ├── coder.yaml
+│   │   ├── reviewer.yaml
+│   │   └── tester.yaml
+│   ├── docs/skills/                 ← Group-specific skill injection
+│   │   ├── golang-patterns/
+│   │   └── golang-testing/
+│   └── secrets/
+│       ├── key.json
+│       └── keys
+
+ait-<tag>/                           ← Provisioned tag (group NOT in path)
+├── .gitignore                       ← Ignores output/ and secrets/
+├── configs/
+│   ├── butler.yaml                  ← Copied from group template
+│   ├── <persona>.yaml               ← Generated: stub's MODE+PERSON merged with butler
+│   └── ...
+├── secrets/
+├── docs/                            ← Only if group had docs/ and -c not used
+└── output/
+```
+
+### Key Features
+
+| Feature | How |
+|---------|-----|
+| **Group-based templates** | `ait-base/<group>/` — each group is a self-contained template with its own configs, secrets, and optional docs/skills |
+| **Group only at creation** | The group is specified with `-n` and never again. Switching providers or tags does not involve or change the group |
+| **Per-group persona discovery** | Personas are discovered from `<group>/configs/*.yaml` (excluding `butler.yaml` and `butler-priority.yaml`), same as Flopsy's variation discovery but scoped to the group |
+| **Per-group skills** | The `docs/skills/` directory is optional per group — `engineers/` includes `golang-patterns` and `golang-testing`; `actors/` has none |
+| **Per-group secrets** | Each group template carries its own `secrets/` directory, copied at provisioning time |
+| **Config generation** | On `-n`, each persona stub (`MODE` + `PERSON` only) is merged with `butler.yaml` (or `butler-priority.yaml` with `-p`) into a full `<persona>.yaml` config with all providers, pricing, and tools |
+| **Priority mode** (`-p`) | Uses `butler-priority.yaml` as the merge source, with Vertex AI shared/priority headers |
+| **Clean mode** (`-c`) | Skips copying the `docs/` folder from the group template |
+| **Re-entry guard** | Same as Dobby/Flopsy: detects `NIFFLER_SOURCED`, strips old prompt prefix, allows provider-only switching, rejects `-n` since the tag is fixed |
+| **Prompt preservation** | Saves original `PS1` on first source, restores and re-applies on re-entry so prefixes never stack |
+| **Role functions** | `b` (butler, always available) + one shell function per discovered persona, keyed by the **first letter** of the persona filename |
+
+### Group Discovery
+
+Groups are subdirectories of `ait-base/` that contain a `configs/butler.yaml` file. At provisioning time, Niffler scans `ait-base/` and presents discovered groups via `fzf`:
+
+```bash
+_niffler_existing_groups() {
+    for d in "$NIFFLER_TEMPLATE_DIR"/*/; do
+        [[ -d "$d" ]] || continue
+        [[ -f "$d/configs/butler.yaml" ]] || continue
+        printf '%s\n' "${d%/##*/}"
+    done | sort -u
+}
+```
+
+This means adding a new category is as simple as creating a new directory under `ait-base/` with a `configs/butler.yaml` — no script changes needed.
+
+### Persona Validation Rules
+
+Same as Flopsy, enforced at provisioning time:
+
+- **`b` is reserved** for butler — no persona filename can start with `b`
+- **Unique first letters** — `alice.yaml` and `alex.yaml` can't coexist in the same group (both claim `a`)
+
+Violations abort creation and clean up the partial workspace.
+
+### Concrete Example: Two Groups in Practice
+
+**Group: `engineers`** — Software development pipeline:
+```bash
+source niffler.sh -n engineers tmg vertex-flash
+
+b "Hello!"   # Butler (always available)
+a "Design..."# Architect — system design, architecture review
+c "Write..." # Coder — implementation
+r "Review..."# Reviewer — code review against idioms/security
+t "Test..."  # Tester — QA, coverage verification
+```
+
+Prompt: `[tmg|vertex-flash]`. `golang-patterns` and `golang-testing` skills auto-inject into the context.
+
+**Group: `actors`** — Creative persona studio:
+```bash
+source niffler.sh -n actors studio vertex-flash
+
+b "Hello!"   # Butler (always available)
+a "Write..." # Alice
+c "Create..."# Carol
+d "Help..."  # Diana
+e "Draft..." # Eve
+```
+
+Prompt: `[studio|vertex-flash]`. No engineering skills — the `actors/` group template has no `docs/` directory.
+
+### Mid-Session Provider Switching
+
+Since the group is not in the directory name or path, switching providers works exactly like Dobby:
+
+```bash
+# Start with Vertex Flash in engineers/tmg
+source niffler.sh -n engineers tmg vertex-flash
+a "Design the auth module"
+# Session history, tasks, SafePath all live in ait-tmg/output/
+
+# Switch to DeepSeek — same tag, same group, same terminal, same state
+source niffler.sh deepseek-pro
+a "Design the auth module"
+# Compares models on the same prompt, with full session context preserved
+```
+
+The re-entry guard detects `NIFFLER_SOURCED`, strips the old prompt prefix, re-applies with the new provider. The tag stays fixed; only the provider changes. The group is never mentioned.
+
+### Tag Switching
+
+Niffler also supports switching to a different tag (from any group) without the `-n` flag:
+
+```bash
+source niffler.sh studio vertex-flash   # switch to actors/studio tag
+a "Write a story"                       # Alice from the actors group
+```
+
+The group is irrelevant at switch time — Niffler discovers personas from the target tag's `configs/` directory. The tag's group "sticks" from whenever it was provisioned.
+
+### What It Solves vs. Stage 7
+
+| Limitation (Flopsy) | Stage 8 (Niffler) |
+|----------------------|-------------------|
+| Single template — all tags share the same set of personas | Multiple group templates — each tag is provisioned from one self-contained category |
+| One `variations/` directory for everything | Each group has its own `configs/` directory with its own personas |
+| Skills/docs are global (all-or-nothing) | Skills/docs are per-group — engineers get them, actors don't |
+| No way to have fundamentally different config scaffolds | Actors and engineers are completely separate template trees |
+| Adding a new category means a new `variations/` file alongside unrelated ones | Adding a new category means a new `ait-base/<group>/` directory, fully isolated |
+
+### The Evolution of Categorization
+
+| Stage | Template model | How to add a category |
+|-------|---------------|----------------------|
+| Stage 1–6 | Single `ait-base/` or embedded template | Edit the script or template directory |
+| Stage 7 (Flopsy) | Single `ait-base/` with `configs/variations/` | Add a YAML file to `variations/` |
+| Stage 8 (Niffler) | `ait-base/<group>/` — multiple self-contained category templates | Create a new group directory with `configs/butler.yaml` + persona stubs |
+
+Niffler is the endpoint of the categorization arc: from one fixed category, to many variations in one category, to many isolated categories each with their own variations. The name draws from the Harry Potter creature that compulsively collects shiny objects — fitting for a tool that collects and organizes groups of AI personas.
