@@ -315,6 +315,10 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			}
 		}
 		m.editor = editor.NewModel(text, thought)
+		// Seed the editor with the current window dimensions so its layout
+		// initializes before the first render. Bubble Tea does not re-send
+		// WindowSizeMsg to sub-models created after program startup.
+		_, _ = m.editor.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		m.editing = true
 		m.editIndex = dto.OriginalIndex
 		return m, m.editor.Init()
