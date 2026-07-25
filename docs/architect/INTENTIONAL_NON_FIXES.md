@@ -841,6 +841,12 @@ to reason about.
   `(*model).Update` (Bubble Tea dispatch).
 - **See**: `internal/ui/tui/history_editor.go:39`
 
+### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Type-switch dispatching key actions in the browse TUI. The 'e' (edit) keybinding added 4 structural branches: bounds guard on `selectedTurn`, role guard (`"model" || "assistant"`), `GetModelTurn` error guard, and editor-creation. Each branch is a single-line guard or delegation, not branching business logic. Same acceptance class as `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — type-switch dispatch where cyclomatic complexity is structural, not cognitive.
+- **See**: `internal/ui/tui/browser.go:294`
+
 ---
 
 ## Test Complexity (ACCEPTED — 2026-07 Supplemental)
@@ -911,6 +917,12 @@ to reason about.
 - **Rationale**: Sequential test exercising the command executor's error-handling paths for non-exit errors (signal, wait failure, context cancellation). Steps build on shared process state. CC is assertion boilerplate across error paths.
 - **See**: `internal/tools/workspace/process_executor_stream_test.go:817`
 
+### internal/infrastructure/history/history_test.go — TestGetModelTurn (CC=16)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Table-driven test with 5 subtests covering valid index, OOB negative, OOB pos, non-model role, and deep-copy isolation for `GetModelTurn`. Each subtest contains its own setup (temp dir, `NewManager`, `AddContent`). CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestUpdateTurnContent_ClearText` (CC=12) and `TestUpdateTurnContent_AddTextWhenNone` (CC=12) in the same file.
+- **See**: `internal/infrastructure/history/history_test.go:1198`
+
 ---
 
-*Last Updated: 2026-07 (Supplemental: Test Complexity batch documentation)*
+*Last Updated: 2026-07 (feat/multi-turn-edit: handleActionKeys + TestGetModelTurn complexity acceptance)*

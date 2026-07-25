@@ -67,6 +67,10 @@ func (s *stubHistoryManager) GetLastModelTurn(_ stdctx.Context) (int, *llm.Conte
 	return 0, nil, ports.ErrHistoryNotFound
 }
 
+func (s *stubHistoryManager) GetModelTurn(_ stdctx.Context, _ int) (*llm.Content, error) {
+	return nil, ports.ErrHistoryNotFound
+}
+
 func (s *stubHistoryManager) UpdateTurnContent(_ stdctx.Context, _ int, _ string, _ string) error {
 	return nil
 }

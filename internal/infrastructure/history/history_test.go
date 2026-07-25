@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -1194,4 +1195,89 @@ func TestUpdateTurnContent_MultiPartText(t *testing.T) {
 	if m.Contents[1].Parts[0].Text != "Edited" {
 		t.Errorf("expected text %q, got %q", "Edited", m.Contents[1].Parts[0].Text)
 	}
+}
+
+func TestGetModelTurn(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyFile := filepath.Join(tmp, "history.jsonl")
+	archiveFile := filepath.Join(tmp, "archive.jsonl")
+
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+
+	// Setup: user → model turn
+	if err := m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	modelContent := &llm.Content{Role: "model", Parts: []*llm.Part{
+		{Text: "hi there"},
+		{Text: "thinking...", IsThought: true},
+	}}
+	if err := m.AddContent(ctx, modelContent); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("valid index returns model turn", func(t *testing.T) {
+		got, err := m.GetModelTurn(ctx, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Role != "model" {
+			t.Errorf("expected role 'model', got %q", got.Role)
+		}
+		if len(got.Parts) != 2 {
+			t.Fatalf("expected 2 parts, got %d", len(got.Parts))
+		}
+		if got.Parts[0].Text != "hi there" {
+			t.Errorf("expected text 'hi there', got %q", got.Parts[0].Text)
+		}
+		if !got.Parts[1].IsThought || got.Parts[1].Text != "thinking..." {
+			t.Errorf("expected thought part 'thinking...', got %+v", got.Parts[1])
+		}
+	})
+
+	t.Run("out-of-bounds negative index", func(t *testing.T) {
+		_, err := m.GetModelTurn(ctx, -1)
+		if !errors.Is(err, ports.ErrHistoryNotFound) {
+			t.Errorf("expected ErrHistoryNotFound, got %v", err)
+		}
+	})
+
+	t.Run("out-of-bounds index beyond length", func(t *testing.T) {
+		_, err := m.GetModelTurn(ctx, 100)
+		if !errors.Is(err, ports.ErrHistoryNotFound) {
+			t.Errorf("expected ErrHistoryNotFound, got %v", err)
+		}
+	})
+
+	t.Run("non-model role returns ErrHistoryNotFound", func(t *testing.T) {
+		_, err := m.GetModelTurn(ctx, 0) // index 0 is the user entry
+		if !errors.Is(err, ports.ErrHistoryNotFound) {
+			t.Errorf("expected ErrHistoryNotFound, got %v", err)
+		}
+	})
+
+	t.Run("deep copy isolation", func(t *testing.T) {
+		// Fetch once
+		first, err := m.GetModelTurn(ctx, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Mutate the returned copy
+		first.Parts[0].Text = "mutated"
+		first.Parts = append(first.Parts, &llm.Part{Text: "injected"})
+
+		// Fetch again — must return original, unmutated data
+		second, err := m.GetModelTurn(ctx, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if second.Parts[0].Text != "hi there" {
+			t.Errorf("deep copy failed: expected 'hi there', got %q", second.Parts[0].Text)
+		}
+		if len(second.Parts) != 2 {
+			t.Errorf("deep copy failed: expected 2 parts, got %d", len(second.Parts))
+		}
+	})
 }

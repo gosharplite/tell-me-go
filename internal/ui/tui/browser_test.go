@@ -34,6 +34,7 @@ type mockHistoryModifier struct {
 	SetPinnedFunc     func(ctx context.Context, turnID string, pinned bool) error
 	GetFilePathFunc   func() string
 	RollbackTurnsFunc func(ctx context.Context, turns int) (int, int, int, error)
+	GetModelTurnFunc  func(ctx context.Context, index int) (*llm.Content, error)
 
 	SetPinnedCalled   bool
 	RollbackCalled    bool
@@ -77,6 +78,13 @@ func (m *mockHistoryModifier) RollbackTurns(ctx context.Context, turns int) (int
 
 func (m *mockHistoryModifier) GetLastModelTurn(ctx context.Context) (int, *llm.Content, error) {
 	return 0, nil, ports.ErrHistoryNotFound
+}
+
+func (m *mockHistoryModifier) GetModelTurn(ctx context.Context, index int) (*llm.Content, error) {
+	if m.GetModelTurnFunc != nil {
+		return m.GetModelTurnFunc(ctx, index)
+	}
+	return nil, ports.ErrHistoryNotFound
 }
 
 func (m *mockHistoryModifier) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
@@ -1288,4 +1296,108 @@ func TestProcessWatcherEvents_ClosedWatcher(t *testing.T) {
 	if msg != nil {
 		t.Errorf("expected nil msg from closed watcher, got %T: %v", msg, msg)
 	}
+}
+
+// ── Browser edit keybinding tests ──
+
+func TestBrowserEditKeybinding(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("e on model turn opens editor", func(t *testing.T) {
+		mockProvider := &mockHistoryProvider{}
+		mockModifier := &mockHistoryModifier{
+			GetModelTurnFunc: func(ctx context.Context, index int) (*llm.Content, error) {
+				return &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{
+						{Text: "Hello world"},
+						{Text: "thinking...", IsThought: true},
+					},
+				}, nil
+			},
+		}
+		m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+		m.history = []ports.HistoryViewDTO{
+			{ID: "user-0", Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+			{ID: "model-0", Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+		}
+		m.selectedTurn = 1 // Model turn
+
+		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+		updated := newModel.(*rootBrowserModel)
+
+		if !updated.editing {
+			t.Error("expected editing to be true after 'e' on model turn")
+		}
+		if updated.editor == nil {
+			t.Error("expected editor to be non-nil after 'e' on model turn")
+		}
+		if updated.editIndex != 1 {
+			t.Errorf("expected editIndex 1, got %d", updated.editIndex)
+		}
+	})
+
+	t.Run("e on user turn does nothing", func(t *testing.T) {
+		mockProvider := &mockHistoryProvider{}
+		mockModifier := &mockHistoryModifier{}
+		m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+		m.history = []ports.HistoryViewDTO{
+			{ID: "user-0", Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+			{ID: "model-0", Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+		}
+		m.selectedTurn = 0 // User turn
+
+		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+		updated := newModel.(*rootBrowserModel)
+
+		if updated.editing {
+			t.Error("expected editing to be false after 'e' on user turn")
+		}
+	})
+
+	t.Run("e with no selection does nothing", func(t *testing.T) {
+		mockProvider := &mockHistoryProvider{}
+		mockModifier := &mockHistoryModifier{}
+		m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+		m.history = []ports.HistoryViewDTO{
+			{ID: "user-0", Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+			{ID: "model-0", Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+		}
+		m.selectedTurn = -1 // No selection
+
+		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+		updated := newModel.(*rootBrowserModel)
+
+		if updated.editing {
+			t.Error("expected editing to be false when nothing selected")
+		}
+	})
+
+	t.Run("e when GetModelTurn fails sets error", func(t *testing.T) {
+		mockProvider := &mockHistoryProvider{}
+		mockModifier := &mockHistoryModifier{
+			GetModelTurnFunc: func(ctx context.Context, index int) (*llm.Content, error) {
+				return nil, ports.ErrHistoryNotFound
+			},
+		}
+		m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+		m.history = []ports.HistoryViewDTO{
+			{ID: "user-0", Role: "user", ContentPreview: "hello", OriginalIndex: 0},
+			{ID: "model-0", Role: "assistant", ContentPreview: "hi", OriginalIndex: 1},
+		}
+		m.selectedTurn = 1 // Model turn
+
+		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+		updated := newModel.(*rootBrowserModel)
+
+		if updated.editing {
+			t.Error("expected editing to remain false when GetModelTurn fails")
+		}
+		if updated.err == nil {
+			t.Fatal("expected error to be set when GetModelTurn fails")
+		}
+		if !strings.Contains(updated.err.Error(), "get model turn") {
+			t.Errorf("expected error to contain 'get model turn', got: %v", updated.err)
+		}
+	})
 }

@@ -483,6 +483,30 @@ func (m *Manager) GetLastModelTurn(ctx context.Context) (int, *llm.Content, erro
 	return 0, nil, ports.ErrHistoryNotFound
 }
 
+// GetModelTurn returns a deep copy of the model-role Content at the given index.
+func (m *Manager) GetModelTurn(ctx context.Context, index int) (*llm.Content, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if index < 0 || index >= len(m.Contents) {
+		return nil, ports.ErrHistoryNotFound
+	}
+
+	entry := m.Contents[index]
+	if entry.Role != "model" {
+		return nil, ports.ErrHistoryNotFound
+	}
+
+	copied := *entry
+	copied.Parts = make([]*llm.Part, len(entry.Parts))
+	for i, p := range entry.Parts {
+		pc := *p
+		copied.Parts[i] = &pc
+	}
+
+	return &copied, nil
+}
+
 // isNonTextNonThought returns true when a part is neither a thought nor a
 // text part (i.e., it's a function call, function response, inline data, etc.).
 func isNonTextNonThought(p *llm.Part) bool {

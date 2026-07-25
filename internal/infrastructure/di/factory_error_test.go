@@ -221,6 +221,10 @@ func (m *mockHistoryManagerFull) GetLastModelTurn(ctx context.Context) (int, *ll
 	return 0, nil, ports.ErrHistoryNotFound
 }
 
+func (m *mockHistoryManagerFull) GetModelTurn(ctx context.Context, index int) (*llm.Content, error) {
+	return nil, ports.ErrHistoryNotFound
+}
+
 func (m *mockHistoryManagerFull) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
 	return nil
 }

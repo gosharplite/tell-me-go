@@ -530,6 +530,10 @@ func (m *mockHistoryManagerForRetry) GetLastModelTurn(ctx context.Context) (int,
 	return 0, nil, ports.ErrHistoryNotFound
 }
 
+func (m *mockHistoryManagerForRetry) GetModelTurn(ctx context.Context, index int) (*llm.Content, error) {
+	return nil, ports.ErrHistoryNotFound
+}
+
 func (m *mockHistoryManagerForRetry) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
 	return nil
 }
