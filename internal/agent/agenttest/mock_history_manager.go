@@ -29,6 +29,7 @@ type MockHistoryManager struct {
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 
 	GetLastModelTurnFunc  func(ctx context.Context) (int, *llm.Content, error)
+	GetModelTurnFunc      func(ctx context.Context, index int) (*llm.Content, error)
 	UpdateTurnContentFunc func(ctx context.Context, index int, newText string, newThought string) error
 }
 
@@ -147,6 +148,12 @@ func (m *MockHistoryManager) GetLastModelTurn(ctx context.Context) (int, *llm.Co
 		}
 	}
 	return 0, nil, nil
+}
+func (m *MockHistoryManager) GetModelTurn(ctx context.Context, index int) (*llm.Content, error) {
+	if m.GetModelTurnFunc != nil {
+		return m.GetModelTurnFunc(ctx, index)
+	}
+	return nil, nil
 }
 func (m *MockHistoryManager) UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error {
 	if m.UpdateTurnContentFunc != nil {

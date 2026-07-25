@@ -19,8 +19,8 @@ func TestNewModel_WithThought(t *testing.T) {
 	if model.EditedThought() != "thinking..." {
 		t.Errorf("expected EditedThought %q, got %q", "thinking...", model.EditedThought())
 	}
-	if model.wasSaved() {
-		t.Error("expected wasSaved() to be false for new model")
+	if model.WasSaved() {
+		t.Error("expected WasSaved() to be false for new model")
 	}
 	if model.WasAborted() {
 		t.Error("expected WasAborted() to be false for new model")
@@ -103,8 +103,8 @@ func TestCtrlS_SavesAndQuits(t *testing.T) {
 	newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 
 	editor := newModel.(*EditorModel)
-	if !editor.wasSaved() {
-		t.Error("expected wasSaved() to be true after Ctrl+S")
+	if !editor.WasSaved() {
+		t.Error("expected WasSaved() to be true after Ctrl+S")
 	}
 	if editor.WasAborted() {
 		t.Error("expected WasAborted() to be false after Ctrl+S")
@@ -126,8 +126,8 @@ func TestEsc_AbortsAndQuits(t *testing.T) {
 	if !editor.WasAborted() {
 		t.Error("expected WasAborted() to be true after Esc")
 	}
-	if editor.wasSaved() {
-		t.Error("expected wasSaved() to be false after Esc")
+	if editor.WasSaved() {
+		t.Error("expected WasSaved() to be false after Esc")
 	}
 	if cmd == nil {
 		t.Fatal("expected tea.Quit command after Esc")

@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui/editor"
 )
 
 var (
@@ -75,6 +76,11 @@ type rootBrowserModel struct {
 	watcherFactory    func() (*fsnotify.Watcher, error)
 	watcherErrorCount int // consecutive watcher error count for threshold alerting
 	watcherRestarting bool
+
+	// Editor sub-model fields
+	editor    *editor.EditorModel // non-nil when editing a turn
+	editing   bool                // true when editor is active
+	editIndex int                 // content-slice index of the turn being edited
 }
 
 // NewRootBrowserModel creates a new history browser root model.
@@ -176,6 +182,10 @@ func (m *rootBrowserModel) handleWatcherError(err error, ok bool) tea.Msg {
 
 // Update handles incoming messages and updates the model state.
 func (m *rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.editing {
+		return m.handleEditorMsg(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
@@ -203,7 +213,7 @@ func (m *rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "j", "k", "n", "N":
 		return m.handleNavigationKeys(msg)
-	case "p", "r", " ", "/":
+	case "p", "r", " ", "/", "e":
 		return m.handleActionKeys(msg)
 	}
 
@@ -283,6 +293,31 @@ func (m *rootBrowserModel) moveSearchMatch(delta int) {
 
 func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "e":
+		if m.selectedTurn < 0 || m.selectedTurn >= len(m.history) {
+			return m, nil
+		}
+		dto := m.history[m.selectedTurn]
+		if dto.Role != "model" && dto.Role != "assistant" {
+			return m, nil
+		}
+		content, err := m.cmdService.GetModelTurn(m.ctx, dto.OriginalIndex)
+		if err != nil {
+			m.err = fmt.Errorf("get model turn: %w", err)
+			return m, nil
+		}
+		var text, thought string
+		for _, p := range content.Parts {
+			if p.IsThought {
+				thought += p.Text
+			} else if p.Text != "" {
+				text += p.Text
+			}
+		}
+		m.editor = editor.NewModel(text, thought)
+		m.editing = true
+		m.editIndex = dto.OriginalIndex
+		return m, m.editor.Init()
 	case "p":
 		m.togglePin()
 		if m.isLoading {
@@ -303,6 +338,45 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return m, nil
 	}
 	return m, nil
+}
+
+// handleEditorMsg delegates messages to the editor sub-model and handles
+// save/abort completion. The editor signals completion via WasAborted() or
+// WasSaved() after processing a tea.KeyMsg.
+func (m *rootBrowserModel) handleEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Forward window-size messages so the editor can lay out
+	if _, ok := msg.(tea.WindowSizeMsg); ok {
+		m.editor.Update(msg)
+		return m, nil
+	}
+
+	// Delegate key messages to the editor; check completion after
+	if _, ok := msg.(tea.KeyMsg); ok {
+		_, _ = m.editor.Update(msg)
+
+		if m.editor.WasAborted() {
+			m.editing = false
+			m.editor = nil
+			return m, nil
+		}
+		if m.editor.WasSaved() {
+			newText := m.editor.EditedText()
+			newThought := m.editor.EditedThought()
+			if err := m.cmdService.UpdateTurnContent(m.ctx, m.editIndex, newText, newThought); err != nil {
+				m.err = err
+			}
+			m.editing = false
+			m.editor = nil
+			m.lastMutationTime = time.Now()
+			m.updateViewportContent()
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// Forward other messages to the editor
+	_, cmd := m.editor.Update(msg)
+	return m, cmd
 }
 
 func (m *rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -411,6 +485,10 @@ func (m *rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, 
 
 // View renders the current state of the model.
 func (m *rootBrowserModel) View() string {
+	if m.editing {
+		return m.editor.View()
+	}
+
 	if m.err != nil {
 		return errorStyle.Render(fmt.Sprintf("Error: %v\nPress 'q' to quit.", m.err))
 	}

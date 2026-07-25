@@ -268,7 +268,7 @@ func (m *rootBrowserModel) renderFooter() string {
 	if !m.showThoughts {
 		thoughtsStatus = "OFF"
 	}
-	fmt.Fprintf(&sb, "↑/↓: Scroll • Space: Thoughts [%s] • /: Search • j/k: Select • p: Pin • r: Rollback • q: Quit", thoughtsStatus)
+	fmt.Fprintf(&sb, "↑/↓: Scroll • Space: Thoughts [%s] • /: Search • j/k: Select • e: Edit • p: Pin • r: Rollback • q: Quit", thoughtsStatus)
 
 	if m.currentQuery != "" {
 		matchInfo := ""

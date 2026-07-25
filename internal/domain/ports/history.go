@@ -89,6 +89,13 @@ type HistoryModifier interface {
 	// ErrHistoryNotFound if no model turns exist in the history.
 	GetLastModelTurn(ctx context.Context) (index int, content *llm.Content, err error)
 
+	// GetModelTurn returns a deep copy of the model-role Content entry at the
+	// given index in the underlying content slice. The index refers to the
+	// position in the full content slice (0-based), not a turn number.
+	// Returns ErrHistoryNotFound if index is out of bounds or the entry at
+	// that position is not a model role.
+	GetModelTurn(ctx context.Context, index int) (*llm.Content, error)
+
 	// UpdateTurnContent replaces the text and thought parts of the Content at
 	// the given index in memory, then persists the change via Save.
 	// The index must reference a model-role entry. Passing an empty string for
