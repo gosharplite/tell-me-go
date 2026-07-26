@@ -18,7 +18,9 @@ const (
 	LLMErrorRateLimited LLMError = iota
 	// LLMErrorContextOverflow — the accumulated prompt exceeds the model's context window.
 	LLMErrorContextOverflow
-	// LLMErrorAuthFailure — the API key or credentials are invalid; do not retry.
+	// LLMErrorAuthFailure — the API key or credentials are invalid, or
+	// the provider rejected the request due to content safety policy
+	// (ErrContentFilter); do not retry.
 	LLMErrorAuthFailure
 	// LLMErrorServerError — a transient 5xx from the provider; may succeed on retry or failover.
 	LLMErrorServerError
@@ -71,7 +73,7 @@ func classifySentinel(err error) LLMError {
 	if errors.Is(err, ErrRateLimit) {
 		return LLMErrorRateLimited
 	}
-	if errors.Is(err, ErrAuth) {
+	if errors.Is(err, ErrAuth) || errors.Is(err, ErrContentFilter) {
 		return LLMErrorAuthFailure
 	}
 	if errors.Is(err, ErrContextLimitExceeded) || errors.Is(err, errBudgetExceeded) {

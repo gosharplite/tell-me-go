@@ -38,6 +38,7 @@ func TestClassifyLLMError(t *testing.T) {
 		{"nil error", nil, -1},
 		{"rate limit", ErrRateLimit, LLMErrorRateLimited},
 		{"auth failure", ErrAuth, LLMErrorAuthFailure},
+		{"content filter", ErrContentFilter, LLMErrorAuthFailure},
 		{"context overflow", ErrContextLimitExceeded, LLMErrorContextOverflow},
 		{"budget exceeded", errBudgetExceeded, LLMErrorContextOverflow},
 		{"transient", ErrTransient, LLMErrorServerError},

@@ -393,3 +393,154 @@ type mockHTTPStatusErr struct {
 
 func (e *mockHTTPStatusErr) Error() string   { return fmt.Sprintf("http %d", e.status) }
 func (e *mockHTTPStatusErr) StatusCode() int { return e.status }
+
+func TestIsTerminalQuotaError(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "Kimi exceeded_current_quota_error",
+			body: `{"error": {"type": "exceeded_current_quota_error", "message": "Account balance is insufficient"}}`,
+			want: true,
+		},
+		{
+			name: "OpenAI insufficient_quota",
+			body: `{"error": {"type": "insufficient_quota", "message": "You exceeded your current quota"}}`,
+			want: true,
+		},
+		{
+			name: "Anthropic rate_limit_error",
+			body: `{"error": {"type": "rate_limit_error", "message": "..."}}`,
+			want: false,
+		},
+		{
+			name: "Kimi engine_overloaded_error",
+			body: `{"error": {"type": "engine_overloaded_error", "message": "..."}}`,
+			want: false,
+		},
+		{
+			name: "empty body",
+			body: "",
+			want: false,
+		},
+		{
+			name: "not json",
+			body: "not json",
+			want: false,
+		},
+		{
+			name: "no type field",
+			body: `{"error": {}}`,
+			want: false,
+		},
+		{
+			name: "no message field",
+			body: `{"error": {"type": "exceeded_current_quota_error"}}`,
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTerminalQuotaError(tt.body)
+			if got != tt.want {
+				t.Errorf("isTerminalQuotaError(%q) = %v; want %v", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassify_QuotaExhausted(t *testing.T) {
+	err := &APIError{
+		Status: 429,
+		Body:   `{"error": {"type": "exceeded_current_quota_error", "message": "Account balance is insufficient"}}`,
+	}
+	result := Classify(err)
+	if !errors.Is(result, llm.ErrQuotaExhausted) {
+		t.Errorf("expected llm.ErrQuotaExhausted, got %v", result)
+	}
+	// Quota exhaustion must NOT be transient — same-provider retry should stop.
+	if llm.IsTransient(result) {
+		t.Error("ErrQuotaExhausted should not be transient (must stop same-provider retry)")
+	}
+}
+
+func TestClassify_RetryableRateLimit_Unaffected(t *testing.T) {
+	err := &APIError{
+		Status: 429,
+		Body:   `{"error": {"type": "rate_limit_error", "message": "..."}}`,
+	}
+	result := Classify(err)
+	if !errors.Is(result, llm.ErrRateLimit) {
+		t.Errorf("expected llm.ErrRateLimit, got %v", result)
+	}
+}
+
+func TestIsContentFilterError(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "Kimi content_filter",
+			body: `{"error": {"type": "content_filter", "message": "high risk"}}`,
+			want: "high risk",
+		},
+		{
+			name: "invalid_request_error",
+			body: `{"error": {"type": "invalid_request_error", "message": "bad"}}`,
+			want: "",
+		},
+		{
+			name: "empty body",
+			body: "",
+			want: "",
+		},
+		{
+			name: "not json",
+			body: "not json",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isContentFilterError(tt.body)
+			if got != tt.want {
+				t.Errorf("isContentFilterError(%q) = %q; want %q", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassify_ContentFilter(t *testing.T) {
+	err := &APIError{
+		Status: 400,
+		Body:   `{"error": {"type": "content_filter", "message": "high risk"}}`,
+	}
+	result := Classify(err)
+	if !errors.Is(result, llm.ErrContentFilter) {
+		t.Errorf("expected llm.ErrContentFilter, got %v", result)
+	}
+}
+
+func TestClassify_ContentFilter_Idempotent(t *testing.T) {
+	// First pass: classify the raw APIError
+	apiErr := &APIError{
+		Status: 400,
+		Body:   `{"error": {"type": "content_filter", "message": "high risk"}}`,
+	}
+	result1 := Classify(apiErr)
+	if !errors.Is(result1, llm.ErrContentFilter) {
+		t.Fatalf("first pass: expected ErrContentFilter, got %v", result1)
+	}
+	// Second pass: classify the already-classified error
+	// Must be idempotent — should not re-wrap or change the sentinel
+	result2 := Classify(result1)
+	if !errors.Is(result2, llm.ErrContentFilter) {
+		t.Errorf("second pass: expected ErrContentFilter, got %v (not idempotent)", result2)
+	}
+}

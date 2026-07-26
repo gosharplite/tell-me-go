@@ -19,6 +19,17 @@ var (
 	ErrAuth = errors.New("authentication error")
 	// ErrRateLimit signals a rate limit failure.
 	ErrRateLimit = errors.New("rate limit exceeded")
+	// ErrQuotaExhausted signals that the provider's quota or account balance
+	// has been exhausted. Unlike ErrRateLimit (transient backpressure),
+	// quota exhaustion is terminal for THIS provider — do not retry
+	// same-provider — but it must NOT abort cross-provider failover chains.
+	// The failover gateway skips an exhausted provider and tries the next one.
+	ErrQuotaExhausted = errors.New("quota exhausted")
+	// ErrContentFilter signals that the provider rejected the request
+	// due to content safety policy. The error message contains the
+	// provider's reason, which is surfaced to the user/operator so they
+	// can adjust the prompt or input before retrying.
+	ErrContentFilter = errors.New("content filter rejection")
 )
 
 // IsTransient returns true if the error is ErrTransient or ErrRateLimit.
@@ -31,7 +42,8 @@ func IsTerminal(err error) bool {
 	return errors.Is(err, ErrTerminal) ||
 		errors.Is(err, errBudgetExceeded) ||
 		errors.Is(err, ErrMaxTurnsReached) ||
-		errors.Is(err, ErrContextLimitExceeded)
+		errors.Is(err, ErrContextLimitExceeded) ||
+		errors.Is(err, ErrContentFilter)
 }
 
 // IsAuth returns true if the error is ErrAuth.

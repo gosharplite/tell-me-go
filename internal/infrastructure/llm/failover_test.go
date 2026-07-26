@@ -709,3 +709,40 @@ func TestFailoverGateway_Generate_NilMetricsPassthrough(t *testing.T) {
 	assert.Equal(t, 1, primary.generateCalled)
 	assert.Equal(t, 0, secondary.generateCalled)
 }
+
+func TestFailoverGateway_Generate_PrimaryQuotaExhaustedSecondarySucceeds(t *testing.T) {
+	primary := &mockExtendedClient{
+		name: "primary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, llm.ErrQuotaExhausted
+		},
+	}
+	secondary := &mockExtendedClient{
+		name: "secondary",
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return successContent(), successMetrics(), nil
+		},
+	}
+
+	fg := newFailoverGateway([]namedClient{
+		{Name: primary.name, Client: primary},
+		{Name: secondary.name, Client: secondary},
+	})
+
+	content, metrics, err := fg.Generate(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content.Parts[0].Text != "success" {
+		t.Errorf("got %q, want %q", content.Parts[0].Text, "success")
+	}
+	if metrics.Provider != "secondary" {
+		t.Errorf("got provider %q, want %q", metrics.Provider, "secondary")
+	}
+	if primary.generateCalled != 1 {
+		t.Errorf("primary.generateCalled = %d, want 1", primary.generateCalled)
+	}
+	if secondary.generateCalled != 1 {
+		t.Errorf("secondary.generateCalled = %d, want 1", secondary.generateCalled)
+	}
+}
