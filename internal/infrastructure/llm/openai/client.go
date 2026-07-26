@@ -20,48 +20,74 @@ import (
 
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
-	httpClient     *http.Client
-	transport      http.RoundTripper
-	authenticator  auth.Authenticator
-	baseURL        string
-	model          string
-	capabilities   llm.Capabilities
-	headers        map[string]string
-	persona        string
-	thinkingBudget int
-	maxTokens      int
-	logger         ports.Logger
-	timeout        time.Duration
+	httpClient         *http.Client
+	transport          http.RoundTripper
+	authenticator      auth.Authenticator
+	baseURL            string
+	model              string
+	capabilities       llm.Capabilities
+	headers            map[string]string
+	persona            string
+	thinkingBudget     int
+	maxTokens          int
+	thinkingEnabled    bool   // thinking toggle value; meaningless unless thinkingEnabledSet is true
+	thinkingEnabledSet bool   // true when WithThinkingEnabled was called (tri-state: unset vs explicit false)
+	userID             string // DeepSeek user_id for isolation
+	logger             ports.Logger
+	timeout            time.Duration
 }
 
-// openaiOption defines a functional option for configuring the OpenAI Client.
-type openaiOption func(*client)
+// Option defines a functional option for configuring the OpenAI Client.
+type Option func(*client)
 
 // WithHeaders sets the custom headers for the OpenAI Client.
-func WithHeaders(headers map[string]string) openaiOption {
+func WithHeaders(headers map[string]string) Option {
 	return func(c *client) {
 		c.headers = headers
 	}
 }
 
 // WithPersona sets the initial persona instruction for the OpenAI Client.
-func WithPersona(persona string) openaiOption {
+func WithPersona(persona string) Option {
 	return func(c *client) {
 		c.persona = persona
 	}
 }
 
 // WithTimeout sets the HTTP timeout for the OpenAI Client.
-func WithTimeout(timeout time.Duration) openaiOption {
+func WithTimeout(timeout time.Duration) Option {
 	return func(c *client) {
 		c.timeout = timeout
 	}
 }
 
 // WithThinkingBudget sets the thinking budget for models that support it.
-func WithThinkingBudget(budget int) openaiOption {
+func WithThinkingBudget(budget int) Option {
 	return func(c *client) {
 		c.thinkingBudget = budget
+	}
+}
+
+// WithThinkingEnabled controls the DeepSeek/Kimi thinking-mode toggle.
+// When true, the request includes {"thinking": {"type": "enabled"}}.
+// When false, includes {"thinking": {"type": "disabled"}}.
+// When not called at all, the field is omitted from the wire, preserving
+// the provider's default. Only emitted for models where
+// SupportsThinkingToggle is true.
+func WithThinkingEnabled(enabled bool) Option {
+	return func(c *client) {
+		c.thinkingEnabled = enabled
+		c.thinkingEnabledSet = true
+	}
+}
+
+// WithUserID sets the DeepSeek user_id for content safety isolation,
+// KVCache isolation, and scheduling isolation. The value is validated
+// at config load ([a-zA-Z0-9\-_]+, max 512). Do not include PII.
+// Only emitted for models where SupportsThinkingToggle is true.
+func WithUserID(id string) Option {
+	return func(c *client) {
+		c.userID = id
 	}
 }
 
@@ -88,7 +114,7 @@ func WithThinkingBudget(budget int) openaiOption {
 // TestOpenAI_WithMaxTokens_ZeroAndNoThinkingBudget_FallsBackToDefault,
 // and TestOpenAI_WithMaxTokens_DeepSeek_PopulatesMaxTokensField in
 // maxtokens_test.go.
-func WithMaxTokens(n int) openaiOption {
+func WithMaxTokens(n int) Option {
 	return func(c *client) {
 		if n > 0 {
 			c.maxTokens = n
@@ -97,14 +123,14 @@ func WithMaxTokens(n int) openaiOption {
 }
 
 // WithLogger sets the logger for the OpenAI Client.
-func WithLogger(l ports.Logger) openaiOption {
+func WithLogger(l ports.Logger) Option {
 	return func(c *client) {
 		c.logger = l
 	}
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...openaiOption) *client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...Option) *client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -149,6 +175,13 @@ type chatRequest struct {
 	MaxOutputTokens     int              `json:"max_output_tokens,omitempty"` // NEW: for /responses endpoint
 	Reasoning           *reasoningConfig `json:"reasoning,omitempty"`
 	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
+	// Thinking controls the DeepSeek/Kimi thinking mode toggle.
+	// {"type": "enabled"} or {"type": "disabled"}. Omitted when nil.
+	Thinking *thinkingToggle `json:"thinking,omitempty"`
+
+	// UserID carries the DeepSeek user_id for isolation.
+	// Omitted when empty.
+	UserID string `json:"user_id,omitempty"`
 	// ChatTemplateKwargs carries non-standard template parameters required
 	// by certain transports. Used to enable thinking mode on Vertex AI's
 	// deepseek-ai/deepseek-v3.2-maas, which silently ignores the standard
@@ -168,6 +201,11 @@ type historyItem struct {
 
 type reasoningConfig struct {
 	Effort string `json:"effort,omitempty"`
+}
+
+// thinkingToggle controls the DeepSeek thinking mode.
+type thinkingToggle struct {
+	Type string `json:"type"`
 }
 
 type responsesAPIResponse struct {

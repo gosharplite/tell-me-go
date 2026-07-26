@@ -67,6 +67,18 @@ type Capabilities struct {
 	// Set for all models known to use reasoning_content natively:
 	// deepseek-* and kimi-* model families.
 	SupportsReasoningContent bool
+	// SupportsThinkingToggle indicates the model accepts the
+	// {"thinking":{"type":"enabled|disabled"}} request field to
+	// control thinking/chain-of-thought mode. When true, the
+	// client emits the toggle explicitly; when false, the field
+	// is omitted from the wire, preserving provider defaults.
+	//
+	// Set for: deepseek-* and kimi-* model families.
+	// Note: independent of SupportsReasoningContent — Vertex MaaS
+	// DeepSeek supports reasoning_content on the response side
+	// but uses chat_template_kwargs on the request side instead
+	// of the standard thinking field (RequiresVertexThinkingKwargs).
+	SupportsThinkingToggle bool
 	// SupportsVision indicates the model natively understands images via
 	// image_url content parts in the messages array. When true, InlineData
 	// parts are serialized as base64 image_url blocks rather than being
@@ -170,9 +182,10 @@ func resolveGPTFamily(model string) (isReasoner bool, requireResponses bool) {
 
 // resolveDeepSeekFamily derives DeepSeek capabilities from the model string and
 // base URL. The base URL is used only for RequiresVertexThinkingKwargs detection.
-func resolveDeepSeekFamily(model, baseURL string) (isDeepSeek, supportsReasoningContent, requiresVertexThinkingKwargs bool) {
+func resolveDeepSeekFamily(model, baseURL string) (isDeepSeek, supportsReasoningContent, supportsThinkingToggle, requiresVertexThinkingKwargs bool) {
 	isDeepSeek = isDeepSeekModel(model)
 	supportsReasoningContent = isDeepSeek
+	supportsThinkingToggle = isDeepSeek
 	if isDeepSeek && strings.Contains(baseURL, "aiplatform.googleapis.com") {
 		requiresVertexThinkingKwargs = true
 	}
@@ -180,11 +193,12 @@ func resolveDeepSeekFamily(model, baseURL string) (isDeepSeek, supportsReasoning
 }
 
 // resolveKimiFamily derives Kimi capabilities from the model string.
-func resolveKimiFamily(model string) (supportsReasoningContent, supportsVision, supportsVideo, supportsFileUpload, supportsReasoningEffort, isKimiK3 bool) {
+func resolveKimiFamily(model string) (supportsReasoningContent, supportsThinkingToggle, supportsVision, supportsVideo, supportsFileUpload, supportsReasoningEffort, isKimiK3 bool) {
 	if !isKimiModel(model) {
 		return
 	}
 	supportsReasoningContent = true
+	supportsThinkingToggle = true
 	supportsVision = true
 	supportsVideo = true
 	supportsFileUpload = true
@@ -202,8 +216,8 @@ func resolveKimiFamily(model string) (supportsReasoningContent, supportsVision, 
 // default to false.
 func ResolveCapabilities(model, baseURL string) Capabilities {
 	isReasoner, requireResponses := resolveGPTFamily(model)
-	isDeepSeek, dsReasoningContent, vertexThinkingKwargs := resolveDeepSeekFamily(model, baseURL)
-	kReasoningContent, supportsVision, supportsVideo, supportsFileUpload, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
+	isDeepSeek, dsReasoningContent, dsThinkingToggle, vertexThinkingKwargs := resolveDeepSeekFamily(model, baseURL)
+	kReasoningContent, kThinkingToggle, supportsVision, supportsVideo, supportsFileUpload, kReasoningEffort, isKimiK3 := resolveKimiFamily(model)
 
 	caps := Capabilities{
 		SupportsReasoningEffort:      isReasoner || kReasoningEffort,
@@ -211,6 +225,7 @@ func ResolveCapabilities(model, baseURL string) Capabilities {
 		UseDeveloperRole:             isReasoner,
 		IsDeepSeek:                   isDeepSeek,
 		SupportsReasoningContent:     dsReasoningContent || kReasoningContent,
+		SupportsThinkingToggle:       dsThinkingToggle || kThinkingToggle,
 		SupportsVision:               supportsVision,
 		SupportsVideo:                supportsVideo,
 		SupportsFileUpload:           supportsFileUpload,
