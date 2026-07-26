@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -31,8 +32,9 @@ type namedClient struct {
 //
 //	FailoverGateway (this type) — provider iteration and routing decisions based
 //	solely on the domain sentinels returned by ResilientClient. It does NOT
-//	repeat error classification; it only checks IsTransient() to decide whether
-//	to try the next provider or abort the chain.
+//	repeat error classification; it checks IsTransient() and a dedicated
+//	ErrQuotaExhausted gate to decide whether to try the next provider or
+//	abort the chain.
 type failoverGateway struct {
 	clients []namedClient // clients[0] is primary
 }
@@ -57,9 +59,13 @@ func newFailoverGateway(clients []namedClient) *failoverGateway {
 // (via ResilientClient / llmerr.Classify). FailoverGateway only routes
 // based on the error category:
 //   - On success: sets metrics.Provider to the client's name and returns.
+//   - On quota exhaustion (ErrQuotaExhausted): records the error and tries
+//     the next provider — quota is provider-scoped, a funded fallback may
+//     still succeed. No same-provider retry occurs (IsTransient returns false
+//     for this sentinel).
 //   - On transient (including rate limits): records the error and tries the
 //     next provider in the chain.
-//   - On any non-transient error (auth, terminal, unrecognized): aborts
+//   - On any other non-transient error (auth, terminal, unrecognized): aborts
 //     immediately — no further providers are tried.
 //   - If all providers are exhausted: returns the last error wrapped as terminal.
 func (fg *failoverGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -75,6 +81,13 @@ func (fg *failoverGateway) Generate(ctx context.Context, input []*llm.Content, t
 				metrics.Provider = nc.Name
 			}
 			return content, metrics, nil
+		}
+
+		// If the error is quota exhaustion, skip this provider and try the next one.
+		// Quota exhaustion is provider-scoped — a funded fallback may still succeed.
+		if errors.Is(err, llm.ErrQuotaExhausted) {
+			lastErr = err
+			continue
 		}
 
 		// ResilientClient already classified this error as a domain sentinel
