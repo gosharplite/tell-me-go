@@ -101,6 +101,11 @@ func TestIsTerminal(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "content filter",
+			err:  ErrContentFilter,
+			want: true,
+		},
+		{
 			name: "negative: unrelated standard error",
 			err:  errors.New("random network timeout"),
 			want: false,
@@ -173,5 +178,19 @@ func TestIsAuth(t *testing.T) {
 				t.Errorf("IsAuth() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIsTransient_QuotaExhausted(t *testing.T) {
+	t.Parallel()
+	if IsTransient(ErrQuotaExhausted) {
+		t.Error("ErrQuotaExhausted should not be transient")
+	}
+}
+
+func TestIsTransient_ContentFilter(t *testing.T) {
+	t.Parallel()
+	if IsTransient(ErrContentFilter) {
+		t.Error("ErrContentFilter should not be transient")
 	}
 }

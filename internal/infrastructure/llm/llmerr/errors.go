@@ -5,6 +5,7 @@ package llmerr
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -82,7 +83,7 @@ func Classify(err error) error {
 }
 
 func classifyDomain(err error) (error, bool) {
-	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) || errors.Is(err, llm.ErrRateLimit) {
+	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) || errors.Is(err, llm.ErrRateLimit) || errors.Is(err, llm.ErrQuotaExhausted) || errors.Is(err, llm.ErrContentFilter) {
 		return err, true
 	}
 	return nil, false
@@ -124,15 +125,97 @@ func httpStatusToDomain(status int) error {
 	return nil
 }
 
+// providerError holds the parsed fields from a provider JSON error body
+// of the form {"error": {"type": "...", "message": "..."}}.
+type providerError struct {
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// parseProviderError attempts to parse a provider JSON error body.
+// Returns the parsed fields and true on success, or zero values and false
+// on any failure (empty body, invalid JSON).
+func parseProviderError(body string) (typ, msg string, ok bool) {
+	if body == "" {
+		return "", "", false
+	}
+	var pe providerError
+	if err := json.Unmarshal([]byte(body), &pe); err != nil {
+		return "", "", false
+	}
+	return pe.Error.Type, pe.Error.Message, true
+}
+
+// isTerminalQuotaError parses a provider error body to detect quota-exhaustion
+// errors that should not be retried. Returns true when the error.type field
+// indicates a terminal billing/quota failure rather than a transient rate limit.
+//
+// Recognised types:
+//   - "exceeded_current_quota_error" (Kimi)
+//   - "insufficient_quota"           (OpenAI, DeepSeek)
+//
+// The function is defensive: any parse failure or unrecognised type
+// returns false, preserving the existing retry behaviour.
+func isTerminalQuotaError(body string) bool {
+	typ, _, ok := parseProviderError(body)
+	if !ok {
+		return false
+	}
+	return typ == "exceeded_current_quota_error" || typ == "insufficient_quota"
+}
+
+// isContentFilterError parses a provider error body to detect content
+// safety rejections. Returns the provider's rejection message when the
+// error.type field is "content_filter", or empty string otherwise.
+//
+// The function is defensive: any parse failure or unrecognised type
+// returns an empty string.
+func isContentFilterError(body string) string {
+	typ, msg, ok := parseProviderError(body)
+	if !ok || typ != "content_filter" {
+		return ""
+	}
+	return msg
+}
+
 func classifyHTTP(err error) (error, bool) {
 	var httpErr HTTPStatusErr
 	if !errors.As(err, &httpErr) {
 		return nil, false
 	}
-	if domainErr := httpStatusToDomain(httpErr.StatusCode()); domainErr != nil {
-		return fmt.Errorf("%w: %w", domainErr, err), true
+	domainErr := httpStatusToDomain(httpErr.StatusCode())
+	if domainErr == nil {
+		return nil, false
 	}
-	return nil, false
+
+	// Single cast to *APIError — used by both override blocks below.
+	var apiErr *APIError
+	_ = errors.As(err, &apiErr)
+
+	// Override: if the status code maps to rate limit but the error body
+	// indicates a terminal quota exhaustion (e.g. empty account balance),
+	// classify as quota exhausted — stops same-provider retry but allows
+	// cross-provider failover.
+	if domainErr == llm.ErrRateLimit {
+		if apiErr != nil && isTerminalQuotaError(apiErr.Body) {
+			return fmt.Errorf("%w: %w", llm.ErrQuotaExhausted, err), true
+		}
+	}
+	// Override: if the status code maps to terminal but the error body
+	// indicates a content safety rejection, classify as content filter
+	// so the operator can see the rejection reason and adjust the input
+	// before retrying. (Future: feed back into the model loop for in-session
+	// self-correction.)
+	if domainErr == llm.ErrTerminal {
+		if apiErr != nil {
+			if msg := isContentFilterError(apiErr.Body); msg != "" {
+				return fmt.Errorf("%w: %s: %w", llm.ErrContentFilter, msg, err), true
+			}
+		}
+	}
+	return fmt.Errorf("%w: %w", domainErr, err), true
 }
 
 // classifyStandard intercepts standard Go network and context errors
