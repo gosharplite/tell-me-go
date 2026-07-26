@@ -4,6 +4,8 @@
 package openai
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -102,5 +104,180 @@ func TestDecodeResponsesAPIResponse_EmitsTimingDebugLog(t *testing.T) {
 	}
 	if metrics.TotalTokens != 3 {
 		t.Errorf("expected TotalTokens=3, got %d", metrics.TotalTokens)
+	}
+}
+
+// TestThinkingToggle_DeepSeekDefaultEnabled verifies that the thinking
+// toggle is emitted as {"thinking":{"type":"enabled"}} for DeepSeek
+// models by default (thinkingEnabled defaults to true when
+// SupportsReasoningContent is true).
+func TestThinkingToggle_DeepSeekDefaultEnabled(t *testing.T) {
+	t.Parallel()
+
+	server, captured := captureChatRequest(t)
+	c := NewClient(server.URL, "deepseek-reasoner",
+		&auth.BearerAuth{Token: "k"},
+	)
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if captured.Thinking == nil {
+		t.Fatal("expected Thinking field to be populated for DeepSeek model")
+	}
+	if captured.Thinking.Type != "enabled" {
+		t.Errorf("expected thinking type 'enabled', got %q", captured.Thinking.Type)
+	}
+
+	// Verify the JSON body contains the expected field.
+	body, _ := json.Marshal(captured)
+	if !strings.Contains(string(body), `"thinking":{"type":"enabled"}`) {
+		t.Errorf("expected JSON to contain thinking toggle, got: %s", string(body))
+	}
+}
+
+// TestThinkingToggle_KimiDefaultEnabled verifies the thinking toggle
+// is emitted for Kimi models.
+func TestThinkingToggle_KimiDefaultEnabled(t *testing.T) {
+	t.Parallel()
+
+	server, captured := captureChatRequest(t)
+	c := NewClient(server.URL, "kimi-k3",
+		&auth.BearerAuth{Token: "k"},
+	)
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if captured.Thinking == nil {
+		t.Fatal("expected Thinking field to be populated for Kimi model")
+	}
+	if captured.Thinking.Type != "enabled" {
+		t.Errorf("expected thinking type 'enabled', got %q", captured.Thinking.Type)
+	}
+}
+
+// TestThinkingToggle_ExplicitDisabled verifies that WithThinkingEnabled(false)
+// emits {"thinking":{"type":"disabled"}}.
+func TestThinkingToggle_ExplicitDisabled(t *testing.T) {
+	t.Parallel()
+
+	server, captured := captureChatRequest(t)
+	c := NewClient(server.URL, "deepseek-reasoner",
+		&auth.BearerAuth{Token: "k"},
+		WithThinkingEnabled(false),
+	)
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if captured.Thinking == nil {
+		t.Fatal("expected Thinking field to be populated")
+	}
+	if captured.Thinking.Type != "disabled" {
+		t.Errorf("expected thinking type 'disabled', got %q", captured.Thinking.Type)
+	}
+
+	body, _ := json.Marshal(captured)
+	if !strings.Contains(string(body), `"thinking":{"type":"disabled"}`) {
+		t.Errorf("expected JSON to contain disabled toggle, got: %s", string(body))
+	}
+}
+
+// TestThinkingToggle_NotEmittedForNonReasoningContent verifies that
+// the thinking toggle is NOT emitted for models without
+// SupportsReasoningContent (e.g., gpt-4).
+func TestThinkingToggle_NotEmittedForNonReasoningContent(t *testing.T) {
+	t.Parallel()
+
+	server, captured := captureChatRequest(t)
+	c := NewClient(server.URL, "gpt-4",
+		&auth.BearerAuth{Token: "k"},
+	)
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if captured.Thinking != nil {
+		t.Errorf("expected Thinking field to be nil for non-reasoning model, got %+v", captured.Thinking)
+	}
+
+	body, _ := json.Marshal(captured)
+	if strings.Contains(string(body), `"thinking"`) {
+		t.Errorf("expected JSON to NOT contain thinking field, got: %s", string(body))
+	}
+}
+
+// TestUserID_EmittedForDeepSeek verifies that WithUserID emits
+// "user_id" in the JSON request body for DeepSeek models.
+func TestUserID_EmittedForDeepSeek(t *testing.T) {
+	t.Parallel()
+
+	server, captured := captureChatRequest(t)
+	c := NewClient(server.URL, "deepseek-reasoner",
+		&auth.BearerAuth{Token: "k"},
+		WithUserID("tenant-42"),
+	)
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if captured.UserID != "tenant-42" {
+		t.Errorf("expected UserID='tenant-42', got %q", captured.UserID)
+	}
+
+	body, _ := json.Marshal(captured)
+	if !strings.Contains(string(body), `"user_id":"tenant-42"`) {
+		t.Errorf("expected JSON to contain user_id, got: %s", string(body))
+	}
+}
+
+// TestUserID_NotEmittedWhenEmpty verifies that user_id is NOT emitted
+// when WithUserID is not called.
+func TestUserID_NotEmittedWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	server, captured := captureChatRequest(t)
+	c := NewClient(server.URL, "deepseek-reasoner",
+		&auth.BearerAuth{Token: "k"},
+		// no WithUserID
+	)
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if captured.UserID != "" {
+		t.Errorf("expected UserID to be empty, got %q", captured.UserID)
+	}
+
+	body, _ := json.Marshal(captured)
+	if strings.Contains(string(body), `"user_id"`) {
+		t.Errorf("expected JSON to NOT contain user_id, got: %s", string(body))
+	}
+}
+
+// TestUserID_NotEmittedForNonDeepSeek verifies that user_id is NOT
+// emitted for non-DeepSeek/Kimi models even when WithUserID is set.
+func TestUserID_NotEmittedForNonDeepSeek(t *testing.T) {
+	t.Parallel()
+
+	server, captured := captureChatRequest(t)
+	c := NewClient(server.URL, "gpt-4",
+		&auth.BearerAuth{Token: "k"},
+		WithUserID("tenant-42"),
+	)
+	_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if captured.UserID != "" {
+		t.Errorf("expected UserID to be empty for non-DeepSeek model, got %q", captured.UserID)
 	}
 }

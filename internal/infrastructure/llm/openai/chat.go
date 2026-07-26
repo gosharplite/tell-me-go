@@ -185,6 +185,24 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	}
 
 	c.applyOutputBudget(req, strat.useResponses)
+
+	// DeepSeek/Kimi thinking mode toggle.
+	// Emit when the model supports reasoning_content (i.e., deepseek-* or kimi-*).
+	// When not emitted, DeepSeek defaults to thinking ON.
+	if c.capabilities.SupportsReasoningContent {
+		mode := "disabled"
+		if c.thinkingEnabled {
+			mode = "enabled"
+		}
+		req.Thinking = &thinkingToggle{Type: mode}
+	}
+
+	// DeepSeek user_id isolation (content safety, KVCache, scheduling).
+	// Only emitted for models that support reasoning_content (deepseek-*, kimi-*).
+	if c.capabilities.SupportsReasoningContent && c.userID != "" {
+		req.UserID = c.userID
+	}
+
 	c.injectTransportHints(req)
 
 	return req, nil

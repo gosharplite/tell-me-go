@@ -113,6 +113,8 @@ func httpStatusToDomain(status int) error {
 	switch {
 	case status == 401:
 		return llm.ErrAuth
+	case status == 402:
+		return llm.ErrQuotaExhausted
 	case status == 429:
 		return llm.ErrRateLimit
 	case status == 499 || status == 408:

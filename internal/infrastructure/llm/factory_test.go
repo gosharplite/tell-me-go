@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -536,6 +537,69 @@ func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "provider_max_tokens_unusually_high") {
 		t.Errorf("expected warn 'provider_max_tokens_unusually_high'; got %q", buf.String())
+	}
+}
+
+func TestBuildBaseClient_DeprecatedDeepSeekModel_Warns(t *testing.T) {
+	buf, logger := captureLogger()
+
+	p := config.LLMProvider{
+		Type:  "deepseek",
+		Model: "deepseek-chat",
+		URL:   "https://api.deepseek.com",
+	}
+	_, err := buildBaseClient(p, &auth.BearerAuth{Token: "k"}, "", false, 60*time.Second, 0, nil, logger)
+	if err != nil {
+		t.Fatalf("buildBaseClient failed: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "deprecated_deepseek_model") {
+		t.Errorf("expected warn 'deprecated_deepseek_model'; got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "deepseek-chat") {
+		t.Errorf("expected deprecated model name in warning; got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "deepseek-v4-flash") {
+		t.Errorf("expected replacement model name in warning; got %q", buf.String())
+	}
+}
+
+func TestBuildBaseClient_DeprecatedDeepSeekReasoner_Warns(t *testing.T) {
+	buf, logger := captureLogger()
+
+	p := config.LLMProvider{
+		Type:  "deepseek",
+		Model: "deepseek-reasoner",
+		URL:   "https://api.deepseek.com",
+	}
+	_, err := buildBaseClient(p, &auth.BearerAuth{Token: "k"}, "", false, 60*time.Second, 0, nil, logger)
+	if err != nil {
+		t.Fatalf("buildBaseClient failed: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "deprecated_deepseek_model") {
+		t.Errorf("expected warn 'deprecated_deepseek_model'; got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "thinking mode") {
+		t.Errorf("expected thinking mode hint in warning; got %q", buf.String())
+	}
+}
+
+func TestBuildBaseClient_NonDeprecatedModel_NoWarning(t *testing.T) {
+	buf, logger := captureLogger()
+
+	p := config.LLMProvider{
+		Type:  "deepseek",
+		Model: "deepseek-v4-flash",
+		URL:   "https://api.deepseek.com",
+	}
+	_, err := buildBaseClient(p, &auth.BearerAuth{Token: "k"}, "", false, 60*time.Second, 0, nil, logger)
+	if err != nil {
+		t.Fatalf("buildBaseClient failed: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "deprecated_deepseek_model") {
+		t.Errorf("expected NO deprecated model warning for current model; got %q", buf.String())
 	}
 }
 

@@ -30,6 +30,8 @@ type client struct {
 	persona        string
 	thinkingBudget int
 	maxTokens      int
+	thinkingEnabled bool // when true, emit {"thinking": {"type": "enabled"}} for DeepSeek/Kimi
+	userID         string // DeepSeek user_id for isolation (content safety, KVCache, scheduling)
 	logger         ports.Logger
 	timeout        time.Duration
 }
@@ -62,6 +64,26 @@ func WithTimeout(timeout time.Duration) openaiOption {
 func WithThinkingBudget(budget int) openaiOption {
 	return func(c *client) {
 		c.thinkingBudget = budget
+	}
+}
+
+// WithThinkingEnabled controls the DeepSeek/Kimi thinking mode toggle.
+// When true, the request includes {"thinking": {"type": "enabled"}}.
+// When false, includes {"thinking": {"type": "disabled"}}.
+// Only has effect for models where SupportsReasoningContent is true.
+func WithThinkingEnabled(enabled bool) openaiOption {
+	return func(c *client) {
+		c.thinkingEnabled = enabled
+	}
+}
+
+// WithUserID sets the DeepSeek user_id for content safety isolation,
+// KVCache isolation, and scheduling isolation. The value must match
+// [a-zA-Z0-9\-_]+ with max length 512. Do not include PII.
+// Only emitted in the JSON body for models where SupportsReasoningContent is true.
+func WithUserID(id string) openaiOption {
+	return func(c *client) {
+		c.userID = id
 	}
 }
 
@@ -117,6 +139,13 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...
 		logger:        &ports.NoOpLogger{},
 	}
 
+	// DeepSeek/Kimi models default to thinking enabled.
+	// The thinkingEnabled field controls whether we emit the thinking toggle.
+	// Default: enabled for models that support reasoning_content.
+	if c.capabilities.SupportsReasoningContent {
+		c.thinkingEnabled = true
+	}
+
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -149,6 +178,12 @@ type chatRequest struct {
 	MaxOutputTokens     int              `json:"max_output_tokens,omitempty"` // NEW: for /responses endpoint
 	Reasoning           *reasoningConfig `json:"reasoning,omitempty"`
 	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
+	// Thinking controls the DeepSeek thinking mode toggle.
+	// {"type": "enabled"} or {"type": "disabled"}. Omitted when nil.
+	Thinking *thinkingToggle `json:"thinking,omitempty"`
+	// UserID carries the DeepSeek user_id for isolation.
+	// Must match [a-zA-Z0-9\-_]+ with max length 512. Omitted when empty.
+	UserID string `json:"user_id,omitempty"`
 	// ChatTemplateKwargs carries non-standard template parameters required
 	// by certain transports. Used to enable thinking mode on Vertex AI's
 	// deepseek-ai/deepseek-v3.2-maas, which silently ignores the standard
@@ -168,6 +203,10 @@ type historyItem struct {
 
 type reasoningConfig struct {
 	Effort string `json:"effort,omitempty"`
+}
+
+type thinkingToggle struct {
+	Type string `json:"type"`
 }
 
 type responsesAPIResponse struct {
