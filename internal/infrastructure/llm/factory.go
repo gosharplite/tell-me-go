@@ -45,14 +45,22 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 
 	switch p.Type {
 	case "openai", "deepseek", "kimi":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator,
+		opts := []openai.Option{
 			openai.WithHeaders(p.Headers),
 			openai.WithPersona(persona),
 			openai.WithTimeout(timeout),
 			openai.WithThinkingBudget(maxBudget),
 			openai.WithMaxTokens(p.MaxTokens),
 			openai.WithLogger(logger),
-		)
+		}
+		if p.ThinkingEnabled != nil {
+			opts = append(opts, openai.WithThinkingEnabled(*p.ThinkingEnabled))
+		}
+		if p.UserID != "" {
+			opts = append(opts, openai.WithUserID(p.UserID))
+		}
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, opts...)
+
 		// Warn if using a deprecated DeepSeek model name.
 		if replacement, deprecated := deprecatedDeepSeekModels[p.Model]; deprecated {
 			logger.Warn("deprecated_deepseek_model",
