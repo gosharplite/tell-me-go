@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -25,6 +26,10 @@ const (
 	SystemContextBuffer       = 1000 // Reserved space for system warnings/instructions
 )
 
+// userIDRegex validates the DeepSeek user_id format.
+// Must match [a-zA-Z0-9\-_]+ per DeepSeek API spec.
+var userIDRegex = regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`)
+
 // LLMProvider represents the configuration for a specific AI service provider.
 type LLMProvider struct {
 	Type           string `yaml:"TYPE"`            // e.g., "openai", "anthropic", "gemini"
@@ -38,6 +43,18 @@ type LLMProvider struct {
 	// to this field require a process restart to take effect.
 	MaxTokens int               `yaml:"MAX_TOKENS"`
 	Headers   map[string]string `yaml:"HEADERS"` // Custom HTTP headers
+
+	// ThinkingEnabled controls the DeepSeek/Kimi thinking-mode toggle.
+	// Tri-state: nil = omit the field from the wire (preserve provider
+	// default); true = thinking enabled; false = thinking disabled.
+	// Only emitted for providers with SupportsThinkingToggle capability.
+	ThinkingEnabled *bool `yaml:"THINKING_ENABLED"`
+
+	// UserID is the DeepSeek user_id for content safety, KVCache, and
+	// scheduling isolation. Must match [a-zA-Z0-9\-_]+ with max length
+	// 512. Do not include PII. Emitted only when non-empty for providers
+	// with SupportsThinkingToggle capability.
+	UserID string `yaml:"USER_ID"`
 }
 
 // anthropicThinkingBudgetHeadroom mirrors the Anthropic client's
@@ -67,6 +84,18 @@ func (p *LLMProvider) validate(name string, logger *slog.Logger) error {
 	if p.MaxTokens < 0 {
 		return fmt.Errorf("PROVIDERS.%s.MAX_TOKENS must be >= 0, got %d", name, p.MaxTokens)
 	}
+
+	// user_id validation: enforce format + length constraint at startup
+	// rather than letting invalid values surface as runtime HTTP 400s.
+	if p.UserID != "" {
+		if len(p.UserID) > 512 {
+			return fmt.Errorf("PROVIDERS.%s.USER_ID must be <= 512 characters, got %d", name, len(p.UserID))
+		}
+		if !userIDRegex.MatchString(p.UserID) {
+			return fmt.Errorf("PROVIDERS.%s.USER_ID must match [a-zA-Z0-9\\-_]+, got %q", name, p.UserID)
+		}
+	}
+
 	if p.Type == "anthropic" && p.MaxTokens > 0 && p.ThinkingBudget > 0 &&
 		p.MaxTokens < p.ThinkingBudget+anthropicThinkingBudgetHeadroom {
 		logger.Warn("provider_max_tokens_below_thinking_budget_floor",

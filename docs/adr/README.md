@@ -57,6 +57,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-049** | Third-Party Skill Injection Security Model | 2026-07 | Accepted | [2026-07-skills-sh-injection-security.md](2026-07-skills-sh-injection-security.md) |
 | **ADR-050** | Duplicate Skill Name Resolution Policy | 2026-07 | Accepted | [2026-07-skills-sh-duplicate-resolution.md](2026-07-skills-sh-duplicate-resolution.md) |
 | **ADR-051** | Async TUI Rendering for Large Responses | 2026-07 | Accepted | [2026-07-async-tui-rendering.md](2026-07-async-tui-rendering.md) |
+| **ADR-052** | DeepSeek/Kimi Thinking Mode Toggle and user_id Isolation | 2026-07 | Accepted | [2026-07-deepseek-thinking-toggle.md](2026-07-deepseek-thinking-toggle.md) |
 
 ## How to Create a New ADR
 

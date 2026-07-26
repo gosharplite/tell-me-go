@@ -33,7 +33,7 @@ func FuzzHTTPStatusToDomain(f *testing.F) {
 		err := httpStatusToDomain(status)
 		if err != nil {
 			switch err {
-			case llm.ErrAuth, llm.ErrRateLimit, llm.ErrTransient, llm.ErrTerminal:
+			case llm.ErrAuth, llm.ErrRateLimit, llm.ErrTransient, llm.ErrTerminal, llm.ErrQuotaExhausted:
 				// valid sentinel — pass
 			default:
 				t.Errorf("httpStatusToDomain(%d) = %v; want nil or a domain sentinel", status, err)
@@ -61,7 +61,7 @@ func TestHTTPStatusToDomain_Seeds(t *testing.T) {
 
 		// Generic 4xx → ErrTerminal
 		{status: 400, expected: llm.ErrTerminal},
-		{status: 402, expected: llm.ErrTerminal},
+		{status: 402, expected: llm.ErrQuotaExhausted},
 		{status: 404, expected: llm.ErrTerminal},
 		{status: 498, expected: llm.ErrTerminal},
 

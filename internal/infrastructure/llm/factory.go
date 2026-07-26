@@ -29,6 +29,13 @@ import (
 // Pinned by TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning.
 const softMaxTokensCeiling = 200_000
 
+// deprecatedDeepSeekModels maps deprecated DeepSeek model names to their
+// recommended replacements. These will stop working on 2026/07/24 15:59 UTC.
+var deprecatedDeepSeekModels = map[string]string{
+	"deepseek-chat":     "deepseek-v4-flash (non-thinking mode)",
+	"deepseek-reasoner": "deepseek-v4-flash (thinking mode)",
+}
+
 // buildBaseClient constructs a provider-specific LLM client based on the
 // provider type. Unknown or empty types fall back to Gemini. The caller
 // must provide a pre-created authenticator.
@@ -38,14 +45,30 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 
 	switch p.Type {
 	case "openai", "deepseek", "kimi":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator,
+		opts := []openai.Option{
 			openai.WithHeaders(p.Headers),
 			openai.WithPersona(persona),
 			openai.WithTimeout(timeout),
 			openai.WithThinkingBudget(maxBudget),
 			openai.WithMaxTokens(p.MaxTokens),
 			openai.WithLogger(logger),
-		)
+		}
+		if p.ThinkingEnabled != nil {
+			opts = append(opts, openai.WithThinkingEnabled(*p.ThinkingEnabled))
+		}
+		if p.UserID != "" {
+			opts = append(opts, openai.WithUserID(p.UserID))
+		}
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, opts...)
+
+		// Warn if using a deprecated DeepSeek model name.
+		if replacement, deprecated := deprecatedDeepSeekModels[p.Model]; deprecated {
+			logger.Warn("deprecated_deepseek_model",
+				"model", p.Model,
+				"replacement", replacement,
+				"deadline", "2026-07-24T15:59:00Z",
+			)
+		}
 	case "anthropic":
 		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
 			anthropic.WithHeaders(p.Headers),

@@ -4,6 +4,9 @@
 package config
 
 import (
+	"io"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -514,6 +517,40 @@ func TestLLMProvider_Validate_EdgeCases(t *testing.T) {
 				assert.Contains(t, logged, "provider_max_tokens_below_thinking_budget_floor")
 			} else {
 				assert.NotContains(t, logged, "provider_max_tokens_below_thinking_budget_floor")
+			}
+		})
+	}
+}
+
+// TestLLMProvider_Validate_UserID pins the startup validation contract
+// for PROVIDERS.<name>.USER_ID. Valid values pass; too-long, bad
+// characters, and unicode are hard-rejected with actionable messages.
+func TestLLMProvider_Validate_UserID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		userID  string
+		wantErr bool
+	}{
+		{"empty allowed", "", false},
+		{"valid simple", "tenant-42", false},
+		{"valid with dash and underscore", "tenant_a-b", false},
+		{"exactly 512 chars accepted", strings.Repeat("a", 512), false},
+		{"513 chars rejected", strings.Repeat("a", 513), true},
+		{"space rejected", "tenant 42", true},
+		{"special char at rejected", "tenant@42", true},
+		{"unicode rejected", "tenant-\u2122", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := &LLMProvider{UserID: tt.userID}
+			err := p.validate("test-provider", slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

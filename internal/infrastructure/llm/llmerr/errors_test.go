@@ -59,6 +59,11 @@ func TestClassify(t *testing.T) {
 			expectedWrap: llm.ErrAuth,
 		},
 		{
+			name:         "HTTP 402 via APIError → ErrQuotaExhausted",
+			input:        &APIError{Status: 402, Body: "Insufficient Balance"},
+			expectedWrap: llm.ErrQuotaExhausted,
+		},
+		{
 			name:         "HTTP 429 via APIError",
 			input:        &APIError{Status: 429, Body: "Rate limit exceeded"},
 			expectedWrap: llm.ErrRateLimit,
@@ -456,6 +461,21 @@ func TestClassify_QuotaExhausted(t *testing.T) {
 	err := &APIError{
 		Status: 429,
 		Body:   `{"error": {"type": "exceeded_current_quota_error", "message": "Account balance is insufficient"}}`,
+	}
+	result := Classify(err)
+	if !errors.Is(result, llm.ErrQuotaExhausted) {
+		t.Errorf("expected llm.ErrQuotaExhausted, got %v", result)
+	}
+	// Quota exhaustion must NOT be transient — same-provider retry should stop.
+	if llm.IsTransient(result) {
+		t.Error("ErrQuotaExhausted should not be transient (must stop same-provider retry)")
+	}
+}
+
+func TestClassify_HTTP402_QuotaExhausted(t *testing.T) {
+	err := &APIError{
+		Status: 402,
+		Body:   `{"error": {"type": "insufficient_quota", "message": "Account balance is insufficient"}}`,
 	}
 	result := Classify(err)
 	if !errors.Is(result, llm.ErrQuotaExhausted) {

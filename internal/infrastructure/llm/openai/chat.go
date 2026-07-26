@@ -169,7 +169,11 @@ func (c *client) applyOutputBudget(req *chatRequest, useResponses bool) {
 // certain API surfaces (e.g., Vertex AI thinking mode).
 func (c *client) injectTransportHints(req *chatRequest) {
 	if c.capabilities.RequiresVertexThinkingKwargs {
-		req.ChatTemplateKwargs = map[string]any{"thinking": true}
+		val := true // default: Vertex MaaS thinking ON (backward compat)
+		if c.thinkingEnabledSet {
+			val = c.thinkingEnabled
+		}
+		req.ChatTemplateKwargs = map[string]any{"thinking": val}
 	}
 }
 
@@ -185,6 +189,24 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	}
 
 	c.applyOutputBudget(req, strat.useResponses)
+
+	// DeepSeek/Kimi thinking-mode toggle.
+	// Emitted ONLY when SupportsThinkingToggle is true AND the option
+	// was explicitly called (thinkingEnabledSet). When unset, the field
+	// is omitted, preserving provider defaults.
+	if c.capabilities.SupportsThinkingToggle && c.thinkingEnabledSet {
+		mode := "disabled"
+		if c.thinkingEnabled {
+			mode = "enabled"
+		}
+		req.Thinking = &thinkingToggle{Type: mode}
+	}
+
+	// DeepSeek user_id isolation.
+	if c.capabilities.SupportsThinkingToggle && c.userID != "" {
+		req.UserID = c.userID
+	}
+
 	c.injectTransportHints(req)
 
 	return req, nil

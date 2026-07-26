@@ -18,6 +18,7 @@ func TestResolveCapabilities(t *testing.T) {
 		maxTokensField               MaxTokensField
 		isDeepSeek                   bool
 		supportsReasoningContent     bool
+		supportsThinkingToggle       bool
 		supportsVision               bool
 		supportsVideo                bool
 		requiresVertexThinkingKwargs bool
@@ -134,6 +135,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsVision:           false,
 		},
 		{
@@ -144,6 +146,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsVision:           false,
 		},
 		{
@@ -154,6 +157,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsVision:           false,
 		},
 		{
@@ -164,6 +168,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsVision:           false,
 		},
 		{
@@ -174,6 +179,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:           MaxTokensFieldLegacy,
 			isDeepSeek:               true,
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsVision:           false,
 		},
 		{
@@ -183,6 +189,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			supportsReasoningContent:     true,
+			supportsThinkingToggle:       true,
 			supportsVision:               false,
 			requiresVertexThinkingKwargs: true,
 		},
@@ -193,6 +200,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			supportsReasoningContent:     true,
+			supportsThinkingToggle:       true,
 			supportsVision:               false,
 			requiresVertexThinkingKwargs: false,
 		},
@@ -213,6 +221,7 @@ func TestResolveCapabilities(t *testing.T) {
 			maxTokensField:               MaxTokensFieldLegacy,
 			isDeepSeek:                   true,
 			supportsReasoningContent:     true,
+			supportsThinkingToggle:       true,
 			supportsVision:               false,
 			requiresVertexThinkingKwargs: false,
 		},
@@ -221,6 +230,7 @@ func TestResolveCapabilities(t *testing.T) {
 			model:                    "kimi-k3",
 			baseURL:                  "",
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsReasoningEffort:  true,
 			supportsVision:           true,
 			supportsVideo:            true,
@@ -231,6 +241,7 @@ func TestResolveCapabilities(t *testing.T) {
 			model:                    "moonshotai/kimi-k3",
 			baseURL:                  "",
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsReasoningEffort:  true,
 			supportsVision:           true,
 			supportsVideo:            true,
@@ -241,6 +252,7 @@ func TestResolveCapabilities(t *testing.T) {
 			model:                    "kimi-k2.7-code",
 			baseURL:                  "",
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsReasoningEffort:  false,
 			supportsVision:           true,
 			supportsVideo:            true,
@@ -251,6 +263,7 @@ func TestResolveCapabilities(t *testing.T) {
 			model:                    "kimi-k2.6",
 			baseURL:                  "",
 			supportsReasoningContent: true,
+			supportsThinkingToggle:   true,
 			supportsReasoningEffort:  false,
 			supportsVision:           true,
 			supportsVideo:            true,
@@ -282,6 +295,9 @@ func TestResolveCapabilities(t *testing.T) {
 			}
 			if caps.SupportsReasoningContent != tt.supportsReasoningContent {
 				t.Errorf("expected SupportsReasoningContent %v, got %v", tt.supportsReasoningContent, caps.SupportsReasoningContent)
+			}
+			if caps.SupportsThinkingToggle != tt.supportsThinkingToggle {
+				t.Errorf("expected SupportsThinkingToggle %v, got %v", tt.supportsThinkingToggle, caps.SupportsThinkingToggle)
 			}
 			if caps.SupportsVision != tt.supportsVision {
 				t.Errorf("expected SupportsVision %v, got %v", tt.supportsVision, caps.SupportsVision)

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -487,6 +488,162 @@ func TestFactory_MaxTokensZero_PreservesProviderDefault(t *testing.T) {
 	})
 }
 
+// --- ThinkingEnabled and UserID factory wiring ---
+//
+// These tests pin the contract that PROVIDERS.<name>.THINKING_ENABLED
+// and PROVIDERS.<name>.USER_ID in YAML reach the per-provider request
+// payload via openai.WithThinkingEnabled / openai.WithUserID.
+
+func TestFactory_PassesThinkingEnabled_True_ToOpenAI(t *testing.T) {
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	enabled := true
+	cfg := &config.Config{
+		SelectedProvider: "deepseek",
+		Providers: map[string]config.LLMProvider{
+			"deepseek": {
+				Type:            "deepseek",
+				URL:             server.URL,
+				Model:           "deepseek-v4-flash",
+				APIKey:          "test-key",
+				ThinkingEnabled: &enabled,
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	thinking, ok := captured["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected 'thinking' in request, got %v", captured)
+	}
+	if thinking["type"] != "enabled" {
+		t.Errorf("expected type='enabled', got %v", thinking["type"])
+	}
+}
+
+func TestFactory_PassesThinkingEnabled_False_ToOpenAI(t *testing.T) {
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	disabled := false
+	cfg := &config.Config{
+		SelectedProvider: "deepseek",
+		Providers: map[string]config.LLMProvider{
+			"deepseek": {
+				Type:            "deepseek",
+				URL:             server.URL,
+				Model:           "deepseek-v4-flash",
+				APIKey:          "test-key",
+				ThinkingEnabled: &disabled,
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	thinking, ok := captured["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected 'thinking' in request, got %v", captured)
+	}
+	if thinking["type"] != "disabled" {
+		t.Errorf("expected type='disabled', got %v", thinking["type"])
+	}
+}
+
+func TestFactory_ThinkingEnabled_Unset_Omitted(t *testing.T) {
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		SelectedProvider: "deepseek",
+		Providers: map[string]config.LLMProvider{
+			"deepseek": {
+				Type:   "deepseek",
+				URL:    server.URL,
+				Model:  "deepseek-v4-flash",
+				APIKey: "test-key",
+				// ThinkingEnabled is nil (zero value)
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	if _, ok := captured["thinking"]; ok {
+		t.Errorf("expected 'thinking' to be absent when unset, got %v", captured)
+	}
+}
+
+func TestFactory_PassesUserID_ToOpenAI(t *testing.T) {
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		SelectedProvider: "deepseek",
+		Providers: map[string]config.LLMProvider{
+			"deepseek": {
+				Type:   "deepseek",
+				URL:    server.URL,
+				Model:  "deepseek-v4-flash",
+				APIKey: "test-key",
+				UserID: "tenant-42",
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	if captured["user_id"] != "tenant-42" {
+		t.Errorf("expected user_id='tenant-42', got %v", captured["user_id"])
+	}
+}
+
+func TestFactory_UserID_Empty_Omitted(t *testing.T) {
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		_, _ = w.Write([]byte(`{"id":"x","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		SelectedProvider: "deepseek",
+		Providers: map[string]config.LLMProvider{
+			"deepseek": {
+				Type:   "deepseek",
+				URL:    server.URL,
+				Model:  "deepseek-v4-flash",
+				APIKey: "test-key",
+				// UserID is empty (zero value)
+			},
+		},
+	}
+	runFactorySendChatAndCapture(t, cfg, pricing.PricingData{})
+
+	if _, ok := captured["user_id"]; ok {
+		t.Errorf("expected 'user_id' to be absent when empty, got %v", captured)
+	}
+}
+
 // captureLogger returns an slog.Logger that writes warn+ records to
 // the returned buffer. Used to assert factory-side soft-warning
 // emissions. Wrapped in a ports.Logger adapter so it slots into the
@@ -536,6 +693,69 @@ func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "provider_max_tokens_unusually_high") {
 		t.Errorf("expected warn 'provider_max_tokens_unusually_high'; got %q", buf.String())
+	}
+}
+
+func TestBuildBaseClient_DeprecatedDeepSeekModel_Warns(t *testing.T) {
+	buf, logger := captureLogger()
+
+	p := config.LLMProvider{
+		Type:  "deepseek",
+		Model: "deepseek-chat",
+		URL:   "https://api.deepseek.com",
+	}
+	_, err := buildBaseClient(p, &auth.BearerAuth{Token: "k"}, "", false, 60*time.Second, 0, nil, logger)
+	if err != nil {
+		t.Fatalf("buildBaseClient failed: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "deprecated_deepseek_model") {
+		t.Errorf("expected warn 'deprecated_deepseek_model'; got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "deepseek-chat") {
+		t.Errorf("expected deprecated model name in warning; got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "deepseek-v4-flash") {
+		t.Errorf("expected replacement model name in warning; got %q", buf.String())
+	}
+}
+
+func TestBuildBaseClient_DeprecatedDeepSeekReasoner_Warns(t *testing.T) {
+	buf, logger := captureLogger()
+
+	p := config.LLMProvider{
+		Type:  "deepseek",
+		Model: "deepseek-reasoner",
+		URL:   "https://api.deepseek.com",
+	}
+	_, err := buildBaseClient(p, &auth.BearerAuth{Token: "k"}, "", false, 60*time.Second, 0, nil, logger)
+	if err != nil {
+		t.Fatalf("buildBaseClient failed: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "deprecated_deepseek_model") {
+		t.Errorf("expected warn 'deprecated_deepseek_model'; got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "thinking mode") {
+		t.Errorf("expected thinking mode hint in warning; got %q", buf.String())
+	}
+}
+
+func TestBuildBaseClient_NonDeprecatedModel_NoWarning(t *testing.T) {
+	buf, logger := captureLogger()
+
+	p := config.LLMProvider{
+		Type:  "deepseek",
+		Model: "deepseek-v4-flash",
+		URL:   "https://api.deepseek.com",
+	}
+	_, err := buildBaseClient(p, &auth.BearerAuth{Token: "k"}, "", false, 60*time.Second, 0, nil, logger)
+	if err != nil {
+		t.Fatalf("buildBaseClient failed: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "deprecated_deepseek_model") {
+		t.Errorf("expected NO deprecated model warning for current model; got %q", buf.String())
 	}
 }
 
