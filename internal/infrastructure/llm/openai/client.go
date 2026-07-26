@@ -20,21 +20,21 @@ import (
 
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
-	httpClient     *http.Client
-	transport      http.RoundTripper
-	authenticator  auth.Authenticator
-	baseURL        string
-	model          string
-	capabilities   llm.Capabilities
-	headers        map[string]string
-	persona        string
-	thinkingBudget    int
-	maxTokens         int
-	thinkingEnabled    bool // thinking toggle value; meaningless unless thinkingEnabledSet is true
-	thinkingEnabledSet bool // true when WithThinkingEnabled was called (tri-state: unset vs explicit false)
+	httpClient         *http.Client
+	transport          http.RoundTripper
+	authenticator      auth.Authenticator
+	baseURL            string
+	model              string
+	capabilities       llm.Capabilities
+	headers            map[string]string
+	persona            string
+	thinkingBudget     int
+	maxTokens          int
+	thinkingEnabled    bool   // thinking toggle value; meaningless unless thinkingEnabledSet is true
+	thinkingEnabledSet bool   // true when WithThinkingEnabled was called (tri-state: unset vs explicit false)
 	userID             string // DeepSeek user_id for isolation
-	logger            ports.Logger
-	timeout        time.Duration
+	logger             ports.Logger
+	timeout            time.Duration
 }
 
 // Option defines a functional option for configuring the OpenAI Client.
