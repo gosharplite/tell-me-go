@@ -846,6 +846,23 @@ to reason about.
 - **Rationale**: Type-switch dispatching key actions in the browse TUI. The 'e' (edit) keybinding added 4 structural branches: bounds guard on `selectedTurn`, role guard (`"model" || "assistant"`), `GetModelTurn` error guard, and editor-creation. Each branch is a single-line guard or delegation, not branching business logic. Same acceptance class as `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — type-switch dispatch where cyclomatic complexity is structural, not cognitive.
 - **See**: `internal/ui/tui/browser.go:294`
 
+### ui/tui/browser.go — (*rootBrowserModel).handleEditorMsg at 0%
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: `handleEditorMsg` is a Bubble Tea sub-model message dispatcher that
+  routes `WindowSizeMsg`, `KeyMsg`, and other messages to an embedded
+  `editor.EditorModel` when the browse TUI is in editing mode (activated by the
+  'e' keybinding). The existing `TestBrowserEditKeybinding` tests the
+  `handleActionKeys` 'e' case (which sets `m.editing = true`) but never sends a
+  follow-up message to exercise `handleEditorMsg` itself. Testing it would require
+  a full TUI integration harness with `tea.NewProgram` to drive the editor
+  sub-model's save/abort lifecycle. Same acceptance class as
+  `renderMarkdownAsync` (Bubble Tea goroutine body at 13.3%) and the
+  `handleActionKeys` type-switch dispatch — TUI message handlers that require
+  full runtime integration to exercise synchronously.
+- **See**: `internal/ui/tui/browser.go:350` (`handleEditorMsg`),
+  `internal/ui/tui/browser_test.go:1303` (`TestBrowserEditKeybinding`)
+
 ---
 
 ## Test Complexity (ACCEPTED — 2026-07 Supplemental)
@@ -936,4 +953,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-07 (SetPinned coverage: contentHasFunctionCall → 100%, CC acceptance for new tests)*
+*Last Updated: 2026-07 (browser: handleEditorMsg TUI acceptance, SetPinned coverage: contentHasFunctionCall → 100%)*
