@@ -52,27 +52,31 @@ Any AI agent recommending these should consult the rationale below.
   already exists at the gap site (`global_prompt_tracker.go:365-366`).
 - **See**: `internal/infrastructure/history/global_prompt_tracker.go:367-369`
 
-### history/history.go — complementPred and contentHasFunctionCall at 0%
+### history/history.go — complementPred and contentHasFunctionCall at 0% → PARTIALLY RESOLVED
 
-- **Status**: ACCEPTED (2026-07)
-- **Rationale**: `complementPred` and `contentHasFunctionCall` are helper
-  functions in the `findTurnPair` → `validateTurnPair` chain that powers
-  `SetPinned` for FunctionCall/FunctionResponse turn pairing. The existing
-  `SetPinned` tests (`TestHistoryManager_SetPinned_WithSystemMessage`,
-  `TestHistoryManager_SetPinned_Error`, `TestHistoryManager_SetPinned_InvalidIndex`)
-  exercise the standard user↔model turn-pairing rules via the `turnPairRules`
-  table. The FunctionCall model→user rule (rule index 0 in `turnPairRules`,
-  which references `contentHasFunctionCall`) requires content with
-  `FunctionCall` parts — an edge case not triggered by the current test
-  suite's content shapes. The functions are structurally sound and exercised
-  indirectly through the `turnPairRules` variable initialization. The 0%
-  coverage reflects a gap in test content diversity, not a gap in business
-  logic. Same acceptance class as defensive guards on internal pipeline
-  state (2026-07 Batch Triage).
-- **See**: `internal/infrastructure/history/history.go:256` (turnPairRules
-  referencing contentHasFunctionCall), `history.go:287` (validateTurnPair
-  calling complementPred), `history.go:301` (complementPred definition),
-  `history.go:333` (contentHasFunctionCall definition)
+- **Status**: PARTIALLY RESOLVED (2026-07, `TestHistoryManager_SetPinned_WithFunctionCall`)
+- **Coverage after fix**: `complementPred` **100%** (was 0%), `contentHasFunctionCall` **75.0%** (was 0%),
+  `contentHasFunctionResponse` **100%** (was 75%), `validateTurnPair` **78.9%** (was 52.6%),
+  package **97.5%** (was 96.1% at `origin/dev`).
+- **What was covered**: The test adds a FunctionCall→FunctionResponse turn with explicitly
+  assigned IDs (`llm.NewID()`) — necessary because `AddContent` does not auto-assign IDs
+  (unlike `addEntry`). Two subtests:
+  - Forward rule (rule 0): pin via model message ID → `complementPred("model")` returns
+    `contentHasFunctionResponse`, partner checked for FunctionResponse.
+  - Backward rule (rule 1): pin via user message ID → `complementPred("user")` returns
+    `contentHasFunctionCall`, partner checked for FunctionCall.
+  This covers `complementPred` at 100% and `contentHasFunctionResponse` at 100%.
+- **What remains uncovered**: `contentHasFunctionCall` at 75% — the `return false` path
+  (`history.go:339`) requires a model message **without** FunctionCall being evaluated by
+  rule 0's pred, which causes `contentHasFunctionCall` to return false and fall through to
+  rule 3. This requires a different scenario: pinning via a **model** message ID in a plain
+  user→model text turn. Not covered by existing `SetPinned` tests (which pin via user IDs).
+  The `validateTurnPair` remaining gap is all four error-return branches: "no following
+  message" (`:270`), "no preceding message" (`:275`), "unexpected partner role" (`:282`),
+  and "mismatched partner content" (`:289`).
+- **See**: `internal/infrastructure/history/history_test.go`
+  (`TestHistoryManager_SetPinned_WithFunctionCall`),
+  `history.go:301` (complementPred), `history.go:333` (contentHasFunctionCall)
 
 ### persistence/mock_fs.go — Chmod always returns nil
 
