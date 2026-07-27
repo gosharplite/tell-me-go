@@ -502,13 +502,13 @@ func TestHistoryManager_SetPinned_ViaModelID(t *testing.T) {
 	ctx := context.Background()
 
 	if err := m.AddContent(ctx, &llm.Content{
-		Role: "user",
+		Role:  "user",
 		Parts: []*llm.Part{{Text: "hello"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.AddContent(ctx, &llm.Content{
-		Role: "model",
+		Role:  "model",
 		Parts: []*llm.Part{{Text: "hi there"}},
 	}); err != nil {
 		t.Fatal(err)
