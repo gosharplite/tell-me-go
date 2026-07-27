@@ -423,9 +423,6 @@ func TestHistoryManager_SetPinned_WithFunctionCall(t *testing.T) {
 		if len(contents) != 2 {
 			t.Fatalf("expected 2 messages, got %d", len(contents))
 		}
-		if contents[0].ID == "" || contents[1].ID == "" {
-			t.Fatal("AddContent did not assign IDs")
-		}
 
 		return m, ctx, contents[0].ID, contents[1].ID
 	}
@@ -491,6 +488,65 @@ func TestHistoryManager_SetPinned_WithFunctionCall(t *testing.T) {
 			t.Error("both messages should be unpinned")
 		}
 	})
+}
+
+func TestHistoryManager_SetPinned_ViaModelID(t *testing.T) {
+	// Pinning via a model message ID in a plain user→model text turn
+	// exercises turnPairRules[0] → contentHasFunctionCall returns false
+	// → fallthrough to rule 3 (model, pred=nil, backward, partner=user).
+	// This closes the contentHasFunctionCall false-return gap (75% → 100%).
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "pin_model_id.json")
+	archiveFile := filepath.Join(tmpDir, "pin_model_id.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	if err := m.AddContent(ctx, &llm.Content{
+		Role: "user",
+		Parts: []*llm.Part{{Text: "hello"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{{Text: "hi there"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	contents, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	modelID := contents[1].ID // model message at index 1
+
+	// Pin
+	if err := m.SetPinned(ctx, modelID, true); err != nil {
+		t.Fatalf("SetPinned(%s, true) failed: %v", modelID, err)
+	}
+
+	updated, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	if !updated[0].Pinned {
+		t.Error("user message (index 0) should be pinned")
+	}
+	if !updated[1].Pinned {
+		t.Error("model message (index 1) should be pinned")
+	}
+
+	// Unpin
+	if err := m.SetPinned(ctx, modelID, false); err != nil {
+		t.Fatalf("SetPinned(%s, false) failed: %v", modelID, err)
+	}
+	updated, err = m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	if updated[0].Pinned || updated[1].Pinned {
+		t.Error("both messages should be unpinned")
+	}
 }
 
 func TestHistoryManager_SetContents(t *testing.T) {

@@ -52,28 +52,23 @@ Any AI agent recommending these should consult the rationale below.
   already exists at the gap site (`global_prompt_tracker.go:365-366`).
 - **See**: `internal/infrastructure/history/global_prompt_tracker.go:367-369`
 
-### history/history.go — complementPred and contentHasFunctionCall at 0% → PARTIALLY RESOLVED
+### history/history.go — complementPred and contentHasFunctionCall at 0% → RESOLVED
 
-- **Status**: PARTIALLY RESOLVED (2026-07, `TestHistoryManager_SetPinned_WithFunctionCall`)
-- **Coverage after fix**: `complementPred` **100%** (was 0%), `contentHasFunctionCall` **75.0%** (was 0%),
+- **Status**: RESOLVED (2026-07, `TestHistoryManager_SetPinned_WithFunctionCall` + `TestHistoryManager_SetPinned_ViaModelID`)
+- **Coverage after fix**: `complementPred` **100%** (was 0%), `contentHasFunctionCall` **100%** (was 0%),
   `contentHasFunctionResponse` **100%** (was 75%), `validateTurnPair` **78.9%** (was 52.6%),
-  package **97.5%** (was 96.1% at `origin/dev`).
-- **What was covered**: The test adds a FunctionCall→FunctionResponse turn with explicitly
-  assigned IDs (`llm.NewID()`) — necessary because `AddContent` does not auto-assign IDs
-  (unlike `addEntry`). Two subtests:
-  - Forward rule (rule 0): pin via model message ID → `complementPred("model")` returns
-    `contentHasFunctionResponse`, partner checked for FunctionResponse.
-  - Backward rule (rule 1): pin via user message ID → `complementPred("user")` returns
-    `contentHasFunctionCall`, partner checked for FunctionCall.
-  This covers `complementPred` at 100% and `contentHasFunctionResponse` at 100%.
-- **What remains uncovered**: `contentHasFunctionCall` at 75% — the `return false` path
-  (`history.go:339`) requires a model message **without** FunctionCall being evaluated by
-  rule 0's pred, which causes `contentHasFunctionCall` to return false and fall through to
-  rule 3. This requires a different scenario: pinning via a **model** message ID in a plain
-  user→model text turn. Not covered by existing `SetPinned` tests (which pin via user IDs).
-  The `validateTurnPair` remaining gap is all four error-return branches: "no following
+  package **97.6%** (was 96.1% at `origin/dev`).
+- **What was covered**: Two tests close all gaps in the `turnPairRules` chain:
+  - `TestHistoryManager_SetPinned_WithFunctionCall`: FunctionCall→FunctionResponse turn with
+    two subtests — forward rule (pin via model ID, rule 0) and backward rule (pin via user ID, rule 1).
+    This covers `complementPred` at 100% and `contentHasFunctionResponse` at 100%.
+  - `TestHistoryManager_SetPinned_ViaModelID`: plain user→model text turn, pin via **model** ID.
+    This drives rule 0's pred (`contentHasFunctionCall`) to return false on a non-FC model message,
+    triggering fallthrough to rule 3. Closes the `contentHasFunctionCall` false-return gap (75% → 100%).
+- **What remains uncovered**: `validateTurnPair` four error-return branches: "no following
   message" (`:270`), "no preceding message" (`:275`), "unexpected partner role" (`:282`),
-  and "mismatched partner content" (`:289`).
+  and "mismatched partner content" (`:289`). Requires edge-case malformed turn sequences
+  (OOB indices, role mismatches, FC/non-FR pairings). Low ROI.
 - **See**: `internal/infrastructure/history/history_test.go`
   (`TestHistoryManager_SetPinned_WithFunctionCall`),
   `history.go:301` (complementPred), `history.go:333` (contentHasFunctionCall)
@@ -927,6 +922,18 @@ to reason about.
 - **Rationale**: Table-driven test with 5 subtests covering valid index, OOB negative, OOB pos, non-model role, and deep-copy isolation for `GetModelTurn`. Each subtest contains its own setup (temp dir, `NewManager`, `AddContent`). CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestUpdateTurnContent_ClearText` (CC=12) and `TestUpdateTurnContent_AddTextWhenNone` (CC=12) in the same file.
 - **See**: `internal/infrastructure/history/history_test.go:1198`
 
+### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_WithFunctionCall (CC=21)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Two-subtest test with a per-subtest `setup` helper that creates a FunctionCall→FunctionResponse turn. The CC=21 is entirely from error-checking boilerplate: `t.Fatalf` on every `AddContent` and `GetWindow` call in setup, plus pin/unpin assertions in each subtest. All branches are guard clauses, not business logic. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestUpdateTurnContent_ClearText` (CC=12).
+- **See**: `internal/infrastructure/history/history_test.go:391`
+
+### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_ViaModelID (CC=12)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Single-scenario test pinning via model message ID in a plain user→model text turn to close the `contentHasFunctionCall` false-return gap. CC=12 is entirely error-checking boilerplate: `t.Fatalf` on `AddContent`, `GetWindow`, and `SetPinned` calls, plus pin/unpin assertions. Same acceptance class as `TestGetModelTurn` (CC=16) and `TestHistoryManager_SetPinned_WithFunctionCall` (CC=21).
+- **See**: `internal/infrastructure/history/history_test.go:493`
+
 ---
 
-*Last Updated: 2026-07 (feat/multi-turn-edit: handleActionKeys + TestGetModelTurn complexity acceptance)*
+*Last Updated: 2026-07 (SetPinned coverage: contentHasFunctionCall → 100%, CC acceptance for new tests)*
