@@ -388,6 +388,167 @@ func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
 	}
 }
 
+func TestHistoryManager_SetPinned_WithFunctionCall(t *testing.T) {
+	// setup creates a fresh Manager with a FunctionCall→FunctionResponse turn
+	// and returns the Manager, context, model ID, and user ID.
+	setup := func(t *testing.T) (*Manager, context.Context, string, string) {
+		t.Helper()
+		tmpDir := t.TempDir()
+		historyFile := filepath.Join(tmpDir, "pin_fc.json")
+		archiveFile := filepath.Join(tmpDir, "pin_fc.archive.jsonl")
+		m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+		ctx := context.Background()
+
+		if err := m.AddContent(ctx, &llm.Content{
+			Role: "model",
+			Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "get_weather", Args: map[string]interface{}{"city": "Tokyo"}}},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.AddContent(ctx, &llm.Content{
+			Role: "user",
+			Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{Name: "get_weather", Response: map[string]interface{}{"temp": 22}}},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		contents, err := m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
+		if len(contents) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(contents))
+		}
+
+		return m, ctx, contents[0].ID, contents[1].ID
+	}
+
+	t.Run("pin via model message ID (forward rule)", func(t *testing.T) {
+		m, ctx, modelID, _ := setup(t)
+
+		if err := m.SetPinned(ctx, modelID, true); err != nil {
+			t.Fatalf("SetPinned(%s, true) failed: %v", modelID, err)
+		}
+
+		updated, err := m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
+		if !updated[0].Pinned {
+			t.Error("model message (index 0) should be pinned")
+		}
+		if !updated[1].Pinned {
+			t.Error("user message (index 1) should be pinned")
+		}
+
+		// Unpin
+		if err := m.SetPinned(ctx, modelID, false); err != nil {
+			t.Fatalf("SetPinned(%s, false) failed: %v", modelID, err)
+		}
+		updated, err = m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
+		if updated[0].Pinned || updated[1].Pinned {
+			t.Error("both messages should be unpinned")
+		}
+	})
+
+	t.Run("pin via user message ID (backward rule)", func(t *testing.T) {
+		m, ctx, _, userID := setup(t)
+
+		if err := m.SetPinned(ctx, userID, true); err != nil {
+			t.Fatalf("SetPinned(%s, true) failed: %v", userID, err)
+		}
+
+		updated, err := m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
+		if !updated[0].Pinned {
+			t.Error("model message (index 0) should be pinned")
+		}
+		if !updated[1].Pinned {
+			t.Error("user message (index 1) should be pinned")
+		}
+
+		// Unpin
+		if err := m.SetPinned(ctx, userID, false); err != nil {
+			t.Fatalf("SetPinned(%s, false) failed: %v", userID, err)
+		}
+		updated, err = m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
+		if updated[0].Pinned || updated[1].Pinned {
+			t.Error("both messages should be unpinned")
+		}
+	})
+}
+
+func TestHistoryManager_SetPinned_ViaModelID(t *testing.T) {
+	// Pinning via a model message ID in a plain user→model text turn
+	// exercises turnPairRules[0] → contentHasFunctionCall returns false
+	// → fallthrough to rule 3 (model, pred=nil, backward, partner=user).
+	// This closes the contentHasFunctionCall false-return gap (75% → 100%).
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "pin_model_id.json")
+	archiveFile := filepath.Join(tmpDir, "pin_model_id.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	if err := m.AddContent(ctx, &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "hello"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddContent(ctx, &llm.Content{
+		Role:  "model",
+		Parts: []*llm.Part{{Text: "hi there"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	contents, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	modelID := contents[1].ID // model message at index 1
+
+	// Pin
+	if err := m.SetPinned(ctx, modelID, true); err != nil {
+		t.Fatalf("SetPinned(%s, true) failed: %v", modelID, err)
+	}
+
+	updated, err := m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	if !updated[0].Pinned {
+		t.Error("user message (index 0) should be pinned")
+	}
+	if !updated[1].Pinned {
+		t.Error("model message (index 1) should be pinned")
+	}
+
+	// Unpin
+	if err := m.SetPinned(ctx, modelID, false); err != nil {
+		t.Fatalf("SetPinned(%s, false) failed: %v", modelID, err)
+	}
+	updated, err = m.GetWindow(ctx, 0, -1)
+	if err != nil {
+		t.Fatalf("GetWindow failed: %v", err)
+	}
+	if updated[0].Pinned || updated[1].Pinned {
+		t.Error("both messages should be unpinned")
+	}
+}
+
 func TestHistoryManager_SetContents(t *testing.T) {
 	tmpDir := t.TempDir()
 	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))

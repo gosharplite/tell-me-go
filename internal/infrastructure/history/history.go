@@ -114,6 +114,8 @@ func (m *Manager) Archive(ctx context.Context, contents []*llm.Content) error {
 }
 
 // AddContent appends a full api.Content object to the history.
+// If content.ID is empty, a new UUID is auto-generated to ensure every
+// entry has a stable identity for operations like SetPinned.
 // Note: It does NOT validate role alternation or clean content;
 // these are responsibilities of the Orchestration layer.
 func (m *Manager) AddContent(ctx context.Context, content *llm.Content) error {
@@ -121,6 +123,9 @@ func (m *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	defer m.mu.Unlock()
 
 	cloned := m.clonePersistentContentLocked(content)
+	if cloned.ID == "" {
+		cloned.ID = llm.NewID()
+	}
 	if err := m.store.Append(ctx, []*llm.Content{cloned}); err != nil {
 		return err
 	}
