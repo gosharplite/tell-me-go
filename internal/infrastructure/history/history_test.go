@@ -389,58 +389,58 @@ func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
 }
 
 func TestHistoryManager_SetPinned_WithFunctionCall(t *testing.T) {
-	tmpDir := t.TempDir()
-	historyFile := filepath.Join(tmpDir, "pin_fc.json")
-	archiveFile := filepath.Join(tmpDir, "pin_fc.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
-	ctx := context.Background()
+	// setup creates a fresh Manager with a FunctionCall→FunctionResponse turn
+	// and returns the Manager, context, model ID, and user ID.
+	setup := func(t *testing.T) (*Manager, context.Context, string, string) {
+		t.Helper()
+		tmpDir := t.TempDir()
+		historyFile := filepath.Join(tmpDir, "pin_fc.json")
+		archiveFile := filepath.Join(tmpDir, "pin_fc.archive.jsonl")
+		m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+		ctx := context.Background()
 
-	// Setup: model turn with FunctionCall → user turn with FunctionResponse.
-	// This exercises turnPairRules[0] (model+FunctionCall → user, forward)
-	// and turnPairRules[1] (user+FunctionResponse → model, backward),
-	// covering contentHasFunctionCall, contentHasFunctionResponse, and
-	// complementPred — all previously at 0% coverage.
-	//
-	// IMPORTANT: AddContent does NOT auto-assign IDs (unlike addEntry), so we
-	// assign them explicitly. Without unique IDs, SetPinned resolves both "" to
-	// index 0, making subtest 2 a silent duplicate of subtest 1.
-	if err := m.AddContent(ctx, &llm.Content{
-		Role: "model",
-		ID:   llm.NewID(),
-		Parts: []*llm.Part{
-			{FunctionCall: &llm.FunctionCall{Name: "get_weather", Args: map[string]interface{}{"city": "Tokyo"}}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.AddContent(ctx, &llm.Content{
-		Role: "user",
-		ID:   llm.NewID(),
-		Parts: []*llm.Part{
-			{FunctionResponse: &llm.FunctionResponse{Name: "get_weather", Response: map[string]interface{}{"temp": 22}}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
+		if err := m.AddContent(ctx, &llm.Content{
+			Role: "model",
+			Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "get_weather", Args: map[string]interface{}{"city": "Tokyo"}}},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.AddContent(ctx, &llm.Content{
+			Role: "user",
+			Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{Name: "get_weather", Response: map[string]interface{}{"temp": 22}}},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
 
-	contents, _ := m.GetWindow(ctx, 0, -1)
-	if len(contents) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(contents))
-	}
-	if contents[0].ID == "" || contents[1].ID == "" {
-		t.Fatal("AddContent did not preserve assigned IDs; subtest isolation broken")
-	}
-	if contents[0].ID == contents[1].ID {
-		t.Fatal("both messages have the same ID; subtest isolation broken")
+		contents, err := m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
+		if len(contents) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(contents))
+		}
+		if contents[0].ID == "" || contents[1].ID == "" {
+			t.Fatal("AddContent did not assign IDs")
+		}
+
+		return m, ctx, contents[0].ID, contents[1].ID
 	}
 
 	t.Run("pin via model message ID (forward rule)", func(t *testing.T) {
-		modelID := contents[0].ID
+		m, ctx, modelID, _ := setup(t)
+
 		if err := m.SetPinned(ctx, modelID, true); err != nil {
 			t.Fatalf("SetPinned(%s, true) failed: %v", modelID, err)
 		}
 
-		updated, _ := m.GetWindow(ctx, 0, -1)
+		updated, err := m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
 		if !updated[0].Pinned {
 			t.Error("model message (index 0) should be pinned")
 		}
@@ -452,19 +452,26 @@ func TestHistoryManager_SetPinned_WithFunctionCall(t *testing.T) {
 		if err := m.SetPinned(ctx, modelID, false); err != nil {
 			t.Fatalf("SetPinned(%s, false) failed: %v", modelID, err)
 		}
-		updated, _ = m.GetWindow(ctx, 0, -1)
+		updated, err = m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
 		if updated[0].Pinned || updated[1].Pinned {
 			t.Error("both messages should be unpinned")
 		}
 	})
 
 	t.Run("pin via user message ID (backward rule)", func(t *testing.T) {
-		userID := contents[1].ID
+		m, ctx, _, userID := setup(t)
+
 		if err := m.SetPinned(ctx, userID, true); err != nil {
 			t.Fatalf("SetPinned(%s, true) failed: %v", userID, err)
 		}
 
-		updated, _ := m.GetWindow(ctx, 0, -1)
+		updated, err := m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
 		if !updated[0].Pinned {
 			t.Error("model message (index 0) should be pinned")
 		}
@@ -476,7 +483,10 @@ func TestHistoryManager_SetPinned_WithFunctionCall(t *testing.T) {
 		if err := m.SetPinned(ctx, userID, false); err != nil {
 			t.Fatalf("SetPinned(%s, false) failed: %v", userID, err)
 		}
-		updated, _ = m.GetWindow(ctx, 0, -1)
+		updated, err = m.GetWindow(ctx, 0, -1)
+		if err != nil {
+			t.Fatalf("GetWindow failed: %v", err)
+		}
 		if updated[0].Pinned || updated[1].Pinned {
 			t.Error("both messages should be unpinned")
 		}
