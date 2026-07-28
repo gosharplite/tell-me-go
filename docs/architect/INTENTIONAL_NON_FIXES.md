@@ -699,7 +699,7 @@ Any AI agent recommending these should consult the rationale below.
 
 ## Complexity Alerts (ACCEPTED)
 
-### ui/tui/progress/model.go — handleDomainEvent (CC=11)
+### ui/tui/progress/model.go — handleDomainEvent (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: This is a 10-case type-switch dispatching domain events in a
@@ -796,7 +796,7 @@ to reason about.
   `internal/tools/analysis/fixture_gen_test.go:58`
 ---
 
-### ui/tui/progress/model.go — (*model).Update (CC=12)
+### ui/tui/progress/model.go — (*model).Update (CC=14)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: This is the standard Bubble Tea `Update` method — a type-switch
@@ -862,6 +862,45 @@ to reason about.
   full runtime integration to exercise synchronously.
 - **See**: `internal/ui/tui/browser.go:350` (`handleEditorMsg`),
   `internal/ui/tui/browser_test.go:1303` (`TestBrowserEditKeybinding`)
+
+### tools/workspace/shell.go — (*windowsShellWrapper).isPowerShellIndicator (CC=10)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: Windows-only helper that detects PowerShell usage indicators
+  (bare newlines, PowerShell aliases, Verb-Noun cmdlet patterns, PS-specific
+  substrings like `$env:`, `$(`, `select-string`) to decide between
+  `powershell`/`pwsh` vs `cmd.exe` shell wrappers. The 10 CC points are
+  structural guards (nil-check, alias lookup, hyphen-index bounds, prefix
+  validation, loop over substring indicators) — zero branching business logic.
+  Not exercisable on Linux dev/CI. Same acceptance class as the platform-specific
+  Windows branches in `pidlock/pidlock.go` (already ACCEPTED in Coverage Gaps
+  above) and the type-switch dispatch entries in this section.
+- **See**: `internal/tools/workspace/shell.go:152`
+
+### CC=9 production cohort — threshold policy (2026-07)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: All non-test production functions at CC=9 were triaged and
+  found to be structural — the cyclomatic complexity comes from error guards,
+  switch dispatch, and validation checks, not from branching business logic.
+  CC < 10 is acceptable by policy. This policy covers approximately 21–23
+  functions across `internal/tools/analysis`, `internal/tools/workspace`,
+  `internal/infrastructure/...`, `internal/agent/session/...`, and
+  `internal/domain/config/...`. Individual entries are added only where
+  rationale is non-obvious (see `RecoveryStep.Process` below).
+- **See**: Complexity metrics tool output for `./internal/...` (CC ≥ 9 filter,
+  excluding `_test.go`, benchmarks, `toolstest` mocks)
+
+### agent/orchestrator/engine_phases.go — (*RecoveryStep).Process (CC=9)
+
+- **Status**: ACCEPTED (2026-07)
+- **Rationale**: 5-case classify-switch (`RateLimited`, `ContextOverflow`,
+  `AuthFailure`, `ServerError`, `Timeout`) with error guards on each branch.
+  Every branch is a single-line delegation or return. The CC is inherent to
+  the exhaustive switch dispatch — each case adds 1 CC. The `default:` case
+  is already individually ACCEPTED in Coverage Gaps above as structurally
+  unreachable (`ClassifyLLMError` returns exactly five known categories).
+- **See**: `internal/agent/orchestrator/engine_phases.go:101`
 
 ---
 
@@ -953,4 +992,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-07 (browser: handleEditorMsg TUI acceptance, SetPinned coverage: contentHasFunctionCall → 100%)*
+*Last Updated: 2026-07 (browser: handleEditorMsg TUI acceptance, SetPinned coverage: contentHasFunctionCall → 100%, shell: isPowerShellIndicator CC=10 acceptance, CC=9 threshold policy + RecoveryStep.Process, stale CC figures corrected: Update 12→14, handleDomainEvent 11→12)*

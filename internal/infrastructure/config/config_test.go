@@ -699,13 +699,15 @@ func TestLoad_IntegerOverflowIsDetected(t *testing.T) {
 	const overflow = "99999999999999999999"
 
 	tests := []struct {
-		name    string
-		yamlVal string // "KEY: overflow" line
-		errFrag string // substring expected in the error message
+		name     string
+		yamlVal  string // "KEY: overflow" line
+		errFrag  string // substring expected in the error message
+		errFrag2 string // optional second error fragment; only checked when non-empty
 	}{
-		{name: "MAX_TURNS overflow", yamlVal: "MAX_TURNS: " + overflow, errFrag: "integer overflow"},
-		{name: "MAX_HISTORY_TURNS overflow", yamlVal: "MAX_HISTORY_TURNS: " + overflow, errFrag: "integer overflow"},
-		{name: "MAX_HISTORY_TOKENS overflow", yamlVal: "MAX_HISTORY_TOKENS: " + overflow, errFrag: "integer overflow"},
+		{name: "MAX_TURNS overflow", yamlVal: "MAX_TURNS: " + overflow, errFrag: "integer overflow", errFrag2: "exceeds int range"},
+		{name: "MAX_HISTORY_TURNS overflow", yamlVal: "MAX_HISTORY_TURNS: " + overflow, errFrag: "integer overflow", errFrag2: "exceeds int range"},
+		{name: "MAX_HISTORY_TOKENS overflow", yamlVal: "MAX_HISTORY_TOKENS: " + overflow, errFrag: "integer overflow", errFrag2: "exceeds int range"},
+		{name: "MAX_TURNS non-integer float64", yamlVal: "MAX_TURNS: 1.5", errFrag: "cannot decode non-integer float64"},
 	}
 
 	for _, tt := range tests {
@@ -725,8 +727,45 @@ func TestLoad_IntegerOverflowIsDetected(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.errFrag) {
 				t.Errorf("expected error containing %q, got %q", tt.errFrag, err.Error())
 			}
-			if !strings.Contains(err.Error(), "exceeds int range") {
-				t.Errorf("expected error containing \"exceeds int range\", got %q", err.Error())
+			if tt.errFrag2 != "" && !strings.Contains(err.Error(), tt.errFrag2) {
+				t.Errorf("expected error containing %q, got %q", tt.errFrag2, err.Error())
+			}
+		})
+	}
+}
+
+// TestLoad_ValidateBoundsError verifies that load() propagates ValidateBounds
+// errors for values that pass intOverflowHook (e.g., negative integers within
+// float64 range) but fail domain-level bounds checks. This covers the error
+// propagation path at config.go:74-76.
+func TestLoad_ValidateBoundsError(t *testing.T) {
+	tests := []struct {
+		name    string
+		yamlVal string // a single top-level int field line
+		errFrag string // substring expected in the error
+	}{
+		{name: "MAX_TURNS negative", yamlVal: "MAX_TURNS: -1", errFrag: "MAX_TURNS must be >= 0"},
+		{name: "MAX_HISTORY_TURNS negative", yamlVal: "MAX_HISTORY_TURNS: -1", errFrag: "MAX_HISTORY_TURNS must be >= 0"},
+		{name: "MAX_HISTORY_TOKENS negative", yamlVal: "MAX_HISTORY_TOKENS: -1", errFrag: "MAX_HISTORY_TOKENS must be >= 0"},
+		{name: "MAX_CONCURRENT_TOOLS negative", yamlVal: "MAX_CONCURRENT_TOOLS: -1", errFrag: "MAX_CONCURRENT_TOOLS must be >= 0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TELL_ME_MODE", "") // neutralize ambient env pollution
+
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "test_bounds.yaml")
+			if err := os.WriteFile(configPath, []byte(tt.yamlVal+"\n"), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			_, err := load(configPath)
+			if err == nil {
+				t.Fatal("expected ValidateBounds error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.errFrag) {
+				t.Errorf("expected error containing %q, got %q", tt.errFrag, err.Error())
 			}
 		})
 	}
