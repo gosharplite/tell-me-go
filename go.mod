@@ -28,7 +28,7 @@ require (
 	golang.org/x/text v0.39.0
 	golang.org/x/tools v0.47.0
 	google.golang.org/genai v1.61.0
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.82.1
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.53.0
 	pgregory.net/rapid v1.3.0
