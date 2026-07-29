@@ -207,7 +207,7 @@ func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 		}
 	}
 
-	if strategy, ok := authStrategies[p.Type]; ok {
+	if strategy, ok := authStrategies[p.Family()]; ok {
 		return strategy(p)
 	}
 
@@ -221,40 +221,38 @@ func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 
 type authStrategy func(*config.LLMProvider) (auth.Authenticator, error)
 
-var authStrategies = map[string]authStrategy{
-	"openai": func(p *config.LLMProvider) (auth.Authenticator, error) {
-		if p.APIKey == "" {
-			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
-				return auth.NewVertexAuth(), nil
-			}
+// openAIFamilyAuth returns the authenticator for OpenAI-compatible providers
+// (openai, deepseek, kimi). For kimi, there is no Vertex fallback and an
+// API key is always required — this label-specific override must be checked
+// before the VertexAuth path.
+func openAIFamilyAuth(p *config.LLMProvider) (auth.Authenticator, error) {
+	if p.APIKey == "" {
+		if p.Type == "kimi" {
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
-		return &auth.BearerAuth{Token: p.APIKey}, nil
-	},
-	"deepseek": func(p *config.LLMProvider) (auth.Authenticator, error) {
-		if p.APIKey == "" {
-			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
-				return auth.NewVertexAuth(), nil
-			}
-			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+		if strings.Contains(p.URL, "aiplatform.googleapis.com") {
+			return auth.NewVertexAuth(), nil
 		}
-		return &auth.BearerAuth{Token: p.APIKey}, nil
-	},
-	"kimi": func(p *config.LLMProvider) (auth.Authenticator, error) {
-		if p.APIKey == "" {
-			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
-		}
-		return &auth.BearerAuth{Token: p.APIKey}, nil
-	},
-	"anthropic": func(p *config.LLMProvider) (auth.Authenticator, error) {
-		if p.APIKey == "" {
-			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
-		}
-		return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
-	},
-	"google": resolveGoogleAuth,
-	"gemini": resolveGoogleAuth,
-	"":       resolveGoogleAuth,
+		return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+	}
+	return &auth.BearerAuth{Token: p.APIKey}, nil
+}
+
+// authStrategies maps each wire-protocol family to its authenticator factory.
+// Label-specific overrides (e.g. kimi's no-Vertex constraint) are handled
+// inside the family function, not as separate map entries.
+var authStrategies = map[config.APIFamily]authStrategy{
+	config.APIOpenAI:    openAIFamilyAuth,
+	config.APIAnthropic: anthropicFamilyAuth,
+	config.APIGemini:    resolveGoogleAuth,
+}
+
+// anthropicFamilyAuth returns the authenticator for Anthropic providers.
+func anthropicFamilyAuth(p *config.LLMProvider) (auth.Authenticator, error) {
+	if p.APIKey == "" {
+		return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+	}
+	return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
 }
 
 func resolveGoogleAuth(p *config.LLMProvider) (auth.Authenticator, error) {
@@ -278,8 +276,9 @@ func resolveTimeout(cfg *config.Config) time.Duration {
 //
 // The authenticator type is determined by the provider type and
 // available credentials:
-//   - APIKey: BearerAuth (OpenAI/DeepSeek/Kimi), AnthropicAuth, or
-//     APIKeyAuth (Google/Gemini with explicit key)
+//   - APIKey: BearerAuth (OpenAI-family: openai, deepseek, kimi),
+//     AnthropicAuth (Anthropic-family), or APIKeyAuth (Gemini-family
+//     with explicit key)
 //   - Service Account JSON file: ServiceAccountAuth
 //   - Google/Gemini without API key: VertexAuth (Application Default
 //     Credentials)
