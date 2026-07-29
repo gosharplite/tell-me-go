@@ -1,8 +1,13 @@
 version: "2"
 
 linters:
+  enable:
+    - exhaustive
   settings:
     staticcheck:
       checks:
         - "SA"
         - "-SA5011"
+    exhaustive:
+      default-signifies-exhaustive: false
+      explicit-exhaustive-switch: true

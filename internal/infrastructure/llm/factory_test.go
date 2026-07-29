@@ -116,7 +116,9 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 		{"deepseek missing key", "deepseek", "", "", true},
 		{"deepseek with vertex url", "deepseek", "", "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/deepseek-ai/models/deepseek-r1", false},
 		{"anthropic missing key", "anthropic", "", "", true},
-		{"unknown provider missing key", "unknown", "", "", true},
+		// unknown providers now map to APIGemini via Family(), which resolves
+		// to VertexAuth when no API key is set — consistent with buildBaseClient.
+		{"unknown provider missing key", "unknown", "", "", false},
 		{"google missing key", "google", "", "", false},                     // Resolves to VertexAuth
 		{"unknown provider with key", "unknown", "explicit-key", "", false}, // Resolves to APIKeyAuth
 	}
@@ -222,6 +224,14 @@ func assertMissingKeysResult(t *testing.T, a auth.Authenticator, err error, want
 		if provider == "unknown" && apiKey != "" {
 			if _, ok := a.(*auth.APIKeyAuth); !ok {
 				t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
+			}
+		}
+
+		// unknown providers with no key and no Vertex URL still get
+		// VertexAuth via the APIGemini family default.
+		if provider == "unknown" && apiKey == "" && url == "" {
+			if _, ok := a.(*auth.VertexAuth); !ok {
+				t.Errorf("expected *auth.VertexAuth for unknown provider (Gemini default), got %T", a)
 			}
 		}
 	}

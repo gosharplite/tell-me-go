@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
@@ -20,6 +21,7 @@ import (
 // llmProviderHealthChecker implements ports.HealthChecker for LLM providers.
 type llmProviderHealthChecker struct {
 	providerName  string
+	family        config.APIFamily // wire-protocol family for dispatch
 	authenticator auth.Authenticator
 	baseURL       string
 	httpClient    *http.Client
@@ -27,20 +29,22 @@ type llmProviderHealthChecker struct {
 }
 
 // NewLLMProviderHealthChecker creates a new llmProviderHealthChecker.
-func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
+func NewLLMProviderHealthChecker(family config.APIFamily, providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
 	if baseURL == "" {
-		switch strings.ToLower(providerName) {
-		case "openai", "deepseek", "kimi":
+		//exhaustive:enforce
+		switch family {
+		case config.APIOpenAI:
 			baseURL = "https://api.openai.com/v1"
-		case "anthropic":
+		case config.APIAnthropic:
 			baseURL = "https://api.anthropic.com/v1"
-		case "google", "gemini":
+		case config.APIGemini:
 			baseURL = "https://generativelanguage.googleapis.com/v1beta"
 		}
 	}
 
 	return &llmProviderHealthChecker{
 		providerName:  providerName,
+		family:        family,
 		authenticator: authenticator,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		httpClient: &http.Client{
@@ -207,11 +211,13 @@ func (c *llmProviderHealthChecker) classifyErrorStatus(statusCode int, report *p
 }
 
 func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
-	p := strings.ToLower(c.providerName)
-	switch p {
-	case "openai", "deepseek", "kimi":
+	// This switch is exhaustive — c.family is an APIFamily, and
+	// LLMProvider.Family() always returns one of the three constants.
+	//exhaustive:enforce
+	switch c.family {
+	case config.APIOpenAI:
 		return "GET", c.baseURL + "/models", nil
-	case "google", "gemini":
+	case config.APIGemini:
 		// Gemini API often uses a different base for models or needs the key as a query param.
 		// But if we use the baseURL passed in (which usually includes the key or uses headers),
 		// we try a standard models list.
@@ -219,7 +225,7 @@ func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
 			return "GET", c.baseURL + "/models", nil
 		}
 		return "GET", c.baseURL + "/models", nil
-	case "anthropic":
+	case config.APIAnthropic:
 		// Anthropic's Messages API has no standard GET ping endpoint.
 		// GET /v1/messages returns 405; GET /v1/models is not a Messages endpoint.
 		// We ping the base URL directly. The expected response is 404 (Not Found)
@@ -228,7 +234,6 @@ func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
 		// responded, proving connectivity. See ADR-022 "fail loud" principle:
 		// we do NOT silently succeed; we explicitly document the workaround.
 		return "GET", c.baseURL, nil
-	default:
-		return "", "", fmt.Errorf("unknown provider type %q: cannot determine health check endpoint", c.providerName)
 	}
+	panic("unreachable: APIFamily must be one of APIOpenAI, APIAnthropic, or APIGemini")
 }
