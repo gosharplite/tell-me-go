@@ -43,8 +43,8 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 	var baseClient llm.LLMClient
 	var err error
 
-	switch p.Type {
-	case "openai", "deepseek", "kimi":
+	switch p.Family() {
+	case config.APIOpenAI:
 		opts := []openai.Option{
 			openai.WithHeaders(p.Headers),
 			openai.WithPersona(persona),
@@ -69,7 +69,7 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 				"deadline", "2026-07-24T15:59:00Z",
 			)
 		}
-	case "anthropic":
+	case config.APIAnthropic:
 		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
 			anthropic.WithHeaders(p.Headers),
 			anthropic.WithThinkingBudget(maxBudget),
@@ -78,7 +78,7 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 			anthropic.WithTimeout(timeout),
 			anthropic.WithLogger(logger),
 		)
-	case "google", "gemini", "":
+	case config.APIGemini:
 		fallthrough
 	default:
 		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,

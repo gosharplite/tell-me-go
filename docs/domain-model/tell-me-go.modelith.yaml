@@ -33,17 +33,19 @@ glossary:
     controlled by `Config.bypassConfirmation`.
 
 enums:
-  ProviderType:
-    description: The API family backing an LLM `Provider`.
+  APIFamily:
+    description: >
+      The wire-protocol family backing an LLM `Provider`. There are exactly
+      three families — this is the compile-time-safe dispatch dimension
+      (distinct from the user-facing `Provider.type` label string, which
+      may include OpenAI-compatible providers like "deepseek" or "kimi").
     values:
-      - name: gemini
-        definition: Google Vertex AI (Gemini 3.0 / 3.1).
       - name: openai
-        definition: OpenAI API (GPT-5.4 / 5.5).
-      - name: deepseek
-        definition: DeepSeek API (V3.2 / V4) or Vertex AI Model-as-a-Service.
+        definition: OpenAI-compatible API (covers openai, deepseek, kimi, and any future provider speaking the OpenAI protocol).
       - name: anthropic
-        definition: Anthropic API or Vertex AI hosted Claude (Opus 4.7).
+        definition: Anthropic Messages API.
+      - name: gemini
+        definition: Google Gemini / Vertex AI API (covers google, gemini, vertex).
 
   LLMError:
     description: >
@@ -244,7 +246,18 @@ entities:
           Note: In Go, this is the map key in `Config.Providers`, not a field on the `LLMProvider` struct.
           It is listed here because it is the `Provider`'s primary identity in the domain.
       - name: type
-        type: ProviderType
+        type: string
+        description: >
+          The user-facing label identifying this `Provider` (e.g. "vertex-flash",
+          "deepseek-pro", "kimi"). This is a free-form string, not an enum —
+          multiple labels map to the same `APIFamily`. The `family` attribute
+          (derived) resolves this label to a wire-protocol family.
+      - name: family
+        type: APIFamily
+        derived: true
+        derivation: >
+          Resolved from `type` via `LLMProvider.Family()` — "openai"/"deepseek"/"kimi"
+          → openai, "anthropic" → anthropic, "google"/"gemini"/"" → gemini.
       - name: model
         type: string
         description: The model identifier sent on the wire.

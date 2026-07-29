@@ -29,7 +29,7 @@ func (f *defaultHealthFactory) BuildHealthManager(cfg *config.Config, sessionPro
 
 	healthCheckers := map[ports.Component]ports.HealthChecker{
 		ports.CompPersistence: sessionProvider.GetHealthChecker(),
-		ports.CompLLMProvider: infra_llm.NewLLMProviderHealthChecker(p.Type, authenticator, p.URL, lazyClient),
+		ports.CompLLMProvider: infra_llm.NewLLMProviderHealthChecker(p.Family(), p.Type, authenticator, p.URL, lazyClient),
 		ports.CompToolchain:   tf.BuildHealthChecker(),
 	}
 

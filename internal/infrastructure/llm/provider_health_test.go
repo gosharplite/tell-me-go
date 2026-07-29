@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
@@ -37,7 +38,7 @@ func TestLLMProviderHealthChecker_Healthy(t *testing.T) {
 	defer server.Close()
 
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, server.URL, nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, server.URL, nil)
 
 	report, err := checker.Check(context.Background())
 	if err != nil {
@@ -60,7 +61,7 @@ func TestLLMProviderHealthChecker_Healthy(t *testing.T) {
 func TestLLMProviderHealthChecker_UnhealthyMissingKey(t *testing.T) {
 	t.Parallel()
 	authMock := &auth.BearerAuth{Token: ""}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "http://localhost", nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, "http://localhost", nil)
 
 	report, err := checker.Check(context.Background())
 	if err != nil {
@@ -77,7 +78,7 @@ func TestLLMProviderHealthChecker_UnhealthyMissingKey(t *testing.T) {
 func TestLLMProviderHealthChecker_UnhealthyApplyError(t *testing.T) {
 	t.Parallel()
 	authMock := &errorAuthenticator{}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "http://localhost", nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, "http://localhost", nil)
 
 	report, _ := checker.Check(context.Background())
 	if report.Status != ports.StatusUnhealthy {
@@ -96,7 +97,7 @@ func TestLLMProviderHealthChecker_UnhealthyInvalidKey(t *testing.T) {
 	defer server.Close()
 
 	authMock := &auth.BearerAuth{Token: "bad-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, server.URL, nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, server.URL, nil)
 
 	report, _ := checker.Check(context.Background())
 	if report.Status != ports.StatusUnhealthy {
@@ -115,7 +116,7 @@ func TestLLMProviderHealthChecker_DegradedTransient(t *testing.T) {
 	defer server.Close()
 
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, server.URL, nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, server.URL, nil)
 
 	report, _ := checker.Check(context.Background())
 	if report.Status != ports.StatusDegraded {
@@ -126,7 +127,7 @@ func TestLLMProviderHealthChecker_DegradedTransient(t *testing.T) {
 func TestLLMProviderHealthChecker_DegradedConnectivity(t *testing.T) {
 	t.Parallel()
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, "http://127.0.0.1:1", nil)
 
 	report, _ := checker.Check(context.Background())
 	if report.Status != ports.StatusDegraded {
@@ -142,7 +143,7 @@ func TestLLMProviderHealthChecker_AnthropicHealthyFallback(t *testing.T) {
 	defer server.Close()
 
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("anthropic", authMock, server.URL, nil)
+	checker := NewLLMProviderHealthChecker(config.APIAnthropic, "anthropic", authMock, server.URL, nil)
 
 	report, _ := checker.Check(context.Background())
 	if report.Status != ports.StatusHealthy {
@@ -155,38 +156,45 @@ func TestNewLLMProviderHealthChecker_BaseURLFallback(t *testing.T) {
 
 	tests := []struct {
 		name            string
+		family          config.APIFamily
 		providerName    string
 		expectedBaseURL string
 	}{
 		{
 			name:            "openai fallback",
+			family:          config.APIOpenAI,
 			providerName:    "openai",
 			expectedBaseURL: "https://api.openai.com/v1",
 		},
 		{
 			name:            "deepseek fallback",
+			family:          config.APIOpenAI,
 			providerName:    "deepseek",
 			expectedBaseURL: "https://api.openai.com/v1",
 		},
 		{
 			name:            "anthropic fallback",
+			family:          config.APIAnthropic,
 			providerName:    "anthropic",
 			expectedBaseURL: "https://api.anthropic.com/v1",
 		},
 		{
 			name:            "google fallback",
+			family:          config.APIGemini,
 			providerName:    "google",
 			expectedBaseURL: "https://generativelanguage.googleapis.com/v1beta",
 		},
 		{
 			name:            "gemini fallback",
+			family:          config.APIGemini,
 			providerName:    "gemini",
 			expectedBaseURL: "https://generativelanguage.googleapis.com/v1beta",
 		},
 		{
-			name:            "unknown provider no fallback",
+			name:            "unknown provider defaults to gemini",
+			family:          config.APIGemini,
 			providerName:    "unknown-provider",
-			expectedBaseURL: "",
+			expectedBaseURL: "https://generativelanguage.googleapis.com/v1beta",
 		},
 	}
 
@@ -195,7 +203,7 @@ func TestNewLLMProviderHealthChecker_BaseURLFallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			checker := NewLLMProviderHealthChecker(tt.providerName, nil, "", nil)
+			checker := NewLLMProviderHealthChecker(tt.family, tt.providerName, nil, "", nil)
 			report, err := checker.Check(context.Background())
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -225,7 +233,7 @@ func TestLLMProviderHealthChecker_BuildRequestError(t *testing.T) {
 	t.Parallel()
 
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "://invalid", nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, "://invalid", nil)
 
 	report, err := checker.Check(context.Background())
 	if err != nil {
@@ -252,7 +260,7 @@ func TestLLMProviderHealthChecker_NonTransientNonAuthError(t *testing.T) {
 	defer server.Close()
 
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, server.URL, nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, server.URL, nil)
 
 	report, err := checker.Check(context.Background())
 	if err != nil {
@@ -275,16 +283,19 @@ func TestLLMProviderHealthChecker_GeminiEndpointSelection(t *testing.T) {
 
 	tests := []struct {
 		name         string
+		family       config.APIFamily
 		providerName string
 		baseURL      string
 	}{
 		{
 			name:         "vertex aiplatform url",
+			family:       config.APIGemini,
 			providerName: "gemini",
 			baseURL:      "https://us-central1-aiplatform.googleapis.com/v1",
 		},
 		{
 			name:         "custom proxy url",
+			family:       config.APIGemini,
 			providerName: "gemini",
 			baseURL:      "https://my-proxy.example.com/v1",
 		},
@@ -295,7 +306,7 @@ func TestLLMProviderHealthChecker_GeminiEndpointSelection(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			checker := NewLLMProviderHealthChecker(tt.providerName, nil, tt.baseURL, nil)
+			checker := NewLLMProviderHealthChecker(tt.family, tt.providerName, nil, tt.baseURL, nil)
 			report, err := checker.Check(context.Background())
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -320,23 +331,24 @@ func TestLLMProviderHealthChecker_GeminiEndpointSelection(t *testing.T) {
 func TestLLMProviderHealthChecker_UnknownProvider(t *testing.T) {
 	t.Parallel()
 
+	// Unknown provider types are mapped to APIGemini by LLMProvider.Family(),
+	// so they inherit Gemini's ping endpoint and behavior. This test verifies
+	// that an unknown type with Gemini family proceeds through the normal
+	// health-check flow (no "unknown provider type" error).
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("unknown-provider", authMock, server.URL, nil)
+	checker := NewLLMProviderHealthChecker(config.APIGemini, "unknown-provider", authMock, server.URL, nil)
 
 	report, err := checker.Check(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if report.Status != ports.StatusUnhealthy {
-		t.Errorf("expected StatusUnhealthy, got %s: %s", report.Status, report.Message)
-	}
-	if !strings.Contains(report.Message, "unknown provider type") {
-		t.Errorf("expected message to contain 'unknown provider type', got: %s", report.Message)
+	if report.Status != ports.StatusHealthy {
+		t.Errorf("expected StatusHealthy (unknown maps to Gemini), got %s: %s", report.Status, report.Message)
 	}
 }
 
@@ -345,7 +357,7 @@ func TestLLMProviderHealthChecker_NilResponseNilError(t *testing.T) {
 	// Call handleHTTPResponse directly with (nil, nil) — this path is reachable
 	// if custom middleware or refactored code bypasses the stdlib's RoundTripper guard.
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, "http://127.0.0.1:1", nil)
 
 	details := make(map[string]any)
 	report := &ports.ComponentReport{
@@ -371,6 +383,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 
 	tests := []struct {
 		name            string
+		family          config.APIFamily
 		providerName    string
 		baseURL         string
 		useServer       bool
@@ -384,6 +397,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		// but httpClient.Do fails immediately with "context canceled" → connectivity error.
 		{
 			name:            "pre-cancelled context",
+			family:          config.APIOpenAI,
 			providerName:    "openai",
 			baseURL:         "http://127.0.0.1:1",
 			cancelCtx:       true,
@@ -394,6 +408,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		// Gap 2: Google/Gemini without googleapis.com in URL — hits the false branch.
 		{
 			name:            "gemini without googleapis in URL",
+			family:          config.APIGemini,
 			providerName:    "gemini",
 			baseURL:         "http://127.0.0.1:1",
 			authenticator:   &auth.APIKeyAuth{APIKey: "test-key"},
@@ -403,6 +418,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		// Gap 3: Google/Gemini WITH googleapis.com in URL — hits the true branch.
 		{
 			name:            "gemini with googleapis in URL",
+			family:          config.APIGemini,
 			providerName:    "google",
 			baseURL:         "http://127.0.0.1:1/googleapis.com",
 			authenticator:   &auth.APIKeyAuth{APIKey: "test-key"},
@@ -412,6 +428,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		// Gap 5: 405 MethodNotAllowed → classifyErrorStatus returns StatusHealthy (same as 404).
 		{
 			name:         "method not allowed fallback",
+			family:       config.APIOpenAI,
 			providerName: "openai",
 			useServer:    true,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
@@ -424,6 +441,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		// Gap 6a: 502 Bad Gateway → classified as transient → StatusDegraded.
 		{
 			name:         "bad gateway 502",
+			family:       config.APIOpenAI,
 			providerName: "openai",
 			useServer:    true,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
@@ -436,6 +454,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		// Gap 6b: 504 Gateway Timeout → classified as transient → StatusDegraded.
 		{
 			name:         "gateway timeout 504",
+			family:       config.APIOpenAI,
 			providerName: "openai",
 			useServer:    true,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
@@ -449,6 +468,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 		// falls through to classifyErrorStatus → StatusUnhealthy.
 		{
 			name:         "forbidden 403",
+			family:       config.APIOpenAI,
 			providerName: "openai",
 			useServer:    true,
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
@@ -474,7 +494,7 @@ func TestLLMProviderHealthChecker_ComprehensiveEdgeCases(t *testing.T) {
 				baseURL = tt.baseURL
 			}
 
-			checker := NewLLMProviderHealthChecker(tt.providerName, tt.authenticator, baseURL, nil)
+			checker := NewLLMProviderHealthChecker(tt.family, tt.providerName, tt.authenticator, baseURL, nil)
 
 			ctx := context.Background()
 			if tt.cancelCtx {
@@ -521,7 +541,7 @@ func TestLLMProviderHealthChecker_DefaultTransportFallback(t *testing.T) {
 
 	// 2. Construct the checker — the IIFE should hit the else branch
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, "http://127.0.0.1:1", nil)
 
 	// 3. Verify the transport is our custom one (not a clone)
 	client := GetHTTPClient(checker)
@@ -537,7 +557,7 @@ func TestLLMProviderHealthChecker_TransportClone(t *testing.T) {
 	t.Parallel()
 
 	authMock := &auth.BearerAuth{Token: "test-key"}
-	checker := NewLLMProviderHealthChecker("openai", authMock, "http://127.0.0.1:1", nil)
+	checker := NewLLMProviderHealthChecker(config.APIOpenAI, "openai", authMock, "http://127.0.0.1:1", nil)
 
 	client := GetHTTPClient(checker)
 

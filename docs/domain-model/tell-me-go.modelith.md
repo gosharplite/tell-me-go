@@ -14,6 +14,16 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 
 ## Enums
 
+### `APIFamily`
+
+The wire-protocol family backing an LLM `Provider`. There are exactly three families — this is the compile-time-safe dispatch dimension (distinct from the user-facing `Provider.type` label string, which may include OpenAI-compatible providers like "deepseek" or "kimi").
+
+| Value | Definition |
+| --- | --- |
+| `openai` | OpenAI-compatible API (covers openai, deepseek, kimi, and any future provider speaking the OpenAI protocol). |
+| `anthropic` | Anthropic Messages API. |
+| `gemini` | Google Gemini / Vertex AI API (covers google, gemini, vertex). |
+
 ### `LLMError`
 
 Categories of `Provider` error that affect retry and failover behaviour. Distinguishing these lets the `Orchestrator` decide whether to retry the same `Provider`, switch to a fallback, or surface the error to the user.
@@ -25,17 +35,6 @@ Categories of `Provider` error that affect retry and failover behaviour. Disting
 | `auth_failure` | The API key or credentials are invalid — no retry. |
 | `server_error` | A transient 5xx from the `Provider`; may succeed on retry or failover. |
 | `timeout` | The `Provider` did not respond within `Config.HTTP_TIMEOUT`. |
-
-### `ProviderType`
-
-The API family backing an LLM `Provider`.
-
-| Value | Definition |
-| --- | --- |
-| `gemini` | Google Vertex AI (Gemini 3.0 / 3.1). |
-| `openai` | OpenAI API (GPT-5.4 / 5.5). |
-| `deepseek` | DeepSeek API (V3.2 / V4) or Vertex AI Model-as-a-Service. |
-| `anthropic` | Anthropic API or Vertex AI hosted Claude (Opus 4.7). |
 
 ## Entities
 
@@ -141,7 +140,8 @@ An LLM backend reachable via a specific API. Encapsulates the type (gemini/opena
 | Name | Type | Description |
 | --- | --- | --- |
 | `name` | string | The registry key identifying this `Provider` (e.g. "vertex-flash", "deepseek-pro"). Note: In Go, this is the map key in `Config.Providers`, not a field on the `LLMProvider` struct. It is listed here because it is the `Provider`'s primary identity in the domain. |
-| `type` | ProviderType |  |
+| `type` | string | The user-facing label identifying this `Provider` (e.g. "vertex-flash", "deepseek-pro", "kimi"). This is a free-form string, not an enum — multiple labels map to the same `APIFamily`. The `family` attribute (derived) resolves this label to a wire-protocol family. |
+| `family` | APIFamily | _Derived:_ Resolved from `type` via `LLMProvider.Family()` — "openai"/"deepseek"/"kimi" → openai, "anthropic" → anthropic, "google"/"gemini"/"" → gemini. |
 | `model` | string | The model identifier sent on the wire. |
 | `url` | string | Base API endpoint. |
 | `maxTokens` | integer |  |
