@@ -31,6 +31,7 @@ type llmProviderHealthChecker struct {
 // NewLLMProviderHealthChecker creates a new llmProviderHealthChecker.
 func NewLLMProviderHealthChecker(family config.APIFamily, providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
 	if baseURL == "" {
+		//exhaustive:enforce
 		switch family {
 		case config.APIOpenAI:
 			baseURL = "https://api.openai.com/v1"
@@ -212,6 +213,7 @@ func (c *llmProviderHealthChecker) classifyErrorStatus(statusCode int, report *p
 func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
 	// This switch is exhaustive — c.family is an APIFamily, and
 	// LLMProvider.Family() always returns one of the three constants.
+	//exhaustive:enforce
 	switch c.family {
 	case config.APIOpenAI:
 		return "GET", c.baseURL + "/models", nil

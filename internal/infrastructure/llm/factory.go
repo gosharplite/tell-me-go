@@ -43,6 +43,7 @@ func buildBaseClient(p config.LLMProvider, authenticator auth.Authenticator, per
 	var baseClient llm.LLMClient
 	var err error
 
+	//exhaustive:enforce
 	switch p.Family() {
 	case config.APIOpenAI:
 		opts := []openai.Option{
@@ -207,19 +208,20 @@ func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 		}
 	}
 
-	if strategy, ok := authStrategies[p.Family()]; ok {
-		return strategy(p)
+	//exhaustive:enforce
+	switch p.Family() {
+	case config.APIOpenAI:
+		return openAIFamilyAuth(p)
+	case config.APIAnthropic:
+		return anthropicFamilyAuth(p)
+	case config.APIGemini:
+		return resolveGoogleAuth(p)
+	default:
+		// Defensive: unreachable given Family()'s totality, but
+		// guarded as a safety net to fail loudly on programmer error.
+		return nil, fmt.Errorf("API key or Service Account JSON is required for provider: %s", p.Type)
 	}
-
-	// Fallback for any unknown provider with an explicit API key
-	if p.APIKey != "" {
-		return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
-	}
-
-	return nil, fmt.Errorf("API key or Service Account JSON is required for provider: %s", p.Type)
 }
-
-type authStrategy func(*config.LLMProvider) (auth.Authenticator, error)
 
 // openAIFamilyAuth returns the authenticator for OpenAI-compatible providers
 // (openai, deepseek, kimi). For kimi, there is no Vertex fallback and an
@@ -236,15 +238,6 @@ func openAIFamilyAuth(p *config.LLMProvider) (auth.Authenticator, error) {
 		return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 	}
 	return &auth.BearerAuth{Token: p.APIKey}, nil
-}
-
-// authStrategies maps each wire-protocol family to its authenticator factory.
-// Label-specific overrides (e.g. kimi's no-Vertex constraint) are handled
-// inside the family function, not as separate map entries.
-var authStrategies = map[config.APIFamily]authStrategy{
-	config.APIOpenAI:    openAIFamilyAuth,
-	config.APIAnthropic: anthropicFamilyAuth,
-	config.APIGemini:    resolveGoogleAuth,
 }
 
 // anthropicFamilyAuth returns the authenticator for Anthropic providers.
