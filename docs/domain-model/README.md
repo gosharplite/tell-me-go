@@ -89,7 +89,7 @@ typing."* Naming is a commitment. Fuzziness is a signal. Push on invariants.
 
 ### How our model is doing
 
-0 errors, 0 warnings. All modelith-skill conventions are followed:
+0 errors, 1 warning (pre-existing — `LLMProvider` backticked in `Provider.family` derivation; it is a Go type name, not a domain entity).
 
 - **Entity names backtick-quoted** in all definitions, invariants, notes, and scenario steps.
 - **`SecurityManager`** added to the glossary as a defined actor.
