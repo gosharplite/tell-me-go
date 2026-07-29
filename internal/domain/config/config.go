@@ -35,8 +35,10 @@ var userIDRegex = regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`)
 // with a provider, as opposed to LLMProvider.Type which is the
 // user-facing label string (e.g., "kimi", "deepseek").
 //
-// There are exactly three API families. Adding a fourth is a
-// compile-time error at every exhaustive switch site.
+// There are exactly three API families. The set is intended to be
+// exhaustive — adding a fourth should be a deliberate, grep-able change
+// at every switch site. Enable the 'exhaustive' linter for this type
+// to make it a compile-time error.
 type APIFamily string
 
 const (
@@ -127,7 +129,7 @@ func (p *LLMProvider) validate(name string, logger *slog.Logger) error {
 		}
 	}
 
-	if p.Type == "anthropic" && p.MaxTokens > 0 && p.ThinkingBudget > 0 &&
+	if p.Family() == APIAnthropic && p.MaxTokens > 0 && p.ThinkingBudget > 0 &&
 		p.MaxTokens < p.ThinkingBudget+anthropicThinkingBudgetHeadroom {
 		logger.Warn("provider_max_tokens_below_thinking_budget_floor",
 			"provider", name,

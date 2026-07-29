@@ -210,6 +210,8 @@ func (c *llmProviderHealthChecker) classifyErrorStatus(statusCode int, report *p
 }
 
 func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
+	// This switch is exhaustive — c.family is an APIFamily, and
+	// LLMProvider.Family() always returns one of the three constants.
 	switch c.family {
 	case config.APIOpenAI:
 		return "GET", c.baseURL + "/models", nil
@@ -230,7 +232,6 @@ func (c *llmProviderHealthChecker) getPingEndpoint() (string, string, error) {
 		// responded, proving connectivity. See ADR-022 "fail loud" principle:
 		// we do NOT silently succeed; we explicitly document the workaround.
 		return "GET", c.baseURL, nil
-	default:
-		return "", "", fmt.Errorf("unknown provider type %q: cannot determine health check endpoint", c.providerName)
 	}
+	panic("unreachable: APIFamily must be one of APIOpenAI, APIAnthropic, or APIGemini")
 }

@@ -780,3 +780,38 @@ func TestConfig_ValidateBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestLLMProvider_Family(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		typ  string
+		want APIFamily
+	}{
+		// OpenAI-compatible labels
+		{"openai", "openai", APIOpenAI},
+		{"deepseek", "deepseek", APIOpenAI},
+		{"kimi", "kimi", APIOpenAI},
+		// Anthropic
+		{"anthropic", "anthropic", APIAnthropic},
+		// Gemini family
+		{"gemini", "gemini", APIGemini},
+		{"google", "google", APIGemini},
+		// Edge cases
+		{"empty string falls to Gemini", "", APIGemini},
+		{"unknown type falls to Gemini", "bogus", APIGemini},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := LLMProvider{Type: tt.typ}
+			got := p.Family()
+			if got != tt.want {
+				t.Errorf("LLMProvider{Type: %q}.Family() = %q; want %q",
+					tt.typ, got, tt.want)
+			}
+		})
+	}
+}
