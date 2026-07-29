@@ -256,7 +256,7 @@ entities:
         type: APIFamily
         derived: true
         derivation: >
-          Resolved from `type` via `LLMProvider.Family()` — "openai"/"deepseek"/"kimi"
+          Resolved from `type` via LLMProvider.Family() — "openai"/"deepseek"/"kimi"
           → openai, "anthropic" → anthropic, "google"/"gemini"/"" → gemini.
       - name: model
         type: string
