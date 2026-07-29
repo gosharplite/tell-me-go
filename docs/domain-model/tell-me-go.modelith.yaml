@@ -4,7 +4,7 @@ version: v1
 title: tell-me-go — Multi-Provider Reasoning Agent
 description: >
   A high-performance CLI assistant that unifies reasoning engines (Gemini,
-  OpenAI, DeepSeek, Claude) under a single interface. Models the core
+  OpenAI, DeepSeek, Claude, Kimi) under a single interface. Models the core
   conversation loop, provider abstraction, tool execution, security
   boundaries, and cost auditing.
 
@@ -236,7 +236,7 @@ entities:
   Provider:
     definition: >
       An LLM backend reachable via a specific API. Encapsulates the type
-      (gemini/openai/deepseek/anthropic), model name, endpoint URL,
+      (gemini/openai/deepseek/anthropic/kimi), model name, endpoint URL,
       authentication, and provider-specific settings like thinking budget.
     attributes:
       - name: name

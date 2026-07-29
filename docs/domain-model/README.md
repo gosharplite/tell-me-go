@@ -214,7 +214,7 @@ runs in CI, the diagram is regenerated from source on every commit — it
 | | `Context` | In-flight prompt payload assembled before each `Turn` |
 | | `Turn` | One request–response cycle with thoughts and tool calls |
 | | `ToolCall` | Single tool invocation during a Turn |
-| LLM backend | `Provider` | LLM backend (gemini/openai/deepseek/anthropic) |
+| LLM backend | `Provider` | LLM backend (gemini/openai/deepseek/anthropic/kimi) |
 | | `Config` | YAML configuration with provider registry |
 | | `Pricing` | Per-model cost rates (HIT/MISS/COMP per million tokens) |
 | Agent capabilities | `Tool` | Registered capability exposed to the LLM |
