@@ -116,7 +116,9 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 		{"deepseek missing key", "deepseek", "", "", true},
 		{"deepseek with vertex url", "deepseek", "", "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/deepseek-ai/models/deepseek-r1", false},
 		{"anthropic missing key", "anthropic", "", "", true},
-		{"unknown provider missing key", "unknown", "", "", true},
+		// unknown providers now map to APIGemini via Family(), which resolves
+		// to VertexAuth when no API key is set — consistent with buildBaseClient.
+		{"unknown provider missing key", "unknown", "", "", false},
 		{"google missing key", "google", "", "", false},                     // Resolves to VertexAuth
 		{"unknown provider with key", "unknown", "explicit-key", "", false}, // Resolves to APIKeyAuth
 	}
