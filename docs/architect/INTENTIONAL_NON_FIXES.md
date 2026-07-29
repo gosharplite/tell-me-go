@@ -893,7 +893,7 @@ to reason about.
 
 ### agent/orchestrator/engine_phases.go — (*RecoveryStep).Process (CC=9)
 
-- **Status**: ACCEPTED (2026-07)
+- **Status**: [SUPERSEDED — see CC=12 entry below] ACCEPTED (2026-07)
 - **Rationale**: 5-case classify-switch (`RateLimited`, `ContextOverflow`,
   `AuthFailure`, `ServerError`, `Timeout`) with error guards on each branch.
   Every branch is a single-line delegation or return. The CC is inherent to
@@ -901,6 +901,17 @@ to reason about.
   is already individually ACCEPTED in Coverage Gaps above as structurally
   unreachable (`ClassifyLLMError` returns exactly five known categories).
 - **See**: `internal/agent/orchestrator/engine_phases.go:101`
+
+### agent/orchestrator/engine_phases.go — (*RecoveryStep).Process (CC=12 — increased from 9)
+
+- **Status**: ACCEPTED (2026-07, PR #1283 — empty response retry feature)
+- **Rationale**: CC increased from 9→12 due to the empty-response retry branch
+  (3 structural branches: `errors.Is(..., errEmptyResponse)`, `RetryCount <
+  maxEmptyResponseRetries`, `policy.ShouldRetry`/fallback delay). Each branch
+  is a single-line delegation or return. Same acceptance class as
+  `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — structural
+  dispatch where CC is switch/branch count, not branching business logic.
+- **See**: `internal/agent/orchestrator/engine_phases.go:105`
 
 ---
 
@@ -992,4 +1003,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-07 (browser: handleEditorMsg TUI acceptance, SetPinned coverage: contentHasFunctionCall → 100%, shell: isPowerShellIndicator CC=10 acceptance, CC=9 threshold policy + RecoveryStep.Process, stale CC figures corrected: Update 12→14, handleDomainEvent 11→12)*
+*Last Updated: 2026-07 (browser: handleEditorMsg TUI acceptance, SetPinned coverage: contentHasFunctionCall → 100%, shell: isPowerShellIndicator CC=10 acceptance, CC=9 threshold policy + RecoveryStep.Process, stale CC figures corrected: Update 12→14, handleDomainEvent 11→12, RecoveryStep.Process CC=9→12: empty-response retry feature)*
