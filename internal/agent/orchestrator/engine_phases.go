@@ -13,6 +13,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
+// maxEmptyResponseRetries is the number of times the RecoveryStep
+// will retry after an empty model response before giving up.
+const maxEmptyResponseRetries = 3
+
 // GuardStep validates the Turn against limits before proceeding.
 type GuardStep struct{}
 
@@ -106,6 +110,25 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 
 	category := llm.ClassifyLLMError(err)
 
+	// Empty responses are retried separately from the LLM error taxonomy.
+	// They are not provider errors — the HTTP call succeeded. Give the
+	// model up to maxEmptyResponseRetries attempts before accepting emptiness.
+	if errors.Is(err, errEmptyResponse) {
+		if Turn.State.RetryCount < maxEmptyResponseRetries {
+			delay, ok := p.Policy.ShouldRetry(Turn.Clock, err, Turn.State.RetryCount, Turn.State.HasSeenRateLimit)
+			if !ok {
+				delay = 2 * time.Second
+			}
+			return p.attemptRetry(ctx, Turn, delay)
+		}
+		// Max retries reached — complete the turn normally, persisting
+		// the empty response to keep user/model alternation intact.
+		Turn.getLogger().Warn("empty_response_max_retries",
+			"turn", Turn.Index,
+			"retry_count", Turn.State.RetryCount)
+		return ProcessResult{NextPhase: PhasePersisting}, nil
+	}
+
 	switch category {
 	case llm.LLMErrorRateLimited:
 		Turn.State.HasSeenRateLimit = true
@@ -161,8 +184,12 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, Turn *Turn, delay time.
 		"attempt", Turn.State.RetryCount)
 
 	// Publish retry notification to the UI/EventBus
-	msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
-		Turn.State.LastError, delay.Round(time.Millisecond), Turn.State.RetryCount)
+	errLabel := "Transient error"
+	if errors.Is(Turn.State.LastError, errEmptyResponse) {
+		errLabel = "Empty response"
+	}
+	msg := fmt.Sprintf("%s: %v. Retrying in %v (Attempt %d)...",
+		errLabel, Turn.State.LastError, delay.Round(time.Millisecond), Turn.State.RetryCount)
 	evt := events.SystemMessageEvent{
 		Message: msg,
 		Level:   "warn",
