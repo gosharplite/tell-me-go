@@ -91,21 +91,22 @@ The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`.
 
 ### `History`
 
-The persisted record of a `Session`'s `Turn`s, stored in SQLite. Supports auto-repair on corruption, full-text search, and O(1) archive navigation. Separate from the in-memory `Session` state.
+The persisted record of a `Session`'s `Turn`s, stored as an append-only JSON Lines file (`history.jsonl`) with an incremental patch system for metadata updates (e.g. pinning). Older `Turn`s that have been summarised are moved to a separate archive file (`history.archive.jsonl`) to keep the in-memory working set bounded. The archive supports O(1) lazy navigation via byte-offset indexing (`file.Seek`) — it is never loaded fully into memory. Patches are merged into clean base records during compaction (triggered by `save` or `rollback`). Separate from the in-memory `Session` state.
 
 **Attributes**
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `turns` | []Turn | Ordered list of persisted `Turn`s. |
-| `pinnedTurns` | []int | Indices of `Turn`s protected from summarization/pruning. |
+| `turns` | []Turn | Ordered list of persisted `Turn`s stored as individual JSONL lines. |
+| `pinnedTurns` | []int | Indices of `Turn`s protected from summarisation/pruning, stored as `_patch` lines. |
 
 **Actions**
 
-- `save` — Persist the current `Turn` to storage.
-- `autoRepair` — Detect and recover from corrupted history files.
-- `search` — Full-text search across all stored `Turn`s.
-- `summarize` — Compress older `Turn`s to stay within token limits.
+- `append` — Append a `Turn` as a new JSONL line — O(1) disk operation.
+- `save` — Atomic full rewrite of the active file, merging all outstanding patches.
+- `archive` — Move summarised `Turn`s to `history.archive.jsonl` and remove them from the active file.
+- `compact` — Merge outstanding `_patch` lines into clean base records.
+- `rollback` — Remove the last N `Turn`s from the active file and persist.
 
 **Invariants**
 
