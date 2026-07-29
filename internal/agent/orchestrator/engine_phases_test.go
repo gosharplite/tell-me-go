@@ -527,3 +527,83 @@ func TestRecoveryStep_Process(t *testing.T) {
 		assert.Equal(t, 1, turn.State.RetryCount)
 	})
 }
+
+func TestRecoveryStep_EmptyResponse_RetriesUpToLimit(t *testing.T) {
+	// Construct the full error chain as InferenceStep.Process would produce.
+	innerErr := NewAgentError(llm.ErrTransient, "empty response from model", errEmptyResponse)
+	lastErr := NewAgentError(llm.ErrTransient, "inference failed", innerErr)
+
+	t.Run("retries up to maxEmptyResponseRetries then gives up", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		step := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 5, Backoff: time.Millisecond}}
+		turn := &Turn{
+			Events: bus,
+			Clock:  &agenttest.MockClock{},
+			State: &TurnState{
+				Phase:     PhaseRecovering,
+				LastError: lastErr,
+			},
+		}
+
+		// Attempt 1
+		res, err := step.Process(context.Background(), turn)
+		if err != nil {
+			t.Fatalf("attempt 1: unexpected error: %v", err)
+		}
+		if res.NextPhase != PhaseRefining {
+			t.Errorf("attempt 1: want PhaseRefining, got %s", res.NextPhase)
+		}
+		if turn.State.RetryCount != 1 {
+			t.Errorf("attempt 1: want RetryCount=1, got %d", turn.State.RetryCount)
+		}
+
+		// Attempt 2
+		res, err = step.Process(context.Background(), turn)
+		if err != nil {
+			t.Fatalf("attempt 2: unexpected error: %v", err)
+		}
+		if res.NextPhase != PhaseRefining {
+			t.Errorf("attempt 2: want PhaseRefining, got %s", res.NextPhase)
+		}
+
+		// Attempt 3
+		res, err = step.Process(context.Background(), turn)
+		if err != nil {
+			t.Fatalf("attempt 3: unexpected error: %v", err)
+		}
+		if res.NextPhase != PhaseRefining {
+			t.Errorf("attempt 3: want PhaseRefining, got %s", res.NextPhase)
+		}
+
+		// Attempt 4 — exhausted (RetryCount == 3 == maxEmptyResponseRetries)
+		res, err = step.Process(context.Background(), turn)
+		if err != nil {
+			t.Errorf("attempt 4 (exhausted): unexpected error: %v", err)
+		}
+		if res.NextPhase != PhasePersisting {
+			t.Errorf("attempt 4 (exhausted): want PhasePersisting, got %s", res.NextPhase)
+		}
+	})
+
+	t.Run("gives up immediately if retry count already exceeds limit", func(t *testing.T) {
+		bus := &eventstest.TestEventBus{}
+		step := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 5, Backoff: time.Second}}
+		turn := &Turn{
+			Events: bus,
+			Clock:  &agenttest.MockClock{},
+			State: &TurnState{
+				Phase:      PhaseRecovering,
+				LastError:  lastErr,
+				RetryCount: maxEmptyResponseRetries, // already at limit
+			},
+		}
+
+		res, err := step.Process(context.Background(), turn)
+		if res.NextPhase != PhasePersisting {
+			t.Errorf("want PhasePersisting, got %s", res.NextPhase)
+		}
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
