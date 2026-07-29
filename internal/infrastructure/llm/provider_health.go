@@ -31,6 +31,7 @@ type llmProviderHealthChecker struct {
 // NewLLMProviderHealthChecker creates a new llmProviderHealthChecker.
 func NewLLMProviderHealthChecker(family config.APIFamily, providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
 	if baseURL == "" {
+		//exhaustive:enforce
 		switch family {
 		case config.APIOpenAI:
 			baseURL = "https://api.openai.com/v1"

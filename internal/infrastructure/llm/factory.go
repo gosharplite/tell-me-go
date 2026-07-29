@@ -218,7 +218,7 @@ func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 		return resolveGoogleAuth(p)
 	default:
 		// Defensive: unreachable given Family()'s totality, but
-		// guarded as a safety net per ADR-022 "fail loud."
+		// guarded as a safety net to fail loudly on programmer error.
 		return nil, fmt.Errorf("API key or Service Account JSON is required for provider: %s", p.Type)
 	}
 }

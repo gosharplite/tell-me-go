@@ -9,5 +9,5 @@ linters:
         - "SA"
         - "-SA5011"
     exhaustive:
-      default-signifies-exhaustive: true
+      default-signifies-exhaustive: false
       explicit-exhaustive-switch: true
