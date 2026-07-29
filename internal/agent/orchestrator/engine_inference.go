@@ -5,12 +5,19 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
+
+// errEmptyResponse is raised when the LLM returns a response with no
+// meaningful content (nil content or all parts empty). It is classified
+// as transient so the RecoveryStep retries the inference. After 3 retries
+// the turn completes with an empty response.
+var errEmptyResponse = errors.New("empty response from model")
 
 // InferenceStep calls the LLM.
 type InferenceStep struct{}
@@ -26,6 +33,13 @@ func (p *InferenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 
 	if respContent != nil {
 		p.updateState(Turn, respContent, metrics)
+	}
+
+	// If the model returned a response with no meaningful content
+	// (nil or all parts empty), treat it as a transient failure
+	// so the RecoveryStep can retry.
+	if err == nil && isResponseEmpty(respContent) {
+		err = NewAgentError(llm.ErrTransient, "empty response from model", errEmptyResponse)
 	}
 
 	if err != nil {
@@ -142,4 +156,22 @@ func publishResponseDetached(ctx context.Context, Turn *Turn, respContent *llm.C
 	if err := events.SafePublish(stopCtx, Turn.Events, events.ResponseEvent{Content: safeContent}); err != nil {
 		Turn.getLogger().Error("Failed to publish ResponseEvent; UI spinner may hang", "error", err)
 	}
+}
+
+// isResponseEmpty returns true when a response has no content worth
+// displaying or persisting: nil content, zero parts, or all parts
+// are empty (no text, no function call, no thought, no inline data).
+func isResponseEmpty(content *llm.Content) bool {
+	if content == nil {
+		return true
+	}
+	if len(content.Parts) == 0 {
+		return true
+	}
+	for _, p := range content.Parts {
+		if !p.IsEmpty() {
+			return false
+		}
+	}
+	return true
 }

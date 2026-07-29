@@ -8,11 +8,13 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -272,5 +274,127 @@ func TestPublishResponseDetached(t *testing.T) {
 
 		assert.True(t, spyLogger.CalledWith("Error", "Failed to publish ResponseEvent; UI spinner may hang"))
 		assert.Empty(t, bus.GetEvents())
+	})
+}
+
+func TestIsResponseEmpty(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content *llm.Content
+		want    bool
+	}{
+		{"nil content", nil, true},
+		{"zero parts", &llm.Content{Role: "model", Parts: []*llm.Part{}}, true},
+		{"all empty parts", &llm.Content{Role: "model", Parts: []*llm.Part{
+			{Text: ""},
+			{Text: ""},
+		}}, true},
+		{"one non-empty text part", &llm.Content{Role: "model", Parts: []*llm.Part{
+			{Text: "hello"},
+		}}, false},
+		{"one non-empty function call", &llm.Content{Role: "model", Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test"}},
+		}}, false},
+		{"mixed empty and non-empty", &llm.Content{Role: "model", Parts: []*llm.Part{
+			{Text: ""},
+			{Text: "real content"},
+		}}, false},
+		{"one non-empty thought", &llm.Content{Role: "model", Parts: []*llm.Part{
+			{IsThought: true},
+		}}, false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isResponseEmpty(tt.content)
+			if got != tt.want {
+				t.Errorf("isResponseEmpty() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInferenceStep_EmptyResponse_Detected(t *testing.T) {
+	// setupTurn creates a minimal Turn with the given gateway override.
+	setupTurn := func(t *testing.T, gw *agenttest.MockGateway) *Turn {
+		t.Helper()
+		bus := &eventstest.TestEventBus{}
+		hMock := &agenttest.MockHistoryManager{}
+		counter := &agenttest.MockTokenCounter{}
+		strategy := sessctx.NewStrategy(counter)
+		cm := sessctx.NewManager(strategy, hMock, bus, nil)
+		reg := &agenttest.MockToolRegistry{}
+
+		return &Turn{
+			Events:       bus,
+			Gateway:      gw,
+			Registry:     reg,
+			TokenCounter: counter,
+			CtxManager:   cm,
+			Model:        "test-model",
+			ProviderName: "test-provider",
+			Logger:       &testfixtures.SpyLogger{},
+			Clock:        &agenttest.MockClock{},
+			State:        &TurnState{},
+		}
+	}
+
+	t.Run("nil content with nil error triggers ErrLogic from validateResponse", func(t *testing.T) {
+		// validateResponse catches nil content before isResponseEmpty runs.
+		gw := &agenttest.MockGateway{
+			GenerateFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				return nil, nil, nil
+			},
+		}
+		turn := setupTurn(t, gw)
+
+		step := &InferenceStep{}
+		_, err := step.Process(context.Background(), turn)
+		if err == nil {
+			t.Fatal("expected error for nil content, got nil")
+		}
+		if !errors.Is(err, ErrLogic) {
+			t.Errorf("error chain should contain ErrLogic (validateResponse path): %v", err)
+		}
+	})
+
+	t.Run("all empty parts triggers empty response error", func(t *testing.T) {
+		gw := &agenttest.MockGateway{
+			GenerateFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: ""}}}, nil, nil
+			},
+		}
+		turn := setupTurn(t, gw)
+
+		step := &InferenceStep{}
+		_, err := step.Process(context.Background(), turn)
+		if err == nil {
+			t.Fatal("expected error for all-empty-parts response, got nil")
+		}
+		if !errors.Is(err, errEmptyResponse) {
+			t.Errorf("error chain should contain errEmptyResponse: %v", err)
+		}
+	})
+
+	t.Run("non-empty text part succeeds normally", func(t *testing.T) {
+		gw := &agenttest.MockGateway{
+			GenerateFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{}, nil
+			},
+		}
+		turn := setupTurn(t, gw)
+
+		step := &InferenceStep{}
+		res, err := step.Process(context.Background(), turn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.NextPhase != PhasePersisting {
+			t.Errorf("want PhasePersisting, got %s", res.NextPhase)
+		}
 	})
 }
