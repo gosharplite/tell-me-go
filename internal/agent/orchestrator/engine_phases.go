@@ -115,18 +115,18 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 	// model up to maxEmptyResponseRetries attempts before accepting emptiness.
 	if errors.Is(err, errEmptyResponse) {
 		if Turn.State.RetryCount < maxEmptyResponseRetries {
-			delay := 2 * time.Second
-			if dp, ok := p.Policy.(*DefaultRetryPolicy); ok {
-				delay = calculateBackoff(dp.Backoff, Turn.State.RetryCount)
+			delay, ok := p.Policy.ShouldRetry(Turn.Clock, err, Turn.State.RetryCount, Turn.State.HasSeenRateLimit)
+			if !ok {
+				delay = 2 * time.Second
 			}
 			return p.attemptRetry(ctx, Turn, delay)
 		}
-		// Max retries reached — let the turn complete with empty response.
-		// The contentCleaner pipeline will inject "[empty response]" for persistence.
+		// Max retries reached — complete the turn normally, persisting
+		// the empty response to keep user/model alternation intact.
 		Turn.getLogger().Warn("empty_response_max_retries",
 			"turn", Turn.Index,
 			"retry_count", Turn.State.RetryCount)
-		return ProcessResult{NextPhase: PhaseComplete}, nil
+		return ProcessResult{NextPhase: PhasePersisting}, nil
 	}
 
 	switch category {

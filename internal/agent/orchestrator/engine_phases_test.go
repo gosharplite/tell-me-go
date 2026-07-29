@@ -580,8 +580,8 @@ func TestRecoveryStep_EmptyResponse_RetriesUpToLimit(t *testing.T) {
 		if err != nil {
 			t.Errorf("attempt 4 (exhausted): unexpected error: %v", err)
 		}
-		if res.NextPhase != PhaseComplete {
-			t.Errorf("attempt 4 (exhausted): want PhaseComplete, got %s", res.NextPhase)
+		if res.NextPhase != PhasePersisting {
+			t.Errorf("attempt 4 (exhausted): want PhasePersisting, got %s", res.NextPhase)
 		}
 	})
 
@@ -599,8 +599,8 @@ func TestRecoveryStep_EmptyResponse_RetriesUpToLimit(t *testing.T) {
 		}
 
 		res, err := step.Process(context.Background(), turn)
-		if res.NextPhase != PhaseComplete {
-			t.Errorf("want PhaseComplete, got %s", res.NextPhase)
+		if res.NextPhase != PhasePersisting {
+			t.Errorf("want PhasePersisting, got %s", res.NextPhase)
 		}
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
