@@ -142,7 +142,7 @@ An LLM backend reachable via a specific API. Encapsulates the type (gemini/opena
 | --- | --- | --- |
 | `name` | string | The registry key identifying this `Provider` (e.g. "vertex-flash", "deepseek-pro"). Note: In Go, this is the map key in `Config.Providers`, not a field on the `LLMProvider` struct. It is listed here because it is the `Provider`'s primary identity in the domain. |
 | `type` | string | The user-facing label identifying this `Provider` (e.g. "vertex-flash", "deepseek-pro", "kimi"). This is a free-form string, not an enum — multiple labels map to the same `APIFamily`. The `family` attribute (derived) resolves this label to a wire-protocol family. |
-| `family` | APIFamily | _Derived:_ Resolved from `type` via `LLMProvider.Family()` — "openai"/"deepseek"/"kimi" → openai, "anthropic" → anthropic, "google"/"gemini"/"" → gemini. |
+| `family` | APIFamily | _Derived:_ Resolved from `type` via LLMProvider.Family() — "openai"/"deepseek"/"kimi" → openai, "anthropic" → anthropic, "google"/"gemini"/"" → gemini. |
 | `model` | string | The model identifier sent on the wire. |
 | `url` | string | Base API endpoint. |
 | `maxTokens` | integer |  |
