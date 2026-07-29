@@ -89,7 +89,7 @@ typing."* Naming is a commitment. Fuzziness is a signal. Push on invariants.
 
 ### How our model is doing
 
-0 errors, 0 warnings. All modelith-skill conventions are followed:
+0 errors, 1 warning (pre-existing — `LLMProvider` backticked in `Provider.family` derivation; it is a Go type name, not a domain entity).
 
 - **Entity names backtick-quoted** in all definitions, invariants, notes, and scenario steps.
 - **`SecurityManager`** added to the glossary as a defined actor.
@@ -220,7 +220,7 @@ runs in CI, the diagram is regenerated from source on every commit — it
 | Agent capabilities | `Tool` | Registered capability exposed to the LLM |
 | | `Skill` | Injected guidance (golang-patterns, golang-testing) |
 | Safety | `SafePath` | Authorized directory boundary |
-| Persistence | `History` | Persisted session storage (SQLite) |
+| Persistence | `History` | Append-only JSONL storage with incremental patches and archive compaction |
 
 Glossary roles (not entities — they have no persisted state):
 
@@ -246,10 +246,10 @@ Glossary roles (not entities — they have no persisted state):
   a structured cost profile (context window + three rate tiers). The cost-audit
   scenario demonstrates the lookup: Turn token counts → Pricing rates → USD
   cost → accumulated on Session.
-- **`Context` is distinct from `History`.** `History` is persisted (SQLite);
-  `Context` is the runtime prompt payload assembled before each Turn. It has
-  its own invariants: must fit within the model's context window, and pinned
-  Turns are never summarised.
+- **`Context` is distinct from `History`.** `History` is persisted as append-only JSONL
+  with an incremental patch system; `Context` is the runtime prompt payload assembled
+  before each Turn. It has its own invariants: must fit within the model's context window,
+  and pinned Turns are never summarised.
 - **`LLMError` and `ToolCategory` are typed enums.** Error classification
   drives retry/failover decisions (rate_limited → backoff, auth_failure →
   abort, context_overflow → summarise). Tool categories group capabilities

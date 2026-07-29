@@ -466,25 +466,33 @@ entities:
 
   History:
     definition: >
-      The persisted record of a `Session`'s `Turn`s, stored in SQLite. Supports
-      auto-repair on corruption, full-text search, and O(1) archive
-      navigation. Separate from the in-memory `Session` state.
+      The persisted record of a `Session`'s `Turn`s, stored as an append-only
+      JSON Lines file (`history.jsonl`) with an incremental patch system for
+      metadata updates (e.g. pinning). Older `Turn`s that have been summarised
+      are moved to a separate archive file (`history.archive.jsonl`) to keep
+      the in-memory working set bounded. The archive supports O(1) lazy
+      navigation via byte-offset indexing (`file.Seek`) — it is never loaded
+      fully into memory. Patches are merged into clean base records during
+      compaction (triggered by `save` or `rollback`). Separate from the
+      in-memory `Session` state.
     attributes:
       - name: turns
         type: "[]Turn"
-        description: Ordered list of persisted `Turn`s.
+        description: Ordered list of persisted `Turn`s stored as individual JSONL lines.
       - name: pinnedTurns
         type: "[]int"
-        description: Indices of `Turn`s protected from summarization/pruning.
+        description: Indices of `Turn`s protected from summarisation/pruning, stored as `_patch` lines.
     actions:
+      - name: append
+        description: Append a `Turn` as a new JSONL line — O(1) disk operation.
       - name: save
-        description: Persist the current `Turn` to storage.
-      - name: autoRepair
-        description: Detect and recover from corrupted history files.
-      - name: search
-        description: Full-text search across all stored `Turn`s.
-      - name: summarize
-        description: Compress older `Turn`s to stay within token limits.
+        description: Atomic full rewrite of the active file, merging all outstanding patches.
+      - name: archive
+        description: Move summarised `Turn`s to `history.archive.jsonl` and remove them from the active file.
+      - name: compact
+        description: Merge outstanding `_patch` lines into clean base records.
+      - name: rollback
+        description: Remove the last N `Turn`s from the active file and persist.
     invariants:
       - id: history-persisted-after-turn
         statement: "Every completed `Turn` is persisted before the next `Turn` begins."
