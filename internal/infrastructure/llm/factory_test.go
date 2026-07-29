@@ -226,6 +226,14 @@ func assertMissingKeysResult(t *testing.T, a auth.Authenticator, err error, want
 				t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
 			}
 		}
+
+		// unknown providers with no key and no Vertex URL still get
+		// VertexAuth via the APIGemini family default.
+		if provider == "unknown" && apiKey == "" && url == "" {
+			if _, ok := a.(*auth.VertexAuth); !ok {
+				t.Errorf("expected *auth.VertexAuth for unknown provider (Gemini default), got %T", a)
+			}
+		}
 	}
 }
 
