@@ -30,6 +30,23 @@ const (
 // Must match [a-zA-Z0-9\-_]+ per DeepSeek API spec.
 var userIDRegex = regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`)
 
+// APIFamily identifies the wire-protocol family of an LLM provider.
+// It is the compile-time-safe representation of how to communicate
+// with a provider, as opposed to LLMProvider.Type which is the
+// user-facing label string (e.g., "kimi", "deepseek").
+//
+// There are exactly three API families. The set is intended to be
+// exhaustive — adding a fourth should be a deliberate, grep-able change
+// at every switch site. Enable the 'exhaustive' linter for this type
+// to make it a compile-time error.
+type APIFamily string
+
+const (
+	APIOpenAI    APIFamily = "openai"    // OpenAI-compatible: openai, deepseek, kimi
+	APIAnthropic APIFamily = "anthropic" // Anthropic Messages API
+	APIGemini    APIFamily = "gemini"    // Google Gemini / Vertex AI
+)
+
 // LLMProvider represents the configuration for a specific AI service provider.
 type LLMProvider struct {
 	Type           string `yaml:"TYPE"`            // e.g., "openai", "anthropic", "gemini"
@@ -55,6 +72,22 @@ type LLMProvider struct {
 	// 512. Do not include PII. Emitted only when non-empty for providers
 	// with SupportsThinkingToggle capability.
 	UserID string `yaml:"USER_ID"`
+}
+
+// Family returns the wire-protocol family for this provider,
+// derived from its Type label. Unknown types default to APIGemini
+// for backward compatibility with the existing factory switch.
+func (p *LLMProvider) Family() APIFamily {
+	switch p.Type {
+	case "openai", "deepseek", "kimi":
+		return APIOpenAI
+	case "anthropic":
+		return APIAnthropic
+	case "google", "gemini", "":
+		return APIGemini
+	default:
+		return APIGemini
+	}
 }
 
 // anthropicThinkingBudgetHeadroom mirrors the Anthropic client's
@@ -96,7 +129,7 @@ func (p *LLMProvider) validate(name string, logger *slog.Logger) error {
 		}
 	}
 
-	if p.Type == "anthropic" && p.MaxTokens > 0 && p.ThinkingBudget > 0 &&
+	if p.Family() == APIAnthropic && p.MaxTokens > 0 && p.ThinkingBudget > 0 &&
 		p.MaxTokens < p.ThinkingBudget+anthropicThinkingBudgetHeadroom {
 		logger.Warn("provider_max_tokens_below_thinking_budget_floor",
 			"provider", name,
