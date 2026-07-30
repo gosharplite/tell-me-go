@@ -65,7 +65,6 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 - **config-valid-provider** — `selectedProvider` must reference a key in the PROVIDERS registry.
 - **bypass-suppresses-prompts** — When `Config.bypassConfirmation` is true, Confirm is never called — every authorization check is silently approved.
 
-
 ### `Context`
 
 The in-flight prompt payload assembled by the `Orchestrator` before each `Turn`. Distinct from `History` (persisted) — `Context` is the runtime view: it holds the system prompt, injected `Skill` content, the recent `Turn` history (possibly summarised), and the current user prompt. Its token count is checked against `Pricing.contextWindow` before every `Turn`. In the code, `Context` is implemented as a package of cooperating types (`internal/agent/session/context/`) rather than a single struct. Each type has a single responsibility in the assembly pipeline: HistoryPruner removes old turns, TokenGatekeeper enforces the token budget, `pinningPolicy` protects pinned turns, `emptyTurnFilter` removes empty turns, `finalContextValidator` validates the final state, TransientMerger merges transient content, and Strategy orchestrates the pipeline. This decomposition is intentional — it keeps each concern testable in isolation.
@@ -319,20 +318,19 @@ erDiagram
     Tool {}
     ToolCall {}
     Turn {}
-    Config ||--o{ Pricing : "owned"
-    Session ||--o{ Turn : "owned"
-    Session }o--|| Config : "referenced"
-    Session }o--|| Provider : "referenced"
-    Session ||--|| History : "owned"
-    Session ||--|| Context : "owned"
-    Session ||--o{ Task : "owned"
-    Turn ||--o{ ToolCall : "owned"
+    Config ||--o{ Pricing : ""
+    Session ||--o{ Turn : ""
+    Session }o..|| Config : ""
+    Session }o..|| Provider : ""
+    Session ||--|| History : ""
+    Session ||--|| Context : ""
+    Session ||--o{ Task : ""
+    Turn ||--o{ ToolCall : ""
 ```
 
 ## Invariants
 
 - **deterministic-cost-audit** — Every `Turn`'s cost is computed from token counts and the `Provider`'s pricing model before the next `Turn` begins, and accumulated on the `Session`.
-
 
 ## Scenarios
 
@@ -377,7 +375,6 @@ After every `Turn` completes, the `Orchestrator` computes its USD cost using the
 **Invariants touched**
 
 - **deterministic-cost-audit** — Every `Turn`'s cost is computed from token counts and the `Provider`'s pricing model before the next `Turn` begins, and accumulated on the `Session`.
-
 - **pricing-unique-model** — Each `modelName` appears at most once in the pricing table.
 
 ### Skill injection into context
@@ -510,9 +507,7 @@ A `Tool` attempts to access a path outside the project boundary. The `SecurityMa
 1. `Tool` requests access to a path.
 2. `SecurityManager` checks if the path is within any registered `SafePath`.
 3. If not, and `bypassConfirmation` is false, the `UserInteractor` prompts the user.
-
 4. If the user approves, the path is registered as a `SafePath` and the `Tool` proceeds.
-
 5. If the user denies, the `Tool` returns an error.
 6. If `bypassConfirmation` is true, the check is silently skipped.
 
@@ -520,5 +515,4 @@ A `Tool` attempts to access a path outside the project boundary. The `SecurityMa
 
 - **safepath-absolute** — Paths are stored in canonical absolute form.
 - **bypass-suppresses-prompts** — When `Config.bypassConfirmation` is true, Confirm is never called — every authorization check is silently approved.
-
 
