@@ -3,19 +3,6 @@
 This folder contains the canonical domain model for tell-me-go, built with
 [modelith](https://github.com/stacklok/modelith).
 
-> [!IMPORTANT]
-> **AI agents (including tell-me-go itself): before doing any work in this
-> repository, you MUST read all three domain-model skill files in full:**
->
-> - [`skills/domain-model-author/SKILL.md`](skills/domain-model-author/SKILL.md)
-> - [`skills/domain-model-context/SKILL.md`](skills/domain-model-context/SKILL.md)
-> - [`skills/domain-model-lint/SKILL.md`](skills/domain-model-lint/SKILL.md)
->
-> These define the canonical vocabulary, conventions, and rules for working
-> with the domain model. Reasoning without them will produce names and
-> structures inconsistent with the model. At minimum, load
-> `domain-model-context` before any coding task that touches product concepts.
-
 ## Files
 
 | File | Role |

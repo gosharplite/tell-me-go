@@ -14,9 +14,8 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
 `tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic, Kimi-K3**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance, provides a rich TUI for history exploration, and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
-*   **Multi-Provider Reasoning**: Native support for Gemini 3.0/3.1, GPT-5.4/5.5, DeepSeek V3.2/V4, and Claude 4.7 — across Google Vertex AI, OpenAI, DeepSeek, and Anthropic APIs.
+*   **Multi-Provider Reasoning**: Native support for Gemini 3.0/3.1, GPT-5.4/5.5, DeepSeek V3.2/V4, Kimi-K3, and Claude 4.7 — across Google Vertex AI, OpenAI, DeepSeek, Moonshot, and Anthropic APIs.
 *   **Intelligence & Context**:
-    *   **Dynamic Skill Injection**: Automatically injects idiomatic Go patterns (`golang-patterns`) and TDD best practices (`golang-testing`) into the context based on task relevance.
     *   **Skills.sh Ecosystem**: Discover, install, and remove skills on the fly from the open agent skills ecosystem. Skills are installed via `git clone` into `.skills/` and are available immediately. Requires user approval for installation.
     *   **Unified Domain Model**: Optimized for a provider-agnostic `Thought` architecture, ensuring consistent reasoning across models.
 *   **Agentic Tools**: Natively executes local and cloud tools to solve complex tasks.
@@ -25,7 +24,6 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Enterprise**: Deep integration with **Jira** (search/get), **Confluence** (search/read/write), **Azure DevOps** (PRs, Repos, Pipeline creation/runs/logs), and **Teams**.
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
     *   **State & History**: Task tracking, `summarize_history`, `manage_history` (pinning/unpinning turns to protect them from pruning), and **Interactive History Browser** (`tell-me-go browse`) with full-text search and O(1) archive navigation.
-    *   **Skills Ecosystem**: Discover and install skills from the skills.sh ecosystem (`search_skills`, `list_skills`, `install_skill`, `remove_skill`). Installed skills auto-inject on future turns.
     *   **Media**: Imagen 3 image generation and Vision analysis.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
