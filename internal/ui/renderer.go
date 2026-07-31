@@ -451,17 +451,23 @@ func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Con
 	writeBestEffort(ui.stderr, "\r%s", ui.c(termClearLine))
 
 	// When thoughts are hidden but there is no non-thought visible text,
-	// fall back to rendering thought content visibly. DeepSeek v4 Pro may
-	// put the entire answer in reasoning_content with content=null.
-	hasNonThoughtText := false
-	for _, part := range respContent.Parts {
-		if part.Text != "" && !part.IsThought {
-			hasNonThoughtText = true
-			break
+	// the model likely put its answer in reasoning_content (e.g. DeepSeek
+	// v4 Pro with content=null). Render the fallback text to stdout as
+	// normal answer text, not via renderThoughtLocked (which routes to
+	// stderr with a [Thinking] label, invisible to pipes).
+	if !showThoughts && !HasVisibleText(respContent) {
+		fallbackText := ExtractVisibleText(respContent)
+		if fallbackText != "" {
+			if rawOutput {
+				_, _ = fmt.Fprint(ui.stdout, fallbackText)
+				if !strings.HasSuffix(fallbackText, "\n") {
+					_, _ = fmt.Fprintln(ui.stdout)
+				}
+			} else {
+				r.renderMarkdownWithUILocked(ui, sanitizeForTerminal(fallbackText))
+			}
+			return
 		}
-	}
-	if !showThoughts && !hasNonThoughtText {
-		showThoughts = true
 	}
 
 	for _, part := range respContent.Parts {

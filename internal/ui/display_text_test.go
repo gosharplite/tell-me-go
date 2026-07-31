@@ -125,3 +125,40 @@ func TestExtractVisibleText(t *testing.T) {
 		}
 	})
 }
+
+func TestHasVisibleText(t *testing.T) {
+	t.Run("true with non-thought text", func(t *testing.T) {
+		content := &llm.Content{
+			Parts: []*llm.Part{
+				{Text: "hello", IsThought: false},
+			},
+		}
+		if !HasVisibleText(content) {
+			t.Error("expected true for non-thought text")
+		}
+	})
+
+	t.Run("false with thought only", func(t *testing.T) {
+		content := &llm.Content{
+			Parts: []*llm.Part{
+				{Text: "think", IsThought: true},
+			},
+		}
+		if HasVisibleText(content) {
+			t.Error("expected false for thought-only content")
+		}
+	})
+
+	t.Run("false with nil content", func(t *testing.T) {
+		if HasVisibleText(nil) {
+			t.Error("expected false for nil content")
+		}
+	})
+
+	t.Run("false with no parts", func(t *testing.T) {
+		content := &llm.Content{Parts: nil}
+		if HasVisibleText(content) {
+			t.Error("expected false for nil parts")
+		}
+	})
+}

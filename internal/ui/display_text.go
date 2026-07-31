@@ -48,3 +48,19 @@ func ExtractVisibleText(content *llm.Content) string {
 	}
 	return sb.String()
 }
+
+// HasVisibleText returns true when the content has at least one non-thought,
+// non-empty text part. Used by renderers to decide whether thought promotion
+// is needed (e.g. DeepSeek v4 Pro returning content=null with the answer in
+// reasoning_content).
+func HasVisibleText(content *llm.Content) bool {
+	if content == nil {
+		return false
+	}
+	for _, part := range content.Parts {
+		if part.Text != "" && !part.IsThought {
+			return true
+		}
+	}
+	return false
+}

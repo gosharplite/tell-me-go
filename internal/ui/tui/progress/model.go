@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // domainEventMsg wraps a domain event to ensure exactly one reader exists on
@@ -585,28 +586,7 @@ func (m *model) sampleMetrics(now time.Time) (cpu float64, mem float64) {
 // models that put the entire answer in reasoning_content (e.g. DeepSeek v4 Pro
 // returning content=null with the answer in reasoning_content).
 func extractResponseText(content *llm.Content) string {
-	if content == nil {
-		return ""
-	}
-	var sb strings.Builder
-	for _, part := range content.Parts {
-		if part.Text != "" && !part.IsThought {
-			sb.WriteString(part.Text)
-		}
-	}
-	if sb.Len() > 0 {
-		return sb.String()
-	}
-	// Fallback: no visible text — show thought content visibly.
-	// Reasoning models may put the answer in reasoning_content when
-	// content is null/empty. The wire format is preserved (IsThought
-	// stays true), only the display is affected.
-	for _, part := range content.Parts {
-		if part.Text != "" && part.IsThought {
-			sb.WriteString(part.Text)
-		}
-	}
-	return sb.String()
+	return ui.ExtractVisibleText(content)
 }
 
 // extractToolCallsFromResponse populates bodyLines from FunctionCall parts

@@ -1406,7 +1406,7 @@ func TestStdUIRenderer_RenderResponse_ThoughtPromotion(t *testing.T) {
 	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
 
-	t.Run("thought promoted when no visible text and showThoughts=false", func(t *testing.T) {
+	t.Run("thought promoted to stdout when no visible text and showThoughts=false", func(t *testing.T) {
 		stdout.Reset()
 		stderr.Reset()
 		content := &llm.Content{
@@ -1414,19 +1414,19 @@ func TestStdUIRenderer_RenderResponse_ThoughtPromotion(t *testing.T) {
 				{Text: "the answer", IsThought: true},
 			},
 		}
-		r.RenderResponse(context.Background(), content, false, false)
+		// Use rawOutput=true to bypass glamour rendering — we want to
+		// verify text routing, not glamour output format.
+		r.RenderResponse(context.Background(), content, false, true)
 
-		// Thought must appear on stderr because showThoughts was promoted to true.
+		// Thought must appear on stdout as normal answer text (promoted).
+		stdoutOut := stdout.String()
+		if !strings.Contains(stdoutOut, "the answer") {
+			t.Errorf("expected 'the answer' on stdout when thought is promoted, got: %q", stdoutOut)
+		}
+		// No [Thinking] label on stderr — promotion renders to stdout.
 		stderrOut := stderr.String()
-		if !strings.Contains(stderrOut, "[Thinking]") {
-			t.Errorf("expected [Thinking] in stderr when thought is promoted, got: %q", stderrOut)
-		}
-		if !strings.Contains(stderrOut, "the answer") {
-			t.Errorf("expected 'the answer' in stderr, got: %q", stderrOut)
-		}
-		// Nothing on stdout since the part is IsThought and renderTextLocked skips it.
-		if stdout.Len() > 0 {
-			t.Errorf("expected empty stdout, got: %q", stdout.String())
+		if strings.Contains(stderrOut, "[Thinking]") {
+			t.Errorf("expected no [Thinking] label on stderr, got: %q", stderrOut)
 		}
 	})
 
