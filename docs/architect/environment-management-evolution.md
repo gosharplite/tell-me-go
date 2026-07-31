@@ -684,7 +684,17 @@ All previous stages share a single template: one `ait-base/` with one set of rol
 
 Niffler solves this by adding a **GROUP layer** above Flopsy's tag+provider model. Groups are self-contained category templates under `ait-base/`, and each tag is provisioned from exactly one group.
 
+A ready-to-use example is provided at [`docs/user/niffler/`](../user/niffler/), containing two group templates — `actors` and `engineers` — with stub secrets and full provider configurations.
+
 ### How It's Sourced
+
+For convenience, add an alias to your `.bashrc`:
+
+```bash
+alias nf='source /path/to/niffler.sh'
+```
+
+Then use it:
 
 ```bash
 # In .bashrc

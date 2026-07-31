@@ -1,0 +1,206 @@
+MODE: "butler"
+PERSON: "Your name is butler, an AI assistant."
+
+SELECTED_PROVIDER: "deepseek-flash"
+
+PROVIDERS:
+  kimi:
+    TYPE: "kimi"
+    MODEL: "kimi-k3"
+    URL: "https://api.moonshot.ai/v1"
+    API_KEY: "${MOONSHOT_API_KEY}"
+    MAX_TOKENS: 32768
+    HEADERS:
+      reasoning_effort: "max"
+  deepseek-flash:
+    TYPE: "deepseek"
+    MODEL: "deepseek-v4-flash"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
+  deepseek-pro:
+    TYPE: "deepseek"
+    MODEL: "deepseek-v4-pro"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+    MAX_TOKENS: 32768
+  vertex-deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-ai/deepseek-v3.2-maas"
+    URL: "https://aiplatform.googleapis.com/v1beta1/projects/YOUR_GCP_PROJECT_ID/locations/global/endpoints/openapi"
+    API_KEY: "${NIFFLER_HOME}/secrets/key.json"
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  vertex-flash:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_GCP_PROJECT_ID/locations/global/publishers/google/models"
+    API_KEY: "${NIFFLER_HOME}/secrets/key.json"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  vertex-flash-3.6:
+    TYPE: "gemini"
+    MODEL: "gemini-3.6-flash"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_GCP_PROJECT_ID/locations/global/publishers/google/models"
+    API_KEY: "${NIFFLER_HOME}/secrets/key.json"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  vertex-flash-lite:
+    TYPE: "gemini"
+    MODEL: "gemini-3.5-flash-lite"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_GCP_PROJECT_ID/locations/global/publishers/google/models"
+    API_KEY: "${NIFFLER_HOME}/secrets/key.json"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  vertex-pro:
+    TYPE: "gemini"
+    MODEL: "gemini-3.1-pro-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_GCP_PROJECT_ID/locations/global/publishers/google/models"
+    API_KEY: "${NIFFLER_HOME}/secrets/key.json"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+    MAX_TOKENS: 40960
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  vertex-claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-8"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_GCP_PROJECT_ID/locations/global/publishers/anthropic/models"
+    API_KEY: "${NIFFLER_HOME}/secrets/key.json"
+    THINKING_BUDGET: 32768
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  vertex-claude-fable:
+    TYPE: "anthropic"
+    MODEL: "claude-fable-5"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_GCP_PROJECT_ID/locations/global/publishers/anthropic/models"
+    API_KEY: "${NIFFLER_HOME}/secrets/key.json"
+    THINKING_BUDGET: 32768
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-5.5"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-8"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
+
+# --- Tools & Features ---
+USE_SEARCH: false
+SHOW_THOUGHTS: false
+SHOW_TOOLS: true
+
+# --- Global Timeouts & Streaming ---
+HTTP_TIMEOUT: 300
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
+
+# --- Safety & History ---
+MAX_TURNS: 1000
+MAX_HISTORY_TOKENS: 1000000
+BYPASS_CONFIRMATION: true
+
+MODELS:
+  "kimi-k3":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.3
+      MISS:     3.0
+      COMP:     15.0
+  "deepseek-v4-flash":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.0028
+      MISS:     0.14
+      COMP:     0.28
+  "deepseek-v4-pro":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.003625
+      MISS:     0.435
+      COMP:     0.87
+  "deepseek-ai/deepseek-v3.2-maas":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT:      0.056
+      MISS:     0.56
+      COMP:     1.68
+  "gemini-3-flash-preview":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.09
+      MISS: 0.90
+      COMP: 5.40
+  "gemini-3.6-flash":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.27
+      MISS: 2.70
+      COMP: 13.50
+  "gemini-3.5-flash-lite":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.054
+      MISS: 0.54
+      COMP: 4.50
+  "gemini-3.1-pro-preview":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.36
+      MISS: 3.60
+      COMP: 21.60
+  "gpt-5.4":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.25
+      MISS: 2.50
+      COMP: 15.00
+  "gpt-5.5":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.50
+      MISS: 5.00
+      COMP: 30.00
+  "claude-opus-4-7":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.50
+      MISS: 6.25
+      COMP: 25.00
+  "claude-opus-4-8":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 0.50
+      MISS: 6.25
+      COMP: 25.00
+  "claude-fable-5":
+    CONTEXT_WINDOW: 1000000
+    PRICING:
+      HIT: 1.00
+      MISS: 10.00
+      COMP: 50.00
