@@ -35,7 +35,7 @@ EOF
 
 entities=$(grep -E '^  [A-Z][A-Za-z]+:$' "$MODEL" \
   | sed 's/^  //;s/:$//' \
-  | grep -v '^ProviderType$' | grep -v '^LLMError$' | grep -v '^ToolCategory$')
+  | grep -v '^ProviderType$' | grep -v '^LLMError$' | grep -v '^ToolCategory$' | grep -v '^APIFamily$')
 
 # ── 2. Build exception map ─────────────────────────────────────────────────
 
