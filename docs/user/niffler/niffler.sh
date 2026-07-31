@@ -470,6 +470,10 @@ if [[ -d "$_niffler_configs_dir" ]]; then
         _niffler_persona_entries+=("${_valias}|${_vmode}")
     done < <(_niffler_discover_personas "$_niffler_configs_dir")
 
+    # Save PWD: eval of persona function definitions may trigger a stray cd
+    # in shells with DEBUG traps (e.g. VS Code's __vsc_preexec_only).
+    _niffler_saved_pwd="$PWD"
+
     for _entry in "${_niffler_persona_entries[@]}"; do
         _valias="${_entry%%|*}"
         _vmode="${_entry##*|}"
@@ -479,6 +483,8 @@ if [[ -d "$_niffler_configs_dir" ]]; then
 
         _niffler_commands+=", ${_valias}:${_vmode}"
     done
+
+    cd "$_niffler_saved_pwd" 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
@@ -527,5 +533,5 @@ unset _niffler_green _niffler_cyan _niffler_reset _niffler_tool _niffler_keys_fi
 unset _niffler_configs_dir _niffler_butler_source _niffler_butler
 unset _niffler_persona_entries _niffler_seen_aliases _niffler_commands
 unset _valias _vmode _var_file _var_basename _var_name _var_mode _var_person _var_out _entry _seen _arg
-unset _groups _tag_out _tquery _tselected
+unset _groups _tag_out _tquery _tselected _niffler_saved_pwd
 unset NIFFLER_CREATE NIFFLER_PRIORITY NIFFLER_CLEAN
