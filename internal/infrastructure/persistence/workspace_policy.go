@@ -37,6 +37,7 @@ var ignoredDirNames = map[string]bool{
 	"dist":         true,
 	"testdata":     true,
 	"configs":      true,
+	"secrets":      true,
 }
 
 // ignoredExtensions lists file suffixes that the path-level policy should skip
