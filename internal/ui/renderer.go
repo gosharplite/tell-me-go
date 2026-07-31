@@ -450,6 +450,20 @@ func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Con
 	// Clear the spinner line so response text doesn't overlap it.
 	writeBestEffort(ui.stderr, "\r%s", ui.c(termClearLine))
 
+	// When thoughts are hidden but there is no non-thought visible text,
+	// fall back to rendering thought content visibly. DeepSeek v4 Pro may
+	// put the entire answer in reasoning_content with content=null.
+	hasNonThoughtText := false
+	for _, part := range respContent.Parts {
+		if part.Text != "" && !part.IsThought {
+			hasNonThoughtText = true
+			break
+		}
+	}
+	if !showThoughts && !hasNonThoughtText {
+		showThoughts = true
+	}
+
 	for _, part := range respContent.Parts {
 		r.renderThoughtLocked(ui, part, showThoughts)
 		r.renderTextLocked(ui, part, rawOutput)

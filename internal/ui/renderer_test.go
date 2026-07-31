@@ -1399,3 +1399,93 @@ func TestNewRenderer_GlamourInitFailure(t *testing.T) {
 		}
 	})
 }
+
+func TestStdUIRenderer_RenderResponse_ThoughtPromotion(t *testing.T) {
+	stdout, stderr := testfixtures.NewSafeBuffer(), testfixtures.NewSafeBuffer()
+	locker := ui.NewMockLocker()
+	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
+
+	t.Run("thought promoted when no visible text and showThoughts=false", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		content := &llm.Content{
+			Parts: []*llm.Part{
+				{Text: "the answer", IsThought: true},
+			},
+		}
+		r.RenderResponse(context.Background(), content, false, false)
+
+		// Thought must appear on stderr because showThoughts was promoted to true.
+		stderrOut := stderr.String()
+		if !strings.Contains(stderrOut, "[Thinking]") {
+			t.Errorf("expected [Thinking] in stderr when thought is promoted, got: %q", stderrOut)
+		}
+		if !strings.Contains(stderrOut, "the answer") {
+			t.Errorf("expected 'the answer' in stderr, got: %q", stderrOut)
+		}
+		// Nothing on stdout since the part is IsThought and renderTextLocked skips it.
+		if stdout.Len() > 0 {
+			t.Errorf("expected empty stdout, got: %q", stdout.String())
+		}
+	})
+
+	t.Run("thought NOT promoted when visible text exists", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		content := &llm.Content{
+			Parts: []*llm.Part{
+				{Text: "visible", IsThought: false},
+				{Text: "hidden", IsThought: true},
+			},
+		}
+		r.RenderResponse(context.Background(), content, false, false)
+
+		// Visible text must appear on stdout.
+		stdoutOut := stdout.String()
+		if !strings.Contains(stdoutOut, "visible") {
+			t.Errorf("expected 'visible' in stdout, got: %q", stdoutOut)
+		}
+
+		// The thought part must NOT appear — showThoughts stays false.
+		stderrOut := stderr.String()
+		if strings.Contains(stderrOut, "[Thinking]") || strings.Contains(stderrOut, "hidden") {
+			t.Errorf("expected thought NOT to appear when visible text exists, got stderr: %q", stderrOut)
+		}
+	})
+
+	t.Run("showThoughts=true unchanged", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		content := &llm.Content{
+			Parts: []*llm.Part{
+				{Text: "visible", IsThought: false},
+				{Text: "hidden", IsThought: true},
+			},
+		}
+		r.RenderResponse(context.Background(), content, true, false)
+
+		// Visible text on stdout.
+		stdoutOut := stdout.String()
+		if !strings.Contains(stdoutOut, "visible") {
+			t.Errorf("expected 'visible' in stdout, got: %q", stdoutOut)
+		}
+
+		// Thought must also appear since showThoughts=true.
+		stderrOut := stderr.String()
+		if !strings.Contains(stderrOut, "[Thinking]") {
+			t.Errorf("expected [Thinking] in stderr when showThoughts=true, got: %q", stderrOut)
+		}
+		if !strings.Contains(stderrOut, "hidden") {
+			t.Errorf("expected 'hidden' in stderr when showThoughts=true, got: %q", stderrOut)
+		}
+	})
+
+	t.Run("empty content unchanged", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		content := &llm.Content{Parts: nil}
+		// Must not panic.
+		r.RenderResponse(context.Background(), content, false, false)
+	})
+}

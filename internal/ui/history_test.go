@@ -320,3 +320,56 @@ func TestHistory_RenderTextError(t *testing.T) {
 		}
 	})
 }
+
+func TestHistory_ThoughtPromotion(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyPath := filepath.Join(tmp, "history.json")
+
+	t.Run("thought rendered when no visible text and showThoughts=false", func(t *testing.T) {
+		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+		if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "test"}}}); err != nil {
+			t.Fatal(err)
+		}
+		// Model response has only thought text — simulates DeepSeek v4 Pro
+		// returning the answer in reasoning_content with content=null.
+		if err := h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
+			{IsThought: true, Text: "the answer"},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+
+		var buf bytes.Buffer
+		ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: true, ShowThoughts: false})
+
+		output := buf.String()
+		if !strings.Contains(output, "the answer") {
+			t.Errorf("expected thought 'the answer' to appear when no visible text exists, got: %q", output)
+		}
+	})
+
+	t.Run("thought NOT rendered when visible text exists", func(t *testing.T) {
+		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath+"-2", historyPath+"-2.archive")
+		if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "test"}}}); err != nil {
+			t.Fatal(err)
+		}
+		// Model response has both visible text and hidden thought.
+		if err := h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
+			{IsThought: true, Text: "thinking..."},
+			{Text: "visible response"},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+
+		var buf bytes.Buffer
+		ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: true, ShowThoughts: false})
+
+		output := buf.String()
+		if !strings.Contains(output, "visible response") {
+			t.Errorf("expected 'visible response' in output, got: %q", output)
+		}
+		if strings.Contains(output, "thinking...") {
+			t.Errorf("thought 'thinking...' should NOT appear when visible text exists")
+		}
+	})
+}
