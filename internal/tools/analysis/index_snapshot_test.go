@@ -6,6 +6,7 @@ package analysis
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
 // jsonSymMeta is the JSON-serializable form of symMeta. All fields
@@ -54,6 +55,7 @@ func (j *jsonSymMeta) toSymMeta() *symMeta {
 // unexported symMeta fields.
 type indexSnapshotJSON struct {
 	ModulePath    string                      `json:"module_path"`
+	WorkspaceRoot string                      `json:"workspace_root"`
 	Declarations  []*jsonSymMeta              `json:"declarations"`
 	FileToPkg     map[string]string           `json:"file_to_pkg"`
 	SymbolsByPath map[string][]symbolLocation `json:"symbols_by_path"`
@@ -66,6 +68,7 @@ type indexSnapshotJSON struct {
 // fixtures, bypassing the expensive packages.Load call.
 type indexSnapshot struct {
 	ModulePath    string
+	WorkspaceRoot string
 	Declarations  []*symMeta
 	FileToPkg     map[string]string
 	SymbolsByPath map[string][]symbolLocation
@@ -76,6 +79,7 @@ type indexSnapshot struct {
 func (s *indexSnapshot) toJSON() *indexSnapshotJSON {
 	j := &indexSnapshotJSON{
 		ModulePath:    s.ModulePath,
+		WorkspaceRoot: s.WorkspaceRoot,
 		FileToPkg:     s.FileToPkg,
 		SymbolsByPath: s.SymbolsByPath,
 		UsagesByName:  s.UsagesByName,
@@ -91,6 +95,7 @@ func (s *indexSnapshot) toJSON() *indexSnapshotJSON {
 func fromJSON(j *indexSnapshotJSON) *indexSnapshot {
 	s := &indexSnapshot{
 		ModulePath:    j.ModulePath,
+		WorkspaceRoot: j.WorkspaceRoot,
 		FileToPkg:     j.FileToPkg,
 		SymbolsByPath: j.SymbolsByPath,
 		UsagesByName:  j.UsagesByName,
@@ -117,6 +122,18 @@ func (idx *indexer) snapshot() *indexSnapshot {
 			if _, ok := fileToPkg[f]; !ok {
 				fileToPkg[f] = pkg.PkgPath
 			}
+		}
+	}
+
+	// Compute workspace root and rewrite file paths to be relative.
+	wsRoot, err := filepath.Abs(idx.dir)
+	if err != nil {
+		wsRoot = idx.dir
+	}
+	relFileToPkg := make(map[string]string, len(fileToPkg))
+	for filePath, pkgPath := range fileToPkg {
+		if relPath, err := filepath.Rel(wsRoot, filePath); err == nil {
+			relFileToPkg[relPath] = pkgPath
 		}
 	}
 
@@ -152,8 +169,9 @@ func (idx *indexer) snapshot() *indexSnapshot {
 
 	return &indexSnapshot{
 		ModulePath:    modulePath,
+		WorkspaceRoot: wsRoot,
 		Declarations:  decls,
-		FileToPkg:     fileToPkg,
+		FileToPkg:     relFileToPkg,
 		SymbolsByPath: symbolsCopy,
 		UsagesByName:  usagesCopy,
 		ImplsCache:    implsCopy,

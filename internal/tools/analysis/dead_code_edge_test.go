@@ -164,7 +164,7 @@ func TestHarvestPackageSymbols_EdgeCases(t *testing.T) {
 			ImplsCache:   map[string][]string{},
 		}
 
-		fi := newFixtureIndexer(snap)
+		fi := newFixtureIndexer(snap, "/tmp")
 		err := fi.HarvestDeclarations(context.Background(), func(meta *symMeta) bool {
 			state.declarations[meta.id] = meta
 			return true

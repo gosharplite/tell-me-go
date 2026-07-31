@@ -1423,6 +1423,54 @@ func TestChatCommand_HandleEditLastWorkflow_EditLastTurnError(t *testing.T) {
 	}
 }
 
+// TestChatCommand_HandleEditLastWorkflow_EditAborted verifies that
+// when EditLastTurn returns ports.ErrEditAborted, handleEditLastWorkflow
+// returns nil (user abort is not an error).
+func TestChatCommand_HandleEditLastWorkflow_EditAborted(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	mb.GetHistoryManagerFunc = func(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+		return &stubHistoryManager{}, nil
+	}
+	mService.EditLastTurnFunc = func(ctx stdctx.Context, hManager ports.HistoryManager) error {
+		return ports.ErrEditAborted
+	}
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"-e"})
+	require.NoError(t, err, "edit abort should not be an error")
+
+	snap := mService.Snapshot()
+	if snap.EditLastTurn != 1 {
+		t.Errorf("expected EditLastTurn count 1, got %d", snap.EditLastTurn)
+	}
+	if snap.ProcessMessage != 0 {
+		t.Errorf("expected ProcessMessage NOT to be called, got %d", snap.ProcessMessage)
+	}
+
+	bootSnap := mb.Snapshot()
+	if bootSnap.GetHistoryManager != 1 {
+		t.Errorf("GetHistoryManager: expected 1, got %d", bootSnap.GetHistoryManager)
+	}
+	if bootSnap.BuildSessionDependencies != 0 {
+		t.Errorf("BuildSessionDependencies: expected 0, got %d", bootSnap.BuildSessionDependencies)
+	}
+}
+
 // TestChatCommand_HandleUpdateTurnWorkflow_Success verifies the happy path:
 // GetHistoryManager returns a valid hManager, UpdateLastTurn succeeds.
 func TestChatCommand_HandleUpdateTurnWorkflow_Success(t *testing.T) {
