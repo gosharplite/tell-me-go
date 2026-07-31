@@ -450,6 +450,30 @@ func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Con
 	// Clear the spinner line so response text doesn't overlap it.
 	writeBestEffort(ui.stderr, "\r%s", ui.c(termClearLine))
 
+	// When thoughts are hidden but there is no non-thought visible text,
+	// the model likely put its answer in reasoning_content (e.g. DeepSeek
+	// v4 Pro with content=null). Render the fallback text to stdout as
+	// normal answer text, not via renderThoughtLocked (which routes to
+	// stderr with a [Thinking] label, invisible to pipes).
+	if !showThoughts && !HasVisibleText(respContent) {
+		fallbackText := ExtractVisibleText(respContent)
+		if fallbackText != "" {
+			// NOTE: this early return bypasses renderInlineDataLocked.
+			// A multimodal reasoning model returning thought-text +
+			// inline-data with content=null would lose the inline data.
+			// Deferred — extremely rare and non-destructive.
+			if rawOutput {
+				_, _ = fmt.Fprint(ui.stdout, fallbackText)
+				if !strings.HasSuffix(fallbackText, "\n") {
+					_, _ = fmt.Fprintln(ui.stdout)
+				}
+			} else {
+				r.renderMarkdownWithUILocked(ui, sanitizeForTerminal(fallbackText))
+			}
+			return
+		}
+	}
+
 	for _, part := range respContent.Parts {
 		r.renderThoughtLocked(ui, part, showThoughts)
 		r.renderTextLocked(ui, part, rawOutput)
