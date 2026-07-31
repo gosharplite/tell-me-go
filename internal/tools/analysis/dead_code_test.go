@@ -468,7 +468,7 @@ func getSharedWorkspaceIndexer(tb testing.TB) (string, string, symbolIndex) {
 		if err != nil {
 			absRoot = root // fallback
 		}
-		return absRoot, snap.ModulePath, newFixtureIndexer(snap)
+		return absRoot, snap.ModulePath, newFixtureIndexer(snap, absRoot)
 	}
 
 	// Slow path: build the real indexer (fallback when fixture is missing).

@@ -23,6 +23,8 @@ type fixtureIndexer struct {
 	mu       sync.RWMutex
 	snapshot *indexSnapshot
 
+	workspaceRoot string
+
 	// Pre-computed lookup maps for O(1) access.
 	declsByID map[string]*symMeta
 	pkgPaths  map[string]bool
@@ -33,11 +35,12 @@ var _ SymbolIndex = (*fixtureIndexer)(nil)
 
 // newFixtureIndexer creates a fixtureIndexer from an indexSnapshot.
 // It pre-computes lookup maps for O(1) access during analysis.
-func newFixtureIndexer(s *indexSnapshot) *fixtureIndexer {
+func newFixtureIndexer(s *indexSnapshot, workspaceRoot string) *fixtureIndexer {
 	fi := &fixtureIndexer{
-		snapshot:  s,
-		declsByID: make(map[string]*symMeta, len(s.Declarations)),
-		pkgPaths:  make(map[string]bool, len(s.Declarations)),
+		snapshot:      s,
+		workspaceRoot: workspaceRoot,
+		declsByID:     make(map[string]*symMeta, len(s.Declarations)),
+		pkgPaths:      make(map[string]bool, len(s.Declarations)),
 	}
 	for _, decl := range s.Declarations {
 		fi.declsByID[decl.id] = decl
@@ -112,7 +115,8 @@ func (fi *fixtureIndexer) Packages(ctx context.Context, hb chan<- struct{}) ([]*
 	// has nil guards and gracefully degrades.
 	pkgFiles := make(map[string][]string, len(fi.snapshot.FileToPkg))
 	for file, pkgPath := range fi.snapshot.FileToPkg {
-		pkgFiles[pkgPath] = append(pkgFiles[pkgPath], file)
+		resolved := filepath.Join(fi.workspaceRoot, file)
+		pkgFiles[pkgPath] = append(pkgFiles[pkgPath], resolved)
 	}
 
 	var pkgs []*packages.Package
@@ -155,13 +159,14 @@ func TestFixtureIndexer_ConstructAndHarvest(t *testing.T) {
 	t.Parallel()
 
 	snap := &indexSnapshot{
-		ModulePath: "example.com/test",
+		ModulePath:    "example.com/test",
+		WorkspaceRoot: "/tmp",
 		Declarations: []*symMeta{
 			{id: "example.com/test/pkg.Foo", pkgPath: "example.com/test/pkg", name: "Foo", symType: "Function"},
 			{id: "example.com/test/pkg.Bar", pkgPath: "example.com/test/pkg", name: "Bar", symType: "Type", isInterfaceType: true},
 		},
 		FileToPkg: map[string]string{
-			"/tmp/pkg/file.go": "example.com/test/pkg",
+			"pkg/file.go": "example.com/test/pkg",
 		},
 		SymbolsByPath: map[string][]symbolLocation{},
 		UsagesByName: map[string][]location{
@@ -170,7 +175,7 @@ func TestFixtureIndexer_ConstructAndHarvest(t *testing.T) {
 		ImplsCache: map[string][]string{},
 	}
 
-	fi := newFixtureIndexer(snap)
+	fi := newFixtureIndexer(snap, "/tmp")
 
 	// Test HarvestDeclarations
 	var count int
@@ -213,17 +218,21 @@ func TestFixtureIndexer_ConstructAndHarvest(t *testing.T) {
 	if pkgs[0].PkgPath != "example.com/test/pkg" {
 		t.Errorf("expected pkgPath 'example.com/test/pkg', got %q", pkgs[0].PkgPath)
 	}
+	if len(pkgs[0].GoFiles) != 1 || pkgs[0].GoFiles[0] != "/tmp/pkg/file.go" {
+		t.Errorf("expected GoFiles ['/tmp/pkg/file.go'], got %v", pkgs[0].GoFiles)
+	}
 }
 
 func TestIndexSnapshot_JSONRoundtrip(t *testing.T) {
 	t.Parallel()
 
 	snap := &indexSnapshot{
-		ModulePath: "example.com/test",
+		ModulePath:    "example.com/test",
+		WorkspaceRoot: "/custom/workspace",
 		Declarations: []*symMeta{
 			{id: "example.com/test/pkg.Foo", pkgPath: "example.com/test/pkg", name: "Foo", symType: "Function"},
 		},
-		FileToPkg:    map[string]string{"/tmp/pkg/file.go": "example.com/test/pkg"},
+		FileToPkg:    map[string]string{"pkg/file.go": "example.com/test/pkg"},
 		UsagesByName: map[string][]location{"example.com/test/pkg.Foo": {{Path: "/tmp/main.go", Line: 10}}},
 		ImplsCache:   map[string][]string{},
 	}
@@ -248,5 +257,8 @@ func TestIndexSnapshot_JSONRoundtrip(t *testing.T) {
 	}
 	if loaded.ModulePath != "example.com/test" {
 		t.Errorf("expected module path 'example.com/test', got %q", loaded.ModulePath)
+	}
+	if loaded.WorkspaceRoot != "/custom/workspace" {
+		t.Errorf("expected workspace root '/custom/workspace', got %q", loaded.WorkspaceRoot)
 	}
 }
