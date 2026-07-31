@@ -8,7 +8,6 @@
 
 # Logs and Output
 *.log
-output/
 
 # Session Data
 *_history.json
