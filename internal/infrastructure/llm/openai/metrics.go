@@ -144,22 +144,9 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 
 	c.parseResponseContent(msg.Content, content)
 
-	// Determine whether the response already has visible text content.
-	// DeepSeek family models may put the entire answer in reasoning_content
-	// with content=null. When that happens, promote reasoning_content to
-	// visible text rather than classifying it as a hidden thought bubble.
-	hasVisibleText := false
-	for _, p := range content.Parts {
-		if !p.IsThought && p.Text != "" {
-			hasVisibleText = true
-			break
-		}
-	}
-
 	// Reasoning content (DeepSeek extension)
 	if msg.ReasoningContent != nil && *msg.ReasoningContent != "" {
-		isThought := hasVisibleText // thought bubble only when there's separate visible content
-		content.Parts = append(content.Parts, &llm.Part{Text: *msg.ReasoningContent, IsThought: isThought})
+		content.Parts = append(content.Parts, &llm.Part{Text: *msg.ReasoningContent, IsThought: true})
 	}
 
 	if err := c.parseResponseToolCalls(msg.ToolCalls, content); err != nil {

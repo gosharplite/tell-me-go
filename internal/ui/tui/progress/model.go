@@ -581,6 +581,9 @@ func (m *model) sampleMetrics(now time.Time) (cpu float64, mem float64) {
 }
 
 // extractResponseText concatenates non-thought text parts from an LLM response.
+// Falls back to thought-text parts when there is no visible text — handles
+// models that put the entire answer in reasoning_content (e.g. DeepSeek v4 Pro
+// returning content=null with the answer in reasoning_content).
 func extractResponseText(content *llm.Content) string {
 	if content == nil {
 		return ""
@@ -588,6 +591,18 @@ func extractResponseText(content *llm.Content) string {
 	var sb strings.Builder
 	for _, part := range content.Parts {
 		if part.Text != "" && !part.IsThought {
+			sb.WriteString(part.Text)
+		}
+	}
+	if sb.Len() > 0 {
+		return sb.String()
+	}
+	// Fallback: no visible text — show thought content visibly.
+	// Reasoning models may put the answer in reasoning_content when
+	// content is null/empty. The wire format is preserved (IsThought
+	// stays true), only the display is affected.
+	for _, part := range content.Parts {
+		if part.Text != "" && part.IsThought {
 			sb.WriteString(part.Text)
 		}
 	}
