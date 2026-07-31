@@ -23,6 +23,12 @@ import (
 //	The wire format is preserved (IsThought stays true); only display
 //	is affected.
 //
+// Accepted trade-off: on tool-call turns where the model returns
+// reasoning_content + tool_calls with no separate visible text, the
+// chain-of-thought becomes visible on every agent hop (in one-shot, TUI,
+// and history views). This is a display-verbosity choice — the wire format
+// is unchanged, and the alternative is a blank response.
+//
 // Returns "" when content is nil or has no text in any part.
 func ExtractVisibleText(content *llm.Content) string {
 	if content == nil {

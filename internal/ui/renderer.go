@@ -458,6 +458,10 @@ func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Con
 	if !showThoughts && !HasVisibleText(respContent) {
 		fallbackText := ExtractVisibleText(respContent)
 		if fallbackText != "" {
+			// NOTE: this early return bypasses renderInlineDataLocked.
+			// A multimodal reasoning model returning thought-text +
+			// inline-data with content=null would lose the inline data.
+			// Deferred — extremely rare and non-destructive.
 			if rawOutput {
 				_, _ = fmt.Fprint(ui.stdout, fallbackText)
 				if !strings.HasSuffix(fallbackText, "\n") {
