@@ -88,7 +88,7 @@ entities:
       - entity: Persona
         cardinality: "1:n"
         ownership: owned
-        note: "Generated full configs from the `Group`'s `Persona` stubs."
+        note: "Generated full configs from the `Group`'s `Persona` stubs. Distinct lifecycle stage from the stub — the stub is owned by the `Group`, the generated config by the `Environment`."
     attributes:
       - name: tag
         type: string
@@ -98,7 +98,7 @@ entities:
         description: "The currently sourced LLM provider. Can be changed via `HotSwap` without affecting the `Environment`."
       - name: provisionFlags
         type: ProvisionFlag
-        description: "Flags applied at `Provision` time (e.g. `priority`, `clean`)."
+        description: "Zero or more flags applied at `Provision` time (e.g. `priority`, `clean`). Flags are mutually independent — any combination is valid."
       - name: personaAliases
         type: "map[string]string"
         derived: true
@@ -170,7 +170,7 @@ scenarios:
       - "For each `Persona`, the stub (`MODE` + `PERSON`) is merged with `butler.yaml` into a full `<persona>.yaml` config."
       - "`SecretSet` is copied from the `Group` template to the `Environment`."
       - "`docs/skills/` is copied (the `engineers` `Group` has Go skills)."
-      - "Shell aliases (`a`, `c`, `t`, `r`) are defined from `Persona` first letters."
+      - "Shell aliases (`b`, `a`, `c`, `t`, `r`) are defined from `Persona` first letters (butler is always pre-seeded)."
       - "The terminal prompt updates to `[tmg|vertex-flash]`."
     invariants_touched: [group-has-butler, persona-alias-unique, persona-b-reserved, env-provider-not-in-path, secrets-per-group]
 

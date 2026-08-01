@@ -610,28 +610,27 @@ The user starts a new `Session` via `--new`. The `Orchestrator` archives the old
 
 ### Config hot-reload mid-session
 
-The user edits the YAML `Config` file (e.g. changing `MAX_TURNS` or switching the active `Provider`) while a `Turn` is in progress. The `Orchestrator` detects the file change at the next phase transition (between inference and tool execution), re-reads the `Config`, and atomically applies the new limits — without restarting the `Session`. If the new `Config` references an invalid `Provider`, the change is rejected and the previous `Config` remains in effect.
+The user edits the YAML `Config` file (e.g. changing `MAX_TURNS` or the context window) while a `Turn` is in progress. The `Orchestrator` detects the file change at the next phase transition (between inference and tool execution), re-reads the changed limits, and atomically applies them — without restarting the `Session`. Switching the active `Provider` requires a new session; the hot-reload path refreshes only operational limits, not provider identity.
 
-**Actors:** Orchestrator, Config, Context, Provider, Session
+**Actors:** Orchestrator, Config, Context, Session
 
 **Steps**
 
 1. A `Session` is mid-`Turn`: the `Provider` has returned a response with tool calls.
 2. While the LLM was responding, the user edits `assistant.yaml` to increase `MAX_TURNS` from 20 to 50.
 3. The `Orchestrator`'s `configRefreshHook` fires on the `Inference → Execution` phase transition.
-4. The `Config` is re-read from disk and validated (`selectedProvider` must exist in the registry).
+4. The config watcher re-reads the file and extracts updated limits (`maxHistoryTokens`, `maxToolTurns`, `maxHistoryTurns`, `contextWindow`).
 5. New limits are atomically applied: `Context` token budget, max tool turns, and concurrency are updated.
 6. Tool execution proceeds with the updated limits.
-7. If the new `Config` had referenced an unknown `Provider`, the change would be rejected and the prior `Config` retained.
+7. `SELECTED_PROVIDER` is not refreshed — switching providers requires a new `Session`.
 
 **Invariants touched**
 
-- **config-valid-provider** — `selectedProvider` must reference a key in the PROVIDERS registry.
 - **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
 
 ### Retry last turn
 
-The user invokes `--retry` after an unsatisfactory response. The `Orchestrator` locates the last user message in `History`, rolls back exactly one `Turn` (removing both the user prompt and the model response), and resends the original prompt as a fresh `Turn`. This is distinct from `--back-n` + `--prompt`: the user does not need to re-type or even know the original prompt — the `Orchestrator` recovers it automatically from `History`.
+The user invokes `--retry` after an unsatisfactory response. Before the session loop begins, the `ChatService` locates the last user message in `History`, prompts the user for confirmation, rolls back exactly one `Turn`, and rewrites the command parameters so the `Orchestrator` resends the original prompt as a fresh `Turn`. The user does not need to re-type or even know the original prompt — it is recovered automatically from `History`.
 
 **Actors:** Orchestrator, Session, History, Turn
 
@@ -639,12 +638,13 @@ The user invokes `--retry` after an unsatisfactory response. The `Orchestrator` 
 
 1. The user receives a model response they are unhappy with.
 2. User invokes `tell-me-go --retry`.
-3. `Orchestrator` calls `History.GetLastUserMessage`, which scans backward to find the most recent user-role message.
-4. The method returns both the original prompt text and the number of `Turn`s to roll back (always 1 for --retry).
-5. `Orchestrator` rolls back `History` by exactly 1 `Turn`, removing the last user message and model response.
-6. `History` is synced to disk to reflect the rollback.
-7. `Orchestrator` resends the recovered prompt as a fresh `Turn`.
-8. The new `Turn` begins with the rolled-back `History` as context.
+3. Before the session loop starts, ChatService calls `History.GetLastUserMessage`, which scans backward to find the most recent user-role message.
+4. The method returns both the original prompt text and the number of `Turn`s to roll back (typically 1 for a standard user→model pair).
+5. The user is prompted: `Retry? [y/N]`. If declined, the operation aborts with no changes.
+6. On confirmation, ChatService rewrites the command's prompt and BackN fields and the `Orchestrator` rolls back `History` by the computed number of `Turn`s.
+7. `History` is synced to disk to reflect the rollback.
+8. The `Orchestrator` begins a fresh `Session` loop with the recovered prompt.
+9. The new `Turn` begins with the rolled-back `History` as context.
 
 **Invariants touched**
 

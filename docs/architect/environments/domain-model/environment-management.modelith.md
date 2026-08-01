@@ -35,7 +35,7 @@ A self-contained `ait-<tag>/` directory provisioned from exactly one `Group`. Th
 
 **Relationships**
 
-- `Persona` — 1:n — owned — Generated full configs from the `Group`'s `Persona` stubs.
+- `Persona` — 1:n — owned — Generated full configs from the `Group`'s `Persona` stubs. Distinct lifecycle stage from the stub — the stub is owned by the `Group`, the generated config by the `Environment`.
 
 **Attributes**
 
@@ -43,7 +43,7 @@ A self-contained `ait-<tag>/` directory provisioned from exactly one `Group`. Th
 | --- | --- | --- |
 | `tag` | string | The human-chosen name (e.g. 'tmg', 'myproject'). Forms the directory name `ait-<Tag>`. |
 | `activeProvider` | string | The currently sourced LLM provider. Can be changed via `HotSwap` without affecting the `Environment`. |
-| `provisionFlags` | ProvisionFlag | Flags applied at `Provision` time (e.g. `priority`, `clean`). |
+| `provisionFlags` | ProvisionFlag | Zero or more flags applied at `Provision` time (e.g. `priority`, `clean`). Flags are mutually independent — any combination is valid. |
 | `personaAliases` | map[string]string | _Derived:_ Map of single-letter shell aliases (e.g. 'a' → 'architect') to `Persona` names, derived from the first letter of each `Persona` filename. |
 
 **Actions**
@@ -143,7 +143,7 @@ A user creates a new `Environment` from a `Group` template using the Niffler she
 4. For each `Persona`, the stub (`MODE` + `PERSON`) is merged with `butler.yaml` into a full `<persona>.yaml` config.
 5. `SecretSet` is copied from the `Group` template to the `Environment`.
 6. `docs/skills/` is copied (the `engineers` `Group` has Go skills).
-7. Shell aliases (`a`, `c`, `t`, `r`) are defined from `Persona` first letters.
+7. Shell aliases (`b`, `a`, `c`, `t`, `r`) are defined from `Persona` first letters (butler is always pre-seeded).
 8. The terminal prompt updates to `[tmg|vertex-flash]`.
 
 **Invariants touched**
