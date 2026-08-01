@@ -741,7 +741,7 @@ scenarios:
       without restarting the `Session`. Switching the active `Provider` requires
       a new session; the hot-reload path refreshes only operational limits, not
       provider identity.
-    actors: [Orchestrator, Config, Context, Session]
+    actors: [Orchestrator, Config, Context, Provider, Session]
     steps:
       - "A `Session` is mid-`Turn`: the `Provider` has returned a response with tool calls."
       - "While the LLM was responding, the user edits `assistant.yaml` to increase `MAX_TURNS` from 20 to 50."

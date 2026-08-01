@@ -612,7 +612,7 @@ The user starts a new `Session` via `--new`. The `Orchestrator` archives the old
 
 The user edits the YAML `Config` file (e.g. changing `MAX_TURNS` or the context window) while a `Turn` is in progress. The `Orchestrator` detects the file change at the next phase transition (between inference and tool execution), re-reads the changed limits, and atomically applies them — without restarting the `Session`. Switching the active `Provider` requires a new session; the hot-reload path refreshes only operational limits, not provider identity.
 
-**Actors:** Orchestrator, Config, Context, Session
+**Actors:** Orchestrator, Config, Context, Provider, Session
 
 **Steps**
 
