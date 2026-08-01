@@ -9,6 +9,7 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 - **`Chatter`** — The conversation interface between the `Orchestrator` and the `Provider` gateway. Defines how prompts are sent, responses are streamed, and chat sessions are configured. Not an entity — it is a behavioral role with no persisted state, analogous to `Orchestrator` and `SecurityManager`.
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
 - **`SecurityManager`** — The component that validates `Tool` requests against the `SafePath` registry and delegates to the `UserInteractor` when user confirmation is required.
+- **`TellMeHome`** — The filesystem root directory for all tell-me-go state — `Config`s, local `Skill`s, `History`, `SafePath`s, and `Task`s. A `Session`'s `History` can be archived (`--new`) without affecting `SafePath`s or `Task`s because they are stored under `TellMeHome`, not inside the `Session`-scoped `History` file. The environment tools (Niffler, Dobby, etc.) manage this directory; tell-me-go treats it as the stable namespace for everything it persists.
 - **`Thought`** — A provider-agnostic reasoning block emitted by an LLM — may be a text response, a tool-call request, or (for reasoning models) a chain-of-thought segment. Normalised from provider-specific wire formats.
 - **`UserInteractor`** — The interface through which the `SecurityManager` prompts the user for confirmation (e.g. before a `Tool` accesses an unauthorized path). Implementations include the interactive TUI capturer and a no-op variant for automated workflows. Prompt suppression is controlled by `Config.bypassConfirmation`.
 
@@ -585,7 +586,7 @@ The user explicitly pins specific `Turn`s to protect them from summarisation. La
 
 ### Fresh session with global state preservation
 
-The user starts a new `Session` via `--new`. The `Orchestrator` archives the old `Session`'s `History` (all `Turn`s are moved to the archive file) but preserves global state: `SafePath` registrations and `Task`s survive across sessions because they are not owned by the archived `Session`'s `History`. The new `Session` begins with a clean conversation but retains the user's authorized paths and to-do list.
+The user starts a new `Session` via `--new`. The `Orchestrator` archives the old `Session`'s `History` (all `Turn`s are moved to the archive file) but preserves global state: `SafePath` registrations and `Task`s survive across sessions because they are stored under `TellMeHome`, not inside the `Session`-scoped `History` file. The new `Session` begins with a clean conversation but retains the user's authorized paths and to-do list.
 
 **Actors:** Orchestrator, Session, History, SafePath, Task
 

@@ -31,6 +31,13 @@ glossary:
     Implementations include the interactive TUI
     capturer and a no-op variant for automated workflows. Prompt suppression is
     controlled by `Config.bypassConfirmation`.
+  TellMeHome: >
+    The filesystem root directory for all tell-me-go state — `Config`s, local
+    `Skill`s, `History`, `SafePath`s, and `Task`s. A `Session`'s `History` can
+    be archived (`--new`) without affecting `SafePath`s or `Task`s because they
+    are stored under `TellMeHome`, not inside the `Session`-scoped `History`
+    file. The environment tools (Niffler, Dobby, etc.) manage this directory;
+    tell-me-go treats it as the stable namespace for everything it persists.
 
 enums:
   APIFamily:
@@ -709,9 +716,9 @@ scenarios:
       The user starts a new `Session` via `--new`. The `Orchestrator` archives
       the old `Session`'s `History` (all `Turn`s are moved to the archive file)
       but preserves global state: `SafePath` registrations and `Task`s survive
-      across sessions because they are not owned by the archived `Session`'s
-      `History`. The new `Session` begins with a clean conversation but retains
-      the user's authorized paths and to-do list.
+      across sessions because they are stored under `TellMeHome`, not inside the
+      `Session`-scoped `History` file. The new `Session` begins with a clean
+      conversation but retains the user's authorized paths and to-do list.
     actors: [Orchestrator, Session, History, SafePath, Task]
     steps:
       - "User has an active `Session` with 15 `Turn`s, 3 registered `SafePath`s, and 2 pending `Task`s."
