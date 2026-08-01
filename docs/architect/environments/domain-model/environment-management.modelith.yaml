@@ -1,0 +1,214 @@
+# yaml-language-server: $schema=https://modelith.sh/schema/domain-model/v1.json
+kind: DomainModel
+version: v1
+title: tell-me-go — Environment Management
+description: >
+  Models the shell-based environment management system that provisions,
+  configures, and switches between isolated `tell-me-go` sessions. Covers
+  the full evolution from bash aliases through Toby, Dobby, Porter, Sprawl,
+  Winky, Flopsy, and Niffler.
+
+glossary:
+  Tag: >
+    The human-chosen name portion of an `Environment` directory (`ait-<tag>`).
+    Identifies a project or workspace. The tag is fixed at provisioning time
+    and never changes — only the active provider switches.
+  Provision: >
+    The act of creating a new `Environment` from a `Group` template: copying
+    configs and secrets, generating full role configs from `Persona` stubs,
+    and optionally copying `docs/skills/`.
+  HotSwap: >
+    Changing the active LLM provider within an `Environment` without losing
+    session `History`, `Task`s, or `SafePath`s. Possible because the provider
+    is never encoded in the `Environment` directory name (Dobby onwards).
+  RemoteHost: >
+    An SSH-reachable machine where an `Environment` can be deployed for
+    remote sub-agent execution (Sprawl) or interactive use (Winky).
+  MODE: "A YAML config key identifying the `Persona` (e.g. 'butler', 'architect', 'coder')."
+  PERSON: "A YAML config key containing the system prompt for a `Persona`."
+  History: "Cross-context: the persisted conversation record from the `tell-me-go` domain model. Lives under `TELL_ME_HOME/output/<mode>/`."
+  Task: "Cross-context: a user-facing to-do item from the `tell-me-go` domain model. Persisted in the session state database."
+  SafePath: "Cross-context: an authorized directory boundary from the `tell-me-go` domain model. Persisted in the session state database."
+
+enums:
+  ProvisionFlag:
+    description: >
+      Flags that modify `Provision` behaviour. Mutually independent — any
+      combination is valid.
+    values:
+      - name: priority
+        definition: Use the priority-tier `butler-priority.yaml` as the merge source, with Vertex AI shared/priority headers.
+      - name: clean
+        definition: Skip copying the `docs/` directory from the `Group` template.
+
+entities:
+  Group:
+    definition: >
+      A self-contained category template under `ait-base/<group>/` that defines
+      a set of `Persona` stubs, a `SecretSet`, and optional `docs/skills/`.
+      `Group`s are the template layer — they are never used directly by
+      `tell-me-go`. An `Environment` is provisioned from exactly one `Group`,
+      and the `Group`'s identity is never referenced after provisioning.
+    relationships:
+      - entity: Environment
+        cardinality: "1:n"
+        ownership: referenced
+        note: "`Environment`s provisioned from this `Group`."
+      - entity: Persona
+        cardinality: "1:n"
+        ownership: owned
+        note: "`Persona` stubs discovered from this `Group`'s `configs/` directory."
+      - entity: SecretSet
+        cardinality: "1:1"
+        ownership: owned
+        note: "API keys and credentials bundled with this `Group` template."
+    attributes:
+      - name: name
+        type: string
+        description: Directory name under `ait-base/` (e.g. "engineers", "actors").
+      - name: hasSkills
+        type: boolean
+        derived: true
+        derivation: True when the `Group` template contains a `docs/skills/` directory.
+    invariants:
+      - id: group-has-butler
+        statement: "Every `Group` must contain a `configs/butler.yaml` master config file."
+
+  Environment:
+    definition: >
+      A self-contained `ait-<tag>/` directory provisioned from exactly one
+      `Group`. The `Tag` forms the directory name and is fixed at provisioning
+      time — only the active provider changes. Contains generated configs,
+      secrets, optional skills, and an `output/` directory for session state.
+      The provider is never encoded in the directory name (Dobby onwards),
+      enabling mid-session `HotSwap`. Managed by shell scripts (Dobby,
+      Niffler); used by `tell-me-go` as `TELL_ME_HOME`. May be deployed to a
+      `RemoteHost` for remote execution (Sprawl) or interactive use (Winky).
+    relationships:
+      - entity: Persona
+        cardinality: "1:n"
+        ownership: owned
+        note: "Generated full configs from the `Group`'s `Persona` stubs."
+    attributes:
+      - name: tag
+        type: string
+        description: "The human-chosen name (e.g. 'tmg', 'myproject'). Forms the directory name `ait-<Tag>`."
+      - name: activeProvider
+        type: string
+        description: "The currently sourced LLM provider. Can be changed via `HotSwap` without affecting the `Environment`."
+      - name: provisionFlags
+        type: ProvisionFlag
+        description: "Flags applied at `Provision` time (e.g. `priority`, `clean`)."
+      - name: personaAliases
+        type: "map[string]string"
+        derived: true
+        derivation: "Map of single-letter shell aliases (e.g. 'a' → 'architect') to `Persona` names, derived from the first letter of each `Persona` filename."
+    actions:
+      - name: provision
+        description: "Create an `Environment` from a `Group`: copy configs, secrets, generate persona configs, optionally copy `docs/skills/`."
+      - name: hotswap
+        description: "Switch the active provider without changing the `Environment` directory — `History`, `Task`s, and `SafePath`s are preserved."
+    invariants:
+      - id: env-provider-not-in-path
+        statement: "The provider is never encoded in the `Environment` directory name — the directory is `ait-<tag>`, not `ait-<tag>-<provider>`."
+      - id: env-hotswap-preserves-state
+        statement: "`HotSwap`ping the provider must not affect `History`, `Task`s, or `SafePath`s."
+
+  Persona:
+    definition: >
+      A role definition consisting of a `MODE` and `PERSON` (system prompt).
+      Stored as a lightweight YAML stub in a `Group`'s `configs/` directory.
+      At `Provision` time, each `Persona` stub is merged with the `Group`'s
+      `butler.yaml` to generate a full config file in the `Environment`.
+      Shell aliases are derived from the first letter of the `Persona` filename.
+    attributes:
+      - name: name
+        type: string
+        description: "Filename stem (e.g. 'architect', 'coder', 'alice'). Doubles as the `MODE` value."
+      - name: person
+        type: string
+        description: "The system prompt (`PERSON`) injected into the generated config."
+      - name: alias
+        type: string
+        derived: true
+        derivation: "First letter of `name` (e.g. 'a' for 'architect')."
+    invariants:
+      - id: persona-alias-unique
+        statement: "No two `Persona`s within the same `Group` may share the same first letter."
+      - id: persona-b-reserved
+        statement: "The alias `b` is reserved for the butler `Persona` — no other `Persona` may have a name starting with `b`."
+
+  SecretSet:
+    definition: >
+      A collection of API keys, service account credentials, and environment
+      variables bundled with a `Group` template. Copied into each provisioned
+      `Environment`. Never transmitted over SSH — remote `Environment`s
+      source their own local copy.
+    attributes:
+      - name: keyFile
+        type: string
+        description: Path to the service account JSON credentials file.
+      - name: envFile
+        type: string
+        description: Path to the shell file exporting API key environment variables.
+    invariants:
+      - id: secrets-per-group
+        statement: "Each `Group` template carries its own `secrets/` directory — secrets are never shared between `Group`s."
+
+scenarios:
+  - name: Provision a new environment from a group
+    description: >
+      A user creates a new `Environment` from a `Group` template using the
+      Niffler shell script. The `Group`'s `Persona` stubs are discovered,
+      validated, and merged with `butler.yaml` to generate full role configs.
+      Secrets and optional skills are copied.
+    actors: [Group, Environment, Persona, SecretSet]
+    steps:
+      - "User runs `source niffler.sh -n engineers tmg vertex-flash`."
+      - "Niffler scans `ait-base/engineers/configs/` and discovers four `Persona` stubs: architect, coder, reviewer, tester."
+      - "Each `Persona`'s first letter is checked: no duplicates, and `b` is not claimed."
+      - "For each `Persona`, the stub (`MODE` + `PERSON`) is merged with `butler.yaml` into a full `<persona>.yaml` config."
+      - "`SecretSet` is copied from the `Group` template to the `Environment`."
+      - "`docs/skills/` is copied (the `engineers` `Group` has Go skills)."
+      - "Shell aliases (`a`, `c`, `t`, `r`) are defined from `Persona` first letters."
+      - "The terminal prompt updates to `[tmg|vertex-flash]`."
+    invariants_touched: [group-has-butler, persona-alias-unique, persona-b-reserved, env-provider-not-in-path, secrets-per-group]
+
+  - name: Mid-session provider hot-swap
+    description: >
+      The user switches the active LLM provider without changing the
+      `Environment`. All session state — `History`, `Task`s, and `SafePath`s —
+      is preserved because the provider is not encoded in the directory name.
+      The same prompt can be re-sent to compare models.
+    actors: [Environment, Persona]
+    steps:
+      - "User has an active `Environment` `ait-tmg/` sourced with `vertex-flash`."
+      - "Mid-session, user runs `source niffler.sh deepseek-pro`."
+      - "The re-entry guard detects the environment is already sourced — it strips the old prompt prefix and re-applies with the new provider."
+      - "Shell aliases (`b`, `a`, `c`, `t`, `r`) are re-defined with `deepseek-pro` as the provider."
+      - "The terminal prompt updates to `[tmg|deepseek-pro]`."
+      - "All `Persona` configs remain unchanged — only the `activeProvider` changes."
+      - "The user can now send the same prompt to compare model outputs."
+    invariants_touched: [env-provider-not-in-path, env-hotswap-preserves-state]
+
+  - name: Persona alias collision detection
+    description: >
+      When provisioning an `Environment`, Niffler validates that no two
+      `Persona` stubs in the `Group` share the same first letter, and that
+      no `Persona` claims the reserved `b` alias. Violations abort
+      provisioning and clean up the partial workspace.
+    actors: [Group, Persona, Environment]
+    steps:
+      - "A `Group` template contains `alice.yaml` and `architect.yaml` — both start with `a`."
+      - "User attempts to provision an `Environment` from this `Group`."
+      - "During `Persona` discovery, Niffler detects the alias collision."
+      - "Provisioning is aborted with an error message naming the conflicting files."
+      - "The partial `Environment` directory is cleaned up."
+    invariants_touched: [persona-alias-unique, persona-b-reserved]
+
+invariants:
+  - id: group-provider-choice
+    statement: >
+      The `Group` template includes ALL supported providers in `butler.yaml`.
+      The active provider is chosen at source time or via `HotSwap` — it is
+      never baked into the `Group` template or `Environment` directory name.
