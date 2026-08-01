@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // domainEventMsg wraps a domain event to ensure exactly one reader exists on
@@ -446,7 +447,7 @@ func (m *model) handleResponseEvent(e events.ResponseEvent) tea.Cmd {
 		m.extractToolCallsFromResponse(e.Content)
 	}
 
-	rawText := extractResponseText(e.Content)
+	rawText := ui.ExtractVisibleText(e.Content)
 	if rawText == "" {
 		return m.waitForEvent()
 	}
@@ -578,20 +579,6 @@ func (m *model) sampleMetrics(now time.Time) (cpu float64, mem float64) {
 	m.lastSampleTime = now
 	m.lastMemPercent = currentMem
 	return m.lastCPUPercent, m.lastMemPercent
-}
-
-// extractResponseText concatenates non-thought text parts from an LLM response.
-func extractResponseText(content *llm.Content) string {
-	if content == nil {
-		return ""
-	}
-	var sb strings.Builder
-	for _, part := range content.Parts {
-		if part.Text != "" && !part.IsThought {
-			sb.WriteString(part.Text)
-		}
-	}
-	return sb.String()
 }
 
 // extractToolCallsFromResponse populates bodyLines from FunctionCall parts

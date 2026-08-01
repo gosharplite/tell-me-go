@@ -62,9 +62,17 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 	for _, content := range contents {
 		hr.renderHeader(content.Role)
 
+		// When thoughts are hidden but there is no non-thought visible
+		// text, fall back to showing thought content. Reasoning models
+		// may put the entire answer in reasoning_content with content=null.
+		effectiveShowThoughts := hr.showThoughts
+		if !effectiveShowThoughts && !HasVisibleText(content) {
+			effectiveShowThoughts = true
+		}
+
 		for _, p := range content.Parts {
 			if p != nil {
-				hr.renderPart(*p)
+				hr.renderPart(*p, effectiveShowThoughts)
 			}
 		}
 		_, _ = fmt.Fprintln(w)
@@ -114,8 +122,8 @@ func (r *historyRenderer) renderText(text string) {
 	}
 }
 
-func (r *historyRenderer) renderPart(p llm.Part) {
-	if p.IsThought && !r.showThoughts {
+func (r *historyRenderer) renderPart(p llm.Part, showThoughts bool) {
+	if p.IsThought && !showThoughts {
 		return
 	}
 
