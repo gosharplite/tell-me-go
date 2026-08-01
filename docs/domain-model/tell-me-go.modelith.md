@@ -9,6 +9,7 @@ A high-performance CLI assistant that unifies reasoning engines (Gemini, OpenAI,
 - **`Chatter`** — The conversation interface between the `Orchestrator` and the `Provider` gateway. Defines how prompts are sent, responses are streamed, and chat sessions are configured. Not an entity — it is a behavioral role with no persisted state, analogous to `Orchestrator` and `SecurityManager`.
 - **`Orchestrator`** — The top-level loop that drives a `Session`: receives a user prompt, delegates to the active `Provider`, dispatches `Tool` calls, and manages the `Turn` lifecycle.
 - **`SecurityManager`** — The component that validates `Tool` requests against the `SafePath` registry and delegates to the `UserInteractor` when user confirmation is required.
+- **`TellMeHome`** — The filesystem root directory for all tell-me-go state — `Config`s, local `Skill`s, `History`, `SafePath`s, and `Task`s. A `Session`'s `History` can be archived (`--new`) without affecting `SafePath`s or `Task`s because they are stored under `TellMeHome`, not inside the `Session`-scoped `History` file. The environment tools (Niffler, Dobby, etc.) manage this directory; tell-me-go treats it as the stable namespace for everything it persists.
 - **`Thought`** — A provider-agnostic reasoning block emitted by an LLM — may be a text response, a tool-call request, or (for reasoning models) a chain-of-thought segment. Normalised from provider-specific wire formats.
 - **`UserInteractor`** — The interface through which the `SecurityManager` prompts the user for confirmation (e.g. before a `Tool` accesses an unauthorized path). Implementations include the interactive TUI capturer and a no-op variant for automated workflows. Prompt suppression is controlled by `Config.bypassConfirmation`.
 
@@ -278,6 +279,7 @@ A single invocation of a `Tool` requested by the LLM during a `Turn`. Carries th
 **Invariants**
 
 - **tool-timeout** — Execution duration must not exceed `Config.TOOL_TIMEOUT` seconds.
+- **tool-max-concurrent** — At most `Config.maxConcurrentTools` `ToolCall`s may execute simultaneously within a single `Turn`.
 
 ### `Turn`
 
@@ -515,4 +517,137 @@ A `Tool` attempts to access a path outside the project boundary. The `SecurityMa
 
 - **safepath-absolute** — Paths are stored in canonical absolute form.
 - **bypass-suppresses-prompts** — When `Config.bypassConfirmation` is true, Confirm is never called — every authorization check is silently approved.
+
+### Concurrent tool execution
+
+The LLM requests multiple independent `Tool` calls in a single response. The `Orchestrator` dispatches them concurrently (up to `Config.maxConcurrentTools`), collects results as they complete, and feeds the aggregated results back to the `Provider` in one batch.
+
+**Actors:** Orchestrator, Provider, Tool, ToolCall, Session
+
+**Steps**
+
+1. `Provider` returns a `Thought` requesting three independent `Tool` executions.
+2. `Orchestrator` validates each `Tool` name and arguments.
+3. `Orchestrator` dispatches all three `ToolCall`s concurrently, respecting `Config.maxConcurrentTools`.
+4. Each `ToolCall` executes independently; one takes longer but stays within `Config.toolTimeout`.
+5. Results are collected and fed back to the `Provider` in a single response.
+6. `Provider` integrates the results and emits a final text `Thought`.
+7. The `Turn` (with all `ToolCall`s, each carrying its own `duration` and `status`) is persisted to `History`.
+
+**Invariants touched**
+
+- **tool-timeout** — Execution duration must not exceed `Config.TOOL_TIMEOUT` seconds.
+- **tool-unique-name** — Each `Tool` has a unique name.
+- **tool-max-concurrent** — At most `Config.maxConcurrentTools` `ToolCall`s may execute simultaneously within a single `Turn`.
+
+### Session crash recovery
+
+A `Turn` is in progress when the process crashes. On restart, the `Orchestrator` recovers the `Session` from the append-only JSONL `History`. Because `History` appends each `Turn` atomically as a single line only after the `Turn` completes, the interrupted `Turn` was never written — all previously committed `Turn`s are intact. The `Session` resumes cleanly without data loss.
+
+**Actors:** Orchestrator, History, Session, Turn
+
+**Steps**
+
+1. A `Session` has three completed `Turn`s persisted to `History`.
+2. The fourth `Turn` begins — the `Provider` is called but the process crashes before the response arrives.
+3. On restart, the `Orchestrator` loads the `History` file from disk.
+4. The `History` contains exactly three `Turn`s — the interrupted fourth was never appended.
+5. The `Orchestrator` reconstructs the `Session` from those three `Turn`s.
+6. The user is informed that the previous session was recovered.
+7. The next user prompt begins a fresh fourth `Turn`.
+
+**Invariants touched**
+
+- **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+- **turn-belongs-to-one-session** — A `Turn` belongs to exactly one `Session`.
+
+### Turn pinning and protection
+
+The user explicitly pins specific `Turn`s to protect them from summarisation. Later, when the `Context` overflows the model's token budget, the `Orchestrator` summarises older unpinned `Turn`s while preserving the pinned `Turn`s verbatim — ensuring critical decisions and findings survive context compression intact.
+
+**Actors:** Orchestrator, Context, History, Session, Turn
+
+**Steps**
+
+1. A long `Session` accumulates 20 `Turn`s; the user pins `Turn` 5 (an architectural decision) and `Turn` 15 (a key test result) via `manage_history`.
+2. The pinned indices are persisted as `_patch` lines in `History`.
+3. On `Turn` 21, the `Orchestrator` assembles the `Context` and finds `tokenCount` exceeds `Pricing.contextWindow`.
+4. The `Orchestrator` identifies the oldest non-pinned `Turn`s for summarisation.
+5. `Turn`s 5 and 15 are skipped — their content remains verbatim in `Context`.
+6. Older unpinned `Turn`s are compressed into summarised blocks.
+7. `Context.tokenCount` is recomputed and now fits within budget.
+8. The `Provider` receives the compressed `Context` where the pinned `Turn`s are still exact.
+
+**Invariants touched**
+
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **context-pinned-preserved** — Pinned `Turn`s are never summarised — they are always included verbatim.
+- **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+
+### Fresh session with global state preservation
+
+The user starts a new `Session` via `--new`. The `Orchestrator` archives the old `Session`'s `History` (all `Turn`s are moved to the archive file) but preserves global state: `SafePath` registrations and `Task`s survive across sessions because they are stored under `TellMeHome`, not inside the `Session`-scoped `History` file. The new `Session` begins with a clean conversation but retains the user's authorized paths and to-do list.
+
+**Actors:** Orchestrator, Session, History, SafePath, Task
+
+**Steps**
+
+1. User has an active `Session` with 15 `Turn`s, 3 registered `SafePath`s, and 2 pending `Task`s.
+2. User invokes `tell-me-go --new "Start fresh"`.
+3. The `Orchestrator` archives the old `Session`: its `History` is moved to the archive file.
+4. Global state (`SafePath`s and `Task`s) is preserved — they outlive the old `Session`.
+5. A new `Session` is created with a fresh conversation context.
+6. The new `Session`'s `History` starts with 0 `Turn`s.
+7. The 3 `SafePath`s are still registered and active — `Tool`s respect them immediately.
+8. The 2 `Task`s are still pending and visible to the user.
+9. The user prompt is sent as the first `Turn` of the new `Session`.
+
+**Invariants touched**
+
+- **safepath-absolute** — Paths are stored in canonical absolute form.
+- **task-non-empty-content** — A `Task`'s `content` must not be empty.
+- **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+
+### Config hot-reload mid-session
+
+The user edits the YAML `Config` file (e.g. changing `MAX_TURNS` or the context window) while a `Turn` is in progress. The `Orchestrator` detects the file change at the next phase transition (between inference and tool execution), re-reads the changed limits, and atomically applies them — without restarting the `Session`. Switching the active `Provider` requires a new session; the hot-reload path refreshes only operational limits, not provider identity.
+
+**Actors:** Orchestrator, Config, Context, Provider, Session
+
+**Steps**
+
+1. A `Session` is mid-`Turn`: the `Provider` has returned a response with tool calls.
+2. While the LLM was responding, the user edits `assistant.yaml` to increase `MAX_TURNS` from 20 to 50.
+3. The `Orchestrator`'s `configRefreshHook` fires on the `Inference → Execution` phase transition.
+4. The config watcher re-reads the file and extracts updated limits (`maxHistoryTokens`, `maxToolTurns`, `maxHistoryTurns`, `contextWindow`).
+5. New limits are atomically applied: `Context` token budget, max tool turns, and concurrency are updated.
+6. Tool execution proceeds with the updated limits.
+7. `SELECTED_PROVIDER` is not refreshed — switching providers requires a new `Session`.
+
+**Invariants touched**
+
+- **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+
+### Retry last turn
+
+The user invokes `--retry` after an unsatisfactory response. Before the session loop begins, the `ChatService` locates the last user message in `History`, prompts the user for confirmation, rolls back exactly one `Turn`, and rewrites the command parameters so the `Orchestrator` resends the original prompt as a fresh `Turn`. The user does not need to re-type or even know the original prompt — it is recovered automatically from `History`.
+
+**Actors:** Orchestrator, Session, History, Turn
+
+**Steps**
+
+1. The user receives a model response they are unhappy with.
+2. User invokes `tell-me-go --retry`.
+3. Before the session loop starts, ChatService calls `History.GetLastUserMessage`, which scans backward to find the most recent user-role message.
+4. The method returns both the original prompt text and the number of `Turn`s to roll back (typically 1 for a standard user→model pair).
+5. The user is prompted: `Retry? [y/N]`. If declined, the operation aborts with no changes.
+6. On confirmation, ChatService rewrites the command's prompt and BackN fields and the `Orchestrator` rolls back `History` by the computed number of `Turn`s.
+7. `History` is synced to disk to reflect the rollback.
+8. The `Orchestrator` begins a fresh `Session` loop with the recovered prompt.
+9. The new `Turn` begins with the rolled-back `History` as context.
+
+**Invariants touched**
+
+- **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
+- **turn-belongs-to-one-session** — A `Turn` belongs to exactly one `Session`.
 
