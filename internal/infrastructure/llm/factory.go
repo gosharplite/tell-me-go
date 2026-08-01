@@ -21,13 +21,13 @@ import (
 )
 
 // softMaxTokensCeiling is a heuristic threshold above any current
-// published model ceiling as of 2026-04. Above this we emit a one-time
+// published model ceiling as of 2026-08. Above this we emit a one-time
 // warning so operators notice obviously-wrong values without blocking;
 // the API will reject if the value actually exceeds the model's hard
 // ceiling. Raise this constant as model ceilings rise.
 //
 // Pinned by TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning.
-const softMaxTokensCeiling = 200_000
+const softMaxTokensCeiling = 400_000
 
 // deprecatedDeepSeekModels maps deprecated DeepSeek model names to their
 // recommended replacements. These will stop working on 2026/07/24 15:59 UTC.

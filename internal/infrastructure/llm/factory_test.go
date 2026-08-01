@@ -689,7 +689,7 @@ func TestFactory_MaxTokensAboveSoftCeiling_EmitsWarning(t *testing.T) {
 				URL:       server.URL,
 				Model:     "claude-3-5-sonnet",
 				APIKey:    "test-key",
-				MaxTokens: 300_000, // above softMaxTokensCeiling
+				MaxTokens: 500_000, // above softMaxTokensCeiling (400k)
 			},
 		},
 	}
