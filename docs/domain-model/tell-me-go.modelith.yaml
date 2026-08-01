@@ -725,6 +725,47 @@ scenarios:
       - "The user prompt is sent as the first `Turn` of the new `Session`."
     invariants_touched: [safepath-absolute, task-non-empty-content, history-persisted-after-turn]
 
+  - name: Config hot-reload mid-session
+    description: >
+      The user edits the YAML `Config` file (e.g. changing `MAX_TURNS` or
+      switching the active `Provider`) while a `Turn` is in progress. The
+      `Orchestrator` detects the file change at the next phase transition
+      (between inference and tool execution), re-reads the `Config`, and
+      atomically applies the new limits — without restarting the `Session`.
+      If the new `Config` references an invalid `Provider`, the change is
+      rejected and the previous `Config` remains in effect.
+    actors: [Orchestrator, Config, Context, Provider, Session]
+    steps:
+      - "A `Session` is mid-`Turn`: the `Provider` has returned a response with tool calls."
+      - "While the LLM was responding, the user edits `assistant.yaml` to increase `MAX_TURNS` from 20 to 50."
+      - "The `Orchestrator`'s `configRefreshHook` fires on the `Inference → Execution` phase transition."
+      - "The `Config` is re-read from disk and validated (`selectedProvider` must exist in the registry)."
+      - "New limits are atomically applied: `Context` token budget, max tool turns, and concurrency are updated."
+      - "Tool execution proceeds with the updated limits."
+      - "If the new `Config` had referenced an unknown `Provider`, the change would be rejected and the prior `Config` retained."
+    invariants_touched: [config-valid-provider, context-within-budget]
+
+  - name: Retry last turn
+    description: >
+      The user invokes `--retry` after an unsatisfactory response. The
+      `Orchestrator` locates the last user message in `History`, rolls back
+      exactly one `Turn` (removing both the user prompt and the model
+      response), and resends the original prompt as a fresh `Turn`. This is
+      distinct from `--back-n` + `--prompt`: the user does not need to
+      re-type or even know the original prompt — the `Orchestrator` recovers
+      it automatically from `History`.
+    actors: [Orchestrator, Session, History, Turn]
+    steps:
+      - "The user receives a model response they are unhappy with."
+      - "User invokes `tell-me-go --retry`."
+      - "`Orchestrator` calls `History.GetLastUserMessage`, which scans backward to find the most recent user-role message."
+      - "The method returns both the original prompt text and the number of `Turn`s to roll back (always 1 for --retry)."
+      - "`Orchestrator` rolls back `History` by exactly 1 `Turn`, removing the last user message and model response."
+      - "`History` is synced to disk to reflect the rollback."
+      - "`Orchestrator` resends the recovered prompt as a fresh `Turn`."
+      - "The new `Turn` begins with the rolled-back `History` as context."
+    invariants_touched: [history-persisted-after-turn, turn-belongs-to-one-session]
+
 invariants:
   - id: deterministic-cost-audit
     statement: >
