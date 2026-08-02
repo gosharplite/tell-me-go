@@ -34,6 +34,21 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Durability**: Automatic history saving with built-in **Auto-Repair** for crash resilience and session continuity.
     *   **Archiving**: New sessions (`--new`) archive history while preserving global state (tasks and `SafePath`).
 
+## 🤖 AI Session Bootstrap
+
+Before any AI-assisted work in this repository, an AI agent **must** read the
+following files to establish a working understanding of the project:
+
+| # | File / Command | Why |
+|---|---|---|
+| 1 | `README.md` | Project overview, features, configuration, usage |
+| 2 | `Makefile` | Build/test conventions, coverage exclusions, architectural guard checks |
+| 3 | `docs/domain-model/` | Canonical domain model — entities, relationships, invariants, scenarios |
+| 4 | `docs/architect/environments/` | Environment management evolution and tooling (Toby, Dobby, etc.) |
+| 5 | `docs/architect/environments/domain-model/` | Domain model for environment management concepts |
+| 6 | `docs/architect/INTENTIONAL_NON_FIXES.md` | Known code patterns deliberately left as-is, with rationale |
+| 7 | Execute `list_skills` | Discover installed skills available for the session |
+
 ## 📋 Prerequisites
 *   **Go**: 1.26.4 or higher.
 *   **Development Tools** (optional): For building from source, running tests, and contributing, install `golangci-lint`, `staticcheck`, `govulncheck`, `goimports`, and `gh` (GitHub CLI). See the Development section below.
