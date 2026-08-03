@@ -65,7 +65,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 2. Create a new file with naming convention: `YYYY-MM-short-descriptive-title.md`
 3. Follow the required ADR format (Status, Context, Decision, Consequences)
 4. Update this README.md file with the new ADR entry
-5. Update relevant project documentation (README.md, ROADMAP.md) with references
+5. Update relevant project documentation (README.md) with references
 
 ## Purpose of ADRs
 
@@ -80,4 +80,4 @@ ADRs capture important architectural decisions made along the project's evolutio
 
 - [ADR Standards](../sop/standards/adr_standards.md) - Process for creating and maintaining ADRs
 - [README.md](../../README.md) - Main project documentation with ADR references
-- [ROADMAP.md](../../ROADMAP.md) - Project roadmap with ADR implementation status
+
