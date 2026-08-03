@@ -368,33 +368,23 @@ function b-install {
 
 For advanced usage with piped multi-agent workflows and role-based review checklists, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md), [docs/steps/review-by-roles.md](docs/steps/review-by-roles.md), and [docs/steps/reduce-cyclomatic-complexity.md](docs/steps/reduce-cyclomatic-complexity.md). For the fully-automated Architect + Coder Issue-to-PR pipeline, see [docs/sop/lifecycle/issue_to_pr_orchestration.md](docs/sop/lifecycle/issue_to_pr_orchestration.md).
 
-### Advanced Environment Management with Toby
+### Advanced Environment Management with Niffler
 
-If you work with multiple LLM providers or need isolated configuration/history per project, consider using **Toby** – a Bash environment manager that creates and switches between isolated `tell-me-go` environments.
+If you need fully isolated AI environments with category-level templates (e.g., a software engineering pipeline vs. a creative writing studio), consider using **Niffler** – the culmination of tell-me-go's environment management evolution. Niffler provisions isolated `tell-me-go` environments from self-contained **group templates** under `ait-base/`, with on-the-fly provider switching and dynamic persona discovery.
 
-Toby provides:
-- **Tag‑based environments** (`ait‑<tag>‑<provider>` directories)
-- **Interactive selection** (with `fzf`)
-- **Automatic configuration updates** and API‑key path rewriting
-- **Role‑specific helper functions** (`c`, `t`, `r`, `a`, `b`) scoped to the current environment
-- **Visual shell prompt** showing the active tag and provider
-
-See the [Toby documentation](docs/user/toby/README.md) for installation and usage.
-
-### Advanced Environment Management with Dobby
-
-If you need to switch AI providers mid-session while keeping the same project context, consider using **Dobby** – a Bash environment manager that creates isolated `tell-me-go` environments with dedicated configurations for every role in the pipeline and on-the-fly provider switching within the same tag.
-
-Dobby provides:
-- **Multi‑role environments** (`ait‑<tag>` directories) with five role configs: `butler`, `architect`, `coder`, `reviewer`, `tester`
-- **Template‑based provisioning** (`-n` flag) with auto‑generated role configs from a single `butler.yaml` source
+Niffler provides:
+- **Group‑based templates** (`ait-base/<group>/`) — each group is a self-contained category with its own configs, secrets, personas, and optional skills/docs
+- **Provider‑agnostic environments** (`ait‑<tag>` directories) — the provider is chosen at source time, not baked into the directory name, enabling mid-session hot‑swap
+- **Dynamic persona discovery** — shell aliases are derived from the first letter of each persona YAML file in the group's `configs/`; add a file, get a function. No script changes needed
+- **Per‑group skills** — the `docs/skills/` directory is optional per group (e.g., `engineers/` gets `golang-patterns` and `golang-testing`; `actors/` gets none)
+- **Template‑based provisioning** (`-n` flag) — auto‑generates full role configs by merging persona stubs (MODE + PERSON) with `butler.yaml`
 - **Priority mode** (`-p` flag) for Vertex AI shared/priority headers
 - **Clean mode** (`-c` flag) for lean, docs‑free environments
-- **Interactive selection** (with `fzf`) for tags and providers
-- **Role‑specific helper functions** (`b`, `a`, `c`, `t`, `r`) scoped to the current environment
+- **Interactive selection** (with `fzf`) for groups, tags, and providers
+- **Role‑specific helper functions** (`b`, `a`, `c`, `t`, `r` …) scoped to the current environment
 - **Visual shell prompt** showing the active tag and provider
 
-See the [Dobby documentation](docs/user/dobby/README.md) for installation and usage.
+See the [Niffler documentation](docs/user/niffler/README.md) for installation and usage. For the full evolution from bash aliases through Niffler, see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
 ## 🛠️ Development
 
