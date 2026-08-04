@@ -7,23 +7,6 @@ Any AI agent recommending these should consult the rationale below.
 
 ## Coverage Gaps (ACCEPTED)
 
-### pidlock/pidlock.go — 6 gaps
-
-- **Status**: ACCEPTED (2026-06-28, commit `0f882423`)
-- **Rationale**:
-  - **2 gaps are platform-specific**: the Windows `return true` branch in
-    `isProcessAlive` and the `IsStale` `os.Stat`-failure fallback are
-    unreachable in `pidlock_unix_test.go` (the only test file).
-  - **2 gaps are structurally unreachable on Linux**: `os.FindProcess`
-    never fails on Linux (it wraps the PID without a syscall); the ESRCH
-    branch is tested by `TestIsProcessAlive_DeadProcess` but the coverage
-    tool reports it as uncovered when the dead-PID test Skips.
-  - **2 gaps require filesystem fault injection**: `fmt.Fprintf` and
-    `f.Sync()` to a just-opened `*os.File` can only fail on disk-full or
-    hardware error. Not worth the test complexity for a process-lock helper.
-- **See**: `internal/infrastructure/pidlock/pidlock.go` (architect-acceptance
-  comments at each gap site)
-
 ### history/global_prompt_tracker.go — writeCompactedData branch
 
 - **Status**: ACCEPTED (2026-06-28, commit `0f882423`)
@@ -99,8 +82,9 @@ Any AI agent recommending these should consult the rationale below.
   (changing file ownership, read-only filesystem, or Windows ACL restrictions).
   The `fsRetry` wrapper is already tested through other `OSFileSystem` methods
   (e.g., `Stat`, `ReadFile`), so the retry logic itself is covered. Same
-  acceptance rationale as `pidlock/pidlock.go` — "require filesystem fault
-  injection... not worth the test complexity for a process-lock helper."
+  acceptance class as platform-specific / filesystem fault-injection gaps —
+  "require filesystem fault injection... not worth the test complexity for a
+  process-lock helper."
 - **See**: `internal/infrastructure/persistence/os_fs.go:50-53`
 
 ### security/command_validator.go — HasBareNewline delegation wrapper at 0%
@@ -606,7 +590,7 @@ Any AI agent recommending these should consult the rationale below.
   - `searchGitHubAPI`: `http.NewRequestWithContext` error — URL constructed from
     `url.QueryEscape`, unreachable for GET.
   - `searchGitHubAPI`: `io.ReadAll` error — requires transport-level corruption.
-    Same class as pidlock/process_executor acceptances.
+    Same class as the process_executor acceptance.
   - `searchGitHubAPI`: `limit > 10` guard — `per_page=10` makes this defensive
     against API changes.
   - `fetchSkillMeta`: `http.NewRequestWithContext`, `client.Do`, `StatusCode`,
@@ -619,7 +603,8 @@ Any AI agent recommending these should consult the rationale below.
     unreachable.
 
   **Filesystem fault injection (4 sites)**:
-  - `InstallSkill`: `os.MkdirAll` error — same class as `pidlock/pidlock.go`.
+  - `InstallSkill`: `os.MkdirAll` error — same class as filesystem
+    fault-injection gaps.
   - `RemoveSkill`: `os.RemoveAll` error — same class.
   - `findSkillDir`: `filepath.Walk` walkErr — unreachable on test-controlled
     temp dirs.
@@ -668,8 +653,7 @@ Any AI agent recommending these should consult the rationale below.
   reachable on Linux via the chdir-into-deleted-directory technique used by
   `TestBuildApp_GetwdError`. On macOS and Windows, the kernel caches the
   working directory path, making the error structurally unreachable.
-  Same acceptance class as the platform-specific branches in
-  `pidlock/pidlock.go`.
+  Same acceptance class as platform-specific branches.
 - **See**: `cmd/tell-me-go/main.go` (`buildApp`, `os.Getwd` error branch),
   `cmd/tell-me-go/main_test.go` (`TestBuildApp_GetwdError`)
 
@@ -872,9 +856,9 @@ to reason about.
   `powershell`/`pwsh` vs `cmd.exe` shell wrappers. The 10 CC points are
   structural guards (nil-check, alias lookup, hyphen-index bounds, prefix
   validation, loop over substring indicators) — zero branching business logic.
-  Not exercisable on Linux dev/CI. Same acceptance class as the platform-specific
-  Windows branches in `pidlock/pidlock.go` (already ACCEPTED in Coverage Gaps
-  above) and the type-switch dispatch entries in this section.
+  Not exercisable on Linux dev/CI. Same acceptance class as platform-specific
+  branches (already ACCEPTED in Coverage Gaps above) and the type-switch
+  dispatch entries in this section.
 - **See**: `internal/tools/workspace/shell.go:152`
 
 ### CC=9 production cohort — threshold policy (2026-07)
@@ -1014,9 +998,9 @@ to reason about.
 ### di/container.go — skills repository init error paths
 
 - **Status**: ACCEPTED (2026-08)
-- **Rationale**: The error branches of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) and `infra_skills.NewSkillsShRepository(skillsShDir)` (`container.go:203-206`) require filesystem fault injection (unreadable skills directory, mkdir failure). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage (pidlock, process_executor).
+- **Rationale**: The error branches of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) and `infra_skills.NewSkillsShRepository(skillsShDir)` (`container.go:203-206`) require filesystem fault injection (unreadable skills directory, mkdir failure). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage.
 - **See**: `internal/infrastructure/di/container.go:197-206`
 
 ---
 
-*Last Updated: 2026-08 (coverage: telemetry runtime-metric kind mismatch + di skills-repo init accepted; lazyClient.ExtractDocument init-error covered by TestLazyClient_InitializationFailure_ExtractDocument; pricing-file removal follow-up, PR #1290)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291)*

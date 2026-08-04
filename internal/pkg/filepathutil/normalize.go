@@ -59,7 +59,7 @@ func NormalizeKey(path string) string {
 	s := Normalize(path)
 	// Coverage gap accepted by architect — filepath.VolumeName only
 	// returns non-empty on Windows. The volume-prefix stripping branch
-	// is platform-specific (same class as pidlock/pidlock.go).
+	// is platform-specific.
 	if vol := filepath.VolumeName(s); vol != "" {
 		s = s[len(vol):]
 	}
