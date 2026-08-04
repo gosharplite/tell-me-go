@@ -69,7 +69,6 @@ type TurnStatus struct {
 	IsFinal          bool // True if the agent is stopping and yielding control to user
 	StartTime        time.Time
 	SessionCost      float64
-	DailyCost        float64
 	TaskCost         float64
 	TotalM           int64
 	TotalH           int64

@@ -345,10 +345,9 @@ func (l *asyncTurnsLogger) renderTurnFooter(sb *strings.Builder, status events.T
 		turnCost = status.Metrics.Cost
 	}
 
-	fmt.Fprintf(sb, "╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)\n",
+	fmt.Fprintf(sb, "╰─⠿ Ready ($%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)\n",
 		turnCost, status.TaskCost,
 		status.SessionCost,
-		status.DailyCost,
 		status.TotalM,
 		status.TotalH,
 		hitRate,

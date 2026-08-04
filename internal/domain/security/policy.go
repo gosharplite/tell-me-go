@@ -164,7 +164,6 @@ func DefaultPolicy() *Policy {
 			"bypass_confirmation":      true,
 			"revoke_bypass":            true,
 			"estimate_cost":            true,
-			"get_cost_summary":         true,
 			"verify_release_readiness": true,
 			"check_system_health":      true,
 			"summarize_history":        true,

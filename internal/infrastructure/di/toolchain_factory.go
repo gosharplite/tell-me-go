@@ -51,10 +51,10 @@ type defaultToolchainFactory struct {
 	SM               ConfigurableSecurityManager
 	WorkspacePolicy  services.WorkspacePolicy
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
+	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
 }
 
-func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, wp services.WorkspacePolicy, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error) toolchainFactory {
+func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, wp services.WorkspacePolicy, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error) toolchainFactory {
 	return &defaultToolchainFactory{
 		HomeDir:          homeDir,
 		FileSystem:       fs,
@@ -91,7 +91,7 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		return nil, fmt.Errorf("%w: failed to register core tools: %w", errInfraInit, err)
 	}
 
-	if err := f.RegisterMetrics(reg, f.SM, regParams.LogFile, regParams.TraceFile, regParams.Model, regParams.Mode, regParams.PricingOverrides, regParams.SessionProvider.GetSettings()); err != nil {
+	if err := f.RegisterMetrics(reg, f.SM, regParams.LogFile, regParams.TraceFile, regParams.Model, regParams.Mode, regParams.PricingOverrides); err != nil {
 		return nil, fmt.Errorf("%w: failed to register metrics tools: %w", errInfraInit, err)
 	}
 

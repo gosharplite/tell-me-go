@@ -426,7 +426,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 			name: "RegisterMetricsFailure",
 			setup: func(f *defaultToolchainFactory, sm *mockConfigurableSecurityManager) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error { return nil }
-				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
+				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
 					return simulatedErr
 				}
 			},
@@ -436,7 +436,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 			name: "RegisterPolicyToolsFailure",
 			setup: func(f *defaultToolchainFactory, sm *mockConfigurableSecurityManager) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error { return nil }
-				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
+				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
 					return nil
 				}
 				// Policy tools registration is done via SM

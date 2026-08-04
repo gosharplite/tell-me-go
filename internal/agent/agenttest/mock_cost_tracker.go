@@ -37,10 +37,6 @@ func (m *MockCostTracker) GetTotalCost(ctx context.Context) float64 {
 	return 0.05
 }
 
-func (m *MockCostTracker) GetDailyCost(ctx context.Context) float64 {
-	return 0.05
-}
-
 func (m *MockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
 	return pricing.UsageStats{}, 0.05
 }

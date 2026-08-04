@@ -468,48 +468,6 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 	}
 }
 
-func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
-	ctx := context.Background()
-	tempDir, err := os.MkdirTemp("", "di-test-warning")
-	assert.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	testCfg := &config.Config{
-		Mode:  "assistant",
-		Model: "test-model",
-	}
-	simulatedErr := errors.New("simulated error")
-
-	sm := new(mockConfigurableSecurityManager)
-	// RecordSessionCost -> EstimateCost -> IsPathSafe
-	sm.IsPathSafeFunc = func(path string) (string, error) {
-		return "", simulatedErr
-	}
-
-	var stderr bytes.Buffer
-	bcfg := DefaultBootstrapperConfig()
-	bcfg.HomeDir = tempDir
-	bcfg.SM = sm
-	bcfg.Version = "1.0.0"
-	bcfg.Stdout = io.Discard
-	bcfg.Stderr = &stderr
-	bcfg.ClientFactory = ports.ClientFactoryFunc(func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
-		return new(mockLLMClient), nil
-	})
-	bootstrapper := NewBootstrapper(bcfg)
-
-	deps, hManager, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, testCfg, "config.yaml", true, nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, deps)
-	assert.NotNil(t, hManager)
-	assert.NotNil(t, cleanup)
-
-	assert.Contains(t, stderr.String(), "Warning: Failed to record session cost for backup")
-	assert.Contains(t, stderr.String(), simulatedErr.Error())
-
-	_ = cleanup(ctx)
-}
-
 type mockHistoryManager struct {
 	ports.HistoryManager
 	saveErr error
@@ -557,31 +515,6 @@ func TestFinalizeSession(t *testing.T) {
 	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, testCfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "save failed")
-
-	// Test with record cost error
-	sm.Reset()
-	sm.IsPathSafeFunc = func(path string) (string, error) {
-		return "", errors.New("record cost failed")
-	}
-
-	err = b.FinalizeSession(ctx, hManager, deps, testCfg)
-	assert.Error(t, err)
-	if err != nil {
-		assert.Contains(t, err.Error(), "record cost failed")
-	}
-
-	// Test with both errors
-	sm.Reset()
-	sm.IsPathSafeFunc = func(path string) (string, error) {
-		return "", errors.New("record cost failed")
-	}
-
-	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, testCfg)
-	assert.Error(t, err)
-	if err != nil {
-		assert.Contains(t, err.Error(), "save failed")
-		assert.Contains(t, err.Error(), "record cost failed")
-	}
 }
 
 func TestGetAgentFactory_Execution(t *testing.T) {
@@ -804,7 +737,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "TelemetryRegistrationFails",
 			cfgSetup: func(cfg *BootstrapperConfig, sm *mockConfigurableSecurityManager) {
-				cfg.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
+				cfg.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
 					return simulatedErr
 				}
 			},

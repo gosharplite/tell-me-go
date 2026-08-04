@@ -170,7 +170,7 @@ Detailed cost and token breakdown after every response:
 ```text
 [08:21:09] Payload: 33488/180000 tokens
 [08:21:09] [google] M: 31882 H: 1204 C: 402 ($0.0123) [3.20s (ΣT: 0.15s) / 4.50s]
-╰─⠿ Ready ($0.0123 $0.0123 $1.4745 $2.1050 M: 31882 H: 1204 3.6% O: 402)
+╰─⠿ Ready ($0.0123 $0.0123 $1.4745 M: 31882 H: 1204 3.6% O: 402)
 ```
 
 > **Note on the `Th:` (thinking-tokens) field**: When present in the metrics line, `Th: <n>` shows the number of reasoning tokens the model emitted on this turn. The segment is intentionally suppressed when `n == 0` so it never appears for non-reasoning turns or for providers that do not separately report reasoning tokens. **Anthropic Claude in particular never displays a `Th:` value** — its API rolls reasoning tokens into the standard output count (`output_tokens`) and bills them at the standard output rate, with no separate counter on the wire. To verify extended thinking is firing on the Anthropic path, set `SHOW_THOUGHTS: true` and you will see the model's reasoning rendered under `[Thinking]` blocks. Gemini and OpenAI/DeepSeek continue to show `Th: <n>` whenever reasoning fires.
@@ -452,6 +452,8 @@ the 3-pass build order, and design rationale.
 
 ## Design Decisions
 Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).
+
+*   **[ADR-053](docs/adr/2026-08-remove-get-cost-summary-and-daily-cost-metric.md)** — removal of the `get_cost_summary` tool, the `DailyCost` status-line metric, and the global cost ledger.
 
 For the evolution of the shell-based environment management tooling — from simple bash aliases through Toby, Dobby, Porter, Sprawl, Winky, Flopsy, and Niffler — see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 

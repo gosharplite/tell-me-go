@@ -9,7 +9,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
@@ -52,10 +51,7 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 		if options.CustomRenderer != nil {
 			hr.renderer = options.CustomRenderer
 		} else {
-			hr.renderer, _ = glamour.NewTermRenderer(
-				glamour.WithStandardStyle(resolveGlamourStyle()),
-				glamour.WithEmoji(),
-			)
+			hr.renderer, _ = NewMarkdownRenderer()
 		}
 	}
 

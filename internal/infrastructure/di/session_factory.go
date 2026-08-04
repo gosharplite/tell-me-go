@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -122,9 +121,7 @@ func (f *defaultSessionFactory) setupSecurity(paths *persistence.Paths, configPa
 }
 
 func (f *defaultSessionFactory) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
-	timestamp := time.Now().Format("20060102_150405")
-	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
-	if err := telemetry.RecordSessionCost(ctx, f.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
+	if err := telemetry.RecordSessionCost(ctx, f.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, pricingOverrides); err != nil {
 		_, _ = fmt.Fprintf(f.Stderr, "Warning: Failed to record session cost for backup (log may be missing/corrupt): %v\n", err)
 	}
 

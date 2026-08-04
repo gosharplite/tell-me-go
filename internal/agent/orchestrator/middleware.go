@@ -56,12 +56,10 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 	maxHistTurns := limits.MaxHistoryTurns
 
 	var cost float64
-	var dailyCost float64
 	var totalM, totalH, totalO int64
 	if Turn.CostTracker != nil {
 		var stats domain_pricing.UsageStats
 		stats, cost = Turn.CostTracker.GetStats(ctx)
-		dailyCost = Turn.CostTracker.GetDailyCost(ctx)
 		totalM = stats.PromptTokens - stats.CachedTokens
 		totalH = stats.CachedTokens
 		totalO = stats.ResponseTokens + stats.ThinkingTokens
@@ -80,7 +78,6 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 			IsFinal:          isFinal,
 			StartTime:        Turn.StartTime,
 			SessionCost:      cost,
-			DailyCost:        dailyCost,
 			TaskCost:         Turn.State.TaskCost,
 			TotalM:           totalM,
 			TotalH:           totalH,
