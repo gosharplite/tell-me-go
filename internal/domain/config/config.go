@@ -396,7 +396,7 @@ func findBestMatch[T any](m map[string]T, key string, isValid func(T) bool) (T, 
 // DefaultPricing returns the hardcoded fallback pricing data.
 func DefaultPricing() pricing.PricingData {
 	return pricing.PricingData{
-		UpdatedAt: "2026-07-18T12:00:00Z", // Sync with assets/pricing.json
+		UpdatedAt: "2026-07-18T12:00:00Z",
 		Models: map[string]pricing.ModelPricing{
 			"default": {
 				Hit:  0.0,

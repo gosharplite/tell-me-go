@@ -6,124 +6,13 @@ package telemetry
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
-	"log/slog"
 	"os"
-	"path/filepath"
-	"sync"
 	"time"
-
-	"golang.org/x/sync/singleflight"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
-
-type cachedPricing struct {
-	data    domain_pricing.PricingData
-	modTime time.Time
-}
-
-// pricingLoader encapsulates caching, singleflight coordination, and disk I/O
-// for loading domain_pricing.PricingData from a JSON file.
-type pricingLoader struct {
-	mu    sync.RWMutex
-	cache map[string]cachedPricing
-	sf    singleflight.Group
-}
-
-// defaultLoader caches pricing data in-memory to avoid redundant
-// disk reads of $TELL_ME_HOME/assets/pricing.json. Cache entries
-// are keyed by the fully resolved file path and invalidated when
-// the file's modification time changes. Singleflight deduplication
-// ensures only one goroutine performs disk I/O per pricingPath.
-var defaultLoader = &pricingLoader{
-	cache: make(map[string]cachedPricing),
-}
-
-// load returns pricing data for the given file path, using a read-locked cache
-// fast path when the file's mtime matches the cached entry. On cache miss, it
-// coordinates via singleflight to ensure only one goroutine performs disk I/O
-// and unmarshaling per path.
-func (pl *pricingLoader) load(ctx context.Context, pricingPath string) (domain_pricing.PricingData, error) {
-	// Fast path: check cache under read lock
-	pl.mu.RLock()
-	if cached, ok := pl.cache[pricingPath]; ok {
-		if info, err := os.Stat(pricingPath); err == nil && info.ModTime().Equal(cached.modTime) {
-			data := cached.data
-			pl.mu.RUnlock()
-			return data, nil
-		}
-	}
-	pl.mu.RUnlock()
-
-	// Slow path: singleflight ensures only one goroutine does disk I/O per path.
-	result, err, _ := pl.sf.Do(pricingPath, func() (interface{}, error) {
-		return pl.loadFromDisk(pricingPath)
-	})
-	if err != nil {
-		return domain_pricing.PricingData{}, err
-	}
-	return result.(domain_pricing.PricingData), nil
-}
-
-func (pl *pricingLoader) loadFromDisk(pricingPath string) (domain_pricing.PricingData, error) {
-	pl.mu.Lock()
-	defer pl.mu.Unlock()
-
-	// Double-check: another goroutine may have populated the cache
-	// while we were waiting on singleflight.
-	if cached, ok := pl.cache[pricingPath]; ok {
-		if info, statErr := os.Stat(pricingPath); statErr == nil &&
-			info.ModTime().Equal(cached.modTime) {
-			return cached.data, nil
-		}
-	}
-
-	data, err := os.ReadFile(pricingPath)
-	if err != nil {
-		return domain_pricing.PricingData{}, err
-	}
-
-	var pd domain_pricing.PricingData
-	if err := json.Unmarshal(data, &pd); err != nil {
-		return domain_pricing.PricingData{}, err
-	}
-
-	info, statErr := os.Stat(pricingPath)
-	if statErr == nil {
-		pl.cache[pricingPath] = cachedPricing{data: pd, modTime: info.ModTime()}
-	}
-
-	slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
-	return pd, nil
-}
-
-// GetPricing attempts to load pricing data from $TELL_ME_HOME/assets/pricing.json,
-// falling back to hardcoded defaults if the file is missing or invalid.
-func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir string) domain_pricing.PricingData {
-	homeDir := filepath.Dir(outputDir)
-	pricingPath := filepath.Join(homeDir, "assets", "pricing.json")
-
-	data, err := defaultLoader.load(ctx, pricingPath)
-	if err != nil {
-		slog.Debug("falling back to hardcoded default pricing")
-		data = config.DefaultPricing()
-	}
-
-	if err := data.ValidateUniqueModels(); err != nil {
-		slog.Warn("pricing uniqueness validation failed", "error", err)
-	}
-	return data
-}
-
-// GetModelPricing finds the best pricing match for a model name.
-func GetModelPricing(modelName string, pd domain_pricing.PricingData) domain_pricing.ModelPricing {
-	return pd.GetModelPricing(modelName)
-}
 
 // parseUsage extracts usage statistics and calculates total cost from a log file.
 func parseUsage(path string, pd domain_pricing.PricingData, defaultModel string) (domain_pricing.UsageStats, float64, string, time.Time, error) {
@@ -200,7 +89,7 @@ func calculateLineCost(mt llm.Metrics, turnStats domain_pricing.UsageStats, pd d
 	if mt.Cost > 0 {
 		return mt.Cost
 	}
-	p := GetModelPricing(modelName, pd)
+	p := pd.GetModelPricing(modelName)
 	calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
 	return calc.Calculate(turnStats).TotalCost
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,7 +59,7 @@ func TestDiscoverNewRecords_ContextCancellation(t *testing.T) {
 	ls := newLedgerStore(sm, "test-model", nil)
 
 	seen := make(map[string]bool)
-	pricing := GetPricing(context.Background(), sm, tempDir)
+	pricing := config.DefaultPricing()
 
 	// Call discoverNewRecords with the already-cancelled context.
 	// The loop must break on the first iteration (ctx.Err() != nil).
@@ -98,7 +99,7 @@ func TestProcessLogFile_TimestampFallback(t *testing.T) {
 	sm.RegisterSafePath(tempDir)
 	ls := newLedgerStore(sm, "test-model", nil)
 
-	pricing := GetPricing(context.Background(), sm, tempDir)
+	pricing := config.DefaultPricing()
 
 	// Call processLogFile directly. Because the JSON line has no "timestamp"
 	// field, parseUsage returns time.Time{} (zero), and processLogFile must
@@ -302,7 +303,7 @@ func TestDiscoverNewRecords_AlreadySeen(t *testing.T) {
 	sessionID := "session/tokens.log"
 	seen := map[string]bool{sessionID: true}
 
-	pricing := GetPricing(context.Background(), sm, tempDir)
+	pricing := config.DefaultPricing()
 
 	discovered := ls.discoverNewRecords(context.Background(), []string{logPath}, tempDir, seen, pricing)
 
@@ -337,7 +338,7 @@ func TestProcessLogFile_DetectedModelFallback(t *testing.T) {
 	// Empty model ensures detectedModel stays "" so the fallback branch is hit.
 	ls := newLedgerStore(sm, "", nil)
 
-	pricing := GetPricing(context.Background(), sm, tempDir)
+	pricing := config.DefaultPricing()
 
 	record, err := ls.processLogFile(logPath, info, tempDir, pricing)
 	require.NoError(t, err)
@@ -372,7 +373,7 @@ func TestProcessLogFile_DateFromPath(t *testing.T) {
 	sm.RegisterSafePath(tempDir)
 	ls := newLedgerStore(sm, "test-model", nil)
 
-	pricing := GetPricing(context.Background(), sm, tempDir)
+	pricing := config.DefaultPricing()
 
 	record, err := ls.processLogFile(logPath, info, tempDir, pricing)
 	require.NoError(t, err)
@@ -475,7 +476,7 @@ func TestDiscoverNewRecords_GetSessionIDError(t *testing.T) {
 	files := []string{badPath, validLog}
 
 	seen := make(map[string]bool)
-	pricing := GetPricing(context.Background(), sm, tempDir)
+	pricing := config.DefaultPricing()
 
 	// Call discoverNewRecords — the bad path must cause getSessionID to fail,
 	// log "Recovery: skipping", and continue. The valid path must be processed.

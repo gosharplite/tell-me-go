@@ -29,7 +29,7 @@ func TestGetDailyCost_Concurrency(t *testing.T) {
 
 	p := config.DefaultPricing()
 	modelName := "gemini-1.5-flash"
-	modelPricing := GetModelPricing(modelName, p)
+	modelPricing := p.GetModelPricing(modelName)
 
 	tracker := NewSessionCostTracker(nil, logFile, "interactive", modelName, modelPricing, p)
 
@@ -89,7 +89,7 @@ func TestGetDailyCost_DeadlockPrevention(t *testing.T) {
 
 	p := config.DefaultPricing()
 	modelName := "gemini-1.5-flash"
-	modelPricing := GetModelPricing(modelName, p)
+	modelPricing := p.GetModelPricing(modelName)
 	tracker := NewSessionCostTracker(nil, logFile, "interactive", modelName, modelPricing, p)
 
 	m := &metricsManager{

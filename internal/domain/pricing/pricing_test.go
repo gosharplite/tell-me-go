@@ -33,7 +33,7 @@ func TestPricingData_ValidateUniqueModels(t *testing.T) {
 			"gpt-5x": {Hit: 0.20, Miss: 2.00, Comp: 16.00},
 		},
 	}
-	if err := pd.ValidateUniqueModels(); err != nil {
+	if err := pd.validateUniqueModels(); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 }

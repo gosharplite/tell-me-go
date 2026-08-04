@@ -48,12 +48,8 @@ func TestRecordSessionCost_AppendSummaryError(t *testing.T) {
 
 	// Directory layout:
 	//   <tmpdir>/output/session_tokens.log  (valid JSON with tokens)
-	//   <tmpdir>/assets/pricing.json        (valid pricing data)
 	outputDir := filepath.Join(tempDir, "output")
 	require.NoError(t, os.MkdirAll(outputDir, 0755))
-
-	assetsDir := filepath.Join(tempDir, "assets")
-	require.NoError(t, os.MkdirAll(assetsDir, 0755))
 
 	logPath := filepath.Join(outputDir, "session_tokens.log")
 
@@ -64,19 +60,6 @@ func TestRecordSessionCost_AppendSummaryError(t *testing.T) {
 	recentTS := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
 	logContent := `{"prompt_tokens":100,"response_tokens":50,"timestamp":"` + recentTS + `"}` + "\n"
 	require.NoError(t, os.WriteFile(logPath, []byte(logContent), 0644))
-
-	// Write valid pricing data matching the model used in the log.
-	pricingContent := `{
-		"updated_at": "2023-10-27T00:00:00Z",
-		"models": {
-			"test-model": {
-				"hit": 0.5,
-				"miss": 1.0,
-				"comp": 2.0
-			}
-		}
-	}`
-	require.NoError(t, os.WriteFile(filepath.Join(assetsDir, "pricing.json"), []byte(pricingContent), 0644))
 
 	// Pre-create empty global_costs.json so loadHistory does NOT trigger
 	// async ledger recovery. This avoids a race between the background
@@ -439,10 +422,9 @@ func TestLogTrace_WriteErrorUnreachable(t *testing.T) {
 // file exists but cannot be read.
 //
 // Strategy:
-//  1. Create a valid pricing.json so GetPricing succeeds.
-//  2. Create a tokens.log, then chmod 0000 to make it unreadable.
-//  3. Call resolveUsageForSummary directly — parseUsage fails with EACCES.
-//  4. Assert the error is returned, not silently swallowed.
+//  1. Create a tokens.log, then chmod 0000 to make it unreadable.
+//  2. Call resolveUsageForSummary directly — parseUsage fails with EACCES.
+//  3. Assert the error is returned, not silently swallowed.
 func TestResolveUsageForSummary_ParseUsageError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod 0000 not effective on Windows")
@@ -450,12 +432,8 @@ func TestResolveUsageForSummary_ParseUsageError(t *testing.T) {
 
 	tempDir := t.TempDir()
 
-	// Setup pricing data so GetPricing succeeds.
 	logDir := filepath.Join(tempDir, "output")
 	require.NoError(t, os.MkdirAll(logDir, 0755))
-	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, "assets"), 0755))
-	pricingContent := `{"updated_at":"2025-06-15T00:00:00Z","models":{"test-model":{"hit":0.5,"miss":1.0,"comp":2.0}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "assets", "pricing.json"), []byte(pricingContent), 0644))
 
 	logPath := filepath.Join(logDir, "session_tokens.log")
 	// Write valid log content so the file exists.

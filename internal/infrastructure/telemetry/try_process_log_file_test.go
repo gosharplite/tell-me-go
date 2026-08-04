@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,7 @@ func TestTryProcessLogFile(t *testing.T) {
 		sm.RegisterSafePath(tempDir)
 		ls := newLedgerStore(sm, "test-model", nil)
 		seen := make(map[string]bool)
-		pricing := GetPricing(context.Background(), sm, tempDir)
+		pricing := config.DefaultPricing()
 
 		record := ls.tryProcessLogFile(context.Background(), logFile, tempDir, seen, pricing)
 
@@ -56,7 +57,7 @@ func TestTryProcessLogFile(t *testing.T) {
 
 		// Pre-populate seen with the expected session ID
 		seen := map[string]bool{"session/tokens.log": true}
-		pricing := GetPricing(context.Background(), sm, tempDir)
+		pricing := config.DefaultPricing()
 
 		record := ls.tryProcessLogFile(context.Background(), logFile, tempDir, seen, pricing)
 
@@ -74,7 +75,7 @@ func TestTryProcessLogFile(t *testing.T) {
 		sm.RegisterSafePath(tempDir)
 		ls := newLedgerStore(sm, "test-model", nil)
 		seen := make(map[string]bool)
-		pricing := GetPricing(context.Background(), sm, tempDir)
+		pricing := config.DefaultPricing()
 
 		record := ls.tryProcessLogFile(context.Background(), nonexistentLog, tempDir, seen, pricing)
 
@@ -101,7 +102,7 @@ func TestTryProcessLogFile(t *testing.T) {
 		}
 
 		seen := make(map[string]bool)
-		pricing := GetPricing(context.Background(), sm, tempDir)
+		pricing := config.DefaultPricing()
 
 		record := ls.tryProcessLogFile(context.Background(), logFile, tempDir, seen, pricing)
 
