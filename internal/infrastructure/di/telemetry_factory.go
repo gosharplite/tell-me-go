@@ -9,7 +9,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	infraconfig "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
@@ -43,7 +42,7 @@ func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 		slog.String("model", cfg.Model),
 		slog.Int("pricing_overrides_count", len(pricingOverrides)))
 
-	pricingData := infraconfig.DefaultPricing()
+	pricingData := config.DefaultPricing()
 	f.Logger.Debug("Base pricing data loaded",
 		slog.Int("total_models", len(pricingData.Models)))
 
