@@ -260,7 +260,8 @@ func TestHistoryOnlyExit(t *testing.T) {
 			t.Fatalf("CLI -l failed: %v\nStderr: %s", err, stderr)
 		}
 
-		if !strings.Contains(stdout, "initial message") {
+		out := stripANSI(stdout)
+		if !strings.Contains(out, "initial message") {
 			t.Error("Expected stdout to contain history")
 		}
 	})
@@ -273,7 +274,8 @@ func TestHistoryOnlyExit(t *testing.T) {
 		forceReconcileHistory(t, histPath)
 		waitForHistoryStable(t, histPath)
 
-		if !strings.Contains(stdout, "Rolled back 1 turns") {
+		out := stripANSI(stdout)
+		if !strings.Contains(out, "Rolled back 1 turns") {
 			t.Error("Expected stdout to contain rollback confirmation")
 		}
 	})
