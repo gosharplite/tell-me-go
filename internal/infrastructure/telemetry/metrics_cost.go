@@ -184,10 +184,6 @@ func upsertRecord(history []sessionCostRecord, record sessionCostRecord) []sessi
 	return history
 }
 
-func (m *metricsManager) getModelPricing(modelName string, pd domain_pricing.PricingData) domain_pricing.ModelPricing {
-	return pd.GetModelPricing(modelName)
-}
-
 // recordCostIfNeeded persists the cost breakdown to the local ledger when
 // shouldRecord is true. It generates a session ID and timestamp if needed.
 func (m *metricsManager) recordCostIfNeeded(ctx context.Context, shouldRecord bool, sessionID, detectedModel string, timestamp time.Time, outputDir string, breakdown domain_pricing.CostBreakdown, usage domain_pricing.UsageStats) {
@@ -250,7 +246,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	detectedModel = m.resolveModel(detectedModel)
 
 	// 2. Delegate financial math to Calculator
-	p := GetModelPricing(detectedModel, pd)
+	p := pd.GetModelPricing(detectedModel)
 	calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
 	breakdown := calc.Calculate(usage)
 	breakdown.TotalCost = totalCost // Use the per-turn accurate total cost
@@ -262,7 +258,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 }
 
 func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakdown domain_pricing.CostBreakdown) string {
-	p := m.getModelPricing(m.model, pricing)
+	p := pricing.GetModelPricing(m.model)
 	stats := breakdown.Stats
 
 	var sb strings.Builder

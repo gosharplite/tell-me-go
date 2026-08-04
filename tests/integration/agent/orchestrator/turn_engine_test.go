@@ -745,7 +745,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 
 	pricing := config.DefaultPricing()
 	modelName := "gemini-3-flash-preview"
-	modelPricing := telemetry.GetModelPricing(modelName, pricing)
+	modelPricing := pricing.GetModelPricing(modelName)
 	tracker := telemetry.NewSessionCostTracker(nil, "", "interactive", modelName, modelPricing, pricing)
 
 	e := orchestrator.NewEngine(env.Gw, &agenttest.MockAgentExecutor{}, env.Cm, env.Reg, env.Bus, env.Cm.Strategy, orchestrator.WithEngineCostTracker(tracker))

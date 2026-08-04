@@ -134,7 +134,7 @@ func TestCalculateLineCost_NilPricing(t *testing.T) {
 	t.Parallel()
 
 	// Empty pricing data with no models and no default entry.
-	// getModelPricing returns zero-value ModelPricing, which produces zero cost.
+	// An empty pricing table yields a zero-value ModelPricing, producing zero cost.
 	pd := domain_pricing.PricingData{}
 
 	cost := calculateLineCost(llm.Metrics{}, domain_pricing.UsageStats{}, pd, "unknown-model")

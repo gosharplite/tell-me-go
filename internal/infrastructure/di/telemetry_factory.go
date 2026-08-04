@@ -72,7 +72,7 @@ func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 		f.Logger.Debug("No pricing overrides to apply")
 	}
 
-	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
+	modelPricing := pricingData.GetModelPricing(cfg.Model)
 	f.Logger.Debug("Retrieved model pricing",
 		slog.String("model", cfg.Model),
 		slog.Float64("hit", modelPricing.Hit),

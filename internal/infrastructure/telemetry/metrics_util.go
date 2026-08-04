@@ -14,11 +14,6 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
-// GetModelPricing finds the best pricing match for a model name.
-func GetModelPricing(modelName string, pd domain_pricing.PricingData) domain_pricing.ModelPricing {
-	return pd.GetModelPricing(modelName)
-}
-
 // parseUsage extracts usage statistics and calculates total cost from a log file.
 func parseUsage(path string, pd domain_pricing.PricingData, defaultModel string) (domain_pricing.UsageStats, float64, string, time.Time, error) {
 	f, err := os.Open(path)
@@ -94,7 +89,7 @@ func calculateLineCost(mt llm.Metrics, turnStats domain_pricing.UsageStats, pd d
 	if mt.Cost > 0 {
 		return mt.Cost
 	}
-	p := GetModelPricing(modelName, pd)
+	p := pd.GetModelPricing(modelName)
 	calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
 	return calc.Calculate(turnStats).TotalCost
 }
