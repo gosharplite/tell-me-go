@@ -15,6 +15,7 @@ import (
 	"time"
 
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pidlock"
 )
@@ -234,7 +235,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	}
 
 	outputDir := filepath.Dir(resolvedLog)
-	pd := GetPricing(ctx, m.sm, outputDir)
+	pd := config.DefaultPricing()
 	pd = m.applyPricingOverrides(pd)
 
 	// 1. Parse usage from log

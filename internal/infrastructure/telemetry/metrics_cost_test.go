@@ -248,16 +248,6 @@ func TestRecordSessionCost_ResolveUsageSummaryError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write valid pricing data so EstimateCost succeeds.
-	assetsDir := filepath.Join(tempDir, "assets")
-	if err := os.MkdirAll(assetsDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	pricingContent := `{"updated_at":"2025-06-15T00:00:00Z","models":{"test-model":{"hit":0.5,"miss":1.0,"comp":2.0}}}`
-	if err := os.WriteFile(filepath.Join(assetsDir, "pricing.json"), []byte(pricingContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	sm := &mockSM{}
 
 	err := RecordSessionCost(context.Background(), sm, nil, logPath, "test-model", "manual", "session-1", nil)
@@ -500,25 +490,13 @@ func BenchmarkRenderReport_Batch100(b *testing.B) {
 
 // ---------------------------------------------------------------------------
 // BenchmarkEstimateCost_Single — one EstimateCost call per iteration.
-// Exercises: IsPathSafe (mock) → GetPricing (reads pricing.json) → parseUsage
+// Exercises: IsPathSafe (mock) → parseUsage
 // (reads + parses log) → CostCalculator.Calculate (math) → renderReport (string build).
 // Uses shouldRecord=false to bypass all ledger/lock/KV I/O.
 // ---------------------------------------------------------------------------
 
 func BenchmarkEstimateCost_Single(b *testing.B) {
 	const oneLine = `{"model":"claude-sonnet-4-20250514","prompt_tokens":1500,"response_tokens":800,"cached_tokens":200,"cache_write_tokens":100,"thinking_tokens":400,"search_queries":2,"timestamp":"2026-03-15T10:30:00Z","cost":0.015432}`
-
-	const pricingJSON = `{
-  "updated_at": "2026-03-15T00:00:00Z",
-  "models": {
-    "claude-sonnet-4-20250514": {
-      "hit": 0.30,
-      "miss": 3.00,
-      "comp": 15.00,
-      "search_query": 0.015
-    }
-  }
-}`
 
 	setup := func(b *testing.B, logContent string) *metricsManager {
 		b.Helper()
@@ -532,16 +510,6 @@ func BenchmarkEstimateCost_Single(b *testing.B) {
 		}
 		logPath := filepath.Join(outputDir, "session_tokens.log")
 		if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
-			b.Fatal(err)
-		}
-
-		// Create assets/pricing.json in parent of outputDir
-		assetsDir := filepath.Join(tmpDir, "assets")
-		if err := os.MkdirAll(assetsDir, 0755); err != nil {
-			b.Fatal(err)
-		}
-		pricingPath := filepath.Join(assetsDir, "pricing.json")
-		if err := os.WriteFile(pricingPath, []byte(pricingJSON), 0644); err != nil {
 			b.Fatal(err)
 		}
 
@@ -583,18 +551,6 @@ func BenchmarkEstimateCost_Single(b *testing.B) {
 func BenchmarkEstimateCost_Batch100(b *testing.B) {
 	const oneLine = `{"model":"claude-sonnet-4-20250514","prompt_tokens":1500,"response_tokens":800,"cached_tokens":200,"cache_write_tokens":100,"thinking_tokens":400,"search_queries":2,"timestamp":"2026-03-15T10:30:00Z","cost":0.015432}`
 
-	const pricingJSON = `{
-  "updated_at": "2026-03-15T00:00:00Z",
-  "models": {
-    "claude-sonnet-4-20250514": {
-      "hit": 0.30,
-      "miss": 3.00,
-      "comp": 15.00,
-      "search_query": 0.015
-    }
-  }
-}`
-
 	setup := func(b *testing.B, logContent string) *metricsManager {
 		b.Helper()
 
@@ -606,15 +562,6 @@ func BenchmarkEstimateCost_Batch100(b *testing.B) {
 		}
 		logPath := filepath.Join(outputDir, "session_tokens.log")
 		if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
-			b.Fatal(err)
-		}
-
-		assetsDir := filepath.Join(tmpDir, "assets")
-		if err := os.MkdirAll(assetsDir, 0755); err != nil {
-			b.Fatal(err)
-		}
-		pricingPath := filepath.Join(assetsDir, "pricing.json")
-		if err := os.WriteFile(pricingPath, []byte(pricingJSON), 0644); err != nil {
 			b.Fatal(err)
 		}
 

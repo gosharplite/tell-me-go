@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -384,7 +385,7 @@ func TestDiscoverNewRecords_OsStatError(t *testing.T) {
 	ls := newLedgerStore(sm, "test-model", nil)
 
 	seen := make(map[string]bool)
-	pricing := GetPricing(context.Background(), sm, tempDir)
+	pricing := config.DefaultPricing()
 
 	// 4. Call discoverNewRecords directly
 	discovered := ls.discoverNewRecords(context.Background(), files, tempDir, seen, pricing)

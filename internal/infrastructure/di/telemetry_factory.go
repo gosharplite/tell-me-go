@@ -4,7 +4,6 @@ import (
 	stdctx "context"
 	"errors"
 	"log/slog"
-	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -43,7 +42,7 @@ func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 		slog.String("model", cfg.Model),
 		slog.Int("pricing_overrides_count", len(pricingOverrides)))
 
-	pricingData := telemetry.GetPricing(ctx, f.SM, filepath.Join(f.HomeDir, "output"))
+	pricingData := config.DefaultPricing()
 	f.Logger.Debug("Base pricing data loaded",
 		slog.Int("total_models", len(pricingData.Models)))
 
