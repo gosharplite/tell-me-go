@@ -6,7 +6,6 @@ package progress
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -145,7 +144,6 @@ type model struct {
 	maxTokens           int
 	timestamp           time.Time
 	err                 error
-	isDark              bool // cached terminal background theme (legacy, now unused as we default to dark)
 	metricsProvider     ports.SystemMetricsProvider
 	lastCPUTime         int64
 	lastIdleTime        int64
@@ -166,14 +164,6 @@ type model struct {
 	footerVP viewport.Model
 }
 
-// resolveIsDark evaluates the GLAMOUR_STYLE environment variable to determine
-// if the dark theme should be used. It explicitly avoids termenv's active IO
-// probes (which cause race conditions with Bubble Tea's input loop).
-func resolveIsDark() bool {
-	style := os.Getenv("GLAMOUR_STYLE")
-	return style == "" || style == "auto" || style == "dark"
-}
-
 // NewModel creates a new progress model that consumes events from the given
 // channel.
 func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.SystemMetricsProvider) tea.Model {
@@ -186,7 +176,6 @@ func NewModel(_ context.Context, ch <-chan events.Event, metricsProvider ports.S
 		currentState:    stateIdle,
 		height:          24,
 		width:           80,
-		isDark:          resolveIsDark(),
 		metricsProvider: metricsProvider,
 		seenCallIDs:     make(map[string]bool),
 		headerVP:        headerVP,
@@ -731,17 +720,12 @@ func (m *model) renderFooterContent() string {
 // It returns a tea.Cmd that will yield an mdRenderCompleteMsg with the rendered text
 // and the bodyLines index to update.
 func (m *model) renderMarkdownAsync(text string, width int, index int) tea.Cmd {
-	isDark := m.isDark // capture locally for goroutine
 	return func() tea.Msg {
-		style := "light"
-		if isDark {
-			style = "dark"
-		}
-		opts := []glamour.TermRendererOption{glamour.WithStandardStyle(style)}
+		var opts []glamour.TermRendererOption
 		if width > 0 {
 			opts = append(opts, glamour.WithWordWrap(width))
 		}
-		tr, err := glamour.NewTermRenderer(opts...)
+		tr, err := ui.NewMarkdownRenderer(opts...)
 		if err != nil {
 			return mdRenderCompleteMsg{index: index, rendered: text}
 		}

@@ -191,17 +191,12 @@ func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk c
 		metricsProvider = &defaultMetricsProvider{}
 	}
 
-	cfg := &rendererConfig{
-		glamourOpts: []glamour.TermRendererOption{
-			glamour.WithStandardStyle(resolveGlamourStyle()),
-			glamour.WithEmoji(),
-		},
-	}
+	cfg := &rendererConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	tr, err := glamour.NewTermRenderer(cfg.glamourOpts...)
+	tr, err := NewMarkdownRenderer(cfg.glamourOpts...)
 	r := &stdUIRenderer{
 		locker:             locker,
 		stdout:             stdout,

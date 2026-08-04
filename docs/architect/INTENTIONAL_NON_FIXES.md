@@ -307,6 +307,30 @@ Any AI agent recommending these should consult the rationale below.
   Makefile `test-coverage` target.
 - **See**: `internal/agent/agenttest/helpers.go`
 
+### agent/agenttest + clitest/eventstest — interface-satisfying mock stubs at 0%
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The following mock methods exist solely to satisfy interface
+  contracts (CostTracker.Warmup, HistoryManager.GetLastModelTurn/GetModelTurn/
+  UpdateTurnContent, Logger.ExecutionCompletedLate, UIRenderer.UpdateSpinnerStatus,
+  EventBus.Subscribe/WaitStarted, Gateway/LLMClient.ExtractDocument,
+  clock.Ticker.Stop, clitest mocks) — no unit test calls them because tests
+  exercise the real implementations via DI or integration tests. Testing a
+  mock's stub would test the mock itself (circular, no value) — same acceptance
+  class as agenttest/helpers.go interface-satisfying stubs (already documented
+  above) and auth.Invalidate no-ops.
+- **See**: `internal/agent/agenttest/mock_cost_tracker.go:44`,
+  `internal/agent/agenttest/mock_history_manager.go:139,152,158`,
+  `internal/agent/agenttest/mock_logger.go:20`,
+  `internal/agent/agenttest/mock_ui_renderer.go:274`,
+  `internal/domain/events/eventstest/test_event_bus.go:109`,
+  `internal/agent/agenttest/mock_event_bus_fail.go:22,26`,
+  `internal/agent/agenttest/mock_gateway.go:66`,
+  `internal/agent/agenttest/mock_llm_client.go:91`,
+  `internal/agent/agenttest/mock_clock.go:93`,
+  `internal/cli/clitest/mock_bootstrapper.go:225`,
+  `internal/cli/clitest/mock_chat_service.go:128,143`
+
 ### infrastructure/auth/auth.go — four Invalidate() no-op stubs at 0%
 
 - **Status**: ACCEPTED (2026-07)
@@ -824,6 +848,23 @@ to reason about.
   `(*model).Update` (Bubble Tea dispatch).
 - **See**: `internal/ui/tui/history_editor.go:39`
 
+### ui/history.go — renderHistory (CC=11)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Sequential history renderer with structural guards only:
+  empty-history early return, `n > total` clamp, `GetWindow` error branch,
+  `Raw`/`CustomRenderer` option branches (markdown renderer selection), and
+  per-part nil guards inside the two loops. Every branch is a single-line
+  guard, error return, or renderer assignment — zero branching business logic.
+  The CC is driven by the guard count (+7) and the two iteration loops (+2),
+  not by decision complexity. Extracting guards into helpers would fragment a
+  coherent sequential render for cosmetic CC reduction with no cognitive
+  benefit. Same acceptance class as `(*HistoryEditor).Edit` (CC=10, sequential
+  orchestration with error guards) and the other structural-dispatch entries
+  in this section. Note: the shared `NewMarkdownRenderer` helper (2026-08)
+  already removed the duplicated glamour construction from this function.
+- **See**: `internal/ui/history.go:26`
+
 ### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15)
 
 - **Status**: ACCEPTED (2026-07)
@@ -1003,4 +1044,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs)*
