@@ -772,7 +772,6 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 				IsFinal:     true,
 				SessionCost: 1.2345,
 				TaskCost:    0.0123,
-				DailyCost:   5.6789,
 				TotalM:      1000,
 				TotalH:      2000,
 				TotalO:      500,
@@ -781,7 +780,7 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 				},
 			},
 			contains: []string{
-				"╰─⠿ Ready ($0.0050 $0.0123 $1.2345 $5.6789 M: 1000 H: 2000 66.7% O: 500)",
+				"╰─⠿ Ready ($0.0050 $0.0123 $1.2345 M: 1000 H: 2000 66.7% O: 500)",
 			},
 		},
 		{

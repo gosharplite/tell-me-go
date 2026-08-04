@@ -653,8 +653,8 @@ func FormatFinalLine(ts events.TurnStatus, turnCost float64) string {
 	if total := ts.TotalM + ts.TotalH; total > 0 {
 		hitRate = float64(ts.TotalH) / float64(total) * 100
 	}
-	return fmt.Sprintf("╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)",
-		turnCost, ts.TaskCost, ts.SessionCost, ts.DailyCost,
+	return fmt.Sprintf("╰─⠿ Ready ($%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)",
+		turnCost, ts.TaskCost, ts.SessionCost,
 		ts.TotalM, ts.TotalH, hitRate, ts.TotalO)
 }
 

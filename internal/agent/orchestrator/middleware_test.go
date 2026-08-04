@@ -524,7 +524,7 @@ func TestPublishTurnStatus_WithCostTracker(t *testing.T) {
 	}
 
 	// Must not panic. The CostTracker branch will execute, calling
-	// GetStats and GetDailyCost on the mock.
+	// GetStats on the mock.
 	assert.NotPanics(t, func() {
 		engine.publishTurnStatus(context.Background(), turn, false, false)
 	})
@@ -533,10 +533,9 @@ func TestPublishTurnStatus_WithCostTracker(t *testing.T) {
 	found := false
 	for _, e := range bus.GetEvents() {
 		if evt, ok := e.(events.TurnStatusEvent); ok {
-			// MockCostTracker returns GetStats → (UsageStats{}, 0.05), GetDailyCost → 0.05,
+			// MockCostTracker returns GetStats → (UsageStats{}, 0.05)
 			// — UsageStats fields are all zero.
 			assert.Equal(t, 0.05, evt.Status.SessionCost)
-			assert.Equal(t, 0.05, evt.Status.DailyCost)
 			assert.Equal(t, int64(0), evt.Status.TotalM)
 			assert.Equal(t, int64(0), evt.Status.TotalH)
 			assert.Equal(t, int64(0), evt.Status.TotalO)

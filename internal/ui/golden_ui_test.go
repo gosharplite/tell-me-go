@@ -65,7 +65,6 @@ func TestUIRendererGolden(t *testing.T) {
 			IsFinal:         true,
 			StartTime:       frozenTime.Add(-10 * time.Second),
 			SessionCost:     1.2345,
-			DailyCost:       5.6789,
 			TaskCost:        0.0123,
 			TotalM:          1000,
 			TotalH:          2000,

@@ -1385,7 +1385,6 @@ func TestSessionManager_RenderPostTUISummary(t *testing.T) {
 		},
 		TaskCost:    0.0012,
 		SessionCost: 0.1505,
-		DailyCost:   0.0000,
 		TotalM:      116386,
 		TotalH:      15172096,
 		TotalO:      51607,
@@ -1415,7 +1414,7 @@ func TestSessionManager_RenderPostTUISummary(t *testing.T) {
 
 	// Footer: final cost line
 	assert.Contains(t, output, "╰─⠿ Ready")
-	assert.Contains(t, output, "($0.0010 $0.0012 $0.1505 $0.0000")
+	assert.Contains(t, output, "($0.0010 $0.0012 $0.1505")
 	assert.Contains(t, output, "M: 116386 H: 15172096")
 }
 
@@ -1479,7 +1478,6 @@ func TestSessionManager_RenderPostTUISummary_SkipsBodyWhenLastNSet(t *testing.T)
 		},
 		TaskCost:    0.0005,
 		SessionCost: 0.0100,
-		DailyCost:   0.0000,
 		TotalM:      5000,
 		TotalH:      2000,
 		TotalO:      1000,

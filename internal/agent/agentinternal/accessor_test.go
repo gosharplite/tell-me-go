@@ -149,10 +149,6 @@ func (m *mockCostTracker) GetTotalCost(ctx context.Context) float64 {
 	return m.Called(ctx).Get(0).(float64)
 }
 
-func (m *mockCostTracker) GetDailyCost(ctx context.Context) float64 {
-	return m.Called(ctx).Get(0).(float64)
-}
-
 func (m *mockCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
 	args := m.Called(ctx)
 	return args.Get(0).(domain_pricing.UsageStats), args.Get(1).(float64)

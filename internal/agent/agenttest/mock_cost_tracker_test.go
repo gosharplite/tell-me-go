@@ -44,16 +44,6 @@ func TestMockCostTracker_GetTotalCost(t *testing.T) {
 	}
 }
 
-func TestMockCostTracker_GetDailyCost(t *testing.T) {
-	t.Parallel()
-
-	m := &MockCostTracker{}
-	got := m.GetDailyCost(context.Background())
-	if got != 0.05 {
-		t.Errorf("got %v; want 0.05", got)
-	}
-}
-
 func TestMockCostTracker_GetStats(t *testing.T) {
 	t.Parallel()
 

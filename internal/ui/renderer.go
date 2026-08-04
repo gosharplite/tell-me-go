@@ -416,12 +416,11 @@ func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) st
 		turnCost = status.Metrics.Cost
 	}
 
-	// Format: (TurnCost TaskCost SessionCost DailyCost M: ... H: ... O: ...)
-	return fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
+	// Format: (TurnCost TaskCost SessionCost M: ... H: ... O: ...)
+	return fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
 		ui.c(colorGray),
 		turnCost, status.TaskCost,
 		ui.c(colorGreen), status.SessionCost,
-		ui.c(colorGray), status.DailyCost,
 		ui.c(colorGray),
 		status.TotalM,
 		status.TotalH,
