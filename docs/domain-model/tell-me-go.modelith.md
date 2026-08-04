@@ -35,7 +35,7 @@ Categories of `Provider` error that affect retry and failover behaviour. Disting
 | `context_overflow` | The accumulated prompt exceeds the model's context window. |
 | `auth_failure` | The API key or credentials are invalid — no retry. |
 | `server_error` | A transient 5xx from the `Provider`; may succeed on retry or failover. |
-| `timeout` | The `Provider` did not respond within `Config.HTTP_TIMEOUT`. |
+| `timeout` | The `Provider` did not respond within `Config.httpTimeout`. |
 
 ## Entities
 
@@ -45,18 +45,23 @@ The YAML configuration loaded at startup. Defines the active `Provider`, the ful
 
 **Relationships**
 
-- `Pricing` — 1:n — owned — Per-model cost rates loaded from the MODELS section.
+- `Pricing` — 1:n — owned — Per-model cost rates from the built-in pricing table, overridable per model via the MODELS section.
 
 **Attributes**
 
 | Name | Type | Description |
 | --- | --- | --- |
 | `selectedProvider` | string | Key of the active `Provider` in the registry. |
-| `maxTurns` | integer |  |
-| `maxHistoryTokens` | integer |  |
-| `maxConcurrentTools` | integer |  |
-| `toolTimeout` | integer |  |
-| `httpTimeout` | integer |  |
+| `maxToolTurns` | integer | Recursion limit on tool-execution iterations within a single `Turn` (YAML key `MAX_TURNS`). Bounds the Think → Act → Observe cycle; it does not cap the number of user `Turn`s in a `Session`. |
+| `maxHistoryTurns` | integer | Turn-window pruning limit for `Context` assembly — at most this many `Turn`s are retained verbatim (0 = turn-based pruning disabled). Together with `maxHistoryTokens` this bounds the `Session`'s working history. |
+| `maxHistoryTokens` | integer | Token budget for the retained `Context`; exceeding it triggers summarisation/pruning. |
+| `contextWindow` | integer | _Derived:_ Effective token limit for the active model, resolved from `maxHistoryTokens`, per-model Models overrides, and `Pricing.contextWindow`. |
+| `maxConcurrentTools` | integer | Maximum `ToolCall`s that may execute simultaneously within a single `Turn`. |
+| `toolTimeout` | integer | Per-`ToolCall` execution timeout in seconds. |
+| `httpTimeout` | integer | `Provider` request timeout in seconds. |
+| `useSearch` | boolean | Enables Google Search grounding for Gemini `Provider`s (priced via `Pricing.searchQuery`). |
+| `failoverOrder` | []string | Ordered `Provider` registry keys for the gateway's failover chain. |
+| `useTUIPrompt` | boolean | Use the interactive TUI prompt (with suggestions) instead of the plain capturer. |
 | `showThoughts` | boolean |  |
 | `showTools` | boolean |  |
 | `bypassConfirmation` | boolean | When true, all security prompts are skipped (used in CI/automation). |
@@ -134,7 +139,7 @@ The cost structure for a specific model variant. Maps a model identifier to per-
 
 ### `Provider`
 
-An LLM backend reachable via a specific API. Encapsulates the type (gemini/openai/deepseek/anthropic/kimi), model name, endpoint URL, authentication, and provider-specific settings like thinking budget.
+An LLM backend reachable via a specific API. Encapsulates the type (gemini/openai/deepseek/anthropic/kimi), model name, endpoint URL, authentication, and provider-specific settings like thinking budget and the DeepSeek/Kimi thinking-mode toggle.
 
 **Attributes**
 
@@ -148,6 +153,8 @@ An LLM backend reachable via a specific API. Encapsulates the type (gemini/opena
 | `maxTokens` | integer |  |
 | `thinkingBudget` | integer | Max thinking tokens for reasoning models (0 = disabled). |
 | `thinkingLevel` | string | Provider-specific reasoning effort (e.g. "HIGH"). |
+| `thinkingEnabled` | boolean | Tri-state DeepSeek/Kimi thinking-mode toggle: nil = omit the field from the wire (preserve the provider default); true = thinking enabled; false = disabled. Only emitted for providers with the thinking-toggle capability. Distinct from `thinkingBudget` (token budget) and `thinkingLevel` (reasoning effort). |
+| `userID` | string | DeepSeek `user_id` for content safety, KVCache, and scheduling isolation. Emitted only when non-empty for providers with the thinking-toggle capability. |
 | `lastError` | LLMError | The most recent error returned by this `Provider` during the current `Session`, if any. Used by the `Orchestrator` to decide retry vs. failover. Note: Runtime-only — not stored on the `LLMProvider` struct. Tracked by the `Orchestrator`'s retry/failover logic. Resets on restart. |
 
 **Invariants**
@@ -200,7 +207,7 @@ A long-running conversation context identified by a unique ID. Owns a sequence o
 
 **Invariants**
 
-- **session-max-turns** — `Turn` count must not exceed `Config.MAX_TURNS`.
+- **session-max-turns** — The `Session`'s working history is bounded: `Context` retains at most `Config.maxHistoryTurns` `Turn`s (0 = unlimited) within `Config.maxHistoryTokens` tokens.
 
 ### `Skill`
 
@@ -264,7 +271,7 @@ A capability exposed to the LLM for agentic execution. `Tool`s are registered at
 
 ### `ToolCall`
 
-A single invocation of a `Tool` requested by the LLM during a `Turn`. Carries the tool name, arguments, result, and timing. `ToolCall`s may execute concurrently (up to `MAX_CONCURRENT_TOOLS`).
+A single invocation of a `Tool` requested by the LLM during a `Turn`. Carries the tool name, arguments, result, and timing. `ToolCall`s may execute concurrently (up to `Config.maxConcurrentTools`).
 
 **Attributes**
 
@@ -278,7 +285,7 @@ A single invocation of a `Tool` requested by the LLM during a `Turn`. Carries th
 
 **Invariants**
 
-- **tool-timeout** — Execution duration must not exceed `Config.TOOL_TIMEOUT` seconds.
+- **tool-timeout** — Execution duration must not exceed `Config.toolTimeout` seconds.
 - **tool-max-concurrent** — At most `Config.maxConcurrentTools` `ToolCall`s may execute simultaneously within a single `Turn`.
 
 ### `Turn`
@@ -303,6 +310,7 @@ One atomic exchange: a user prompt, zero or more assistant `Thought`s (possibly 
 **Invariants**
 
 - **turn-belongs-to-one-session** — A `Turn` belongs to exactly one `Session`.
+- **turn-max-tool-iterations** — Tool-execution iterations within a single `Turn` must not exceed `Config.maxToolTurns`.
 
 ## Relationships
 
@@ -355,7 +363,7 @@ A user asks a question that requires no `Tool`s. The `Orchestrator` assembles th
 
 **Invariants touched**
 
-- **session-max-turns** — `Turn` count must not exceed `Config.MAX_TURNS`.
+- **session-max-turns** — The `Session`'s working history is bounded: `Context` retains at most `Config.maxHistoryTurns` `Turn`s (0 = unlimited) within `Config.maxHistoryTokens` tokens.
 - **history-persisted-after-turn** — Every completed `Turn` is persisted before the next `Turn` begins.
 - **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
 - **turn-belongs-to-one-session** — A `Turn` belongs to exactly one `Session`.
@@ -412,15 +420,16 @@ The LLM requests a `Tool` call. The `Orchestrator` dispatches it, feeds the resu
 2. `Orchestrator` validates the `Tool` name and arguments.
 3. If the `Tool` requires consent, the `Orchestrator` prompts the user for approval.
 4. If the `Tool` accesses paths, the `SecurityManager` validates them against the `SafePath` registry.
-5. `Orchestrator` executes the `Tool` (possibly concurrently with others).
+5. `Orchestrator` executes the `Tool` (possibly concurrently with others), bounded by `Config.maxToolTurns` iterations.
 6. The `Tool` result is fed back to the `Provider`.
 7. The cycle repeats until `Provider` emits a final text `Thought`.
 8. The `Turn` (with all `ToolCall`s) is persisted to `History`.
 
 **Invariants touched**
 
-- **tool-timeout** — Execution duration must not exceed `Config.TOOL_TIMEOUT` seconds.
+- **tool-timeout** — Execution duration must not exceed `Config.toolTimeout` seconds.
 - **tool-unique-name** — Each `Tool` has a unique name.
+- **turn-max-tool-iterations** — Tool-execution iterations within a single `Turn` must not exceed `Config.maxToolTurns`.
 
 ### Hallucination loop detection
 
@@ -437,7 +446,7 @@ The `Orchestrator` detects when the LLM is stuck in a loop via two mechanisms: (
 
 **Invariants touched**
 
-- **session-max-turns** — `Turn` count must not exceed `Config.MAX_TURNS`.
+- **session-max-turns** — The `Session`'s working history is bounded: `Context` retains at most `Config.maxHistoryTurns` `Turn`s (0 = unlimited) within `Config.maxHistoryTokens` tokens.
 
 ### Context overflow and summarisation
 
@@ -536,9 +545,10 @@ The LLM requests multiple independent `Tool` calls in a single response. The `Or
 
 **Invariants touched**
 
-- **tool-timeout** — Execution duration must not exceed `Config.TOOL_TIMEOUT` seconds.
+- **tool-timeout** — Execution duration must not exceed `Config.toolTimeout` seconds.
 - **tool-unique-name** — Each `Tool` has a unique name.
 - **tool-max-concurrent** — At most `Config.maxConcurrentTools` `ToolCall`s may execute simultaneously within a single `Turn`.
+- **turn-max-tool-iterations** — Tool-execution iterations within a single `Turn` must not exceed `Config.maxToolTurns`.
 
 ### Session crash recovery
 
@@ -610,14 +620,14 @@ The user starts a new `Session` via `--new`. The `Orchestrator` archives the old
 
 ### Config hot-reload mid-session
 
-The user edits the YAML `Config` file (e.g. changing `MAX_TURNS` or the context window) while a `Turn` is in progress. The `Orchestrator` detects the file change at the next phase transition (between inference and tool execution), re-reads the changed limits, and atomically applies them — without restarting the `Session`. Switching the active `Provider` requires a new session; the hot-reload path refreshes only operational limits, not provider identity.
+The user edits the YAML `Config` file (e.g. changing `MAX_TURNS`, `MAX_HISTORY_TURNS`, or the context window) while a `Turn` is in progress. The `Orchestrator` detects the file change at the next phase transition (between inference and tool execution), re-reads the changed limits, and atomically applies them — without restarting the `Session`. Switching the active `Provider` requires a new session; the hot-reload path refreshes only operational limits, not provider identity.
 
 **Actors:** Orchestrator, Config, Context, Provider, Session
 
 **Steps**
 
 1. A `Session` is mid-`Turn`: the `Provider` has returned a response with tool calls.
-2. While the LLM was responding, the user edits `assistant.yaml` to increase `MAX_TURNS` from 20 to 50.
+2. While the LLM was responding, the user edits `assistant.yaml` to raise `MAX_TURNS` (the `Config.maxToolTurns` limit) from 20 to 50.
 3. The `Orchestrator`'s `configRefreshHook` fires on the `Inference → Execution` phase transition.
 4. The config watcher re-reads the file and extracts updated limits (`maxHistoryTokens`, `maxToolTurns`, `maxHistoryTurns`, `contextWindow`).
 5. New limits are atomically applied: `Context` token budget, max tool turns, and concurrency are updated.
@@ -627,6 +637,7 @@ The user edits the YAML `Config` file (e.g. changing `MAX_TURNS` or the context 
 **Invariants touched**
 
 - **context-within-budget** — `tokenCount` must not exceed the model's `Pricing.contextWindow`.
+- **turn-max-tool-iterations** — Tool-execution iterations within a single `Turn` must not exceed `Config.maxToolTurns`.
 
 ### Retry last turn
 
