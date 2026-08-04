@@ -70,7 +70,7 @@ func (ls *ledgerStore) recoverLedger(ctx context.Context, globalDir string) {
 	defer recoveryInProgress.Delete(historyPath)
 
 	seen := ls.loadExistingSessionIDs(historyPath)
-	pricing := ls.getPricingWithOverrides(ctx, globalDir)
+	pricing := ls.getPricingWithOverrides()
 
 	files, err := ls.findLogFiles(globalDir)
 	if err != nil {
@@ -114,7 +114,7 @@ func (ls *ledgerStore) loadExistingSessionIDs(historyPath string) map[string]boo
 }
 
 // getPricingWithOverrides fetches the latest pricing data and applies any local overrides.
-func (ls *ledgerStore) getPricingWithOverrides(ctx context.Context, globalDir string) domain_pricing.PricingData {
+func (ls *ledgerStore) getPricingWithOverrides() domain_pricing.PricingData {
 	pricing := config.DefaultPricing()
 	for k, v := range ls.pricingOverrides {
 		pricing.Models[k] = v
