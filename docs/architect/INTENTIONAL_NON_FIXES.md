@@ -7,23 +7,6 @@ Any AI agent recommending these should consult the rationale below.
 
 ## Coverage Gaps (ACCEPTED)
 
-### pidlock/pidlock.go — 6 gaps
-
-- **Status**: ACCEPTED (2026-06-28, commit `0f882423`)
-- **Rationale**:
-  - **2 gaps are platform-specific**: the Windows `return true` branch in
-    `isProcessAlive` and the `IsStale` `os.Stat`-failure fallback are
-    unreachable in `pidlock_unix_test.go` (the only test file).
-  - **2 gaps are structurally unreachable on Linux**: `os.FindProcess`
-    never fails on Linux (it wraps the PID without a syscall); the ESRCH
-    branch is tested by `TestIsProcessAlive_DeadProcess` but the coverage
-    tool reports it as uncovered when the dead-PID test Skips.
-  - **2 gaps require filesystem fault injection**: `fmt.Fprintf` and
-    `f.Sync()` to a just-opened `*os.File` can only fail on disk-full or
-    hardware error. Not worth the test complexity for a process-lock helper.
-- **See**: `internal/infrastructure/pidlock/pidlock.go` (architect-acceptance
-  comments at each gap site)
-
 ### history/global_prompt_tracker.go — writeCompactedData branch
 
 - **Status**: ACCEPTED (2026-06-28, commit `0f882423`)
@@ -99,8 +82,9 @@ Any AI agent recommending these should consult the rationale below.
   (changing file ownership, read-only filesystem, or Windows ACL restrictions).
   The `fsRetry` wrapper is already tested through other `OSFileSystem` methods
   (e.g., `Stat`, `ReadFile`), so the retry logic itself is covered. Same
-  acceptance rationale as `pidlock/pidlock.go` — "require filesystem fault
-  injection... not worth the test complexity for a process-lock helper."
+  acceptance class as platform-specific / filesystem fault-injection gaps —
+  "require filesystem fault injection... not worth the test complexity for a
+  process-lock helper."
 - **See**: `internal/infrastructure/persistence/os_fs.go:50-53`
 
 ### security/command_validator.go — HasBareNewline delegation wrapper at 0%
@@ -322,6 +306,30 @@ Any AI agent recommending these should consult the rationale below.
   The `agenttest/` package is already excluded from coverage metrics by the
   Makefile `test-coverage` target.
 - **See**: `internal/agent/agenttest/helpers.go`
+
+### agent/agenttest + clitest/eventstest — interface-satisfying mock stubs at 0%
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The following mock methods exist solely to satisfy interface
+  contracts (CostTracker.Warmup, HistoryManager.GetLastModelTurn/GetModelTurn/
+  UpdateTurnContent, Logger.ExecutionCompletedLate, UIRenderer.UpdateSpinnerStatus,
+  EventBus.Subscribe/WaitStarted, Gateway/LLMClient.ExtractDocument,
+  clock.Ticker.Stop, clitest mocks) — no unit test calls them because tests
+  exercise the real implementations via DI or integration tests. Testing a
+  mock's stub would test the mock itself (circular, no value) — same acceptance
+  class as agenttest/helpers.go interface-satisfying stubs (already documented
+  above) and auth.Invalidate no-ops.
+- **See**: `internal/agent/agenttest/mock_cost_tracker.go:44`,
+  `internal/agent/agenttest/mock_history_manager.go:139,152,158`,
+  `internal/agent/agenttest/mock_logger.go:20`,
+  `internal/agent/agenttest/mock_ui_renderer.go:274`,
+  `internal/domain/events/eventstest/test_event_bus.go:109`,
+  `internal/agent/agenttest/mock_event_bus_fail.go:22,26`,
+  `internal/agent/agenttest/mock_gateway.go:66`,
+  `internal/agent/agenttest/mock_llm_client.go:91`,
+  `internal/agent/agenttest/mock_clock.go:93`,
+  `internal/cli/clitest/mock_bootstrapper.go:225`,
+  `internal/cli/clitest/mock_chat_service.go:128,143`
 
 ### infrastructure/auth/auth.go — four Invalidate() no-op stubs at 0%
 
@@ -606,7 +614,7 @@ Any AI agent recommending these should consult the rationale below.
   - `searchGitHubAPI`: `http.NewRequestWithContext` error — URL constructed from
     `url.QueryEscape`, unreachable for GET.
   - `searchGitHubAPI`: `io.ReadAll` error — requires transport-level corruption.
-    Same class as pidlock/process_executor acceptances.
+    Same class as the process_executor acceptance.
   - `searchGitHubAPI`: `limit > 10` guard — `per_page=10` makes this defensive
     against API changes.
   - `fetchSkillMeta`: `http.NewRequestWithContext`, `client.Do`, `StatusCode`,
@@ -619,7 +627,8 @@ Any AI agent recommending these should consult the rationale below.
     unreachable.
 
   **Filesystem fault injection (4 sites)**:
-  - `InstallSkill`: `os.MkdirAll` error — same class as `pidlock/pidlock.go`.
+  - `InstallSkill`: `os.MkdirAll` error — same class as filesystem
+    fault-injection gaps.
   - `RemoveSkill`: `os.RemoveAll` error — same class.
   - `findSkillDir`: `filepath.Walk` walkErr — unreachable on test-controlled
     temp dirs.
@@ -668,8 +677,7 @@ Any AI agent recommending these should consult the rationale below.
   reachable on Linux via the chdir-into-deleted-directory technique used by
   `TestBuildApp_GetwdError`. On macOS and Windows, the kernel caches the
   working directory path, making the error structurally unreachable.
-  Same acceptance class as the platform-specific branches in
-  `pidlock/pidlock.go`.
+  Same acceptance class as platform-specific branches.
 - **See**: `cmd/tell-me-go/main.go` (`buildApp`, `os.Getwd` error branch),
   `cmd/tell-me-go/main_test.go` (`TestBuildApp_GetwdError`)
 
@@ -840,6 +848,23 @@ to reason about.
   `(*model).Update` (Bubble Tea dispatch).
 - **See**: `internal/ui/tui/history_editor.go:39`
 
+### ui/history.go — renderHistory (CC=11)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Sequential history renderer with structural guards only:
+  empty-history early return, `n > total` clamp, `GetWindow` error branch,
+  `Raw`/`CustomRenderer` option branches (markdown renderer selection), and
+  per-part nil guards inside the two loops. Every branch is a single-line
+  guard, error return, or renderer assignment — zero branching business logic.
+  The CC is driven by the guard count (+7) and the two iteration loops (+2),
+  not by decision complexity. Extracting guards into helpers would fragment a
+  coherent sequential render for cosmetic CC reduction with no cognitive
+  benefit. Same acceptance class as `(*HistoryEditor).Edit` (CC=10, sequential
+  orchestration with error guards) and the other structural-dispatch entries
+  in this section. Note: the shared `NewMarkdownRenderer` helper (2026-08)
+  already removed the duplicated glamour construction from this function.
+- **See**: `internal/ui/history.go:26`
+
 ### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15)
 
 - **Status**: ACCEPTED (2026-07)
@@ -872,9 +897,9 @@ to reason about.
   `powershell`/`pwsh` vs `cmd.exe` shell wrappers. The 10 CC points are
   structural guards (nil-check, alias lookup, hyphen-index bounds, prefix
   validation, loop over substring indicators) — zero branching business logic.
-  Not exercisable on Linux dev/CI. Same acceptance class as the platform-specific
-  Windows branches in `pidlock/pidlock.go` (already ACCEPTED in Coverage Gaps
-  above) and the type-switch dispatch entries in this section.
+  Not exercisable on Linux dev/CI. Same acceptance class as platform-specific
+  branches (already ACCEPTED in Coverage Gaps above) and the type-switch
+  dispatch entries in this section.
 - **See**: `internal/tools/workspace/shell.go:152`
 
 ### CC=9 production cohort — threshold policy (2026-07)
@@ -1014,9 +1039,9 @@ to reason about.
 ### di/container.go — skills repository init error paths
 
 - **Status**: ACCEPTED (2026-08)
-- **Rationale**: The error branches of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) and `infra_skills.NewSkillsShRepository(skillsShDir)` (`container.go:203-206`) require filesystem fault injection (unreadable skills directory, mkdir failure). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage (pidlock, process_executor).
+- **Rationale**: The error branches of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) and `infra_skills.NewSkillsShRepository(skillsShDir)` (`container.go:203-206`) require filesystem fault injection (unreadable skills directory, mkdir failure). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage.
 - **See**: `internal/infrastructure/di/container.go:197-206`
 
 ---
 
-*Last Updated: 2026-08 (coverage: telemetry runtime-metric kind mismatch + di skills-repo init accepted; lazyClient.ExtractDocument init-error covered by TestLazyClient_InitializationFailure_ExtractDocument; pricing-file removal follow-up, PR #1290)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs)*

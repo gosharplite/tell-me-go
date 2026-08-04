@@ -58,6 +58,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-050** | Duplicate Skill Name Resolution Policy | 2026-07 | Accepted | [2026-07-skills-sh-duplicate-resolution.md](2026-07-skills-sh-duplicate-resolution.md) |
 | **ADR-051** | Async TUI Rendering for Large Responses | 2026-07 | Accepted | [2026-07-async-tui-rendering.md](2026-07-async-tui-rendering.md) |
 | **ADR-052** | DeepSeek/Kimi Thinking Mode Toggle and user_id Isolation | 2026-07 | Accepted | [2026-07-deepseek-thinking-toggle.md](2026-07-deepseek-thinking-toggle.md) |
+| **ADR-053** | Remove `get_cost_summary` Tool and DailyCost Metric — Deprecate the Global Cost Ledger | 2026-08 | Accepted | [2026-08-remove-get-cost-summary-and-daily-cost-metric.md](2026-08-remove-get-cost-summary-and-daily-cost-metric.md) |
 
 ## How to Create a New ADR
 

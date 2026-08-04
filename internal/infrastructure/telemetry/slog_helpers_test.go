@@ -9,49 +9,22 @@ import (
 	"log/slog"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pidlock"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
 // TestMain redirects slog.Default() to a discard handler for all tests in
 // this package. The telemetry package has numerous error-path tests that
 // intentionally exercise slog.Warn code paths (corrupted files, permission
-// errors, lock contention, etc.). Without this, those expected warnings
+// errors, etc.). Without this, those expected warnings
 // flood the test harness output (testlog.txt), which can cause "file too
 // large" errors during coverage-instrumented runs (issue #1167).
 //
-// Tests that need to assert on specific slog.Warn messages can use
-// captureSlogOutput to temporarily swap in a spy handler.
+// Tests that need to assert on specific slog.Warn messages use the
+// newSpySlogLogger helper to route records to a spy handler.
 func TestMain(m *testing.M) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-
-	// Replace exponential backoff with zero-duration retries.
-	// pidlock.Acquire still retries the same number of times,
-	// but without sleeping — tests that pre-create lock files
-	// to exercise error paths don't pay a 1.55s penalty.
-	pidlock.DefaultAcquireBackoff = []time.Duration{0, 0, 0, 0, 0}
-
 	os.Exit(m.Run())
-}
-
-// captureSlogOutput redirects slog.Default() to a spy handler backed by
-// testfixtures.SpyLogger for the duration of the test. The returned spy
-// can be used to assert that specific WARN/ERROR messages were emitted.
-//
-// Deprecated: Prefer newSpySlogLogger + TraceLogger DI for new tests.
-// This helper remains for legacy tests that still rely on slog.SetDefault.
-// Tests using this helper must NOT use t.Parallel() because
-// slog.SetDefault is a global mutation.
-func captureSlogOutput(t *testing.T) *testfixtures.SpyLogger {
-	t.Helper()
-
-	spy := &testfixtures.SpyLogger{}
-	orig := slog.Default()
-	slog.SetDefault(slog.New(&spySlogHandler{spy: spy, level: slog.LevelDebug}))
-	t.Cleanup(func() { slog.SetDefault(orig) })
-	return spy
 }
 
 // newSpySlogLogger creates a *slog.Logger that routes all log records

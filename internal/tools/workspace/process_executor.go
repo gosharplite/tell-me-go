@@ -352,7 +352,7 @@ func resolveAndValidateOutputPath(cleanedPath, originalPath string) (string, err
 
 	// Coverage gap accepted by architect — the Windows separator-leading
 	// path branch is platform-specific and only executable on Windows.
-	// Same acceptance class as pidlock/pidlock.go platform branches.
+	// Same acceptance class as other platform-specific branches.
 	if runtime.GOOS == "windows" && len(cleanedPath) > 0 && os.IsPathSeparator(cleanedPath[0]) {
 		cwd, err := osGetwd()
 		if err != nil {

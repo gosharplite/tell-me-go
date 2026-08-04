@@ -243,7 +243,7 @@ func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.Histor
 	}
 
 	// Calculate and record cost
-	if recordErr := telemetry.RecordSessionCost(ctx, b.cfg.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
+	if recordErr := telemetry.RecordSessionCost(ctx, b.cfg.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, deps.GetPricingOverrides()); recordErr != nil {
 		errs = append(errs, fmt.Errorf("failed to record final session cost: %w", recordErr))
 	}
 

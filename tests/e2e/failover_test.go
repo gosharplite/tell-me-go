@@ -91,8 +91,9 @@ FAILOVER_ORDER:
 	}
 
 	// 5. Assertions
-	if !strings.Contains(stdout, "Failover successful — secondary responded!") {
-		t.Errorf("expected stdout to contain success message, got: %q", stdout)
+	out := stripANSI(stdout)
+	if !strings.Contains(out, "Failover successful — secondary responded!") {
+		t.Errorf("expected stdout to contain success message, got: %q", out)
 	}
 	if got := atomic.LoadInt32(&primaryCalls); got < 1 {
 		t.Errorf("primaryCalls = %d, want >= 1", got)

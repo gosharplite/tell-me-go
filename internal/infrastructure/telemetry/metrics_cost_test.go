@@ -8,16 +8,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -41,7 +37,7 @@ func (m *mockSMWithError) Close() error                               { return n
 func (m *mockSMWithError) IsBypassActive() bool                       { return false }
 
 // ---------------------------------------------------------------------------
-// Gap 1 — IsPathSafe error return (metrics_cost.go:123-125)
+// Gap 1 — IsPathSafe error return (metrics_cost.go)
 // ---------------------------------------------------------------------------
 
 // TestEstimateCost_IsPathSafeError verifies that when sm.IsPathSafe returns an
@@ -56,7 +52,7 @@ func TestEstimateCost_IsPathSafeError(t *testing.T) {
 		mode:    "test-mode",
 	}
 
-	result, err := m.EstimateCost(context.Background(), false, "")
+	result, err := m.EstimateCost(context.Background())
 	if err == nil {
 		t.Fatal("expected error from IsPathSafe, got nil")
 	}
@@ -69,7 +65,7 @@ func TestEstimateCost_IsPathSafeError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Gap 2 — parseUsage non-NotExist error (metrics_cost.go:134-140)
+// Gap 2 — parseUsage non-NotExist error (metrics_cost.go)
 // ---------------------------------------------------------------------------
 
 // TestEstimateCost_ParseUsageDirectoryError verifies that when parseUsage
@@ -90,7 +86,7 @@ func TestEstimateCost_ParseUsageDirectoryError(t *testing.T) {
 		mode:    "test-mode",
 	}
 
-	result, err := m.EstimateCost(context.Background(), false, "")
+	result, err := m.EstimateCost(context.Background())
 	if err == nil {
 		t.Fatal("expected error when logFile is a directory, got nil")
 	}
@@ -102,9 +98,9 @@ func TestEstimateCost_ParseUsageDirectoryError(t *testing.T) {
 	}
 }
 
-// TestEstimateCost_LogFileNotFound verifies the os.IsNotExist branch
-// (metrics_cost.go:136-138): EstimateCost returns a user-friendly message
-// with a nil error when the log file has not been created yet.
+// TestEstimateCost_LogFileNotFound verifies the os.IsNotExist branch:
+// EstimateCost returns a user-friendly message with a nil error when the log
+// file has not been created yet.
 func TestEstimateCost_LogFileNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -117,7 +113,7 @@ func TestEstimateCost_LogFileNotFound(t *testing.T) {
 		mode:    "test-mode",
 	}
 
-	result, err := m.EstimateCost(context.Background(), false, "")
+	result, err := m.EstimateCost(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error for nonexistent log file, got: %v", err)
 	}
@@ -183,39 +179,11 @@ func TestCalculateLineCost_ExplicitCost(t *testing.T) {
 // RecordSessionCost error-path tests
 // ---------------------------------------------------------------------------
 
-// TestRecordSessionCost_EstimateCostFails verifies that when EstimateCost
-// returns an error (e.g., IsPathSafe fails), RecordSessionCost wraps it with
-// "failed to estimate and record session cost" and propagates the original.
-func TestRecordSessionCost_EstimateCostFails(t *testing.T) {
-	// NOT parallel — uses global metricsMu / ledgerMu.
-	ctx := context.Background()
-	tempDir := t.TempDir()
-	logPath := filepath.Join(tempDir, "tokens.log")
-	// Create a valid minimal log file so the path exists.
-	if err := os.WriteFile(logPath, []byte("{}"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	mockSM := &mockSMWithError{pathErr: errors.New("path not safe")}
-
-	err := RecordSessionCost(ctx, mockSM, nil, logPath, "test-model", "test-mode", "test-session", nil)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to estimate and record session cost") {
-		t.Errorf("error should contain 'failed to estimate and record session cost', got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "path not safe") {
-		t.Errorf("error should wrap 'path not safe', got: %v", err)
-	}
-}
-
-// TestRecordSessionCost_ResolveUsageSummaryError covers the gap at
-// metrics.go:145-147 where resolveUsageForSummary returns an error
-// inside RecordSessionCost. Uses the resolveUsageForSummaryFunc injection
-// so EstimateCost succeeds but the injected function returns an error.
+// TestRecordSessionCost_ResolveUsageSummaryError covers the gap where
+// resolveUsageForSummary returns an error inside RecordSessionCost. Uses the
+// resolveUsageForSummaryFunc injection so the summary resolution fails.
 func TestRecordSessionCost_ResolveUsageSummaryError(t *testing.T) {
-	// NOT parallel — overrides package-level var AND uses global ledger mutexes
+	// NOT parallel — overrides package-level var.
 	originalFunc := resolveUsageForSummaryFunc
 	resolveUsageForSummaryFunc = func(ctx context.Context, sm domain_security.Manager,
 		tracker domain_pricing.CostTracker, logPath, model string,
@@ -225,32 +193,18 @@ func TestRecordSessionCost_ResolveUsageSummaryError(t *testing.T) {
 	t.Cleanup(func() { resolveUsageForSummaryFunc = originalFunc })
 
 	tempDir := t.TempDir()
-
-	// Place tokens.log inside an output subdirectory so that globalDir
-	// (filepath.Dir(outputDir)) is tempDir itself — keeping all ledger
-	// files (global_costs.json, locks, AtomicWrite temp files) inside
-	// the tempDir for clean teardown.
-	outputDir := filepath.Join(tempDir, "output")
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	logPath := filepath.Join(tempDir, "output", "tokens.log")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
 		t.Fatal(err)
 	}
-	logPath := filepath.Join(outputDir, "tokens.log")
 	logContent := `{"prompt_tokens":100,"response_tokens":50,"cost":0.01,"timestamp":"2025-06-15T12:00:00Z"}` + "\n"
 	if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Pre-create empty global_costs.json so loadHistory does NOT trigger
-	// async ledger recovery. This avoids a race between the background
-	// recovery goroutine and subsequent RecordSessionCost calls.
-	historyPath := filepath.Join(tempDir, "global_costs.json")
-	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	sm := &mockSM{}
 
-	err := RecordSessionCost(context.Background(), sm, nil, logPath, "test-model", "manual", "session-1", nil)
+	err := RecordSessionCost(context.Background(), sm, nil, logPath, "test-model", "manual", nil)
 
 	if err == nil {
 		t.Fatal("expected error from injected resolveUsageForSummaryFunc")
@@ -262,7 +216,6 @@ func TestRecordSessionCost_ResolveUsageSummaryError(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Gap 3 — renderReport CacheWriteTokens / ThinkingTokens branches
-// (metrics_cost.go:192-199)
 // ---------------------------------------------------------------------------
 
 // TestRenderReport_AllRows verifies that the optional Cache Write and Thinking
@@ -492,7 +445,7 @@ func BenchmarkRenderReport_Batch100(b *testing.B) {
 // BenchmarkEstimateCost_Single — one EstimateCost call per iteration.
 // Exercises: IsPathSafe (mock) → parseUsage
 // (reads + parses log) → CostCalculator.Calculate (math) → renderReport (string build).
-// Uses shouldRecord=false to bypass all ledger/lock/KV I/O.
+// EstimateCost is read-only: no ledger/lock/KV I/O.
 // ---------------------------------------------------------------------------
 
 func BenchmarkEstimateCost_Single(b *testing.B) {
@@ -526,7 +479,7 @@ func BenchmarkEstimateCost_Single(b *testing.B) {
 		ctx := context.Background()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+			benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx)
 		}
 		_, _ = benchSinkEstimate, benchSinkEstimateErr
 	})
@@ -538,7 +491,7 @@ func BenchmarkEstimateCost_Single(b *testing.B) {
 		ctx := context.Background()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+			benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx)
 		}
 		_, _ = benchSinkEstimate, benchSinkEstimateErr
 	})
@@ -580,7 +533,7 @@ func BenchmarkEstimateCost_Batch100(b *testing.B) {
 		// Batch of 100 calls per iteration — amortized cost = reported / 100.
 		for i := 0; i < b.N; i++ {
 			for j := 0; j < 100; j++ {
-				benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+				benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx)
 			}
 		}
 		_, _ = benchSinkEstimate, benchSinkEstimateErr
@@ -594,180 +547,9 @@ func BenchmarkEstimateCost_Batch100(b *testing.B) {
 		// Batch of 100 calls per iteration — amortized cost = reported / 100.
 		for i := 0; i < b.N; i++ {
 			for j := 0; j < 100; j++ {
-				benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx, false, "")
+				benchSinkEstimate, benchSinkEstimateErr = m.EstimateCost(ctx)
 			}
 		}
 		_, _ = benchSinkEstimate, benchSinkEstimateErr
 	})
-}
-
-// ---------------------------------------------------------------------------
-// TestCostLedger_RecoverySkipsUnreadableFile — verifies graceful degradation
-// when global_costs.json exists but is unreadable (e.g., 0000 permissions).
-// os.ReadFile returns EACCES, which is not os.IsNotExist, so loadHistoryFromDisk
-// returns fileExisted=false with a non-nil error. The error is discarded by
-// loadHistory, and since m.ledger is nil, recovery is a no-op. The function
-// returns an empty slice without panicking.
-// ---------------------------------------------------------------------------
-
-func TestCostLedger_RecoverySkipsUnreadableFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Chmod does not prevent file reads on Windows")
-	}
-
-	tmpDir := t.TempDir()
-	historyPath := filepath.Join(tmpDir, "global_costs.json")
-
-	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chmod(historyPath, 0000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(historyPath, 0644) })
-
-	// nil ledger means checkLedgerAndTriggerRecovery is a no-op even if reached.
-	m := &metricsManager{}
-
-	history := m.loadHistory(context.Background(), historyPath, tmpDir)
-
-	if len(history) != 0 {
-		t.Errorf("expected empty history for unreadable file, got %d records", len(history))
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Gap — loadHistoryFromDisk failure under lock (metrics_cost.go:63-68)
-// ---------------------------------------------------------------------------
-
-// TestRecordCost_LoadHistoryReadError verifies that when the ledger file exists
-// but is unreadable (e.g., permission denied), recordCost logs a warning and
-// returns early without panicking or modifying the ledger file.
-func TestRecordCost_LoadHistoryReadError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Chmod does not prevent file reads on Windows")
-	}
-
-	// Install SpyLogger as the slog default handler to capture slog.Warn calls.
-	spy := captureSlogOutput(t)
-
-	ctx := context.Background()
-	tempDir := t.TempDir()
-
-	// Create output directory so globalDir = tempDir.
-	outputDir := filepath.Join(tempDir, "output")
-	require.NoError(t, os.MkdirAll(outputDir, 0755))
-
-	historyPath := filepath.Join(tempDir, "global_costs.json")
-
-	// Write a valid ledger file, then make it unreadable.
-	require.NoError(t, os.WriteFile(historyPath, []byte("[]"), 0644))
-	require.NoError(t, os.Chmod(historyPath, 0000))
-	t.Cleanup(func() { _ = os.Chmod(historyPath, 0644) })
-
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(tempDir)
-
-	m := &metricsManager{
-		sm:      sm,
-		logFile: filepath.Join(outputDir, "session_tokens.log"),
-		model:   "test-model",
-		mode:    "test-mode",
-		ledger:  nil, // nil prevents async ledger recovery
-	}
-
-	record := sessionCostRecord{
-		Date:      "2026-08-01",
-		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
-		Session:   "test-mode/session_tokens.log",
-		Model:     "test-model",
-		TotalCost: 0.01,
-	}
-
-	// Call recordCost directly — must not panic.
-	require.NotPanics(t, func() {
-		m.recordCost(ctx, outputDir, "test-mode", record)
-	}, "recordCost must not panic when ledger file is unreadable")
-
-	// Assert the warning was logged.
-	require.True(t, spy.CalledWith("Warn", "failed to read ledger under lock"),
-		"expected slog.Warn 'failed to read ledger under lock' to be logged")
-
-	// Restore permissions so we can read the file for verification.
-	require.NoError(t, os.Chmod(historyPath, 0644))
-
-	// Assert the file was NOT overwritten (content unchanged).
-	data, err := os.ReadFile(historyPath)
-	require.NoError(t, err)
-	require.Equal(t, "[]", string(data), "ledger file must be unchanged after failed read")
-}
-
-// ---------------------------------------------------------------------------
-// Gap — json.Marshal failure on ledger data (metrics_cost.go:74-79)
-// ---------------------------------------------------------------------------
-
-// TestRecordCost_JsonMarshalError verifies that when json.Marshal fails
-// after reading and upserting ledger data, recordCost logs a warning and
-// returns early without panicking or writing a corrupted ledger file.
-//
-// This test overrides the package-level jsonMarshal variable and therefore
-// must NOT use t.Parallel().
-func TestRecordCost_JsonMarshalError(t *testing.T) {
-	// NOT parallel — overrides package-level jsonMarshal AND slog.SetDefault.
-
-	// Step 1: Override jsonMarshal to simulate a marshal failure.
-	originalMarshal := jsonMarshal
-	jsonMarshal = func(v any) ([]byte, error) {
-		return nil, errors.New("injected marshal error")
-	}
-	t.Cleanup(func() { jsonMarshal = originalMarshal })
-
-	// Step 2: Install SpyLogger as the slog default handler.
-	spy := captureSlogOutput(t)
-
-	ctx := context.Background()
-	tempDir := t.TempDir()
-
-	// Create output directory so globalDir = tempDir.
-	outputDir := filepath.Join(tempDir, "output")
-	require.NoError(t, os.MkdirAll(outputDir, 0755))
-
-	// Step 3: Create a valid ledger file so loadHistoryFromDisk succeeds.
-	// The upsert will add the new record, then jsonMarshal will fail.
-	historyPath := filepath.Join(tempDir, "global_costs.json")
-	require.NoError(t, os.WriteFile(historyPath, []byte("[]"), 0644))
-
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(tempDir)
-
-	m := &metricsManager{
-		sm:      sm,
-		logFile: filepath.Join(outputDir, "session_tokens.log"),
-		model:   "test-model",
-		mode:    "test-mode",
-		ledger:  nil, // nil prevents async ledger recovery
-	}
-
-	record := sessionCostRecord{
-		Date:      "2026-08-01",
-		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
-		Session:   "test-mode/session_tokens.log",
-		Model:     "test-model",
-		TotalCost: 0.05,
-	}
-
-	// Step 4: Call recordCost — must not panic, even with marshal failure.
-	require.NotPanics(t, func() {
-		m.recordCost(ctx, outputDir, "test-mode", record)
-	}, "recordCost must not panic when json.Marshal fails")
-
-	// Step 5: Assert the warning was logged.
-	require.True(t, spy.CalledWith("Warn", "failed to marshal ledger"),
-		"expected slog.Warn 'failed to marshal ledger' to be logged")
-
-	// Step 6: Assert the file was NOT modified (marshal failed before AtomicWrite).
-	data, err := os.ReadFile(historyPath)
-	require.NoError(t, err)
-	require.Equal(t, "[]", string(data), "ledger file must be unchanged after failed marshal")
 }

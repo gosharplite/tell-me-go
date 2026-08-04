@@ -287,7 +287,7 @@ func TestModel_Update(t *testing.T) {
 
 		assert.NotEmpty(t, updated.finalCostLine)
 		assert.Contains(t, updated.finalCostLine, "Ready")
-		assert.Contains(t, updated.finalCostLine, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
+		assert.Contains(t, updated.finalCostLine, "($0.0010 $0.0012 $0.1505 M: 116386 H: 15172096")
 		assert.NotNil(t, cmd)
 	})
 }
@@ -417,12 +417,12 @@ func TestModel_View(t *testing.T) {
 		ch := make(chan events.Event, 1)
 		m := newTestModel(ctx, ch)
 		m.currentState = stateRendering
-		m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 99.2% O: 51607)"
+		m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 M: 116386 H: 15172096 99.2% O: 51607)"
 
 		out := m.View()
 		assert.Contains(t, out, "╰─⠿ Ready")
 		assert.Contains(t, out, "M: 116386")
-		assert.Contains(t, out, "($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096")
+		assert.Contains(t, out, "($0.0010 $0.0012 $0.1505 M: 116386 H: 15172096")
 	})
 
 	t.Run("body_content_visible_in_viewport", func(t *testing.T) {
@@ -1443,7 +1443,7 @@ func TestModel_TurnStarted_ClearsStaleDisplayState(t *testing.T) {
 		},
 	}
 	m.postCallMetricsLine = "[14:30:05] [deepseek-pro] M: 200 H: 800 C: 50 ($0.0012) [7.00s (ΣT: 2.00s)]"
-	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 99.2% O: 51607)"
+	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 M: 116386 H: 15172096 99.2% O: 51607)"
 
 	// Verify initial View() contains all the stale content.
 	outBefore := m.View()
@@ -1522,7 +1522,7 @@ func TestModel_FooterStatusLinesPersistAcrossTurns(t *testing.T) {
 	m.turn = 1
 	m.currentState = stateRendering
 	m.postCallMetricsLine = "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)"
-	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)"
+	m.finalCostLine = "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 M: 116386 H: 15172096 95.4% O: 20086)"
 	m.postCallStatus = &events.TurnStatus{}
 
 	// Fire TurnStarted — footer should NOT be cleared.
@@ -1532,7 +1532,7 @@ func TestModel_FooterStatusLinesPersistAcrossTurns(t *testing.T) {
 	assert.Equal(t, 2, updated.turn, "turn should increment")
 	assert.NotNil(t, updated.postCallStatus, "postCallStatus should persist")
 	assert.Equal(t, "[14:30:05] [deepseek] M: 200 H: 800 C: 50 ($0.0012)", updated.postCallMetricsLine)
-	assert.Equal(t, "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 $0.0000 M: 116386 H: 15172096 95.4% O: 20086)", updated.finalCostLine)
+	assert.Equal(t, "╰─⠿ Ready ($0.0010 $0.0012 $0.1505 M: 116386 H: 15172096 95.4% O: 20086)", updated.finalCostLine)
 	assert.NotNil(t, cmd)
 }
 
