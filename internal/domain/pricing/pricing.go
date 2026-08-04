@@ -44,7 +44,7 @@ type PricingData struct {
 	Models    map[string]ModelPricing `json:"models"`
 }
 
-// ValidateUniqueModels is a named validation anchor for the pricing-unique-model
+// validateUniqueModels is a named validation anchor for the pricing-unique-model
 // invariant: each modelName appears at most once in the pricing table.
 //
 // The invariant is structurally enforced by Go's map semantics — a
@@ -53,9 +53,9 @@ type PricingData struct {
 // sources (e.g., merging two PricingData structs) has an obvious place
 // to add explicit duplicate detection with a warning or error.
 //
-// In the current single-source architecture (JSON file → map), this
-// always returns nil.
-func (pd *PricingData) ValidateUniqueModels() error {
+// In the current architecture (hardcoded default table + YAML overrides
+// merged into a map), this always returns nil.
+func (pd *PricingData) validateUniqueModels() error {
 	// Structurally enforced by map[string]ModelPricing.
 	// If pricing is ever assembled from multiple maps, add a
 	// duplicate-key check here before the merge.
