@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -25,7 +24,6 @@ import (
 
 type metricsManager struct {
 	sm               domain_security.Manager
-	metricsMu        sync.Mutex
 	logFile          string
 	traceFile        string
 	model            string
