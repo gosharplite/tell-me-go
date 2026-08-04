@@ -204,19 +204,21 @@ func (s *stubHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, 
 // mockExtendedClient is a hand-rolled test double for llm.ExtendedClient.
 // When a Func field is nil, the method returns its natural zero value.
 type mockExtendedClient struct {
-	GenerateFunc       func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	SendChatFunc       func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	GenerateImagesFunc func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
-	RefreshAuthFunc    func() error
-	CloseFunc          func() error
-	GetModelFunc       func() string
+	GenerateFunc        func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	SendChatFunc        func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	GenerateImagesFunc  func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
+	RefreshAuthFunc     func() error
+	CloseFunc           func() error
+	ExtractDocumentFunc func(ctx context.Context, data []byte, filename string) (string, error)
+	GetModelFunc        func() string
 
-	generateCalls       int
-	sendChatCalls       int
-	generateImagesCalls int
-	refreshAuthCalls    int
-	closeCalls          int
-	getModelCalls       int
+	generateCalls        int
+	sendChatCalls        int
+	generateImagesCalls  int
+	refreshAuthCalls     int
+	closeCalls           int
+	extractDocumentCalls int
+	getModelCalls        int
 }
 
 func (m *mockExtendedClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -252,6 +254,10 @@ func (m *mockExtendedClient) RefreshAuth() error {
 }
 
 func (m *mockExtendedClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	m.extractDocumentCalls++
+	if m.ExtractDocumentFunc != nil {
+		return m.ExtractDocumentFunc(ctx, data, filename)
+	}
 	return "", llm.ErrNotImplemented
 }
 
@@ -390,6 +396,35 @@ func TestLazyClient_InitializationFailure_GenerateImages(t *testing.T) {
 	_, err := lc.GenerateImages(context.Background(), "", "", "")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, simulatedErr)
+}
+
+func TestLazyClient_ExtractDocument(t *testing.T) {
+	mockClient := &mockExtendedClient{
+		ExtractDocumentFunc: func(ctx context.Context, data []byte, filename string) (string, error) {
+			return "extracted text", nil
+		},
+	}
+
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return mockClient, nil
+	})
+
+	text, err := lc.ExtractDocument(context.Background(), []byte("payload"), "doc.pdf")
+	assert.NoError(t, err)
+	assert.Equal(t, "extracted text", text)
+	assert.Equal(t, 1, mockClient.extractDocumentCalls)
+}
+
+func TestLazyClient_InitializationFailure_ExtractDocument(t *testing.T) {
+	simulatedErr := errors.New("llm init failed")
+	lc := newLazyClient(func() (llm.ExtendedClient, error) {
+		return nil, simulatedErr
+	})
+
+	_, err := lc.ExtractDocument(context.Background(), nil, "")
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, simulatedErr)
+	assert.Contains(t, err.Error(), "LLM provider initialization failed")
 }
 
 func TestLazyClient_ConcurrentInit_ErrorCached(t *testing.T) {

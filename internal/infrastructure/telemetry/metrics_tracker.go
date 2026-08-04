@@ -211,7 +211,7 @@ func (t *sessionCostTracker) Accumulate(mt llm.Metrics) {
 	if mtModel == "" {
 		mtModel = t.modelName
 	}
-	p := GetModelPricing(mtModel, t.pricing)
+	p := t.pricing.GetModelPricing(mtModel)
 
 	turnStats := accumulate(&t.stats, mt)
 
@@ -240,7 +240,7 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 		slog.Int("response", int(mt.ResponseTokens)),
 		slog.Int("thinking", int(mt.ThinkingTokens)))
 
-	p := GetModelPricing(mtModel, t.pricing)
+	p := t.pricing.GetModelPricing(mtModel)
 
 	slog.Debug("retrieved pricing",
 		slog.Float64("hit", p.Hit),

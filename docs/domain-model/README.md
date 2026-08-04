@@ -164,7 +164,7 @@ The model declares 15 invariants. Each has been traced to its code enforcer
 | 6 | `turn-belongs-to-one-session` | Structural — `Turn` composed within `Session`, not independently referenceable | ✅ STRUCTURAL |
 | 7 | `provider-unique-name` | `config.go:158` — `validateProviderUniqueness()` checks map keys before accepting config | ✅ ENFORCED |
 | 8 | `config-valid-provider` | `config.go:126` — `validateSelectedProvider()` verifies key exists in registry | ✅ ENFORCED |
-| 9 | `pricing-unique-model` | `map[string]ModelPricing` — Go maps structurally prevent duplicates; `ValidateUniqueModels()` anchor at `pricing.go:58` | ✅ STRUCTURAL |
+| 9 | `pricing-unique-model` | `map[string]ModelPricing` — Go maps structurally prevent duplicates; `validateUniqueModels()` anchor at `pricing.go:58` | ✅ STRUCTURAL |
 | 10 | `tool-unique-name` | `registry.go:63` — `RegisterToToolkitWithOptions` checks `r.entries[def.Name]`; duplicates update existing entry | ✅ ENFORCED |
 | 11 | `skill-unique-name` | `file_repo.go:36` — `hasSkillName()` checks cache; duplicates trigger `slog.Warn` and skip | ⚠️ SOFT |
 | 12 | `safepath-absolute` | `manager.go:148` — `RegisterSafePath` calls `filepath.Clean()` + `filepath.Abs()`; also enforced in `policy.go:93` | ✅ ENFORCED |

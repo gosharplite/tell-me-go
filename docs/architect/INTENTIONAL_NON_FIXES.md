@@ -1003,4 +1003,20 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-07 (browser: handleEditorMsg TUI acceptance, SetPinned coverage: contentHasFunctionCall → 100%, shell: isPowerShellIndicator CC=10 acceptance, CC=9 threshold policy + RecoveryStep.Process, stale CC figures corrected: Update 12→14, handleDomainEvent 11→12, RecoveryStep.Process CC=9→12: empty-response retry feature)*
+## Coverage Gaps (ACCEPTED — 2026-08 pricing-file removal follow-up)
+
+### telemetry/system_metrics_shared.go — runtime metric kind mismatch (errRuntimeMetricKindMismatch)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The `return 0, errRuntimeMetricKindMismatch` branch in the runtime-metrics converter (`system_metrics_shared.go:47`) is a defensive guard against a runtime metric reporting a Kind other than `KindFloat64`. Its companion test `TestGetRuntimeCPUStats_KindFloat64Always` asserts that every consumed runtime metric is `KindFloat64` on the current Go version — the mismatch branch is structurally unreachable today and exists only to guard against future Go runtime changes. Same acceptance class as defensive guards on internal state (2026-07 Batch Triage).
+- **See**: `internal/infrastructure/telemetry/system_metrics_shared.go:47`
+
+### di/container.go — skills repository init error paths
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The error branches of `infra_skills.NewFileSkillRepository(skillsDir)` (`container.go:197-200`) and `infra_skills.NewSkillsShRepository(skillsShDir)` (`container.go:203-206`) require filesystem fault injection (unreadable skills directory, mkdir failure). Both degrade gracefully — `slog.Warn` + continue without skills, and `slog.Debug` + nil repo — and the happy paths are covered by container tests. Same acceptance class as the filesystem fault-injection gaps in the 2026-07 Batch Triage (pidlock, process_executor).
+- **See**: `internal/infrastructure/di/container.go:197-206`
+
+---
+
+*Last Updated: 2026-08 (coverage: telemetry runtime-metric kind mismatch + di skills-repo init accepted; lazyClient.ExtractDocument init-error covered by TestLazyClient_InitializationFailure_ExtractDocument; pricing-file removal follow-up, PR #1290)*

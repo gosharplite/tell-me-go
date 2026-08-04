@@ -21,6 +21,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 type metricsManager struct {
@@ -179,7 +180,7 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tra
 		return usage, totalCost, nil
 	}
 
-	pd := GetPricing(ctx, sm, filepath.Dir(logPath))
+	pd := config.DefaultPricing()
 	for k, v := range overrides {
 		pd.Models[k] = v
 	}
