@@ -161,14 +161,14 @@ tell-me-go -d --json
 Before every request, the tool shows your current resource usage relative to configured limits:
 ```text
 ────────────────────────────────────────────────────────────────────────────────
-╭─⠿ Session: 3/20 turns
-[14:19:43] Payload: ~4549/180000 tokens
+╭─⠿ Turn 3/20
+[14:19:43] Payload: ~4549/1000000 tokens
 ```
 
 **Post-turn Usage Metrics:**
 Detailed cost and token breakdown after every response:
 ```text
-[08:21:09] Payload: 33488/180000 tokens
+[08:21:09] Payload: 33488/1000000 tokens
 [08:21:09] [google] M: 31882 H: 1204 C: 402 ($0.0123) [3.20s (ΣT: 0.15s) / 4.50s]
 ╰─⠿ Ready ($0.0123 $0.0123 $1.4745 M: 31882 H: 1204 3.6% O: 402)
 ```
@@ -384,7 +384,7 @@ Niffler provides:
 - **Role‑specific helper functions** (`b`, `a`, `c`, `t`, `r` …) scoped to the current environment
 - **Visual shell prompt** showing the active tag and provider
 
-See the [Niffler documentation](docs/user/niffler/README.md) for installation and usage. For the full evolution from bash aliases through Niffler, see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
+See the [Niffler documentation](docs/user/niffler/niffler.sh) for installation and usage. For the full evolution from bash aliases through Niffler, see [Evolution of Environment Management](docs/architect/environments/environment-management-evolution.md).
 
 ## 🛠️ Development
 
