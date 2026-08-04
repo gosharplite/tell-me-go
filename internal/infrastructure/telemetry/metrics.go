@@ -37,14 +37,6 @@ type metricsManager struct {
 	fs               FileSystem
 }
 
-type costSummaryArgs struct {
-	Billing   bool   `json:"billing"`
-	StartDate string `json:"start_date"`
-	EndDate   string `json:"end_date"`
-	Interval  string `json:"interval"` // "hour" or "day"
-	GroupBy   string `json:"group_by"` // NEW: "date" (default), "model", or "date,model"
-}
-
 type estimateCostArgs struct{}
 
 // resolveUsageForSummaryFunc is the resolveUsageForSummary function, overridable in tests.
@@ -98,47 +90,6 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
 		}
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
-		return tools.ToolResult{Text: res}, err
-	}, tools.ToolOptions{Serial: true}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "get_cost_summary",
-		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"billing": {
-					Type:        "BOOLEAN",
-					Description: "If true, aggregates costs using Google Billing timezone (UTC-8).",
-				},
-				"start_date": {
-					Type:        "STRING",
-					Description: "The start date for the summary (YYYY-MM-DD).",
-				},
-				"end_date": {
-					Type:        "STRING",
-					Description: "The end date for the summary (YYYY-MM-DD).",
-				},
-				"interval": {
-					Type:        "STRING",
-					Description: "Aggregation interval: 'hour' or 'day' (default: 'day').",
-				},
-				"group_by": {
-					Type:        "STRING",
-					Description: "NEW: 'date' (default), 'model', or 'date,model'.",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-		var sArgs costSummaryArgs
-		if err := tools.UnmarshalArgs(args, &sArgs); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
-		}
-
-		m.recordCostSilently(ctx)
-		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
 	}, tools.ToolOptions{Serial: true}); err != nil {
 		return err
@@ -251,15 +202,6 @@ func (m *metricsManager) appendSummaryToLog(logPath string, usage domain_pricing
 		return fmt.Errorf("failed to write cost summary to log: %w", err)
 	}
 	return nil
-}
-
-// recordCostSilently calls EstimateCost and logs a warning on failure
-// without interrupting the caller. Extracted for testability.
-func (m *metricsManager) recordCostSilently(ctx context.Context) {
-	if _, err := m.EstimateCost(ctx, true, ""); err != nil {
-		slog.Warn("failed to record cost before summary",
-			slog.Any("error", err))
-	}
 }
 
 // generateSessionID creates a unique identifier for a session based on its mode and log file name.

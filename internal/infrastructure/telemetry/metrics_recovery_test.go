@@ -242,12 +242,12 @@ invalid json line
 }
 
 // TestRegisterMetrics_UnmarshalArgsErrors exercises the UnmarshalArgs error
-// paths inside the RegisterMetrics closures at metrics.go:65-67 (estimate_cost)
-// and metrics.go:104-106 (get_cost_summary). These paths are reachable via:
+// path inside the RegisterMetrics closure at metrics.go (estimate_cost).
+// These paths are reachable via:
 //   - Non-JSON-serializable values (e.g., chan) → json.Marshal fails
 //   - Type-mismatched JSON values (e.g., string where bool is expected) → json.Unmarshal fails
 //
-// The handlers wrap these errors with "invalid arguments: %w" and return them.
+// The handler wraps these errors with "invalid arguments: %w" and returns them.
 func TestRegisterMetrics_UnmarshalArgsErrors(t *testing.T) {
 	// NOT parallel: subtests share a single mockRegistry with registered handlers.
 	sm := &mockSM{}
@@ -273,18 +273,6 @@ func TestRegisterMetrics_UnmarshalArgsErrors(t *testing.T) {
 			name:        "estimate_cost with non-serializable args",
 			toolName:    "estimate_cost",
 			args:        map[string]interface{}{"bad": make(chan int)},
-			wantErrText: "invalid arguments",
-		},
-		{
-			name:        "get_cost_summary with string billing",
-			toolName:    "get_cost_summary",
-			args:        map[string]interface{}{"billing": "not-a-bool"},
-			wantErrText: "invalid arguments",
-		},
-		{
-			name:        "get_cost_summary with numeric billing",
-			toolName:    "get_cost_summary",
-			args:        map[string]interface{}{"billing": 123},
 			wantErrText: "invalid arguments",
 		},
 	}

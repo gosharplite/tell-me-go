@@ -63,30 +63,26 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 		_, err := os.Stat(historyPath)
 		require.True(t, os.IsNotExist(err), "global_costs.json should not exist initially")
 
-		// 6. Call getCostSummary(ctx, costSummaryArgs{Billing: false}).
-		// This should trigger async recovery.
+		// 6. Trigger async recovery. Previously this happened through the
+		// removed cost-summary tool path; triggerLedgerRecovery is the
+		// direct equivalent.
 		ctx := context.Background()
-		initialSummary, err := m.getCostSummary(ctx, costSummaryArgs{Billing: false})
-		require.NoError(t, err)
-		require.Contains(t, initialSummary, "Cost history ledger is missing")
+		m.triggerLedgerRecovery(ctx, historyPath, tempDir)
 
 		// 7. Assertion: Implement a require.Eventually or simple polling loop.
 		require.Eventually(t, func() bool {
-			summary, err := m.getCostSummary(ctx, costSummaryArgs{Billing: false})
-			if err != nil {
-				return false
-			}
-			// If recovery is still in progress, it returns a specific message.
-			if strings.Contains(summary, "recovery is currently in progress") {
-				return false
-			}
-			if strings.Contains(summary, "is missing") {
+			history, existed, err := loadHistoryFromDisk(historyPath)
+			if err != nil || !existed {
 				return false
 			}
 
-			// Verify the "Grand Total" is $3.0000.
-			// Expected format: "| **Grand Total** | **0** | **0** | **0** | **0.0%** | **$3.0000** |"
-			return strings.Contains(summary, "**$3.0000**")
+			var total float64
+			for _, r := range history {
+				total += r.TotalCost
+			}
+
+			// Verify the grand total is $3.0000 (1.0 + 2.0).
+			return total > 2.9999 && total < 3.0001
 		}, 2*time.Second, 100*time.Millisecond, "Ledger recovery should reconstruct the history with total $3.0000")
 
 		// Additional check: Ensure global_costs.json was actually created
