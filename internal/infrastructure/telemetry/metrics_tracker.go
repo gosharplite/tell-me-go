@@ -25,9 +25,6 @@ type sessionCostTracker struct {
 	mode      string
 	sm        domain_security.Manager
 	initiated bool
-
-	// currentSessionID is computed once from generateSessionID(t.mode, t.logFile) and set inside ensureInitialized().
-	currentSessionID string
 }
 
 // NewSessionCostTracker creates a new tracker.
@@ -72,7 +69,6 @@ func (t *sessionCostTracker) ensureInitialized() {
 			t.totalCost = totalCost
 		}
 		t.initiated = true
-		t.currentSessionID = generateSessionID(t.mode, t.logFile)
 	}
 }
 

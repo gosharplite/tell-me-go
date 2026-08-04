@@ -16,7 +16,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
@@ -32,8 +31,6 @@ type metricsManager struct {
 	model            string
 	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
-	ledger           *ledgerStore
-	kvStore          ports.KVStore
 	fs               FileSystem
 }
 
@@ -68,7 +65,7 @@ func newTraceLogger(logger *slog.Logger) *traceLogger {
 }
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, kvStore ports.KVStore) error {
+func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -76,8 +73,6 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 		model:            model,
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
-		ledger:           newLedgerStore(sm, model, pricingOverrides),
-		kvStore:          kvStore,
 		fs:               osFS{},
 	}
 
@@ -89,7 +84,7 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 		if err := tools.UnmarshalArgs(args, &eArgs); err != nil {
 			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
 		}
-		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
+		res, err := m.EstimateCost(ctx)
 		return tools.ToolResult{Text: res}, err
 	}, tools.ToolOptions{Serial: true}); err != nil {
 		return err
@@ -97,31 +92,26 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 	return nil
 }
 
-// RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
-func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker domain_pricing.CostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+// RecordSessionCost calculates the session's usage statistics and appends a
+// summary line to the tokens log. It is best-effort: it does not fail the
+// session when the log is missing or cannot be parsed.
+func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker domain_pricing.CostTracker, logPath, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
 		model:            model,
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
-		ledger:           newLedgerStore(sm, model, pricingOverrides),
 		fs:               osFS{},
 	}
 
-	// 1. Record to global ledger (detailed breakdown)
-	_, err := m.EstimateCost(ctx, true, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to estimate and record session cost: %w", err)
-	}
-
-	// 2. Resolve usage stats
+	// 1. Resolve usage stats
 	usage, totalCost, err := resolveUsageForSummaryFunc(ctx, sm, tracker, logPath, model, pricingOverrides)
 	if err != nil {
 		return err
 	}
 
-	// 3. Append summary to log
+	// 2. Append summary to log
 	return m.appendSummaryToLog(logPath, usage, totalCost, model)
 }
 
@@ -202,12 +192,6 @@ func (m *metricsManager) appendSummaryToLog(logPath string, usage domain_pricing
 		return fmt.Errorf("failed to write cost summary to log: %w", err)
 	}
 	return nil
-}
-
-// generateSessionID creates a unique identifier for a session based on its mode and log file name.
-// This ID is used as the unique key in global_costs.json to identify and update session records.
-func generateSessionID(mode, logFile string) string {
-	return filepath.ToSlash(filepath.Join(mode, filepath.Base(logFile)))
 }
 
 // logTrace writes a TurnTrace to a trace log file.

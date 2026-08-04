@@ -9,9 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pidlock"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 )
 
@@ -26,13 +24,6 @@ import (
 // captureSlogOutput to temporarily swap in a spy handler.
 func TestMain(m *testing.M) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-
-	// Replace exponential backoff with zero-duration retries.
-	// pidlock.Acquire still retries the same number of times,
-	// but without sleeping — tests that pre-create lock files
-	// to exercise error paths don't pay a 1.55s penalty.
-	pidlock.DefaultAcquireBackoff = []time.Duration{0, 0, 0, 0, 0}
-
 	os.Exit(m.Run())
 }
 

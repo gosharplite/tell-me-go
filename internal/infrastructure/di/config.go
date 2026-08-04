@@ -36,7 +36,7 @@ type BootstrapperConfig struct {
 	// Factory functions
 	ClientFactory    ports.ClientFactory
 	RegisterAllTools func(infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(tools.Registry, security.Manager, string, string, string, string, map[string]pricing.ModelPricing, ports.KVStore) error
+	RegisterMetrics  func(tools.Registry, security.Manager, string, string, string, string, map[string]pricing.ModelPricing) error
 	RotateSession    func(context.Context, infra_persistence.FileSystem, io.Writer, persistence.Paths, int, *slog.Logger) error
 	NewSessionState  func(context.Context, string, ...infra_persistence.SessionStateOption) (ports.SessionProvider, error)
 }
