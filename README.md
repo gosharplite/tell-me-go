@@ -407,9 +407,16 @@ brew install gh
 sudo apt install gh
 ```
 
-To work with the domain model, install **modelith**:
+To work with the domain model, install **modelith**. The modelith binary used
+across this ecosystem is built from the
+[`gosharplite/modelith`](https://github.com/gosharplite/modelith) fork at the
+`feat/self-domain-model` branch — a fork of
+[`stacklok/modelith`](https://github.com/stacklok/modelith). Build it from a
+checkout of that branch (`task build` / `go install`) rather than installing
+the upstream release, or behavior may differ:
+
 ```bash
-go install github.com/stacklok/modelith/cmd/modelith@latest
+go install github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model
 ```
 
 Then run the standard Go workflow:
@@ -437,9 +444,12 @@ plain-language description of what the system *is*: its entities
 that govern them, and scenario narratives that stress-test the whole.
 
 The model is authored as a `*.modelith.yaml` file and rendered to Markdown with
-embedded Mermaid ER diagrams using [modelith](https://github.com/stacklok/modelith),
-a domain-model-as-code toolchain by [Stacklok](https://stacklok.com). The
-Markdown is regenerated and checked for drift in CI (`make modelith-check`).
+embedded Mermaid ER diagrams using **modelith** — the
+[`gosharplite/modelith`](https://github.com/gosharplite/modelith) fork at
+`feat/self-domain-model`, a fork of the [Stacklok](https://stacklok.com)
+[modelith](https://github.com/stacklok/modelith) domain-model-as-code
+toolchain. The Markdown is regenerated and checked for drift in CI
+(`make modelith-check`).
 
 ```sh
 make modelith-lint     # validate the YAML

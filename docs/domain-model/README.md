@@ -1,7 +1,12 @@
 # Domain Model for tell-me-go
 
 This folder contains the canonical domain model for tell-me-go, built with
-[modelith](https://github.com/stacklok/modelith).
+**modelith** — the
+[`gosharplite/modelith`](https://github.com/gosharplite/modelith) fork at
+`feat/self-domain-model`, a fork of
+[`stacklok/modelith`](https://github.com/stacklok/modelith). Install from the
+fork branch (`go install github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model`),
+not the upstream release — behavior may differ.
 
 ## Files
 

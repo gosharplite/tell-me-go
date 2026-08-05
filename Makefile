@@ -483,24 +483,47 @@ else
 endif
 
 # Domain model validation (modelith).
-# Requires modelith: go install github.com/stacklok/modelith/cmd/modelith@latest
+# Requires modelith built from the gosharplite fork at feat/self-domain-model
+# (a fork of stacklok/modelith — upstream may behave differently):
+#   go install github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model
 # Falls back to 'go run' if the binary is not on PATH.
 ifeq ($(OS),Windows_NT)
     MODELITH := $(shell where modelith 2>NUL)
 else
     MODELITH := $(shell command -v modelith 2>/dev/null)
 endif
-MODELITH_CMD := $(if $(MODELITH),$(MODELITH),go run github.com/stacklok/modelith/cmd/modelith@latest)
-MODELITH_YAML := docs/domain-model/tell-me-go.modelith.yaml
+MODELITH_CMD := $(if $(MODELITH),$(MODELITH),go run github.com/gosharplite/modelith/cmd/modelith@feat/self-domain-model)
+# All canonical models in this repo — lint, render, and the CI drift gate cover
+# every one of them so none can rot silently.
+MODELITH_MODELS := docs/domain-model/tell-me-go.modelith.yaml \
+                   docs/architect/environments/domain-model/environment-management.modelith.yaml \
+                   docs/domain-model/quality.modelith.yaml
+# The model with Go type correspondence — the only one the code<->model
+# alignment gates (drift, layers) apply to. The process/ops models
+# (environment-management, quality) model non-Go concepts and would produce
+# false flags.
+MODELITH_CODE_MODEL := docs/domain-model/tell-me-go.modelith.yaml
 
 modelith-lint:
-	$(MODELITH_CMD) lint $(MODELITH_YAML)
+ifeq ($(IS_POSIX),true)
+	@for m in $(MODELITH_MODELS); do echo "  modelith-lint $$m"; $(MODELITH_CMD) lint $$m || exit 1; done
+else
+	@for %%m in ($(MODELITH_MODELS)) do (echo modelith-lint %%m & $(MODELITH_CMD) lint %%m || exit /b 1)
+endif
 
 modelith-render:
-	$(MODELITH_CMD) render $(MODELITH_YAML)
+ifeq ($(IS_POSIX),true)
+	@for m in $(MODELITH_MODELS); do echo "  modelith-render $$m"; $(MODELITH_CMD) render $$m || exit 1; done
+else
+	@for %%m in ($(MODELITH_MODELS)) do (echo modelith-render %%m & $(MODELITH_CMD) render %%m || exit /b 1)
+endif
 
 modelith-check:
-	$(MODELITH_CMD) render --check $(MODELITH_YAML)
+ifeq ($(IS_POSIX),true)
+	@for m in $(MODELITH_MODELS); do echo "  modelith-check $$m"; $(MODELITH_CMD) render --check $$m || exit 1; done
+else
+	@for %%m in ($(MODELITH_MODELS)) do (echo modelith-check %%m & $(MODELITH_CMD) render --check %%m || exit /b 1)
+endif
 
 # modelith-drift scans the current diff for new exported Go identifiers
 # that look like domain concepts but have no entry in the domain model.
@@ -508,7 +531,7 @@ modelith-check:
 # POSIX-only; skipped on Windows (requires grep/sed/git).
 modelith-drift:
 ifeq ($(IS_POSIX),true)
-	@scripts/modelith-drift.sh $(MODELITH_YAML) origin/main
+	@scripts/modelith-drift.sh $(MODELITH_CODE_MODEL) origin/main
 else
 	@echo "  modelith-drift: skipped (POSIX required — run in WSL or macOS/Linux CI)"
 endif
@@ -520,7 +543,7 @@ endif
 # Advisory only; POSIX-only.
 modelith-layers:
 ifeq ($(IS_POSIX),true)
-	@scripts/modelith-layers.sh $(MODELITH_YAML)
+	@scripts/modelith-layers.sh $(MODELITH_CODE_MODEL)
 else
 	@echo "  modelith-layers: skipped (POSIX required — run in WSL or macOS/Linux CI)"
 endif
