@@ -148,7 +148,9 @@ func (m *AdoManager) executeRunPipeline(ctx context.Context, org, project string
 	}
 
 	// json.Marshal cannot fail on a struct composed entirely of JSON-safe
-	// primitives (string, bool, *bool). See ADR-037.
+	// primitives (string, bool, *bool). Structurally unreachable — see
+	// the `structurally-unreachable` acceptance class in
+	// docs/architect/INTENTIONAL_NON_FIXES.md.
 	body, _ := json.Marshal(payload)
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs?api-version=7.1-preview.1",

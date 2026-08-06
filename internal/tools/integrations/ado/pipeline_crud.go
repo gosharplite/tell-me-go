@@ -194,7 +194,9 @@ func (m *AdoManager) executeCreatePipeline(ctx context.Context, org, project, na
 	}
 
 	// json.Marshal cannot fail on a struct composed entirely of JSON-safe
-	// primitives (string, int, bool, *bool). See ADR-037.
+	// primitives (string, int, bool, *bool). Structurally unreachable — see
+	// the `structurally-unreachable` acceptance class in
+	// docs/architect/INTENTIONAL_NON_FIXES.md.
 	body, _ := json.Marshal(payload)
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1-preview.1",
@@ -271,7 +273,9 @@ func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars m
 
 	// json.Marshal cannot fail on a map[string]interface{} produced by
 	// json.Decode into interface{} plus manual insertion of JSON-safe
-	// primitives (string, bool, *bool). See ADR-037.
+	// primitives (string, bool, *bool). Structurally unreachable — see
+	// the `structurally-unreachable` acceptance class in
+	// docs/architect/INTENTIONAL_NON_FIXES.md.
 	return json.Marshal(existingDef)
 }
 

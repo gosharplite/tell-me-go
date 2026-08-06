@@ -37,7 +37,8 @@ func (m *ConfluenceManager) fetchSpaceByKey(ctx context.Context, spaceKey string
 
 	// http.NewRequestWithContext cannot fail here: u.String() returns the
 	// canonical form of a URL already validated by url.Parse above.
-	// See ADR-037: unreachable error branches are removed, not tested.
+	// Structurally unreachable — see the `structurally-unreachable`
+	// acceptance class in docs/architect/INTENTIONAL_NON_FIXES.md.
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	req.Header.Set("Accept", "application/json")
 
