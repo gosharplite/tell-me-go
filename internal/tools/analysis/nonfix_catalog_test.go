@@ -245,6 +245,14 @@ func TestParseCatalogRef(t *testing.T) {
 			},
 		},
 		{
+			name: "empty comma part skipped",
+			ref:  "file.go:10,,20",
+			want: []fileRange{
+				{File: "file.go", Start: 10, End: 10},
+				{File: "file.go", Start: 20, End: 20},
+			},
+		},
+		{
 			name: "plain path ignored",
 			ref:  "internal/ui/tui/progress/model.go",
 			want: nil,
