@@ -72,37 +72,58 @@ func parseNonFixCatalog(data string) []nonFixEntry {
 
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
+		cur, inSee = processCatalogLine(scanner.Text(), cur, inSee, &pending)
+	}
+	return filterAcceptedEntries(pending)
+}
 
-		if strings.HasPrefix(trimmed, "### ") {
-			pending = append(pending, pendingEntry{
-				entry: nonFixEntry{Title: strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))},
-			})
-			cur = &pending[len(pending)-1]
-			inSee = false
-			continue
-		}
+// processCatalogLine applies one scanned line to the catalog parse state: a
+// `### ` heading opens a new pending entry, a Status bullet records its
+// status, a See bullet (or its indented continuation) collects backticked
+// references, and any other bullet ends the See continuation. It returns the
+// (possibly updated) current entry pointer and See-continuation flag.
+func processCatalogLine(line string, cur *pendingEntry, inSee bool, pending *[]pendingEntry) (*pendingEntry, bool) {
+	trimmed := strings.TrimSpace(line)
 
-		if cur == nil {
-			continue // footer or prose outside a ### heading
-		}
-
-		switch {
-		case strings.HasPrefix(trimmed, "- **Status**:"):
-			cur.status = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "- **Status**:")))
-			inSee = false
-		case strings.HasPrefix(trimmed, "- **See**:"):
-			inSee = true
-			parseSeeRefs(trimmed, cur)
-		case strings.HasPrefix(trimmed, "- "):
-			inSee = false
-		case inSee && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")):
-			// Indented continuation of a See bullet carrying more refs.
-			parseSeeRefs(trimmed, cur)
-		}
+	if strings.HasPrefix(trimmed, "### ") {
+		*pending = append(*pending, pendingEntry{
+			entry: nonFixEntry{Title: strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))},
+		})
+		return &(*pending)[len(*pending)-1], false
 	}
 
+	if cur == nil {
+		return nil, inSee // footer or prose outside a ### heading
+	}
+
+	switch {
+	case strings.HasPrefix(trimmed, "- **Status**:"):
+		cur.status = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "- **Status**:")))
+		return cur, false
+	case strings.HasPrefix(trimmed, "- **See**:"):
+		inSee = true
+		parseSeeRefs(trimmed, cur)
+		return cur, inSee
+	case strings.HasPrefix(trimmed, "- "):
+		return cur, false
+	case inSee && isIndentedLine(line):
+		// Indented continuation of a See bullet carrying more refs.
+		parseSeeRefs(trimmed, cur)
+		return cur, inSee
+	}
+	return cur, inSee
+}
+
+// isIndentedLine reports whether line starts with the whitespace indentation
+// used by See-bullet continuation lines in the catalog.
+func isIndentedLine(line string) bool {
+	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+}
+
+// filterAcceptedEntries keeps only pending entries whose Status bullet began
+// with "accepted" (matched case-insensitively because status is lowered at
+// parse time) and returns them in document order.
+func filterAcceptedEntries(pending []pendingEntry) []nonFixEntry {
 	var accepted []nonFixEntry
 	for _, p := range pending {
 		if strings.HasPrefix(p.status, "accepted") {
@@ -139,26 +160,40 @@ func parseCatalogRef(ref string) []fileRange {
 
 	var ranges []fileRange
 	for _, part := range strings.Split(locSpec, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if dashIdx := strings.Index(part, "-"); dashIdx != -1 {
-			start, err1 := strconv.Atoi(part[:dashIdx])
-			end, err2 := strconv.Atoi(part[dashIdx+1:])
-			if err1 != nil || err2 != nil || start < 1 || end < start {
-				continue
-			}
-			ranges = append(ranges, fileRange{File: file, Start: start, End: end})
-			continue
-		}
-		line, err := strconv.Atoi(part)
-		if err != nil || line < 1 {
-			continue
-		}
-		ranges = append(ranges, fileRange{File: file, Start: line, End: line})
+		ranges = append(ranges, parseRefPart(part, file)...)
 	}
 	return ranges
+}
+
+// parseRefPart parses one comma-separated location part ("162", "142-144")
+// into the fileRange values it denotes. Empty or invalid parts return nil.
+func parseRefPart(part, file string) []fileRange {
+	part = strings.TrimSpace(part)
+	if part == "" {
+		return nil
+	}
+	if dashIdx := strings.Index(part, "-"); dashIdx != -1 {
+		if r, ok := parseRefRange(part, dashIdx, file); ok {
+			return []fileRange{r}
+		}
+		return nil
+	}
+	if line, err := strconv.Atoi(part); err == nil && line >= 1 {
+		return []fileRange{{File: file, Start: line, End: line}}
+	}
+	return nil
+}
+
+// parseRefRange parses a "start-end" location part into a fileRange, reporting
+// ok=false when either bound is not a positive integer or the range is
+// inverted (end < start).
+func parseRefRange(part string, dashIdx int, file string) (fileRange, bool) {
+	start, err1 := strconv.Atoi(part[:dashIdx])
+	end, err2 := strconv.Atoi(part[dashIdx+1:])
+	if err1 != nil || err2 != nil || start < 1 || end < start {
+		return fileRange{}, false
+	}
+	return fileRange{File: file, Start: start, End: end}, true
 }
 
 // catalogTitleFor returns the Title of the first ACCEPTED catalog entry whose
