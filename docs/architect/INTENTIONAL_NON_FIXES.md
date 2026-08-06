@@ -3,6 +3,45 @@
 Items evaluated by the architect and deliberately NOT pursued.
 Any AI agent recommending these should consult the rationale below.
 
+## Acceptance Classes
+
+Every entry carries an acceptance class — the triage classification that
+justifies why the issue is deliberately left unaddressed. These class names
+are also referenced by code comments (e.g. "structurally unreachable — see
+the `structurally-unreachable` acceptance class") and are the authoritative
+definition of each term. Mirrors the `AcceptanceClass` enum in the quality
+domain model (`docs/domain-model/quality.modelith.yaml`).
+
+| Class | Definition |
+| --- | --- |
+| `structurally-unreachable` | The branch cannot fire in correct code — e.g. `json.Marshal` on an all-string struct, or `StdoutPipe` before `Start`. |
+| `delegation-wrapper` | A thin pass-through that would only re-test the underlying implementation — e.g. `domainFS.Chmod`, `AppendTask`, `RealClock`. |
+| `platform-specific` | A branch only executable on a specific OS — e.g. Windows path separators, Darwin kernel observation. |
+| `fault-injection-required` | Triggering the branch requires filesystem or driver fault injection disproportionate to the test value. |
+| `defensive-guard` | A nil or empty guard on internal pipeline state that callers never produce. |
+| `interface-stub` | A no-op method that exists solely to satisfy an interface contract — e.g. `auth.Invalidate`, `NoOpEventBus`. |
+| `test-complexity` | Sequential state-mutation or dispatch-heavy test where splitting would duplicate expensive setup. |
+| `dispatch-structural` | Cyclomatic complexity from type-switch or branch count, not branching business logic — e.g. `handleDomainEvent` (CC=12). |
+| `soft-enforcement` | An invariant deliberately enforced as a warning rather than a hard failure — e.g. `skill-unique-name`. |
+
+## Drift Policy
+
+Catalog entries pin code locations with `file:line` or `file:start-end`
+references. These references are verified at record time but can drift as
+code above them is edited. The analysis tooling matches cataloged gaps by
+*interval overlap* and accepts *bare-basename* references; both are
+deliberate trade-offs for a curated catalog, but a shifted range can quietly
+catalog a new gap no one reviewed. Policy:
+
+- **Re-verify on every PR** that touches a file referenced by the catalog:
+  confirm each entry's ranges still point at the intended symbol, and update
+  the entry (or record a new one) when they do not.
+- **Never rely on overlap-matching as review** — it is an advisory aid, not a
+  substitute for re-anchoring the reference.
+- **CC values in complexity entries are re-measured** whenever the referenced
+  function changes; drift is recorded in the entry's rationale (see the
+  2026-08 CC drift corrections for the pattern).
+
 ---
 
 ## Coverage Gaps (ACCEPTED)
