@@ -29,6 +29,10 @@ type uncoveredBlock struct {
 	Code     string `json:"code,omitempty"`
 	Category string `json:"category"`
 	Priority string `json:"priority"`
+	// CatalogTitle names the ACCEPTED entry in the Intentional Non-Fixes
+	// catalog whose references cover this block's range, when one exists.
+	// A non-empty value marks the gap as deliberately accepted (not actionable).
+	CatalogTitle string `json:"catalog_title,omitempty"`
 }
 
 // classificationRule defines a rule for categorizing uncovered code blocks.
@@ -451,6 +455,17 @@ func filterExcludedBlocks(blocks []uncoveredBlock, excluded []string) []uncovere
 	return filtered
 }
 
+// applyCatalogTitles cross-references uncovered blocks against the given
+// Intentional Non-Fixes catalog entries, tagging each block whose range falls
+// inside an ACCEPTED entry with that entry's title. Cataloged blocks keep
+// their original Category/Priority (set by Classify); reporting layers decide
+// how to surface them. A nil or empty entry slice is a no-op.
+func applyCatalogTitles(blocks []uncoveredBlock, entries []nonFixEntry) {
+	for i := range blocks {
+		blocks[i].CatalogTitle = catalogTitleForRange(entries, blocks[i].File, blocks[i].Start, blocks[i].End)
+	}
+}
+
 // getDetailedCoverageReport generates a formatted report optimized for LLM consumption.
 func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePath string, excludedPackages []string, hb chan<- struct{}) (string, error) {
 	blocks, err := m.getDetailedCoverage(ctx, packagePath, hb)
@@ -461,6 +476,11 @@ func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePa
 	if len(excludedPackages) > 0 {
 		blocks = filterExcludedBlocks(blocks, excludedPackages)
 	}
+
+	// Load the catalog once and tag ACCEPTED gaps after Classify() so
+	// Priority/Category for uncataloged blocks remain exactly as before.
+	entries, _ := loadNonFixCatalog(defaultNonFixCatalogPath)
+	applyCatalogTitles(blocks, entries)
 
 	report := formatDetailedCoverageReport(packagePath, blocks)
 	if err != nil {
@@ -475,10 +495,10 @@ func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePa
 }
 
 func formatDetailedCoverageReport(packagePath string, blocks []uncoveredBlock) string {
-	high, medium, lowCount, catStats := aggregateCoverageStats(blocks)
+	high, medium, lowCount, cataloged, catStats := aggregateCoverageStats(blocks)
 
 	var sb strings.Builder
-	renderReportSummary(&sb, packagePath, len(blocks), high, medium, lowCount, catStats)
+	renderReportSummary(&sb, packagePath, len(blocks), high, medium, lowCount, len(cataloged), catStats)
 
 	const maxItems = 10
 	renderBlockGaps(&sb, "HIGH PRIORITY GAPS", high, maxItems)
@@ -488,13 +508,21 @@ func formatDetailedCoverageReport(packagePath string, blocks []uncoveredBlock) s
 		renderBlockGaps(&sb, "MEDIUM PRIORITY GAPS", medium, remainingSlots)
 	}
 
+	renderCatalogedGaps(&sb, cataloged, maxItems)
+
 	return sb.String()
 }
 
-func aggregateCoverageStats(blocks []uncoveredBlock) (high []uncoveredBlock, medium []uncoveredBlock, lowCount int, catStats map[string]int) {
+func aggregateCoverageStats(blocks []uncoveredBlock) (high []uncoveredBlock, medium []uncoveredBlock, lowCount int, cataloged []uncoveredBlock, catStats map[string]int) {
 	catStats = make(map[string]int)
 	for _, b := range blocks {
 		catStats[b.Category]++
+		// Blocks covered by an ACCEPTED catalog entry are already-accepted
+		// gaps: they are excluded from the actionable priority buckets.
+		if b.CatalogTitle != "" {
+			cataloged = append(cataloged, b)
+			continue
+		}
 		switch b.Priority {
 		case "High":
 			high = append(high, b)
@@ -507,7 +535,7 @@ func aggregateCoverageStats(blocks []uncoveredBlock) (high []uncoveredBlock, med
 	return
 }
 
-func renderReportSummary(sb *strings.Builder, packagePath string, total int, high, medium []uncoveredBlock, lowCount int, catStats map[string]int) {
+func renderReportSummary(sb *strings.Builder, packagePath string, total int, high, medium []uncoveredBlock, lowCount, catalogedCount int, catStats map[string]int) {
 	_, _ = fmt.Fprintf(sb, "Detailed Coverage Report for %s\n", packagePath)
 	sb.WriteString(strings.Repeat("-", len(packagePath)+29) + "\n")
 	sb.WriteString("Summary:\n")
@@ -515,6 +543,7 @@ func renderReportSummary(sb *strings.Builder, packagePath string, total int, hig
 	_, _ = fmt.Fprintf(sb, "- High Priority (Architectural): %d\n", len(high))
 	_, _ = fmt.Fprintf(sb, "- Medium Priority (Technical Debt): %d\n", len(medium))
 	_, _ = fmt.Fprintf(sb, "- Low Priority: %d\n", lowCount)
+	_, _ = fmt.Fprintf(sb, "- Cataloged (ACCEPTED): %d\n", catalogedCount)
 	sb.WriteString("\nBreakdown by Category:\n")
 
 	var cats []string
@@ -547,12 +576,37 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 	}
 }
 
+// renderCatalogedGaps lists blocks whose ranges fall inside an ACCEPTED entry
+// of the Intentional Non-Fixes catalog, so readers can verify the acceptance
+// rationale before treating them as actionable gaps.
+func renderCatalogedGaps(sb *strings.Builder, blocks []uncoveredBlock, maxItems int) {
+	if len(blocks) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(sb, "\n[CATALOGED GAPS (ACCEPTED)]\n")
+
+	for i, b := range blocks {
+		if i >= maxItems {
+			_, _ = fmt.Fprintf(sb, "... and %d more cataloged (ACCEPTED) gaps.\n", len(blocks)-maxItems)
+			break
+		}
+		_, _ = fmt.Fprintf(sb, "%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End)
+		_, _ = fmt.Fprintf(sb, "   Category: %s\n", b.Category)
+		_, _ = fmt.Fprintf(sb, "   Catalog: %s\n", b.CatalogTitle)
+	}
+}
+
 // getDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
 func (m *healthManager) getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, hb chan<- struct{}) (string, error) {
 	blocks, err := m.getDetailedCoverage(ctx, packagePath, hb)
 	if err != nil && len(blocks) == 0 {
 		return "", err
 	}
+
+	// Tag ACCEPTED catalog gaps (additive). The catalog_title field is exposed
+	// to JSON callers; no filtering change here — callers may filter.
+	entries, _ := loadNonFixCatalog(defaultNonFixCatalogPath)
+	applyCatalogTitles(blocks, entries)
 
 	jsonStr, jsonErr := formatDetailedCoverageJSON(blocks, minPriority)
 	if jsonErr != nil {

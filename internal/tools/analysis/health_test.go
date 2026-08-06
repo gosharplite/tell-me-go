@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -479,6 +480,91 @@ func TestCheckComplexity_AllPaths(t *testing.T) {
 			}
 			_ = alerts
 		})
+	}
+}
+
+// TestCheckComplexity_CatalogedExcluded verifies that over-threshold functions
+// covered by an ACCEPTED catalog entry are excluded from the alert count and
+// reported as a separate cataloged note. NOT parallel: it temporarily points
+// defaultNonFixCatalogPath at a fixture.
+func TestCheckComplexity_CatalogedExcluded(t *testing.T) {
+	origDefault := defaultNonFixCatalogPath
+	t.Cleanup(func() { defaultNonFixCatalogPath = origDefault })
+
+	catalog := "### agent/orchestrator/engine_phases.go — (*RecoveryStep).Process (CC=12)\n\n" +
+		"- **Status**: ACCEPTED (2026-07)\n" +
+		"- **See**: `internal/agent/orchestrator/engine_phases.go:105`\n"
+	path := filepath.Join(t.TempDir(), "INTENTIONAL_NON_FIXES.md")
+	if err := os.WriteFile(path, []byte(catalog), 0644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	defaultNonFixCatalogPath = path
+
+	m := &healthManager{complexity: &stubComplexityAnalyzer{
+		complexities: []funcComplexity{
+			{Name: "(*RecoveryStep).Process", Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go", Line: 105},
+			{Name: "HotMess", Complexity: 15, FilePath: "internal/agent/other.go", Line: 3},
+			{Name: "Simple", Complexity: 1},
+		},
+	}}
+
+	status, details, alerts := m.checkComplexity(context.Background(), nil)
+
+	if status != "1 Alerts" {
+		t.Errorf("status = %q, want %q (cataloged excluded)", status, "1 Alerts")
+	}
+	if !strings.Contains(details, "1 functions > threshold (10)") {
+		t.Errorf("details = %q, want uncataloged count 1", details)
+	}
+	if !strings.Contains(details, "1 cataloged (ACCEPTED) over threshold excluded") {
+		t.Errorf("details = %q, want cataloged exclusion note", details)
+	}
+	if len(alerts) != 2 {
+		t.Fatalf("alerts = %v, want 2 entries (1 alert + 1 cataloged note)", alerts)
+	}
+	if alerts[0] != "`HotMess` (15)" {
+		t.Errorf("alerts[0] = %q, want %q", alerts[0], "`HotMess` (15)")
+	}
+	if !strings.Contains(alerts[1], "1 cataloged (ACCEPTED) functions over threshold excluded:") {
+		t.Errorf("alerts[1] = %q, want cataloged note prefix", alerts[1])
+	}
+	if !strings.Contains(alerts[1], "(*RecoveryStep).Process") {
+		t.Errorf("alerts[1] = %q, want cataloged function name", alerts[1])
+	}
+}
+
+// TestCheckComplexity_AllCataloged verifies the all-cataloged edge case: no
+// actionable alerts, only the cataloged note. NOT parallel: it temporarily
+// points defaultNonFixCatalogPath at a fixture.
+func TestCheckComplexity_AllCataloged(t *testing.T) {
+	origDefault := defaultNonFixCatalogPath
+	t.Cleanup(func() { defaultNonFixCatalogPath = origDefault })
+
+	catalog := "### ui/tui/progress/model.go — handleDomainEvent (CC=12)\n\n" +
+		"- **Status**: ACCEPTED (2026-07)\n" +
+		"- **See**: `internal/ui/tui/progress/model.go:250`\n"
+	path := filepath.Join(t.TempDir(), "INTENTIONAL_NON_FIXES.md")
+	if err := os.WriteFile(path, []byte(catalog), 0644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	defaultNonFixCatalogPath = path
+
+	m := &healthManager{complexity: &stubComplexityAnalyzer{
+		complexities: []funcComplexity{
+			{Name: "(*model).Update", Complexity: 14, FilePath: "internal/ui/tui/progress/model.go", Line: 250},
+		},
+	}}
+
+	status, details, alerts := m.checkComplexity(context.Background(), nil)
+
+	if status != "0 Alerts" {
+		t.Errorf("status = %q, want %q", status, "0 Alerts")
+	}
+	if !strings.Contains(details, "0 functions > threshold (10)") {
+		t.Errorf("details = %q, want uncataloged count 0", details)
+	}
+	if len(alerts) != 1 || !strings.Contains(alerts[0], "1 cataloged (ACCEPTED) functions over threshold excluded:") {
+		t.Errorf("alerts = %v, want single cataloged note", alerts)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -230,6 +231,22 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 	return fmt.Sprintf("%d Issues", count), fmt.Sprintf("Using %s", tool)
 }
 
+// resolveRepoRoot returns the repository root used to normalize file paths
+// against the Intentional Non-Fixes catalog. It prefers the module directory
+// reported by the Go runner and falls back to the process working directory;
+// an empty result means normalization can only rely on relative paths.
+func (m *healthManager) resolveRepoRoot(ctx context.Context) string {
+	if m != nil && m.Runner != nil {
+		if dir, err := m.Runner.GetModuleDir(ctx); err == nil && dir != "" {
+			return dir
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return ""
+}
+
 func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
 	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
 	complexities, _, err := m.complexity.GatherComplexities(ctx, ".", hb)
@@ -237,23 +254,50 @@ func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{})
 		return "ERROR", err.Error(), nil
 	}
 
+	// Cross-reference over-threshold functions against the Intentional
+	// Non-Fixes catalog: ACCEPTED complexity entries are reported separately
+	// and do not count as actionable alerts.
+	entries, _ := loadNonFixCatalog(defaultNonFixCatalogPath)
+	repoRoot := m.resolveRepoRoot(ctx)
+
 	threshold := 10
 	var alerts []string
+	var catalogedNames []string
 	highCount := 0
+	catalogedCount := 0
 	for _, c := range complexities {
-		if c.Complexity > threshold {
-			highCount++
-			if len(alerts) < 5 {
-				alerts = append(alerts, fmt.Sprintf("`%s` (%d)", c.Name, c.Complexity))
+		if c.Complexity <= threshold {
+			continue
+		}
+		// funcComplexity.FilePath comes from fs.Walk and may be absolute or
+		// relative; normalize to the repo-relative "internal/..." form used
+		// by the catalog. Unmatched (or unnormalizable) functions stay alerts.
+		normalized := normalizeCatalogFilePath(c.FilePath, repoRoot)
+		if catalogTitleFor(entries, normalized, c.Line) != "" {
+			catalogedCount++
+			if len(catalogedNames) < 5 {
+				catalogedNames = append(catalogedNames, fmt.Sprintf("`%s` (%d)", c.Name, c.Complexity))
 			}
+			continue
+		}
+		highCount++
+		if len(alerts) < 5 {
+			alerts = append(alerts, fmt.Sprintf("`%s` (%d)", c.Name, c.Complexity))
 		}
 	}
 
-	if highCount == 0 {
+	if highCount == 0 && catalogedCount == 0 {
 		return "GOOD", "All functions under threshold", nil
 	}
 
-	return fmt.Sprintf("%d Alerts", highCount), fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold), alerts
+	details := fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold)
+	if catalogedCount > 0 {
+		details += fmt.Sprintf("; %d cataloged (ACCEPTED) over threshold excluded", catalogedCount)
+		alerts = append(alerts, fmt.Sprintf("%d cataloged (ACCEPTED) functions over threshold excluded: %s",
+			catalogedCount, strings.Join(catalogedNames, ", ")))
+	}
+
+	return fmt.Sprintf("%d Alerts", highCount), details, alerts
 }
 
 func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (string, string) {
