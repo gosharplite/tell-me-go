@@ -88,12 +88,13 @@ func TestMediaTools_CreateImage(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	tests := []struct {
-		name       string
-		args       map[string]interface{}
-		client     *mockLLMClient
-		assetsDir  string
-		wantImages int
-		wantErr    bool
+		name        string
+		args        map[string]interface{}
+		client      *mockLLMClient
+		assetsDir   string
+		wantImages  int
+		wantErr     bool
+		errSentinel error
 	}{
 		{
 			name: "successful generation with default model",
@@ -139,6 +140,17 @@ func TestMediaTools_CreateImage(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "generate images ErrNotImplemented",
+			args: map[string]interface{}{"prompt": "fail"},
+			client: &mockLLMClient{
+				generateImagesFunc: func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+					return nil, llm.ErrNotImplemented
+				},
+			},
+			wantErr:     true,
+			errSentinel: tools.ErrNotImplemented,
+		},
+		{
 			name:      "save to disk success",
 			args:      map[string]interface{}{"prompt": "save"},
 			assetsDir: tmpDir,
@@ -163,6 +175,9 @@ func TestMediaTools_CreateImage(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("createImage() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+			if tt.errSentinel != nil && !errors.Is(err, tt.errSentinel) {
+				t.Errorf("expected error %v, got %v", tt.errSentinel, err)
 			}
 
 			if !tt.wantErr {
@@ -496,6 +511,13 @@ func (m *atomicWriteFailFS) MkdirAll(ctx context.Context, path string, perm os.F
 
 func (m *atomicWriteFailFS) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
 	return errors.New("write failed")
+}
+
+// readFailFS overrides ReadFile to simulate a filesystem read failure.
+type readFailFS struct{ *mockFileSystem }
+
+func (m *readFailFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	return nil, errors.New("read failed")
 }
 
 func TestMediaTools_ErrorPaths(t *testing.T) {
@@ -887,6 +909,118 @@ func TestReadDocument_NotImplemented(t *testing.T) {
 	}
 }
 
+func TestReadDocument_ErrorPaths(t *testing.T) {
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	docPath := filepath.Join(tmpDir, "test.pdf")
+	if err := os.WriteFile(docPath, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		setup       func() *mediaManager
+		action      func(m *mediaManager) error
+		errText     string
+		errSentinel error
+	}{
+		{
+			name: "nil LLM client returns ErrNotImplemented",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, newMediaMockSecurityManager(), nil, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readDocument(ctx, map[string]interface{}{"filepath": docPath}, nil)
+				return err
+			},
+			errSentinel: tools.ErrNotImplemented,
+		},
+		{
+			name: "unmarshal args failure",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, newMediaMockSecurityManager(), &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readDocument(ctx, map[string]interface{}{"filepath": 123}, nil)
+				return err
+			},
+			errText: "unmarshal args",
+		},
+		{
+			name: "nil security manager",
+			setup: func() *mediaManager {
+				return newMediaManager(&mockFileSystem{}, nil, &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readDocument(ctx, map[string]interface{}{"filepath": docPath}, nil)
+				return err
+			},
+			errText: "path validator is required",
+		},
+		{
+			name: "security validation failure",
+			setup: func() *mediaManager {
+				sm := newMediaMockSecurityManager()
+				sm.isPathSafeFunc = func(path string) (string, error) {
+					return "", errors.New("unsafe path")
+				}
+				return newMediaManager(&mockFileSystem{}, sm, &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readDocument(ctx, map[string]interface{}{"filepath": docPath}, nil)
+				return err
+			},
+			errText: "security validation failed",
+		},
+		{
+			name: "read file failure",
+			setup: func() *mediaManager {
+				return newMediaManager(&readFailFS{&mockFileSystem{}}, newMediaMockSecurityManager(), &mockLLMClient{}, "")
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readDocument(ctx, map[string]interface{}{"filepath": docPath}, nil)
+				return err
+			},
+			errText: "read file",
+		},
+		{
+			name: "extract document generic failure",
+			setup: func() *mediaManager {
+				client := &failingDocumentClient{err: errors.New("extraction boom")}
+				return newMediaManager(&mockFileSystem{}, newMediaMockSecurityManager(), client, "",
+					withMediaHeartbeatInterval(10*time.Millisecond))
+			},
+			action: func(m *mediaManager) error {
+				_, err := m.readDocument(ctx, map[string]interface{}{"filepath": docPath}, nil)
+				return err
+			},
+			errText: "extract document",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := tt.setup()
+			err := tt.action(m)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if tt.errSentinel != nil && !errors.Is(err, tt.errSentinel) {
+				t.Errorf("expected error %v, got %v", tt.errSentinel, err)
+			}
+			if tt.errText != "" && !strings.Contains(err.Error(), tt.errText) {
+				t.Errorf("expected error to contain %q, got %q", tt.errText, err.Error())
+			}
+		})
+	}
+}
+
 // documentExtractorClient implements llm.LLMClient with a stub ExtractDocument.
 type documentExtractorClient struct {
 	text string
@@ -916,3 +1050,20 @@ func (c *notImplementedDocumentClient) GenerateImages(ctx context.Context, model
 	return nil, fmt.Errorf("not implemented")
 }
 func (c *notImplementedDocumentClient) RefreshAuth() error { return nil }
+
+// failingDocumentClient implements llm.LLMClient with an ExtractDocument that
+// always returns a generic (non-ErrNotImplemented) error.
+type failingDocumentClient struct {
+	err error
+}
+
+func (c *failingDocumentClient) ExtractDocument(ctx context.Context, data []byte, filename string) (string, error) {
+	return "", c.err
+}
+func (c *failingDocumentClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return nil, nil, fmt.Errorf("not implemented")
+}
+func (c *failingDocumentClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (c *failingDocumentClient) RefreshAuth() error { return nil }

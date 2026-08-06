@@ -376,7 +376,7 @@ Niffler provides:
 - **Group‑based templates** (`ait-base/<group>/`) — each group is a self-contained category with its own configs, secrets, personas, and optional skills/docs
 - **Provider‑agnostic environments** (`ait‑<tag>` directories) — the provider is chosen at source time, not baked into the directory name, enabling mid-session hot‑swap
 - **Dynamic persona discovery** — shell aliases are derived from the first letter of each persona YAML file in the group's `configs/`; add a file, get a function. No script changes needed
-- **Per‑group skills** — the `docs/skills/` directory is optional per group (e.g., `engineers/` gets `golang-patterns` and `golang-testing`; `actors/` gets none)
+- **Per‑group skills** — the `docs/skills/` directory is optional per group (both current groups ship `tmg-chat-ingroup`; the earlier Toby/Dobby templates additionally carry `golang-patterns`, `golang-testing`, `k8s-operations`)
 - **Template‑based provisioning** (`-n` flag) — auto‑generates full role configs by merging persona stubs (MODE + PERSON) with `butler.yaml`
 - **Priority mode** (`-p` flag) for Vertex AI shared/priority headers
 - **Clean mode** (`-c` flag) for lean, docs‑free environments

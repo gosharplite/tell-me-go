@@ -735,8 +735,7 @@ ait-base/
 │   │   ├── reviewer.yaml
 │   │   └── tester.yaml
 │   ├── docs/skills/                 ← Group-specific skill injection
-│   │   ├── golang-patterns/
-│   │   └── golang-testing/
+│   │   └── tmg-chat-ingroup/
 │   └── secrets/
 │       ├── key.json
 │       └── keys
@@ -759,7 +758,7 @@ ait-<tag>/                           ← Provisioned tag (group NOT in path)
 | **Group-based templates** | `ait-base/<group>/` — each group is a self-contained template with its own configs, secrets, and optional docs/skills |
 | **Group only at creation** | The group is specified with `-n` and never again. Switching providers or tags does not involve or change the group |
 | **Per-group persona discovery** | Personas are discovered from `<group>/configs/*.yaml` (excluding `butler.yaml` and `butler-priority.yaml`), same as Flopsy's variation discovery but scoped to the group |
-| **Per-group skills** | The `docs/skills/` directory is optional per group — `engineers/` includes `golang-patterns` and `golang-testing`; `actors/` has none |
+| **Per-group skills** | The `docs/skills/` directory is optional per group — both current Niffler groups ship `tmg-chat-ingroup`; the earlier Toby/Dobby templates additionally carry `golang-patterns`, `golang-testing`, `k8s-operations` |
 | **Per-group secrets** | Each group template carries its own `secrets/` directory, copied at provisioning time |
 | **Config generation** | On `-n`, each persona stub (`MODE` + `PERSON` only) is merged with `butler.yaml` (or `butler-priority.yaml` with `-p`) into a full `<persona>.yaml` config with all providers, pricing, and tools |
 | **Priority mode** (`-p`) | Uses `butler-priority.yaml` as the merge source, with Vertex AI shared/priority headers |
@@ -806,7 +805,7 @@ r "Review..."# Reviewer — code review against idioms/security
 t "Test..."  # Tester — QA, coverage verification
 ```
 
-Prompt: `[tmg|vertex-flash]`. `golang-patterns` and `golang-testing` skills auto-inject into the context.
+Prompt: `[tmg|vertex-flash]`. The `tmg-chat-ingroup` skill auto-injects into the context.
 
 **Group: `actors`** — Creative persona studio:
 ```bash

@@ -7,9 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -26,6 +29,17 @@ type healthManager struct {
 	complexity complexityAnalyzer
 	deadCode   deadCodeAnalyzer
 	clk        clock.Clock
+
+	// catalogPath is the location of the Intentional Non-Fixes catalog read
+	// during health checks. Injected at construction (production wiring uses
+	// the package default); tests inject a fixture path. The zero value
+	// behaves like a missing catalog.
+	catalogPath string
+
+	// repoRoot caches the repository root resolved by resolveRepoRoot so the
+	// go list subprocess runs at most once per healthManager lifetime.
+	repoRoot     string
+	repoRootOnce sync.Once
 }
 
 type healthResult struct {
@@ -36,6 +50,10 @@ type healthResult struct {
 type healthSummary struct {
 	Results map[string]healthResult
 	Alerts  []string
+	// CatalogedNote carries the Intentional Non-Fixes (ACCEPTED) exclusion
+	// note for over-threshold complexity functions, separate from the
+	// actionable alerts so the dashboard can render it under its own header.
+	CatalogedNote string
 }
 
 func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -51,7 +69,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	go m.startHeartbeat(done, hb)
 
 	summary := m.runParallelChecks(ctx, hb)
-	table := m.formatHealthTable(summary.Results, summary.Alerts)
+	table := m.formatHealthTable(summary.Results, summary.Alerts, summary.CatalogedNote)
 
 	recommendation := m.generateRecommendation(
 		summary.Results["Tests"].Status,
@@ -99,6 +117,7 @@ func (m *healthManager) runParallelChecks(ctx context.Context, hb chan<- struct{
 		compStatus, compDetails                                  string
 		deadStatus, deadDetails                                  string
 		alerts                                                   []string
+		catalogedNote                                            string
 	)
 
 	g, gCtx := errgroup.WithContext(ctx)
@@ -117,7 +136,7 @@ func (m *healthManager) runParallelChecks(ctx context.Context, hb chan<- struct{
 
 	// 4. Complexity
 	g.Go(func() error {
-		compStatus, compDetails, alerts = m.checkComplexity(gCtx, hb)
+		compStatus, compDetails, alerts, catalogedNote = m.checkComplexity(gCtx, hb)
 		return nil
 	})
 
@@ -137,11 +156,18 @@ func (m *healthManager) runParallelChecks(ctx context.Context, hb chan<- struct{
 			"Complexity": {Status: compStatus, Details: compDetails},
 			"Dead Code":  {Status: deadStatus, Details: deadDetails},
 		},
-		Alerts: alerts,
+		Alerts:        alerts,
+		CatalogedNote: catalogedNote,
 	}
 }
 
-func (m *healthManager) formatHealthTable(results map[string]healthResult, alerts []string) string {
+// formatHealthTable renders the dashboard table plus the complexity sections.
+// alerts holds only actionable over-threshold bullets (the cataloged note is
+// passed separately), so a non-empty alerts slice always means there is at
+// least one real alert and the "Complexity Alerts" header is honest. When only
+// the cataloged note exists (every over-threshold function ACCEPTED), the
+// "Complexity Alerts" header must NOT appear; the note gets its own section.
+func (m *healthManager) formatHealthTable(results map[string]healthResult, alerts []string, catalogedNote string) string {
 	var sb strings.Builder
 	sb.WriteString("### Project Health Dashboard\n")
 	sb.WriteString("| Metric | Status | Details |\n")
@@ -158,6 +184,10 @@ func (m *healthManager) formatHealthTable(results map[string]healthResult, alert
 		for _, alert := range alerts {
 			_, _ = fmt.Fprintf(&sb, "- %s\n", alert)
 		}
+	}
+	if catalogedNote != "" {
+		sb.WriteString("\n**Cataloged (ACCEPTED) over threshold:**\n")
+		_, _ = fmt.Fprintf(&sb, "- %s\n", catalogedNote)
 	}
 	return sb.String()
 }
@@ -230,30 +260,110 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 	return fmt.Sprintf("%d Issues", count), fmt.Sprintf("Using %s", tool)
 }
 
-func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
+// resolveRepoRoot returns the repository root used to normalize file paths
+// against the Intentional Non-Fixes catalog. It prefers the module directory
+// reported by the Go runner and falls back to the process working directory;
+// an empty result means normalization can only rely on relative paths. The
+// result is computed once per healthManager (the first call still runs the go
+// list subprocess) and cached for subsequent calls; a nil Runner fallback
+// (os.Getwd) is cached too, since the process working directory does not
+// change mid-run.
+func (m *healthManager) resolveRepoRoot(ctx context.Context) string {
+	m.repoRootOnce.Do(func() {
+		if m.Runner != nil {
+			if dir, err := m.Runner.GetModuleDir(ctx); err == nil && dir != "" {
+				m.repoRoot = dir
+				return
+			}
+		}
+		if wd, err := os.Getwd(); err == nil {
+			m.repoRoot = wd
+		}
+	})
+	return m.repoRoot
+}
+
+// loadNonFixEntries loads the Intentional Non-Fixes catalog, logging a
+// warning on I/O failure and degrading gracefully to an empty catalog
+// (all gaps treated as actionable).
+func (m *healthManager) loadNonFixEntries() []nonFixEntry {
+	entries, catErr := loadNonFixCatalog(m.catalogPath)
+	if catErr != nil {
+		slog.Warn("failed to load non-fix catalog; treating all gaps as actionable", "path", m.catalogPath, "error", catErr)
+	}
+	return entries
+}
+
+// bucketComplexityAlerts partitions over-threshold functions into actionable
+// alerts and cataloged (ACCEPTED) names, preserving document order. It keeps
+// the historical caps of 5 collected alert strings and 5 collected cataloged
+// names; the returned counts are always exact.
+func bucketComplexityAlerts(complexities []funcComplexity, entries []nonFixEntry, repoRoot string, threshold int) (alerts []string, catalogedNames []string, highCount, catalogedCount int) {
+	for _, c := range complexities {
+		if c.Complexity <= threshold {
+			continue
+		}
+		// funcComplexity.FilePath comes from fs.Walk and may be absolute or
+		// relative; normalize to the repo-relative "internal/..." form used
+		// by the catalog. Unmatched (or unnormalizable) functions stay alerts.
+		normalized := normalizeCatalogFilePath(c.FilePath, repoRoot)
+		if catalogTitleFor(entries, normalized, c.Line) != "" {
+			catalogedCount++
+			if len(catalogedNames) < 5 {
+				catalogedNames = append(catalogedNames, fmt.Sprintf("`%s` (%d)", c.Name, c.Complexity))
+			}
+			continue
+		}
+		highCount++
+		if len(alerts) < 5 {
+			alerts = append(alerts, fmt.Sprintf("`%s` (%d)", c.Name, c.Complexity))
+		}
+	}
+	return
+}
+
+// checkComplexity reports complexity health as (status, details, alerts,
+// catalogedNote). "GOOD" means nothing actionable: either every function is
+// under the threshold, or every over-threshold function is cataloged (ACCEPTED)
+// — the cataloged note is carried in details and returned separately so the
+// dashboard can render it under its own header. alerts contains only
+// actionable bullets; catalogedNote is the single exclusion-note bullet.
+func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string, string) {
 	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
 	complexities, _, err := m.complexity.GatherComplexities(ctx, ".", hb)
 	if err != nil {
-		return "ERROR", err.Error(), nil
+		return "ERROR", err.Error(), nil, ""
 	}
 
+	// Cross-reference over-threshold functions against the Intentional
+	// Non-Fixes catalog: ACCEPTED complexity entries are reported separately
+	// and do not count as actionable alerts. A load failure degrades
+	// gracefully: every gap is treated as actionable.
+	entries := m.loadNonFixEntries()
+	repoRoot := m.resolveRepoRoot(ctx)
+
 	threshold := 10
-	var alerts []string
-	highCount := 0
-	for _, c := range complexities {
-		if c.Complexity > threshold {
-			highCount++
-			if len(alerts) < 5 {
-				alerts = append(alerts, fmt.Sprintf("`%s` (%d)", c.Name, c.Complexity))
-			}
-		}
+	alerts, catalogedNames, highCount, catalogedCount := bucketComplexityAlerts(complexities, entries, repoRoot, threshold)
+
+	if highCount == 0 && catalogedCount == 0 {
+		return "GOOD", "All functions under threshold", nil, ""
+	}
+
+	details := fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold)
+	catalogedNote := ""
+	if catalogedCount > 0 {
+		details += fmt.Sprintf("; %d cataloged (ACCEPTED) over threshold excluded", catalogedCount)
+		catalogedNote = fmt.Sprintf("%d cataloged (ACCEPTED) functions over threshold excluded: %s",
+			catalogedCount, strings.Join(catalogedNames, ", "))
 	}
 
 	if highCount == 0 {
-		return "GOOD", "All functions under threshold", nil
+		// Only cataloged (ACCEPTED) over-threshold functions: nothing
+		// actionable. "GOOD" must not become "0 Alerts", which would trip
+		// recommendComplexity's strings.Contains(comp, "Alerts") check.
+		return "GOOD", details, alerts, catalogedNote
 	}
-
-	return fmt.Sprintf("%d Alerts", highCount), fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold), alerts
+	return fmt.Sprintf("%d Alerts", highCount), details, alerts, catalogedNote
 }
 
 func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (string, string) {

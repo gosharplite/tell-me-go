@@ -94,12 +94,13 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 	}
 
 	m.health = &healthManager{
-		SP:         sp,
-		complexity: m.complexity,
-		deadCode:   m.deadCode,
-		Exec:       executor,
-		Runner:     runner,
-		clk:        clock.RealClock{},
+		SP:          sp,
+		complexity:  m.complexity,
+		deadCode:    m.deadCode,
+		Exec:        executor,
+		Runner:      runner,
+		clk:         clock.RealClock{},
+		catalogPath: defaultNonFixCatalogPath,
 	}
 
 	return m

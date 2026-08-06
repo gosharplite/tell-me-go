@@ -322,8 +322,9 @@ func TestRenderReportSummary(t *testing.T) {
 	high := make([]uncoveredBlock, 3)
 	medium := make([]uncoveredBlock, 4)
 	lowCount := 1
+	catalogedCount := 2
 
-	renderReportSummary(&sb, "./pkg", 8, high, medium, lowCount, catStats)
+	renderReportSummary(&sb, "./pkg", 8, high, medium, lowCount, catalogedCount, catStats)
 
 	got := sb.String()
 	expected := []string{
@@ -332,6 +333,7 @@ func TestRenderReportSummary(t *testing.T) {
 		"- High Priority (Architectural): 3",
 		"- Medium Priority (Technical Debt): 4",
 		"- Low Priority: 1",
+		"- Cataloged (ACCEPTED): 2",
 		"- ADAPTER: 2",
 		"- BUSINESS_LOGIC: 5",
 	}
@@ -350,18 +352,23 @@ func TestAggregateCoverageStats(t *testing.T) {
 		{Priority: "High", Category: "BUSINESS_LOGIC"},
 		{Priority: "Medium", Category: "BUSINESS_LOGIC"},
 		{Priority: "Low", Category: "OTHER"},
+		{Priority: "High", Category: "ERROR_HANDLING", CatalogTitle: "accepted entry"},
+		{Priority: "Medium", Category: "ADAPTER", CatalogTitle: "accepted entry"},
 	}
 
-	high, medium, lowCount, catStats := aggregateCoverageStats(blocks)
+	high, medium, lowCount, cataloged, catStats := aggregateCoverageStats(blocks)
 
 	if len(high) != 2 {
-		t.Errorf("expected 2 high priority blocks, got %d", len(high))
+		t.Errorf("expected 2 high priority blocks (cataloged excluded), got %d", len(high))
 	}
 	if len(medium) != 1 {
-		t.Errorf("expected 1 medium priority blocks, got %d", len(medium))
+		t.Errorf("expected 1 medium priority block (cataloged excluded), got %d", len(medium))
 	}
 	if lowCount != 1 {
 		t.Errorf("expected 1 low priority block, got %d", lowCount)
+	}
+	if len(cataloged) != 2 {
+		t.Errorf("expected 2 cataloged blocks, got %d", len(cataloged))
 	}
 	if catStats["BUSINESS_LOGIC"] != 2 {
 		t.Errorf("expected 2 BUSINESS_LOGIC blocks, got %d", catStats["BUSINESS_LOGIC"])
@@ -1429,5 +1436,132 @@ func TestGetDetailedCoverage_ParseDetailedCoverageError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bufio.Scanner: token too long") {
 		t.Errorf("expected scanner overflow error, got: %v", err)
+	}
+}
+
+// TestFormatDetailedCoverageReport_CatalogedExcluded verifies that a block
+// tagged with a CatalogTitle is excluded from the High/Medium gap sections
+// and the summary counts, and is instead listed in the cataloged section.
+func TestFormatDetailedCoverageReport_CatalogedExcluded(t *testing.T) {
+	t.Parallel()
+	blocks := []uncoveredBlock{
+		{
+			File:         "internal/tools/integrations/ado/pipeline_crud.go",
+			Start:        308,
+			End:          310,
+			Category:     "ERROR_HANDLING",
+			Priority:     "High",
+			Code:         "if err != nil { return ... }",
+			CatalogTitle: "ado/pipeline_crud.go — buildVariablesUpdatePayload error return",
+		},
+		{
+			File:     "internal/domain/logic.go",
+			Start:    5,
+			End:      7,
+			Category: "BUSINESS_LOGIC",
+			Priority: "High",
+			Code:     "real gap",
+		},
+	}
+
+	report := formatDetailedCoverageReport("./pkg", blocks)
+
+	// Summary counts only uncataloged blocks.
+	if !strings.Contains(report, "- Total Gaps: 2") {
+		t.Errorf("expected Total Gaps: 2, got:\n%s", report)
+	}
+	if !strings.Contains(report, "- High Priority (Architectural): 1") {
+		t.Errorf("expected High Priority count 1 (cataloged excluded), got:\n%s", report)
+	}
+	if !strings.Contains(report, "- Cataloged (ACCEPTED): 1") {
+		t.Errorf("expected Cataloged (ACCEPTED) count 1, got:\n%s", report)
+	}
+
+	// Cataloged block must not appear in the HIGH PRIORITY GAPS section.
+	if !strings.Contains(report, "[HIGH PRIORITY GAPS]") {
+		t.Errorf("expected HIGH PRIORITY GAPS section, got:\n%s", report)
+	}
+	if strings.Contains(report, "[HIGH PRIORITY GAPS]\n1. File: internal/tools/integrations/ado/pipeline_crud.go") {
+		t.Errorf("cataloged block must be excluded from HIGH PRIORITY GAPS:\n%s", report)
+	}
+
+	// Cataloged block must appear in the cataloged section with its title.
+	if !strings.Contains(report, "[CATALOGED GAPS (ACCEPTED)]") {
+		t.Errorf("expected CATALOGED GAPS section, got:\n%s", report)
+	}
+	if !strings.Contains(report, "1. File: internal/tools/integrations/ado/pipeline_crud.go (Lines 308-310)") {
+		t.Errorf("expected cataloged block listed with lines, got:\n%s", report)
+	}
+	if !strings.Contains(report, "Category: ERROR_HANDLING") {
+		t.Errorf("expected cataloged block category, got:\n%s", report)
+	}
+	if !strings.Contains(report, "Catalog: ado/pipeline_crud.go — buildVariablesUpdatePayload error return") {
+		t.Errorf("expected catalog title on cataloged block, got:\n%s", report)
+	}
+}
+
+// TestFormatDetailedCoverageReport_CatalogedSectionLimit verifies the
+// cataloged section renders at most maxItems blocks and reports the remainder.
+func TestFormatDetailedCoverageReport_CatalogedSectionLimit(t *testing.T) {
+	t.Parallel()
+	var blocks []uncoveredBlock
+	for i := 0; i < 12; i++ {
+		blocks = append(blocks, uncoveredBlock{
+			File:         "internal/cataloged.go",
+			Start:        i + 1,
+			End:          i + 1,
+			Category:     "OTHER",
+			Priority:     "Low",
+			CatalogTitle: "cataloged entry",
+		})
+	}
+
+	report := formatDetailedCoverageReport("pkg", blocks)
+	if !strings.Contains(report, "... and 2 more cataloged (ACCEPTED) gaps.") {
+		t.Errorf("expected truncation note for cataloged section, got:\n%s", report)
+	}
+	if !strings.Contains(report, "- Cataloged (ACCEPTED): 12") {
+		t.Errorf("expected full cataloged count in summary, got:\n%s", report)
+	}
+}
+
+// TestApplyCatalogTitles verifies that blocks are tagged from the catalog
+// entries via range overlap, and that nil entries are a no-op.
+func TestApplyCatalogTitles(t *testing.T) {
+	t.Parallel()
+	entries := []nonFixEntry{
+		{
+			Title: "ado/pipeline_crud.go — buildVariablesUpdatePayload error return",
+			Refs: []fileRange{
+				{File: "internal/tools/integrations/ado/pipeline_crud.go", Start: 272, End: 275},
+				{File: "pipeline_crud.go", Start: 308, End: 310}, // bare basename follow-on
+			},
+		},
+	}
+
+	blocks := []uncoveredBlock{
+		{File: "internal/tools/integrations/ado/pipeline_crud.go", Start: 308, End: 310}, // bare basename ref match
+		{File: "internal/tools/integrations/ado/pipeline_crud.go", Start: 274, End: 276}, // partial overlap
+		{File: "internal/tools/integrations/ado/pipeline_crud.go", Start: 400, End: 410}, // no overlap
+		{File: "internal/other.go", Start: 1, End: 5},                                    // wrong file
+	}
+	applyCatalogTitles(blocks, entries)
+
+	want := []string{
+		"ado/pipeline_crud.go — buildVariablesUpdatePayload error return",
+		"ado/pipeline_crud.go — buildVariablesUpdatePayload error return",
+		"",
+		"",
+	}
+	for i, w := range want {
+		if blocks[i].CatalogTitle != w {
+			t.Errorf("blocks[%d].CatalogTitle = %q, want %q", i, blocks[i].CatalogTitle, w)
+		}
+	}
+
+	// Nil entries must be a no-op.
+	applyCatalogTitles(blocks, nil)
+	if blocks[0].CatalogTitle != "" {
+		t.Errorf("expected empty CatalogTitle after nil-entries no-op, got %q", blocks[0].CatalogTitle)
 	}
 }
