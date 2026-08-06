@@ -485,11 +485,10 @@ func TestCheckComplexity_AllPaths(t *testing.T) {
 
 // TestCheckComplexity_CatalogedExcluded verifies that over-threshold functions
 // covered by an ACCEPTED catalog entry are excluded from the alert count and
-// reported as a separate cataloged note. NOT parallel: it temporarily points
-// defaultNonFixCatalogPath at a fixture.
+// reported as a separate cataloged note. Parallel-safe: the catalog path is
+// injected per healthManager, so no global state is touched.
 func TestCheckComplexity_CatalogedExcluded(t *testing.T) {
-	origDefault := defaultNonFixCatalogPath
-	t.Cleanup(func() { defaultNonFixCatalogPath = origDefault })
+	t.Parallel()
 
 	catalog := "### agent/orchestrator/engine_phases.go — (*RecoveryStep).Process (CC=12)\n\n" +
 		"- **Status**: ACCEPTED (2026-07)\n" +
@@ -498,15 +497,17 @@ func TestCheckComplexity_CatalogedExcluded(t *testing.T) {
 	if err := os.WriteFile(path, []byte(catalog), 0644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	defaultNonFixCatalogPath = path
 
-	m := &healthManager{complexity: &stubComplexityAnalyzer{
-		complexities: []funcComplexity{
-			{Name: "(*RecoveryStep).Process", Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go", Line: 105},
-			{Name: "HotMess", Complexity: 15, FilePath: "internal/agent/other.go", Line: 3},
-			{Name: "Simple", Complexity: 1},
+	m := &healthManager{
+		catalogPath: path,
+		complexity: &stubComplexityAnalyzer{
+			complexities: []funcComplexity{
+				{Name: "(*RecoveryStep).Process", Complexity: 12, FilePath: "internal/agent/orchestrator/engine_phases.go", Line: 105},
+				{Name: "HotMess", Complexity: 15, FilePath: "internal/agent/other.go", Line: 3},
+				{Name: "Simple", Complexity: 1},
+			},
 		},
-	}}
+	}
 
 	status, details, alerts := m.checkComplexity(context.Background(), nil)
 
@@ -534,11 +535,10 @@ func TestCheckComplexity_CatalogedExcluded(t *testing.T) {
 }
 
 // TestCheckComplexity_AllCataloged verifies the all-cataloged edge case: no
-// actionable alerts, only the cataloged note. NOT parallel: it temporarily
-// points defaultNonFixCatalogPath at a fixture.
+// actionable alerts, only the cataloged note. Parallel-safe: the catalog path
+// is injected per healthManager, so no global state is touched.
 func TestCheckComplexity_AllCataloged(t *testing.T) {
-	origDefault := defaultNonFixCatalogPath
-	t.Cleanup(func() { defaultNonFixCatalogPath = origDefault })
+	t.Parallel()
 
 	catalog := "### ui/tui/progress/model.go — handleDomainEvent (CC=12)\n\n" +
 		"- **Status**: ACCEPTED (2026-07)\n" +
@@ -547,13 +547,15 @@ func TestCheckComplexity_AllCataloged(t *testing.T) {
 	if err := os.WriteFile(path, []byte(catalog), 0644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	defaultNonFixCatalogPath = path
 
-	m := &healthManager{complexity: &stubComplexityAnalyzer{
-		complexities: []funcComplexity{
-			{Name: "(*model).Update", Complexity: 14, FilePath: "internal/ui/tui/progress/model.go", Line: 250},
+	m := &healthManager{
+		catalogPath: path,
+		complexity: &stubComplexityAnalyzer{
+			complexities: []funcComplexity{
+				{Name: "(*model).Update", Complexity: 14, FilePath: "internal/ui/tui/progress/model.go", Line: 250},
+			},
 		},
-	}}
+	}
 
 	status, details, alerts := m.checkComplexity(context.Background(), nil)
 
@@ -565,6 +567,38 @@ func TestCheckComplexity_AllCataloged(t *testing.T) {
 	}
 	if len(alerts) != 1 || !strings.Contains(alerts[0], "1 cataloged (ACCEPTED) functions over threshold excluded:") {
 		t.Errorf("alerts = %v, want single cataloged note", alerts)
+	}
+}
+
+// TestCheckComplexity_CatalogLoadError verifies that a catalog load failure
+// (a non-IsNotExist I/O error) does not panic and degrades gracefully: all
+// over-threshold functions are treated as uncataloged actionable alerts.
+// catalogPath points at a directory, so os.ReadFile fails deterministically
+// with an "is a directory" error on every platform (no permission-bit
+// dependence).
+func TestCheckComplexity_CatalogLoadError(t *testing.T) {
+	t.Parallel()
+
+	m := &healthManager{
+		catalogPath: t.TempDir(), // a directory: os.ReadFile must fail with a non-IsNotExist error
+		complexity: &stubComplexityAnalyzer{
+			complexities: []funcComplexity{
+				{Name: "ComplexFunc", Complexity: 15, FilePath: "internal/agent/other.go", Line: 3},
+				{Name: "Simple", Complexity: 1},
+			},
+		},
+	}
+
+	status, details, alerts := m.checkComplexity(context.Background(), nil)
+
+	if status != "1 Alerts" {
+		t.Errorf("status = %q, want %q (catalog load error must not drop the alert)", status, "1 Alerts")
+	}
+	if strings.Contains(details, "cataloged") {
+		t.Errorf("details = %q, want no cataloged note when the catalog fails to load", details)
+	}
+	if len(alerts) != 1 || alerts[0] != "`ComplexFunc` (15)" {
+		t.Errorf("alerts = %v, want single uncataloged alert for the over-threshold function", alerts)
 	}
 }
 

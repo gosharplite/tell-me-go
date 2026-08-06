@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -27,6 +29,17 @@ type healthManager struct {
 	complexity complexityAnalyzer
 	deadCode   deadCodeAnalyzer
 	clk        clock.Clock
+
+	// catalogPath is the location of the Intentional Non-Fixes catalog read
+	// during health checks. Injected at construction (production wiring uses
+	// the package default); tests inject a fixture path. The zero value
+	// behaves like a missing catalog.
+	catalogPath string
+
+	// repoRoot caches the repository root resolved by resolveRepoRoot so the
+	// go list subprocess runs at most once per healthManager lifetime.
+	repoRoot     string
+	repoRootOnce sync.Once
 }
 
 type healthResult struct {
@@ -234,17 +247,24 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 // resolveRepoRoot returns the repository root used to normalize file paths
 // against the Intentional Non-Fixes catalog. It prefers the module directory
 // reported by the Go runner and falls back to the process working directory;
-// an empty result means normalization can only rely on relative paths.
+// an empty result means normalization can only rely on relative paths. The
+// result is computed once per healthManager (the first call still runs the go
+// list subprocess) and cached for subsequent calls; a nil Runner fallback
+// (os.Getwd) is cached too, since the process working directory does not
+// change mid-run.
 func (m *healthManager) resolveRepoRoot(ctx context.Context) string {
-	if m != nil && m.Runner != nil {
-		if dir, err := m.Runner.GetModuleDir(ctx); err == nil && dir != "" {
-			return dir
+	m.repoRootOnce.Do(func() {
+		if m.Runner != nil {
+			if dir, err := m.Runner.GetModuleDir(ctx); err == nil && dir != "" {
+				m.repoRoot = dir
+				return
+			}
 		}
-	}
-	if wd, err := os.Getwd(); err == nil {
-		return wd
-	}
-	return ""
+		if wd, err := os.Getwd(); err == nil {
+			m.repoRoot = wd
+		}
+	})
+	return m.repoRoot
 }
 
 func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
@@ -256,8 +276,12 @@ func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{})
 
 	// Cross-reference over-threshold functions against the Intentional
 	// Non-Fixes catalog: ACCEPTED complexity entries are reported separately
-	// and do not count as actionable alerts.
-	entries, _ := loadNonFixCatalog(defaultNonFixCatalogPath)
+	// and do not count as actionable alerts. A load failure degrades
+	// gracefully: every gap is treated as actionable.
+	entries, catErr := loadNonFixCatalog(m.catalogPath)
+	if catErr != nil {
+		slog.Warn("failed to load non-fix catalog; treating all gaps as actionable", "path", m.catalogPath, "error", catErr)
+	}
 	repoRoot := m.resolveRepoRoot(ctx)
 
 	threshold := 10

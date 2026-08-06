@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sort"
 	"strconv"
@@ -478,8 +479,14 @@ func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePa
 	}
 
 	// Load the catalog once and tag ACCEPTED gaps after Classify() so
-	// Priority/Category for uncataloged blocks remain exactly as before.
-	entries, _ := loadNonFixCatalog(defaultNonFixCatalogPath)
+	// Priority/Category for uncataloged blocks remain exactly as before. A
+	// load failure degrades gracefully: all gaps stay actionable. catErr is
+	// deliberately separate from err so the coverage-test error below is
+	// preserved.
+	entries, catErr := loadNonFixCatalog(m.catalogPath)
+	if catErr != nil {
+		slog.Warn("failed to load non-fix catalog; treating all gaps as actionable", "path", m.catalogPath, "error", catErr)
+	}
 	applyCatalogTitles(blocks, entries)
 
 	report := formatDetailedCoverageReport(packagePath, blocks)
@@ -604,8 +611,14 @@ func (m *healthManager) getDetailedCoverageJSON(ctx context.Context, packagePath
 	}
 
 	// Tag ACCEPTED catalog gaps (additive). The catalog_title field is exposed
-	// to JSON callers; no filtering change here — callers may filter.
-	entries, _ := loadNonFixCatalog(defaultNonFixCatalogPath)
+	// to JSON callers; no filtering change here — callers may filter. A load
+	// failure degrades gracefully: all gaps stay actionable. catErr is
+	// deliberately separate from err so the coverage-test error below is
+	// preserved.
+	entries, catErr := loadNonFixCatalog(m.catalogPath)
+	if catErr != nil {
+		slog.Warn("failed to load non-fix catalog; treating all gaps as actionable", "path", m.catalogPath, "error", catErr)
+	}
 	applyCatalogTitles(blocks, entries)
 
 	jsonStr, jsonErr := formatDetailedCoverageJSON(blocks, minPriority)
