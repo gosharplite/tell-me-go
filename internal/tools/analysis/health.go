@@ -267,28 +267,22 @@ func (m *healthManager) resolveRepoRoot(ctx context.Context) string {
 	return m.repoRoot
 }
 
-func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
-	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
-	complexities, _, err := m.complexity.GatherComplexities(ctx, ".", hb)
-	if err != nil {
-		return "ERROR", err.Error(), nil
-	}
-
-	// Cross-reference over-threshold functions against the Intentional
-	// Non-Fixes catalog: ACCEPTED complexity entries are reported separately
-	// and do not count as actionable alerts. A load failure degrades
-	// gracefully: every gap is treated as actionable.
+// loadNonFixEntries loads the Intentional Non-Fixes catalog, logging a
+// warning on I/O failure and degrading gracefully to an empty catalog
+// (all gaps treated as actionable).
+func (m *healthManager) loadNonFixEntries() []nonFixEntry {
 	entries, catErr := loadNonFixCatalog(m.catalogPath)
 	if catErr != nil {
 		slog.Warn("failed to load non-fix catalog; treating all gaps as actionable", "path", m.catalogPath, "error", catErr)
 	}
-	repoRoot := m.resolveRepoRoot(ctx)
+	return entries
+}
 
-	threshold := 10
-	var alerts []string
-	var catalogedNames []string
-	highCount := 0
-	catalogedCount := 0
+// bucketComplexityAlerts partitions over-threshold functions into actionable
+// alerts and cataloged (ACCEPTED) names, preserving document order. It keeps
+// the historical caps of 5 collected alert strings and 5 collected cataloged
+// names; the returned counts are always exact.
+func bucketComplexityAlerts(complexities []funcComplexity, entries []nonFixEntry, repoRoot string, threshold int) (alerts []string, catalogedNames []string, highCount, catalogedCount int) {
 	for _, c := range complexities {
 		if c.Complexity <= threshold {
 			continue
@@ -309,6 +303,25 @@ func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{})
 			alerts = append(alerts, fmt.Sprintf("`%s` (%d)", c.Name, c.Complexity))
 		}
 	}
+	return
+}
+
+func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
+	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
+	complexities, _, err := m.complexity.GatherComplexities(ctx, ".", hb)
+	if err != nil {
+		return "ERROR", err.Error(), nil
+	}
+
+	// Cross-reference over-threshold functions against the Intentional
+	// Non-Fixes catalog: ACCEPTED complexity entries are reported separately
+	// and do not count as actionable alerts. A load failure degrades
+	// gracefully: every gap is treated as actionable.
+	entries := m.loadNonFixEntries()
+	repoRoot := m.resolveRepoRoot(ctx)
+
+	threshold := 10
+	alerts, catalogedNames, highCount, catalogedCount := bucketComplexityAlerts(complexities, entries, repoRoot, threshold)
 
 	if highCount == 0 && catalogedCount == 0 {
 		return "GOOD", "All functions under threshold", nil
