@@ -341,7 +341,7 @@ func TestFormatHealthTable_WithAlerts(t *testing.T) {
 		"Dead Code":  {Status: "CLEAN", Details: "no orphans"},
 	}
 	alerts := []string{"`BigFunc` (15)", "`HugeFunc` (22)", "`MassiveFunc` (30)"}
-	output := m.formatHealthTable(results, alerts)
+	output := m.formatHealthTable(results, alerts, "")
 	if !strings.Contains(output, "Complexity Alerts (Threshold > 10)") {
 		t.Error("expected complexity alerts header")
 	}
@@ -350,6 +350,66 @@ func TestFormatHealthTable_WithAlerts(t *testing.T) {
 	}
 	if !strings.Contains(output, "`MassiveFunc` (30)") {
 		t.Error("expected MassiveFunc alert")
+	}
+}
+
+// TestFormatHealthTable_Mixed verifies the mixed rendering: actionable alerts
+// keep the "Complexity Alerts (Threshold > 10):" header, and the cataloged
+// note renders as a distinct small section beneath it. Parallel-safe: no
+// shared state.
+func TestFormatHealthTable_Mixed(t *testing.T) {
+	t.Parallel()
+	m := &healthManager{}
+	results := map[string]healthResult{
+		"Tests":      {Status: "PASS", Details: "ok"},
+		"Coverage":   {Status: "80%", Details: "target met"},
+		"Linting":    {Status: "CLEAN", Details: "no issues"},
+		"Complexity": {Status: "1 Alerts", Details: "1 functions > threshold (10); 1 cataloged (ACCEPTED) over threshold excluded"},
+		"Dead Code":  {Status: "CLEAN", Details: "no orphans"},
+	}
+	alerts := []string{"`HotMess` (15)"}
+	catalogedNote := "1 cataloged (ACCEPTED) functions over threshold excluded: `(*RecoveryStep).Process` (12)"
+	output := m.formatHealthTable(results, alerts, catalogedNote)
+
+	if !strings.Contains(output, "Complexity Alerts (Threshold > 10)") {
+		t.Errorf("expected complexity alerts header when actionable alerts exist, got:\n%s", output)
+	}
+	if !strings.Contains(output, "`HotMess` (15)") {
+		t.Errorf("expected actionable alert bullet, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Cataloged (ACCEPTED) over threshold:") {
+		t.Errorf("expected cataloged section header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "`(*RecoveryStep).Process` (12)") {
+		t.Errorf("expected cataloged function bullet, got:\n%s", output)
+	}
+}
+
+// TestFormatHealthTable_AllCataloged verifies the all-cataloged rendering:
+// every over-threshold function is cataloged (ACCEPTED), so the table must
+// NOT carry a "Complexity Alerts" header — only the distinct cataloged note
+// section. Parallel-safe: no shared state.
+func TestFormatHealthTable_AllCataloged(t *testing.T) {
+	t.Parallel()
+	m := &healthManager{}
+	results := map[string]healthResult{
+		"Tests":      {Status: "PASS", Details: "ok"},
+		"Coverage":   {Status: "80%", Details: "target met"},
+		"Linting":    {Status: "CLEAN", Details: "no issues"},
+		"Complexity": {Status: "GOOD", Details: "0 functions > threshold (10); 1 cataloged (ACCEPTED) over threshold excluded"},
+		"Dead Code":  {Status: "CLEAN", Details: "no orphans"},
+	}
+	catalogedNote := "1 cataloged (ACCEPTED) functions over threshold excluded: `(*model).Update` (14)"
+	output := m.formatHealthTable(results, nil, catalogedNote)
+
+	if strings.Contains(output, "Complexity Alerts (Threshold > 10)") {
+		t.Errorf("did not expect 'Complexity Alerts' header when nothing actionable, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Cataloged (ACCEPTED) over threshold:") {
+		t.Errorf("expected cataloged section header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "`(*model).Update` (14)") {
+		t.Errorf("expected cataloged function bullet, got:\n%s", output)
 	}
 }
 
@@ -471,7 +531,7 @@ func TestCheckComplexity_AllPaths(t *testing.T) {
 			m := &healthManager{complexity: &stubComplexityAnalyzer{
 				complexities: tt.mockComplexities, err: tt.mockErr,
 			}}
-			status, details, alerts := m.checkComplexity(context.Background(), nil)
+			status, details, alerts, _ := m.checkComplexity(context.Background(), nil)
 			if status != tt.wantStatus {
 				t.Errorf("status: got %q, want %q", status, tt.wantStatus)
 			}
@@ -509,7 +569,7 @@ func TestCheckComplexity_CatalogedExcluded(t *testing.T) {
 		},
 	}
 
-	status, details, alerts := m.checkComplexity(context.Background(), nil)
+	status, details, alerts, catalogedNote := m.checkComplexity(context.Background(), nil)
 
 	if status != "1 Alerts" {
 		t.Errorf("status = %q, want %q (cataloged excluded)", status, "1 Alerts")
@@ -520,17 +580,17 @@ func TestCheckComplexity_CatalogedExcluded(t *testing.T) {
 	if !strings.Contains(details, "1 cataloged (ACCEPTED) over threshold excluded") {
 		t.Errorf("details = %q, want cataloged exclusion note", details)
 	}
-	if len(alerts) != 2 {
-		t.Fatalf("alerts = %v, want 2 entries (1 alert + 1 cataloged note)", alerts)
+	if len(alerts) != 1 {
+		t.Fatalf("alerts = %v, want exactly 1 actionable alert (cataloged note is separate)", alerts)
 	}
 	if alerts[0] != "`HotMess` (15)" {
 		t.Errorf("alerts[0] = %q, want %q", alerts[0], "`HotMess` (15)")
 	}
-	if !strings.Contains(alerts[1], "1 cataloged (ACCEPTED) functions over threshold excluded:") {
-		t.Errorf("alerts[1] = %q, want cataloged note prefix", alerts[1])
+	if !strings.Contains(catalogedNote, "1 cataloged (ACCEPTED) functions over threshold excluded:") {
+		t.Errorf("catalogedNote = %q, want cataloged note prefix", catalogedNote)
 	}
-	if !strings.Contains(alerts[1], "(*RecoveryStep).Process") {
-		t.Errorf("alerts[1] = %q, want cataloged function name", alerts[1])
+	if !strings.Contains(catalogedNote, "(*RecoveryStep).Process") {
+		t.Errorf("catalogedNote = %q, want cataloged function name", catalogedNote)
 	}
 }
 
@@ -557,16 +617,27 @@ func TestCheckComplexity_AllCataloged(t *testing.T) {
 		},
 	}
 
-	status, details, alerts := m.checkComplexity(context.Background(), nil)
+	status, details, alerts, catalogedNote := m.checkComplexity(context.Background(), nil)
 
-	if status != "0 Alerts" {
-		t.Errorf("status = %q, want %q", status, "0 Alerts")
+	// Nothing actionable: status must be GOOD, not "0 Alerts", so the
+	// recommendation layer does not fire a false "Refactor" suggestion.
+	if status != "GOOD" {
+		t.Errorf("status = %q, want %q", status, "GOOD")
 	}
 	if !strings.Contains(details, "0 functions > threshold (10)") {
 		t.Errorf("details = %q, want uncataloged count 0", details)
 	}
-	if len(alerts) != 1 || !strings.Contains(alerts[0], "1 cataloged (ACCEPTED) functions over threshold excluded:") {
-		t.Errorf("alerts = %v, want single cataloged note", alerts)
+	if !strings.Contains(details, "1 cataloged (ACCEPTED) over threshold excluded") {
+		t.Errorf("details = %q, want cataloged exclusion note", details)
+	}
+	if len(alerts) != 0 {
+		t.Errorf("alerts = %v, want no actionable alerts in the all-cataloged case", alerts)
+	}
+	if !strings.Contains(catalogedNote, "1 cataloged (ACCEPTED) functions over threshold excluded:") {
+		t.Errorf("catalogedNote = %q, want cataloged note prefix", catalogedNote)
+	}
+	if !strings.Contains(catalogedNote, "(*model).Update") {
+		t.Errorf("catalogedNote = %q, want cataloged function name", catalogedNote)
 	}
 }
 
@@ -589,7 +660,7 @@ func TestCheckComplexity_CatalogLoadError(t *testing.T) {
 		},
 	}
 
-	status, details, alerts := m.checkComplexity(context.Background(), nil)
+	status, details, alerts, catalogedNote := m.checkComplexity(context.Background(), nil)
 
 	if status != "1 Alerts" {
 		t.Errorf("status = %q, want %q (catalog load error must not drop the alert)", status, "1 Alerts")
@@ -599,6 +670,9 @@ func TestCheckComplexity_CatalogLoadError(t *testing.T) {
 	}
 	if len(alerts) != 1 || alerts[0] != "`ComplexFunc` (15)" {
 		t.Errorf("alerts = %v, want single uncataloged alert for the over-threshold function", alerts)
+	}
+	if catalogedNote != "" {
+		t.Errorf("catalogedNote = %q, want empty when the catalog fails to load", catalogedNote)
 	}
 }
 
