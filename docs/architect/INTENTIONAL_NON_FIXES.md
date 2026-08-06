@@ -35,6 +35,24 @@ Any AI agent recommending these should consult the rationale below.
   already exists at the gap site (`global_prompt_tracker.go:365-366`).
 - **See**: `internal/infrastructure/history/global_prompt_tracker.go:367-369`
 
+### ado/pipeline_crud.go — buildVariablesUpdatePayload error return
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The error return of `json.Marshal(existingDef)` in
+  `buildVariablesUpdatePayload` is structurally unreachable: the map is
+  produced by `json.Decode` into `interface{}` plus manual insertion of
+  JSON-safe primitives (string, bool, *bool), so `json.Marshal` cannot fail.
+  Note: the inline comment at `pipeline_crud.go:272-274` cites "ADR-037",
+  but ADR-037 is the `agentinternal` test-bridge decision and says nothing
+  about `json.Marshal` — that citation is stale and should be read as
+  referring to this catalog's `json.Marshal` acceptance class instead.
+  Same acceptance class as the cataloged `json.Marshal` entries
+  (`global_prompt_tracker.go` Append/writeCompactedData,
+  `orchestrator/middleware.go` detectLoop).
+- **See**: `internal/tools/integrations/ado/pipeline_crud.go:272-275`
+  (inline comment + `return json.Marshal(existingDef)`), and the `if err != nil`
+  branch at `pipeline_crud.go:308-310` that consumes this unreachable error
+
 ### history/history.go — complementPred and contentHasFunctionCall at 0% → RESOLVED
 
 - **Status**: RESOLVED (2026-07, `TestHistoryManager_SetPinned_WithFunctionCall` + `TestHistoryManager_SetPinned_ViaModelID`)
@@ -655,6 +673,27 @@ Any AI agent recommending these should consult the rationale below.
 
 ## Test Complexity (ACCEPTED)
 
+### internal/infrastructure/llm/factory_test.go — assertMissingKeysResult (CC=13)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Table-driven test helper asserting per-key error results
+  across multiple missing-key scenarios (multiple API response shapes).
+  CC comes from case enumeration and assertion boilerplate, not branching
+  business logic. Same acceptance class as `TestHydrateMediaAssets` (CC=13) —
+  assertion boilerplate across a coverage matrix.
+- **See**: `internal/infrastructure/llm/factory_test.go:211`
+
+### internal/agent/orchestrator/engine_phases_test.go — TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Sequential test driving the empty-response retry branch to
+  its retry limit; steps mutate shared mock state across iterations. CC is
+  assertion boilerplate, not branching business logic. Same acceptance
+  class as its production counterpart `(*RecoveryStep).Process` (CC=12,
+  already ACCEPTED) — sequential state-mutation test where splitting would
+  duplicate setup.
+- **See**: `internal/agent/orchestrator/engine_phases_test.go:531`
+
 ### tests/e2e/history_flags_test.go — TestHistoryNavigation_CompleteWorkflow (complexity 15)
 
 - **Status**: ACCEPTED (2026-07)
@@ -784,15 +823,16 @@ to reason about.
   in the Test Complexity section above).
 - **See**: `internal/ui/renderer_spinner_test.go:176`
 
-### tools/analysis/index_snapshot_test.go — (*indexer).snapshot (CC=11)
+### tools/analysis/index_snapshot_test.go — (*indexer).snapshot (CC=14)
 
-- **Status**: ACCEPTED (2026-07)
+- **Status**: ACCEPTED (2026-08)
 - **Rationale**: Production method defined in a `_test.go` file (package `analysis`,
   not `analysis_test`) because it needs access to unexported indexer fields
   (`idx.mu`, `idx.pkgs`, `idx.symbolsByPath`, `idx.usagesByName`,
   `idx.implsCache`). It deep-copies the indexer's complete internal state into
-  an `indexSnapshot` struct for test-fixture generation. The CC=11 comes from
-  5 deep-copy loops (`fileToPkg`, `decls`, `implsCopy`, `symbolsCopy`,
+  an `indexSnapshot` struct for test-fixture generation. CC increased from 11→14
+  since acceptance (re-verified 2026-08) — still a test-fixture builder. The CC=14
+  comes from 5 deep-copy loops (`fileToPkg`, `decls`, `implsCopy`, `symbolsCopy`,
   `usagesCopy`) + 3 guards (`modulePath` discovery, `CompiledGoFiles` dedup,
   `collectDeclarations` filter). Only called from `fixture_gen_test.go:58` —
   pure test infrastructure. Splitting the copy loops into helpers would
@@ -800,7 +840,7 @@ to reason about.
   maintainability benefit. Same acceptance class as `createPrecisionWorkspace`
   (CC=12, test-fixture builder) and the type-switch dispatch entries in this
   section.
-- **See**: `internal/tools/analysis/index_snapshot_test.go:107`,
+- **See**: `internal/tools/analysis/index_snapshot_test.go:112`,
   `internal/tools/analysis/fixture_gen_test.go:58`
 ---
 
@@ -978,10 +1018,10 @@ to reason about.
 - **Rationale**: Same sequential state-mutation pattern as `TestUpdateTurnContent_ClearText`, verifying the complementary code path. CC is assertion boilerplate across dependent steps.
 - **See**: `internal/infrastructure/history/history_test.go:1115`
 
-### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=12)
+### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=13)
 
-- **Status**: ACCEPTED (2026-07)
-- **Rationale**: Table-driven combinatorial test covering provider × model × feature capability resolution. CC comes from the 10+ test cases in the table, each a simple assertion. Splitting the table into subtests would obscure the cross-provider comparison intent.
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: Table-driven combinatorial test covering provider × model × feature capability resolution. CC increased from 12→13 since acceptance (re-verified 2026-08) — still the same acceptance class. CC comes from the 10+ test cases in the table, each a simple assertion. Splitting the table into subtests would obscure the cross-provider comparison intent.
 - **See**: `internal/domain/llm/capabilities_test.go:10`
 
 ### internal/tools/analysis/precision_test.go — TestDeadCodeAnalyzer_Precision (CC=12)
@@ -996,11 +1036,11 @@ to reason about.
 - **Rationale**: Test-fixture builder that constructs a multi-package Go workspace with specific symbol structures for dead code analysis. Already referenced as accepted in the `(*indexer).snapshot` (CC=11) entry. CC comes from file creation boilerplate, not branching logic.
 - **See**: `internal/tools/analysis/precision_test.go:118`
 
-### internal/tools/analysis/index_fixture_test.go — TestFixtureIndexer_ConstructAndHarvest (CC=11)
+### internal/tools/analysis/index_fixture_test.go — TestFixtureIndexer_ConstructAndHarvest (CC=13)
 
-- **Status**: ACCEPTED (2026-07)
-- **Rationale**: End-to-end fixture test constructing an indexer, loading packages, and harvesting results. CC comes from setup + assertion blocks across the three-phase test (construct → index → harvest). Splitting would duplicate the fixture construction.
-- **See**: `internal/tools/analysis/index_fixture_test.go:154`
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: End-to-end fixture test constructing an indexer, loading packages, and harvesting results. CC increased from 11→13 since acceptance (re-verified 2026-08) — still the same acceptance class. CC comes from setup + assertion blocks across the three-phase test (construct → index → harvest). Splitting would duplicate the fixture construction.
+- **See**: `internal/tools/analysis/index_fixture_test.go:158`
 
 ### internal/tools/workspace/process_executor_stream_test.go — TestRunCommand_NonExitErrorWaitPath (CC=11)
 
@@ -1044,4 +1084,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13))*
