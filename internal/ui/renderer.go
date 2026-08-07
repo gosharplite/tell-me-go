@@ -267,6 +267,12 @@ func (r *stdUIRenderer) SetWordWrap(width int) {
 	}
 	tr, err := NewMarkdownRenderer(opts...)
 	if err != nil {
+		// Structurally unreachable — see the `structurally-unreachable`
+		// acceptance class (docs/architect/INTENTIONAL_NON_FIXES.md):
+		// NewMarkdownRenderer receives only WithStandardStyle + WithEmoji
+		// (+ optional WithWordWrap), none of which can fail. Keep the
+		// existing renderer on the impossible error rather than degrading
+		// (consistent with ADR-007 semantics).
 		return // keep existing renderer
 	}
 	r.renderer = tr

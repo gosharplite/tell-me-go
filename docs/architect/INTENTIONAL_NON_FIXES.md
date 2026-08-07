@@ -291,7 +291,7 @@ catalog a new gap no one reviewed. Policy:
   error-return branch flagged by coverage tools does not exist in the current
   single-file architecture. Structurally unreachable — same acceptance class
   as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
-- **See**: `internal/domain/config/config.go:183-185`
+- **See**: `internal/domain/config/config.go:224-229`
 
 ### domain/events/events.go — NoOpEventBus no-op stubs at 0%
 
@@ -346,7 +346,7 @@ catalog a new gap no one reviewed. Policy:
   internal pipeline state (2026-07 Batch Triage).
 - **See**: `internal/agent/orchestrator/middleware.go:255`
 
-### agent/agenttest/helpers.go — 0% coverage on interface-satisfying stubs (15 methods)
+### agent/agenttest/helpers.go — 0% coverage on interface-satisfying stubs (16 methods)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: The following methods on test doubles in `agenttest/helpers.go`
@@ -356,7 +356,7 @@ catalog a new gap no one reviewed. Policy:
   `RenderResponse`, `LogTurnStatus`, `LogSystemMessage`, `LogUsage`,
   `LogToolCall`, `LogToolResult`, `RenderHealthReport`, `SetUseColor`,
   `SetForceSpinner`, `Render`, `GetSkillRepository`, `Subscribe`,
-  `WaitStarted`, `Warn`, `Prompt`.
+  `WaitStarted`, `Warn`, `Prompt`, `SetWordWrap`.
   Testing a mock's no-op method would test the mock itself, not production
   behavior — same acceptance class as `mockFileSystem.Chmod` and
   `domainFS.Chmod` already documented below.
@@ -379,7 +379,7 @@ catalog a new gap no one reviewed. Policy:
 - **See**: `internal/agent/agenttest/mock_cost_tracker.go:44`,
   `internal/agent/agenttest/mock_history_manager.go:139,152,158`,
   `internal/agent/agenttest/mock_logger.go:20`,
-  `internal/agent/agenttest/mock_ui_renderer.go:274`,
+  `internal/agent/agenttest/mock_ui_renderer.go:289`,
   `internal/domain/events/eventstest/test_event_bus.go:109`,
   `internal/agent/agenttest/mock_event_bus_fail.go:22,26`,
   `internal/agent/agenttest/mock_gateway.go:66`,
@@ -462,6 +462,20 @@ catalog a new gap no one reviewed. Policy:
   acceptance class as `glamour render error paths` in `renderer.go`:
   structurally unreachable in normal operation, cosmetic degrade only.
 - **See**: `internal/ui/tui/progress/model.go:746` (`renderMarkdownAsync`)
+
+### ui/renderer.go — SetWordWrap renderer rebuild error branch
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The `if err != nil` branch in `stdUIRenderer.SetWordWrap` after
+  `NewMarkdownRenderer` is structurally unreachable: the renderer is rebuilt
+  with only `WithStandardStyle`, `WithEmoji`, and an optional `WithWordWrap`
+  option, none of which can fail. On the impossible error the previous
+  renderer is kept rather than degrading (consistent with ADR-007). Same
+  acceptance class as the cataloged glamour error paths in
+  `ui/tui/progress/renderer.go` (structurally unreachable, cosmetic degrade
+  only). Forcing coverage would require changing SetWordWrap's signature to
+  accept a failing option — disproportionate to the value.
+- **See**: `internal/ui/renderer.go:258-273` (SetWordWrap)
 
 ---
 
@@ -614,7 +628,7 @@ catalog a new gap no one reviewed. Policy:
   no value. Same acceptance class as `AppendTask`, `domainFS.Chmod`,
   `mockFileSystem.Chmod`, `plainOSFS.Chmod`, and `HasBareNewline` — all
   delegation wrappers already documented in this file.
-- **See**: `internal/agent/service.go:223-225`
+- **See**: `internal/agent/service.go:226-228`
 
 ### persistence/state.go — NewSessionStateFromEnv thin entry point at 0%
 
