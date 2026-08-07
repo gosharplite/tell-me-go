@@ -1489,3 +1489,61 @@ func TestStdUIRenderer_RenderResponse_ThoughtPromotion(t *testing.T) {
 		r.RenderResponse(context.Background(), content, false, false)
 	})
 }
+
+func TestStdUIRenderer_SetWordWrap(t *testing.T) {
+	var stdout bytes.Buffer
+	locker := ui.NewMockLocker()
+	r := ui.NewRenderer(locker, &stdout, &stdout, nil, nil).(*ui.StdUIRenderer)
+
+	// Plain words (no markdown syntax) so glamour wraps at word boundaries.
+	// 40 repetitions of a 5-word phrase ≈ 1200 chars — comfortably above 120.
+	text := strings.Repeat("lorem ipsum dolor sit amet ", 40)
+
+	t.Run("width 120 widens output beyond default 80", func(t *testing.T) {
+		stdout.Reset()
+		r.SetWordWrap(120)
+		r.RenderMarkdown(text)
+		maxLen := 0
+		for _, ln := range strings.Split(stripANSI(stdout.String()), "\n") {
+			if len(ln) > maxLen {
+				maxLen = len(ln)
+			}
+		}
+		if maxLen > 120 {
+			t.Errorf("SetWordWrap(120): longest line %d exceeds 120", maxLen)
+		}
+		if maxLen <= 80 {
+			t.Errorf("SetWordWrap(120): longest line %d is not wider than the default 80 — width option not applied", maxLen)
+		}
+	})
+
+	t.Run("width 0 restores default 80", func(t *testing.T) {
+		stdout.Reset()
+		r.SetWordWrap(0)
+		r.RenderMarkdown(text)
+		maxLen := 0
+		for _, ln := range strings.Split(stripANSI(stdout.String()), "\n") {
+			if len(ln) > maxLen {
+				maxLen = len(ln)
+			}
+		}
+		if maxLen > 80 {
+			t.Errorf("SetWordWrap(0): longest line %d exceeds default 80", maxLen)
+		}
+	})
+
+	t.Run("degraded renderer stays degraded", func(t *testing.T) {
+		failingOpt := glamour.TermRendererOption(func(tr *glamour.TermRenderer) error {
+			return errors.New("injected glamour init failure")
+		})
+		var buf bytes.Buffer
+		deg := ui.NewRenderer(locker, &buf, &buf, nil, nil, ui.WithGlamourOption(failingOpt)).(*ui.StdUIRenderer)
+		if !deg.IsRendererDegraded() {
+			t.Fatal("expected degraded renderer after injected init failure")
+		}
+		deg.SetWordWrap(120)
+		if !deg.IsRendererDegraded() {
+			t.Error("expected renderer to stay degraded after SetWordWrap")
+		}
+	})
+}

@@ -65,6 +65,7 @@ func (s *spyRenderer) LogSystemMessage(_ context.Context, _ string, _ string)   
 func (s *spyRenderer) RenderHealthReport(_ context.Context, _ *ports.HealthReport) {}
 func (s *spyRenderer) SetUseColor(_ bool)                                          {}
 func (s *spyRenderer) SetForceSpinner(_ bool)                                      {}
+func (s *spyRenderer) SetWordWrap(width int)                                       {}
 func (s *spyRenderer) IsTerminalContext() bool                                     { return false }
 func (s *spyRenderer) UpdateSpinnerStatus(_ context.Context, _ string, _ bool)     {}
 

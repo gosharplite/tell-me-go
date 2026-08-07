@@ -38,6 +38,7 @@ func (b *benchRenderer) LogToolCall(_ context.Context, _ []*llm.FunctionCall, _,
 func (b *benchRenderer) LogToolResult(_ context.Context, _ string, _ tools.ToolResult, _ bool) {}
 func (b *benchRenderer) SetUseColor(_ bool)                                                    {}
 func (b *benchRenderer) SetForceSpinner(_ bool)                                                {}
+func (b *benchRenderer) SetWordWrap(width int)                                                 {}
 func (b *benchRenderer) IsTerminalContext() bool                                               { return false }
 func (b *benchRenderer) UpdateSpinnerStatus(_ context.Context, _ string, _ bool)               {}
 

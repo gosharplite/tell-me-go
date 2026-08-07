@@ -362,6 +362,8 @@ func (m *behaviorMockUIRenderer) SetForceSpinner(force bool) {
 	}
 }
 
+func (m *behaviorMockUIRenderer) SetWordWrap(width int) {}
+
 func (m *behaviorMockUIRenderer) IsTerminalContext() bool {
 	m.tracker.record("UIRenderer.IsTerminalContext")
 	if m.IsTerminalContextFn != nil {

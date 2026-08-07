@@ -770,3 +770,125 @@ func TestLoad_ValidateBoundsError(t *testing.T) {
 		})
 	}
 }
+
+// TestLoad_WrapWidth_RoundTrip pins that the top-level WRAP_WIDTH field
+// round-trips correctly from YAML through Viper + mapstructure into the
+// domain Config.WrapWidth field, and that the loader rejects negative
+// values via the domain ValidateBounds path. Zero is the correct default
+// when the field is omitted.
+func TestLoad_WrapWidth_RoundTrip(t *testing.T) {
+	t.Setenv("TELL_ME_WRAP_WIDTH", "")        // neutralize ambient env pollution
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tests := []struct {
+		name    string
+		yamlVal string // text for the WRAP_WIDTH line; empty omits the field
+		wantErr bool
+		wantVal int
+		errFrag string
+	}{
+		{name: "positive value round-trips", yamlVal: "WRAP_WIDTH: 120", wantVal: 120},
+		{name: "explicit zero round-trips as zero", yamlVal: "WRAP_WIDTH: 0", wantVal: 0},
+		{name: "field omitted defaults to zero", yamlVal: "", wantVal: 0},
+		{name: "negative value rejected", yamlVal: "WRAP_WIDTH: -1", wantErr: true, errFrag: "WRAP_WIDTH"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "test_wrap_width.yaml")
+			// WRAP_WIDTH is a top-level key (unlike provider-scoped
+			// MAX_TOKENS), so the injected line must not be indented.
+			yamlContent := `
+SELECTED_PROVIDER: "claude"
+PROVIDERS:
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    API_KEY: "test"
+` + tt.yamlVal + `
+`
+			if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			cfg, err := load(configPath)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("load() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				if !strings.Contains(err.Error(), tt.errFrag) {
+					t.Errorf("expected error containing %q, got %q", tt.errFrag, err.Error())
+				}
+				return
+			}
+			if got := cfg.WrapWidth; got != tt.wantVal {
+				t.Errorf("WrapWidth = %d; want %d", got, tt.wantVal)
+			}
+		})
+	}
+}
+
+// TestLoad_WrapWidth_EnvOverride pins that TELL_ME_WRAP_WIDTH takes
+// precedence over the WRAP_WIDTH value in the YAML file.
+func TestLoad_WrapWidth_EnvOverride(t *testing.T) {
+	t.Setenv("TELL_ME_WRAP_WIDTH", "200")
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_env_wrap_width.yaml")
+	yamlContent := `
+SELECTED_PROVIDER: "claude"
+PROVIDERS:
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    API_KEY: "test"
+WRAP_WIDTH: 120
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+
+	if got := cfg.WrapWidth; got != 200 {
+		t.Errorf("expected env override WRAP_WIDTH=200, got %d", got)
+	}
+}
+
+// TestLoad_WrapWidth_EnvOnly is the critical test: TELL_ME_WRAP_WIDTH set
+// in the environment MUST take effect even when WRAP_WIDTH is absent from
+// the YAML file entirely. This only works because configureViper registers
+// the key with BindEnv — AutomaticEnv alone cannot surface a key that
+// Unmarshal never asks for (viper.AllKeys() omits it).
+func TestLoad_WrapWidth_EnvOnly(t *testing.T) {
+	t.Setenv("TELL_ME_WRAP_WIDTH", "150")
+	t.Setenv("TELL_ME_SELECTED_PROVIDER", "") // neutralize ambient env pollution
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_env_only_wrap_width.yaml")
+	yamlContent := `
+SELECTED_PROVIDER: "claude"
+PROVIDERS:
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    API_KEY: "test"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+
+	if got := cfg.WrapWidth; got != 150 {
+		t.Errorf("expected env-only WRAP_WIDTH=150, got %d", got)
+	}
+}

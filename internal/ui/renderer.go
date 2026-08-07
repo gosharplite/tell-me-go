@@ -250,6 +250,34 @@ func (r *stdUIRenderer) SetForceSpinner(force bool) {
 	r.forceSpinner = force
 }
 
+// SetWordWrap rebuilds the markdown renderer with the given word-wrap
+// width. width <= 0 restores glamour's built-in default (80). Acquires
+// ioMu — the same lock the render path holds when reading r.renderer.
+// If the renderer is degraded (glamour init failed, ADR-007) it stays
+// degraded; if the rebuild fails, the previous renderer is kept.
+func (r *stdUIRenderer) SetWordWrap(width int) {
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+	if r.renderer == nil {
+		return // stay degraded (ADR-007)
+	}
+	var opts []glamour.TermRendererOption
+	if width > 0 {
+		opts = append(opts, glamour.WithWordWrap(width))
+	}
+	tr, err := NewMarkdownRenderer(opts...)
+	if err != nil {
+		// Structurally unreachable — see the `structurally-unreachable`
+		// acceptance class (docs/architect/INTENTIONAL_NON_FIXES.md):
+		// NewMarkdownRenderer receives only WithStandardStyle + WithEmoji
+		// (+ optional WithWordWrap), none of which can fail. Keep the
+		// existing renderer on the impossible error rather than degrading
+		// (consistent with ADR-007 semantics).
+		return // keep existing renderer
+	}
+	r.renderer = tr
+}
+
 // SetWriters allows overriding the output writers (primarily for testing).
 func (r *stdUIRenderer) SetWriters(stdout, stderr io.Writer) {
 	r.mu.Lock()

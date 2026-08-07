@@ -80,6 +80,11 @@ type RendererConfigurator interface {
 	// not a terminal. Useful for testing or when piping to a pager.
 	SetForceSpinner(force bool)
 
+	// SetWordWrap sets the word-wrap column width for subsequent markdown
+	// rendering. width <= 0 restores glamour's built-in default (80).
+	// Safe to call at any time; applies to subsequently rendered output.
+	SetWordWrap(width int)
+
 	// IsTerminalContext reports whether the renderer is connected to
 	// an interactive terminal. This determines default spinner behavior.
 	IsTerminalContext() bool
@@ -122,6 +127,9 @@ type HistoryRenderOptions struct {
 	CustomRenderer interface{ Render(string) (string, error) }
 	// SuppressRoles omits [MODEL] and [USER] role headers from output.
 	SuppressRoles bool
+	// WrapWidth sets the word-wrap column width for markdown rendering.
+	// Zero means "use glamour's built-in default (80)".
+	WrapWidth int
 }
 
 // SystemMetricsProvider defines the interface for collecting host resource usage.

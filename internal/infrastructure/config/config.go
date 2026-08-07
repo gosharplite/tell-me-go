@@ -123,6 +123,7 @@ func configureViper(path string) (*viper.Viper, error) {
 	_ = v.BindEnv("PERSON", "GOSHARP_PERSON", "TELL_ME_PERSON")
 	_ = v.BindEnv("AIMODEL", "GOSHARP_AIMODEL", "TELL_ME_AIMODEL")
 	_ = v.BindEnv("AIURL", "GOSHARP_AIURL", "TELL_ME_AIURL")
+	_ = v.BindEnv("WRAP_WIDTH", "TELL_ME_WRAP_WIDTH")
 
 	return v, nil
 }
