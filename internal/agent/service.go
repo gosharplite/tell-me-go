@@ -155,6 +155,9 @@ func (s *chatService) cleanupSession(deps ports.ChatterComposer, cleanup func(co
 
 // ProcessMessage implements ChatService.
 func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, cmd ChatCommand, capturer CapturerInteractor) error {
+	// Apply the configured word-wrap width to the markdown renderer before any output.
+	s.UIRenderer.SetWordWrap(cfg.WrapWidth)
+
 	// 1. Build session dependencies
 	deps, hManager, cleanup, err := s.LifecycleManager.BuildSessionDependencies(ctx, cfg, cmd.ConfigPath, cmd.NewSession, capturer)
 	if err != nil {
@@ -293,6 +296,9 @@ func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Con
 
 // RunDiagnostics implements ChatService.
 func (s *chatService) RunDiagnostics(ctx context.Context, cfg *domain_config.Config, configPath string, jsonOutput bool) error {
+	// Apply the configured word-wrap width to the markdown renderer before any output.
+	s.UIRenderer.SetWordWrap(cfg.WrapWidth)
+
 	// 1. Build session dependencies
 	deps, _, cleanup, err := s.LifecycleManager.BuildSessionDependencies(ctx, cfg, configPath, false, nil)
 	if err != nil {

@@ -86,6 +86,12 @@ USE_SEARCH: false
 SHOW_THOUGHTS: false
 SHOW_TOOLS: true
 
+# --- Output ---
+# WRAP_WIDTH: column width for word-wrapping non-TUI markdown output.
+# 0 (default) = glamour's built-in 80 columns. Env TELL_ME_WRAP_WIDTH
+# overrides. Read at session start; changes apply from the next session.
+# WRAP_WIDTH: 120
+
 # --- Global Timeouts & Streaming ---
 HTTP_TIMEOUT: 300
 

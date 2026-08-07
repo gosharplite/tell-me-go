@@ -142,22 +142,26 @@ func (p *LLMProvider) validate(name string, logger *slog.Logger) error {
 
 // Config represents the application configuration loaded from a YAML file.
 type Config struct {
-	Mode               string                 `yaml:"MODE"`
-	Person             string                 `yaml:"PERSON"`
-	URL                string                 `yaml:"AIURL"`
-	Model              string                 `yaml:"AIMODEL"`
-	UseSearch          bool                   `yaml:"USE_SEARCH"`
-	MaxToolTurns       int                    `yaml:"MAX_TURNS"`          // Recursion limit
-	MaxHistoryTurns    int                    `yaml:"MAX_HISTORY_TURNS"`  // For pruning turns
-	MaxHistoryTokens   int                    `yaml:"MAX_HISTORY_TOKENS"` // For safety rollback
-	ThinkingBudget     int                    `yaml:"THINKING_BUDGET"`
-	ThinkingLevel      string                 `yaml:"THINKING_LEVEL"`
-	ShowThoughts       bool                   `yaml:"SHOW_THOUGHTS"`
-	ShowTools          bool                   `yaml:"SHOW_TOOLS"`
-	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
-	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
-	HTTPTimeoutSeconds int                    `yaml:"HTTP_TIMEOUT"`         // LLM Client timeout
-	UseTUIPrompt       bool                   `yaml:"USE_TUI_PROMPT"`       // Enable TUI prompt with suggestions
+	Mode               string `yaml:"MODE"`
+	Person             string `yaml:"PERSON"`
+	URL                string `yaml:"AIURL"`
+	Model              string `yaml:"AIMODEL"`
+	UseSearch          bool   `yaml:"USE_SEARCH"`
+	MaxToolTurns       int    `yaml:"MAX_TURNS"`          // Recursion limit
+	MaxHistoryTurns    int    `yaml:"MAX_HISTORY_TURNS"`  // For pruning turns
+	MaxHistoryTokens   int    `yaml:"MAX_HISTORY_TOKENS"` // For safety rollback
+	ThinkingBudget     int    `yaml:"THINKING_BUDGET"`
+	ThinkingLevel      string `yaml:"THINKING_LEVEL"`
+	ShowThoughts       bool   `yaml:"SHOW_THOUGHTS"`
+	ShowTools          bool   `yaml:"SHOW_TOOLS"`
+	MaxConcurrentTools int    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
+	ToolTimeoutSeconds int    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
+	HTTPTimeoutSeconds int    `yaml:"HTTP_TIMEOUT"`         // LLM Client timeout
+	UseTUIPrompt       bool   `yaml:"USE_TUI_PROMPT"`       // Enable TUI prompt with suggestions
+	// WrapWidth is the column width for word-wrapping non-TUI markdown
+	// output. Zero means "use glamour's built-in default (80)". Read at
+	// session start only — changes take effect from the next session.
+	WrapWidth          int                    `yaml:"WRAP_WIDTH"`
 	BypassConfirmation bool                   `yaml:"BYPASS_CONFIRMATION"`
 	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
 	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`
@@ -280,6 +284,9 @@ func (c *Config) ValidateBounds() error {
 	}
 	if c.HTTPTimeoutSeconds < 0 {
 		return fmt.Errorf("HTTP_TIMEOUT must be >= 0, got %d", c.HTTPTimeoutSeconds)
+	}
+	if c.WrapWidth < 0 {
+		return fmt.Errorf("WRAP_WIDTH must be >= 0, got %d", c.WrapWidth)
 	}
 	return nil
 }

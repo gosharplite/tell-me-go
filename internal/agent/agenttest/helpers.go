@@ -42,6 +42,7 @@ func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result 
 func (s *stubUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport)       {}
 func (s *stubUIRenderer) SetUseColor(use bool)                                                     {}
 func (s *stubUIRenderer) SetForceSpinner(force bool)                                               {}
+func (s *stubUIRenderer) SetWordWrap(width int)                                                    {}
 func (s *stubUIRenderer) IsTerminalContext() bool                                                  { return false }
 func (s *stubUIRenderer) UpdateSpinnerStatus(ctx context.Context, status string, showMetrics bool) {}
 

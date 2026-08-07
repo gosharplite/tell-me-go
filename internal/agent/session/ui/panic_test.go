@@ -62,6 +62,7 @@ func (m *panicMockRenderer) RenderHealthReport(ctx context.Context, report *port
 func (m *panicMockRenderer) IsTerminalContext() bool                                            { return false }
 func (m *panicMockRenderer) SetUseColor(use bool)                                               {}
 func (m *panicMockRenderer) SetForceSpinner(force bool)                                         {}
+func (m *panicMockRenderer) SetWordWrap(width int)                                              {}
 func (m *panicMockRenderer) UpdateSpinnerStatus(_ context.Context, _ string, _ bool)            {}
 
 func TestUIBridge_PanicResilience(t *testing.T) {

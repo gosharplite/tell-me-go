@@ -35,6 +35,7 @@ type MockUIRenderer struct {
 	calledRenderHealthReport      int
 	calledSetUseColor             int
 	calledSetForceSpinner         int
+	calledSetWordWrap             int
 	calledIsTerminalContext       int
 	calledUpdateSpinnerStatus     int
 	calledMethods                 []string
@@ -52,6 +53,7 @@ type MockUIRenderer struct {
 	RenderHealthReportFn      func(ctx context.Context, report *ports.HealthReport)
 	SetUseColorFn             func(use bool)
 	SetForceSpinnerFn         func(force bool)
+	SetWordWrapFn             func(width int)
 	IsTerminalContextFn       func() bool
 	UpdateSpinnerStatusFn     func(ctx context.Context, status string, showMetrics bool)
 }
@@ -61,7 +63,7 @@ type UIRendererSnapshot struct {
 	StartSpinner, StartSpinnerWithStatus, StartSpinnerWithMetrics int
 	RenderResponse, LogTurnStatus, LogUsage                       int
 	LogToolCall, LogToolResult, LogSystemMessage                  int
-	RenderHealthReport, SetUseColor, SetForceSpinner              int
+	RenderHealthReport, SetUseColor, SetForceSpinner, SetWordWrap int
 	IsTerminalContext, UpdateSpinnerStatus                        int
 	Methods                                                       []string
 }
@@ -85,6 +87,7 @@ func (m *MockUIRenderer) Snapshot() UIRendererSnapshot {
 		RenderHealthReport:      m.calledRenderHealthReport,
 		SetUseColor:             m.calledSetUseColor,
 		SetForceSpinner:         m.calledSetForceSpinner,
+		SetWordWrap:             m.calledSetWordWrap,
 		IsTerminalContext:       m.calledIsTerminalContext,
 		UpdateSpinnerStatus:     m.calledUpdateSpinnerStatus,
 		Methods:                 methods,
@@ -255,6 +258,18 @@ func (m *MockUIRenderer) SetForceSpinner(force bool) {
 
 	if fn != nil {
 		fn(force)
+	}
+}
+
+func (m *MockUIRenderer) SetWordWrap(width int) {
+	m.mu.Lock()
+	m.calledSetWordWrap++
+	m.calledMethods = append(m.calledMethods, "SetWordWrap")
+	fn := m.SetWordWrapFn
+	m.mu.Unlock()
+
+	if fn != nil {
+		fn(width)
 	}
 }
 
