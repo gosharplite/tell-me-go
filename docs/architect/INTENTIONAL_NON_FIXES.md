@@ -941,21 +941,24 @@ to reason about.
   `(*model).Update` (Bubble Tea dispatch).
 - **See**: `internal/ui/tui/history_editor.go:39`
 
-### ui/history.go — renderHistory (CC=11)
+### ui/history.go — renderHistory (CC=12 — increased from 11)
 
-- **Status**: ACCEPTED (2026-08)
+- **Status**: ACCEPTED (2026-08, PR #1294 — WRAP_WIDTH -l history width)
 - **Rationale**: Sequential history renderer with structural guards only:
   empty-history early return, `n > total` clamp, `GetWindow` error branch,
   `Raw`/`CustomRenderer` option branches (markdown renderer selection), and
   per-part nil guards inside the two loops. Every branch is a single-line
   guard, error return, or renderer assignment — zero branching business logic.
-  The CC is driven by the guard count (+7) and the two iteration loops (+2),
+  The CC is driven by the guard count (+8) and the two iteration loops (+2),
   not by decision complexity. Extracting guards into helpers would fragment a
   coherent sequential render for cosmetic CC reduction with no cognitive
   benefit. Same acceptance class as `(*HistoryEditor).Edit` (CC=10, sequential
   orchestration with error guards) and the other structural-dispatch entries
   in this section. Note: the shared `NewMarkdownRenderer` helper (2026-08)
   already removed the duplicated glamour construction from this function.
+  CC increased from 11→12 (2026-08, PR #1294) due to the single-line
+  `WrapWidth > 0` guard added to the markdown-renderer selection branch —
+  the same structural-guard acceptance class as the rest of this function.
 - **See**: `internal/ui/history.go:26`
 
 ### ui/tui/browser.go — (*rootBrowserModel).handleActionKeys (CC=15)
