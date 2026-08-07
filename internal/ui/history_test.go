@@ -273,6 +273,52 @@ func TestHistory_RenderTextFallback(t *testing.T) {
 	})
 }
 
+func TestHistory_RenderWrapWidth(t *testing.T) {
+	// A long plain-text paragraph (no markdown syntax) so glamour wraps at
+	// word boundaries: 27 chars x 40 = ~1080 chars.
+	longText := strings.Repeat("lorem ipsum dolor sit amet ", 40)
+
+	tmp := t.TempDir()
+	historyPath := filepath.Join(tmp, "history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+
+	ctx := context.Background()
+	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	maxLineLen := func(s string) int {
+		max := 0
+		for _, line := range strings.Split(s, "\n") {
+			if len(line) > max {
+				max = len(line)
+			}
+		}
+		return max
+	}
+
+	t.Run("wrap width 120 widens output beyond default 80", func(t *testing.T) {
+		var buf bytes.Buffer
+		ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{WrapWidth: 120})
+		maxLen := maxLineLen(stripANSI(buf.String()))
+		if maxLen > 120 {
+			t.Errorf("max line length %d exceeds wrap width 120", maxLen)
+		}
+		if maxLen <= 80 {
+			t.Errorf("max line length %d did not widen beyond default 80; WrapWidth 120 had no effect", maxLen)
+		}
+	})
+
+	t.Run("wrap width 0 keeps default 80", func(t *testing.T) {
+		var buf bytes.Buffer
+		ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{WrapWidth: 0})
+		maxLen := maxLineLen(stripANSI(buf.String()))
+		if maxLen > 80 {
+			t.Errorf("max line length %d exceeds default wrap width 80", maxLen)
+		}
+	})
+}
+
 // ── History render error reporting tests (G20) ──
 
 func TestHistory_RenderTextError(t *testing.T) {

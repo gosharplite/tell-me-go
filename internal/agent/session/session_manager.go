@@ -260,6 +260,7 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 		Raw:          sCfg.GetRawOutput(),
 		ShowThoughts: cfg.ShowThoughts,
 		UseColor:     isTTY && !sCfg.GetRawOutput(),
+		WrapWidth:    cfg.WrapWidth,
 	})
 }
 
@@ -284,6 +285,7 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 			ShowThoughts:  cfg.ShowThoughts,
 			UseColor:      isTTY && !sc.GetRawOutput(),
 			SuppressRoles: true,
+			WrapWidth:     cfg.WrapWidth,
 		})
 	}
 

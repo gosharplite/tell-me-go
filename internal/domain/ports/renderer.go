@@ -127,6 +127,9 @@ type HistoryRenderOptions struct {
 	CustomRenderer interface{ Render(string) (string, error) }
 	// SuppressRoles omits [MODEL] and [USER] role headers from output.
 	SuppressRoles bool
+	// WrapWidth sets the word-wrap column width for markdown rendering.
+	// Zero means "use glamour's built-in default (80)".
+	WrapWidth int
 }
 
 // SystemMetricsProvider defines the interface for collecting host resource usage.
