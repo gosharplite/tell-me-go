@@ -162,22 +162,22 @@ type TurnHook interface {
 
 // TurnState carries data between the phases of a Turn and tracks the current phase.
 type TurnState struct {
-	Phase                TurnPhase         `json:"phase"`
-	HasToolCalls         bool              `json:"has_tool_calls"`
-	Metrics              *llm.Metrics      `json:"metrics,omitempty"`
-	Tokens               int               `json:"tokens"`
-	CurrentTurns         int               `json:"current_turns"`
-	Metadata             *sessctx.Metadata `json:"metadata,omitempty"`
-	Response             *llm.Content      `json:"response,omitempty"`
-	ToolResponse         *llm.Content      `json:"tool_response,omitempty"`
-	LastError            error             `json:"-"`
-	RetryCount           int               `json:"retry_count"`
-	HasSeenRateLimit     bool              `json:"-"`
-	ToolCallCount        map[string]int    `json:"-"`
-	RecentResponseHashes []string          `json:"-"`
-	PreparedHistory      []*llm.Content    `json:"-"`
-	TaskCost             float64           `json:"task_cost"`
-	ToolReasons          []string          `json:"-"`
+	Phase                TurnPhase                `json:"phase"`
+	HasToolCalls         bool                     `json:"has_tool_calls"`
+	Metrics              *llm.Metrics             `json:"metrics,omitempty"`
+	Tokens               int                      `json:"tokens"`
+	CurrentTurns         int                      `json:"current_turns"`
+	Metadata             *sessctx.ContextMetadata `json:"metadata,omitempty"`
+	Response             *llm.Content             `json:"response,omitempty"`
+	ToolResponse         *llm.Content             `json:"tool_response,omitempty"`
+	LastError            error                    `json:"-"`
+	RetryCount           int                      `json:"retry_count"`
+	HasSeenRateLimit     bool                     `json:"-"`
+	ToolCallCount        map[string]int           `json:"-"`
+	RecentResponseHashes []string                 `json:"-"`
+	PreparedHistory      []*llm.Content           `json:"-"`
+	TaskCost             float64                  `json:"task_cost"`
+	ToolReasons          []string                 `json:"-"`
 }
 
 // ToolExecutor defines the interface for tool execution.

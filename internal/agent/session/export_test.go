@@ -16,6 +16,9 @@ import (
 // Exported for external tests
 type SessionManagerInternal = sessionManager
 type SessionConfigInternal = sessionConfig
+
+// SessionDependenciesInternal is a legacy test alias kept for ADR-056:
+// renaming churns ~15 test sites for zero production value.
 type SessionDependenciesInternal = agenttest.StubChatterComposer
 
 func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {

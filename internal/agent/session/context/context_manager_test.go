@@ -16,7 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -538,7 +537,7 @@ type versionBumpingTransformer struct {
 
 func (t *versionBumpingTransformer) Priority() int { return 200 } // transient: runs after persistFn
 
-func (t *versionBumpingTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *versionBumpingTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
 	if err := t.cm.Reconfigure(events.Limits{}); err != nil {
 		return err
 	}
@@ -554,7 +553,7 @@ type canonicalVersionBumper struct {
 
 func (t *canonicalVersionBumper) Priority() int { return 50 } // canonical: runs before persistFn
 
-func (t *canonicalVersionBumper) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *canonicalVersionBumper) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
 	// Force persistence so persistFn is called.
 	req.PersistHistory = true
 	if err := t.cm.Reconfigure(events.Limits{}); err != nil {
@@ -568,7 +567,7 @@ type forcePersistTransformer struct{}
 
 func (t *forcePersistTransformer) Priority() int { return 10 }
 
-func (t *forcePersistTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *forcePersistTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
 	req.PersistHistory = true
 	return nil
 }
@@ -582,7 +581,7 @@ type failingTransientTransformer struct{}
 
 func (t *failingTransientTransformer) Priority() int { return 150 }
 
-func (t *failingTransientTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *failingTransientTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
 	return errTransientFail
 }
 
@@ -781,21 +780,21 @@ func TestManager_AddContent_EmptyWindow_FallsThroughToAddContent(t *testing.T) {
 func TestManager_Prepare_ExecutePipeline_Coverage(t *testing.T) {
 	tests := []struct {
 		name           string
-		pipeline       []ports.ContextTransformer
+		pipeline       []sessctx.ContextTransformer
 		setContentsErr error
 		wantErr        error
 		verifyPersist  bool // if true, assert SetContents was called before the error
 	}{
 		{
 			name: "happy path: version matches, SetContents succeeds, commitToCache succeeds",
-			pipeline: []ports.ContextTransformer{
+			pipeline: []sessctx.ContextTransformer{
 				&forcePersistTransformer{},
 			},
 			wantErr: nil,
 		},
 		{
 			name: "transient transformer fails after successful persist",
-			pipeline: []ports.ContextTransformer{
+			pipeline: []sessctx.ContextTransformer{
 				&forcePersistTransformer{},
 				&failingTransientTransformer{},
 			},

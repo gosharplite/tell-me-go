@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-transitive-gate verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -40,6 +40,7 @@ help:
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
 	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
+	@echo "  make verify-transitive-gate - Print the ADR-056 transitive closure gate report (v1, report-only)"
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
@@ -304,7 +305,7 @@ else
 endif
 
 # All ports.SessionProvider / ports.SessionStateProvider test doubles
-# must use agenttest.MockSessionProvider — the single canonical mock.
+# must use testfixtures.MockSessionProvider — the single canonical mock.
 # Hand-rolled mocks outside agenttest/ are forbidden. This guard catches
 # any new mock added to a _test.go file outside the canonical location.
 verify-session-provider-mock:
@@ -316,13 +317,13 @@ ifeq ($(IS_POSIX),true)
 	if [ -n "$$VIOLATIONS" ]; then \
 		echo ""; \
 		echo "❌ hand-rolled SessionProvider mock outside agenttest/."; \
-		echo "   Use agenttest.MockSessionProvider — the single canonical mock."; \
+		echo "   Use testfixtures.MockSessionProvider — the single canonical mock."; \
 		echo "   All other SessionProvider mocks were eliminated; new ones are forbidden."; \
 		echo ""; \
 		echo "Violating files:"; \
 		echo "$$VIOLATIONS"; \
 		echo ""; \
-		echo "Fix: replace with &agenttest.MockSessionProvider{}."; \
+		echo "Fix: replace with &testfixtures.MockSessionProvider{}."; \
 		exit 1; \
 	fi
 	@echo "  ✓ No hand-rolled SessionProvider mocks outside agenttest/."
@@ -340,11 +341,11 @@ else
 		if ($$violations.Count -gt 0) { \
 			Write-Host ''; \
 			Write-Host '❌ hand-rolled SessionProvider mock outside agenttest/.'; \
-			Write-Host '   Use agenttest.MockSessionProvider — the single canonical mock.'; \
+			Write-Host '   Use testfixtures.MockSessionProvider — the single canonical mock.'; \
 			Write-Host ''; \
 			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
 			Write-Host ''; \
-			Write-Host 'Fix: replace with &agenttest.MockSessionProvider{}.'; \
+			Write-Host 'Fix: replace with &testfixtures.MockSessionProvider{}.'; \
 			exit 1 \
 		}; \
 		Write-Host '  ✓ No hand-rolled SessionProvider mocks outside agenttest/.' \
@@ -468,6 +469,21 @@ else
 	@go test -tags=arch -run TestVerifyRealArchitecture ./internal/tools/analysis -args -strict-arch=true
 	@echo "=== modelith-layers ==="
 	@$(MAKE) modelith-layers
+endif
+
+# Verify the ADR-056 transitive closure gate (issue #1300): prints the v1
+# report separating "decision required" rows from "approved constant" rows.
+# -v is required so go test surfaces the report's stdout on a passing run.
+# The explicit -transitive-gate-report-only=true documents the v1
+# report-first posture (default non-failing per the issue's implementation
+# detail); flipping to strict post-ratification = change the flag to
+# -transitive-gate-report-only=false. Deliberately NOT wired into
+# verify-architecture — v1 keeps passing as today.
+verify-transitive-gate:
+ifeq ($(IS_POSIX),true)
+	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=true
+else
+	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=true
 endif
 
 # Verify the complexity-pin catalog partition (issue #1297): runs the real

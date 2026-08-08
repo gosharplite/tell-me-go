@@ -16,7 +16,7 @@ import (
 
 // HistoryPruner enforces history turn limits using a policy.
 type HistoryPruner struct {
-	Policy ports.PruningPolicy
+	Policy PruningPolicy
 	Events events.EventBus
 	Logger ports.Logger
 }
@@ -28,7 +28,7 @@ func (t *HistoryPruner) getLogger() ports.Logger {
 	return slog.Default()
 }
 
-func (t *HistoryPruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) error {
 	initialLen := len(req.History)
 	if initialLen == 0 {
 		return nil
@@ -66,7 +66,7 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ports.ContextRequest
 	return nil
 }
 
-func (t *HistoryPruner) reportPruning(ctx context.Context, req *ports.ContextRequest, initialTurnCount, prunedCount, keptCount int) error {
+func (t *HistoryPruner) reportPruning(ctx context.Context, req *ContextRequest, initialTurnCount, prunedCount, keptCount int) error {
 	t.getLogger().Info("history pruning triggered",
 		"initial_turns", initialTurnCount,
 		"pruned_turns", prunedCount,
@@ -138,7 +138,7 @@ func (t *HistoryPruner) Priority() int { return 110 }
 
 // compositePruningPolicy aggregates multiple policies using OR logic.
 type compositePruningPolicy struct {
-	Policies []ports.PruningPolicy
+	Policies []PruningPolicy
 }
 
 func (p *compositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {

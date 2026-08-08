@@ -20,7 +20,7 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 	injector := &WarningInjector{Strategy: strategy}
 
 	// Case where last message is a FunctionResponse
-	req := &request{
+	req := &ContextRequest{
 		Turn: 8, // Triggers turn warning (8/10)
 		History: []*llm.Content{
 			{
@@ -68,7 +68,7 @@ func TestWarningInjector_Idempotency(t *testing.T) {
 	injector := &WarningInjector{Strategy: strategy}
 
 	// Case 1: First turn reaches threshold (90% threshold -> > 90 tokens)
-	req1 := &request{
+	req1 := &ContextRequest{
 		Turn: 0,
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
@@ -107,7 +107,7 @@ func TestWarningInjector_Idempotency(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "how are you?"}}},
 	}
 
-	req2 := &request{
+	req2 := &ContextRequest{
 		Turn:    1,
 		History: historyWithWarning,
 	}
@@ -135,7 +135,7 @@ func TestWarningInjector_GatherWarnings_Empty(t *testing.T) {
 
 	injector := &WarningInjector{Strategy: strategy}
 
-	req := &request{
+	req := &ContextRequest{
 		Turn: 1,
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
@@ -159,7 +159,7 @@ func TestWarningInjector_InjectWarning_EmptyHistory(t *testing.T) {
 	strategy := NewStrategy(NewHeuristicTokenCounter(&agenttest.MockToolRegistry{}))
 	injector := &WarningInjector{Strategy: strategy}
 
-	req := &request{
+	req := &ContextRequest{
 		History: []*llm.Content{},
 	}
 
@@ -180,7 +180,7 @@ func TestWarningInjector_InjectWarning_TransientPartsDedup(t *testing.T) {
 
 	warningText := "WARNING: some warning"
 
-	req := &request{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "first message"}}},
 			{
@@ -219,7 +219,7 @@ func TestWarningInjector_GatherWarnings_Multiple(t *testing.T) {
 
 	injector := &WarningInjector{Strategy: strategy}
 
-	req := &request{
+	req := &ContextRequest{
 		Turn: 0, // remaining = 3-0 = 3 → triggers turn warning "3 turns remaining"
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
@@ -256,7 +256,7 @@ func TestWarningInjector_GatherWarnings_Clogged(t *testing.T) {
 
 	injector := &WarningInjector{Strategy: strategy}
 
-	req := &request{
+	req := &ContextRequest{
 		Turn: 1,
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},

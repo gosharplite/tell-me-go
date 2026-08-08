@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	sessctx "github.com/gosharplite/tell-me-go/internal/agent/session/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
@@ -38,9 +39,9 @@ func TestSkillInjector_Transform(t *testing.T) {
 	tests := []struct {
 		name     string
 		selector skills.SkillSelector
-		req      *ports.ContextRequest
+		req      *sessctx.ContextRequest
 		logger   ports.Logger
-		validate func(t *testing.T, req *ports.ContextRequest)
+		validate func(t *testing.T, req *sessctx.ContextRequest)
 	}{
 		{
 			name: "InjectsSkills",
@@ -49,7 +50,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 					{Name: "test-skill", Content: "Use testing."},
 				},
 			},
-			req: &ports.ContextRequest{
+			req: &sessctx.ContextRequest{
 				History: []*llm.Content{
 					{
 						Role:  "user",
@@ -57,7 +58,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 					},
 				},
 			},
-			validate: func(t *testing.T, req *ports.ContextRequest) {
+			validate: func(t *testing.T, req *sessctx.ContextRequest) {
 				require.Len(t, req.History, 2)
 				assert.Equal(t, "system", req.History[0].Role)
 				assert.True(t, req.History[0].Pinned, "expected injected system message to be pinned")
@@ -73,7 +74,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 					{Name: "test-skill", Content: "Use testing."},
 				},
 			},
-			req: &ports.ContextRequest{
+			req: &sessctx.ContextRequest{
 				History: []*llm.Content{
 					{
 						Role: "system",
@@ -83,7 +84,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 					},
 				},
 			},
-			validate: func(t *testing.T, req *ports.ContextRequest) {
+			validate: func(t *testing.T, req *sessctx.ContextRequest) {
 				require.Len(t, req.History, 1, "should not prepend new message")
 				require.Len(t, req.History[0].Parts, 2, "should append injection part")
 				assert.Equal(t, "You are a helpful assistant.", req.History[0].Parts[0].Text)
@@ -100,7 +101,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 					{Name: "test-skill", Content: "Use testing."},
 				},
 			},
-			req: &ports.ContextRequest{
+			req: &sessctx.ContextRequest{
 				History: []*llm.Content{
 					{
 						Role: "system",
@@ -110,7 +111,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 					},
 				},
 			},
-			validate: func(t *testing.T, req *ports.ContextRequest) {
+			validate: func(t *testing.T, req *sessctx.ContextRequest) {
 				if len(req.History[0].Parts) != 1 {
 					t.Error("expected no second injection due to idempotency check")
 				}
@@ -121,12 +122,12 @@ func TestSkillInjector_Transform(t *testing.T) {
 			selector: &mockSkillSelector{
 				selected: []skills.Skill{},
 			},
-			req: &ports.ContextRequest{
+			req: &sessctx.ContextRequest{
 				History: []*llm.Content{
 					{Role: "user", Parts: []*llm.Part{{Text: "some task"}}},
 				},
 			},
-			validate: func(t *testing.T, req *ports.ContextRequest) {
+			validate: func(t *testing.T, req *sessctx.ContextRequest) {
 				assert.Len(t, req.History, 1, "history should be unchanged")
 				assert.False(t, req.PersistHistory, "PersistHistory should not be set")
 			},
@@ -134,18 +135,18 @@ func TestSkillInjector_Transform(t *testing.T) {
 		{
 			name:     "HandlesEmptyHistory",
 			selector: &mockSkillSelector{},
-			req:      &ports.ContextRequest{History: []*llm.Content{}},
-			validate: func(t *testing.T, req *ports.ContextRequest) {
+			req:      &sessctx.ContextRequest{History: []*llm.Content{}},
+			validate: func(t *testing.T, req *sessctx.ContextRequest) {
 				// Success if it doesn't panic
 			},
 		},
 		{
 			name:     "HandlesNilSelector",
 			selector: nil,
-			req: &ports.ContextRequest{
+			req: &sessctx.ContextRequest{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}},
 			},
-			validate: func(t *testing.T, req *ports.ContextRequest) {
+			validate: func(t *testing.T, req *sessctx.ContextRequest) {
 				// Success if it doesn't panic
 			},
 		},
@@ -154,13 +155,13 @@ func TestSkillInjector_Transform(t *testing.T) {
 			selector: &mockSkillSelector{
 				err: errors.New("selector unavailable"),
 			},
-			req: &ports.ContextRequest{
+			req: &sessctx.ContextRequest{
 				History: []*llm.Content{
 					{Role: "user", Parts: []*llm.Part{{Text: "how do I test in Go?"}}},
 				},
 			},
 			logger: errLogger,
-			validate: func(t *testing.T, req *ports.ContextRequest) {
+			validate: func(t *testing.T, req *sessctx.ContextRequest) {
 				// Transform must NOT return an error — the failure is logged, not propagated.
 				// History must remain unchanged (no injection, no mutation).
 				assert.Len(t, req.History, 1, "expected history unchanged")
@@ -270,13 +271,13 @@ func TestNewSkillInjector(t *testing.T) {
 	require.NotNil(t, transformer, "NewSkillInjector must return a non-nil transformer")
 
 	// Interface satisfaction is verified at compile time by the return type
-	// (NewSkillInjector returns ports.ContextTransformer).
+	// (NewSkillInjector returns sessctx.ContextTransformer).
 
 	// Verify Priority contract through the interface
 	assert.Equal(t, 10, transformer.Priority())
 
 	// Verify basic usability (no panic on empty history)
-	req := &ports.ContextRequest{History: []*llm.Content{}}
+	req := &sessctx.ContextRequest{History: []*llm.Content{}}
 	err := transformer.Transform(context.Background(), req)
 	require.NoError(t, err)
 }
@@ -302,7 +303,7 @@ func TestSkillInjector_EcosystemIntro_OptionAndConstructor(t *testing.T) {
 		require.NotNil(t, transformer)
 
 		// Verify via Transform: ecosystem intro is injected even when no skills match
-		req := &ports.ContextRequest{
+		req := &sessctx.ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "some task"}}},
 			},

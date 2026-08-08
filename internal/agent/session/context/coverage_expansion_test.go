@@ -10,7 +10,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +18,7 @@ type mockExpTransformer struct {
 	err      error
 }
 
-func (m *mockExpTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (m *mockExpTransformer) Transform(ctx context.Context, req *ContextRequest) error {
 	return m.err
 }
 
@@ -33,31 +32,31 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		req         *request
-		pipeline    []ports.ContextTransformer
+		req         *ContextRequest
+		pipeline    []ContextTransformer
 		persistFn   func(context.Context, []*llm.Content) error
 		expectedErr error
 	}{
 		{
 			name: "Error in canonical transformer",
-			req:  &request{},
-			pipeline: []ports.ContextTransformer{
+			req:  &ContextRequest{},
+			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 10, err: transformErr},
 			},
 			expectedErr: transformErr,
 		},
 		{
 			name: "Error in transient transformer",
-			req:  &request{},
-			pipeline: []ports.ContextTransformer{
+			req:  &ContextRequest{},
+			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 150, err: transformErr},
 			},
 			expectedErr: transformErr,
 		},
 		{
 			name: "Error in persistence",
-			req:  &request{PersistHistory: true},
-			pipeline: []ports.ContextTransformer{
+			req:  &ContextRequest{PersistHistory: true},
+			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 10},
 				&mockExpTransformer{priority: 150},
 			},
@@ -68,8 +67,8 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		},
 		{
 			name: "No persist function, no error",
-			req:  &request{PersistHistory: true},
-			pipeline: []ports.ContextTransformer{
+			req:  &ContextRequest{PersistHistory: true},
+			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 10},
 			},
 			persistFn:   nil,
@@ -131,7 +130,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bus.events = nil
-			err := tg.validateHardLimits(context.Background(), &request{}, tt.tokens)
+			err := tg.validateHardLimits(context.Background(), &ContextRequest{}, tt.tokens)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				assert.NotEmpty(t, bus.events)
@@ -144,7 +143,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 
 	// MaxTokens <= 0 case
 	tg.MaxTokens = 0
-	assert.NoError(t, tg.validateHardLimits(context.Background(), &request{}, 9999))
+	assert.NoError(t, tg.validateHardLimits(context.Background(), &ContextRequest{}, 9999))
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
@@ -223,7 +222,7 @@ func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 
 	// Case 1: MaxTokens <= 0
 	tg.MaxTokens = 0
-	tokens, err := tg.handleSafetyPressure(context.Background(), &request{}, 2000)
+	tokens, err := tg.handleSafetyPressure(context.Background(), &ContextRequest{}, 2000)
 	assert.NoError(t, err)
 	assert.Equal(t, 2000, tokens)
 
@@ -234,7 +233,7 @@ func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 	assert.Equal(t, 800, tokens)
 
 	// Case 3: autoSummarize fails but blocked (history too short)
-	req := &request{
+	req := &ContextRequest{
 		History: make([]*llm.Content, 5),
 	}
 	tokens, err = tg.handleSafetyPressure(context.Background(), req, 950)
@@ -242,8 +241,8 @@ func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 	assert.Equal(t, 950, tokens)
 }
 
-func req() *request {
-	return &request{}
+func req() *ContextRequest {
+	return &ContextRequest{}
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_CustomSelector(t *testing.T) {

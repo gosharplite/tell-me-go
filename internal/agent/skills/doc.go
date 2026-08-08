@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package skills provides the skill-injection context transformer for
-// the agent pipeline. It implements ports.ContextTransformer to inject
-// relevant Go development skills into the LLM context at the start of
-// each turn.
+// the agent pipeline. It implements session/context.ContextTransformer
+// to inject relevant Go development skills into the LLM context at the
+// start of each turn.
 package skills

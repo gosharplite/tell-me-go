@@ -28,7 +28,7 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 				nil,
 				withMaxTokens(tt.maxTokens),
 			)
-			req := &request{
+			req := &ContextRequest{
 				History: []*llm.Content{{Role: "user"}},
 			}
 			err := tg.Transform(context.Background(), req)

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // WarningInjector adds safety warnings to the context.
@@ -16,7 +15,7 @@ type WarningInjector struct {
 	Strategy *Strategy
 }
 
-func (t *WarningInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) error {
 	tokens := req.Metadata.FinalTokenCount
 	// Count logical conversational turns by counting messages with RoleUser.
 	// This prevents tool-call loops from artificially inflating the turn count.
@@ -49,7 +48,7 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ports.ContextReque
 	return nil
 }
 
-func (t *WarningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turns int) (string, []string) {
+func (t *WarningInjector) gatherWarnings(req *ContextRequest, tokens, turns int) (string, []string) {
 	var combined string
 	var list []string
 	maxTokens, _, _ := t.Strategy.getLimits()
@@ -75,7 +74,7 @@ func (t *WarningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turn
 	return combined, list
 }
 
-func (t *WarningInjector) injectWarning(req *ports.ContextRequest, combined string) {
+func (t *WarningInjector) injectWarning(req *ContextRequest, combined string) {
 	if len(req.History) == 0 {
 		return
 	}

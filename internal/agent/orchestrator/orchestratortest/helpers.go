@@ -99,7 +99,7 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase, execErr er
 			HasToolCalls: hasTools,
 			RetryCount:   0,
 			LastError:    orchestrator.NewAgentError(llm.ErrTransient, "err", nil),
-			Metadata: &sessctx.Metadata{
+			Metadata: &sessctx.ContextMetadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},

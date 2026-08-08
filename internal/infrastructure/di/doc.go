@@ -79,7 +79,7 @@ BuildSessionDependencies(ctx, cfg, ...)
 	├─► healthFactory.BuildHealthManager()   → health (wired into sessionDeps)
 	└─► lazyRegistry (sync.Once)            → tools.Registry (on first call)
 
-The result is sessionDeps, which implements ports.SessionDependencies —
+The result is sessionDeps, which implements ports.ChatterComposer —
 the single interface consumed by agent.Chatter implementations.
 
 # Lazy Initialization
@@ -107,8 +107,10 @@ GetGateway() and GetRegistry().
 # Maintainer Guidance
 
 Adding a new dependency:
- 1. Define the domain interface in internal/domain/ports/ if it does
-    not already exist.
+ 1. Define the domain interface where it is consumed (ADR-003 Rule #1); place
+    it in internal/domain/ports/ only when its consumers span non-importable
+    layers (cross-layer criterion, ADR-056). DI references count as consumers —
+    realignment always includes unwiring the DI composition root.
  2. Create a new sub-factory file (e.g., foo_factory.go) with a private
     fooFactory interface and a defaultFooFactory struct.
  3. Add the sub-factory field to Bootstrapper and construct it in

@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +16,7 @@ type mockPriorityTransformer struct {
 	name     string
 }
 
-func (m *mockPriorityTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (m *mockPriorityTransformer) Transform(ctx context.Context, req *ContextRequest) error {
 	return nil
 }
 
@@ -32,14 +31,14 @@ func TestContextPipeline_Sort(t *testing.T) {
 
 	p := NewContextPipeline(t1, t2, t3)
 
-	expected := []ports.ContextTransformer{t2, t3, t1}
+	expected := []ContextTransformer{t2, t3, t1}
 	if !reflect.DeepEqual(p.transformers, expected) {
 		t.Errorf("NewContextPipeline: expected order %v, got %v", getNames(expected), getNames(p.transformers))
 	}
 
 }
 
-func getNames(transformers []ports.ContextTransformer) []string {
+func getNames(transformers []ContextTransformer) []string {
 	names := make([]string, len(transformers))
 	for i, t := range transformers {
 		names[i] = t.(*mockPriorityTransformer).name
@@ -54,7 +53,7 @@ func TestContextPipeline_ExecuteWithPersistence_ContextCancellation(t *testing.T
 	cancel() // Cancel immediately
 
 	// Should fail during execution when checking ctx.Done()
-	err := pipeline.executeWithPersistence(ctx, &ports.ContextRequest{}, nil)
+	err := pipeline.executeWithPersistence(ctx, &ContextRequest{}, nil)
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -65,6 +64,6 @@ func TestContextPipeline_ExecuteWithPersistence_Transformer_Cancellation(t *test
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	err := pipeline.executeWithPersistence(ctx, &ports.ContextRequest{}, nil)
+	err := pipeline.executeWithPersistence(ctx, &ContextRequest{}, nil)
 	require.ErrorIs(t, err, context.Canceled)
 }

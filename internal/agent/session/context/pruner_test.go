@@ -13,7 +13,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +39,7 @@ func TestPruner_MidExecutionCancel(t *testing.T) {
 	}
 
 	// We need some history to trigger reconstructHistory loop
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -64,12 +63,12 @@ func TestPruner_Policies_ContextCancelled(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		policy ports.PruningPolicy
+		policy PruningPolicy
 	}{
 		{"SlidingWindow", &SlidingWindowPolicy{MaxTurns: 10}},
 		{"Importance", &importanceRankPolicy{}},
 		{"Pinning", &pinningPolicy{}},
-		{"Composite", &compositePruningPolicy{Policies: []ports.PruningPolicy{&SlidingWindowPolicy{MaxTurns: 10}}}},
+		{"Composite", &compositePruningPolicy{Policies: []PruningPolicy{&SlidingWindowPolicy{MaxTurns: 10}}}},
 	}
 
 	for _, tt := range tests {
@@ -96,7 +95,7 @@ func TestPruner_ApplyPolicies_ErrorPropagation(t *testing.T) {
 	}
 
 	// 3. Setup Request with history to trigger policy call
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "world"}}},
@@ -122,7 +121,7 @@ func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
 
 	// 2. Create Composite Policy
 	composite := &compositePruningPolicy{
-		Policies: []ports.PruningPolicy{mockSubPolicy},
+		Policies: []PruningPolicy{mockSubPolicy},
 	}
 
 	// 3. Instantiate Pruner
@@ -131,7 +130,7 @@ func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
 	}
 
 	// 4. Setup Request
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 		},
@@ -156,7 +155,7 @@ func TestCompositePruningPolicy_MarkTurns_ErrorPropagation(t *testing.T) {
 	}
 
 	composite := &compositePruningPolicy{
-		Policies: []ports.PruningPolicy{mockSubPolicy},
+		Policies: []PruningPolicy{mockSubPolicy},
 	}
 
 	turns := [][]*llm.Content{{{Role: "user"}}}
@@ -179,7 +178,7 @@ func TestHistoryPruner_Transform_EmptyHistory(t *testing.T) {
 	pruner := &HistoryPruner{
 		Policy: &SlidingWindowPolicy{MaxTurns: 1},
 	}
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: nil,
 	}
 	err := pruner.Transform(context.Background(), req)

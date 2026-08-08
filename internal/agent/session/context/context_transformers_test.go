@@ -12,7 +12,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,11 +51,11 @@ func TestHistoryPruner_Transform(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		policy  ports.PruningPolicy
+		policy  PruningPolicy
 		history []*llm.Content
 		cancel  bool
 		wantErr error
-		verify  func(t *testing.T, req *ports.ContextRequest)
+		verify  func(t *testing.T, req *ContextRequest)
 	}{
 		{
 			name:   "Pruning occurred",
@@ -69,7 +68,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 				{Role: "user", Parts: []*llm.Part{{Text: "5"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "6"}}},
 			},
-			verify: func(t *testing.T, req *ports.ContextRequest) {
+			verify: func(t *testing.T, req *ContextRequest) {
 				require.Len(t, req.History, 2)
 				require.Equal(t, 2, req.Metadata.PrunedTurns)
 				count, ok := req.Metadata.KeptByPolicy["SlidingWindow"]
@@ -83,7 +82,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			history: []*llm.Content{
 				{Role: "user"},
 			},
-			verify: func(t *testing.T, req *ports.ContextRequest) {
+			verify: func(t *testing.T, req *ContextRequest) {
 				require.Equal(t, 0, req.Metadata.PrunedTurns)
 			},
 		},
@@ -105,7 +104,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
 				{Role: "user", Parts: []*llm.Part{{Text: "3"}}},
 			},
-			verify: func(t *testing.T, req *ports.ContextRequest) {
+			verify: func(t *testing.T, req *ContextRequest) {
 				// Grouping: [1,2], [3]. MaxTurns 1 keeps the last turn: [3].
 				require.Len(t, req.History, 1)
 				require.Equal(t, "3", req.History[0].Parts[0].Text)
@@ -118,7 +117,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			pruner := &HistoryPruner{
 				Policy: tt.policy,
 			}
-			req := &ports.ContextRequest{
+			req := &ContextRequest{
 				History: tt.history,
 			}
 
@@ -185,7 +184,7 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 
 func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	p := &compositePruningPolicy{
-		Policies: []ports.PruningPolicy{
+		Policies: []PruningPolicy{
 			&SlidingWindowPolicy{MaxTurns: 1},
 			&pinningPolicy{},
 		},
@@ -216,7 +215,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 			nil,
 			withMaxTokens(1000),
 		)
-		req := &request{History: []*llm.Content{{Role: "user"}}}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.NoError(t, err)
 		require.Equal(t, 500, req.Metadata.FinalTokenCount)
@@ -237,7 +236,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		for i := range h {
 			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 		}
-		req := &request{History: h}
+		req := &ContextRequest{History: h}
 		err := tg.Transform(ctx, req)
 		require.ErrorIs(t, err, llm.ErrContextLimitExceeded)
 	})
@@ -256,7 +255,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		for i := range h {
 			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 		}
-		req := &request{History: h}
+		req := &ContextRequest{History: h}
 		err := tg.Transform(ctx, req)
 		// Should still succeed if under limit, but metadata won't show summarization
 		require.NoError(t, err)
@@ -272,7 +271,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 	injector := &WarningInjector{Strategy: strategy}
 
 	t.Run("Inject turn warning", func(t *testing.T) {
-		req := &request{
+		req := &ContextRequest{
 			Turn: 8, // 2 remaining
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
@@ -332,7 +331,7 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 		h[i].Pinned = true
 	}
 
-	req := &request{History: h}
+	req := &ContextRequest{History: h}
 	err := tg.Transform(ctx, req)
 	require.NoError(t, err)
 
@@ -350,7 +349,7 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 	injector := &WarningInjector{Strategy: strategy}
 
 	t.Run("Inject clogged warning", func(t *testing.T) {
-		req := &request{
+		req := &ContextRequest{
 			Turn: 1,
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
@@ -390,7 +389,7 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	for i := range h {
 		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 	}
-	req := &request{History: h}
+	req := &ContextRequest{History: h}
 	err := tg.Transform(ctx, req)
 	require.NoError(t, err)
 	require.True(t, req.Metadata.SummarizationAttempted)
@@ -413,7 +412,7 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 		}
 		h[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}, Pinned: true}
 	}
-	req := &request{History: h}
+	req := &ContextRequest{History: h}
 
 	err := tg.Transform(ctx, req)
 	// autoSummarize will fail, but since tokens (1900) < SafetyLimit (2000-buffer), it might not fail the turn.
@@ -430,7 +429,7 @@ func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 	injector := &WarningInjector{Strategy: strategy}
 
 	t.Run("Blocked triggers clogged warning", func(t *testing.T) {
-		req := &request{
+		req := &ContextRequest{
 			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}}},
 		}
 		req.Metadata.FinalTokenCount = 900 // > 85%
@@ -476,7 +475,7 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 				nil,
 				withMaxTokens(tt.maxTokens),
 			)
-			req := &request{History: []*llm.Content{{Role: "user"}}}
+			req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
 			err := tg.Transform(ctx, req)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -492,7 +491,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	maxTokens := 2000
 	pipeline, strategy := setupTestPipeline(maxTokens)
 
-	req := &request{
+	req := &ContextRequest{
 		History: generatePinnedHistory(20, 400),
 		Turn:    1,
 	}
@@ -508,7 +507,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	tg := pipeline.transformers[0].(*TokenGatekeeper) // TokenGatekeeper is first after sorting (80)
 	tg.MaxTokens = maxTokens
 
-	req2 := &request{
+	req2 := &ContextRequest{
 		History: generatePinnedHistory(20, 2960),
 		Turn:    1,
 	}
@@ -529,7 +528,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 			nil,
 			withMaxTokens(1000),
 		)
-		req := &request{History: []*llm.Content{{Role: "user"}}}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 901 tokens (limit 900)")
 
@@ -544,7 +543,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 			nil,
 			withMaxTokens(10000),
 		)
-		req := &request{History: []*llm.Content{{Role: "user"}}}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 9001 tokens (limit 9000)")
 
@@ -672,7 +671,7 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &request{History: tt.input}
+			req := &ContextRequest{History: tt.input}
 			err := filter.Transform(ctx, req)
 			require.NoError(t, err)
 			require.Len(t, req.History, tt.expected)
@@ -723,7 +722,7 @@ func TestFinalContextValidator_Transform(t *testing.T) {
 			strategy.SetLimits(tt.maxTokens, 10, 20)
 			counter.Tokens = tt.tokens
 
-			req := &request{
+			req := &ContextRequest{
 				History: []*llm.Content{
 					{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 					{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
@@ -1233,7 +1232,7 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &request{History: tt.history}
+			req := &ContextRequest{History: tt.history}
 			err := repairer.Transform(ctx, req)
 			require.NoError(t, err)
 			require.Len(t, req.History, tt.wantLen)
@@ -1302,7 +1301,7 @@ func TestContextPipeline_NilSafety(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &ports.ContextRequest{
+			req := &ContextRequest{
 				History: tt.history,
 			}
 
@@ -1323,7 +1322,7 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		transformer ports.ContextTransformer
+		transformer ContextTransformer
 		history     []*llm.Content
 		wantErr     error
 	}{
@@ -1391,7 +1390,7 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 				return
 			}
 
-			req := &ports.ContextRequest{History: tt.history}
+			req := &ContextRequest{History: tt.history}
 			err := tt.transformer.Transform(ctx, req)
 			require.ErrorIs(t, err, tt.wantErr)
 		})
@@ -1446,7 +1445,7 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 		ctx := context.Background()
 		// emptyTurnFilter error from isTurnEmpty (nil part in message, not last turn)
 		etf := &emptyTurnFilter{}
-		err := etf.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+		err := etf.Transform(ctx, &ContextRequest{History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{nil}},
 			{Role: "user"},
 		}})
@@ -1471,21 +1470,21 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 
 		// HistoryRepairer error from nil part
 		hr := &HistoryRepairer{}
-		err = hr.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+		err = hr.Transform(ctx, &ContextRequest{History: []*llm.Content{
 			{Role: "model", Parts: []*llm.Part{nil}},
 		}})
 		require.ErrorIs(t, err, ErrInvalidPayload)
 
 		// contentCleaner error from cleanContent
 		cc := &contentCleaner{}
-		err = cc.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+		err = cc.Transform(ctx, &ContextRequest{History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{nil}},
 		}})
 		require.ErrorIs(t, err, ErrInvalidPayload)
 
 		// thoughtSignaturePropagator error from propagateSignatureToMessage
 		tsp := &thoughtSignaturePropagator{}
-		err = tsp.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+		err = tsp.Transform(ctx, &ContextRequest{History: []*llm.Content{
 			{Role: "model", Parts: []*llm.Part{nil}},
 		}})
 		require.ErrorIs(t, err, ErrInvalidPayload)
@@ -1501,7 +1500,7 @@ func TestContentCleaner_Transform(t *testing.T) {
 	cleaner := &contentCleaner{}
 
 	t.Run("Clean empty parts", func(t *testing.T) {
-		req := &request{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{
 					Role: "user",
@@ -1519,7 +1518,7 @@ func TestContentCleaner_Transform(t *testing.T) {
 	})
 
 	t.Run("Fallback for completely empty content", func(t *testing.T) {
-		req := &request{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{
 					Role: "model",
@@ -1540,7 +1539,7 @@ func TestTransientMerger_Transform(t *testing.T) {
 	ctx := context.Background()
 	merger := &TransientMerger{}
 
-	req := &request{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{
 				Role:           "user",
@@ -1579,7 +1578,7 @@ func TestToolResponseCleaner_Transform_NilSafety(t *testing.T) {
 	cleaner := &toolResponseCleaner{}
 
 	t.Run("Verify tool response cleaning", func(t *testing.T) {
-		req := &ports.ContextRequest{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
@@ -1597,7 +1596,7 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 	pruner := &emptyMessagePruner{}
 
 	t.Run("Prune empty messages", func(t *testing.T) {
-		req := &ports.ContextRequest{
+		req := &ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 				{Role: "model", Parts: []*llm.Part{}}, // Should be dropped
@@ -1622,13 +1621,13 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		inputReq       *ports.ContextRequest
+		inputReq       *ContextRequest
 		wantPersist    bool
-		validateResult func(t *testing.T, req *ports.ContextRequest)
+		validateResult func(t *testing.T, req *ContextRequest)
 	}{
 		{
 			name: "propagates signature to function calls",
-			inputReq: &ports.ContextRequest{
+			inputReq: &ContextRequest{
 				History: []*llm.Content{
 					{
 						Role: "user",
@@ -1646,7 +1645,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				},
 			},
 			wantPersist: true,
-			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+			validateResult: func(t *testing.T, req *ContextRequest) {
 				modelMsg := req.History[1]
 				fcPart := modelMsg.Parts[1]
 				assert.Equal(t, "sig-123", string(fcPart.ThoughtSignature))
@@ -1654,7 +1653,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 		},
 		{
 			name: "ignores non-model roles",
-			inputReq: &ports.ContextRequest{
+			inputReq: &ContextRequest{
 				History: []*llm.Content{
 					{
 						Role: "user",
@@ -1666,21 +1665,21 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				},
 			},
 			wantPersist: false,
-			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+			validateResult: func(t *testing.T, req *ContextRequest) {
 				fcPart := req.History[0].Parts[1]
 				assert.Empty(t, fcPart.ThoughtSignature)
 			},
 		},
 		{
 			name: "Nil History slice handled gracefully",
-			inputReq: &ports.ContextRequest{
+			inputReq: &ContextRequest{
 				History: nil,
 			},
 			wantPersist: false,
 		},
 		{
 			name: "Model message without thought signature is ignored",
-			inputReq: &ports.ContextRequest{
+			inputReq: &ContextRequest{
 				History: []*llm.Content{
 					{
 						Role: "model",
@@ -1692,14 +1691,14 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				},
 			},
 			wantPersist: false,
-			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+			validateResult: func(t *testing.T, req *ContextRequest) {
 				fcPart := req.History[0].Parts[1]
 				assert.Empty(t, fcPart.ThoughtSignature)
 			},
 		},
 		{
 			name: "Existing signature on FunctionCall is preserved",
-			inputReq: &ports.ContextRequest{
+			inputReq: &ContextRequest{
 				History: []*llm.Content{
 					{
 						Role: "model",
@@ -1714,14 +1713,14 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				},
 			},
 			wantPersist: false,
-			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+			validateResult: func(t *testing.T, req *ContextRequest) {
 				fcPart := req.History[0].Parts[1]
 				assert.Equal(t, "existing-sig", string(fcPart.ThoughtSignature))
 			},
 		},
 		{
 			name: "Multiple thought signatures uses the first one found",
-			inputReq: &ports.ContextRequest{
+			inputReq: &ContextRequest{
 				History: []*llm.Content{
 					{
 						Role: "model",
@@ -1734,7 +1733,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				},
 			},
 			wantPersist: true,
-			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+			validateResult: func(t *testing.T, req *ContextRequest) {
 				fcPart := req.History[0].Parts[2]
 				assert.Equal(t, "sig-1", string(fcPart.ThoughtSignature))
 			},
@@ -1756,7 +1755,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 func TestTransientMerger_NilSafety(t *testing.T) {
 	t.Parallel()
 	merger := &TransientMerger{}
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "a"}}, TransientParts: []*llm.Part{{Text: "b"}}},
 		},

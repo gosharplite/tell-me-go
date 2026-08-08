@@ -598,8 +598,8 @@ catalog a new gap no one reviewed. Policy:
   comment fix, not a refactor. The concrete `*sessctx.Manager` type coupling
   (four holders: agent, orchestrator Engine, orchestrator Turn, and
   session.InternalTools — note `TurnState.Metadata` at engine_types.go:170 is a
-  Metadata holder, not a Manager holder) is agent-layer and not di-touched:
-  under the di-touch criterion (ADR-055) it belongs at its consumer and, by the
+  Metadata holder, not a Manager holder) is agent-layer and not cross-layer:
+  under the cross-layer criterion (ADR-056) it belongs at its consumer and, by the
   clarity-only standard, it is an accepted-cost entry, not a refactor and not a
   ports task.
 - **See**: `internal/agent/agent.go:39,44,104-149`, `internal/agent/service.go`,
@@ -1196,4 +1196,4 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go)*
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056)*
