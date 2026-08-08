@@ -68,6 +68,7 @@ The project is organized into the following top-level directories:
 - **Constructor Pattern**: Use `New<StructName>` functions to initialize packages (e.g., `func NewClient(apiKey string) *Client`).
 - **Interfaces**: Define interfaces at the *consumer* side to enable easy mocking in tests.
 - **Avoid Globals**: Do not use global variables for state. Pass dependencies explicitly via constructors.
+- **Tools-Layer Filesystem Boundary**: Tools-layer packages must not import `internal/infrastructure/persistence` except the two `default_fs.go` files (`internal/tools/analysis/default_fs.go`, `internal/tools/workspace/default_fs.go`), enforced by the `verify-tools-adapter-import` gate (ADR-055). Every live tool path uses the injected domain port (`persistence.FileSystem`); the named `defaultFS` fallback is the only sanctioned adapter construction site per package.
 
 ---
 

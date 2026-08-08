@@ -19,15 +19,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// createErrorFS wraps a persistence.FileSystem and overrides OpenFile to
-// return an error, simulating a file-creation failure without OS-specific
-// tricks like os.Chmod(0500).
-type createErrorFS struct {
+// atomicWriteErrorFS wraps a persistence.FileSystem and overrides
+// AtomicWrite to return an error, simulating an atomic-write failure
+// without OS-specific tricks like os.Chmod(0500).
+type atomicWriteErrorFS struct {
 	persistence.FileSystem
 }
 
-func (f *createErrorFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
-	return nil, fs.ErrPermission
+func (f *atomicWriteErrorFS) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	return fs.ErrPermission
 }
 
 type mockTransform struct {
@@ -48,7 +48,7 @@ func TestTransaction_Commit(t *testing.T) {
 	}
 
 	tx := newTransaction()
-	_, err := tx.LoadFile(path)
+	_, err := tx.LoadFile(context.Background(), path)
 	if err != nil {
 		t.Fatalf("LoadFile failed: %v", err)
 	}
@@ -79,24 +79,10 @@ func TestTransaction_Commit(t *testing.T) {
 	}
 }
 
-func TestTransaction_Rollback(t *testing.T) {
-	t.Parallel()
-	tx := newTransaction()
-	path := filepath.Join(t.TempDir(), "test_rollback.txt")
-	_ = os.WriteFile(path+".tmp", []byte("temp"), 0644)
-	defer func() { _ = os.Remove(path + ".tmp") }()
-
-	tx.rollback([]string{path})
-
-	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
-		t.Error("expected temp file to be removed after rollback")
-	}
-}
-
 func TestTransaction_LoadFile_Error(t *testing.T) {
 	t.Parallel()
 	tx := newTransaction()
-	_, err := tx.LoadFile("non_existent.go")
+	_, err := tx.LoadFile(context.Background(), "non_existent.go")
 	if err == nil {
 		t.Error("expected error loading non-existent file")
 	}
@@ -107,18 +93,18 @@ func TestTransaction_LoadFile_CachedReturn(t *testing.T) {
 	tx := newTransaction()
 
 	// First call: parses the file
-	f1, err := tx.LoadFile("testdata/valid.go")
+	f1, err := tx.LoadFile(context.Background(), "testdata/valid.go")
 	// If testdata/valid.go doesn't exist, create a temp file
 	if err != nil {
 		// Use a temp file instead
 		tmpDir := t.TempDir()
 		path := tmpDir + "/valid.go"
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
-		f1, err = tx.LoadFile(path)
+		f1, err = tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 
 		// Second call with same path: should return cached file
-		f2, err := tx.LoadFile(path)
+		f2, err := tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 		if f1 != f2 {
 			t.Error("LoadFile must return the same *ast.File pointer on cache hit")
@@ -128,7 +114,7 @@ func TestTransaction_LoadFile_CachedReturn(t *testing.T) {
 	require.NoError(t, err)
 
 	// Second call with same path: should return cached file (same pointer)
-	f2, err := tx.LoadFile("testdata/valid.go")
+	f2, err := tx.LoadFile(context.Background(), "testdata/valid.go")
 	require.NoError(t, err)
 
 	if f1 != f2 {
@@ -145,7 +131,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
 
 		tx := newTransaction()
-		_, err := tx.LoadFile(path)
+		_, err := tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 
 		// Corrupt AST so format.Node fails
@@ -181,7 +167,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
 
 		tx := newTransaction()
-		_, err := tx.LoadFile(path)
+		_, err := tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 
 		tx.Add(&mockTransform{
@@ -201,7 +187,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 
 		err = tx.Commit(context.Background())
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to finalize")
+		assert.Contains(t, err.Error(), "failed to rename temp file")
 
 		// .tmp cleaned (rollback)
 		_, statErr := os.Stat(path + ".tmp")
@@ -215,7 +201,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
 
 		tx := newTransaction()
-		_, err := tx.LoadFile(path)
+		_, err := tx.LoadFile(context.Background(), path)
 		require.NoError(t, err)
 
 		tx.Add(&mockTransform{
@@ -230,15 +216,20 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		assert.Contains(t, err.Error(), "simulated transform failure")
 	})
 
-	t.Run("create_temp_file_error_is_wrapped", func(t *testing.T) {
+	t.Run("atomic_write_error_is_wrapped", func(t *testing.T) {
 		t.Parallel()
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "test.go")
-		require.NoError(t, os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0644))
+		ctx := context.Background()
+		path := filepath.Join(t.TempDir(), "test.go")
+		content := []byte("package p\n\nfunc F() {}\n")
+
+		// LoadFile reads through the injected FS, so the mock must hold
+		// the source before the AtomicWrite failure is exercised.
+		mfs := persistence.NewMockFileSystem()
+		require.NoError(t, mfs.WriteFile(ctx, path, content, 0644))
 
 		tx := newTransaction()
-		tx.fs = &createErrorFS{FileSystem: persistence.NewMockFileSystem()}
-		_, err := tx.LoadFile(path)
+		tx.fs = &atomicWriteErrorFS{FileSystem: mfs}
+		_, err := tx.LoadFile(ctx, path)
 		require.NoError(t, err)
 
 		tx.Add(&mockTransform{
@@ -247,10 +238,9 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 			},
 		})
 
-		err = tx.Commit(context.Background())
+		err = tx.Commit(ctx)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "create temp file")
-		assert.Contains(t, err.Error(), ".tmp")
+		assert.Contains(t, err.Error(), "atomic write")
 	})
 
 	t.Run("load_file_parse_error_is_wrapped", func(t *testing.T) {
@@ -260,7 +250,7 @@ func TestTransaction_Commit_ErrorPaths(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("not valid go {{{"), 0644))
 
 		tx := newTransaction()
-		_, err := tx.LoadFile(path)
+		_, err := tx.LoadFile(context.Background(), path)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse")
 		assert.Contains(t, err.Error(), "broken.go")

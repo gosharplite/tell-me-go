@@ -1,16 +1,15 @@
 package analysis
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
-	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // transform represents a single code transformation.
@@ -27,10 +26,22 @@ type transaction struct {
 }
 
 func newTransaction() *transaction {
+	return newTransactionWithFS(defaultFS)
+}
+
+// newTransactionWithFS constructs a transaction bound to an explicitly
+// injected filesystem. nil is a contract violation: use newTransaction()
+// for the package default (defaultFS). In production the DI hub always
+// provides a non-nil persistence.FileSystem; the panic guards test-reachable
+// seams and misuse.
+func newTransactionWithFS(fs persistence.FileSystem) *transaction {
+	if fs == nil {
+		panic("nil FileSystem to newTransactionWithFS: use newTransaction() for the default")
+	}
 	return &transaction{
 		fset:  token.NewFileSet(),
 		files: make(map[string]*ast.File),
-		fs:    infra_persistence.NewOSFileSystem(),
+		fs:    fs,
 	}
 }
 
@@ -45,31 +56,13 @@ func (tx *transaction) Commit(ctx context.Context) error {
 		}
 	}
 
-	var writtenFiles []string
 	for path, file := range tx.files {
-		tmpPath := path + ".tmp"
-		f, err := tx.fs.OpenFile(ctx, tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
-		if err != nil {
-			tx.rollback(writtenFiles)
-			return fmt.Errorf("create temp file %s: %w", tmpPath, err)
-		}
-		if err := tx.safeFormat(f, file); err != nil {
-			_ = f.Close()
-			_ = os.Remove(tmpPath)
-			tx.rollback(writtenFiles)
+		var buf bytes.Buffer
+		if err := tx.safeFormat(&buf, file); err != nil {
 			return fmt.Errorf("format %s: %w", path, err)
 		}
-		_ = f.Close()
-		writtenFiles = append(writtenFiles, path)
-	}
-
-	for i, path := range writtenFiles {
-		if err := os.Rename(path+".tmp", path); err != nil {
-			// Clean up remaining .tmp files from this point onward
-			for _, p := range writtenFiles[i:] {
-				_ = os.Remove(p + ".tmp")
-			}
-			return fmt.Errorf("failed to finalize %s: %w", path, err)
+		if err := tx.fs.AtomicWrite(ctx, path, buf.Bytes(), 0644); err != nil {
+			return fmt.Errorf("atomic write %s: %w", path, err)
 		}
 	}
 
@@ -89,18 +82,17 @@ func (tx *transaction) safeFormat(w interface {
 	return format.Node(w, tx.fset, file)
 }
 
-func (tx *transaction) rollback(writtenFiles []string) {
-	for _, path := range writtenFiles {
-		_ = os.Remove(path + ".tmp")
-	}
-}
-
-func (tx *transaction) LoadFile(path string) (*ast.File, error) {
+func (tx *transaction) LoadFile(ctx context.Context, path string) (*ast.File, error) {
 	if f, ok := tx.files[path]; ok {
 		return f, nil
 	}
 
-	f, err := parser.ParseFile(tx.fset, path, nil, parser.ParseComments)
+	data, err := tx.fs.ReadFile(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	f, err := parser.ParseFile(tx.fset, path, data, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
