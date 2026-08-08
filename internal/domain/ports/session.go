@@ -7,7 +7,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -100,33 +99,6 @@ type ChatterConfig struct {
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.
 type ChatterFactory func(ctx context.Context, deps ChatterComposer, cfg ChatterConfig) (Chatter, error)
-
-// SessionConfig defines the configuration interface for a session.
-type SessionConfig interface {
-	// GetPrompt returns the user's input prompt for the current turn.
-	GetPrompt() string
-
-	// GetLastN returns the number of recent history entries to display.
-	GetLastN() int
-
-	// IsLastNSet returns true if -l was explicitly passed by the user.
-	// When false, GetLastN() returns 0 (default).
-	IsLastNSet() bool
-
-	// GetBackN returns the number of turns to roll back when processing
-	// a history navigation command.
-	GetBackN() int
-
-	// GetRawOutput returns true if markdown rendering should be disabled
-	// and output should be displayed as plain text.
-	GetRawOutput() bool
-
-	// GetConfigPath returns the filesystem path to the main configuration file.
-	GetConfigPath() string
-
-	// GetConfig returns the full application configuration.
-	GetConfig() *config.Config
-}
 
 // ChatterComposer defines the dependencies required to construct a Chatter
 // via a ChatterFactory. It is the narrowest interface needed by

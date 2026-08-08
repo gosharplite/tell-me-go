@@ -136,3 +136,7 @@ The context-pipeline family leaves `internal/domain/ports`:
   composition-root-excluded single-layer status is realignment-eligibility, not an
   exit). Realignment-strike stay-rationales enumerated above.
 - **SessionConfig realignment** tracked as follow-up work (not a non-fix).
+
+### SessionConfig realignment completed (2026-08)
+
+**SessionConfig realignment completed** — interface moved to `internal/agent/session` per ADR-003 Rule #1; `ports.SessionConfig` deleted; move is edge-neutral for the transitive gate (no whitelist change).
