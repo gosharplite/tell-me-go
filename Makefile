@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -42,6 +42,7 @@ help:
 	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
+	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
@@ -63,7 +64,7 @@ help:
 build:
 	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
-test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock
+test: verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import
 	go test ./...
 
 # Verify ADR-021: no testutil packages (centralized test-double dump).
@@ -350,6 +351,65 @@ else
 	"
 endif
 
+# Verify ADR-055: the internal/infrastructure/persistence adapter import is
+# confined to the two sanctioned default_fs.go files in internal/tools/
+# (analysis, workspace). Every other tools-layer production file must use
+# the injected domain port (persistence.FileSystem).
+verify-tools-adapter-import:
+ifeq ($(IS_POSIX),true)
+	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
+	@VIOLATIONS="$$( grep -rn 'github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"' internal/tools/ --include='*.go' \
+		| grep -v '_test\.go:' \
+		| grep -v '^internal/tools/analysis/default_fs\.go:' \
+		| grep -v '^internal/tools/workspace/default_fs\.go:' )"; \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo ""; \
+		echo "❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files."; \
+		echo "   internal/tools production files may import internal/infrastructure/persistence"; \
+		echo "   only in internal/tools/analysis/default_fs.go and"; \
+		echo "   internal/tools/workspace/default_fs.go (each holds its package's defaultFS fallback)."; \
+		echo "   Every live tool path must use the injected domain port (persistence.FileSystem)."; \
+		echo "   See: docs/adr/2026-08-tools-filesystem-injection.md"; \
+		echo ""; \
+		echo "Violating files:"; \
+		echo "$$VIOLATIONS"; \
+		echo ""; \
+		echo "Fix: route through the injected FileSystem (ToolRegistrationParams.FileSystem →"; \
+		echo "workspace.Register → registerSystem → newshellTool) and construct the adapter"; \
+		echo "only in the package's default_fs.go."; \
+		exit 1; \
+	fi
+	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
+else
+	@echo "Checking for infrastructure/persistence adapter imports in tools production files (ADR-055)..."
+	@powershell -Command " \
+		$$ErrorActionPreference = 'Stop'; \
+		$$violations = @(); \
+		Get-ChildItem -Path internal/tools -Recurse -Filter '*.go' | Where-Object { \
+			$$_.Name -notlike '*_test.go' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/analysis/default_fs\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'internal/tools/workspace/default_fs\.go$$' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch '.git/' -and \
+			($$_.FullName.Replace('\', '/')) -notmatch 'vendor/' \
+		} | ForEach-Object { \
+			$$matches = Select-String -Path $$_.FullName -Pattern 'github\.com/gosharplite/tell-me-go/internal/infrastructure/persistence"'; \
+			if ($$matches) { foreach ($$m in $$matches) { $$violations += ('{0}:{1}' -f $$m.Path, $$m.LineNumber) } } \
+		}; \
+		if ($$violations.Count -gt 0) { \
+			Write-Host ''; \
+			Write-Host '❌ ADR-055 violation: adapter import outside the sanctioned default_fs.go files.'; \
+			Write-Host '   See: docs/adr/2026-08-tools-filesystem-injection.md'; \
+			Write-Host ''; \
+			$$violations | Sort-Object -Unique | ForEach-Object { Write-Host $$_ }; \
+			Write-Host ''; \
+			Write-Host 'Fix: route through the injected FileSystem and construct the adapter'; \
+			Write-Host 'only in the package default_fs.go.'; \
+			exit 1 \
+		} \
+	"
+	@echo "  ✓ Adapter imports confined to the two default_fs.go files."
+endif
+
 # Verify no time.Sleep for synchronization in test files (Issue #580 / ADR-036).
 # Legitimate I/O simulation and hardware observation sleeps are explicitly allow-listed.
 verify-no-test-sleep:
@@ -589,6 +649,8 @@ check: fmt tidy build
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="
 	@$(MAKE) verify-session-provider-mock
+	@echo "=== verify-tools-adapter-import ==="
+	@$(MAKE) verify-tools-adapter-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="
@@ -621,6 +683,8 @@ check-full: fmt tidy build
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="
 	@$(MAKE) verify-session-provider-mock
+	@echo "=== verify-tools-adapter-import ==="
+	@$(MAKE) verify-tools-adapter-import
 	@echo "=== verify-no-test-sleep ==="
 	@$(MAKE) verify-no-test-sleep
 	@echo "=== verify-adr-index ==="

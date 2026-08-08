@@ -54,6 +54,9 @@ func validateRegistrationParams(params ToolRegistrationParams) error {
 	if params.WorkspacePolicy == nil {
 		return fmt.Errorf("RegisterAll: WorkspacePolicy is required and must not be nil")
 	}
+	if params.FileSystem == nil {
+		return fmt.Errorf("RegisterAll: FileSystem is required and must not be nil")
+	}
 	return nil
 }
 
