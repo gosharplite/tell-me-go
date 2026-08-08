@@ -10,7 +10,7 @@
 //
 // Agent Lifecycle & Configuration:
 //   - Chatter / ChatterFactory / ChatExecutor / ChatConfigurator / ChatEventSource
-//   - ChatterComposer / SessionConfig / Session
+//   - ChatterComposer / Session
 //
 // Conversation Persistence:
 //   - HistoryManager / HistoryReader / HistoryWriter / HistoryModifier

@@ -57,7 +57,7 @@ func (c *sessionConfig) GetConfigPath() string     { return c.ConfigPath }
 func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
 
 // NewSessionConfig creates a new sessionConfig with required parameters.
-func NewSessionConfig(configPath string, newSession bool, lastN int, lastNSet bool, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
+func NewSessionConfig(configPath string, newSession bool, lastN int, lastNSet bool, backN int, rawOutput bool, prompt string, cfg *config.Config) SessionConfig {
 	return &sessionConfig{
 		ConfigPath: configPath,
 		NewSession: newSession,
@@ -110,7 +110,7 @@ func NewSessionManager(homeDir, version string, sm domain_security.Manager, stdo
 }
 
 // Run executes the session orchestration.
-func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer, ic ports.Capturer, tuiOutput bool) (err error) {
+func (o *sessionManager) Run(ctx context.Context, sc SessionConfig, sd ports.ChatterComposer, ic ports.Capturer, tuiOutput bool) (err error) {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -185,7 +185,7 @@ func (o *sessionManager) teardownSession(
 	finalTurnStatus events.TurnStatus,
 	hasFinalTurnStatus bool,
 	sd ports.ChatterComposer,
-	sc ports.SessionConfig,
+	sc SessionConfig,
 	ic ports.Capturer,
 ) error {
 	var errs error
@@ -233,7 +233,7 @@ func (o *sessionManager) generateSessionID() string {
 }
 
 // Rollback deletes the specified number of turns from history.
-func (o *sessionManager) Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.ChatterComposer) error {
+func (o *sessionManager) Rollback(ctx context.Context, sc SessionConfig, sd ports.ChatterComposer) error {
 	if sc.GetBackN() <= 0 {
 		return nil
 	}
@@ -254,7 +254,7 @@ func (o *sessionManager) Rollback(ctx context.Context, sc ports.SessionConfig, s
 }
 
 // RenderHistory renders the last N messages from history.
-func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool) {
+func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg SessionConfig, isTTY bool) {
 	cfg := sCfg.GetConfig()
 	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.GetLastN(), ports.HistoryRenderOptions{
 		Raw:          sCfg.GetRawOutput(),
@@ -267,7 +267,7 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 // renderPostTUISummary writes a header, the last turn from history, and a
 // footer to stdout after the TUI exits. This ensures the user sees a summary
 // when the TUI auto-closes instead of an empty terminal.
-func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.ChatterComposer, sc ports.SessionConfig, ic ports.Capturer) {
+func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.ChatterComposer, sc SessionConfig, ic ports.Capturer) {
 	isTTY := ic.IsTTY(o.Stdout)
 	cfg := sc.GetConfig()
 
@@ -307,7 +307,7 @@ func (o *sessionManager) renderPostTUISummary(ts events.TurnStatus, sd ports.Cha
 	_, _ = fmt.Fprintf(o.Stdout, "%s\n", progress.FormatFinalLine(ts, turnCost))
 }
 
-func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
+func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg SessionConfig, sd ports.ChatterComposer, capturer ports.Capturer, tuiOutput bool) (*ui.Bridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	logger := sd.GetLogger()
