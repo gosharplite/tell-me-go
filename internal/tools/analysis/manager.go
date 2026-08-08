@@ -87,7 +87,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		types:      newTypeManager(idx, cache, sp, fs),
 		deadCode:   dc,
 
-		refactor: newRefactorManager(sp),
+		refactor: newRefactorManager(fs, sp),
 		info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner, Policy: wp, clk: clock.RealClock{}},
 		search:   &searchManager{SP: sp, FS: fs, Policy: wp},
 		arch:     &architectureManager{SP: sp, Runner: runner, idx: idx, clk: clock.RealClock{}},

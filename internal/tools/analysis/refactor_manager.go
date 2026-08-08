@@ -6,16 +6,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 type refactorManager struct {
+	fs persistence.FileSystem
 	SP refactorSecurity
 }
 
-func newRefactorManager(sp refactorSecurity) *refactorManager {
-	return &refactorManager{SP: sp}
+func newRefactorManager(fs persistence.FileSystem, sp refactorSecurity) *refactorManager {
+	return &refactorManager{fs: fs, SP: sp}
 }
 
 func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -47,11 +49,11 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	plan.SrcFile = resolvedSrc
 	plan.DstFile = resolvedDst
 
-	tx := newTransaction()
-	if _, err := tx.LoadFile(plan.SrcFile); err != nil {
+	tx := newTransactionWithFS(m.fs)
+	if _, err := tx.LoadFile(ctx, plan.SrcFile); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("move definition load src %s: %w", plan.SrcFile, err)
 	}
-	if _, err := tx.LoadFile(plan.DstFile); err != nil {
+	if _, err := tx.LoadFile(ctx, plan.DstFile); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("move definition load dst %s: %w", plan.DstFile, err)
 	}
 
@@ -69,7 +71,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 // loadGoFilesForRename discovers all Go source files in resolvedDir, loads
 // them into a new transaction, and returns the file list and transaction.
 // Callers own the responsibility of adding transforms and committing.
-func (m *refactorManager) loadGoFilesForRename(resolvedDir string) ([]string, *transaction, error) {
+func (m *refactorManager) loadGoFilesForRename(ctx context.Context, resolvedDir string) ([]string, *transaction, error) {
 	goFiles, err := filepath.Glob(filepath.Join(resolvedDir, "*.go"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("glob %s: %w", resolvedDir, err)
@@ -78,9 +80,9 @@ func (m *refactorManager) loadGoFilesForRename(resolvedDir string) ([]string, *t
 		return nil, nil, fmt.Errorf("no .go files found in %s", resolvedDir)
 	}
 
-	tx := newTransaction()
+	tx := newTransactionWithFS(m.fs)
 	for _, f := range goFiles {
-		if _, err := tx.LoadFile(f); err != nil {
+		if _, err := tx.LoadFile(ctx, f); err != nil {
 			return nil, nil, fmt.Errorf("load %s: %w", filepath.Base(f), err)
 		}
 	}
@@ -108,7 +110,7 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 	}
 
 	// Discover and load all Go source files into a transaction.
-	goFiles, tx, err := m.loadGoFilesForRename(resolvedDir)
+	goFiles, tx, err := m.loadGoFilesForRename(ctx, resolvedDir)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("rename symbol %s→%s: %w", params.OldName, params.NewName, err)
 	}
