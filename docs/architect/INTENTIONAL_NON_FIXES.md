@@ -293,7 +293,7 @@ catalog a new gap no one reviewed. Policy:
   error-return branch flagged by coverage tools does not exist in the current
   single-file architecture. Structurally unreachable — same acceptance class
   as `json.Marshal` on all-string structs in `global_prompt_tracker.go`.
-- **See**: `internal/domain/config/config.go:224-229`
+- **See**: `internal/domain/config/config.go:224-229` (definition), `:249-251` (call-site error branch, covered by this entry)
 
 ### domain/events/events.go — NoOpEventBus no-op stubs at 0%
 
@@ -496,7 +496,9 @@ catalog a new gap no one reviewed. Policy:
   directory contains no production `.go` files, which is why it does not
   appear in the dependency graph. The Makefile `test-coverage` target already
   explicitly excludes this path from coverage metrics alongside the other
-  `*test/` sub-packages. The directory name `testing/` clearly signals its
+  test-double sub-packages (agenttest/, orchestratortest/, configtest/,
+  analysistest/, clitest/, eventstest/, persistencetest/, toolstest/). The
+  directory name `testing/` clearly signals its
   purpose as test infrastructure. No action is needed.
 - **See**: `Makefile` (test-coverage target, line filtering `internal/infrastructure/testing/`),
   `internal/infrastructure/testing/testdata/helper/main.go`,

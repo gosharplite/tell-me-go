@@ -278,7 +278,7 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 
 	factory := &Factory{}
 	pipeline := NewContextPipeline(
-		&MockTransformer{
+		&mockTransformer{
 			TransformFunc: func(ctx context.Context, req *ContextRequest) error {
 				return errors.New("transform error")
 			},

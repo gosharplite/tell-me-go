@@ -129,7 +129,7 @@ func cloneContentSlice(contents []*llm.Content) []*llm.Content {
 func (cm *Manager) getCachedView(snapshotVersion int) ([]*llm.Content, *ContextMetadata, bool) {
 	if cm.cachedWindow != nil && cm.cachedVersion == snapshotVersion {
 		cachedHistory := cloneContentSlice(cm.cachedWindow)
-		clonedMeta := cm.cachedMetadata.Clone()
+		clonedMeta := cm.cachedMetadata.clone()
 		return cachedHistory, clonedMeta, true
 	}
 	return nil, nil, false
@@ -144,7 +144,7 @@ func (cm *Manager) updateCache(snapshotVersion int, req *ContextRequest) error {
 	}
 
 	cm.cachedWindow = cloneContentSlice(req.History)
-	cm.cachedMetadata = req.Metadata.Clone()
+	cm.cachedMetadata = req.Metadata.clone()
 	cm.cachedVersion = cm.version
 	return nil
 }

@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-transitive-gate verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-tools-adapter-import verify-no-test-sleep verify-architecture verify-exit-query verify-transitive-gate verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -40,7 +40,8 @@ help:
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
 	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
-	@echo "  make verify-transitive-gate - Print the ADR-056 transitive closure gate report (v1, report-only)"
+	@echo "  make verify-transitive-gate - Verify the ADR-056 transitive closure gate (STRICT; part of make check/check-full)"
+	@echo "  make verify-exit-query - ADR-056 Decision 1 exit query (report-only; ports realignment lens)"
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
@@ -48,7 +49,7 @@ help:
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
 	@echo "  make lint       - Run golangci-lint static analysis"
-	@echo "  make dead-code  - Run dead code detection (exports with zero inbound refs)"
+	@echo "  make dead-code       - Report orphan symbols (DEAD/PRIVATE); ports governance moved to verify-exit-query"
 	@echo "  make check      - Run full quality pipeline: fmt tidy build lint verify-architecture vulncheck fuzz-smoke test dead-code test-coverage"
 	@echo "  make check-full - Run full quality pipeline including race detection (use before push/merge)"
 	@echo "  make bench       - Run all benchmarks with memory allocation metrics"
@@ -478,13 +479,23 @@ endif
 # any consumer whose closure exceeds its whitelist or direct imports now
 # FAILS the gate — new closure growth must be adjudicated. Flip back to
 # report-only (-transitive-gate-report-only=true) only for diagnosis.
-# Deliberately NOT wired into verify-architecture.
+# Wired into check/check-full (ADR-056 enforcement is mandatory); kept
+# separate from verify-architecture so the two gates fail independently.
 verify-transitive-gate:
 ifeq ($(IS_POSIX),true)
 	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=false
 else
 	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=false
 endif
+
+# ADR-056 Decision 1 exit query (report-only — never fails the build).
+# Surfaces ports seams eligible for realignment adjudication. Quiet by
+# default: one governance line when all candidates are documented stays;
+# the full table prints when a NEW candidate exists or with
+# -exit-query-verbose. Wired into check/check-full so ports governance
+# drift is always observed.
+verify-exit-query:
+	@go run ./cmd/deadcode -exit-query
 
 # Verify the complexity-pin catalog partition (issue #1297): runs the real
 # GatherComplexities against the live INTENTIONAL_NON_FIXES.md catalog and
@@ -531,6 +542,9 @@ lint:
 vulncheck:
 	govulncheck ./...
 
+# dead-code reports the orphan scan only (DEAD/PRIVATE rows + the "No dead
+# code found." case). The ADR-056 Decision 1 exit query moved to
+# verify-exit-query.
 dead-code:
 	go run ./cmd/deadcode
 
@@ -659,6 +673,10 @@ check: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-transitive-gate ==="
+	@$(MAKE) verify-transitive-gate
+	@echo "=== verify-exit-query ==="
+	@$(MAKE) verify-exit-query
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="
@@ -693,6 +711,10 @@ check-full: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-transitive-gate ==="
+	@$(MAKE) verify-transitive-gate
+	@echo "=== verify-exit-query ==="
+	@$(MAKE) verify-exit-query
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="
@@ -721,14 +743,17 @@ check-full: fmt tidy build
 	@echo "All checks passed (including race detection)."
 
 # Generate coverage report excluding mocks, generated files, and the
-# agentinternal delegation bridge (ADR-022 / issue #138).
+# agentinternal delegation bridge (ADR-022 / issue #138). Excludes the
+# complete documented test-double set — all nine directories named by the
+# coverage-exclusions-explicit invariant in
+# docs/domain-model/quality.modelith.yaml.
 .PHONY: test-coverage
 test-coverage:
 	go test -coverprofile=coverage.raw ./...
 ifeq ($(IS_POSIX),true)
-	@grep -v -E "(internal/agent/agenttest/|internal/agent/orchestrator/orchestratortest/|internal/domain/config/configtest/|internal/tools/analysis/analysistest/|internal/infrastructure/testing/)" coverage.raw > coverage.out
+	@grep -v -E "(internal/agent/agenttest/|internal/agent/orchestrator/orchestratortest/|internal/domain/config/configtest/|internal/tools/analysis/analysistest/|internal/cli/clitest/|internal/domain/events/eventstest/|internal/infrastructure/persistence/persistencetest/|internal/tools/toolstest/|internal/infrastructure/testing/)" coverage.raw > coverage.out
 else
-	@findstr /V /R "internal/agent/agenttest/ internal/agent/orchestrator/orchestratortest/ internal/domain/config/configtest/ internal/tools/analysis/analysistest/ internal/infrastructure/testing/" coverage.raw > coverage.out
+	@findstr /V /R "internal/agent/agenttest/ internal/agent/orchestrator/orchestratortest/ internal/domain/config/configtest/ internal/tools/analysis/analysistest/ internal/cli/clitest/ internal/domain/events/eventstest/ internal/infrastructure/persistence/persistencetest/ internal/tools/toolstest/ internal/infrastructure/testing/" coverage.raw > coverage.out
 endif
 	go tool cover -func=coverage.out
 

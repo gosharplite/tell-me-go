@@ -31,11 +31,29 @@ import (
 // override is scoped to the new query only.
 //
 // Report-only: like the modelith-layers precedent, this query never fails
-// the build. cmd/deadcode prints the candidates; the exit code stays 0.
+// the build. The exit query is surfaced via `cmd/deadcode -exit-query` and
+// `make verify-exit-query`; the exit code stays 0.
 
 // orphanExitLayerLabel is the Layer value recorded when an interface has no
 // non-composition-root consumers and no non-composition-root implementers.
 const orphanExitLayerLabel = "orphan (no non-di consumers or implementers)"
+
+// exitStayRationales documents the ADR-056 post-ratification stays: ports
+// seams whose composition-root-excluded layer set is single-layer (so the
+// query surfaces them) but whose FULL criterion including di is cross-layer
+// — recorded stays, not realignment candidates. The query annotates them so
+// the report confirms the ADR instead of re-listing raw candidates. Source:
+// ADR-056 post-ratification record (docs/adr/2026-08-contract-home-and-
+// transitive-closure-gate.md). Keyed by symbol name (the query's scope is
+// ports interfaces only, where names are unique).
+var exitStayRationales = map[string]string{
+	"Capturer":         "di signature (BootstrapperConfig) — full criterion cross-layer",
+	"HistoryBrowser":   "di uiFactory binding — full criterion cross-layer",
+	"HistoryEditor":    "di uiFactory binding — full criterion cross-layer",
+	"UIRenderer":       "di uiFactory binding — full criterion cross-layer",
+	"SessionFinalizer": "di-implemented sessionDeps — full criterion cross-layer",
+	"HistoryRenderer":  "di + telemetry — recorded stay confirmed (realignment-eligibility, not an exit)",
+}
 
 // ExitCandidate is one internal/domain/ports interface whose non-composition-root
 // consumers + implementers sit in a single layer (or none) — an ADR-056
@@ -289,7 +307,10 @@ func packagePathOfSymbolID(id string) string {
 // The "— EXIT CANDIDATES (ADR-056 Decision 1, report-only) —" banner is
 // emitted by cmd/deadcode (see main.go); this function carries the
 // composition-root exclusion note and the per-symbol rows so the report is
-// self-documenting. Report-only: the output never influences the exit code.
+// self-documenting. Documented ADR-056 post-ratification stays (see
+// exitStayRationales) are annotated per-row with their stay rationale
+// instead of being re-listed as raw realignment candidates. Report-only: the
+// output never influences the exit code.
 func FormatExitCandidates(candidates []ExitCandidate) string {
 	var sb strings.Builder
 	sb.WriteString("ADR-056 Decision 1 exit query (report-only — never fails the build). Composition roots (internal/infrastructure/di, internal/infrastructure/factory) are excluded: realignment always unwires di wiring, so the query asks whether everything else sits in one layer.\n")
@@ -299,11 +320,43 @@ func FormatExitCandidates(candidates []ExitCandidate) string {
 		return sb.String()
 	}
 
-	_, _ = fmt.Fprintf(&sb, "\nFound %d exit candidate(s) — single-layer non-di consumer+implementer sets eligible for Decision-1 realignment:\n\n", len(candidates))
-	sb.WriteString("| symbol | layer | consumers | implementers |\n")
-	sb.WriteString("| --- | --- | --- | --- |\n")
+	stays := 0
 	for _, c := range candidates {
-		_, _ = fmt.Fprintf(&sb, "| %s.%s | %s | %d | %d |\n", c.Pkg, c.Symbol, c.Layer, c.Consumers, c.Implementers)
+		if _, ok := exitStayRationales[c.Symbol]; ok {
+			stays++
+		}
+	}
+	newCandidates := len(candidates) - stays
+
+	_, _ = fmt.Fprintf(&sb, "\nFound %d exit candidate(s): %d recorded stay(s) (ADR-056), %d new candidate(s) requiring adjudication:\n\n", len(candidates), stays, newCandidates)
+	sb.WriteString("| symbol | layer | consumers | implementers | status |\n")
+	sb.WriteString("| --- | --- | --- | --- | --- |\n")
+	for _, c := range candidates {
+		status := "NEW — adjudicate"
+		if rationale, ok := exitStayRationales[c.Symbol]; ok {
+			status = "stay: " + rationale
+		}
+		_, _ = fmt.Fprintf(&sb, "| %s.%s | %s | %d | %d | %s |\n", c.Pkg, c.Symbol, c.Layer, c.Consumers, c.Implementers, status)
 	}
 	return sb.String()
+}
+
+// SummarizeExitCandidates returns a compact one-line governance summary when
+// the candidate list contains no NEW rows (every candidate is a documented
+// ADR-056 stay, or the list is empty). It returns "" when a NEW candidate is
+// present — the caller must print the full FormatExitCandidates table so
+// actionable rows are never hidden. Quiet mode is the CLI default.
+func SummarizeExitCandidates(candidates []ExitCandidate) string {
+	if len(candidates) == 0 {
+		// FormatExitCandidates already prints the "no exit candidates" note.
+		return ""
+	}
+	for _, c := range candidates {
+		if _, ok := exitStayRationales[c.Symbol]; !ok {
+			// A NEW candidate requiring adjudication: the caller must print
+			// the full table so the actionable row is never hidden.
+			return ""
+		}
+	}
+	return fmt.Sprintf("ports governance (ADR-056 Decision 1): %d documented stay(s), 0 new candidate(s) requiring adjudication. Full table: go run ./cmd/deadcode -exit-query -exit-query-verbose\n", len(candidates))
 }

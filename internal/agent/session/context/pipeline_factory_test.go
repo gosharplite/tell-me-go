@@ -62,7 +62,7 @@ func TestFactory_BuildStandardPipeline_ExtraTransformerOrdering(t *testing.T) {
 		Profile:   profilePrecise,
 	}
 
-	extra := &mockTransformer{name: "extra-skill"}
+	extra := &namedMockTransformer{name: "extra-skill"}
 	pipeline := factory.BuildStandardPipeline(events.Limits{MaxHistoryTurns: 10, MaxHistoryTokens: 1000}, extra)
 
 	// extra transformers must appear after HistoryRepairer (index 0)
@@ -81,18 +81,18 @@ func TestFactory_BuildStandardPipeline_ExtraTransformerOrdering(t *testing.T) {
 	assert.True(t, foundExtra, "extra transformer must be present in pipeline")
 }
 
-type mockTransformer struct {
+type namedMockTransformer struct {
 	name string
 }
 
-func (m *mockTransformer) Transform(ctx context.Context, req *ContextRequest) error {
+func (m *namedMockTransformer) Transform(ctx context.Context, req *ContextRequest) error {
 	return nil
 }
 
-func (m *mockTransformer) Name() string {
+func (m *namedMockTransformer) Name() string {
 	return m.name
 }
 
-func (m *mockTransformer) Priority() int {
+func (m *namedMockTransformer) Priority() int {
 	return 0
 }

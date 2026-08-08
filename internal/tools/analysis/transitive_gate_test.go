@@ -31,7 +31,7 @@ allowed: <derived>
 func TestParseTransitiveWhitelist(t *testing.T) {
 	t.Parallel()
 
-	wl, err := ParseTransitiveWhitelist(pinnedWhitelist)
+	wl, err := parseTransitiveWhitelist(pinnedWhitelist)
 	require.NoError(t, err)
 
 	require.Len(t, wl.Decisions, 1)
@@ -113,7 +113,7 @@ func TestParseTransitiveWhitelist_Malformed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := ParseTransitiveWhitelist(tt.data)
+			_, err := parseTransitiveWhitelist(tt.data)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})
@@ -128,7 +128,7 @@ func TestParseTransitiveWhitelist_Malformed(t *testing.T) {
 // Dom(consumer) includes telemetry without the consumer importing it
 // directly.
 func transitiveFixtureGraph(modulePath string) map[string][]string {
-	ports := modulePath + "/" + PortsConsumerPath
+	ports := modulePath + "/" + portsConsumerPath
 	return map[string][]string{
 		modulePath + "/internal/consumer": {
 			modulePath + "/internal/domain/llm",
@@ -164,7 +164,7 @@ func TestDomainClosure_PortsHubExcluded(t *testing.T) {
 
 	t.Run("consumer closure excludes ports hub families", func(t *testing.T) {
 		t.Parallel()
-		dom := DomainClosure(graph, modulePath+"/internal/consumer", modulePath)
+		dom := domainClosure(graph, modulePath+"/internal/consumer", modulePath)
 		// config/security/skills live behind ports — the hub is a whitelisted
 		// node, so its closure is NOT attributed to importers.
 		assert.Equal(t, []string{"events", "llm", "telemetry"}, dom)
@@ -172,27 +172,27 @@ func TestDomainClosure_PortsHubExcluded(t *testing.T) {
 
 	t.Run("transitive consumer sees same closure", func(t *testing.T) {
 		t.Parallel()
-		dom := DomainClosure(graph, modulePath+"/internal/deep", modulePath)
+		dom := domainClosure(graph, modulePath+"/internal/deep", modulePath)
 		assert.Equal(t, []string{"events", "llm", "telemetry"}, dom)
 	})
 
 	t.Run("ports root traverses through itself", func(t *testing.T) {
 		t.Parallel()
-		dom := DomainClosure(graph, modulePath+"/"+PortsConsumerPath, modulePath)
+		dom := domainClosure(graph, modulePath+"/"+portsConsumerPath, modulePath)
 		// Rooted at the hub, its own edges expand to the full documented
 		// 9-family derived constant.
-		assert.Equal(t, DerivedPortsFamilies, dom)
+		assert.Equal(t, derivedPortsFamilies, dom)
 	})
 
 	t.Run("leaf domain family has empty closure", func(t *testing.T) {
 		t.Parallel()
-		dom := DomainClosure(graph, modulePath+"/internal/domain/llm", modulePath)
+		dom := domainClosure(graph, modulePath+"/internal/domain/llm", modulePath)
 		assert.Empty(t, dom)
 	})
 
 	t.Run("non-domain consumer has empty closure", func(t *testing.T) {
 		t.Parallel()
-		dom := DomainClosure(graph, modulePath+"/internal/pkg/clock", modulePath)
+		dom := domainClosure(graph, modulePath+"/internal/pkg/clock", modulePath)
 		assert.Empty(t, dom)
 	})
 }
@@ -202,22 +202,22 @@ func TestDirectDomainFamilies(t *testing.T) {
 	const modulePath = "example.com/mod"
 	graph := transitiveFixtureGraph(modulePath)
 
-	direct := DirectDomainFamilies(graph, modulePath+"/internal/consumer", modulePath)
+	direct := directDomainFamilies(graph, modulePath+"/internal/consumer", modulePath)
 	// ports excluded from direct domain imports; events + llm are the
 	// consumer's own direct domain families.
 	assert.Equal(t, []string{"events", "llm"}, direct)
 
-	direct = DirectDomainFamilies(graph, modulePath+"/"+PortsConsumerPath, modulePath)
-	assert.Equal(t, DerivedPortsFamilies, direct)
+	direct = directDomainFamilies(graph, modulePath+"/"+portsConsumerPath, modulePath)
+	assert.Equal(t, derivedPortsFamilies, direct)
 
-	direct = DirectDomainFamilies(graph, modulePath+"/internal/deep", modulePath)
+	direct = directDomainFamilies(graph, modulePath+"/internal/deep", modulePath)
 	assert.Empty(t, direct)
 }
 
 func TestClassifyConsumer(t *testing.T) {
 	t.Parallel()
 
-	wl, err := ParseTransitiveWhitelist(pinnedWhitelist)
+	wl, err := parseTransitiveWhitelist(pinnedWhitelist)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -225,7 +225,7 @@ func TestClassifyConsumer(t *testing.T) {
 		consumer   string
 		dom        []string
 		directDom  []string
-		wantStatus ConsumerStatus
+		wantStatus consumerStatus
 		wantExcess []string
 		wantDetail string
 	}{
@@ -234,7 +234,7 @@ func TestClassifyConsumer(t *testing.T) {
 			consumer:   "internal/ui/tui",
 			dom:        []string{"llm"},
 			directDom:  []string{"llm"},
-			wantStatus: StatusApprovedConstant,
+			wantStatus: statusApprovedConstant,
 			wantDetail: "whitelisted",
 		},
 		{
@@ -242,7 +242,7 @@ func TestClassifyConsumer(t *testing.T) {
 			consumer:   "internal/ui/tui",
 			dom:        []string{"llm", "security"},
 			directDom:  []string{"llm"},
-			wantStatus: StatusDecisionRequired,
+			wantStatus: statusDecisionRequired,
 			wantExcess: []string{"security"},
 			wantDetail: "excess beyond whitelist",
 		},
@@ -251,7 +251,7 @@ func TestClassifyConsumer(t *testing.T) {
 			consumer:   "internal/agent/agenttest",
 			dom:        []string{"events", "llm", "telemetry"},
 			directDom:  []string{"events", "llm", "telemetry"},
-			wantStatus: StatusApprovedConstant,
+			wantStatus: statusApprovedConstant,
 			wantDetail: "self-justifying",
 		},
 		{
@@ -259,22 +259,22 @@ func TestClassifyConsumer(t *testing.T) {
 			consumer:   "internal/agent/session",
 			dom:        []string{"config", "events", "llm"},
 			directDom:  []string{"llm"},
-			wantStatus: StatusDecisionRequired,
+			wantStatus: statusDecisionRequired,
 			wantExcess: []string{"config", "events"},
 			wantDetail: "pure-bloat payer",
 		},
 		{
 			name:       "ports matching derived constant is approved",
-			consumer:   PortsConsumerPath,
+			consumer:   portsConsumerPath,
 			dom:        []string{"config", "events", "llm", "persistence", "pricing", "security", "skills", "telemetry", "tools"},
-			wantStatus: StatusApprovedConstant,
+			wantStatus: statusApprovedConstant,
 			wantDetail: "derived constant",
 		},
 		{
 			name:       "ports drift is decision required",
-			consumer:   PortsConsumerPath,
+			consumer:   portsConsumerPath,
 			dom:        []string{"config", "events", "llm", "persistence", "pricing", "security", "skills", "telemetry", "tools", "billing"},
-			wantStatus: StatusDecisionRequired,
+			wantStatus: statusDecisionRequired,
 			wantExcess: []string{"billing"},
 			wantDetail: "derived-constant drift",
 		},
@@ -283,11 +283,11 @@ func TestClassifyConsumer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := ClassifyConsumer(tt.consumer, tt.dom, tt.directDom, wl)
+			got := classifyConsumer(tt.consumer, tt.dom, tt.directDom, wl)
 			assert.Equal(t, tt.wantStatus, got.Status)
 			assert.Equal(t, tt.wantExcess, got.Excess)
 			assert.Contains(t, got.Detail, tt.wantDetail)
-			if tt.consumer == PortsConsumerPath {
+			if tt.consumer == portsConsumerPath {
 				assert.True(t, got.Derived)
 			}
 		})
@@ -295,8 +295,8 @@ func TestClassifyConsumer(t *testing.T) {
 
 	t.Run("nil whitelist treated as no entries", func(t *testing.T) {
 		t.Parallel()
-		got := ClassifyConsumer("internal/x", []string{"config"}, []string{"config"}, nil)
-		assert.Equal(t, StatusApprovedConstant, got.Status)
+		got := classifyConsumer("internal/x", []string{"config"}, []string{"config"}, nil)
+		assert.Equal(t, statusApprovedConstant, got.Status)
 		assert.False(t, got.Whitelisted)
 	})
 }
@@ -350,7 +350,7 @@ func TestBuildInternalImportGraph_MergesTestVariants(t *testing.T) {
 		},
 	}
 
-	graph := BuildInternalImportGraph(pkgs, modulePath)
+	graph := buildInternalImportGraph(pkgs, modulePath)
 
 	// One consumer row: the base and all test variants merge into a single
 	// key with the union of module-internal edges (external module imports
@@ -373,10 +373,10 @@ func TestClassifyAllConsumers_SortedAndComplete(t *testing.T) {
 	const modulePath = "example.com/mod"
 	graph := transitiveFixtureGraph(modulePath)
 
-	wl, err := ParseTransitiveWhitelist(pinnedWhitelist)
+	wl, err := parseTransitiveWhitelist(pinnedWhitelist)
 	require.NoError(t, err)
 
-	got := ClassifyAllConsumers(graph, wl, modulePath)
+	got := classifyAllConsumers(graph, wl, modulePath)
 
 	// Consumers: consumer, deep, events, llm, ports, telemetry — sorted by
 	// full path. consumer is a pure-bloat payer (telemetry enters its closure
@@ -391,14 +391,14 @@ func TestClassifyAllConsumers_SortedAndComplete(t *testing.T) {
 	assert.Equal(t, "internal/domain/ports", got[4].Consumer)
 	assert.Equal(t, "internal/domain/telemetry", got[5].Consumer)
 
-	assert.Equal(t, StatusDecisionRequired, got[0].Status)
+	assert.Equal(t, statusDecisionRequired, got[0].Status)
 	assert.Equal(t, []string{"telemetry"}, got[0].Excess)
-	assert.Equal(t, StatusDecisionRequired, got[1].Status)
-	assert.Equal(t, StatusApprovedConstant, got[2].Status)
-	assert.Equal(t, StatusApprovedConstant, got[3].Status)
-	assert.Equal(t, StatusApprovedConstant, got[4].Status)
+	assert.Equal(t, statusDecisionRequired, got[1].Status)
+	assert.Equal(t, statusApprovedConstant, got[2].Status)
+	assert.Equal(t, statusApprovedConstant, got[3].Status)
+	assert.Equal(t, statusApprovedConstant, got[4].Status)
 	assert.True(t, got[4].Derived)
-	assert.Equal(t, StatusApprovedConstant, got[5].Status)
+	assert.Equal(t, statusApprovedConstant, got[5].Status)
 }
 
 func TestFormatTransitiveGateReport_SeparatesSections(t *testing.T) {
@@ -406,9 +406,9 @@ func TestFormatTransitiveGateReport_SeparatesSections(t *testing.T) {
 	const modulePath = "example.com/mod"
 	graph := transitiveFixtureGraph(modulePath)
 
-	wl, err := ParseTransitiveWhitelist(pinnedWhitelist)
+	wl, err := parseTransitiveWhitelist(pinnedWhitelist)
 	require.NoError(t, err)
-	got := FormatTransitiveGateReport(ClassifyAllConsumers(graph, wl, modulePath), wl)
+	got := formatTransitiveGateReport(classifyAllConsumers(graph, wl, modulePath), wl)
 
 	assert.Contains(t, got, "— DECISION REQUIRED (2) —")
 	assert.Contains(t, got, "— APPROVED CONSTANT (4) —")
@@ -421,14 +421,14 @@ func TestFormatTransitiveGateReport_SeparatesSections(t *testing.T) {
 
 	// With a payer injected, the row shows consumer, whitelist-or-expected,
 	// closure, and excess — no invented rationale.
-	report := FormatTransitiveGateReport([]ConsumerClassification{
+	report := formatTransitiveGateReport([]consumerClassification{
 		{
 			Consumer:    "internal/ui/tui",
 			Whitelisted: true,
 			Allowed:     []string{"llm"},
 			Dom:         []string{"llm", "security"},
 			Excess:      []string{"security"},
-			Status:      StatusDecisionRequired,
+			Status:      statusDecisionRequired,
 		},
 	}, wl)
 	assert.Contains(t, report, "| internal/ui/tui | allowed: llm | llm, security | security |")
@@ -503,8 +503,8 @@ func TestDetectModulePath(t *testing.T) {
 	}
 }
 
-// TestBuildInternalImportGraph_IndexerStyle exercises the exported graph
-// builder through a mockSymbolIndex, mirroring how the arch-tagged gate test
+// TestBuildInternalImportGraph_IndexerStyle exercises the graph builder
+// through a mockSymbolIndex, mirroring how the arch-tagged gate test
 // drives the live indexer (idx.Packages → graph).
 func TestBuildInternalImportGraph_IndexerStyle(t *testing.T) {
 	t.Parallel()
@@ -525,7 +525,7 @@ func TestBuildInternalImportGraph_IndexerStyle(t *testing.T) {
 	}
 	pkgs, err := mockIdx.Packages(context.Background(), nil)
 	require.NoError(t, err)
-	graph := BuildInternalImportGraph(pkgs, modulePath)
+	graph := buildInternalImportGraph(pkgs, modulePath)
 	require.Contains(t, graph, modulePath+"/internal/consumer")
 	assert.Equal(t, []string{modulePath + "/internal/domain/llm"}, graph[modulePath+"/internal/consumer"])
 	assert.True(t, strings.HasPrefix(relPath(modulePath+"/internal/consumer", modulePath), "internal/"))

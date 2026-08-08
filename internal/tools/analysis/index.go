@@ -291,6 +291,16 @@ func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 		Dir:     idx.dir,
 		Fset:    fset,
 		Context: ctx,
+		// BuildFlags: -tags=arch makes arch-gated consumers visible so
+		// arch-only symbols are not mis-flagged DEAD/PRIVATE. The concrete
+		// case: loadTransitiveWhitelist's only caller is
+		// real_architecture_test.go:66, behind //go:build arch — without
+		// this flag the scan reported it DEAD. Only two files in the module
+		// are arch-tagged (real_architecture_test.go,
+		// real_nonfix_catalog_test.go), both in-package tests; loading them
+		// adds usages, never harvestable declarations (test symbols are
+		// excluded by HarvestDeclarations' non-test filter).
+		BuildFlags: []string{"-tags=arch"},
 		// Tests: true is REQUIRED. It causes go/packages to load synthesized
 		// test packages (foo, foo_test, foo.test variants), which dead_code_graph
 		// depends on to detect external _test package consumers. Without this,

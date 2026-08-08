@@ -88,8 +88,8 @@ type ContextTransformer interface {
 	Priority() int
 }
 
-// Clone creates a deep copy of the ContextMetadata.
-func (m *ContextMetadata) Clone() *ContextMetadata {
+// clone creates a deep copy of the ContextMetadata.
+func (m *ContextMetadata) clone() *ContextMetadata {
 	cloned := *m
 	if m.Warnings != nil {
 		cloned.Warnings = make([]string, len(m.Warnings))
