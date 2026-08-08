@@ -1196,4 +1196,20 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056)*
+## Coverage Gaps (ACCEPTED — 2026-08 coverage/complexity hygiene)
+
+### domain/ports/logger.go — NoOpLogger and NoOpTurnsLogger no-op stubs at 0%
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: `NoOpLogger.Error/Warn/Info/Debug` (empty bodies) and `NoOpTurnsLogger.HandleEvent`/`Listen`/`Close` exist solely to satisfy the `Logger`/`TurnsLogger` interface contracts. All are already exercised by `logger_test.go` (`TestNoOpLogger`, `TestNoOpTurnsLogger_HandleEvent`, `TestNoOpTurnsLogger_Listen`, `TestNoOpTurnsLogger_Close`, `TestNoOpTurnsLogger_Listen_DeadlineExceeded`); Go's coverage instrumentation does not count empty method bodies as covered (blocks report `count=1` with zero statements). Same acceptance class as the cataloged `NoOpEventBus` and `auth.Invalidate` entries — `interface-stub`.
+- **See**: `internal/domain/ports/logger.go:36-39,62-64`, `internal/domain/ports/logger_test.go`
+
+### infrastructure/security/policy.go — BypassConfirmation success path and confirmAction error branch
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The entire success path of `BypassConfirmation` (`SetBypassActive(true)` + `kv.Set("bypass_confirmation","true")` + `Warn` + success return, `policy.go:300-308`) and the `confirmAction` error branch (`policy.go:293-295`) are structurally unreachable: `confirmAction` never returns an error, and it returns `true` only when `sm.IsBypassActive()` is already true — which short-circuits at the entry check (`policy.go:287`). Both checks read the same `bypassActive` field (`manager.go:22,90-100`) under the same `TerminalLock`, so no interleaving exists. The tool can only ever report "already enabled" or auto-decline; bypass is actually enabled via `di/session_factory.go:82-86`. A skipped test already documents the kv.Set path (`policy_test.go:596`, `t.Skip("[UNREACHABLE] ...")`). Same acceptance class as `json.Marshal` on all-string structs — `structurally-unreachable`.
+- **See**: `internal/infrastructure/security/policy.go:283-308`, `internal/infrastructure/security/policy_test.go:596`
+
+---
+
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go; #1300: #1299 entry criterion renamed di-touch → cross-layer per ADR-056; coverage hygiene: NoOpLogger + BypassConfirmation entries — 2026-08)*

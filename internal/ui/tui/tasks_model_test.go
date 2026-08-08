@@ -350,6 +350,56 @@ func TestTaskListModel_MoveSelection_Bounds(t *testing.T) {
 	}
 }
 
+func TestTaskListModel_CmdMoveDown(t *testing.T) {
+	m := &taskListModel{tasks: []ports.Task{{}, {}}, selected: 0}
+	cmd := m.cmdMoveDown()
+	if cmd != nil {
+		t.Errorf("expected nil cmd from cmdMoveDown, got %v", cmd)
+	}
+	if m.selected != 1 {
+		t.Errorf("expected selected 1 after move down, got %d", m.selected)
+	}
+}
+
+func TestTaskListModel_CmdMoveUp(t *testing.T) {
+	m := &taskListModel{tasks: []ports.Task{{}, {}}, selected: 1}
+	cmd := m.cmdMoveUp()
+	if cmd != nil {
+		t.Errorf("expected nil cmd from cmdMoveUp, got %v", cmd)
+	}
+	if m.selected != 0 {
+		t.Errorf("expected selected 0 after move up, got %d", m.selected)
+	}
+}
+
+func TestTaskListModel_CmdMoveDown_ClampedAtEnd(t *testing.T) {
+	m := &taskListModel{tasks: []ports.Task{{}, {}}, selected: 1}
+	m.cmdMoveDown()
+	if m.selected != 1 {
+		t.Errorf("expected selected 1 (clamped at end), got %d", m.selected)
+	}
+}
+
+func TestTaskListModel_CmdMoveUp_ClampedAtTop(t *testing.T) {
+	m := &taskListModel{tasks: []ports.Task{{}, {}}, selected: 0}
+	m.cmdMoveUp()
+	if m.selected != 0 {
+		t.Errorf("expected selected 0 (clamped at top), got %d", m.selected)
+	}
+}
+
+func TestTaskListModel_CmdMove_EmptyTasksNoOp(t *testing.T) {
+	m := &taskListModel{tasks: nil, selected: 5}
+	m.cmdMoveDown()
+	if m.selected != 5 {
+		t.Errorf("expected selected unchanged for empty tasks after move down, got %d", m.selected)
+	}
+	m.cmdMoveUp()
+	if m.selected != 5 {
+		t.Errorf("expected selected unchanged for empty tasks after move up, got %d", m.selected)
+	}
+}
+
 func TestTaskListModel_View_ErrorState(t *testing.T) {
 	m := &taskListModel{
 		err:   context.DeadlineExceeded,

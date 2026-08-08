@@ -351,3 +351,53 @@ func (r *testAssetResolver) Resolve(ctx context.Context, assetID string) ([]byte
 	}
 	return d, nil
 }
+
+func TestPrepareMediaForTurn_ResolverError(t *testing.T) {
+	c := NewClient("", "test-model", &auth.BearerAuth{Token: "test"})
+	c.capabilities.SupportsVision = true
+
+	history := []*llm.Content{{
+		Role:  "user",
+		Parts: []*llm.Part{{AssetID: "asset-1"}},
+	}}
+
+	// The asset is missing from the resolver's data map, so Resolve fails.
+	ta, err := c.prepareMediaForTurn(context.Background(), history, &testAssetResolver{data: map[string][]byte{}})
+	if ta != nil {
+		t.Errorf("expected nil turnAssets on resolver error, got %v", ta)
+	}
+	if err == nil {
+		t.Error("expected error from resolver failure, got nil")
+	}
+}
+
+func TestPrepareMediaForTurn_SuccessAppliesParts(t *testing.T) {
+	c := NewClient("", "test-model", &auth.BearerAuth{Token: "test"})
+	c.capabilities.SupportsVision = true
+	c.capabilities.SupportsFileUpload = false
+
+	history := []*llm.Content{{
+		Role: "user",
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("x")}},
+		},
+	}}
+
+	// The part already carries InlineData.Data, so it is not a hydration
+	// candidate — no resolver is required.
+	ta, err := c.prepareMediaForTurn(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ta == nil {
+		t.Fatal("expected non-nil turnAssets")
+	}
+	if len(history[0].Parts) != 1 {
+		t.Fatalf("expected 1 part preserved, got %d", len(history[0].Parts))
+	}
+	if history[0].Parts[0].InlineData == nil ||
+		history[0].Parts[0].InlineData.MIMEType != "image/png" ||
+		string(history[0].Parts[0].InlineData.Data) != "x" {
+		t.Errorf("expected InlineData preserved, got %+v", history[0].Parts[0].InlineData)
+	}
+}
