@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -203,12 +204,12 @@ type shellTool struct {
 	heartbeatInterval time.Duration // zero means default (2s)
 }
 
-func newshellTool(sm shellSecurity, eventBus events.EventBus, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper) *shellTool {
+func newshellTool(sm shellSecurity, eventBus events.EventBus, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper, fs persistence.FileSystem) *shellTool {
 	return &shellTool{
 		sm:         sm,
 		eventBus:   eventBus,
 		validator:  validator,
-		executor:   newprocessExecutor(),
+		executor:   newprocessExecutorWithFS(fs),
 		translator: translator,
 		wrapper:    wrapper,
 		maxOutput:  50000,

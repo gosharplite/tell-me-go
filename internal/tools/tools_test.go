@@ -208,6 +208,17 @@ func TestRegisterAll_Errors(t *testing.T) {
 		assert.Contains(t, err.Error(), "WorkspacePolicy is required")
 	})
 
+	t.Run("nil FileSystem returns error", func(t *testing.T) {
+		t.Parallel()
+		err := tools.RegisterAll(tools.ToolRegistrationParams{
+			Registry:        new(MockRegistry),
+			SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
+			WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "FileSystem is required")
+	})
+
 	tests := []struct {
 		name      string
 		failAfter int
@@ -257,6 +268,7 @@ func TestRegisterAll_Errors(t *testing.T) {
 				Registry:        mockReg,
 				SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
 				WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
+				FileSystem:      persistencetest.NewPlainOSFileSystem(),
 			}
 			if tt.setup != nil {
 				tt.setup(&params)
@@ -327,6 +339,7 @@ func TestRegisterAll_ErrorWrapping(t *testing.T) {
 				SecurityManager: &toolstest.MockSecurityManager{AllowAll: true},
 				WorkspacePolicy: infra_persistence.NewWorkspacePolicy(),
 				HealthManager:   nil,
+				FileSystem:      persistencetest.NewPlainOSFileSystem(),
 			}
 			if tt.setup != nil {
 				tt.setup(&params)

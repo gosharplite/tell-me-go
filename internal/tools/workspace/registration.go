@@ -25,7 +25,7 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 	if err := registerFiles(r, sm, fs, exec, wp); err != nil {
 		return err
 	}
-	if err := registerSystem(r, sm, validator, health, eventBus); err != nil {
+	if err := registerSystem(r, sm, validator, health, eventBus, fs); err != nil {
 		return err
 	}
 	if err := registerGit(r, sm, exec); err != nil {
@@ -295,7 +295,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 	return nil
 }
 
-func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator, health ports.HealthCheckManager, eventBus events.EventBus) error {
+func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator, health ports.HealthCheckManager, eventBus events.EventBus, fs persistence.FileSystem) error {
 	var translator commandTranslator
 	var wrapper shellWrapper
 	if runtime.GOOS == "windows" {
@@ -306,7 +306,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 		wrapper = &posixShellWrapper{}
 	}
 
-	shell := newshellTool(sm, eventBus, validator, translator, wrapper)
+	shell := newshellTool(sm, eventBus, validator, translator, wrapper, fs)
 	diagnostic := newDiagnosticTool(health)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
