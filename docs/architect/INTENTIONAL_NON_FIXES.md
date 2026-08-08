@@ -1174,4 +1174,24 @@ to reason about.
 
 ---
 
-*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13); design rejection: split internal/agent façade — issue #1299)*
+## Coverage Gaps (ACCEPTED — 2026-08 #1302 emergencySave double-append)
+
+### agent/orchestrator/engine_phases.go — ghost-response path (structurally unreachable)
+
+- **Status**: ACCEPTED (2026-08)
+- **Rationale**: The `IsTransient` branch in `PersistenceStep.Process` is structurally
+  unreachable for history-store errors — store errors are raw filesystem errors,
+  never transient (`IsTransient` matches only `ErrTransient`/`ErrRateLimit`,
+  gateway.go:36). The ghost-response path (partial success + hypothetically
+  transient store error → recovery re-infers and appends a fresh response while
+  the old stays) is therefore NOT reachable today. Same acceptance class as
+  defensive guards on internal pipeline state (2026-07 Batch Triage).
+- **Note**: The Sync-wrinkle disk-duplicate (store.go:252-283 — write succeeds,
+  deferred `Sync` fails) is accepted as out-of-scope for #1302; the durable fix
+  belongs in the history store package (fault-injection-required class — fsync
+  failure requires real I/O faults).
+- **See**: `internal/agent/orchestrator/engine_phases.go:79-92` (architect-acceptance comment + `IsTransient` classification)
+
+---
+
+*Last Updated: 2026-08 (ADR-053: get_cost_summary tool, DailyCost metric, and global cost ledger removed — issue #1291; coverage/complexity hygiene: event-type table test, shared markdown renderer, accepted mock stubs; catalog additions: ado/pipeline_crud.go json.Marshal unreachable entry, assertMissingKeysResult (CC=13), TestRecoveryStep_EmptyResponse_RetriesUpToLimit (CC=12), CC drift re-verification for (*indexer).snapshot (14), TestResolveCapabilities (13), TestFixtureIndexer_ConstructAndHarvest (13), design rejection: split internal/agent façade — issue #1299; #1302: emergencySave ghost-response guard entry — engine_phases.go)*

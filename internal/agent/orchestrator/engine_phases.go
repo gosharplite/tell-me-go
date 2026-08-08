@@ -76,12 +76,29 @@ type PersistenceStep struct{}
 func (p *PersistenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 	if Turn.State.Response != nil {
 		if err := Turn.CtxManager.AddContent(ctx, Turn.State.Response); err != nil {
+			// Architect-acceptance (2026-07): this IsTransient branch is
+			// structurally unreachable for history-store errors. Store errors
+			// are raw filesystem errors — IsTransient matches only
+			// ErrTransient/ErrRateLimit (gateway.go:36) — so a partial-success
+			// append (first write landed, second failed) is always classified
+			// ErrTerminal here, never transient. The ghost-response path
+			// (partial success + hypothetically transient store error →
+			// recovery re-infers and appends a fresh response while the old
+			// stays) is therefore NOT reachable today. No test is written for
+			// it (unreachable). Same acceptance class as defensive guards on
+			// internal pipeline state (2026-07 Batch Triage).
+			// See: docs/architect/INTENTIONAL_NON_FIXES.md.
 			category := llm.ErrTerminal
 			if IsTransient(err) {
 				category = llm.ErrTransient
 			}
 			return ProcessResult{}, NewAgentError(category, "history error", err)
 		}
+		// #1302: clear-after-append makes the emergencySave re-run idempotent —
+		// no-op for already-persisted content, retries only what failed. On the
+		// error path above the field is deliberately NOT cleared so the retry
+		// sees what failed. Mirrors handleLoopBreak (middleware.go:213-214).
+		Turn.State.Response = nil
 	}
 
 	if Turn.State.ToolResponse != nil {
@@ -92,6 +109,8 @@ func (p *PersistenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResul
 			}
 			return ProcessResult{}, NewAgentError(category, "failed to persist tool results", err)
 		}
+		// #1302: clear-after-append — see the Response comment above.
+		Turn.State.ToolResponse = nil
 	}
 
 	return ProcessResult{NextPhase: PhaseComplete}, nil
