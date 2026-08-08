@@ -471,19 +471,19 @@ else
 	@$(MAKE) modelith-layers
 endif
 
-# Verify the ADR-056 transitive closure gate (issue #1300): prints the v1
+# Verify the ADR-056 transitive closure gate (issue #1300): prints the
 # report separating "decision required" rows from "approved constant" rows.
 # -v is required so go test surfaces the report's stdout on a passing run.
-# The explicit -transitive-gate-report-only=true documents the v1
-# report-first posture (default non-failing per the issue's implementation
-# detail); flipping to strict post-ratification = change the flag to
-# -transitive-gate-report-only=false. Deliberately NOT wired into
-# verify-architecture — v1 keeps passing as today.
+# STRICT since the 2026-08 ratification (39/39 whitelist entries accepted):
+# any consumer whose closure exceeds its whitelist or direct imports now
+# FAILS the gate — new closure growth must be adjudicated. Flip back to
+# report-only (-transitive-gate-report-only=true) only for diagnosis.
+# Deliberately NOT wired into verify-architecture.
 verify-transitive-gate:
 ifeq ($(IS_POSIX),true)
-	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=true
+	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=false
 else
-	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=true
+	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=false
 endif
 
 # Verify the complexity-pin catalog partition (issue #1297): runs the real
