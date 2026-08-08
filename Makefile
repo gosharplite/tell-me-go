@@ -40,7 +40,7 @@ help:
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
 	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
-	@echo "  make verify-transitive-gate - Print the ADR-056 transitive closure gate report (v1, report-only)"
+	@echo "  make verify-transitive-gate - Verify the ADR-056 transitive closure gate (STRICT; part of make check/check-full)"
 	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make verify-tools-adapter-import - Verify tools adapter imports are confined to default_fs.go (ADR-055)"
@@ -478,7 +478,8 @@ endif
 # any consumer whose closure exceeds its whitelist or direct imports now
 # FAILS the gate — new closure growth must be adjudicated. Flip back to
 # report-only (-transitive-gate-report-only=true) only for diagnosis.
-# Deliberately NOT wired into verify-architecture.
+# Wired into check/check-full (ADR-056 enforcement is mandatory); kept
+# separate from verify-architecture so the two gates fail independently.
 verify-transitive-gate:
 ifeq ($(IS_POSIX),true)
 	@go test -v -tags=arch -run TestVerifyTransitiveClosureGate ./internal/tools/analysis -args -transitive-gate-report-only=false
@@ -659,6 +660,8 @@ check: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-transitive-gate ==="
+	@$(MAKE) verify-transitive-gate
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="
@@ -693,6 +696,8 @@ check-full: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-transitive-gate ==="
+	@$(MAKE) verify-transitive-gate
 	@echo "=== verify-nonfix-catalog ==="
 	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="

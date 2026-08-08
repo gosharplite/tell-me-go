@@ -653,7 +653,7 @@ func FormatTransitiveGateReport(classifications []ConsumerClassification, wl *Tr
 	if wl != nil {
 		decisions = wl.Decisions
 	}
-	_, _ = fmt.Fprintf(&sb, "=== Transitive Closure Gate — ADR-056 Decision 2 (v1, report-only) ===\n\n")
+	_, _ = fmt.Fprintf(&sb, "=== Transitive Closure Gate — ADR-056 Decision 2 (v1, STRICT) ===\n\n")
 	_, _ = fmt.Fprintf(&sb, "Whitelist decisions (%d):\n", len(decisions))
 	if len(decisions) == 0 {
 		sb.WriteString("  — none\n")
