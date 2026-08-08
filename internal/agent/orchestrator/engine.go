@@ -361,7 +361,11 @@ func (e *Engine) finalizeTurnTrace(trace *telemetry.TurnTrace, err error) {
 }
 
 func (e *Engine) emergencySave(Turn *Turn) {
-	if Turn.State.Response != nil && len(Turn.State.Response.Parts) > 0 {
+	// #1302: with clear-after-append in PersistenceStep, the guard must also
+	// cover ToolResponse — else a failed tool-results append would never be
+	// retried after the Response was cleared on success.
+	if (Turn.State.Response != nil && len(Turn.State.Response.Parts) > 0) ||
+		(Turn.State.ToolResponse != nil && len(Turn.State.ToolResponse.Parts) > 0) {
 		e.mu.RLock()
 		p, ok := e.processors[PhasePersisting]
 		e.mu.RUnlock()
