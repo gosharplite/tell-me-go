@@ -53,7 +53,7 @@ var derivedPortsFamilies = []string{
 
 // defaultTransitiveWhitelistPath is the location of the architect-curated
 // transitive-import whitelist relative to the module root.
-var defaultTransitiveWhitelistPath = filepath.Join("docs", "architect", "TRANSITIVE_IMPORT_WHITELIST.md")
+var defaultTransitiveWhitelistPath = filepath.Join("docs", "architect", "TRANSITIVE_IMPORT_WHITELIST.md") //nolint:unused // consumed only via loadTransitiveWhitelist by the arch-tagged gate test
 
 // consumerStatus is the classification outcome for one consumer package.
 type consumerStatus string
@@ -506,7 +506,7 @@ func validateWhitelistEntries(wl *transitiveWhitelist) error {
 // findModuleRoot walks up from the current working directory until it finds
 // a go.mod file, returning the absolute path to the module root. Shared by
 // the real-architecture tests and the transitive-closure gate loader.
-func findModuleRoot() (string, error) {
+func findModuleRoot() (string, error) { //nolint:unused // consumed only via loadTransitiveWhitelist by the arch-tagged gate test
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -532,7 +532,7 @@ func findModuleRoot() (string, error) {
 // via findModuleRoot — the loadNonFixCatalog precedent. Unlike the catalog,
 // a missing or malformed whitelist is an error: the gate cannot run without
 // the architect's curated decisions.
-func loadTransitiveWhitelist() (*transitiveWhitelist, error) {
+func loadTransitiveWhitelist() (*transitiveWhitelist, error) { //nolint:unused // sole caller real_architecture_test.go:66 is behind //go:build arch, invisible to non-arch lint
 	root, err := findModuleRoot()
 	if err != nil {
 		return nil, fmt.Errorf("transitive whitelist: %w", err)
