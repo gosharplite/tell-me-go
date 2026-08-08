@@ -8,7 +8,6 @@ import (
 	"sort"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // Priority levels for transformers
@@ -16,18 +15,12 @@ const (
 	priorityTransientThreshold = 100 // Transformers above this are usually transient/non-persistent
 )
 
-// Metadata contains diagnostics and auxiliary data from the pipeline.
-type Metadata = ports.ContextMetadata
-
-// request represents the input and state of a context preparation pipeline.
-type request = ports.ContextRequest
-
 // contextPipeline manages the execution of multiple transformers.
 type contextPipeline struct {
-	transformers []ports.ContextTransformer
+	transformers []ContextTransformer
 }
 
-func NewContextPipeline(transformers ...ports.ContextTransformer) *contextPipeline {
+func NewContextPipeline(transformers ...ContextTransformer) *contextPipeline {
 	// Sort by priority
 	sort.Slice(transformers, func(i, j int) bool {
 		return transformers[i].Priority() < transformers[j].Priority()
@@ -37,7 +30,7 @@ func NewContextPipeline(transformers ...ports.ContextTransformer) *contextPipeli
 
 // executeWithPersistence runs the pipeline and calls a persist function
 // after "canonical" modifications but before "transient" injections.
-func (p *contextPipeline) executeWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *contextPipeline) executeWithPersistence(ctx context.Context, req *ContextRequest, persistFn func(context.Context, []*llm.Content) error) error {
 	canonical, transient := p.partitionTransformers()
 
 	if err := p.executeTransformers(ctx, req, canonical); err != nil {
@@ -51,7 +44,7 @@ func (p *contextPipeline) executeWithPersistence(ctx context.Context, req *reque
 	return p.executeTransformers(ctx, req, transient)
 }
 
-func (p *contextPipeline) executeTransformers(ctx context.Context, req *request, transformers []ports.ContextTransformer) error {
+func (p *contextPipeline) executeTransformers(ctx context.Context, req *ContextRequest, transformers []ContextTransformer) error {
 	for _, t := range transformers {
 		// SCALABLE: Responsive context cancellation between transformer stages
 		select {
@@ -67,9 +60,9 @@ func (p *contextPipeline) executeTransformers(ctx context.Context, req *request,
 	return nil
 }
 
-func (p *contextPipeline) partitionTransformers() (canonical, transient []ports.ContextTransformer) {
-	canonical = make([]ports.ContextTransformer, 0, len(p.transformers))
-	transient = make([]ports.ContextTransformer, 0, len(p.transformers))
+func (p *contextPipeline) partitionTransformers() (canonical, transient []ContextTransformer) {
+	canonical = make([]ContextTransformer, 0, len(p.transformers))
+	transient = make([]ContextTransformer, 0, len(p.transformers))
 	for _, t := range p.transformers {
 		if t.Priority() < priorityTransientThreshold {
 			canonical = append(canonical, t)
@@ -80,7 +73,7 @@ func (p *contextPipeline) partitionTransformers() (canonical, transient []ports.
 	return
 }
 
-func (p *contextPipeline) persistChanges(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *contextPipeline) persistChanges(ctx context.Context, req *ContextRequest, persistFn func(context.Context, []*llm.Content) error) error {
 	if req.PersistHistory && persistFn != nil {
 		return persistFn(ctx, req.History)
 	}

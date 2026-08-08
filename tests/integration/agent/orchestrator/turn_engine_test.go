@@ -366,15 +366,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 
 	attempts := 0
 	cm := orchestratortest.NewTestContextManager(strategy, hManager, bus)
-	mt := &agenttest.MockTransformer{
-		TransformFunc: func(ctx context.Context, req *ports.ContextRequest) error {
-			attempts++
-			if attempts < 2 {
-				return llm.ErrTransient
-			}
-			return nil
-		},
-	}
+	mt := &retryCountingTransformer{attempts: &attempts}
 	cm.SetPipeline(sessctx.NewContextPipeline(mt))
 
 	e := orchestrator.NewEngine(mockGw, nil, cm, reg, bus, strategy, orchestrator.WithEngineClock(&agenttest.MockClock{}))
@@ -428,7 +420,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	Turn := &orchestrator.Turn{
 		State: &orchestrator.TurnState{
 			Phase: orchestrator.PhaseInference,
-			Metadata: &sessctx.Metadata{
+			Metadata: &sessctx.ContextMetadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
@@ -625,7 +617,7 @@ func TestTurnEngine_WithEngineProcessor(t *testing.T) {
 	customRefinerCalled := false
 	customRefiner := orchestrator.TurnProcessorFunc(func(ctx context.Context, Turn *orchestrator.Turn) (orchestrator.ProcessResult, error) {
 		customRefinerCalled = true
-		Turn.State.Metadata = &sessctx.Metadata{
+		Turn.State.Metadata = &sessctx.ContextMetadata{
 			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "custom"}}}},
 		}
 		return orchestrator.ProcessResult{NextPhase: orchestrator.PhaseInference}, nil
@@ -1419,3 +1411,22 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 		t.Errorf("expected sequence %v, got %v", expected, capturedEvents)
 	}
 }
+
+// retryCountingTransformer is a ContextTransformer test double that returns
+// llm.ErrTransient on the first attempt and succeeds thereafter, so tests
+// can exercise the retry path of the turn engine without a shared agenttest
+// double (agenttest cannot import session/context without a test-import
+// cycle with the context package's own tests).
+type retryCountingTransformer struct {
+	attempts *int
+}
+
+func (t *retryCountingTransformer) Transform(ctx context.Context, req *sessctx.ContextRequest) error {
+	*t.attempts++
+	if *t.attempts < 2 {
+		return llm.ErrTransient
+	}
+	return nil
+}
+
+func (t *retryCountingTransformer) Priority() int { return 50 }

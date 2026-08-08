@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 var (
@@ -21,7 +20,7 @@ var (
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.
 type emptyTurnFilter struct{}
 
-func (t *emptyTurnFilter) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *emptyTurnFilter) Transform(ctx context.Context, req *ContextRequest) error {
 	turns, err := groupTurns(ctx, req.History)
 	if err != nil {
 		return err
@@ -56,7 +55,7 @@ type finalContextValidator struct {
 	Strategy *Strategy
 }
 
-func (t *finalContextValidator) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *finalContextValidator) Transform(ctx context.Context, req *ContextRequest) error {
 	maxTokens, _, _ := t.Strategy.getLimits()
 	finalTokens := t.Strategy.EstimateTokens(req.History)
 
@@ -74,7 +73,7 @@ func (t *finalContextValidator) Priority() int { return priorityTransientThresho
 // TransientMerger merges TransientParts into Parts for the final API payload.
 type TransientMerger struct{}
 
-func (t *TransientMerger) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *TransientMerger) Transform(ctx context.Context, req *ContextRequest) error {
 	for i, msg := range req.History {
 		if msg == nil {
 			return fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, i)
@@ -220,7 +219,7 @@ func isTurnEmpty(turn []*llm.Content) (bool, error) {
 // HistoryRepairer ensures the history is valid for the API after a crash or interruption.
 type HistoryRepairer struct{}
 
-func (t *HistoryRepairer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *HistoryRepairer) Transform(ctx context.Context, req *ContextRequest) error {
 	if len(req.History) == 0 {
 		return nil
 	}
@@ -265,7 +264,7 @@ func (t *HistoryRepairer) Priority() int { return 0 }
 // contentCleaner ensures no empty parts are sent to the API, preventing 400 errors.
 type contentCleaner struct{}
 
-func (t *contentCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *contentCleaner) Transform(ctx context.Context, req *ContextRequest) error {
 	modified := false
 	for i, content := range req.History {
 		if content == nil {
@@ -331,7 +330,7 @@ func (t *contentCleaner) Priority() int { return 5 }
 // toolResponseCleaner removes tool responses with empty IDs, which are invalid for APIs.
 type toolResponseCleaner struct{}
 
-func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *toolResponseCleaner) Transform(ctx context.Context, req *ContextRequest) error {
 	cleanHistory := make([]*llm.Content, 0, len(req.History))
 	modified := false
 
@@ -415,7 +414,7 @@ func (t *toolResponseCleaner) Priority() int { return 3 } // Run after HistoryRe
 // so that genuinely empty messages are fully removed from the history.
 type emptyMessagePruner struct{}
 
-func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *emptyMessagePruner) Transform(ctx context.Context, req *ContextRequest) error {
 	cleanHistory := make([]*llm.Content, 0, len(req.History))
 	modified := false
 
@@ -444,7 +443,7 @@ func (t *emptyMessagePruner) Priority() int { return 4 } // Run after toolRespon
 // in that same block must also have the exact same thought_signature.
 type thoughtSignaturePropagator struct{}
 
-func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ContextRequest) error {
 	modified := false
 	for i, content := range req.History {
 		if content == nil {

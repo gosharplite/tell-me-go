@@ -27,13 +27,13 @@ type Factory struct {
 	Events     events.EventBus
 	Profile    optimizationProfile
 	Logger     ports.Logger
-	Extras     []ports.ContextTransformer // Injected by session/ layer (e.g., skillInjector)
+	Extras     []ContextTransformer // Injected by session/ layer (e.g., skillInjector)
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
 // extras allows the parent session/ package to inject additional transformers
 // (e.g., skillInjector) without creating a context → domain/skills import.
-func (f *Factory) BuildStandardPipeline(limits events.Limits, extras ...ports.ContextTransformer) *contextPipeline {
+func (f *Factory) BuildStandardPipeline(limits events.Limits, extras ...ContextTransformer) *contextPipeline {
 	// 1. Calculate window size based on profile
 	windowTurns := limits.MaxHistoryTurns
 	if f.Profile == profilePrecise {
@@ -45,7 +45,7 @@ func (f *Factory) BuildStandardPipeline(limits events.Limits, extras ...ports.Co
 		}
 	}
 
-	transformers := []ports.ContextTransformer{
+	transformers := []ContextTransformer{
 		&HistoryRepairer{},
 	}
 	transformers = append(transformers, extras...)
@@ -61,7 +61,7 @@ func (f *Factory) BuildStandardPipeline(limits events.Limits, extras ...ports.Co
 	if limits.MaxHistoryTurns > 0 {
 		transformers = append(transformers, &HistoryPruner{
 			Policy: &compositePruningPolicy{
-				Policies: []ports.PruningPolicy{
+				Policies: []PruningPolicy{
 					// 2. Use the profile-adjusted window size
 					&SlidingWindowPolicy{MaxTurns: windowTurns},
 					&pinningPolicy{},

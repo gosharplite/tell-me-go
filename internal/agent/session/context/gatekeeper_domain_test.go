@@ -9,7 +9,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,9 +53,9 @@ func TestTokenGatekeeper_DomainBoundaryValidation(t *testing.T) {
 				nil,
 			)
 
-			req := &ports.ContextRequest{
+			req := &ContextRequest{
 				History:  tt.history,
-				Metadata: ports.ContextMetadata{},
+				Metadata: ContextMetadata{},
 			}
 
 			err := gatekeeper.Transform(context.Background(), req)

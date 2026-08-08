@@ -37,7 +37,7 @@ func (a *agent) AsChatter() ports.Chatter {
 
 // GetTrackerForInternalUse returns the agent's domain_pricing.CostTracker.
 // Consumed exclusively by the agentinternal bridge. Production code
-// obtains the tracker via ports.SessionDependencies.GetTracker(). See ADR-022.
+// obtains the tracker via ports.ChatterComposer.GetTracker(). See ADR-022.
 func (a *agent) GetTrackerForInternalUse() domain_pricing.CostTracker {
 	return a.tracker
 }

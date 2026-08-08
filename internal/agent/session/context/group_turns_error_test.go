@@ -10,7 +10,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +33,7 @@ func TestHistoryPruner_GroupTurnsErrorPropagation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &ports.ContextRequest{
+			req := &ContextRequest{
 				History: tt.history,
 			}
 
@@ -68,7 +67,7 @@ func TestTokenGatekeeper_GroupTurnsErrorPropagation(t *testing.T) {
 	// Introduce a malformed message
 	history[5].Role = ""
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: history,
 	}
 
@@ -103,7 +102,7 @@ func TestEmptyTurnFilter_GroupTurnsErrorPropagation(t *testing.T) {
 	ctx := context.Background()
 	filter := &emptyTurnFilter{}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "", Parts: []*llm.Part{{Text: "invalid"}}},
 		},
@@ -120,7 +119,7 @@ func TestHistoryPruner_GroupTurnsEmptyRoleError(t *testing.T) {
 		Policy: &SlidingWindowPolicy{MaxTurns: 1},
 	}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "", Parts: []*llm.Part{{Text: "empty role"}}},
 		},

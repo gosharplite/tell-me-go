@@ -11,7 +11,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/require"
 )
@@ -64,9 +63,9 @@ func TestTokenGatekeeper_AutoSummarize_GroupTurnsError(t *testing.T) {
 		history = append(history, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "x"}}})
 	}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History:  history,
-		Metadata: ports.ContextMetadata{},
+		Metadata: ContextMetadata{},
 	}
 
 	_, err := tg.autoSummarize(context.Background(), req)
@@ -99,9 +98,9 @@ func TestHistoryPruner_EventPublishError(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "4"}}},
 	}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History:  history,
-		Metadata: ports.ContextMetadata{},
+		Metadata: ContextMetadata{},
 	}
 
 	err := pruner.Transform(context.Background(), req)
@@ -114,7 +113,7 @@ func TestSkillInjector_SelectorError(t *testing.T) {
 		Strategy: NewStrategy(&agenttest.MockTokenCounter{}),
 	}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "task"}}},
 		},
@@ -204,8 +203,8 @@ func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 		withEvents(mockBus),
 	)
 
-	req := &ports.ContextRequest{
-		Metadata: ports.ContextMetadata{},
+	req := &ContextRequest{
+		Metadata: ContextMetadata{},
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
@@ -228,9 +227,9 @@ func TestTokenGatekeeper_TriggerSummarization_MaintenanceBlocked(t *testing.T) {
 		history[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "u"}}}
 	}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History:  history,
-		Metadata: ports.ContextMetadata{},
+		Metadata: ContextMetadata{},
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
@@ -260,9 +259,9 @@ func TestContextManager_UpdateCache_VersionMismatch(t *testing.T) {
 	cm := NewManager(nil, nil, nil, nil)
 	cm.version = 2
 
-	req := &request{
+	req := &ContextRequest{
 		History:  []*llm.Content{},
-		Metadata: Metadata{},
+		Metadata: ContextMetadata{},
 	}
 
 	err := cm.updateCache(1, req)
@@ -279,8 +278,8 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 
 	factory := &Factory{}
 	pipeline := NewContextPipeline(
-		&agenttest.MockTransformer{
-			TransformFunc: func(ctx context.Context, req *ports.ContextRequest) error {
+		&MockTransformer{
+			TransformFunc: func(ctx context.Context, req *ContextRequest) error {
 				return errors.New("transform error")
 			},
 		},
@@ -348,8 +347,8 @@ func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 
 func TestTokenGatekeeper_TriggerSummarization_AlreadyAttempted(t *testing.T) {
 	tg := newTokenGatekeeper(nil, nil)
-	req := &ports.ContextRequest{
-		Metadata: ports.ContextMetadata{SummarizationAttempted: true},
+	req := &ContextRequest{
+		Metadata: ContextMetadata{SummarizationAttempted: true},
 	}
 	tokens, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
 	require.NoError(t, err)
@@ -375,9 +374,9 @@ func TestTokenGatekeeper_TriggerSummarization_OtherError(t *testing.T) {
 		history[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "u"}}}
 	}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History:  history,
-		Metadata: ports.ContextMetadata{},
+		Metadata: ContextMetadata{},
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
@@ -403,9 +402,9 @@ func TestTokenGatekeeper_TriggerSummarization_NilEvents(t *testing.T) {
 		history[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "u"}}}
 	}
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History:  history,
-		Metadata: ports.ContextMetadata{},
+		Metadata: ContextMetadata{},
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
@@ -424,9 +423,9 @@ func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
 	}
 	history[5].Role = "" // Invalid role
 
-	req := &ports.ContextRequest{
+	req := &ContextRequest{
 		History:  history,
-		Metadata: ports.ContextMetadata{},
+		Metadata: ContextMetadata{},
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")

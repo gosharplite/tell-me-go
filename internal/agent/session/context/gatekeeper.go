@@ -117,7 +117,7 @@ func (p hardLimitPolicy) effectiveLimit() int {
 	return p.MaxTokens - reserved
 }
 
-func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) error {
 	// 0. Domain Boundary Validation: Ensure history is structurally sound before processing
 	if _, err := groupTurns(ctx, req.History); err != nil {
 		return fmt.Errorf("gatekeeper validation failed: %w", err)
@@ -141,14 +141,14 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextReque
 	return nil
 }
 
-func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {
+func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ContextRequest, tokens int) (int, error) {
 	if t.MaxTokens > 0 && tokens > int(float64(t.MaxTokens)*0.9) {
 		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, "safety limit pressure (> 90%)")
 	}
 	return tokens, nil
 }
 
-func (t *TokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.ContextRequest, tokens, limit int, reason string) (int, error) {
+func (t *TokenGatekeeper) triggerSummarization(ctx context.Context, req *ContextRequest, tokens, limit int, reason string) (int, error) {
 	if err := t.publishSummarizationEvent(ctx, tokens, limit, reason); err != nil {
 		return tokens, err
 	}
@@ -199,7 +199,7 @@ func (t *TokenGatekeeper) publishHardLimitEvents(ctx context.Context, tokens, ef
 	}
 }
 
-func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
+func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ContextRequest, tokens int) error {
 	effectiveLimit := hardLimitPolicy{
 		MaxTokens:           t.MaxTokens,
 		SystemContextBuffer: config.SystemContextBuffer,
@@ -216,7 +216,7 @@ func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 
 func (t *TokenGatekeeper) Priority() int { return 80 }
 
-func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextRequest) (int, error) {
+func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) (int, error) {
 	if len(req.History) < 10 {
 		req.Metadata.MaintenanceBlocked = true
 		return 0, fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))
@@ -304,7 +304,7 @@ func isBlockingError(err error) bool {
 
 // applySummarizationResult updates the context request with the summarization
 // outcome and returns the new token count.
-func (t *TokenGatekeeper) applySummarizationResult(req *ports.ContextRequest, summarizedTurns int) int {
+func (t *TokenGatekeeper) applySummarizationResult(req *ContextRequest, summarizedTurns int) int {
 	newTokens := t.Estimator.EstimateTokens(req.History)
 	req.Metadata.SummarizedTurns = summarizedTurns
 	req.Metadata.SummarizationAttempted = true

@@ -23,7 +23,7 @@ type Manager struct {
 
 	cachedVersion  int
 	cachedWindow   []*llm.Content
-	cachedMetadata *Metadata
+	cachedMetadata *ContextMetadata
 
 	Strategy        *Strategy
 	History         ports.HistoryManager
@@ -126,7 +126,7 @@ func cloneContentSlice(contents []*llm.Content) []*llm.Content {
 }
 
 // getCachedView checks if the current version matches the cached version. Must be called with lock held.
-func (cm *Manager) getCachedView(snapshotVersion int) ([]*llm.Content, *Metadata, bool) {
+func (cm *Manager) getCachedView(snapshotVersion int) ([]*llm.Content, *ContextMetadata, bool) {
 	if cm.cachedWindow != nil && cm.cachedVersion == snapshotVersion {
 		cachedHistory := cloneContentSlice(cm.cachedWindow)
 		clonedMeta := cm.cachedMetadata.Clone()
@@ -136,7 +136,7 @@ func (cm *Manager) getCachedView(snapshotVersion int) ([]*llm.Content, *Metadata
 }
 
 // updateCache stores the processed context window back into the cache.
-func (cm *Manager) updateCache(snapshotVersion int, req *request) error {
+func (cm *Manager) updateCache(snapshotVersion int, req *ContextRequest) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	if cm.version != snapshotVersion {
@@ -150,7 +150,7 @@ func (cm *Manager) updateCache(snapshotVersion int, req *request) error {
 }
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
-func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
+func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
 	if history, meta, ok := cm.tryCache(); ok {
 		return history, meta, nil
 	}
@@ -160,7 +160,7 @@ func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Meta
 		return nil, nil, err
 	}
 
-	req := &request{
+	req := &ContextRequest{
 		Turn:    turn,
 		History: history,
 	}
@@ -178,7 +178,7 @@ func (cm *Manager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Meta
 	return req.History, &req.Metadata, nil
 }
 
-func (cm *Manager) tryCache() ([]*llm.Content, *Metadata, bool) {
+func (cm *Manager) tryCache() ([]*llm.Content, *ContextMetadata, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return cm.getCachedView(cm.version)
@@ -205,14 +205,14 @@ func (cm *Manager) loadHistory(ctx context.Context) (int, []*llm.Content, *conte
 	return snapshotVersion, history, cm.Pipeline, nil
 }
 
-func (cm *Manager) runPipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
+func (cm *Manager) runPipeline(ctx context.Context, pipeline *contextPipeline, req *ContextRequest, snapshotVersion int) (bool, error) {
 	if pipeline == nil {
 		return false, nil
 	}
 	return cm.executePipeline(ctx, pipeline, req, snapshotVersion)
 }
 
-func (cm *Manager) commitToCache(snapshotVersion int, persisted bool, req *request) error {
+func (cm *Manager) commitToCache(snapshotVersion int, persisted bool, req *ContextRequest) error {
 	expectedVersion := snapshotVersion
 	if persisted {
 		expectedVersion++
@@ -232,7 +232,7 @@ func validateHistoryBoundaries(history []*llm.Content) error {
 	return nil
 }
 
-func (cm *Manager) executePipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
+func (cm *Manager) executePipeline(ctx context.Context, pipeline *contextPipeline, req *ContextRequest, snapshotVersion int) (bool, error) {
 	// We execute the pipeline to prepare the Read-Model (context window).
 	// We DO NOT persist the pruned/transformed history back to the store,
 	// preserving the user's full Event Sourced history safely on disk.
