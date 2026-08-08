@@ -115,3 +115,24 @@ The context-pipeline family leaves `internal/domain/ports`:
 
 - [Issue #1299](https://github.com/gosharplite/tell-me-go/issues/1299): the `*sessctx.Manager` coupling is an accepted cost — it is agent-layer and satisfies the cross-layer criterion.
 - [Issue #1297](https://github.com/gosharplite/tell-me-go/issues/1297): merged; orthogonal to the closure ledger.
+
+### Post-ratification record (2026-08, follow-up)
+
+- **Closure semantics ratified**: merged (prod+test) closure is canonical. The gate
+  classifies each package's compiled footprint (test binaries compile prod+test
+  together); test-edge excess is explicitly annotated in whitelist rationales.
+  V2: report annotates prod vs test-edge excess; family-level whitelists collapse
+  the P1/P2/P5 patterns.
+- **Gate ratification**: 39/39 decision-required rows accepted (whitelist additions
+  with per-row rationales); 0 splits — every excess traced to the recorded
+  events→telemetry decision, domain-internal hub coupling (llm↔events↔tools),
+  infra→domain inversion reach, or test-double coupling. Gate flipped to strict.
+- **Exit-query adjudication (7 candidates)**: 1 realign (SessionConfig →
+  internal/agent/session — the only candidate whose full consumer+implementer set
+  including di is single-layer) / 6 keep. The six stays are full-criterion
+  cross-layer: Capturer (di signature), HistoryBrowser/HistoryEditor/UIRenderer
+  (di uiFactory binding), SessionFinalizer (di-implemented sessionDeps),
+  HistoryRenderer (di + telemetry — recorded stay confirmed; the query's
+  composition-root-excluded single-layer status is realignment-eligibility, not an
+  exit). Realignment-strike stay-rationales enumerated above.
+- **SessionConfig realignment** tracked as follow-up work (not a non-fix).
