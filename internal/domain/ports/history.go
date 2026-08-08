@@ -37,9 +37,9 @@ type HistoryReader interface {
 
 // HistoryWriter defines the interface for adding or modifying chat history.
 type HistoryWriter interface {
-	// SetContents replaces the entire in-memory history with the given
-	// slice. The previous history is discarded without being persisted.
-	// Call Save to persist the new contents to disk.
+	// SetContents replaces the entire history with the given slice and
+	// persists it immediately. If persistence fails, the previous
+	// in-memory history is retained.
 	SetContents(ctx context.Context, contents []*llm.Content) error
 
 	// AddContent appends a single Content entry to the in-memory history.
@@ -97,9 +97,10 @@ type HistoryModifier interface {
 	GetModelTurn(ctx context.Context, index int) (*llm.Content, error)
 
 	// UpdateTurnContent replaces the text and thought parts of the Content at
-	// the given index in memory, then persists the change via Save.
-	// The index must reference a model-role entry. Passing an empty string for
-	// newThought removes any existing thought part from that turn.
+	// the given index. The change is persisted before the in-memory entry is
+	// updated (durability-first). The index must reference a model-role entry.
+	// Passing an empty string for newThought removes any existing thought part
+	// from that turn.
 	UpdateTurnContent(ctx context.Context, index int, newText string, newThought string) error
 }
 
