@@ -546,3 +546,48 @@ func TestClassifyExitLayer_InternalWithoutSegment(t *testing.T) {
 	// "internal" alone has no layer segment → unknown.
 	assert.Equal(t, layerUnknown, classifyExitLayer(exitTestModule+"/internal", exitTestModule))
 }
+
+func TestSummarizeExitCandidates(t *testing.T) {
+	t.Parallel()
+
+	t.Run("all documented stays summarized", func(t *testing.T) {
+		t.Parallel()
+		candidates := []ExitCandidate{
+			{Symbol: "Capturer", Pkg: exitTestModule + "/internal/domain/ports", Layer: layerApplication, Consumers: 28, Implementers: 416},
+			{Symbol: "UIRenderer", Pkg: exitTestModule + "/internal/domain/ports", Layer: layerApplication, Consumers: 5, Implementers: 2},
+		}
+		out := SummarizeExitCandidates(candidates)
+
+		assert.NotEmpty(t, out)
+		// N = 2 for the fixture (Capturer + UIRenderer), both documented stays.
+		assert.Contains(t, out, "2 documented stay(s), 0 new candidate(s) requiring adjudication")
+		assert.Contains(t, out, "ports governance (ADR-056 Decision 1)")
+		assert.Contains(t, out, "-exit-query-verbose")
+		// Exactly one trailing newline, no leading blank line.
+		assert.Equal(t, 1, strings.Count(out, "\n"))
+		assert.False(t, strings.HasPrefix(out, "\n"))
+	})
+
+	t.Run("mixed stay and new candidate returns empty", func(t *testing.T) {
+		t.Parallel()
+		candidates := []ExitCandidate{
+			{Symbol: "Capturer", Pkg: exitTestModule + "/internal/domain/ports", Layer: layerApplication},
+			{Symbol: "Logger", Pkg: exitTestModule + "/internal/domain/ports", Layer: layerApplication},
+		}
+		assert.Equal(t, "", SummarizeExitCandidates(candidates))
+	})
+
+	t.Run("empty slice returns empty", func(t *testing.T) {
+		t.Parallel()
+		assert.Equal(t, "", SummarizeExitCandidates(nil))
+		assert.Equal(t, "", SummarizeExitCandidates([]ExitCandidate{}))
+	})
+
+	t.Run("single non-stay returns empty", func(t *testing.T) {
+		t.Parallel()
+		candidates := []ExitCandidate{
+			{Symbol: "Logger", Pkg: exitTestModule + "/internal/domain/ports", Layer: layerApplication},
+		}
+		assert.Equal(t, "", SummarizeExitCandidates(candidates))
+	})
+}

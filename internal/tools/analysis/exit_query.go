@@ -31,7 +31,8 @@ import (
 // override is scoped to the new query only.
 //
 // Report-only: like the modelith-layers precedent, this query never fails
-// the build. cmd/deadcode prints the candidates; the exit code stays 0.
+// the build. The exit query is surfaced via `cmd/deadcode -exit-query` and
+// `make verify-exit-query`; the exit code stays 0.
 
 // orphanExitLayerLabel is the Layer value recorded when an interface has no
 // non-composition-root consumers and no non-composition-root implementers.
@@ -338,4 +339,24 @@ func FormatExitCandidates(candidates []ExitCandidate) string {
 		_, _ = fmt.Fprintf(&sb, "| %s.%s | %s | %d | %d | %s |\n", c.Pkg, c.Symbol, c.Layer, c.Consumers, c.Implementers, status)
 	}
 	return sb.String()
+}
+
+// SummarizeExitCandidates returns a compact one-line governance summary when
+// the candidate list contains no NEW rows (every candidate is a documented
+// ADR-056 stay, or the list is empty). It returns "" when a NEW candidate is
+// present — the caller must print the full FormatExitCandidates table so
+// actionable rows are never hidden. Quiet mode is the CLI default.
+func SummarizeExitCandidates(candidates []ExitCandidate) string {
+	if len(candidates) == 0 {
+		// FormatExitCandidates already prints the "no exit candidates" note.
+		return ""
+	}
+	for _, c := range candidates {
+		if _, ok := exitStayRationales[c.Symbol]; !ok {
+			// A NEW candidate requiring adjudication: the caller must print
+			// the full table so the actionable row is never hidden.
+			return ""
+		}
+	}
+	return fmt.Sprintf("ports governance (ADR-056 Decision 1): %d documented stay(s), 0 new candidate(s) requiring adjudication. Full table: go run ./cmd/deadcode -exit-query -exit-query-verbose\n", len(candidates))
 }

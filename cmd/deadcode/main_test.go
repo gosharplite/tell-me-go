@@ -174,6 +174,12 @@ func TestRun_ExitCandidatesSection(t *testing.T) {
 	origNewAnalyzer := newAnalyzer
 	t.Cleanup(func() { newAnalyzer = origNewAnalyzer })
 
+	// run() dispatches on *exitQueryMode: this test exercises the exit-query
+	// channel. Restore the prior value so sibling tests see the default.
+	origExitQueryMode := *exitQueryMode
+	*exitQueryMode = true
+	t.Cleanup(func() { *exitQueryMode = origExitQueryMode })
+
 	newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
 		return &mockDeadCodeAnalyzer{
 			reports: []analysis.OrphanReport{},
@@ -234,6 +240,12 @@ func TestRun_ExitCandidatesSection_NoCandidates(t *testing.T) {
 	origNewAnalyzer := newAnalyzer
 	t.Cleanup(func() { newAnalyzer = origNewAnalyzer })
 
+	// run() dispatches on *exitQueryMode: this test exercises the exit-query
+	// channel. Restore the prior value so sibling tests see the default.
+	origExitQueryMode := *exitQueryMode
+	*exitQueryMode = true
+	t.Cleanup(func() { *exitQueryMode = origExitQueryMode })
+
 	newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
 		return &mockDeadCodeAnalyzer{reports: []analysis.OrphanReport{}}
 	}
@@ -263,5 +275,123 @@ func TestRun_ExitCandidatesSection_NoCandidates(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "no exit candidates") {
 		t.Errorf("stdout missing no-candidates note: %q", stdout)
+	}
+}
+
+// TestRun_ExitQueryQuietMode pins the quiet-mode default: with -exit-query
+// and no NEW candidates (the lone candidate is a documented ADR-056 stay),
+// runExitQuery prints the one-line governance summary and NOT the candidate
+// table — an actionable row must never be hidden, but a fully-documented
+// stay list is noise.
+func TestRun_ExitQueryQuietMode(t *testing.T) {
+	origNewAnalyzer := newAnalyzer
+	t.Cleanup(func() { newAnalyzer = origNewAnalyzer })
+
+	origExitQueryMode := *exitQueryMode
+	origExitQueryVerbose := *exitQueryVerbose
+	*exitQueryMode = true
+	*exitQueryVerbose = false
+	t.Cleanup(func() {
+		*exitQueryMode = origExitQueryMode
+		*exitQueryVerbose = origExitQueryVerbose
+	})
+
+	newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
+		return &mockDeadCodeAnalyzer{
+			exitCandidates: []analysis.ExitCandidate{
+				{
+					Symbol:       "Capturer", // documented ADR-056 stay
+					Pkg:          "internal/domain/ports",
+					Layer:        "application",
+					Consumers:    28,
+					Implementers: 416,
+				},
+			},
+		}
+	}
+
+	oldStdout := os.Stdout
+	t.Cleanup(func() { os.Stdout = oldStdout })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+
+	exitCode := run()
+
+	if err := w.Close(); err != nil {
+		t.Logf("closing stdout pipe writer: %v", err)
+	}
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (report-only)", exitCode)
+	}
+	stdout := buf.String()
+	if !strings.Contains(stdout, "documented stay(s)") {
+		t.Errorf("stdout missing quiet governance summary: %q", stdout)
+	}
+	if strings.Contains(stdout, "| symbol |") {
+		t.Errorf("quiet mode must not print the candidate table: %q", stdout)
+	}
+}
+
+// TestRun_ExitQueryVerbose pins the explicit verbose override: with
+// -exit-query -exit-query-verbose, the full candidate table always prints
+// even when every candidate is a documented stay.
+func TestRun_ExitQueryVerbose(t *testing.T) {
+	origNewAnalyzer := newAnalyzer
+	t.Cleanup(func() { newAnalyzer = origNewAnalyzer })
+
+	origExitQueryMode := *exitQueryMode
+	origExitQueryVerbose := *exitQueryVerbose
+	*exitQueryMode = true
+	*exitQueryVerbose = true
+	t.Cleanup(func() {
+		*exitQueryMode = origExitQueryMode
+		*exitQueryVerbose = origExitQueryVerbose
+	})
+
+	newAnalyzer = func(sp domain_security.PathValidator) deadCodeAnalyzer {
+		return &mockDeadCodeAnalyzer{
+			exitCandidates: []analysis.ExitCandidate{
+				{
+					Symbol:       "Capturer", // documented ADR-056 stay
+					Pkg:          "internal/domain/ports",
+					Layer:        "application",
+					Consumers:    28,
+					Implementers: 416,
+				},
+			},
+		}
+	}
+
+	oldStdout := os.Stdout
+	t.Cleanup(func() { os.Stdout = oldStdout })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+
+	exitCode := run()
+
+	if err := w.Close(); err != nil {
+		t.Logf("closing stdout pipe writer: %v", err)
+	}
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (report-only)", exitCode)
+	}
+	stdout := buf.String()
+	if !strings.Contains(stdout, "— EXIT CANDIDATES (ADR-056 Decision 1, report-only) —") {
+		t.Errorf("stdout missing exit-candidates banner: %q", stdout)
+	}
+	if !strings.Contains(stdout, "| symbol |") {
+		t.Errorf("verbose mode must print the full candidate table: %q", stdout)
 	}
 }
