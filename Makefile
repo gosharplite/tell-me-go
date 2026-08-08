@@ -32,7 +32,7 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
+.PHONY: build test test-race tidy fmt help verify-testutil-convention verify-no-testing-import verify-internal-bridge-brand verify-mock-pattern verify-session-provider-mock verify-no-test-sleep verify-architecture verify-nonfix-catalog verify-adr-index lint vulncheck dead-code check check-full bench fuzz fuzz-smoke modelith-lint modelith-render modelith-check modelith-drift modelith-layers modelith-vocab
 
 help:
 	@echo "tell-me-go development tasks:"
@@ -40,6 +40,7 @@ help:
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
 	@echo "  make verify-architecture - Verify Clean/Hexagonal Architecture layer discipline"
+	@echo "  make verify-nonfix-catalog - Verify the complexity-pin catalog partition (issue #1297)"
 	@echo "  make verify-no-test-sleep - Verify no time.Sleep for synchronization in tests"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
@@ -409,6 +410,18 @@ else
 	@$(MAKE) modelith-layers
 endif
 
+# Verify the complexity-pin catalog partition (issue #1297): runs the real
+# GatherComplexities against the live INTENTIONAL_NON_FIXES.md catalog and
+# asserts the post-fix 25-cataloged / 1-alert partition by name (line +
+# recorded CC). RED-first: the gate must fail against a drifted catalog —
+# never weaken it to land green.
+verify-nonfix-catalog:
+ifeq ($(IS_POSIX),true)
+	@go test -tags=arch -run TestVerifyNonFixCatalog ./internal/tools/analysis
+else
+	@go test -tags=arch -run TestVerifyNonFixCatalog ./internal/tools/analysis
+endif
+
 # AI-SAFE RACE TEST: 
 # Running 'go test -race ./...' globally can time out in constrained environments.
 # This target iterates through packages sequentially for stability.
@@ -570,6 +583,8 @@ check: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-nonfix-catalog ==="
+	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="
@@ -600,6 +615,8 @@ check-full: fmt tidy build
 	@$(MAKE) lint
 	@echo "=== verify-architecture ==="
 	@$(MAKE) verify-architecture
+	@echo "=== verify-nonfix-catalog ==="
+	@$(MAKE) verify-nonfix-catalog
 	@echo "=== verify-mock-pattern ==="
 	@$(MAKE) verify-mock-pattern
 	@echo "=== verify-session-provider-mock ==="

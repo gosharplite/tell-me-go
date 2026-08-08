@@ -41,6 +41,8 @@ catalog a new gap no one reviewed. Policy:
 - **CC values in complexity entries are re-measured** whenever the referenced
   function changes; drift is recorded in the entry's rationale (see the
   2026-08 CC drift corrections for the pattern).
+- **Enforcement boundary**: complexity pins: mechanically verified by `verify-nonfix-catalog` on over-threshold functions; under-threshold pins are enforced at threshold-crossing, by construction; coverage pins: prose policy per ADR-054 consequences — the coverage matcher has no name axis to verify against.
+- **Coordination rule**: any legitimate catalog change (add/remove/re-anchor/CC re-verify) edits the partition test in the same PR.
 
 ---
 
@@ -794,7 +796,7 @@ catalog a new gap no one reviewed. Policy:
   test boilerplate assertions, not branching business logic. Same acceptance
   class as the existing structural concerns — test infrastructure where the cost
   of refactoring outweighs the maintainability benefit.
-- **See**: `tests/e2e/history_flags_test.go:142`
+- **See**: `tests/e2e/history_flags_test.go:161`
 
 ### cmd/tell-me-go/main.go — buildApp os.Getwd error path (non-Linux)
 
@@ -855,7 +857,7 @@ catalog a new gap no one reviewed. Policy:
   `internal/agent/session/ui/dispatcher.go`) would trade one well-understood
   Go pattern for another with no reduction in cognitive complexity. The code
   is already clean and well-structured.
-- **See**: `internal/ui/tui/progress/model.go`
+- **See**: `internal/ui/tui/progress/model.go:338`
 
 ### agent/session/ui/dispatcher.go — handleToolEvents (CC=10)
 
@@ -883,7 +885,7 @@ catalog a new gap no one reviewed. Policy:
   The complexity is structural, not cognitive — the same pattern appears in
   `handleUsageMetrics`, `handleTurnStatus`, `handleResponse`, and
   `handleSystemMessage`, each with identical comment documentation.
-- **See**: `internal/agent/session/ui/dispatcher.go`
+- **See**: `internal/agent/session/ui/dispatcher.go:147`
 
 ### Acceptance Rationale (Shared)
 
@@ -944,7 +946,7 @@ to reason about.
   function with no cognitive benefit. Same acceptance class as `handleDomainEvent`
   (type-switch dispatch pattern where CC is structural, not from branching
   business logic).
-- **See**: `internal/ui/tui/progress/model.go:250`
+- **See**: `internal/ui/tui/progress/model.go:251`
 
 ### ui/tui/progress/renderer.go — (*renderer).makeSubscriber (CC=11)
 
@@ -1066,7 +1068,7 @@ to reason about.
   is a single-line delegation or return. Same acceptance class as
   `handleDomainEvent` (CC=12) and `(*model).Update` (CC=14) — structural
   dispatch where CC is switch/branch count, not branching business logic.
-- **See**: `internal/agent/orchestrator/engine_phases.go:105`
+- **See**: `internal/agent/orchestrator/engine_phases.go:124`
 
 ---
 
@@ -1100,13 +1102,13 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Sequential state-mutation test verifying text clearing and thought preservation through multiple update cycles. Steps are not independent — each mutates shared history state. Splitting would duplicate setup. Same acceptance class as `TestHistoryNavigation_CompleteWorkflow`.
-- **See**: `internal/infrastructure/history/history_test.go:1028`
+- **See**: `internal/infrastructure/history/history_test.go:1274`
 
 ### internal/infrastructure/history/history_test.go — TestUpdateTurnContent_AddTextWhenNone (CC=12)
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Same sequential state-mutation pattern as `TestUpdateTurnContent_ClearText`, verifying the complementary code path. CC is assertion boilerplate across dependent steps.
-- **See**: `internal/infrastructure/history/history_test.go:1115`
+- **See**: `internal/infrastructure/history/history_test.go:1361`
 
 ### internal/domain/llm/capabilities_test.go — TestResolveCapabilities (CC=13)
 
@@ -1142,7 +1144,7 @@ to reason about.
 
 - **Status**: ACCEPTED (2026-07)
 - **Rationale**: Table-driven test with 5 subtests covering valid index, OOB negative, OOB pos, non-model role, and deep-copy isolation for `GetModelTurn`. Each subtest contains its own setup (temp dir, `NewManager`, `AddContent`). CC comes from subtest enumeration and assertion boilerplate, not branching business logic. Same acceptance class as `TestUpdateTurnContent_ClearText` (CC=12) and `TestUpdateTurnContent_AddTextWhenNone` (CC=12) in the same file.
-- **See**: `internal/infrastructure/history/history_test.go:1198`
+- **See**: `internal/infrastructure/history/history_test.go:1445`
 
 ### internal/infrastructure/history/history_test.go — TestHistoryManager_SetPinned_WithFunctionCall (CC=21)
 
